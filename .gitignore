@@ -1,0 +1,5 @@
+# Aufzeichnungen und erzeugte Berichte gehoeren nicht ins Repository
+WorkerPerfData/
+demo/
+report.html
+*.flag

@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkerPerf Bericht</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f3f0; --surface: #fcfcfb; --border: #dedcd5; --grid: #e8e6e0;
+  --text: #0b0b0b; --text2: #52514e; --muted: #7b7a74; --hover: #efeee9; --sel: #e3edfb;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --other: #b5b3ab; --bar: #9ec5f4;
+  --warn: #fab219; --crit: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #111110; --surface: #1a1a19; --border: #383835; --grid: #2a2a28;
+    --text: #f0efec; --text2: #c3c2b7; --muted: #8f8e86; --hover: #242422; --sel: #1d2f47;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --other: #5c5b56; --bar: #184f95;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+header { padding: 20px 24px 0; }
+h1 { font-size: 22px; margin: 0 0 2px; font-weight: 600; }
+h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
+h3 { font-size: 13px; margin: 0; font-weight: 600; }
+.sub { color: var(--text2); }
+.note { color: var(--muted); font-size: 12px; }
+nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+nav button { font: inherit; color: var(--text2); background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; cursor: pointer; }
+nav button:hover { color: var(--text); }
+nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--s1); font-weight: 600; }
+main { padding: 20px 24px 60px; max-width: 1500px; }
+section[hidden] { display: none; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.tile .label { color: var(--text2); font-size: 12px; }
+.tile .value { font-size: 24px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.tile .value small { font-size: 13px; font-weight: 400; color: var(--text2); }
+.tile .extra { color: var(--muted); font-size: 12px; }
+.tile .flag { display: inline-block; margin-top: 4px; font-size: 12px; }
+.tile .flag::before { content: "▲ "; }
+.tile .flag.warn::before { color: var(--warn); } .tile .flag.crit::before { color: var(--crit); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.card.wide { margin-bottom: 12px; }
+.cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12px; background: none; border: 0; color: var(--text2); padding: 3px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--sel); color: var(--text); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2); margin: 4px 0 2px; min-height: 18px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; }
+.tip b { display: block; margin-bottom: 2px; }
+.tip div { display: flex; align-items: center; gap: 6px; }
+.tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.tip em { font-style: normal; margin-left: auto; padding-left: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
+.toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+input[type=search] { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 260px; }
+.tablewrap { overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th { position: sticky; top: 0; background: var(--surface); color: var(--text2); font-weight: 600; cursor: pointer; user-select: none; z-index: 1; box-shadow: 0 1px 0 var(--border); }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+th[aria-sort]::after { content: " ▾"; } th[aria-sort="ascending"]::after { content: " ▴"; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--hover); }
+tbody tr.selected { background: var(--sel); }
+td .cellbar { display: inline-block; height: 8px; border-radius: 2px; background: var(--bar); vertical-align: middle; margin-right: 6px; }
+.detail { margin-top: 16px; }
+.detail > .cardhead h2 { margin: 0; }
+.kv { display: flex; flex-wrap: wrap; gap: 4px 22px; color: var(--text2); font-size: 13px; margin-bottom: 12px; }
+.kv b { color: var(--text); font-weight: 600; }
+.empty { color: var(--muted); padding: 30px; text-align: center; }
+footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
+@media print { nav, .toolbar { display: none; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">WorkerPerf</h1>
+  <div class="sub" id="subtitle"></div>
+</header>
+<nav role="tablist">
+  <button data-tab="overview" aria-selected="true">Übersicht</button>
+  <button data-tab="sessions">Sitzungen</button>
+  <button data-tab="apps">Anwendungen</button>
+  <button data-tab="procs">Prozesse</button>
+</nav>
+<main>
+  <section id="tab-overview">
+    <div class="tiles" id="tiles"></div>
+    <div class="card wide">
+      <div class="cardhead"><h3>CPU-Auslastung nach Verursacher (% des Hosts)</h3>
+        <div class="seg" id="segCpu"><button data-by="sessions" aria-pressed="true">nach Sitzung</button><button data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+      <div id="chCpuStack"></div>
+    </div>
+    <div class="card wide">
+      <div class="cardhead"><h3>Arbeitsspeicher nach Verursacher (Working Set, GB)</h3>
+        <div class="seg" id="segMem"><button data-by="sessions" aria-pressed="true">nach Sitzung</button><button data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+      <div id="chMemStack"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="cardhead"><h3>CPU gesamt (%)</h3></div><div id="chCpu"></div></div>
+      <div class="card"><div class="cardhead"><h3>Arbeitsspeicher des Hosts (GB)</h3></div><div id="chMem"></div></div>
+      <div class="card"><div class="cardhead"><h3>Sitzungen</h3></div><div id="chSess"></div></div>
+      <div class="card"><div class="cardhead"><h3>Prozessor-Warteschlange</h3></div><div id="chQueue"></div></div>
+      <div class="card"><div class="cardhead"><h3>Datenträger-Durchsatz (MB/s)</h3></div><div id="chDisk"></div></div>
+      <div class="card"><div class="cardhead"><h3>Datenträger-IOPS</h3></div><div id="chIops"></div></div>
+      <div class="card"><div class="cardhead"><h3>Netzwerk (Mbit/s)</h3></div><div id="chNet"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-sessions" hidden>
+    <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …"><span class="note">Zeile anklicken für Details. CPU-Werte in % der gesamten Host-Kapazität.</span></div>
+    <div class="tablewrap"><table id="tSessions"></table></div>
+    <div class="detail" id="dSessions"></div>
+  </section>
+
+  <section id="tab-apps" hidden>
+    <div class="toolbar"><input type="search" id="fApps" placeholder="Anwendung filtern …"><span class="note">Alle Instanzen eines Prozessnamens über alle Sitzungen zusammengefasst.</span></div>
+    <div class="tablewrap"><table id="tApps"></table></div>
+    <div class="detail" id="dApps"></div>
+  </section>
+
+  <section id="tab-procs" hidden>
+    <div class="toolbar"><input type="search" id="fProcs" placeholder="Prozess, PID oder Benutzer filtern …"><span class="note" id="procNote"></span></div>
+    <div class="tablewrap"><table id="tProcs"></table></div>
+    <div class="detail" id="dProcs"></div>
+  </section>
+</main>
+<footer id="footer"></footer>
+
+<script>
+"use strict";
+const D = /*__WORKERPERF_DATA__*/null;
+
+// ---------- formatting ----------
+const nf = (d) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+const NF = [nf(0), nf(1), nf(2)];
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : NF[d].format(v);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = (n) => String(n).padStart(2, "0");
+// Times are shown in the local time of the recorded server, independent of the viewer's time zone.
+const srv = (ms) => new Date(ms + D.meta.offsetMin * 60000);
+const fmtTime = (ms, sec) => { const d = srv(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + (sec ? ":" + pad(d.getUTCSeconds()) : ""); };
+const fmtDate = (ms) => { const d = srv(ms); return pad(d.getUTCDate()) + "." + pad(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(); };
+const fmtDT = (ms) => ms == null ? "–" : fmtDate(ms) + " " + fmtTime(ms);
+const fmtDur = (min) => { if (min == null) return "–"; const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? h + " h " + pad(m) + " min" : m + " min"; };
+const fmtMB = (mb) => mb == null ? "–" : mb >= 1024 ? fmt(mb / 1024, 2) + " GB" : fmt(mb, 0) + " MB";
+const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"];
+const sessLabel = (s) => s.id === 0 && !s.user ? "Dienste / System (Sitzung 0)" : (s.user ? s.user : "ohne Benutzer") + " (#" + s.id + ")";
+const sessByIdx = new Map(D.sessions.map((s) => [s.i, s]));
+const appByIdx = new Map(D.apps.map((a) => [a.i, a]));
+const T = D.t;
+
+// ---------- chart ----------
+// One shared time axis, one y axis. series: [{name, color (css var), values[], dashed}]
+function chart(host, opt) {
+  host = typeof host === "string" ? document.getElementById(host) : host;
+  const W = opt.width || 700, H = opt.height || 220, m = { l: 46, r: 12, t: 8, b: 22 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const series = opt.series.filter((s) => s.values && s.values.some((v) => v != null));
+  if (!series.length) { host.innerHTML = '<div class="empty">Keine Daten vorhanden.</div>'; return; }
+  const n = T.length;
+  const stacked = !!opt.stacked;
+  let tops = null, yMax = 0;
+  if (stacked) {
+    tops = []; const acc = new Array(n).fill(0);
+    for (const s of series) { const top = new Array(n); for (let i = 0; i < n; i++) { acc[i] += (s.values[i] || 0); top[i] = acc[i]; } tops.push(top); }
+    yMax = Math.max(...acc);
+  } else {
+    for (const s of series) for (const v of s.values) if (v != null && v > yMax) yMax = v;
+  }
+  if (opt.yMax) yMax = Math.max(opt.yMax, opt.yMaxFixed ? 0 : yMax);
+  if (yMax <= 0) yMax = 1;
+  const step = niceStep(yMax / 4); yMax = Math.ceil(yMax / step - 1e-9) * step;
+  const x = (i) => m.l + (n > 1 ? (i / (n - 1)) * pw : pw / 2);
+  const y = (v) => m.t + ph - (v / yMax) * ph;
+  const dec = step < 1 ? (step < 0.1 ? 2 : 1) : 0;
+
+  let g = "";
+  for (let v = 0; v <= yMax + 1e-9; v += step) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v, dec)}</text>`;
+  }
+  const ticks = Math.min(8, n);
+  for (let k = 0; k < ticks; k++) {
+    const i = ticks > 1 ? Math.round((k / (ticks - 1)) * (n - 1)) : 0;
+    g += `<text x="${x(i)}" y="${H - 5}" text-anchor="${k === 0 ? "start" : k === ticks - 1 ? "end" : "middle"}">${fmtTime(T[i])}</text>`;
+  }
+  if (stacked) {
+    for (let k = series.length - 1; k >= 0; k--) {
+      const top = tops[k], base = k ? tops[k - 1] : null;
+      let d = "";
+      for (let i = 0; i < n; i++) d += (i ? "L" : "M") + x(i).toFixed(1) + " " + y(top[i]).toFixed(1);
+      for (let i = n - 1; i >= 0; i--) d += "L" + x(i).toFixed(1) + " " + y(base ? base[i] : 0).toFixed(1);
+      g += `<path d="${d}Z" fill="var(${series[k].color})" stroke="var(--surface)" stroke-width="1" stroke-linejoin="round"/>`;
+    }
+  } else {
+    for (const s of series) {
+      let d = "", pen = false;
+      for (let i = 0; i < n; i++) {
+        const v = s.values[i];
+        if (v == null) { pen = false; continue; }
+        d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); pen = true;
+      }
+      g += `<path d="${d}" fill="none" stroke="var(${s.color})" stroke-width="${s.thin ? 1 : 2}" stroke-linejoin="round" stroke-linecap="round"${s.dashed ? ' stroke-dasharray="5 4"' : ""}${s.thin ? ' opacity=".55"' : ""}/>`;
+    }
+  }
+  if (opt.limit != null && opt.limit <= yMax) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(opt.limit)}" y2="${y(opt.limit)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/>`;
+    g += `<text x="${W - m.r}" y="${y(opt.limit) - 4}" text-anchor="end">${esc(opt.limitLabel || "")}</text>`;
+  }
+  const legend = series.length > 1 ? '<div class="legend">' + series.map((s) => `<span><i style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join("") + "</div>" : "";
+  host.innerHTML = legend + `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label || "Diagramm")}">${g}<line class="cross" y1="${m.t}" y2="${m.t + ph}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div></div>`;
+
+  const svg = host.querySelector("svg"), cross = host.querySelector(".cross"), tip = host.querySelector(".tip"), box = host.querySelector(".chart");
+  const unit = opt.unit ? " " + opt.unit : "", tdec = opt.decimals ?? 1;
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((px - m.l) / pw) * (n - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    let rows = series.map((s) => ({ s, v: s.values[i] })).filter((o) => o.v != null && (!stacked || o.v > 0));
+    if (stacked) rows.reverse();
+    let html = `<b>${fmtTime(T[i], D.meta.bucketSec < 60)}</b>`;
+    for (const o of rows.slice(0, 12)) html += `<div><i style="background:var(${o.s.color})"></i>${esc(o.s.name)}<em>${fmt(o.v, tdec)}${unit}</em></div>`;
+    if (stacked) html += `<div><i></i>Summe<em>${fmt(tops[tops.length - 1][i], tdec)}${unit}</em></div>`;
+    tip.innerHTML = html; tip.style.display = "block";
+    const cx = (x(i) / W) * r.width, tw = tip.offsetWidth;
+    tip.style.left = (cx + 14 + tw > r.width ? cx - tw - 14 : cx + 14) + "px"; tip.style.top = "8px";
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+}
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+// Top 7 entities keep a fixed colour slot each, the rest is folded into "Sonstige".
+function stackSeries(items, key, label, scale) {
+  const ranked = items.map((it) => ({ it, sum: (it[key] || []).reduce((a, v) => a + (v || 0), 0) })).filter((o) => o.sum > 0).sort((a, b) => b.sum - a.sum);
+  const top = ranked.slice(0, 7), rest = ranked.slice(7);
+  const out = top.map((o, k) => ({ name: label(o.it), color: SERIES[k], values: o.it[key].map((v) => v == null ? 0 : v * scale) }));
+  if (rest.length) {
+    const other = new Array(T.length).fill(0);
+    for (const o of rest) o.it[key].forEach((v, i) => { other[i] += (v || 0) * scale; });
+    out.push({ name: "Sonstige (" + rest.length + ")", color: "--other", values: other });
+  }
+  return out;
+}
+// Expands a process series (stored from bucket offset "o") to the full time axis.
+function fullSeries(p, key) { const a = new Array(T.length).fill(null); p[key].forEach((v, i) => { a[p.o + i] = v; }); return a; }
+
+// ---------- sortable table ----------
+function table(id, cols, rows, opt) {
+  const el = document.getElementById(id);
+  const st = { key: opt.sort, dir: -1, filter: "", selected: null };
+  const maxOf = {};
+  for (const c of cols) if (c.bar) maxOf[c.key] = Math.max(1e-9, ...rows.map((r) => r[c.key] || 0));
+  function render() {
+    const col = cols.find((c) => c.key === st.key);
+    let list = rows;
+    if (st.filter) { const q = st.filter.toLowerCase(); list = rows.filter((r) => opt.text(r).toLowerCase().includes(q)); }
+    list = list.slice().sort((a, b) => {
+      const va = col.sortVal ? col.sortVal(a) : a[col.key], vb = col.sortVal ? col.sortVal(b) : b[col.key];
+      if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
+      return (typeof va === "string" ? va.localeCompare(vb, "de") : va - vb) * st.dir;
+    });
+    let h = "<thead><tr>" + cols.map((c) => `<th data-k="${c.key}" class="${c.num ? "num" : ""}"${c.key === st.key ? ` aria-sort="${st.dir > 0 ? "ascending" : "descending"}"` : ""} title="${esc(c.title || "")}">${esc(c.head)}</th>`).join("") + "</tr></thead><tbody>";
+    for (const r of list) {
+      h += `<tr data-id="${opt.id(r)}"${st.selected === opt.id(r) ? ' class="selected"' : ""}>` + cols.map((c) => {
+        const txt = c.fmt ? c.fmt(r[c.key], r) : esc(r[c.key]);
+        const bar = c.bar ? `<span class="cellbar" style="width:${Math.round(((r[c.key] || 0) / maxOf[c.key]) * 48)}px"></span>` : "";
+        return `<td class="${c.num ? "num" : ""}">${bar}${txt}</td>`;
+      }).join("") + "</tr>";
+    }
+    if (!list.length) h += `<tr><td colspan="${cols.length}" class="empty">Keine Einträge.</td></tr>`;
+    el.innerHTML = h + "</tbody>";
+  }
+  el.addEventListener("click", (ev) => {
+    const th = ev.target.closest("th");
+    if (th) { const k = th.dataset.k; if (st.key === k) st.dir = -st.dir; else { st.key = k; st.dir = cols.find((c) => c.key === k).num ? -1 : 1; } render(); return; }
+    const tr = ev.target.closest("tbody tr[data-id]");
+    if (tr && opt.onSelect) { st.selected = Number(tr.dataset.id); render(); opt.onSelect(st.selected); }
+  });
+  if (opt.filterInput) document.getElementById(opt.filterInput).addEventListener("input", (ev) => { st.filter = ev.target.value; render(); });
+  render();
+  return { select(id) { st.selected = id; render(); if (opt.onSelect) opt.onSelect(id); } };
+}
+const cNum = (key, head, d, title, extra) => Object.assign({ key, head, num: true, title, fmt: (v) => fmt(v, d) }, extra || {});
+
+// ---------- header + overview ----------
+const M = D.meta, S = D.stats;
+document.title = "WorkerPerf – " + M.computer;
+document.getElementById("title").textContent = "WorkerPerf – " + M.computer + (M.simulated ? " (simulierte Daten)" : "");
+document.getElementById("subtitle").textContent = `${fmtDT(M.start)} bis ${fmtDate(M.start) === fmtDate(M.end) ? fmtTime(M.end) : fmtDT(M.end)} · ${fmtDur(M.durationMin)} · Intervall ${fmt(M.intervalSec, 0)} s · ${M.cores} logische CPUs · ${fmt(M.ramGB, 0)} GB RAM · ${M.os}`;
+document.getElementById("footer").textContent = `${fmt(M.samples, 0)} Messungen, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. Diagramme zeigen Mittelwerte je ${fmt(M.bucketSec, 0)} s. Bericht erstellt am ${fmtDT(M.generated)}.`;
+
+function tile(label, value, unit, extra, flag) {
+  return `<div class="tile"><div class="label">${label}</div><div class="value">${value}<small> ${unit}</small></div><div class="extra">${extra}</div>${flag ? `<div class="flag ${flag[0]}">${flag[1]}</div>` : ""}</div>`;
+}
+const userSessions = D.sessions.filter((s) => s.user);
+const rtts = userSessions.filter((s) => s.rttAvg != null);
+const memPct = (S.usedMax / M.ramGB) * 100;
+document.getElementById("tiles").innerHTML = [
+  tile("CPU Ø", fmt(S.cpuAvg, 1), "%", `P95 ${fmt(S.cpuP95, 1)} % · Max ${fmt(S.cpuMax, 1)} %`, S.cpuP95 >= 90 ? ["crit", "P95 über 90 %"] : S.cpuP95 >= 75 ? ["warn", "P95 über 75 %"] : null),
+  tile("Arbeitsspeicher belegt Ø", fmt(S.usedAvg, 1), "GB", `Max ${fmt(S.usedMax, 1)} von ${fmt(M.ramGB, 0)} GB (${fmt(memPct, 0)} %)`, memPct >= 95 ? ["crit", "Spitze über 95 %"] : memPct >= 85 ? ["warn", "Spitze über 85 %"] : null),
+  tile("Benutzersitzungen Ø", fmt(S.sessAvg, 1), "", `Max ${fmt(S.sessMax, 0)} · ${userSessions.length} im Zeitraum`),
+  tile("CPU je Sitzung Ø", fmt(userSessions.length ? userSessions.reduce((a, s) => a + s.cpuAvg, 0) / userSessions.length : null, 2), "%", `Working Set Ø ${fmtMB(userSessions.length ? userSessions.reduce((a, s) => a + s.wsAvg, 0) / userSessions.length : null)}`),
+  tile("Prozesse Ø", fmt(S.procAvg, 0), "", `Max ${fmt(S.procMax, 0)} · ${fmt(M.processCount, 0)} insgesamt`),
+  tile("Datenträger-IOPS Ø", fmt(S.iopsAvg, 0), "", `P95 ${fmt(S.iopsP95, 0)}`),
+  tile("Prozessor-Warteschlange Ø", fmt(S.queueAvg, 1), "", `Max ${fmt(S.queueMax, 0)}`),
+  rtts.length ? tile("ICA Round Trip Ø", fmt(rtts.reduce((a, s) => a + s.rttAvg, 0) / rtts.length, 0), "ms", `höchster Sitzungs-Ø ${fmt(Math.max(...rtts.map((s) => s.rttAvg)), 0)} ms`) : ""
+].join("");
+
+function drawStacks() {
+  const by = (id) => document.querySelector("#" + id + " button[aria-pressed=true]").dataset.by;
+  const src = (b) => b === "sessions" ? [D.sessions, sessLabel] : [D.apps, (a) => a.name];
+  let [items, label] = src(by("segCpu"));
+  chart("chCpuStack", { series: stackSeries(items, "cpu", label, 1), stacked: true, unit: "%", yMax: 100, limit: 100, limitLabel: "100 % Host", height: 280, width: 1300, label: "CPU nach Verursacher" });
+  [items, label] = src(by("segMem"));
+  chart("chMemStack", { series: stackSeries(items, "ws", label, 1 / 1024), stacked: true, unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM", height: 280, width: 1300, label: "Arbeitsspeicher nach Verursacher" });
+}
+for (const id of ["segCpu", "segMem"]) document.getElementById(id).addEventListener("click", (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  for (const o of b.parentNode.children) o.setAttribute("aria-pressed", o === b ? "true" : "false");
+  drawStacks();
+});
+drawStacks();
+const sy = D.system;
+chart("chCpu", { series: [{ name: "Mittelwert", color: "--s1", values: sy.cpu }, { name: "Spitze im Intervall", color: "--s1", values: sy.cpuMax, thin: true }], unit: "%", yMax: 100, yMaxFixed: true });
+chart("chMem", { series: [{ name: "physisch belegt", color: "--s1", values: sy.usedGB }, { name: "zugesichert (Commit)", color: "--s2", values: sy.commitGB }], unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM" });
+chart("chSess", { series: [{ name: "angemeldet", color: "--s1", values: sy.sessions }, { name: "aktiv", color: "--s3", values: sy.active }], decimals: 0 });
+chart("chQueue", { series: [{ name: "Warteschlange", color: "--s1", values: sy.queue }], decimals: 1 });
+chart("chDisk", { series: [{ name: "Lesen", color: "--s1", values: sy.diskR }, { name: "Schreiben", color: "--s2", values: sy.diskW }], unit: "MB/s", decimals: 2 });
+chart("chIops", { series: [{ name: "Lesen", color: "--s1", values: sy.iopsR }, { name: "Schreiben", color: "--s2", values: sy.iopsW }], decimals: 0 });
+chart("chNet", { series: [{ name: "Empfangen", color: "--s1", values: sy.netR }, { name: "Gesendet", color: "--s2", values: sy.netS }], unit: "Mbit/s", decimals: 2 });
+
+// ---------- sessions ----------
+const sessCols = [
+  { key: "user", head: "Benutzer", fmt: (v, r) => esc(sessLabel(r)), sortVal: (r) => sessLabel(r) },
+  { key: "client", head: "Client" },
+  cNum("durMin", "Dauer", 0, "Anwesenheit im Messzeitraum", { fmt: (v) => fmtDur(v) }),
+  cNum("activePct", "Aktiv %", 0, "Anteil der Messungen im Zustand 'Active' (Rest: getrennt)"),
+  cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
+  cNum("cpuSec", "CPU-Zeit s", 0, "verbrauchte CPU-Sekunden"),
+  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert, % der Host-Kapazität"),
+  cNum("cpuP95", "CPU P95 %", 2),
+  cNum("cpuMax", "CPU Max %", 1),
+  cNum("wsAvg", "RAM Ø", 0, "Summe Working Set aller Prozesse", { fmt: fmtMB, bar: true }),
+  cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
+  cNum("privMax", "Commit Max", 0, "Private Bytes (zugesicherter Speicher)", { fmt: fmtMB }),
+  cNum("ioMB", "I/O MB", 0, "gelesene + geschriebene Daten aller Prozesse (Datei, Netzwerk, Geräte)"),
+  cNum("procsAvg", "Prozesse Ø", 0)
+];
+if (M.hasRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cNum("rttMax", "ICA RTT Max ms", 0));
+
+const pairCols = (first) => [first,
+  cNum("inst", "Instanzen", 0),
+  cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
+  cNum("wsAvg", "RAM Ø", 0, "", { fmt: fmtMB, bar: true }),
+  cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
+  cNum("ioMB", "I/O MB", 1)];
+const procCols = (withUser) => [
+  { key: "name", head: "Prozess" },
+  cNum("pid", "PID", 0, "", { fmt: (v) => v }),
+  ...(withUser ? [{ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }] : []),
+  cNum("start", "Gestartet", 0, "", { fmt: (v) => fmtDT(v) }),
+  cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
+  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert über die Laufzeit im Messzeitraum, % der Host-Kapazität"),
+  cNum("cpuMax", "CPU Max %", 1),
+  cNum("wsAvg", "RAM Ø", 0, "", { fmt: fmtMB }),
+  cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB, bar: true }),
+  cNum("privMax", "Commit Max", 0, "", { fmt: fmtMB }),
+  cNum("ioMB", "I/O MB", 1),
+  cNum("handles", "Handles Max", 0),
+  cNum("threads", "Threads Max", 0)];
+
+function procDetail(host, p) {
+  const s = sessByIdx.get(p.s);
+  host.innerHTML = `<div class="card"><div class="cardhead"><h2>${esc(p.name)} · PID ${p.pid}</h2></div>
+    <div class="kv"><span>Sitzung <b>${esc(sessLabel(s))}</b></span><span>Gestartet <b>${fmtDT(p.start)}</b></span><span>Beobachtet <b>${fmtTime(p.first)}–${fmtTime(p.last)}</b></span><span>CPU-Zeit <b>${fmt(p.cpuSec, 1)} s</b></span><span>RAM Max <b>${fmtMB(p.wsMax)}</b></span></div>
+    <div class="note" style="margin-bottom:8px">${esc(p.path)}${p.cmd ? "<br>" + esc(p.cmd) : ""}</div>
+    <div class="grid2"><div><h3>CPU (% des Hosts)</h3><div class="c1"></div></div><div><h3>Working Set (MB)</h3><div class="c2"></div></div></div></div>`;
+  chart(host.querySelector(".c1"), { series: [{ name: "CPU", color: "--s1", values: fullSeries(p, "cpu") }], unit: "%", decimals: 2 });
+  chart(host.querySelector(".c2"), { series: [{ name: "RAM", color: "--s1", values: fullSeries(p, "ws") }], unit: "MB", decimals: 0 });
+}
+
+let uid = 0;
+function showSession(i) {
+  const s = sessByIdx.get(i), host = document.getElementById("dSessions"), u = ++uid;
+  const ctx = D.citrix.filter((c) => c.s === i);
+  host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
+    <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span></div>
+    <div class="grid2">
+      <div class="card"><h3>CPU (% des Hosts)</h3><div id="sc${u}"></div></div>
+      <div class="card"><h3>Working Set (MB)</h3><div id="sw${u}"></div></div>
+      <div class="card"><h3>I/O (KB/s)</h3><div id="si${u}"></div></div>
+      ${s.rtt ? `<div class="card"><h3>ICA Round Trip (ms)</h3><div id="sr${u}"></div></div>` : ""}
+    </div>
+    <h2>Anwendungen dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sa${u}"></table></div>
+    ${ctx.length ? `<h2 style="margin-top:16px">Citrix-Messwerte</h2><div class="tablewrap" style="max-height:240px"><table id="sx${u}"></table></div>` : ""}
+    <h2 style="margin-top:16px">Ressourcenintensivste Prozesse dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sp${u}"></table></div><div id="spd${u}" class="detail"></div>`;
+  chart("sc" + u, { series: [{ name: "CPU", color: "--s1", values: s.cpu }], unit: "%", decimals: 2 });
+  chart("sw" + u, { series: [{ name: "RAM", color: "--s1", values: s.ws }], unit: "MB", decimals: 0 });
+  chart("si" + u, { series: [{ name: "I/O", color: "--s1", values: s.io }], unit: "KB/s", decimals: 0 });
+  if (s.rtt) chart("sr" + u, { series: [{ name: "RTT", color: "--s1", values: s.rtt }], unit: "ms", decimals: 0 });
+  table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v).name), sortVal: (r) => appByIdx.get(r.a).name }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
+  if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, cNum("avg", "Ø", 1), cNum("max", "Max", 1), cNum("n", "Messungen", 0)], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
+  const procs = D.procs.filter((p) => p.s === i);
+  table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
+  host.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession });
+
+// ---------- applications ----------
+function showApp(i) {
+  const a = appByIdx.get(i), host = document.getElementById("dApps"), u = ++uid;
+  host.innerHTML = `<div class="cardhead"><h2>${esc(a.name)}</h2></div>
+    <div class="kv"><span>Instanzen gesamt <b>${a.inst}</b></span><span>gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span>RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span><span>Pfad <b>${esc(a.path || "–")}</b></span></div>
+    <div class="grid2"><div class="card"><h3>CPU aller Instanzen (% des Hosts)</h3><div id="ac${u}"></div></div><div class="card"><h3>Working Set aller Instanzen (MB)</h3><div id="aw${u}"></div></div></div>
+    <h2>Sitzungen mit dieser Anwendung</h2><div class="tablewrap" style="max-height:340px"><table id="as${u}"></table></div>`;
+  chart("ac" + u, { series: [{ name: "CPU", color: "--s1", values: a.cpu }], unit: "%", decimals: 2 });
+  chart("aw" + u, { series: [{ name: "RAM", color: "--s1", values: a.ws }], unit: "MB", decimals: 0 });
+  table("as" + u, pairCols({ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }), D.pairs.filter((p) => p.a === i), { sort: "cpuSec", id: (r) => r.s, text: () => "", onSelect: (s) => { activate("sessions"); sessTable.select(s); } });
+  host.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+const appTable = table("tApps", [
+  { key: "name", head: "Anwendung" },
+  cNum("sess", "Sitzungen", 0, "Anzahl Sitzungen, in denen die Anwendung lief"),
+  cNum("inst", "Instanzen", 0, "Anzahl beobachteter Prozessinstanzen"),
+  cNum("instAvg", "gleichzeitig Ø", 1),
+  cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
+  cNum("cpuSec", "CPU-Zeit s", 0),
+  cNum("cpuAvg", "CPU Ø %", 2, "alle Instanzen zusammen, % der Host-Kapazität"),
+  cNum("cpuP95", "CPU P95 %", 2),
+  cNum("cpuMax", "CPU Max %", 1),
+  cNum("wsAvg", "RAM Ø gesamt", 0, "Summe Working Set aller Instanzen", { fmt: fmtMB, bar: true }),
+  cNum("wsMax", "RAM Max gesamt", 0, "", { fmt: fmtMB }),
+  cNum("wsPerInst", "RAM Ø je Instanz", 0, "", { fmt: fmtMB }),
+  cNum("ioMB", "I/O MB", 0)
+], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => r.name, filterInput: "fApps", onSelect: showApp });
+
+// ---------- processes ----------
+document.getElementById("procNote").textContent = `Enthält die ${D.procs.length} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O sowie die Spitzenreiter jeder Sitzung).`;
+table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: (r) => r.name + " " + r.pid + " " + sessLabel(sessByIdx.get(r.s)), filterInput: "fProcs", onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+
+// ---------- tabs ----------
+function activate(name) {
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", b.dataset.tab === name ? "true" : "false");
+  for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== "tab-" + name;
+}
+document.querySelector("nav").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) activate(b.dataset.tab); });
+</script>
+</body>
+</html>
