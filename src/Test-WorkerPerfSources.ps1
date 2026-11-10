@@ -47,8 +47,9 @@ $ErrorActionPreference = 'Stop'
 #region ---------- masking --------------------------------------------------------------------
 
 function Hide-WorkerPerfName([string]$Text, [string[]]$Users) {
-    # Replaces user names (case-insensitive, whole names only, longest first) by <user> and a
-    # leading UNC server name by <server>. Self-contained: the tests load this function alone.
+    # Replaces user names (case-insensitive, whole names only, longest first) by <user> and UNC
+    # server names (at the start or inside a text) by <server>.
+    # Self-contained: the tests load this function alone.
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
     $result = $Text
     $names = @(@($Users) | Where-Object { -not [string]::IsNullOrEmpty($_) } | Sort-Object -Unique |
@@ -59,9 +60,9 @@ function Hide-WorkerPerfName([string]$Text, [string[]]$Users) {
         $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
         $result = [regex]::Replace($result, $pattern, '<user>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     }
-    # \\server\... at the start; device paths such as \\?\Volume{...} and \\.\ are kept.
-    $m = [regex]::Match($result, '^\\\\(?![?.]\\)[^\\]+')
-    if ($m.Success) { $result = '\\<server>' + $result.Substring($m.Length) }
+    # \\server\... at the start or after a non-word character (e.g. quoted in an error message);
+    # device paths such as \\?\Volume{...} and \\.\ are kept.
+    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)[^\\\s''"]+', '\\<server>')
     return $result
 }
 
@@ -81,6 +82,40 @@ function Test-ProbeUserInText([string]$Text) {
     # True when a known user name occurs in $Text (same matching rules as the masking).
     if ([string]::IsNullOrEmpty($Text)) { return $false }
     return (Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers) -ne (Hide-WorkerPerfName -Text $Text -Users @())
+}
+
+function Get-ProbeMaskNames([string[]]$SessionUsers, [string[]]$ProfilePaths, [string]$CurrentUser) {
+    # Names to mask: WTS session users, the leaf names of user profile folders (which do not depend
+    # on WTS and cover every user with a local profile) and the current user. A profile folder
+    # such as C:\Users\mueller.KLINIK also yields the part before the first dot.
+    $names = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($u in @($SessionUsers)) { if (-not [string]::IsNullOrEmpty($u)) { $names.Add($u) } }
+    foreach ($p in @($ProfilePaths)) {
+        if ([string]::IsNullOrEmpty($p)) { continue }
+        $leaf = @($p -split '[\\/]' | Where-Object { $_ -ne '' })
+        if ($leaf.Count -eq 0) { continue }
+        $name = $leaf[$leaf.Count - 1]
+        $names.Add($name)
+        $dot = $name.IndexOf('.')
+        if ($dot -gt 0) { $names.Add($name.Substring(0, $dot)) }
+    }
+    if (-not [string]::IsNullOrEmpty($CurrentUser)) { $names.Add($CurrentUser) }
+    return $names.ToArray()
+}
+
+function Hide-ProbeEndpointText([string]$Text, [string[]]$HostNames) {
+    # Endpoint labels are written by the customer and may quote a host; every host name of the
+    # endpoint file and its first label (e.g. ora-db of ora-db.example.local) become <server>.
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $result = $Text
+    $hosts = @(@($HostNames) | Where-Object { -not [string]::IsNullOrEmpty($_) } | ForEach-Object { $_; if ($_ -notmatch '^[0-9.:]+$') { $_.Split('.')[0] } } |
+            Where-Object { $_ -ne '' } | Sort-Object -Unique | Sort-Object -Property { $_.Length } -Descending)
+    if ($hosts.Count -gt 0) {
+        $alternatives = ($hosts | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
+        $result = [regex]::Replace($result, $pattern, '<server>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    }
+    return Hide-WorkerPerfName -Text $result -Users $script:ProbeUsers
 }
 
 #endregion
@@ -303,8 +338,8 @@ function Read-ProbePerf {
     param([string]$Category, [string[]]$Counters, [string]$Instances, [int]$MaxInstances = 0, [switch]$ShareNames)
 
     $r = [ordered]@{
-        Category = $Category; Exists = $false; CategoryType = ''; CounterNames = @(); InstanceCount = 0
-        InstanceNames = @(); Counters = @(); Ok = $false; Error = ''
+        Category = $Category; Exists = $false; CategoryType = ''; CounterNames = @(); CounterNameSource = ''
+        InstanceCount = 0; InstanceNames = @(); Counters = @(); Ok = $false; Error = ''
     }
     if (-not [System.Diagnostics.PerformanceCounterCategory]::Exists($Category)) {
         $r.Error = 'Kategorie nicht vorhanden'
@@ -325,6 +360,7 @@ function Read-ProbePerf {
         }
         if ($null -ne $pcs) {
             foreach ($pc in $pcs) { $names.Add([string]$pc.CounterName); $pc.Dispose() }
+            $r.CounterNameSource = 'GetCounters'
         }
     }
     catch { $r.Error = 'Zaehlernamen: ' + (Get-ProbeErrorText $_) }
@@ -332,13 +368,20 @@ function Read-ProbePerf {
     $d1 = $cat.ReadCategory()
     Start-Sleep -Seconds 1
     $d2 = $cat.ReadCategory()
-    if ($names.Count -eq 0) { foreach ($k in $d2.Keys) { $names.Add([string]$k) } }
+    if ($names.Count -eq 0) {
+        # ReadCategory keys are lowercased by .NET, so their spelling is not authoritative.
+        foreach ($k in $d2.Keys) { $names.Add([string]$k) }
+        $r.CounterNameSource = 'ReadCategoryKeys (lowercase)'
+    }
     $r.CounterNames = $names.ToArray()
 
     $wanted = $names.ToArray()
     if ($null -ne $Counters -and $Counters.Length -gt 0) { $wanted = $Counters }
 
+    # One entry per real instance; InstanceIndex links the rows of all counters to it, because
+    # masked names are not unique (two mount paths may both end in \<user>).
     $instanceNames = New-Object 'System.Collections.Generic.List[string]'
+    $instanceIndex = New-Object 'System.Collections.Generic.Dictionary[string,int]' ([StringComparer]::OrdinalIgnoreCase)
     $counterRows = New-Object 'System.Collections.Generic.List[object]'
     $allOk = $wanted.Length -gt 0
     foreach ($cn in $wanted) {
@@ -367,12 +410,17 @@ function Read-ProbePerf {
                 if ($MaxInstances -gt 0 -and $rows.Count -ge $MaxInstances) { continue }
 
                 $shown = ''
+                $index = 0
                 if ($Instances -ne 'none') {
                     if ($ShareNames) { $shown = Hide-ProbeShareName $name } else { $shown = Hide-ProbeText $name }
-                    if (-not $instanceNames.Contains($shown)) { $instanceNames.Add($shown) }
+                    if (-not $instanceIndex.ContainsKey($name)) {
+                        $instanceIndex[$name] = $instanceNames.Count
+                        $instanceNames.Add($shown)
+                    }
+                    $index = $instanceIndex[$name]
                 }
                 $rows.Add([ordered]@{
-                        Instance = $shown
+                        Instance = $shown; InstanceIndex = $index
                         Raw1 = $raw1; Raw2 = $s2.RawValue
                         Base1 = $base1; Base2 = $s2.BaseValue
                         Time1 = $time1; Time2 = $s2.TimeStamp100nSec
@@ -443,15 +491,17 @@ function Invoke-ProbeVolumesCheck($Ctx, $Check) {
         foreach ($c in $dn.Counters) {
             foreach ($row in $c.Instances) {
                 if ($null -eq $row.Value) { continue }
-                if ($c.Counter -eq 'Avg. Disk sec/Read') { $read[$row.Instance] = $row.Value }
-                if ($c.Counter -eq 'Avg. Disk sec/Write') { $write[$row.Instance] = $row.Value }
+                if ($c.Counter -eq 'Avg. Disk sec/Read') { $read[$row.InstanceIndex] = $row.Value }
+                if ($c.Counter -eq 'Avg. Disk sec/Write') { $write[$row.InstanceIndex] = $row.Value }
             }
         }
-        foreach ($name in $dn.InstanceNames) {
+        # One row per real instance (by index), even when masked names coincide.
+        $names = @($dn.InstanceNames)
+        for ($i = 0; $i -lt $names.Count; $i++) {
             $rm = $null; $wm = $null
-            if ($read.ContainsKey($name)) { $rm = [Math]::Round($read[$name] * 1000, 3) }
-            if ($write.ContainsKey($name)) { $wm = [Math]::Round($write[$name] * 1000, 3) }
-            $times.Add([ordered]@{ Instance = $name; ReadMs = $rm; WriteMs = $wm })
+            if ($read.ContainsKey($i)) { $rm = [Math]::Round($read[$i] * 1000, 3) }
+            if ($write.ContainsKey($i)) { $wm = [Math]::Round($write[$i] * 1000, 3) }
+            $times.Add([ordered]@{ Instance = $names[$i]; InstanceIndex = $i; ReadMs = $rm; WriteMs = $wm })
         }
     }
     $out.Data.ResponseMs = $times.ToArray()
@@ -595,6 +645,7 @@ function Invoke-ProbeSessionsCheck($Ctx, $Check) {
     $data = [ordered]@{
         Compiled = $Ctx.WtsCompiled; Error = $Ctx.WtsError; SessionCount = 0; ByState = [ordered]@{}
         WithUser = 0; WithLogonTime = 0; WithIdleTime = 0
+        MaskProfileCount = $Ctx.ProfileNameCount; MaskProfileError = $Ctx.ProfileError
     }
     $sessions = @($Ctx.Sessions)
     $data.SessionCount = $sessions.Count
@@ -794,15 +845,23 @@ function Invoke-ProbeUserProcessesCheck($Ctx, $Check) {
 
 function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
     if ([string]::IsNullOrEmpty($Ctx.EndpointFile)) {
-        return @{ Ok = $false; Detail = 'kein -EndpointFile angegeben, Pruefung entfaellt'; Data = [ordered]@{ TimeoutMs = 2000; Endpoints = @() } }
+        # Not configured is not a failed source: Ok stays $null and Data says it was skipped.
+        return @{ Ok = $null; Detail = 'kein -EndpointFile angegeben, Pruefung uebersprungen'; Data = [ordered]@{ Skipped = $true; TimeoutMs = 2000; Endpoints = @() } }
     }
     $cfg = Get-Content -LiteralPath $Ctx.EndpointFile -Raw -Encoding UTF8 | ConvertFrom-Json
     $rows = New-Object 'System.Collections.Generic.List[object]'
     $reached = 0
-    foreach ($e in @(Get-Prop $cfg 'endpoints')) {
+    $endpoints = @(Get-Prop $cfg 'endpoints')
+    # Host names never reach the result; endpoints are identified by position, name and role.
+    $hostNames = @($endpoints | ForEach-Object { [string](Get-Prop $_ 'host') })
+    $position = 0
+    foreach ($e in $endpoints) {
+        $position++
         $hostName = [string](Get-Prop $e 'host')
         $row = [ordered]@{
-            Name = Hide-ProbeText ([string](Get-Prop $e 'name')); Role = [string](Get-Prop $e 'role')
+            Index = $position
+            Name = Hide-ProbeEndpointText ([string](Get-Prop $e 'name')) $hostNames
+            Role = Hide-ProbeEndpointText ([string](Get-Prop $e 'role')) $hostNames
             Port = Get-Prop $e 'port'; DnsMs = $null; ConnectMs = $null; Error = ''
         }
         try {
@@ -825,14 +884,12 @@ function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
             finally { $client.Close() }
         }
         catch {
-            $msg = Get-ProbeErrorText $_
-            if ($hostName) { $msg = $msg.Replace($hostName, '<server>') }
-            $row.Error = $msg
+            $row.Error = Hide-ProbeEndpointText (Get-ProbeErrorText $_) $hostNames
         }
         $rows.Add($row)
     }
     $detail = '{0} von {1} Gegenstellen erreichbar' -f $reached, $rows.Count
-    return @{ Ok = ($rows.Count -gt 0 -and $reached -eq $rows.Count); Detail = $detail; Data = [ordered]@{ TimeoutMs = 2000; Endpoints = $rows.ToArray() } }
+    return @{ Ok = ($rows.Count -gt 0 -and $reached -eq $rows.Count); Detail = $detail; Data = [ordered]@{ Skipped = $false; TimeoutMs = 2000; Endpoints = $rows.ToArray() } }
 }
 
 #endregion
@@ -914,6 +971,7 @@ $ctx = @{
     CimPerfClasses = $null; CimPerfError = ''
     InputSeconds = $InputSeconds
     EndpointFile = ''
+    ProfileNameCount = 0; ProfileError = ''
 }
 if ($EndpointFile) { $ctx.EndpointFile = (Resolve-Path -LiteralPath $EndpointFile).ProviderPath }
 
@@ -924,10 +982,21 @@ try {
     $ctx.Sessions = @([WorkerPerfProbe.Wts]::GetSessions())
 }
 catch { $ctx.WtsError = Get-ProbeErrorText $_ }
-$users = New-Object 'System.Collections.Generic.List[string]'
-foreach ($s in $ctx.Sessions) { if (-not [string]::IsNullOrEmpty($s.User)) { $users.Add([string]$s.User) } }
-if ($env:USERNAME) { $users.Add($env:USERNAME) }
-$script:ProbeUsers = $users.ToArray()
+# Second source independent of WTS: the folders of all local (non-special) user profiles.
+$profilePaths = @()
+try {
+    $profilePaths = @(Get-CimInstance -ClassName Win32_UserProfile -ErrorAction Stop |
+            Where-Object { -not (Get-Prop $_ 'Special') } | ForEach-Object { [string](Get-Prop $_ 'LocalPath') })
+}
+catch { $ctx.ProfileError = Get-ProbeErrorText $_ }
+$ctx.ProfileNameCount = $profilePaths.Count
+$wtsOk = $ctx.WtsCompiled -and [string]::IsNullOrEmpty($ctx.WtsError)
+if (-not $wtsOk -and $ctx.ProfileError) {
+    # Without any list of user names the result could leak them, so nothing is written.
+    throw ('Benutzernamen fuer die Maskierung nicht ermittelbar (WTS: {0}; Win32_UserProfile: {1}). Es wird keine Datei geschrieben.' -f $ctx.WtsError, $ctx.ProfileError)
+}
+$sessionUsers = @($ctx.Sessions | ForEach-Object { [string]$_.User })
+$script:ProbeUsers = @(Get-ProbeMaskNames -SessionUsers $sessionUsers -ProfilePaths $profilePaths -CurrentUser $env:USERNAME)
 $ctx.Users = $script:ProbeUsers
 
 $isElevated = $false
@@ -953,7 +1022,7 @@ foreach ($c in $script:Catalogue) {
     $r = [ordered]@{ Id = $c.Id; Signals = [string[]]$c.Signals; Title = $c.Title; Ok = $false; Detail = ''; Data = $null }
     try {
         $out = @(& $c.Run $ctx $c)[-1]
-        $r.Ok = [bool]$out.Ok
+        if ($null -eq $out.Ok) { $r.Ok = $null } else { $r.Ok = [bool]$out.Ok }   # $null = skipped
         $r.Detail = [string]$out.Detail
         $r.Data = $out.Data
     }
@@ -975,7 +1044,11 @@ $report = [ordered]@{
 $json = ConvertTo-Json -InputObject $report -Depth 16
 [System.IO.File]::WriteAllText($target, $json, (New-Object System.Text.UTF8Encoding $false))
 
-$results | ForEach-Object { [pscustomobject]@{ Id = $_.Id; Ok = $_.Ok; Detail = $_.Detail } } |
+$results | ForEach-Object {
+    $shownOk = $_.Ok
+    if ($null -eq $shownOk) { $shownOk = 'uebersprungen' }
+    [pscustomobject]@{ Id = $_.Id; Ok = $shownOk; Detail = $_.Detail }
+} |
     Format-Table -AutoSize -Wrap | Out-Host
 Write-Host ('Ergebnis gespeichert: {0}' -f $target)
 Write-Host 'Bitte diese Datei zur Auswertung zurueckgeben.'
