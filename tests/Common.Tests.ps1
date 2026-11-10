@@ -1,0 +1,98 @@
+BeforeAll {
+    Set-StrictMode -Version 2
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1')
+    $script:Src = Join-Path $PSScriptRoot '../src'
+    $script:Th = Read-WorkerPerfThresholds (Join-Path $Src 'thresholds.json')
+    $script:Roles = Read-WorkerPerfRoles (Join-Path $Src 'roles.json')
+    function Write-Json([string]$Name, [string]$Json) { $p = Join-Path $TestDrive $Name; [IO.File]::WriteAllText($p, $Json); $p }
+    $script:Entry = '{{"id":"{0}","label":"x","unit":"%","direction":"high","warn":{1},"crit":{2},"ideal":"x","minTicks":3,"trigger":false,"origin":"{3}","source":"x","url":""}}'
+}
+Describe 'Schwellwerte' {
+    It 'liefert <Id> mit den Startwerten der Spezifikation' -TestCases @(
+        @{ Id = 'cpu.host';      Warn = 75;  Crit = 90;  MinTicks = 3; Trigger = $true;  Origin = 'Herstellerangabe' }
+        @{ Id = 'cpu.queue';     Warn = 2;   Crit = 5;   MinTicks = 3; Trigger = $false; Origin = 'Herstellerangabe' }
+        @{ Id = 'cpu.steal';     Warn = 5;   Crit = 10;  MinTicks = 3; Trigger = $false; Origin = 'Faustregel' }
+        @{ Id = 'mem.used';      Warn = 75;  Crit = 90;  MinTicks = 3; Trigger = $true;  Origin = 'Herstellerangabe' }
+        @{ Id = 'mem.commit';    Warn = 80;  Crit = 90;  MinTicks = 3; Trigger = $false; Origin = 'Herstellerangabe' }
+        @{ Id = 'mem.pagesin';   Warn = 10;  Crit = 100; MinTicks = 3; Trigger = $false; Origin = 'Faustregel' }
+        @{ Id = 'input.session'; Warn = 150; Crit = 500; MinTicks = 1; Trigger = $true;  Origin = 'Herstellerangabe' }
+        @{ Id = 'disk.latency';  Warn = 10;  Crit = 20;  MinTicks = 3; Trigger = $true;  Origin = 'Herstellerangabe' }
+        @{ Id = 'smb.latency';   Warn = 10;  Crit = 20;  MinTicks = 3; Trigger = $true;  Origin = 'eigene Annahme' }
+        @{ Id = 'ica.rtt';       Warn = 150; Crit = 300; MinTicks = 3; Trigger = $false; Origin = 'Herstellerangabe' }
+        @{ Id = 'ica.latency';   Warn = 150; Crit = 250; MinTicks = 3; Trigger = $false; Origin = 'Herstellerangabe' }
+        @{ Id = 'probe.connect'; Warn = 50;  Crit = 200; MinTicks = 3; Trigger = $false; Origin = 'eigene Annahme' }
+    ) {
+        $e = $Th[$Id]
+        $e.warn | Should -Be $Warn; $e.crit | Should -Be $Crit; $e.minTicks | Should -Be $MinTicks
+        $e.trigger | Should -Be $Trigger; $e.origin | Should -Be $Origin
+    }
+    It 'kennt zwoelf Signale und Mindestaktivitaet nur bei Antwortzeiten' {
+        $Th.Count | Should -Be 12
+        $Th['disk.latency'].minOps | Should -Be 5; $Th['smb.latency'].minOps | Should -Be 5; $Th['cpu.host'].minOps | Should -Be 0
+    }
+    It 'nennt den fehlerhaften Eintrag oder die Datei' {
+        { Read-WorkerPerfThresholds (Write-Json 'a.json' ('{"thresholds":[' + ($Entry -f 'cpu.host', 95, 90, 'Faustregel') + ']}')) } | Should -Throw '*cpu.host*'
+        { Read-WorkerPerfThresholds (Write-Json 'b.json' ('{"thresholds":[' + ($Entry -f 'x.y', 1, 2, 'geraten') + ']}')) } | Should -Throw '*x.y*'
+        { Read-WorkerPerfThresholds (Write-Json 'c.json' ('{"thresholds":[' + ($Entry -f 'x.y', 1, 2, 'Faustregel') + ',' + ($Entry -f 'x.y', 1, 2, 'Faustregel') + ']}')) } | Should -Throw '*x.y*'
+        { Read-WorkerPerfThresholds (Write-Json 'd.json' '{ kaputt') } | Should -Throw '*d.json*'
+    }
+}
+Describe 'Get-WorkerPerfStatus' {
+    It 'stuft Werte ein' {
+        Get-WorkerPerfStatus 74.9 $Th['cpu.host'] | Should -Be 0
+        Get-WorkerPerfStatus 75 $Th['cpu.host'] | Should -Be 1
+        Get-WorkerPerfStatus 90 $Th['cpu.host'] | Should -Be 2
+        Get-WorkerPerfStatus ([double]::PositiveInfinity) $Th['probe.connect'] | Should -Be 2
+        Get-WorkerPerfStatus ([double]::NaN) $Th['cpu.host'] | Should -BeNullOrEmpty
+    }
+    It 'kehrt die Richtung bei direction low um' {
+        $low = [pscustomobject]@{ direction = 'low'; warn = 20; crit = 10 }
+        Get-WorkerPerfStatus 25 $low | Should -Be 0; Get-WorkerPerfStatus 20 $low | Should -Be 1; Get-WorkerPerfStatus 10 $low | Should -Be 2
+    }
+}
+Describe 'Get-WorkerPerfHostSignals' {
+    It 'leitet die bewerteten Groessen ab' {
+        $tick = [pscustomobject]@{ CpuPct = 50; ProcQueue = 16; StealPct = $null; MemAvailMB = 16384; MemCommittedMB = 40000; MemCommitLimitMB = 50000; PagesInPerSec = 3 }
+        $s = Get-WorkerPerfHostSignals -Tick $tick -LogicalProcessors 8 -PhysicalMemoryMB 65536
+        $s['cpu.host'] | Should -Be 50; $s['cpu.queue'] | Should -Be 2; $s['mem.used'] | Should -Be 75; $s['mem.commit'] | Should -Be 80; $s['mem.pagesin'] | Should -Be 3
+        [double]::IsNaN($s['cpu.steal']) | Should -BeTrue
+    }
+}
+Describe 'Resolve-WorkerPerfRole' {
+    It 'ordnet nach Prozessname, Muster und Dienst zu' {
+        (Resolve-WorkerPerfRole $Roles 'msmpeng.EXE' '' 0).Label | Should -Be 'Microsoft Defender'
+        (Resolve-WorkerPerfRole $Roles 'CtxSvcHost.exe' '' 0).Role | Should -Be 'Citrix'
+        (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Foo;AppIDSvc' 0).Label | Should -Be 'AppLocker'
+        (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Dnscache' 0).Role | Should -Be 'System'
+        (Resolve-WorkerPerfRole $Roles 'winword.exe' '' 5).Role | Should -Be ''
+    }
+    It 'nennt den fehlerhaften Rolleneintrag' {
+        { Read-WorkerPerfRoles (Write-Json 'r.json' '{"roles":[{"role":"Unsinn","label":"Testprodukt","processes":[],"services":[]}]}') } | Should -Throw '*Testprodukt*'
+    }
+}
+Describe 'Gegenstellen' {
+    It 'liefert ohne Datei eine leere Liste' { @(Read-WorkerPerfEndpoints (Join-Path $TestDrive 'fehlt.json')).Count | Should -Be 0 }
+    It 'liest die Beispieldatei' { @(Read-WorkerPerfEndpoints (Join-Path $Src 'endpoints.example.json')).Count | Should -Be 3 }
+    It 'nennt die fehlerhafte Gegenstelle' { { Read-WorkerPerfEndpoints (Write-Json 'e.json' '{"endpoints":[{"name":"DB","host":"h","port":70000,"role":""}]}') } | Should -Throw '*DB*' }
+}
+Describe 'CSV-Helfer' {
+    It 'schreibt Zahlen unabhaengig von der Kultur' {                          # Review Focus 2
+        [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+        Format-WorkerPerfNumber 12.5 1 | Should -Be '12.5'
+        Format-WorkerPerfNumber 1234567.891 0 | Should -Be '1234568'
+        Format-WorkerPerfNumber $null | Should -Be ''
+        Format-WorkerPerfNumber ([double]::NaN) | Should -Be ''
+    }
+    It 'uebersteht Komma, Anfuehrungszeichen, Umlaut und Zeilenumbruch' {      # Review Focus 2
+        $name = "M$([char]0xFC)ller, K"
+        $line = (Format-WorkerPerfCsvText $name) + ',' + (Format-WorkerPerfCsvText 'sagt "hi"') + ',' + (Format-WorkerPerfCsvText "a`r`nb")
+        Split-WorkerPerfCsvLine $line | Should -Be @($name, 'sagt "hi"', 'a  b')
+    }
+}
+Describe 'Formatkonstanten' {
+    It 'kennt die dreizehn Dateien mit ihren Kopfzeilen' {
+        $WorkerPerfHeaders.Count | Should -Be 13
+        $WorkerPerfHeaders['processes.csv'] | Should -Be 'P,K,CpuMs,WsKB,PrivKB,ReadBytes,WriteBytes,IoOps,Handles,Threads'
+        $WorkerPerfHeaders['ticks.csv'].Split(',').Count | Should -Be 19
+    }
+}

@@ -1,0 +1,70 @@
+{
+  "roles": [
+    {
+      "role": "Sicherheit",
+      "label": "Microsoft Defender",
+      "processes": [
+        "MsMpEng.exe",
+        "NisSrv.exe",
+        "MpDefenderCoreService.exe",
+        "MpCmdRun.exe"
+      ],
+      "services": [
+        "WinDefend",
+        "WdNisSvc"
+      ],
+      "note": ""
+    },
+    {
+      "role": "Sicherheit",
+      "label": "Arctic Wolf Aurora Endpoint Protection",
+      "processes": [],
+      "services": [],
+      "note": "Prozessnamen per Prüfskript ermitteln"
+    },
+    {
+      "role": "Sicherheit",
+      "label": "AppLocker",
+      "processes": [],
+      "services": [
+        "AppIDSvc"
+      ],
+      "note": ""
+    },
+    {
+      "role": "Profil",
+      "label": "Citrix Profile Management",
+      "processes": [
+        "UserProfileManager.exe"
+      ],
+      "services": [],
+      "note": "ungeprüft"
+    },
+    {
+      "role": "Hauptanwendung",
+      "label": "Nexus KIS",
+      "processes": [],
+      "services": [],
+      "note": "Prozessnamen per Prüfskript ermitteln"
+    },
+    {
+      "role": "Hauptanwendung",
+      "label": "Oracle-Client",
+      "processes": [],
+      "services": [],
+      "note": "Prozessnamen per Prüfskript ermitteln"
+    },
+    {
+      "role": "Citrix",
+      "label": "Citrix VDA",
+      "processes": [
+        "BrokerAgent.exe",
+        "Ctx*.exe",
+        "picaSvc*.exe",
+        "wfshell.exe"
+      ],
+      "services": [],
+      "note": "ungeprüft"
+    }
+  ]
+}

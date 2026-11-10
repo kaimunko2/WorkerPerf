@@ -1,0 +1,22 @@
+{
+  "endpoints": [
+    {
+      "name": "Oracle-Listener",
+      "host": "ora-db.example.local",
+      "port": 1521,
+      "role": "Datenbank"
+    },
+    {
+      "name": "FortiGate-Proxy",
+      "host": "proxy.example.local",
+      "port": 8080,
+      "role": "Proxy"
+    },
+    {
+      "name": "Dateiserver",
+      "host": "fs01.example.local",
+      "port": 445,
+      "role": "Dateiserver"
+    }
+  ]
+}
