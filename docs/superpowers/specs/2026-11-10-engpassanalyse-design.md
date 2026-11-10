@@ -385,3 +385,47 @@ Erreichbarkeit der in `endpoints.json` eingetragenen Gegenstellen.
 5. Kurzmessung auf einem echten VDA, Schwellen und Datenmenge nachstellen.
 
 Schritt 2 hängt nicht von Schritt 1 ab und kann parallel beginnen.
+
+## 14. Nachträge aus der Planung
+
+Beim Ausarbeiten des Umsetzungsplans wurden Lücken geschlossen. Die folgenden Regeln ergänzen
+die Abschnitte oben und gehen ihnen im Zweifel vor.
+
+1. **Dauerzustand (zu 7).** Ein Befund, der länger als 15 Minuten ununterbrochen anliegt, ist ein
+   Dauerzustand. Er bildet einen eigenen Vorfall und wird nicht mit anderen Befunden
+   zusammengefasst – sonst würde etwa eine den ganzen Tag erhöhte RAM-Auslastung alle übrigen
+   Vorfälle zu einem einzigen verschmelzen. Überlappende Dauerzustände nennt ein Vorfall als
+   Begleitumstand. Als Erklärung im Sinne von Abschnitt 12.1 zählt ein Dauerzustand nur in der
+   Stufe „kritisch".
+2. **Verdichtung ist begrenzt (zu 4.2).** Je Auslöser-Signal dauert eine Verdichtung höchstens
+   5 Minuten. Danach löst dasselbe Signal erst wieder aus, nachdem es einmal unter die Schwelle
+   gefallen ist.
+3. **Sitzungsbezogene Signale (zu 7).** Profilcontainer und ICA-Werte gehören zu einer Sitzung.
+   Sie werden einem Vorfall nur zugeordnet, wenn dieselbe Sitzung darin eine Eingabeverzögerung
+   hat; andernfalls bilden sie einen eigenen Vorfall für diese Sitzung. Vorfälle ohne
+   Eingabeverzögerung und ohne Worker-Ressource (nur Netzstrecke oder Gegenstelle) heißen
+   „Umfeld".
+4. **Mindestaktivität (zu 6).** Antwortzeiten von Laufwerken und Freigaben werden nur bewertet,
+   wenn im Messpunkt mindestens 5 Lese- oder Schreibvorgänge stattfanden (`minOps` in der
+   Schwellwert-Datei). Ein einzelner langsamer Zugriff auf ein ruhendes Laufwerk ist kein Befund.
+   Schwellwert-Einträge dürfen außerdem `note` tragen (Freitext zur Herkunft).
+5. **Hauptverursacher (zu 7).** Der im Klartext genannte Hauptverursacher ist die Anwendung in
+   einer Sitzung mit dem größten Anteil; Prozesse der Rolle Sicherheit sind davon ausgenommen
+   und erscheinen als Begleiter.
+6. **Sparsame Dateien (zu 9.2).** `volumes.csv` und `shares.csv` enthalten nur Zeilen für
+   Instanzen mit Zugriffen im Takt, `inputdelay.csv` nur Zeilen mit Verzögerung über 0.
+   ICA-Werte und Antwortzeit-Proben werden mit den Prozess-Schnappschüssen gelesen und unter
+   deren `T` abgelegt. `volumes.csv` führt zusätzlich die Spalte `Backing` mit der Freigabe
+   hinter einem Profilcontainer.
+7. **Zugriff auf Leistungsindikatoren (zu 5).** Vorgesehen ist die .NET-Schnittstelle für
+   Leistungsindikatoren mit englischen Namen statt einzelner CIM-Klassen. Das erspart die
+   unbekannten Klassennamen und die eigene Berechnung aus Rohwerten. Das Prüfskript testet beide
+   Wege; die Entscheidung fällt mit seinem Ergebnis.
+8. **Textbausteine und Dateien (zu 7 und 9).** Die Textbausteine des Klartexts stehen in
+   `src/texts.de.json`, weil Skripte für Windows PowerShell 5.1 nur ASCII enthalten dürfen.
+   Gemeinsamer Code liegt in `src/WorkerPerf.*.ps1`. Die Gegenstellen-Datei wird als
+   `src/endpoints.example.json` ausgeliefert und vom Anwender als `endpoints.json` angelegt.
+9. **Simulation (zu 9.5).** Das Drehbuch ist 60 Minuten lang; die Simulation verlangt
+   mindestens diese Dauer.
+10. **Datenschutz beim Prüfskript (zu 9.1).** Das Ergebnis des Prüfskripts enthält keine
+    Benutzer-, Client- oder Servernamen; Pfade werden entsprechend maskiert.
