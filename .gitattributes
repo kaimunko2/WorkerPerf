@@ -1,0 +1,3 @@
+# Die uebernommenen Skills enthalten Shell- und Node-Skripte, die auch nach einem
+# Checkout unter Windows LF-Zeilenenden brauchen.
+.claude/skills/** text eol=lf
