@@ -31,12 +31,18 @@ Erfolgskriterien:
   typischerweise mehrere Stunden. Kein Dauerbetrieb in der Fläche.
 - Weiterhin keine Installation, keine Module, sprachneutrale Datenquellen.
 - Fokus bleibt: Ressourcen des Servers, ihre Nutzung, Engpässe und deren Verursacher.
+- Umgebung des Auftraggebers: Citrix Profile Management mit Containerprofil, Microsoft Defender,
+  Arctic Wolf Aurora Endpoint Protection, AppLocker, FortiGate als Proxy und Firewall für externe
+  Zugriffe, Hauptanwendung Nexus KIS mit Oracle-Client und Oracle-Datenbank. Abschnitt 12
+  beschreibt, wie der Entwurf darauf eingeht.
 
 ### Nicht enthalten
 
 Fernsteuerung vom Admin-Arbeitsplatz, Dauerbetrieb und Langzeitspeicherung, Tiefenaufzeichnung
 per ETW/WPR, Anmeldedauer, Vergleich mehrerer Worker oder Läufe, Rückwärtskompatibilität zum
-bisherigen Datenformat (es existieren nur simulierte Aufzeichnungen).
+bisherigen Datenformat (es existieren nur simulierte Aufzeichnungen). Ebenfalls nicht messbar
+vom Worker aus und daher nicht enthalten: Abfragezeiten in der Oracle-Datenbank, die Verarbeitung
+innerhalb der FortiGate, der Aufwand einzelner AppLocker-Regelprüfungen.
 
 ## 3. Ausgangslage und Lücken
 
@@ -248,9 +254,11 @@ Zwei Takte, Verdichtung, Aktiv-Filter, Schutzmechanismen. Dateien im Aufzeichnun
 | `inputdelay.csv` | `T` × Sitzung | maximale Eingabeverzögerung |
 | `inputdelay_proc.csv` | `T` × Prozess, nur ab 50 ms | Eingabeverzögerung je Prozess |
 | `citrix.csv` | `T` × Sitzung × Messwert | ICA-Werte |
+| `probes.csv` | Probe × Gegenstelle | Dauer des Verbindungsaufbaus oder Fehler |
+| `events.csv` | Ereignis | Zeit, Quelle, Kennung, Kurztext (Defender, AppLocker) |
 | `snapshots.csv` | Prozess-Schnappschuss `P` | zugehöriges `T`, abgedeckte Sekunden, Art (regulär, Verdichtung, Stützpunkt) |
 | `sessions.csv` | `P` × Sitzung | Benutzer, Zustand, Client, Leerlauf |
-| `procinfo.csv` | Prozessinstanz `K` | PID, Name, Sitzung, Start, Pfad, optional Befehlszeile |
+| `procinfo.csv` | Prozessinstanz `K` | PID, Name, Sitzung, Start, Pfad, Dienstnamen bei `svchost.exe`, optional Befehlszeile |
 | `processes.csv` | `P` × aktivem Prozess | CPU-ms, Working Set, Private Bytes, I/O, Handles, Threads |
 | `procend.csv` | beendetem Prozess | `P`, `K` |
 
@@ -264,7 +272,9 @@ und die fein aufgelösten Signale ein.
 
 `-Simulate` erzeugt ein festes Drehbuch mit bekannten Vorfällen: CPU-Engpass durch einen
 bestimmten Prozess, Speicherdruck durch einen wachsenden Prozess, langsames Laufwerk, langsame
-Freigabe, ein einzelner kurzer Hänger einer Sitzung, dazwischen ruhige Phasen. Zeitpunkt,
+Freigabe, langsamer Profilcontainer eines Benutzers, Datenträgerlast mit Schutzsoftware als
+Begleiter, Verzögerung der Hauptanwendung ohne Engpass auf dem Worker bei gleichzeitig träger
+Gegenstelle, ein einzelner kurzer Hänger einer Sitzung, dazwischen ruhige Phasen. Zeitpunkt,
 Ressource und Verursacher jedes Vorfalls stehen als Soll-Ergebnis in einer Datei im
 Aufzeichnungsordner.
 
@@ -277,13 +287,16 @@ Aufzeichnungsordner.
 | Speicherplatz knapp oder Obergrenze erreicht | sauberes Ende, `meta.json` nennt den Grund |
 | Abbruch mit Strg+C oder `stop.flag` | wie bisher, Dateien bleiben auswertbar |
 | Abgeschnittene letzte Zeile | wird bei der Auswertung übersprungen |
-| Schwellwert-Datei fehlerhaft | Bericht bricht mit Angabe des fehlerhaften Eintrags ab |
+| Schwellwert-, Rollen- oder Gegenstellen-Datei fehlerhaft | Abbruch mit Angabe des fehlerhaften Eintrags |
+| Gegenstelle nicht erreichbar | Probe wird als Fehler mit Dauer bis zum Abbruch (höchstens 2 s) vermerkt, Messung läuft weiter |
+| Ereignisprotokoll nicht lesbar | einmalige Warnung, keine Ereignismarkierungen |
 
 ## 11. Test
 
 - **Befund-Logik (Pester):** je Regel aus Abschnitt 7 Tests mit kleinen, handgebauten Messreihen:
   Schwellen, `minTicks`, Lückenüberbrückung, Zusammenfassen zu Vorfällen, Verursacher-Rangfolge,
-  Normalwert, keine Meldung in ruhigen Reihen, nicht gemessene Signale.
+  Normalwert, keine Meldung in ruhigen Reihen, nicht gemessene Signale, Befundtyp „Verzögerung
+  ohne Engpass auf dem Worker", Schutzsoftware als Begleiter, Rollen-Zuordnung.
 - **Durchlauf:** Simulation → Bericht; geprüft wird, dass genau die Vorfälle des Drehbuchs mit
   richtiger Ressource und richtigem Hauptverursacher gefunden werden und die Datenmenge der
   Simulation im erwarteten Rahmen liegt.
@@ -292,12 +305,82 @@ Aufzeichnungsordner.
 - **Nicht durch Tests abgedeckt:** die Windows-Datenquellen. Sie gelten erst nach einem Lauf des
   Prüfskripts und einer Kurzmessung auf einem echten VDA als geprüft.
 
-## 12. Reihenfolge
+## 12. Bezug zur Umgebung des Auftraggebers
+
+### 12.1 Befundtyp „Verzögerung ohne Engpass auf dem Worker"
+
+Ist die Eingabeverzögerung einer Sitzung mindestens „auffällig", während im selben Fenster kein
+Ressourcensignal des Workers (CPU, Warteschlange, entzogene CPU-Zeit, Speicher, Datenträger,
+Freigaben, Profilcontainer dieser Sitzung) auffällig ist, entsteht ein Vorfall dieses Typs. Er
+nennt die Prozesse mit der höchsten Eingabeverzögerung und, soweit vorhanden, die Antwortzeit-Proben
+und den ICA Round Trip im selben Fenster. Der Klartext sagt ausdrücklich, dass die Ursache
+außerhalb des Workers oder in der Anwendung selbst zu suchen ist (Datenbank, Proxy, Netz).
+
+### 12.2 Antwortzeit-Proben
+
+Optionale Datei `src/endpoints.json` mit benannten Gegenstellen (Name, Host, Port, Rolle), z. B.
+Oracle-Listener, FortiGate-Proxy, Dateiserver. Der Collector misst im langsamen Takt die Dauer
+des TCP-Verbindungsaufbaus je Gegenstelle, mit 2 s Zeitlimit, außerhalb des schnellen Takts.
+Schwellen (eigene Annahme): auffällig ab 50 ms, kritisch ab 200 ms oder bei Fehler. Die Probe
+zeigt, ob Strecke oder Gegenstelle träge erreichbar sind; sie misst keine Abfrage- oder
+Verarbeitungszeiten. Ohne Datei entfällt die Messung.
+
+### 12.3 Profilcontainer (Citrix Profile Management)
+
+Containerprofile sind eingebundene virtuelle Datenträger, die auf einer SMB-Freigabe liegen.
+Der Collector kennzeichnet diese Laufwerke als Profilcontainer und ordnet sie Benutzer und
+Sitzung zu; `volumes.csv` erhält dafür die Spalten Art und Sitzung. Im Bericht erscheint die
+Antwortzeit des eigenen Profilcontainers in der Sitzungsansicht, und ein Befund auf einem
+Profilcontainer nennt den Benutzer und die dahinterliegende Freigabe. Wie sich die Zuordnung
+Laufwerk → Benutzer zuverlässig auslesen lässt, ist ungeprüft und Aufgabe des Prüfskripts;
+gelingt sie nicht, werden die Laufwerke als „Profilcontainer (Benutzer unbekannt)" geführt.
+
+### 12.4 Rollen
+
+Datei `src/roles.json` ordnet Prozessnamen (bei `svchost.exe` auch Dienstnamen) einer Rolle zu:
+Hauptanwendung, Sicherheit, Profil, Citrix, System. Auslieferungszustand:
+
+| Rolle | Einträge | Status |
+|---|---|---|
+| Sicherheit | Microsoft Defender (`MsMpEng.exe`, `NisSrv.exe`, `MpDefenderCoreService.exe`); Arctic Wolf Aurora Endpoint Protection; AppLocker-Dienst (`AppIDSvc`) | Aurora-Prozessnamen unbekannt, per Prüfskript zu ermitteln |
+| Profil | Citrix Profile Management (`UserProfileManager.exe`) | Name ungeprüft |
+| Hauptanwendung | Nexus KIS und Oracle-Client | Prozessnamen vom Auftraggeber oder per Prüfskript |
+| Citrix | VDA-Dienste und Sitzungskomponenten | ungeprüft |
+
+Wirkung im Bericht:
+
+- **Schutzsoftware als Begleiter:** Echtzeitschutz erzeugt Last überwiegend als Folge fremder
+  Dateizugriffe. Steht ein Prozess der Rolle Sicherheit unter den Verursachern eines Vorfalls,
+  wird er als Begleiter neben dem größten I/O-Erzeuger im selben Fenster ausgewiesen, mit
+  Hinweis auf Scan-Ausschlüsse. Da zwei Schutzprodukte im Einsatz sind, weist der Bericht ihre
+  Anteile getrennt und als Summe aus.
+- **Hauptanwendung:** eigene Kachel und eigener Verlauf der Eingabeverzögerung der
+  Hauptanwendung über alle Sitzungen.
+- Tabellen lassen sich nach Rolle filtern.
+
+### 12.5 Ereignisse in der Zeitleiste
+
+Der Collector liest im langsamen Takt neue Einträge aus dem Windows-Ereignisprotokoll und
+schreibt sie nach `events.csv`: Start und Ende von Defender-Scans, Defender-Signatur-Updates,
+AppLocker-Blockierungen. Der Bericht zeigt sie als Markierungen in der Zeitleiste und nennt
+Ereignisse, die in ein Vorfallsfenster fallen, im Vorfall. Protokollnamen und Ereigniskennungen
+sind ungeprüft und Aufgabe des Prüfskripts. Für Arctic Wolf Aurora ist keine Ereignisquelle
+vorgesehen, solange keine bekannt ist.
+
+### 12.6 Erweiterung des Prüfskripts
+
+Zusätzlich zu Abschnitt 9.1 ermittelt das Prüfskript: eingebundene Profilcontainer und ihre
+Zuordnung zu Benutzern, laufende Prozesse und Dienste der Schutzprodukte, die Prozesse der
+Hauptanwendung in einer Benutzersitzung, die genannten Ereignisprotokolle, sowie die
+Erreichbarkeit der in `endpoints.json` eingetragenen Gegenstellen.
+
+## 13. Reihenfolge
 
 1. Quellen-Prüfskript; Lauf auf einem echten VDA durch den Auftraggeber; Namen und
    Berechnungen in dieser Spezifikation nachziehen.
-2. Schwellwert-Datei und Befund-Logik mit Tests.
-3. Collector: neues Format, zwei Takte, Verdichtung, Schutzmechanismen, Simulation mit Drehbuch.
+2. Schwellwert- und Rollen-Datei, Befund-Logik mit Tests.
+3. Collector: neues Format, zwei Takte, Verdichtung, Schutzmechanismen, Proben, Ereignisse,
+   Profilcontainer, Simulation mit Drehbuch.
 4. Berichtsskript und Vorlage.
 5. Kurzmessung auf einem echten VDA, Schwellen und Datenmenge nachstellen.
 
