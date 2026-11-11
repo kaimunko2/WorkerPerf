@@ -41,6 +41,13 @@ param(
     [switch]$ListChecks
 )
 
+# Where AppLocker or WDAC puts the console into ConstrainedLanguage, Add-Type and .NET types fail with errors that
+# do not name the cause. This check uses nothing that the restricted mode forbids.
+$languageMode = "$($ExecutionContext.SessionState.LanguageMode)"
+if ($languageMode -ne 'FullLanguage') {
+    throw "WorkerPerf benoetigt den PowerShell-Sprachmodus FullLanguage; aktiv ist $languageMode. AppLocker oder WDAC schraenkt diese Konsole ein: bitte eine uneingeschraenkte administrative Konsole verwenden."
+}
+
 Set-StrictMode -Version 2
 $ErrorActionPreference = 'Stop'
 

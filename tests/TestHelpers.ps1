@@ -62,3 +62,11 @@ function New-TestReports([string]$OutDir) {
     [void](& $report -Path $bare -OutFile $r.NoData -RoleFile $roles -From (Get-ServerTime $run ($cpu.StartMs - 60000)) -To (Get-ServerTime $run ($cpu.EndMs + 60000)) 6>$null)
     $r
 }
+function New-PatchedSource([string]$OutDir, [string]$Overrides) {
+    # Kopie von src, deren Simulationsquelle am Ende zusaetzlichen Code erhaelt (Funktionen der Quelle ersetzen oder
+    # umhuellen, damit sie Fehler werfen); liefert den Pfad des kopierten Start-WorkerPerfCapture.ps1
+    [void](New-Item -ItemType Directory -Path $OutDir -Force)
+    Copy-Item (Join-Path $PSScriptRoot '../src/*') $OutDir
+    [IO.File]::AppendAllText((Join-Path $OutDir 'WorkerPerf.Sources.Simulation.ps1'), "`n" + $Overrides + "`n")
+    Join-Path $OutDir 'Start-WorkerPerfCapture.ps1'
+}

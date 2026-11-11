@@ -113,6 +113,25 @@ Describe 'Import-WorkerPerfRun: Sitzungen und Instanzen' {
         $M.Events.Count | Should -Be 3; $M.Scans.Count | Should -Be 1; $M.Scans[0].EndMs - $M.Scans[0].StartMs | Should -Be 4000
         $M.Sessions[0].Rtt[0] | Should -Be 180; $M.Sessions[0].Rtt[1] | Should -Be 220
     }
+    It 'wertet eine Probe mit Fehler und Dauer als Fehler' {                      # Abschlussrunde Minor 13
+        $m = Import-TestRun 'probefail' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'probes.csv' = @('1,DB,Datenbank,h,1521,12.5,', '5,DB,Datenbank,h,1521,2000,timeout') }
+        $m.Probes[0].Ms[0] | Should -Be 12.5; [double]::IsPositiveInfinity($m.Probes[0].Ms[2]) | Should -BeTrue; $m.Probes[0].Error[2] | Should -Be 'timeout'
+    }
+    It 'liest die Zwischendatei, wenn meta.json beim Ersetzen verloren ging' {      # Abschlussrunde Minor 7
+        $dir = Write-TestRun 'metatmp' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        Move-Item (Join-Path $dir 'meta.json') (Join-Path $dir 'meta.json.tmp')
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Tick.N | Should -Be 8
+    }
+    It 'liest die Fehler der Datenquelle aus meta.json und duldet ihr Fehlen' {     # Abschlussrunde I6
+        $dir = Write-TestRun 'srcerr' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).SourceErrors.Count | Should -Be 0
+        $text = [IO.File]::ReadAllText($meta)
+        [IO.File]::WriteAllText($meta, $text.Replace('"Simulated":false,', '"Simulated":false,"EndReason":"error","EndMessage":"kaputt","SourceErrors":{"events":{"Count":3,"FirstTime":"' + (Get-Ts 4) + '","FirstMessage":"Zugriff verweigert"},"leer":{}},'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.SourceErrors.Count | Should -Be 1; $m.SourceErrors[0].Source | Should -Be 'events'; $m.SourceErrors[0].Count | Should -Be 3
+        $m.SourceErrors[0].FirstMs | Should -Be $Base.AddSeconds(4).ToUnixTimeMilliseconds(); $m.SourceErrors[0].FirstMessage | Should -Be 'Zugriff verweigert'
+        $m.Meta.EndReason | Should -Be 'error'; $m.Meta.EndMessage | Should -Be 'kaputt'
+    }
     It 'bildet Messreihen fuer die Befund-Logik' {
         $s = @(Get-WorkerPerfSeries -Model $M -Thresholds $Th)
         @($s | Where-Object Id -eq 'cpu.host').Count | Should -Be 1

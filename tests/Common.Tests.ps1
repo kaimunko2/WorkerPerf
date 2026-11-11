@@ -42,6 +42,21 @@ Describe 'Schwellwerte' {
         { Read-WorkerPerfThresholds (Write-Json 'c.json' ('{"thresholds":[' + ($Entry -f 'x.y', 1, 2, 'Faustregel') + ',' + ($Entry -f 'x.y', 1, 2, 'Faustregel') + ']}')) } | Should -Throw '*x.y*'
         { Read-WorkerPerfThresholds (Write-Json 'd.json' '{ kaputt') } | Should -Throw '*d.json*'
     }
+    It 'nennt Eintrag und Feld, wenn <Field> keine Zahl ist (<Value>)' -TestCases @(      # Abschlussrunde Minor 10
+        @{ Field = 'warn'; Value = '"abc"' }, @{ Field = 'crit'; Value = '"10,5"' }, @{ Field = 'minTicks'; Value = '"drei"' }, @{ Field = 'minTicks'; Value = '2.5' }
+        @{ Field = 'minOps'; Value = '"5,5"' }, @{ Field = 'warn'; Value = 'true' }, @{ Field = 'crit'; Value = '[90]' }
+    ) {
+        $e = [ordered]@{ id = '"x.y"'; label = '"x"'; unit = '"%"'; direction = '"high"'; warn = '75'; crit = '90'; ideal = '"x"'; minTicks = '3'; trigger = 'false'
+                         origin = '"Faustregel"'; source = '"x"'; url = '""'; minOps = '0' }
+        $e[$Field] = $Value
+        $json = '{"thresholds":[{' + (($e.Keys | ForEach-Object { '"' + $_ + '":' + $e[$_] }) -join ',') + '}]}'
+        { Read-WorkerPerfThresholds (Write-Json "num-$Field.json" $json) } | Should -Throw "*'x.y'*'$Field'*"
+    }
+    It 'nimmt Zahlen auch als Text mit Dezimalpunkt und liefert sie als Zahl' {
+        $json = '{"thresholds":[' + ($Entry -f 'x.y', '"10.5"', '"20"', 'Faustregel') + ']}'
+        $t = Read-WorkerPerfThresholds (Write-Json 'numtext.json' $json)
+        $t['x.y'].warn | Should -Be 10.5; $t['x.y'].warn | Should -BeOfType [double]; $t['x.y'].crit | Should -Be 20; $t['x.y'].minTicks | Should -Be 3
+    }
 }
 Describe 'Get-WorkerPerfStatus' {
     It 'stuft Werte ein' {

@@ -99,6 +99,22 @@ function Get-WorkerPerfJsonList($Json, [string]$ListName, [string]$Path) {
     return , @($list)
 }
 
+function ConvertTo-WorkerPerfThresholdNumber($Value, [string]$Id, [string]$Field) {
+    # Number of a threshold entry: a JSON number, or a text with decimal point ("10.5"). Anything else, also a decimal
+    # comma ("10,5" would silently become 105), stops with the entry and the field.
+    $d = [double]::NaN
+    if ($Value -is [string]) {
+        if (-not [double]::TryParse($Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { $d = [double]::NaN }
+    }
+    elseif ($Value -is [ValueType] -and $Value -isnot [bool] -and $Value -isnot [char]) { $d = [double]$Value }
+    if ([double]::IsNaN($d) -or [double]::IsInfinity($d)) {
+        $shown = [string]$Value
+        if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { $shown = 'Liste' }
+        throw "Schwellwert '$Id': Feld '$Field' ist keine Zahl ('$shown'). Erlaubt sind Zahlen mit Dezimalpunkt, z. B. 10.5."
+    }
+    return $d
+}
+
 function Read-WorkerPerfThresholds([string]$Path) {
     $json = ConvertFrom-WorkerPerfJsonFile $Path
     $result = [ordered]@{}
@@ -111,12 +127,20 @@ function Read-WorkerPerfThresholds([string]$Path) {
         }
         $dir = [string]$e.direction
         if ($dir -ne 'high' -and $dir -ne 'low') { throw "Schwellwert '$id': direction muss 'high' oder 'low' sein." }
-        if ($dir -eq 'high' -and [double]$e.warn -gt [double]$e.crit) { throw "Schwellwert '$id': warn darf bei direction high nicht ueber crit liegen." }
-        if ($dir -eq 'low' -and [double]$e.warn -lt [double]$e.crit) { throw "Schwellwert '$id': warn darf bei direction low nicht unter crit liegen." }
-        if ([int]$e.minTicks -lt 1) { throw "Schwellwert '$id': minTicks muss mindestens 1 sein." }
-        if ($script:WorkerPerfOrigins -notcontains [string]$e.origin) { throw "Schwellwert '$id': origin '$($e.origin)' ist ungueltig." }
         Set-WorkerPerfDefault $e 'minOps' 0
         Set-WorkerPerfDefault $e 'note' ''
+        # the numbers are checked and stored as numbers, so every later use reads the same value
+        $e.warn = ConvertTo-WorkerPerfThresholdNumber $e.warn $id 'warn'
+        $e.crit = ConvertTo-WorkerPerfThresholdNumber $e.crit $id 'crit'
+        $minTicks = ConvertTo-WorkerPerfThresholdNumber $e.minTicks $id 'minTicks'
+        if ($minTicks -ne [Math]::Floor($minTicks)) { throw "Schwellwert '$id': Feld 'minTicks' muss eine ganze Zahl sein ('$($e.minTicks)')." }
+        if ($minTicks -lt 1) { throw "Schwellwert '$id': minTicks muss mindestens 1 sein." }
+        $e.minTicks = [int]$minTicks
+        $e.minOps = ConvertTo-WorkerPerfThresholdNumber $e.minOps $id 'minOps'
+        if ($e.minOps -lt 0) { throw "Schwellwert '$id': Feld 'minOps' darf nicht negativ sein." }
+        if ($dir -eq 'high' -and $e.warn -gt $e.crit) { throw "Schwellwert '$id': warn darf bei direction high nicht ueber crit liegen." }
+        if ($dir -eq 'low' -and $e.warn -lt $e.crit) { throw "Schwellwert '$id': warn darf bei direction low nicht unter crit liegen." }
+        if ($script:WorkerPerfOrigins -notcontains [string]$e.origin) { throw "Schwellwert '$id': origin '$($e.origin)' ist ungueltig." }
         $result[$id] = $e
     }
     return $result

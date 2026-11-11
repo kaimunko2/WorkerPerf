@@ -107,3 +107,18 @@ Describe 'Funktionsnamen' {
         $clashes | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Sprachmodus' {                                                              # Abschlussrunde I9
+    It '<Script> bricht im eingeschraenkten Sprachmodus mit einer deutschen Meldung ab' -TestCases @(
+        @{ Script = 'Start-WorkerPerfCapture.ps1'; Arguments = '-Simulate -DurationMinutes 60 -OutputPath .' }
+        @{ Script = 'New-WorkerPerfReport.ps1'; Arguments = '-Path .' }
+        @{ Script = 'Test-WorkerPerfSources.ps1'; Arguments = '-ListChecks' }
+    ) {
+        # ein eigener Prozess: der Sprachmodus einer Sitzung laesst sich nicht zuruecksetzen
+        $file = Join-Path $PSScriptRoot "../src/$Script"
+        $command = "`$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; try { & '$file' $Arguments } catch { 'MELDUNG: ' + `$_.Exception.Message }"
+        $out = @(& (Get-Process -Id $PID).Path -NoProfile -Command $command 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $out | Should -Match 'MELDUNG: WorkerPerf benoetigt den PowerShell-Sprachmodus FullLanguage; aktiv ist ConstrainedLanguage\. AppLocker oder WDAC'
+        $out | Should -Match 'uneingeschraenkte administrative Konsole'
+    }
+}

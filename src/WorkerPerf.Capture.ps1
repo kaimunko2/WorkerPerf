@@ -288,6 +288,44 @@ function ConvertTo-WorkerPerfFastRows {
         InputSessions = [string[]]$sessions.ToArray(); InputProcesses = [string[]]$procs.ToArray() }
 }
 
+function ConvertTo-WorkerPerfProbeRow {
+    # One line of probes.csv. A failed probe keeps its duration until the abort next to the error.
+    param($Result, [int]$T)
+    return [string]::Concat($T, ',', (Format-WorkerPerfCsvText ([string]$Result.Name)), ',', (Format-WorkerPerfCsvText ([string]$Result.Role)), ',',
+        (Format-WorkerPerfCsvText ([string]$Result.Host)), ',', [string]$Result.Port, ',', (Format-WorkerPerfNumber $Result.ConnectMs 1), ',',
+        (Format-WorkerPerfCsvText ([string]$Result.Error)))
+}
+
+function ConvertTo-WorkerPerfUtc([datetime]$Time) {
+    # The capture loop schedules and measures durations in UTC: the local clock steps back at the end of daylight
+    # saving time. Times written to the files stay local times of the source.
+    if ($Time.Kind -eq [DateTimeKind]::Utc) { return $Time }
+    return $Time.ToUniversalTime()
+}
+
+function Add-WorkerPerfSourceError {
+    # Counts a failed call of a data source. $Errors (ordered): source -> Count, FirstTime, FirstMessage.
+    # Returns $true for the first failure of the source: the caller warns once and goes on.
+    param($Errors, [string]$Source, [datetime]$Time, [string]$Message)
+    if ($Errors.Contains($Source)) {
+        $Errors[$Source].Count = [int]$Errors[$Source].Count + 1
+        return $false
+    }
+    $Errors[$Source] = [ordered]@{ Count = 1; FirstTime = $Time.ToString('o', [Globalization.CultureInfo]::InvariantCulture); FirstMessage = $Message }
+    return $true
+}
+
+function Save-WorkerPerfMeta {
+    # Writes meta.json to a temporary file next to it and moves that over the target (delete and move, as the report
+    # file is written): a kill during the write leaves the previous meta.json, never a half-written one. The loader
+    # reads the temporary file when the kill fell between delete and move.
+    param([string]$Path, $Meta)
+    $tmp = $Path + '.tmp'
+    [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $Meta -Depth 6), (New-Object System.Text.UTF8Encoding $false))
+    if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
+    [IO.File]::Move($tmp, $Path)
+}
+
 function New-WorkerPerfWriters {
     param([string]$RunDir)
 

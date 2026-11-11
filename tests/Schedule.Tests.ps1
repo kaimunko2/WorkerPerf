@@ -119,3 +119,36 @@ Describe 'New-WorkerPerfWriters' {
         [IO.File]::ReadAllBytes((Join-Path $dir 'ticks.csv'))[0] | Should -Be ([byte][char]'T')
     }
 }
+Describe 'Proben, meta.json und Fehler der Datenquelle' {                          # Abschlussrunde
+    It 'vermerkt eine fehlgeschlagene Probe mit ihrer Dauer bis zum Abbruch' {     # Minor 13
+        $ok = [pscustomobject]@{ Name = 'DB'; Role = 'Datenbank'; Host = 'h'; Port = 1521; ConnectMs = 12.34; Error = '' }
+        $bad = [pscustomobject]@{ Name = 'Proxy, alt'; Role = 'Proxy'; Host = 'p'; Port = 8080; ConnectMs = 2000.4; Error = 'timeout' }
+        ConvertTo-WorkerPerfProbeRow -Result $ok -T 7 | Should -Be '7,DB,Datenbank,h,1521,12.3,'
+        ConvertTo-WorkerPerfProbeRow -Result $bad -T 7 | Should -Be '7,"Proxy, alt",Proxy,p,8080,2000.4,timeout'
+        ConvertTo-WorkerPerfProbeRow -Result ([pscustomobject]@{ Name = 'X'; Role = ''; Host = 'x'; Port = 1; ConnectMs = $null; Error = 'dns' }) -T 7 | Should -Be '7,X,,x,1,,dns'
+    }
+    It 'schreibt meta.json ueber eine Zwischendatei' {                              # Minor 7
+        $dir = Join-Path $TestDrive 'meta'; [void](New-Item -ItemType Directory $dir); $file = Join-Path $dir 'meta.json'
+        Save-WorkerPerfMeta -Path $file -Meta ([ordered]@{ A = 1; EndReason = $null })
+        Save-WorkerPerfMeta -Path $file -Meta ([ordered]@{ A = 2; EndReason = 'duration' })
+        (Get-Content $file -Raw | ConvertFrom-Json).A | Should -Be 2
+        @(Get-ChildItem $dir).Name | Should -Be @('meta.json')
+        [IO.File]::ReadAllBytes($file)[0] | Should -Be ([byte][char]'{')              # ohne BOM
+        [void](New-Item -ItemType Directory (Join-Path $dir 'meta.json.tmp'))          # das Schreiben der Zwischendatei scheitert
+        { Save-WorkerPerfMeta -Path $file -Meta ([ordered]@{ A = 3 }) } | Should -Throw
+        (Get-Content $file -Raw | ConvertFrom-Json).A | Should -Be 2                  # die vorhandene Datei bleibt vollstaendig
+    }
+    It 'zaehlt Fehler je Quelle und merkt sich den ersten' {                         # I6
+        $e = [ordered]@{}
+        Add-WorkerPerfSourceError -Errors $e -Source 'events' -Time $t -Message 'erster' | Should -BeTrue
+        Add-WorkerPerfSourceError -Errors $e -Source 'events' -Time $t.AddSeconds(15) -Message 'zweiter' | Should -BeFalse
+        Add-WorkerPerfSourceError -Errors $e -Source 'fast' -Time $t.AddSeconds(20) -Message 'Takt' | Should -BeTrue
+        $e['events'].Count | Should -Be 2; $e['events'].FirstMessage | Should -Be 'erster'; $e['events'].FirstTime | Should -Be $t.ToString('o', [cultureinfo]::InvariantCulture)
+        @($e.Keys) | Should -Be @('events', 'fast')
+    }
+    It 'rechnet Zeiten fuer den Zeitplan nach UTC um' {                              # Minor 8
+        $utc = [datetime]::SpecifyKind($t, 'Utc'); $local = $utc.ToLocalTime()
+        (ConvertTo-WorkerPerfUtc $utc) | Should -Be $utc; (ConvertTo-WorkerPerfUtc $utc).Kind | Should -Be 'Utc'
+        (ConvertTo-WorkerPerfUtc $local) | Should -Be $utc; (ConvertTo-WorkerPerfUtc $local).Kind | Should -Be 'Utc'
+    }
+}

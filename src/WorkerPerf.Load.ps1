@@ -102,6 +102,8 @@ function Import-WorkerPerfRun {
     $nan = [double]::NaN
 
     $metaPath = Join-Path $Path 'meta.json'
+    # the collector replaces meta.json by delete and move: after a kill between the two only the complete temporary file exists
+    if (-not (Test-Path -LiteralPath $metaPath) -and (Test-Path -LiteralPath ($metaPath + '.tmp'))) { $metaPath = $metaPath + '.tmp' }
     if (-not (Test-Path -LiteralPath $metaPath)) { throw "Ordner '$Path' enthaelt keine Aufzeichnung (meta.json fehlt)." }
     $metaJson = ConvertFrom-WorkerPerfJsonFile $metaPath
     $meta = @{}
@@ -142,9 +144,14 @@ function Import-WorkerPerfRun {
         foreach ($p in $errObj.PSObject.Properties) {
             $count = 0
             if (-not [int]::TryParse([string](Get-WorkerPerfField $p.Value 'Count'), [ref]$count) -or $count -lt 1) { continue }
+            # PowerShell 7 hands a time in a JSON text over as DateTime, Windows PowerShell 5.1 as text
             $firstMs = $null
-            $ft = ConvertTo-WorkerPerfTimestamp ([string](Get-WorkerPerfField $p.Value 'FirstTime'))
-            if ($null -ne $ft) { $firstMs = $ft.ToUnixTimeMilliseconds() }
+            $first = Get-WorkerPerfField $p.Value 'FirstTime'
+            if ($first -is [datetime]) { $firstMs = (New-Object DateTimeOffset ($first)).ToUnixTimeMilliseconds() }
+            else {
+                $ft = ConvertTo-WorkerPerfTimestamp ([string]$first)
+                if ($null -ne $ft) { $firstMs = $ft.ToUnixTimeMilliseconds() }
+            }
             $sourceErrors.Add(@{ Source = [string]$p.Name; Count = $count; FirstMs = $firstMs; FirstMessage = [string](Get-WorkerPerfField $p.Value 'FirstMessage') })
         }
     }
@@ -663,11 +670,12 @@ function Import-WorkerPerfRun {
             }
             $ms = $nan
             $txt = $f[$cMs]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ms)) { $ms = $nan }
-            if ([double]::IsNaN($ms)) {
-                if ($f[$cErr].Length -eq 0) { continue }
+            # a row with an error is a failed probe, with or without the duration until the abort
+            if ($f[$cErr].Length -gt 0) {
                 $ms = [double]::PositiveInfinity
                 $pr.Error[$sp] = $f[$cErr]
             }
+            elseif ([double]::IsNaN($ms)) { continue }
             if ([double]::IsNaN($pr.Ms[$sp]) -or $ms -gt $pr.Ms[$sp]) { $pr.Ms[$sp] = $ms }
         }
     }
