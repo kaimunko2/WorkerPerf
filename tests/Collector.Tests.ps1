@@ -146,11 +146,11 @@ function Save-WorkerPerfMeta { param([string]$Path, $Meta) $script:TestSaves++; 
 }
 Describe 'Zeitplan ueber das Ende der Sommerzeit' -Skip:(-not [TimeZoneInfo]::Local.SupportsDaylightSavingTime) {   # Abschlussrunde Minor 8
     It 'schreibt fortlaufende Takte, wenn die Ortszeit um eine Stunde zurueckspringt' {
-        # Start 30 Minuten vor dem Ende der Sommerzeit dieses Rechners
+        # Start 45 Minuten vor dem Ende der Sommerzeit dieses Rechners (auf die Stunde genau gesucht)
         $tz = [TimeZoneInfo]::Local; $u = [datetime]::SpecifyKind([datetime]'2026-01-01', 'Utc'); $switch = $null
         for ($h = 0; $h -lt 8760 -and $null -eq $switch; $h++) { if ($tz.IsDaylightSavingTime($u.AddHours($h)) -and -not $tz.IsDaylightSavingTime($u.AddHours($h + 1))) { $switch = $u.AddHours($h + 1) } }
         $switch | Should -Not -BeNullOrEmpty
-        $startUtc = $switch.AddMinutes(-30).Ticks
+        $startUtc = $switch.AddMinutes(-45).Ticks
         $capture = New-PatchedSource (Join-Path $TestDrive 'srcdst') @"
 `$script:TestInit = `${function:Initialize-WorkerPerfSource}
 function Initialize-WorkerPerfSource { param([datetime]`$StartTime, [object[]]`$Endpoints = @(), [string]`$CitrixMetricFilter = '', [switch]`$IncludeCommandLine, [switch]`$NoCitrix)

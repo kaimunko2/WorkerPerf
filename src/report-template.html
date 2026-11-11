@@ -210,7 +210,10 @@ td.wrap .note { display: block; }
 #quality .kv { margin-bottom: 10px; }
 @media print { .incident .detail[hidden] { display: none; } }
 footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 1500px; }
-#oldBrowser { margin: 16px 24px; padding: 12px 16px; border: 1px solid #d03b3b; border-radius: 8px; font-weight: 600; }
+/* shown where the script does not run (it removes the message when it starts); it appears after a delay only, so it
+   does not flash while a large report loads */
+#oldBrowser { margin: 16px 24px; padding: 12px 16px; border: 1px solid #d03b3b; border-radius: 8px; font-weight: 600; opacity: 0; animation: wp-old 0s linear 4s forwards; }
+@keyframes wp-old { to { opacity: 1; } }
 .tablenote { margin: -6px 0 14px; max-width: 110ch; }
 .mainline + .mainline { margin-top: 4px; }
 #quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } #quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }

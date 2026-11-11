@@ -125,7 +125,12 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   {                                                                  // Minor 18: without script the static message stays visible
     const ctx = await browser.newContext({ javaScriptEnabled: false }), plain = await ctx.newPage();
     await plain.goto('file://' + path.join(dir, 'report.html'));
-    ok((await plain.locator('#oldBrowser').innerText()).includes('Dieser Bericht benötigt einen aktuellen Browser (Microsoft Edge, Chrome oder Firefox).'), 'Hinweis ohne laufendes Skript sichtbar');
+    ok((await plain.locator('#oldBrowser').innerText()).includes('Dieser Bericht benötigt einen aktuellen Browser (Microsoft Edge, Chrome oder Firefox).'), 'Hinweis ohne laufendes Skript vorhanden');
+    if (scheme === 'light') {                                       // it appears after a delay, so it does not flash while a report loads
+      ok(await plain.evaluate(() => getComputedStyle(document.getElementById('oldBrowser')).opacity) === '0', 'Hinweis zunaechst unsichtbar');
+      await plain.waitForTimeout(4500);
+      ok(await plain.evaluate(() => getComputedStyle(document.getElementById('oldBrowser')).opacity) === '1', 'Hinweis ohne laufendes Skript nach kurzer Zeit sichtbar');
+    }
     await ctx.close();
   }
   // I2: the chronic state of one session's network path shows nothing of other sessions

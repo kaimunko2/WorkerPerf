@@ -39,7 +39,8 @@
     Regular snapshot interval for processes and sessions (5-3600 s, default 15).
 
 .PARAMETER BurstIntervalSeconds
-    Snapshot interval while a trigger signal is over its threshold (default 5).
+    Minimum snapshot interval while a trigger signal is over its threshold (default 5).
+    Snapshots are taken on fast ticks: with the defaults (2 s ticks) every third tick, 6 s.
 
 .PARAMETER BurstHoldSeconds
     How long dense snapshots continue after the last trigger (default 60).
