@@ -11,7 +11,7 @@
   --text: #0b0b0b; --text2: #52514e; --muted: #7b7a74; --hover: #efeee9; --sel: #e3edfb;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --other: #b5b3ab; --bar: #9ec5f4;
-  --warn: #fab219; --crit: #d03b3b;
+  --warn: #fab219; --crit: #d03b3b; --good: #0ca30c;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -29,22 +29,35 @@ h1 { font-size: 22px; margin: 0 0 2px; font-weight: 600; }
 h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
 h3 { font-size: 13px; margin: 0; font-weight: 600; }
 .sub { color: var(--text2); }
+.sub .endreason { color: var(--text); font-weight: 600; }
 .note { color: var(--muted); font-size: 12px; }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--page); }
 nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 nav button { font: inherit; color: var(--text2); background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; cursor: pointer; }
 nav button:hover { color: var(--text); }
 nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--s1); font-weight: 600; }
+.zoombar { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 7px 24px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2); min-height: 40px; }
+.zoombar #zoomInfo b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.zoombar button { font: inherit; font-size: 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.zoombar button:hover { background: var(--hover); }
+.zoombar button[hidden] { display: none; }
+.zoombar .note { margin-left: auto; }
+:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
 main { padding: 20px 24px 60px; max-width: 1500px; }
 section[hidden] { display: none; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
 .tile .label { color: var(--text2); font-size: 12px; }
 .tile .value { font-size: 24px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
 .tile .value small { font-size: 13px; font-weight: 400; color: var(--text2); }
-.tile .extra { color: var(--muted); font-size: 12px; }
-.tile .flag { display: inline-block; margin-top: 4px; font-size: 12px; }
-.tile .flag::before { content: "▲ "; }
-.tile .flag.warn::before { color: var(--warn); } .tile .flag.crit::before { color: var(--crit); }
+.tile .extra { color: var(--text2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tile .extra + .extra { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.status { display: inline-block; margin: 4px 0 2px; font-size: 12px; font-weight: 600; color: var(--text); }
+.status .sym, .sig { font-style: normal; }
+.st-good .sym, .sig.st-good { color: var(--good); } .st-warn .sym, .sig.st-warn { color: var(--warn); }
+.st-crit .sym, .sig.st-crit { color: var(--crit); } .st-na .sym { color: var(--muted); }
+.status .pct { font-weight: 400; color: var(--text2); }
+.tile.info .value small { color: var(--text2); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
 .card.wide { margin-bottom: 12px; }
@@ -53,35 +66,55 @@ section[hidden] { display: none; }
 .seg button { font: inherit; font-size: 12px; background: none; border: 0; color: var(--text2); padding: 3px 10px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--sel); color: var(--text); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2); margin: 4px 0 2px; min-height: 18px; }
-.legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.chart { position: relative; }
-.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-.chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
-.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.legend i.dash { height: 0; border-top: 2px dashed; border-radius: 0; width: 14px; }
+.legend i.failmark { width: 2px; height: 10px; border-radius: 0; background: var(--crit); }
+.chart { position: relative; touch-action: none; }
+.chart svg { display: block; overflow: hidden; user-select: none; }
+.chart text { fill: var(--text2); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
+.chart .xlabels { position: relative; width: 100%; height: 100%; font-size: 11px; line-height: 1; color: var(--text2); font-variant-numeric: tabular-nums; }
+.chart .xlabels text { display: block; position: absolute; top: 6px; white-space: nowrap; }
+.chart .xlabels text.middle { transform: translateX(-50%); } .chart .xlabels text.end { transform: translateX(-100%); }
+.chart .band-warn line { stroke: var(--warn); }
+.chart .band-crit line { stroke: var(--crit); }
+.chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.chart .band-warn tspan.sym { fill: var(--warn); } .chart .band-crit tspan.sym { fill: var(--crit); }
+.chart .selbox { fill: var(--s1); fill-opacity: .14; stroke: var(--s1); stroke-width: 1; }
+.chart .hit { cursor: crosshair; }
+.chartnote { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; max-width: 420px; overflow: hidden; }
 .tip b { display: block; margin-bottom: 2px; }
 .tip div { display: flex; align-items: center; gap: 6px; }
-.tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
+.tip span { overflow: hidden; text-overflow: ellipsis; }
 .tip em { font-style: normal; margin-left: auto; padding-left: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-input[type=search] { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 260px; }
+input[type=search], select { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+input[type=search] { min-width: 260px; }
+label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; }
 .tablewrap { overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--grid); }
 th { position: sticky; top: 0; background: var(--surface); color: var(--text2); font-weight: 600; cursor: pointer; user-select: none; z-index: 1; box-shadow: 0 1px 0 var(--border); }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 th[aria-sort]::after { content: " ▾"; } th[aria-sort="ascending"]::after { content: " ▴"; }
-tbody tr { cursor: pointer; }
+tbody tr[tabindex] { cursor: pointer; }
 tbody tr:hover { background: var(--hover); }
 tbody tr.selected { background: var(--sel); }
+tbody tr.collector td:first-child { box-shadow: inset 3px 0 var(--s7); }
 td .cellbar { display: inline-block; height: 8px; border-radius: 2px; background: var(--bar); vertical-align: middle; margin-right: 6px; }
-.detail { margin-top: 16px; }
+td .tag { color: var(--text2); font-size: 12px; }
+td .svc { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--muted); font-size: 12px; margin-left: 6px; }
+td .sig { margin-right: 4px; }
+.detail { margin-top: 16px; scroll-margin-top: 96px; }
 .detail > .cardhead h2 { margin: 0; }
 .kv { display: flex; flex-wrap: wrap; gap: 4px 22px; color: var(--text2); font-size: 13px; margin-bottom: 12px; }
 .kv b { color: var(--text); font-weight: 600; }
-.empty { color: var(--muted); padding: 30px; text-align: center; }
-footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
-@media print { nav, .toolbar { display: none; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
+.pathline { color: var(--muted); font-size: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.empty { color: var(--text2); padding: 30px; text-align: center; border: 1px dashed var(--border); border-radius: 6px; font-size: 13px; }
+footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 1500px; }
+@media print { nav, .toolbar, .zoombar { display: none; } .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
 </style>
 </head>
 <body>
@@ -89,50 +122,70 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
   <h1 id="title">WorkerPerf</h1>
   <div class="sub" id="subtitle"></div>
 </header>
-<nav role="tablist">
-  <button data-tab="overview" aria-selected="true">Übersicht</button>
-  <button data-tab="sessions">Sitzungen</button>
-  <button data-tab="apps">Anwendungen</button>
-  <button data-tab="procs">Prozesse</button>
-</nav>
+<div class="topbar">
+  <nav role="tablist" aria-label="Bereiche des Berichts">
+    <button role="tab" data-tab="findings" aria-selected="false" aria-controls="tab-findings" tabindex="-1">Befunde</button>
+    <button role="tab" data-tab="overview" aria-selected="true" aria-controls="tab-overview">Übersicht</button>
+    <button role="tab" data-tab="sessions" aria-selected="false" aria-controls="tab-sessions" tabindex="-1">Sitzungen</button>
+    <button role="tab" data-tab="apps" aria-selected="false" aria-controls="tab-apps" tabindex="-1">Anwendungen</button>
+    <button role="tab" data-tab="procs" aria-selected="false" aria-controls="tab-procs" tabindex="-1">Prozesse</button>
+  </nav>
+  <div class="zoombar">
+    <span id="zoomInfo" aria-live="polite"></span>
+    <button type="button" id="zoomReset" hidden>Gesamter Zeitraum</button>
+    <span class="note">Hineinzoomen: in einem Diagramm mit gedrückter Maustaste über den gewünschten Zeitraum ziehen.</span>
+  </div>
+</div>
 <main>
-  <section id="tab-overview">
+  <section id="tab-findings" role="tabpanel" hidden></section>
+
+  <section id="tab-overview" role="tabpanel">
+    <h2>Soll-Ist-Vergleich</h2>
     <div class="tiles" id="tiles"></div>
     <div class="card wide">
       <div class="cardhead"><h3>CPU-Auslastung nach Verursacher (% des Hosts)</h3>
-        <div class="seg" id="segCpu"><button data-by="sessions" aria-pressed="true">nach Sitzung</button><button data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+        <div class="seg" id="segCpu"><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
       <div id="chCpuStack"></div>
     </div>
     <div class="card wide">
       <div class="cardhead"><h3>Arbeitsspeicher nach Verursacher (Working Set, GB)</h3>
-        <div class="seg" id="segMem"><button data-by="sessions" aria-pressed="true">nach Sitzung</button><button data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+        <div class="seg" id="segMem"><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
       <div id="chMemStack"></div>
     </div>
     <div class="grid2">
-      <div class="card"><div class="cardhead"><h3>CPU gesamt (%)</h3></div><div id="chCpu"></div></div>
-      <div class="card"><div class="cardhead"><h3>Arbeitsspeicher des Hosts (GB)</h3></div><div id="chMem"></div></div>
-      <div class="card"><div class="cardhead"><h3>Sitzungen</h3></div><div id="chSess"></div></div>
-      <div class="card"><div class="cardhead"><h3>Prozessor-Warteschlange</h3></div><div id="chQueue"></div></div>
+      <div class="card"><div class="cardhead"><h3>CPU-Auslastung des Hosts (%)</h3></div><div id="chCpu"></div></div>
+      <div class="card"><div class="cardhead"><h3>Prozessor-Warteschlange je logischer CPU</h3></div><div id="chQueue"></div></div>
+      <div class="card"><div class="cardhead"><h3>Arbeitsspeicher des Hosts (% des RAM)</h3></div><div id="chMem"></div></div>
+      <div class="card"><div class="cardhead"><h3>Eingabeverzögerung, höchster Wert aller Sitzungen (ms)</h3></div><div id="chInput"></div></div>
+      <div class="card" id="cardMainApp"><div class="cardhead"><h3 id="hMainApp">Eingabeverzögerung der Hauptanwendung (ms)</h3></div><div id="chMainApp"></div></div>
+      <div class="card"><div class="cardhead"><h3>Datenträger-Antwortzeit, fünf Laufwerke mit der höchsten Spitze (ms)</h3></div><div id="chVolumes"></div></div>
+      <div class="card"><div class="cardhead"><h3>Freigabe-Antwortzeit (SMB, ms)</h3></div><div id="chShares"></div></div>
+      <div class="card"><div class="cardhead"><h3>Antwortzeit der Gegenstellen (ms)</h3></div><div id="chProbes"></div></div>
       <div class="card"><div class="cardhead"><h3>Datenträger-Durchsatz (MB/s)</h3></div><div id="chDisk"></div></div>
       <div class="card"><div class="cardhead"><h3>Datenträger-IOPS</h3></div><div id="chIops"></div></div>
       <div class="card"><div class="cardhead"><h3>Netzwerk (Mbit/s)</h3></div><div id="chNet"></div></div>
+      <div class="card"><div class="cardhead"><h3>Sitzungen</h3></div><div id="chSess"></div></div>
     </div>
   </section>
 
-  <section id="tab-sessions" hidden>
-    <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …"><span class="note">Zeile anklicken für Details. CPU-Werte in % der gesamten Host-Kapazität.</span></div>
+  <section id="tab-sessions" role="tabpanel" hidden>
+    <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …" aria-label="Sitzungen filtern"><span class="note">Zeile anklicken oder mit Eingabetaste öffnen. CPU-Werte in % der gesamten Host-Kapazität; Eingabeverzögerung über Takte mit Verzögerung.</span></div>
     <div class="tablewrap"><table id="tSessions"></table></div>
     <div class="detail" id="dSessions"></div>
   </section>
 
-  <section id="tab-apps" hidden>
-    <div class="toolbar"><input type="search" id="fApps" placeholder="Anwendung filtern …"><span class="note">Alle Instanzen eines Prozessnamens über alle Sitzungen zusammengefasst.</span></div>
+  <section id="tab-apps" role="tabpanel" hidden>
+    <div class="toolbar"><input type="search" id="fApps" placeholder="Anwendung filtern …" aria-label="Anwendungen filtern">
+      <label class="inline">Rolle <select id="fRoleApps"></select></label>
+      <span class="note">Alle Instanzen eines Prozessnamens über alle Sitzungen zusammengefasst.</span></div>
     <div class="tablewrap"><table id="tApps"></table></div>
     <div class="detail" id="dApps"></div>
   </section>
 
-  <section id="tab-procs" hidden>
-    <div class="toolbar"><input type="search" id="fProcs" placeholder="Prozess, PID oder Benutzer filtern …"><span class="note" id="procNote"></span></div>
+  <section id="tab-procs" role="tabpanel" hidden>
+    <div class="toolbar"><input type="search" id="fProcs" placeholder="Prozess, PID, Dienst oder Benutzer filtern …" aria-label="Prozesse filtern">
+      <label class="inline">Rolle <select id="fRoleProcs"></select></label>
+      <span class="note" id="procNote"></span></div>
     <div class="tablewrap"><table id="tProcs"></table></div>
     <div class="detail" id="dProcs"></div>
   </section>
@@ -143,193 +196,494 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
 <script>
 "use strict";
 const D = JSON.parse(document.getElementById('wp-data').textContent);
+const M = D.meta, Q = D.quality;
 
 // ---------- formatting ----------
 const nf = (d) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
-const NF = [nf(0), nf(1), nf(2)];
+const NF = [nf(0), nf(1), nf(2), nf(3)];
 const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : NF[d].format(v);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
 // Times are shown in the local time of the recorded server, independent of the viewer's time zone.
-const srv = (ms) => new Date(ms + D.meta.offsetMin * 60000);
-const fmtTime = (ms, sec) => { const d = srv(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + (sec ? ":" + pad(d.getUTCSeconds()) : ""); };
+const OFF = (M.offsetMin || 0) * 60000;
+const srv = (ms) => new Date(ms + OFF);
+const fmtTime = (ms, sec) => { if (ms == null) return "–"; const d = srv(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + (sec ? ":" + pad(d.getUTCSeconds()) : ""); };
 const fmtDate = (ms) => { const d = srv(ms); return pad(d.getUTCDate()) + "." + pad(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(); };
-const fmtDT = (ms) => ms == null ? "–" : fmtDate(ms) + " " + fmtTime(ms);
+const fmtDT = (ms, sec) => ms == null ? "–" : fmtDate(ms) + " " + fmtTime(ms, sec);
 const fmtDur = (min) => { if (min == null) return "–"; const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? h + " h " + pad(m) + " min" : m + " min"; };
+const fmtSpan = (ms) => {
+  const r = (v) => Math.abs(v - Math.round(v)) < 0.05 ? fmt(Math.round(v), 0) : fmt(v, 1);
+  return ms < 59500 ? r(ms / 1000) + " s" : ms < 3570000 ? r(ms / 60000) + " min" : r(ms / 3600000) + " h";
+};
 const fmtMB = (mb) => mb == null ? "–" : mb >= 1024 ? fmt(mb / 1024, 2) + " GB" : fmt(mb, 0) + " MB";
+const withUnit = (unit) => unit ? (unit === "%" ? " %" : " " + unit) : "";
+// Decimals for a measured value: small numbers keep more digits.
+const autoDec = (v, unit) => v == null ? 0 : unit === "" ? 2 : Math.abs(v) >= 100 ? 0 : 1;
+const fmtVal = (v, unit) => fmt(v, autoDec(v, unit)) + (v == null ? "" : withUnit(unit));
+// threshold values are usually whole numbers: no trailing ",0"
+const fmtLimit = (v, unit) => Number.isInteger(v) ? fmt(v, 0) + withUnit(unit) : fmtVal(v, unit);
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"];
-const sessLabel = (s) => s.id === 0 && !s.user ? "Dienste / System (Sitzung 0)" : (s.user ? s.user : "ohne Benutzer") + " (#" + s.id + ")";
+const sessLabel = (s) => !s ? "–" : (s.user ? s.user : (s.id === 0 ? "Dienste/System" : "unbekannt")) + " (#" + s.id + ")";
 const sessByIdx = new Map(D.sessions.map((s) => [s.i, s]));
 const appByIdx = new Map(D.apps.map((a) => [a.i, a]));
-const T = D.t;
+const TH = new Map(D.thresholds.map((t) => [t.id, t]));
+
+// Status: 0 normal, 1 auffaellig, 2 kritisch, na nicht gemessen. Always symbol plus word.
+const STATUS = { "0": ["●", "normal", "good"], "1": ["▲", "auffällig", "warn"], "2": ["◆", "kritisch", "crit"], "na": ["○", "nicht gemessen", "na"] };
+const statusHtml = (st, extra) => `<span class="status st-${STATUS[st][2]}"><i class="sym" aria-hidden="true">${STATUS[st][0]}</i> ${STATUS[st][1]}${extra ? ` <span class="pct">${extra}</span>` : ""}</span>`;
+const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
+// Small inline marker for table cells whose value reached a target band.
+const sigMark = (v, th) => { const l = levelOf(v, th); return l ? `<i class="sig st-${STATUS[l][2]}" title="${STATUS[l][1]}">${STATUS[l][0]}</i>` : ""; };
+
+// ---------- time range and zoom ----------
+const firstLast = [D.tickT, D.snapT].filter((a) => a && a.length);
+const FULL = (() => {
+  let t0 = Math.min(...firstLast.map((a) => a[0])), t1 = Math.max(...firstLast.map((a) => a[a.length - 1]));
+  if (M.start != null) t0 = Math.min(t0, M.start);
+  if (M.end != null) t1 = Math.max(t1, M.end);
+  if (!isFinite(t0) || !isFinite(t1)) { t0 = M.start || 0; t1 = M.end || t0 + 1000; }
+  if (t1 <= t0) t1 = t0 + 1000;
+  return { t0, t1 };
+})();
+const MIN_ZOOM = 10000;
+const zoomFns = [];
+const view = () => window.WP.zoom || FULL;
+window.WP = {
+  zoom: null,
+  setZoom(t0, t1) {
+    t0 = Number(t0); t1 = Number(t1);
+    if (!isFinite(t0) || !isFinite(t1)) return;
+    if (t1 < t0) [t0, t1] = [t1, t0];
+    t0 = Math.max(FULL.t0, t0); t1 = Math.min(FULL.t1, t1);
+    if (t1 - t0 < MIN_ZOOM) {
+      // too short or outside the capture: a minimal window around the (clamped) centre
+      const c = Math.max(FULL.t0, Math.min(FULL.t1, (t0 + t1) / 2));
+      t0 = Math.max(FULL.t0, c - MIN_ZOOM / 2); t1 = Math.min(FULL.t1, t0 + MIN_ZOOM); t0 = Math.max(FULL.t0, t1 - MIN_ZOOM);
+    }
+    if (t0 <= FULL.t0 && t1 >= FULL.t1) { this.resetZoom(); return; }
+    this.zoom = { t0: Math.round(t0), t1: Math.round(t1) };
+    zoomChanged();
+  },
+  resetZoom() { this.zoom = null; zoomChanged(); },
+  onZoom(fn) { zoomFns.push(fn); }
+};
+function rangeText(r, sec) {
+  return fmtDate(r.t0) === fmtDate(r.t1) ? `${fmtDT(r.t0, sec)}–${fmtTime(r.t1, sec)}` : `${fmtDT(r.t0, sec)} bis ${fmtDT(r.t1, sec)}`;
+}
+function updateZoomBar() {
+  const z = window.WP.zoom;
+  document.getElementById("zoomInfo").innerHTML = z
+    ? `Ausschnitt <b>${rangeText(z, z.t1 - z.t0 < 3600000)}</b> (${fmtSpan(z.t1 - z.t0)})`
+    : `Gesamter Zeitraum <b>${rangeText(FULL, false)}</b> (${fmtSpan(FULL.t1 - FULL.t0)})`;
+  document.getElementById("zoomReset").hidden = !z;
+}
+function zoomChanged() { updateZoomBar(); refreshCharts(); for (const fn of zoomFns) fn(window.WP.zoom); }
+document.getElementById("zoomReset").addEventListener("click", () => window.WP.resetZoom());
 
 // ---------- chart ----------
-// One shared time axis, one y axis. series: [{name, color (css var), values[], dashed}]
-function chart(host, opt) {
-  host = typeof host === "string" ? document.getElementById(host) : host;
-  const W = opt.width || 700, H = opt.height || 220, m = { l: 46, r: 12, t: 8, b: 22 };
-  const pw = W - m.l - m.r, ph = H - m.t - m.b;
-  const series = opt.series.filter((s) => s.values && s.values.some((v) => v != null));
-  if (!series.length) { host.innerHTML = '<div class="empty">Keine Daten vorhanden.</div>'; return; }
-  const n = T.length;
-  const stacked = !!opt.stacked;
-  let tops = null, yMax = 0;
-  if (stacked) {
-    tops = []; const acc = new Array(n).fill(0);
-    for (const s of series) { const top = new Array(n); for (let i = 0; i < n; i++) { acc[i] += (s.values[i] || 0); top[i] = acc[i]; } tops.push(top); }
-    yMax = Math.max(...acc);
-  } else {
-    for (const s of series) for (const v of s.values) if (v != null && v > yMax) yMax = v;
-  }
-  if (opt.yMax) yMax = Math.max(opt.yMax, opt.yMaxFixed ? 0 : yMax);
-  if (yMax <= 0) yMax = 1;
-  const step = niceStep(yMax / 4); yMax = Math.ceil(yMax / step - 1e-9) * step;
-  const x = (i) => m.l + (n > 1 ? (i / (n - 1)) * pw : pw / 2);
-  const y = (v) => m.t + ph - (v / yMax) * ph;
-  const dec = step < 1 ? (step < 0.1 ? 2 : 1) : 0;
+// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note })
+// A series is dense ({ values, o }) or sparse ({ t, v }). Sparse series with missing: 0 count absent points as 0 (input delay);
+// otherwise absent points are a gap (response times; dense series with resp: true drop their null values the same way).
+// Charts are drawn only while visible and redrawn when the zoom or the width changes.
+const GRID = { tick: D.tickT || [], snap: D.snapT || [] };
+const CHARTS = new Set();
+const MAX_POINTS = 1200, BUCKETS = 600;
+let uid = 0;
+const lowerBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < v) lo = m + 1; else hi = m; } return lo; };
+const upperBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= v) lo = m + 1; else hi = m; } return lo; };
+const isShown = (el) => el.isConnected && el.getClientRects().length > 0;
+const hostEl = (h) => typeof h === "string" ? document.getElementById(h) : h;
 
-  let g = "";
-  for (let v = 0; v <= yMax + 1e-9; v += step) {
-    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;
-    g += `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v, dec)}</text>`;
-  }
-  const ticks = Math.min(8, n);
-  for (let k = 0; k < ticks; k++) {
-    const i = ticks > 1 ? Math.round((k / (ticks - 1)) * (n - 1)) : 0;
-    g += `<text x="${x(i)}" y="${H - 5}" text-anchor="${k === 0 ? "start" : k === ticks - 1 ? "end" : "middle"}">${fmtTime(T[i])}</text>`;
-  }
-  if (stacked) {
-    for (let k = series.length - 1; k >= 0; k--) {
-      const top = tops[k], base = k ? tops[k - 1] : null;
-      let d = "";
-      for (let i = 0; i < n; i++) d += (i ? "L" : "M") + x(i).toFixed(1) + " " + y(top[i]).toFixed(1);
-      for (let i = n - 1; i >= 0; i--) d += "L" + x(i).toFixed(1) + " " + y(base ? base[i] : 0).toFixed(1);
-      g += `<path d="${d}Z" fill="var(${series[k].color})" stroke="var(--surface)" stroke-width="1" stroke-linejoin="round"/>`;
+function gapOf(T) {
+  // a break in a response-time line: more than 10 s and more than 2.5 times the regular spacing
+  // (90th percentile, because burst snapshots make the median spacing too short)
+  if (T.length < 2) return 10000;
+  const d = []; const step = Math.max(1, Math.floor(T.length / 200));
+  for (let i = step; i < T.length; i += step) d.push(T[i] - T[i - step] ? (T[i] - T[i - step]) / step : 0);
+  d.sort((a, b) => a - b);
+  return Math.max(10000, 2.5 * d[Math.floor(d.length * 0.9)]);
+}
+function prepSeries(s, grid) {
+  const out = { name: s.name, color: s.color || "--s1", dashed: !!s.dashed, thin: !!s.thin, T: grid, V: [], gap: Infinity, failT: [] };
+  if (s.t) {
+    if (s.missing === 0) {
+      const V = new Array(grid.length).fill(null);
+      const a = s.from != null ? lowerBound(grid, s.from) : 0, b = s.to != null ? upperBound(grid, s.to) : grid.length;
+      for (let i = a; i < b; i++) V[i] = 0;
+      s.t.forEach((ti, k) => { if (ti >= 0 && ti < grid.length) V[ti] = s.v[k]; });
+      out.V = V;
+    } else {
+      const T = [], V = [];
+      s.t.forEach((ti, k) => { if (s.v[k] != null && ti >= 0 && ti < grid.length) { T.push(grid[ti]); V.push(s.v[k]); } });
+      out.T = T; out.V = V; out.gap = gapOf(T);
     }
   } else {
-    for (const s of series) {
-      let d = "", pen = false;
-      for (let i = 0; i < n; i++) {
-        const v = s.values[i];
-        if (v == null) { pen = false; continue; }
-        d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); pen = true;
-      }
-      g += `<path d="${d}" fill="none" stroke="var(${s.color})" stroke-width="${s.thin ? 1 : 2}" stroke-linejoin="round" stroke-linecap="round"${s.dashed ? ' stroke-dasharray="5 4"' : ""}${s.thin ? ' opacity=".55"' : ""}/>`;
+    const vals = s.values || [], o = s.o || 0;
+    let T = (o || vals.length !== grid.length) ? grid.slice(o, o + vals.length) : grid, V = vals;
+    if (s.fail) s.fail.forEach((f, i) => { if (f && i < T.length) out.failT.push(T[i]); });
+    if (s.resp) { const t2 = [], v2 = []; for (let i = 0; i < T.length; i++) if (V[i] != null) { t2.push(T[i]); v2.push(V[i]); } T = t2; V = v2; out.gap = gapOf(T); }
+    out.T = T; out.V = V;
+  }
+  out.has = out.V.some((v) => v != null) || out.failT.length > 0;
+  return out;
+}
+// Visible part of a series; above MAX_POINTS it is reduced to BUCKETS time sections (mean or maximum).
+function reduceSeries(s, z, agg) {
+  const T = s.T, V = s.V, lo = lowerBound(T, z.t0), hi = upperBound(T, z.t1);
+  const xs = [], ys = []; let gap = s.gap, bucket = 0;
+  if (hi - lo > MAX_POINTS) {
+    const w = (z.t1 - z.t0) / BUCKETS; bucket = w;
+    const acc = new Float64Array(BUCKETS), cnt = new Int32Array(BUCKETS), seen = new Uint8Array(BUCKETS);
+    for (let i = lo; i < hi; i++) {
+      const b = Math.min(BUCKETS - 1, Math.floor((T[i] - z.t0) / w)); seen[b] = 1;
+      const v = V[i]; if (v == null) continue;
+      if (agg === "max") { if (!cnt[b] || v > acc[b]) acc[b] = v; } else acc[b] += v;
+      cnt[b]++;
     }
+    for (let b = 0; b < BUCKETS; b++) {
+      if (!seen[b]) continue;
+      xs.push(z.t0 + (b + 0.5) * w); ys.push(cnt[b] ? (agg === "max" ? acc[b] : acc[b] / cnt[b]) : null);
+    }
+    if (isFinite(gap)) gap = Math.max(gap, 2.5 * w);
+  } else {
+    // one point beyond each edge keeps the line continuous up to the frame (clipped)
+    for (let i = Math.max(0, lo - 1); i < Math.min(T.length, hi + 1); i++) { xs.push(T[i]); ys.push(V[i]); }
   }
-  if (opt.limit != null && opt.limit <= yMax) {
-    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(opt.limit)}" y2="${y(opt.limit)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/>`;
-    g += `<text x="${W - m.r}" y="${y(opt.limit) - 4}" text-anchor="end">${esc(opt.limitLabel || "")}</text>`;
-  }
-  const legend = series.length > 1 ? '<div class="legend">' + series.map((s) => `<span><i style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join("") + "</div>" : "";
-  host.innerHTML = legend + `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label || "Diagramm")}">${g}<line class="cross" y1="${m.t}" y2="${m.t + ph}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div></div>`;
-
-  const svg = host.querySelector("svg"), cross = host.querySelector(".cross"), tip = host.querySelector(".tip"), box = host.querySelector(".chart");
-  const unit = opt.unit ? " " + opt.unit : "", tdec = opt.decimals ?? 1;
-  svg.addEventListener("pointermove", (ev) => {
-    const r = svg.getBoundingClientRect();
-    const px = ((ev.clientX - r.left) / r.width) * W;
-    const i = Math.max(0, Math.min(n - 1, Math.round(((px - m.l) / pw) * (n - 1))));
-    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
-    let rows = series.map((s) => ({ s, v: s.values[i] })).filter((o) => o.v != null && (!stacked || o.v > 0));
-    if (stacked) rows.reverse();
-    let html = `<b>${fmtTime(T[i], D.meta.bucketSec < 60)}</b>`;
-    for (const o of rows.slice(0, 12)) html += `<div><i style="background:var(${o.s.color})"></i>${esc(o.s.name)}<em>${fmt(o.v, tdec)}${unit}</em></div>`;
-    if (stacked) html += `<div><i></i>Summe<em>${fmt(tops[tops.length - 1][i], tdec)}${unit}</em></div>`;
-    tip.innerHTML = html; tip.style.display = "block";
-    const cx = (x(i) / W) * r.width, tw = tip.offsetWidth;
-    tip.style.left = (cx + 14 + tw > r.width ? cx - tw - 14 : cx + 14) + "px"; tip.style.top = "8px";
-  });
-  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  const failT = s.failT.filter((t) => t >= z.t0 && t <= z.t1);
+  return { s, xs, ys, gap, bucket, failT, visible: ys.some((v, k) => v != null && xs[k] >= z.t0 - (bucket || 0) && xs[k] <= z.t1 + (bucket || 0)) || failT.length > 0 };
 }
 function niceStep(raw) {
   const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
-// Top 7 entities keep a fixed colour slot each, the rest is folded into "Sonstige".
+const TIME_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400].map((s) => s * 1000);
+function timeTicks(t0, t1, pw, labelW) {
+  // first and last label sit exactly on the window edges; between them round server-local times
+  const want = Math.max(1, Math.floor(pw / (labelW + 50)));
+  const step = TIME_STEPS.find((s) => (t1 - t0) / s <= want) || TIME_STEPS[TIME_STEPS.length - 1];
+  const mid = [];
+  for (let t = Math.ceil((t0 + OFF) / step) * step - OFF; t < t1; t += step) mid.push(t);
+  return { mid, step };
+}
+
+function chart(host, opt) {
+  host = hostEl(host);
+  const grid = GRID[opt.axis || "tick"] || [];
+  const series = (opt.series || []).map((s) => prepSeries(s, grid)).filter((s) => s.has);
+  const label = opt.label || (host.closest(".card, .chartbox")?.querySelector("h3")?.textContent) || "Diagramm";
+  host._wp = { opt, series, label, key: null, id: ++uid };
+  CHARTS.add(host);
+  if (isShown(host)) drawChart(host);
+  return host;
+}
+function refreshCharts() {
+  for (const host of CHARTS) {
+    if (!host.isConnected || !host._wp) { CHARTS.delete(host); continue; }
+    if (!isShown(host)) continue;
+    const z = view();
+    if (host._wp.key !== z.t0 + ":" + z.t1 + ":" + host.clientWidth) drawChart(host);
+  }
+}
+let resizeTimer = 0;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(refreshCharts, 150); });
+
+function drawChart(host) {
+  const st = host._wp, opt = st.opt, z = view();
+  st.key = z.t0 + ":" + z.t1 + ":" + host.clientWidth;
+  if (!st.series.length) { host.innerHTML = `<div class="empty">${esc(opt.empty || "Keine Daten vorhanden.")}</div>`; return; }
+  const stacked = !!opt.stacked, agg = stacked ? "mean" : (opt.agg || "mean");
+  const red = st.series.map((s) => reduceSeries(s, z, agg));
+  if (!red.some((r) => r.visible)) { host.innerHTML = `<div class="empty">Keine Messwerte im gewählten Ausschnitt.</div>`; return; }
+  const W = Math.max(280, Math.floor(host.clientWidth)), H = opt.height || 190;
+  const unit = opt.unit || "", tdec = opt.decimals ?? 1;
+
+  // stacking: all series share one grid, so their reduced points line up
+  let tops = null, yMax = 0;
+  if (stacked) {
+    const n = red[0].xs.length, acc = new Float64Array(n); tops = [];
+    for (const r of red) { const top = new Float64Array(n); for (let k = 0; k < n; k++) { acc[k] += r.ys[k] || 0; top[k] = acc[k]; } tops.push(top); }
+    for (let k = 0; k < n; k++) if (red[0].xs[k] >= z.t0 && red[0].xs[k] <= z.t1 && acc[k] > yMax) yMax = acc[k];
+  } else {
+    for (const r of red) r.ys.forEach((v, k) => { if (v != null && v > yMax && r.xs[k] >= z.t0 - r.bucket && r.xs[k] <= z.t1 + r.bucket) yMax = v; });
+  }
+  if (opt.yMax) yMax = opt.yMaxFixed ? opt.yMax : Math.max(yMax, opt.yMax);
+  const th = opt.signal ? TH.get(opt.signal) : null;
+  // Target lines: the axis is extended so that the warn line is visible, unless the warn value is far
+  // above the data (more than three times the visible maximum) or beyond a fixed axis; then a note names it.
+  let showWarn = false, showCrit = false, bandNote = "";
+  if (th) {
+    const limitTop = opt.yMaxFixed ? yMax : Math.max(yMax, 1e-9) * 3;
+    if (th.warn <= limitTop) {
+      showWarn = true;
+      if (th.warn > yMax * 0.98) yMax = th.warn * 1.15;
+      if (th.crit <= yMax * 1.25 && (!opt.yMaxFixed || th.crit <= yMax)) { showCrit = true; if (th.crit > yMax * 0.98) yMax = th.crit * 1.1; }
+    }
+    if (!showWarn) bandNote = `Soll-Linien außerhalb des Diagramms: auffällig ab ${fmtLimit(th.warn, th.unit)}, kritisch ab ${fmtLimit(th.crit, th.unit)}.`;
+    else if (!showCrit) bandNote = `Kritisch ab ${fmtLimit(th.crit, th.unit)} (außerhalb des Diagramms).`;
+  }
+  if (!(yMax > 0)) yMax = 1;
+  const step = niceStep(yMax / 4); yMax = Math.ceil(yMax / step - 1e-9) * step;
+  const dec = step >= 1 ? 0 : Math.min(3, [1, 2, 3].find((d) => Math.abs(step * 10 ** d - Math.round(step * 10 ** d)) < 1e-6) || 3);
+  const yLabels = []; for (let v = 0; v <= yMax + 1e-9; v += step) yLabels.push(v);
+  const yw = Math.max(...yLabels.map((v) => fmt(v, dec).length)) * 6.6 + 12;
+  const m = { l: Math.round(yw), r: 12, t: 10, b: 22 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const span = z.t1 - z.t0, sec = span < 600000;
+  const X = (t) => m.l + ((t - z.t0) / span) * pw;
+  const Y = (v) => m.t + ph - (Math.min(v, yMax * 1.5) / yMax) * ph;
+  const f1 = (n) => n.toFixed(1);
+
+  let g = "";
+  for (const v of yLabels) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text class="yaxis" x="${m.l - 6}" y="${f1(Y(v) + 4)}" text-anchor="end">${fmt(v, dec)}</text>`;
+  }
+  // time axis
+  // Time labels are HTML elements in a foreignObject, so their text can be read like any page text.
+  const labelW = sec ? 50 : 34, ticks = timeTicks(z.t0, z.t1, pw, labelW);
+  const xl = (x, a, txt) => `<text class="xaxis ${a}" style="left:${f1(x)}px">${txt}</text>`;
+  let xlab = xl(m.l, "start", fmtTime(z.t0, sec));
+  for (const t of ticks.mid) {
+    const x = X(t);
+    if (x - labelW / 2 < m.l + labelW + 16 || x + labelW / 2 > W - m.r - labelW - 16) continue;
+    g += `<line x1="${f1(x)}" x2="${f1(x)}" y1="${m.t + ph}" y2="${m.t + ph + 4}" stroke="var(--border)"/>`;
+    xlab += xl(x, "middle", fmtTime(t, sec || ticks.step < 60000));
+  }
+  xlab += xl(W - m.r, "end", fmtTime(z.t1, sec));
+  g += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--border)"/>`;
+  g += `<foreignObject x="0" y="${m.t + ph}" width="${W}" height="${m.b}"><div class="xlabels">${xlab}</div></foreignObject>`;
+
+  // marks
+  const clip = "clip" + st.id;
+  let marks = "";
+  if (stacked) {
+    const xs = red[0].xs;
+    for (let s = red.length - 1; s >= 0; s--) {
+      const top = tops[s], base = s ? tops[s - 1] : null; let d = "";
+      for (let k = 0; k < xs.length; k++) d += (k ? "L" : "M") + f1(X(xs[k])) + " " + f1(Y(top[k]));
+      for (let k = xs.length - 1; k >= 0; k--) d += "L" + f1(X(xs[k])) + " " + f1(Y(base ? base[k] : 0));
+      marks += `<path d="${d}Z" fill="var(${red[s].s.color})" stroke="var(--surface)" stroke-width="1" stroke-linejoin="round"/>`;
+    }
+  } else {
+    for (const r of red) {
+      let d = "", run = 0, prev = 0;
+      const end = () => { if (run === 1) d += "h0"; run = 0; };
+      for (let k = 0; k < r.xs.length; k++) {
+        const v = r.ys[k];
+        if (v == null) { end(); continue; }
+        if (run && r.xs[k] - prev > r.gap) end();
+        d += (run ? "L" : "M") + f1(X(r.xs[k])) + " " + f1(Y(v)); run++; prev = r.xs[k];
+      }
+      end();
+      marks += `<path d="${d}" fill="none" stroke="var(${r.s.color})" stroke-width="${r.s.thin ? 1 : 2}" stroke-linejoin="round" stroke-linecap="round"${r.s.dashed ? ' stroke-dasharray="5 4"' : ""}${r.s.thin ? ' opacity=".6"' : ""}/>`;
+      if (r.failT.length) marks += `<path class="fail" d="${r.failT.map((t) => "M" + f1(X(t)) + " " + m.t + "v8").join("")}" stroke="var(--crit)" stroke-width="2"/>`;
+    }
+  }
+  g += `<g clip-path="url(#${clip})">${marks}</g>`;
+
+  // target bands and limit line, labels in text colour with the status symbol
+  const bandLine = (cls, v, sym, word, below) => {
+    const y = Y(v), ty = below ? y + 13 : y - 4;
+    return `<g class="${cls}"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(y)}" y2="${f1(y)}" stroke-width="1.5" stroke-dasharray="6 4"/>` +
+      `<text x="${W - m.r - 4}" y="${f1(ty)}" text-anchor="end"><tspan class="sym">${sym}</tspan> ${word} ab ${fmtLimit(v, th.unit)}</text></g>`;
+  };
+  if (showWarn) {
+    const yw2 = Y(th.warn), yc = Y(th.crit), close = showCrit && Math.abs(yw2 - yc) < 15;
+    g += bandLine("band-warn", th.warn, "▲", "auffällig", close);
+    if (showCrit) g += bandLine("band-crit", th.crit, "◆", "kritisch", yc - m.t < 14);
+  }
+  if (opt.limit != null && opt.limit <= yMax) {
+    g += `<g class="limit"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(opt.limit))}" y2="${f1(Y(opt.limit))}" stroke="var(--text2)" stroke-width="1" stroke-dasharray="2 3"/>`;
+    g += `<text x="${m.l + 6}" y="${f1(Y(opt.limit) + (Y(opt.limit) - m.t < 14 ? 13 : -4))}">${esc(opt.limitLabel || "")}</text></g>`;
+  }
+
+  // legend from two series on; identity never by colour alone
+  const anyFail = red.some((r) => r.failT.length);
+  let legend = "";
+  if (red.length > 1 || anyFail) {
+    legend = '<div class="legend">' + (red.length > 1 ? red.map((r) => `<span><i class="${r.s.dashed ? "dash" : ""}" style="${r.s.dashed ? "border-color" : "background"}:var(${r.s.color})"></i>${esc(r.s.name)}</span>`).join("") : "") +
+      (anyFail ? '<span><i class="failmark"></i>Verbindungsfehler (Strich am oberen Rand)</span>' : "") + "</div>";
+  }
+  const reduced = red.find((r) => r.bucket);
+  const notes = [opt.note, bandNote, reduced ? `Verdichtet: ${agg === "max" ? "Maximum" : "Mittelwert"} je ${fmtSpan(Math.round(reduced.bucket))}.` : ""].filter(Boolean);
+  host.innerHTML = legend + `<div class="chart"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(st.label)}">` +
+    `<defs><clipPath id="${clip}"><rect x="${m.l}" y="${m.t - 2}" width="${pw}" height="${ph + 4}"/></clipPath></defs>${g}` +
+    `<line class="cross" y1="${m.t}" y2="${m.t + ph}" stroke="var(--text2)" stroke-width="1" visibility="hidden"/>` +
+    `<rect class="selbox" y="${m.t}" height="${ph}" width="0" visibility="hidden"/>` +
+    `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div></div>` +
+    (notes.length ? `<div class="chartnote">${esc(notes.join(" "))}</div>` : "");
+
+  const svg = host.querySelector("svg"), cross = svg.querySelector(".cross"), sel = svg.querySelector(".selbox"), tip = host.querySelector(".tip");
+  const hit = svg.querySelector(".hit"), unitTxt = withUnit(unit);
+  const toTime = (px) => z.t0 + ((Math.max(m.l, Math.min(W - m.r, px)) - m.l) / pw) * span;
+  const nearest = (xs, t) => { if (!xs.length) return -1; let j = lowerBound(xs, t); if (j >= xs.length) j = xs.length - 1; if (j > 0 && t - xs[j - 1] < xs[j] - t) j--; return j; };
+  let drag = null;
+  const pxOf = (ev) => { const r = svg.getBoundingClientRect(); return ev.clientX - r.left; };
+  function showTip(px) {
+    const t = toTime(px);
+    const ref = red.find((r) => r.xs.length) || red[0];
+    const j = nearest(ref.xs, t); if (j < 0) return;
+    const tx = Math.max(z.t0, Math.min(z.t1, ref.xs[j]));
+    cross.setAttribute("x1", X(tx)); cross.setAttribute("x2", X(tx)); cross.setAttribute("visibility", "visible");
+    let rows = red.map((r, si) => {
+      const k = stacked ? j : nearest(r.xs, tx);
+      const tol = isFinite(r.gap) ? r.gap / 2 : Infinity;
+      const v = (k < 0 || Math.abs(r.xs[k] - tx) > tol) ? null : r.ys[k];
+      const fail = r.failT.some((ft) => Math.abs(ft - tx) <= Math.max(r.bucket, 8000));
+      return { r, v, fail, si };
+    });
+    if (stacked) rows = rows.filter((o) => o.v > 0).reverse();
+    let html = `<b>${fmtTime(tx, true)}${reduced ? ` · ${agg === "max" ? "Maximum" : "Mittelwert"} je ${fmtSpan(Math.round(reduced.bucket))}` : ""}</b>`;
+    for (const o of rows.slice(0, 12)) html += `<div><i style="background:var(${o.r.s.color})"></i><span>${esc(o.r.s.name)}</span><em>${o.fail && o.v == null ? "Verbindungsfehler" : fmt(o.v, tdec) + (o.v == null ? "" : unitTxt)}</em></div>`;
+    if (stacked) html += `<div><i></i><span>Summe</span><em>${fmt(tops[tops.length - 1][j], tdec)}${unitTxt}</em></div>`;
+    tip.innerHTML = html; tip.style.display = "block";
+    const cx = X(tx), tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, cx + 14 + tw > W ? cx - tw - 14 : cx + 14) + "px"; tip.style.top = "8px";
+  }
+  hit.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    drag = { x0: pxOf(ev) }; hit.setPointerCapture(ev.pointerId); ev.preventDefault();
+  });
+  hit.addEventListener("pointermove", (ev) => {
+    const px = pxOf(ev);
+    if (drag) {
+      const a = Math.max(m.l, Math.min(drag.x0, px)), b = Math.min(W - m.r, Math.max(drag.x0, px));
+      sel.setAttribute("x", a); sel.setAttribute("width", Math.max(0, b - a)); sel.setAttribute("visibility", Math.abs(px - drag.x0) >= 3 ? "visible" : "hidden");
+    }
+    showTip(px);
+  });
+  hit.addEventListener("pointerup", (ev) => {
+    if (!drag) return;
+    const px = pxOf(ev), x0 = drag.x0; drag = null; sel.setAttribute("visibility", "hidden");
+    if (Math.abs(px - x0) >= 10) window.WP.setZoom(toTime(Math.min(px, x0)), toTime(Math.max(px, x0)));
+  });
+  hit.addEventListener("pointercancel", () => { drag = null; sel.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("pointerleave", () => { if (drag) return; cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+}
+
+// Top 7 entities keep a fixed colour slot each (ranked over the whole capture), the rest is folded into "Sonstige".
 function stackSeries(items, key, label, scale) {
-  const ranked = items.map((it) => ({ it, sum: (it[key] || []).reduce((a, v) => a + (v || 0), 0) })).filter((o) => o.sum > 0).sort((a, b) => b.sum - a.sum);
-  const top = ranked.slice(0, 7), rest = ranked.slice(7);
+  const ranked = items.filter((it) => Array.isArray(it[key])).map((it) => ({ it, sum: it[key].reduce((a, v) => a + (v || 0), 0) })).filter((o) => o.sum > 0).sort((a, b) => b.sum - a.sum);
+  const top = ranked.slice(0, 7), rest = ranked.slice(7), n = GRID.snap.length;
   const out = top.map((o, k) => ({ name: label(o.it), color: SERIES[k], values: o.it[key].map((v) => v == null ? 0 : v * scale) }));
   if (rest.length) {
-    const other = new Array(T.length).fill(0);
+    const other = new Array(n).fill(0);
     for (const o of rest) o.it[key].forEach((v, i) => { other[i] += (v || 0) * scale; });
     out.push({ name: "Sonstige (" + rest.length + ")", color: "--other", values: other });
   }
   return out;
 }
-// Expands a process series (stored from bucket offset "o") to the full time axis.
-function fullSeries(p, key) { const a = new Array(T.length).fill(null); p[key].forEach((v, i) => { a[p.o + i] = v; }); return a; }
 
 // ---------- sortable table ----------
+// cols: { key, head, num, cls, fmt(v, row), sortVal(row), bar, title }; opt: { sort, id, text, filterInput, roleSelect, rowClass, onSelect }
 function table(id, cols, rows, opt) {
   const el = document.getElementById(id);
-  const st = { key: opt.sort, dir: -1, filter: "", selected: null };
+  const st = { key: opt.sort, dir: -1, filter: "", role: "", selected: null };
   const maxOf = {};
   for (const c of cols) if (c.bar) maxOf[c.key] = Math.max(1e-9, ...rows.map((r) => r[c.key] || 0));
   function render() {
     const col = cols.find((c) => c.key === st.key);
     let list = rows;
-    if (st.filter) { const q = st.filter.toLowerCase(); list = rows.filter((r) => opt.text(r).toLowerCase().includes(q)); }
+    if (st.filter) { const q = st.filter.toLowerCase(); list = list.filter((r) => opt.text(r).toLowerCase().includes(q)); }
+    if (st.role) list = list.filter((r) => r.role === st.role);
     list = list.slice().sort((a, b) => {
       const va = col.sortVal ? col.sortVal(a) : a[col.key], vb = col.sortVal ? col.sortVal(b) : b[col.key];
       if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
       return (typeof va === "string" ? va.localeCompare(vb, "de") : va - vb) * st.dir;
     });
-    let h = "<thead><tr>" + cols.map((c) => `<th data-k="${c.key}" class="${c.num ? "num" : ""}"${c.key === st.key ? ` aria-sort="${st.dir > 0 ? "ascending" : "descending"}"` : ""} title="${esc(c.title || "")}">${esc(c.head)}</th>`).join("") + "</tr></thead><tbody>";
+    let h = "<thead><tr>" + cols.map((c) => `<th data-k="${c.key}" tabindex="0" class="${c.num ? "num" : ""}"${c.key === st.key ? ` aria-sort="${st.dir > 0 ? "ascending" : "descending"}"` : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.head)}</th>`).join("") + "</tr></thead><tbody>";
     for (const r of list) {
-      h += `<tr data-id="${opt.id(r)}"${st.selected === opt.id(r) ? ' class="selected"' : ""}>` + cols.map((c) => {
+      const cls = [opt.rowClass ? opt.rowClass(r) : "", st.selected === opt.id(r) ? "selected" : ""].filter(Boolean).join(" ");
+      h += `<tr data-id="${opt.id(r)}"${cls ? ` class="${cls}"` : ""}${opt.onSelect ? ' tabindex="0"' : ""}>` + cols.map((c) => {
         const txt = c.fmt ? c.fmt(r[c.key], r) : esc(r[c.key]);
         const bar = c.bar ? `<span class="cellbar" style="width:${Math.round(((r[c.key] || 0) / maxOf[c.key]) * 48)}px"></span>` : "";
-        return `<td class="${c.num ? "num" : ""}">${bar}${txt}</td>`;
+        const tc = [c.num ? "num" : "", c.cls || ""].filter(Boolean).join(" ");
+        return `<td${tc ? ` class="${tc}"` : ""}>${bar}${txt}</td>`;
       }).join("") + "</tr>";
     }
     if (!list.length) h += `<tr><td colspan="${cols.length}" class="empty">Keine Einträge.</td></tr>`;
     el.innerHTML = h + "</tbody>";
   }
+  function sortBy(k) { if (st.key === k) st.dir = -st.dir; else { st.key = k; st.dir = cols.find((c) => c.key === k).num ? -1 : 1; } render(); el.querySelector(`th[data-k="${k}"]`)?.focus(); }
+  function choose(tr) { if (!tr || !opt.onSelect) return; st.selected = Number(tr.dataset.id); render(); opt.onSelect(st.selected); }
   el.addEventListener("click", (ev) => {
     const th = ev.target.closest("th");
-    if (th) { const k = th.dataset.k; if (st.key === k) st.dir = -st.dir; else { st.key = k; st.dir = cols.find((c) => c.key === k).num ? -1 : 1; } render(); return; }
-    const tr = ev.target.closest("tbody tr[data-id]");
-    if (tr && opt.onSelect) { st.selected = Number(tr.dataset.id); render(); opt.onSelect(st.selected); }
+    if (th) { sortBy(th.dataset.k); return; }
+    choose(ev.target.closest("tbody tr[data-id]"));
+  });
+  el.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    const th = ev.target.closest("th"), tr = ev.target.closest("tbody tr[data-id]");
+    if (th) { ev.preventDefault(); sortBy(th.dataset.k); } else if (tr && opt.onSelect) { ev.preventDefault(); choose(tr); }
   });
   if (opt.filterInput) document.getElementById(opt.filterInput).addEventListener("input", (ev) => { st.filter = ev.target.value; render(); });
+  if (opt.roleSelect) {
+    const sel = document.getElementById(opt.roleSelect);
+    const roles = [...new Set(rows.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
+    sel.innerHTML = '<option value="">alle</option>' + roles.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+    sel.addEventListener("change", () => { st.role = sel.value; render(); });
+  }
   render();
   return { select(id) { st.selected = id; render(); if (opt.onSelect) opt.onSelect(id); } };
 }
 const cNum = (key, head, d, title, extra) => Object.assign({ key, head, num: true, title, fmt: (v) => fmt(v, d) }, extra || {});
+// numeric column with a status symbol once the value reaches the target band of a signal
+const cSig = (key, head, signal, d, title) => cNum(key, head, d, title, { fmt: (v) => sigMark(v, TH.get(signal)) + fmt(v, d) });
+const roleCol = { key: "role", head: "Rolle", cls: "role", fmt: (v, r) => v ? esc(v) + (r.roleLabel ? ` <span class="tag">· ${esc(r.roleLabel)}</span>` : "") : "–", sortVal: (r) => r.role || null };
 
-// ---------- header + overview ----------
-const M = D.meta, S = D.stats;
+// ---------- header ----------
+const END_REASON = { stopflag: "vorzeitig beendet (Stopp-Datei)", interrupted: "abgebrochen", maxsize: "beendet: Höchstgröße des Ordners erreicht", diskspace: "beendet: zu wenig freier Speicherplatz" };
 document.title = "WorkerPerf – " + M.computer;
 document.getElementById("title").textContent = "WorkerPerf – " + M.computer + (M.simulated ? " (simulierte Daten)" : "");
-document.getElementById("subtitle").textContent = `${fmtDT(M.start)} bis ${fmtDate(M.start) === fmtDate(M.end) ? fmtTime(M.end) : fmtDT(M.end)} · ${fmtDur(M.durationMin)} · Intervall ${fmt(M.intervalSec, 0)} s · ${M.cores} logische CPUs · ${fmt(M.ramGB, 0)} GB RAM · ${M.os}`;
-document.getElementById("footer").textContent = `${fmt(M.samples, 0)} Messungen, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. Diagramme zeigen Mittelwerte je ${fmt(M.bucketSec, 0)} s. Bericht erstellt am ${fmtDT(M.generated)}.`;
-
-function tile(label, value, unit, extra, flag) {
-  return `<div class="tile"><div class="label">${label}</div><div class="value">${value}<small> ${unit}</small></div><div class="extra">${extra}</div>${flag ? `<div class="flag ${flag[0]}">${flag[1]}</div>` : ""}</div>`;
+{
+  const parts = [`${fmtDT(M.start)} bis ${M.end == null ? "–" : fmtDate(M.start) === fmtDate(M.end) ? fmtTime(M.end) : fmtDT(M.end)}`, fmtDur(M.durationMin),
+    `Takt ${fmt(M.fastSec, 0)} s, Schnappschuss ${fmt(M.snapSec, 0)} s`, `${M.cores} logische CPUs`, `${fmt(M.ramGB, 0)} GB RAM`];
+  if (M.os) parts.push(esc(M.os));
+  let html = parts.join(" · ");
+  if (M.endReason && M.endReason !== "duration") html += ` · <span class="endreason">Aufzeichnung ${esc(END_REASON[M.endReason] || M.endReason)}</span>`;
+  document.getElementById("subtitle").innerHTML = html;
 }
-const userSessions = D.sessions.filter((s) => s.user);
-const rtts = userSessions.filter((s) => s.rttAvg != null);
-const memPct = (S.usedMax / M.ramGB) * 100;
-document.getElementById("tiles").innerHTML = [
-  tile("CPU Ø", fmt(S.cpuAvg, 1), "%", `P95 ${fmt(S.cpuP95, 1)} % · Max ${fmt(S.cpuMax, 1)} %`, S.cpuP95 >= 90 ? ["crit", "P95 über 90 %"] : S.cpuP95 >= 75 ? ["warn", "P95 über 75 %"] : null),
-  tile("Arbeitsspeicher belegt Ø", fmt(S.usedAvg, 1), "GB", `Max ${fmt(S.usedMax, 1)} von ${fmt(M.ramGB, 0)} GB (${fmt(memPct, 0)} %)`, memPct >= 95 ? ["crit", "Spitze über 95 %"] : memPct >= 85 ? ["warn", "Spitze über 85 %"] : null),
-  tile("Benutzersitzungen Ø", fmt(S.sessAvg, 1), "", `Max ${fmt(S.sessMax, 0)} · ${userSessions.length} im Zeitraum`),
-  tile("CPU je Sitzung Ø", fmt(userSessions.length ? userSessions.reduce((a, s) => a + s.cpuAvg, 0) / userSessions.length : null, 2), "%", `Working Set Ø ${fmtMB(userSessions.length ? userSessions.reduce((a, s) => a + s.wsAvg, 0) / userSessions.length : null)}`),
-  tile("Prozesse Ø", fmt(S.procAvg, 0), "", `Max ${fmt(S.procMax, 0)} · ${fmt(M.processCount, 0)} insgesamt`),
-  tile("Datenträger-IOPS Ø", fmt(S.iopsAvg, 0), "", `P95 ${fmt(S.iopsP95, 0)}`),
-  tile("Prozessor-Warteschlange Ø", fmt(S.queueAvg, 1), "", `Max ${fmt(S.queueMax, 0)}`),
-  rtts.length ? tile("ICA Round Trip Ø", fmt(rtts.reduce((a, s) => a + s.rttAvg, 0) / rtts.length, 0), "ms", `höchster Sitzungs-Ø ${fmt(Math.max(...rtts.map((s) => s.rttAvg)), 0)} ms`) : ""
-].join("");
+document.getElementById("footer").textContent = `${fmt(M.ticks, 0)} Takte, ${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. ` +
+  `Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts), ${fmt(Q.skippedTicks, 0)} verspätete Takte. ` +
+  `Diagramme zeigen die volle Auflösung; mit mehr als ${fmt(MAX_POINTS, 0)} Punkten im Ausschnitt werden sie auf ${fmt(BUCKETS, 0)} Abschnitte verdichtet. Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated)}.`;
 
+// ---------- overview: tiles ----------
+function sollTile(r) {
+  const st = !r.measured ? "na" : r.pctCrit > 0 ? "2" : r.pctWarn > 0 ? "1" : "0";
+  const title = [r.ideal ? "Soll " + r.ideal : "", r.origin, r.source, r.note].filter(Boolean).join(" · ");
+  if (!r.measured) {
+    return `<div class="tile" data-signal="${esc(r.id)}" data-status="na" title="${esc(title)}"><div class="label">${esc(r.label)}</div><div class="value">–</div>` +
+      `${statusHtml("na")}<div class="extra">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</div></div>`;
+  }
+  const share = st === "2" ? `${fmt(r.pctCrit, 1)} % der Zeit` : st === "1" ? `${fmt(r.pctWarn, 1)} % der Zeit` : "";
+  return `<div class="tile" data-signal="${esc(r.id)}" data-status="${st}" title="${esc(title)}"><div class="label">${esc(r.label)}</div>` +
+    `<div class="value">${fmt(r.max, autoDec(r.max, r.unit))}<small>${withUnit(r.unit)} Max</small></div>` +
+    `<div class="extra">Ø ${fmtVal(r.avg, r.unit)} · P95 ${fmtVal(r.p95, r.unit)}</div>${statusHtml(st, share)}` +
+    `<div class="extra">Soll ${esc(r.ideal || "–")}${r.worstInstance ? " · am stärksten: " + esc(r.worstInstance) : ""}</div></div>`;
+}
+function mainAppTile(a) {
+  const th = TH.get("input.session"), v = a.ms.filter((x) => x != null).sort((p, q) => p - q);
+  const max = v.length ? v[v.length - 1] : null, avg = v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
+  const p95 = v.length ? v[Math.min(v.length - 1, Math.ceil(0.95 * v.length) - 1)] : null;
+  const st = String(levelOf(max, th));
+  return `<div class="tile" data-signal="mainapp" data-status="${st}"><div class="label">Eingabeverzögerung ${esc(a.label)}</div>` +
+    `<div class="value">${fmt(max, autoDec(max, "ms"))}<small> ms Max</small></div><div class="extra">Ø ${fmtVal(avg, "ms")} · P95 ${fmtVal(p95, "ms")} (${fmt(v.length, 0)} Takte mit Verzögerung)</div>` +
+    `${statusHtml(st)}<div class="extra">Soll ${esc(th ? th.ideal : "–")}</div></div>`;
+}
+{
+  const users = D.sessions.filter((s) => s.user).length;
+  const info = `<div class="tile info" data-info="userspercore"><div class="label">Benutzer je logischer CPU</div><div class="value">${fmt(M.usersPerCore, 2)}</div>` +
+    `<div class="extra">höchste Zahl gleichzeitiger Benutzersitzungen je logischer CPU (${M.cores} CPUs)</div><div class="extra">ohne Bewertung · ${users} Benutzersitzungen im Zeitraum</div></div>`;
+  document.getElementById("tiles").innerHTML = D.sollIst.map(sollTile).join("") + (D.mainApp ? mainAppTile(D.mainApp) : "") + info;
+}
+
+// ---------- overview: charts ----------
 function drawStacks() {
   const by = (id) => document.querySelector("#" + id + " button[aria-pressed=true]").dataset.by;
   const src = (b) => b === "sessions" ? [D.sessions, sessLabel] : [D.apps, (a) => a.name];
   let [items, label] = src(by("segCpu"));
-  chart("chCpuStack", { series: stackSeries(items, "cpu", label, 1), stacked: true, unit: "%", yMax: 100, limit: 100, limitLabel: "100 % Host", height: 280, width: 1300, label: "CPU nach Verursacher" });
+  chart("chCpuStack", { axis: "snap", series: stackSeries(items, "cpu", label, 1), stacked: true, unit: "%", decimals: 2, yMax: 100, limit: 100, limitLabel: "100 % des Hosts", height: 260 });
   [items, label] = src(by("segMem"));
-  chart("chMemStack", { series: stackSeries(items, "ws", label, 1 / 1024), stacked: true, unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM", height: 280, width: 1300, label: "Arbeitsspeicher nach Verursacher" });
+  chart("chMemStack", { axis: "snap", series: stackSeries(items, "ws", label, 1 / 1024), stacked: true, unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM", height: 260 });
 }
 for (const id of ["segCpu", "segMem"]) document.getElementById(id).addEventListener("click", (ev) => {
   const b = ev.target.closest("button"); if (!b) return;
@@ -337,19 +691,36 @@ for (const id of ["segCpu", "segMem"]) document.getElementById(id).addEventListe
   drawStacks();
 });
 drawStacks();
-const sy = D.system;
-chart("chCpu", { series: [{ name: "Mittelwert", color: "--s1", values: sy.cpu }, { name: "Spitze im Intervall", color: "--s1", values: sy.cpuMax, thin: true }], unit: "%", yMax: 100, yMaxFixed: true });
-chart("chMem", { series: [{ name: "physisch belegt", color: "--s1", values: sy.usedGB }, { name: "zugesichert (Commit)", color: "--s2", values: sy.commitGB }], unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM" });
-chart("chSess", { series: [{ name: "angemeldet", color: "--s1", values: sy.sessions }, { name: "aktiv", color: "--s3", values: sy.active }], decimals: 0 });
-chart("chQueue", { series: [{ name: "Warteschlange", color: "--s1", values: sy.queue }], decimals: 1 });
-chart("chDisk", { series: [{ name: "Lesen", color: "--s1", values: sy.diskR }, { name: "Schreiben", color: "--s2", values: sy.diskW }], unit: "MB/s", decimals: 2 });
-chart("chIops", { series: [{ name: "Lesen", color: "--s1", values: sy.iopsR }, { name: "Schreiben", color: "--s2", values: sy.iopsW }], decimals: 0 });
-chart("chNet", { series: [{ name: "Empfangen", color: "--s1", values: sy.netR }, { name: "Gesendet", color: "--s2", values: sy.netS }], unit: "Mbit/s", decimals: 2 });
+const H_ = D.host, KB2MB = 1 / 1024, KB2MBIT = 8 * 1024 / 1e6;
+const scaleS = (a, f) => a ? a.map((v) => v == null ? null : v * f) : [];
+const maxOf = (a) => { let m = null; for (const v of a || []) if (v != null && (m == null || v > m)) m = v; return m; };
+chart("chCpu", { series: [{ name: "CPU", values: H_.cpu }], unit: "%", decimals: 1, yMax: 100, yMaxFixed: true, signal: "cpu.host", agg: "max" });
+chart("chQueue", { series: [{ name: "Warteschlange je CPU", values: H_.queue }], decimals: 2, signal: "cpu.queue" });
+chart("chMem", { series: [{ name: "physisch belegt", values: H_.memUsedPct }, { name: "zugesichert (Commit)", color: "--s2", values: H_.commitPct, dashed: true }], unit: "%", decimals: 1, yMax: 100, yMaxFixed: true, signal: "mem.used",
+  note: "Soll-Linien: RAM-Auslastung." });
+chart("chInput", { series: [{ name: "Eingabeverzögerung", values: H_.inputMax }], unit: "ms", decimals: 0, signal: "input.session", agg: "max" });
+if (D.mainApp) {
+  document.getElementById("hMainApp").textContent = `Eingabeverzögerung ${D.mainApp.label} (Hauptanwendung, ms)`;
+  chart("chMainApp", { series: [{ name: D.mainApp.label, t: D.mainApp.t, v: D.mainApp.ms, missing: 0 }], unit: "ms", decimals: 0, signal: "input.session", agg: "max" });
+} else document.getElementById("cardMainApp").remove();
+{
+  const vols = D.volumes.map((v) => ({ v, peak: maxOf(v.ms) })).filter((o) => o.peak != null).sort((a, b) => b.peak - a.peak).slice(0, 5);
+  chart("chVolumes", { series: vols.map((o, k) => ({ name: o.v.label || o.v.name, color: SERIES[k], t: o.v.t, v: o.v.ms })), unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Laufwerke gemessen." });
+  chart("chShares", { series: D.shares.slice(0, 8).map((s, k) => ({ name: s.label || s.name, color: SERIES[k], t: s.t, v: s.ms })), unit: "ms", decimals: 1, signal: "smb.latency", agg: "max", empty: "Keine Freigaben gemessen.",
+    note: D.shares.length > 8 ? `Die ersten 8 von ${D.shares.length} Freigaben.` : "" });
+  chart("chProbes", { axis: "snap", series: D.probes.slice(0, 8).map((p, k) => ({ name: p.name + (p.role ? " (" + p.role + ")" : ""), color: SERIES[k], values: p.ms, fail: p.failed, resp: true })), unit: "ms", decimals: 1, signal: "probe.connect", agg: "max",
+    empty: "Keine Gegenstellen konfiguriert.", note: D.probes.length > 8 ? `Die ersten 8 von ${D.probes.length} Gegenstellen.` : "" });
+}
+chart("chDisk", { series: [{ name: "Lesen", values: scaleS(H_.diskR, KB2MB) }, { name: "Schreiben", color: "--s2", values: scaleS(H_.diskW, KB2MB) }], unit: "MB/s", decimals: 2 });
+chart("chIops", { series: [{ name: "Lesen", values: H_.iopsR }, { name: "Schreiben", color: "--s2", values: H_.iopsW }], decimals: 0 });
+chart("chNet", { series: [{ name: "Empfangen", values: scaleS(H_.netR, KB2MBIT) }, { name: "Gesendet", color: "--s2", values: scaleS(H_.netS, KB2MBIT) }], unit: "Mbit/s", decimals: 1 });
+chart("chSess", { axis: "snap", series: [{ name: "aktiv", color: "--s3", values: H_.active }, { name: "angemeldet", values: H_.sessions, dashed: true }], decimals: 0 });
 
 // ---------- sessions ----------
+const anyRtt = D.sessions.some((s) => s.rttAvg != null);
 const sessCols = [
   { key: "user", head: "Benutzer", fmt: (v, r) => esc(sessLabel(r)), sortVal: (r) => sessLabel(r) },
-  { key: "client", head: "Client" },
+  { key: "client", head: "Client", fmt: (v) => esc(v || "–") },
   cNum("durMin", "Dauer", 0, "Anwesenheit im Messzeitraum", { fmt: (v) => fmtDur(v) }),
   cNum("activePct", "Aktiv %", 0, "Anteil der Messungen im Zustand 'Active' (Rest: getrennt)"),
   cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
@@ -361,9 +732,12 @@ const sessCols = [
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("privMax", "Commit Max", 0, "Private Bytes (zugesicherter Speicher)", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0, "gelesene + geschriebene Daten aller Prozesse (Datei, Netzwerk, Geräte)"),
-  cNum("procsAvg", "Prozesse Ø", 0)
+  cNum("procsAvg", "Prozesse Ø", 0),
+  cSig("inP95", "Eingabe P95 ms", "input.session", 0, "Eingabeverzögerung, 95. Perzentil über Takte mit Verzögerung"),
+  cSig("inMax", "Eingabe Max ms", "input.session", 0, "höchste Eingabeverzögerung"),
+  cNum("inWarnPct", "Eingabe ab auffällig %", 1, "Anteil der Takte der Sitzung mit Eingabeverzögerung ab 'auffällig'")
 ];
-if (M.hasRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cNum("rttMax", "ICA RTT Max ms", 0));
+if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
 
 const pairCols = (first) => [first,
   cNum("inst", "Instanzen", 0),
@@ -371,9 +745,12 @@ const pairCols = (first) => [first,
   cNum("wsAvg", "RAM Ø", 0, "", { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 1)];
+const procName = (v, r) => esc(v) + (r.isCollector ? ' <span class="tag">(WorkerPerf selbst)</span>' : "") +
+  (r.services ? `<span class="svc" title="${esc(r.services.split(";").join(", "))}">${esc(r.services.split(";").join(", "))}</span>` : "");
 const procCols = (withUser) => [
-  { key: "name", head: "Prozess" },
-  cNum("pid", "PID", 0, "", { fmt: (v) => v }),
+  { key: "name", head: "Prozess", fmt: procName },
+  roleCol,
+  cNum("pid", "PID", 0, "", { fmt: (v) => esc(v) }),
   ...(withUser ? [{ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }] : []),
   cNum("start", "Gestartet", 0, "", { fmt: (v) => fmtDT(v) }),
   cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
@@ -385,40 +762,50 @@ const procCols = (withUser) => [
   cNum("ioMB", "I/O MB", 1),
   cNum("handles", "Handles Max", 0),
   cNum("threads", "Threads Max", 0)];
+const procText = (r) => [r.name, r.pid, r.services, r.role, r.roleLabel, sessLabel(sessByIdx.get(r.s))].join(" ");
 
+const chartBox = (title, cls) => `<div class="card chartbox"><h3>${esc(title)}</h3><div class="${cls}"></div></div>`;
 function procDetail(host, p) {
   const s = sessByIdx.get(p.s);
-  host.innerHTML = `<div class="card"><div class="cardhead"><h2>${esc(p.name)} · PID ${p.pid}</h2></div>
-    <div class="kv"><span>Sitzung <b>${esc(sessLabel(s))}</b></span><span>Gestartet <b>${fmtDT(p.start)}</b></span><span>Beobachtet <b>${fmtTime(p.first)}–${fmtTime(p.last)}</b></span><span>CPU-Zeit <b>${fmt(p.cpuSec, 1)} s</b></span><span>RAM Max <b>${fmtMB(p.wsMax)}</b></span></div>
-    <div class="note" style="margin-bottom:8px">${esc(p.path)}${p.cmd ? "<br>" + esc(p.cmd) : ""}</div>
-    <div class="grid2"><div><h3>CPU (% des Hosts)</h3><div class="c1"></div></div><div><h3>Working Set (MB)</h3><div class="c2"></div></div></div></div>`;
-  chart(host.querySelector(".c1"), { series: [{ name: "CPU", color: "--s1", values: fullSeries(p, "cpu") }], unit: "%", decimals: 2 });
-  chart(host.querySelector(".c2"), { series: [{ name: "RAM", color: "--s1", values: fullSeries(p, "ws") }], unit: "MB", decimals: 0 });
+  host.innerHTML = `<div class="card"><div class="cardhead"><h2>${esc(p.name)} · PID ${esc(p.pid)}${p.isCollector ? " (WorkerPerf selbst)" : ""}</h2></div>
+    <div class="kv"><span>Sitzung <b>${esc(sessLabel(s))}</b></span>${p.role ? `<span>Rolle <b>${esc(p.role)}${p.roleLabel ? " · " + esc(p.roleLabel) : ""}</b></span>` : ""}<span>Gestartet <b>${fmtDT(p.start)}</b></span><span>Beobachtet <b>${fmtTime(p.first)}–${fmtTime(p.last)}</b></span><span>CPU-Zeit <b>${fmt(p.cpuSec, 1)} s</b></span><span>RAM Max <b>${fmtMB(p.wsMax)}</b></span></div>
+    ${p.services ? `<div class="pathline">Dienste: ${esc(p.services.split(";").join(", "))}</div>` : ""}
+    <div class="pathline">${esc(p.path || "–")}${p.cmd ? "<br>" + esc(p.cmd) : ""}</div>
+    <div class="grid2">${chartBox("CPU (% des Hosts)", "c1")}${chartBox("Working Set (MB)", "c2")}</div></div>`;
+  chart(host.querySelector(".c1"), { axis: "snap", series: [{ name: "CPU", values: p.cpu, o: p.o }], unit: "%", decimals: 2, agg: "max" });
+  chart(host.querySelector(".c2"), { axis: "snap", series: [{ name: "RAM", values: p.ws, o: p.o }], unit: "MB", decimals: 0 });
 }
 
-let uid = 0;
 function showSession(i) {
   const s = sessByIdx.get(i), host = document.getElementById("dSessions"), u = ++uid;
   const ctx = D.citrix.filter((c) => c.s === i);
+  const vol = s.profileVolume != null ? D.volumes[s.profileVolume] : null;
   host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
-    <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span></div>
+    <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
     <div class="grid2">
-      <div class="card"><h3>CPU (% des Hosts)</h3><div id="sc${u}"></div></div>
-      <div class="card"><h3>Working Set (MB)</h3><div id="sw${u}"></div></div>
-      <div class="card"><h3>I/O (KB/s)</h3><div id="si${u}"></div></div>
-      ${s.rtt ? `<div class="card"><h3>ICA Round Trip (ms)</h3><div id="sr${u}"></div></div>` : ""}
+      ${chartBox("CPU (% des Hosts)", "chart-cpu")}
+      ${chartBox("Working Set (MB)", "chart-ws")}
+      ${chartBox("I/O (KB/s)", "chart-io")}
+      ${chartBox("Eingabeverzögerung (ms)", "chart-input")}
+      ${chartBox("ICA Round Trip (ms)", "chart-rtt")}
+      ${vol ? chartBox("Antwortzeit des Profilcontainers (ms)", "chart-profile") : ""}
     </div>
     <h2>Anwendungen dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sa${u}"></table></div>
     ${ctx.length ? `<h2 style="margin-top:16px">Citrix-Messwerte</h2><div class="tablewrap" style="max-height:240px"><table id="sx${u}"></table></div>` : ""}
     <h2 style="margin-top:16px">Ressourcenintensivste Prozesse dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sp${u}"></table></div><div id="spd${u}" class="detail"></div>`;
-  chart("sc" + u, { series: [{ name: "CPU", color: "--s1", values: s.cpu }], unit: "%", decimals: 2 });
-  chart("sw" + u, { series: [{ name: "RAM", color: "--s1", values: s.ws }], unit: "MB", decimals: 0 });
-  chart("si" + u, { series: [{ name: "I/O", color: "--s1", values: s.io }], unit: "KB/s", decimals: 0 });
-  if (s.rtt) chart("sr" + u, { series: [{ name: "RTT", color: "--s1", values: s.rtt }], unit: "ms", decimals: 0 });
-  table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v).name), sortVal: (r) => appByIdx.get(r.a).name }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
-  if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, cNum("avg", "Ø", 1), cNum("max", "Max", 1), cNum("n", "Messungen", 0)], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
+  const q = (c) => host.querySelector("." + c);
+  chart(q("chart-cpu"), { axis: "snap", series: [{ name: "CPU", values: s.cpu }], unit: "%", decimals: 2, agg: "max" });
+  chart(q("chart-ws"), { axis: "snap", series: [{ name: "RAM", values: s.ws }], unit: "MB", decimals: 0 });
+  chart(q("chart-io"), { axis: "snap", series: [{ name: "I/O", values: s.io }], unit: "KB/s", decimals: 0 });
+  chart(q("chart-input"), { series: [{ name: "Eingabeverzögerung", t: s.inT, v: s.inMs, missing: 0, from: s.first, to: s.last }], unit: "ms", decimals: 0, signal: "input.session", agg: "max",
+    note: s.inT.length ? "" : "In dieser Sitzung wurde keine Eingabeverzögerung über 0 ms gemessen." });
+  chart(q("chart-rtt"), { axis: "snap", series: [{ name: "ICA RTT", values: s.rtt, resp: true }], unit: "ms", decimals: 0, signal: "ica.rtt", agg: "max",
+    empty: "Keine ICA-Messwerte für diese Sitzung." });
+  if (vol) chart(q("chart-profile"), { series: [{ name: vol.label || vol.name, t: vol.t, v: vol.ms }], unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Messwerte des Profilcontainers." });
+  table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v)?.name), sortVal: (r) => appByIdx.get(r.a)?.name || "" }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
+  if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1), cNum("max", "Max", 1), cNum("n", "Messungen", 0)], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
   const procs = D.procs.filter((p) => p.s === i);
-  table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
+  table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
   host.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession });
@@ -426,17 +813,20 @@ const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", i
 // ---------- applications ----------
 function showApp(i) {
   const a = appByIdx.get(i), host = document.getElementById("dApps"), u = ++uid;
+  const noSeries = "Kein Verlauf gespeichert: Anwendung mit weniger als 0,1 % CPU-Anteil und unter 50 MB Working Set.";
   host.innerHTML = `<div class="cardhead"><h2>${esc(a.name)}</h2></div>
-    <div class="kv"><span>Instanzen gesamt <b>${a.inst}</b></span><span>gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span>RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span><span>Pfad <b>${esc(a.path || "–")}</b></span></div>
-    <div class="grid2"><div class="card"><h3>CPU aller Instanzen (% des Hosts)</h3><div id="ac${u}"></div></div><div class="card"><h3>Working Set aller Instanzen (MB)</h3><div id="aw${u}"></div></div></div>
+    <div class="kv">${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span>gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span>RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
+    <div class="pathline">${esc(a.path || "–")}</div>
+    <div class="grid2">${chartBox("CPU aller Instanzen (% des Hosts)", "chart-cpu")}${chartBox("Working Set aller Instanzen (MB)", "chart-ws")}</div>
     <h2>Sitzungen mit dieser Anwendung</h2><div class="tablewrap" style="max-height:340px"><table id="as${u}"></table></div>`;
-  chart("ac" + u, { series: [{ name: "CPU", color: "--s1", values: a.cpu }], unit: "%", decimals: 2 });
-  chart("aw" + u, { series: [{ name: "RAM", color: "--s1", values: a.ws }], unit: "MB", decimals: 0 });
+  chart(host.querySelector(".chart-cpu"), { axis: "snap", series: a.cpu ? [{ name: "CPU", values: a.cpu }] : [], unit: "%", decimals: 2, agg: "max", empty: noSeries });
+  chart(host.querySelector(".chart-ws"), { axis: "snap", series: a.ws ? [{ name: "RAM", values: a.ws }] : [], unit: "MB", decimals: 0, empty: noSeries });
   table("as" + u, pairCols({ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }), D.pairs.filter((p) => p.a === i), { sort: "cpuSec", id: (r) => r.s, text: () => "", onSelect: (s) => { activate("sessions"); sessTable.select(s); } });
   host.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 const appTable = table("tApps", [
   { key: "name", head: "Anwendung" },
+  roleCol,
   cNum("sess", "Sitzungen", 0, "Anzahl Sitzungen, in denen die Anwendung lief"),
   cNum("inst", "Instanzen", 0, "Anzahl beobachteter Prozessinstanzen"),
   cNum("instAvg", "gleichzeitig Ø", 1),
@@ -449,18 +839,30 @@ const appTable = table("tApps", [
   cNum("wsMax", "RAM Max gesamt", 0, "", { fmt: fmtMB }),
   cNum("wsPerInst", "RAM Ø je Instanz", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0)
-], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => r.name, filterInput: "fApps", onSelect: showApp });
+], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => [r.name, r.role, r.roleLabel].join(" "), filterInput: "fApps", roleSelect: "fRoleApps", onSelect: showApp });
 
 // ---------- processes ----------
-document.getElementById("procNote").textContent = `Enthält die ${D.procs.length} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O sowie die Spitzenreiter jeder Sitzung).`;
-table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: (r) => r.name + " " + r.pid + " " + sessLabel(sessByIdx.get(r.s)), filterInput: "fProcs", onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+document.getElementById("procNote").textContent = `Enthält die ${fmt(D.procs.length, 0)} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O, die Spitzenreiter jeder Sitzung und alle Prozesse aus den Ranglisten der Befunde).`;
+table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: procText, filterInput: "fProcs", roleSelect: "fRoleProcs", rowClass: (r) => r.isCollector ? "collector" : "",
+  onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: "smooth", block: "start" }); } });
 
 // ---------- tabs ----------
+const tabButtons = [...document.querySelectorAll("nav button[data-tab]")];
 function activate(name) {
-  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", b.dataset.tab === name ? "true" : "false");
+  for (const b of tabButtons) { const on = b.dataset.tab === name; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; }
   for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== "tab-" + name;
+  refreshCharts();
 }
-document.querySelector("nav").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) activate(b.dataset.tab); });
+document.querySelector("nav").addEventListener("click", (ev) => { const b = ev.target.closest("button[data-tab]"); if (b) activate(b.dataset.tab); });
+document.querySelector("nav").addEventListener("keydown", (ev) => {
+  const k = tabButtons.indexOf(document.activeElement); if (k < 0) return;
+  let n = -1;
+  if (ev.key === "ArrowRight") n = (k + 1) % tabButtons.length; else if (ev.key === "ArrowLeft") n = (k - 1 + tabButtons.length) % tabButtons.length;
+  else if (ev.key === "Home") n = 0; else if (ev.key === "End") n = tabButtons.length - 1;
+  if (n < 0) return;
+  ev.preventDefault(); tabButtons[n].focus(); activate(tabButtons[n].dataset.tab);
+});
+updateZoomBar();
 </script>
 </body>
 </html>
