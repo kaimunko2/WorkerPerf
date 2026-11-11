@@ -22,6 +22,10 @@ Describe 'Durchlauf Simulation -> Bericht' {
     It 'beschreibt den CPU-Engpass im Klartext' {
         (Get-Hit 'cpu').text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: CPU-Engpass \(.+ Spitze .+, Soll .+\)\. Betroffen: 6 Sitzungen\. Hauptverursacher: EXCEL\.EXE in der Sitzung von user003 mit \d+ % der CPU-Zeit \(sonst \d+(,\d)? %\)\.'
     }
+    It 'nennt den Dauerzustand einer Sitzung nicht bei Vorfaellen ohne diese Sitzung' {   # Task 14b, Punkt 2
+        $i = Get-Hit 'cpu'
+        @($i.chronicContext).Count | Should -Be 0; $i.text | Should -Not -Match 'Dauerhaft erhöht'
+    }
     It 'fuehrt Speicher und Datentraeger in einem Vorfall' { (Get-Hit 'memory').resources | Should -Be @('memory', 'disk') }
     It 'nennt den Begleiter beim Datentraeger-Engpass' {
         $i = Get-Hit 'disk'; $i.companion.label | Should -Be 'Microsoft Defender'; $i.scanActive | Should -BeTrue
@@ -39,6 +43,10 @@ Describe 'Durchlauf Simulation -> Bericht' {
     It 'weist Messqualitaet und Collector-Anteil aus' {
         $D.quality.skippedTicks | Should -Be 0; $D.quality.burstSnapshots | Should -BeGreaterThan 50
         $D.quality.collectorCpuPct | Should -BeGreaterThan 0; @($D.procs | Where-Object isCollector).Count | Should -Be 1
+    }
+    It 'benennt jede Datenquelle' {                                                   # Task 14b, Punkt 8
+        @($D.quality.sources).Count | Should -BeGreaterThan 12
+        @($D.quality.sources | Where-Object { $_.label -eq $_.id } | ForEach-Object { $_.id }) | Should -BeNullOrEmpty
     }
     It 'liefert Verlaeufe in voller Aufloesung' {
         $D.tickT.Count | Should -Be 1800; $D.host.cpu.Count | Should -Be 1800; $D.sessions[0].cpu.Count | Should -Be $D.snapT.Count

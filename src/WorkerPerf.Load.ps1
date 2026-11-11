@@ -134,7 +134,7 @@ function Import-WorkerPerfRun {
     for ($i = 0; $i -lt $numNames.Count; $i++) { $numIdx[$i] = [int]$col[$numNames[$i]]; $numLists[$i] = New-Object System.Collections.Generic.List[double] }
     $tickT = New-Object System.Collections.Generic.List[int]
     $tickMs = New-Object System.Collections.Generic.List[long]
-    $cT = [int]$col['T']; $cTs = [int]$col['Timestamp']
+    $cT = [int]$col['T']; $cTs = [int]$col['Timestamp']; $cEl = [int]$col['ElapsedSec']
     $offsetMinutes = 0.0; $haveOffset = $false
     $numRef = [ref]0.0
     foreach ($f in $csv.Rows) {
@@ -142,6 +142,8 @@ function Import-WorkerPerfRun {
         if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
         $dto = [DateTimeOffset]::MinValue
         if (-not [DateTimeOffset]::TryParse($f[$cTs], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
+        # a tick without a readable, finite duration does not exist for the model (like a row with too few fields)
+        if (-not [double]::TryParse($f[$cEl], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
         if ($ms -lt $fromMs -or $ms -gt $toMs) { continue }
         if (-not $haveOffset) { $offsetMinutes = $dto.Offset.TotalMinutes; $haveOffset = $true }
@@ -204,6 +206,9 @@ function Import-WorkerPerfRun {
         if (-not [int]::TryParse($f[[int]$col['T']], [ref]$t)) { continue }
         $dto = [DateTimeOffset]::MinValue
         if (-not [DateTimeOffset]::TryParse($f[[int]$col['Timestamp']], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
+        # a snapshot without a readable, finite duration is skipped like one with an unreadable time; its process rows
+        # are then dropped as rows of a P without snapshot line
+        if (-not [double]::TryParse($f[[int]$col['ElapsedSec']], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
         if ($ms -lt $fromMs) { $preP.Add($p); $preKind.Add($f[[int]$col['Kind']]); continue }
         if ($ms -gt $toMs) { continue }
@@ -705,7 +710,12 @@ function Import-WorkerPerfRun {
         if (-not [int]::TryParse($f[$cId], [ref]$id)) { $id = 0 }
         $allEvents.Add(@{ TimeMs = $dto.ToUnixTimeMilliseconds(); Source = $f[$cSrc]; EventId = $id; Kind = $f[$cKind]; Text = $f[$cText] })
     }
-    $sortedEvents = @($allEvents.ToArray() | Sort-Object -Property @{ Expression = { $_.TimeMs } })
+    # by time, then by position in the file: Sort-Object is not stable, and a scan-start and scan-end in the same
+    # millisecond must keep their order to pair
+    $evList = $allEvents.ToArray()
+    $evOrder = @()
+    if ($evList.Length -gt 0) { $evOrder = @(0..($evList.Length - 1) | Sort-Object -Property @{ Expression = { $evList[$_].TimeMs } }, @{ Expression = { $_ } }) }
+    $sortedEvents = @(foreach ($ix in $evOrder) { $evList[$ix] })
     $events = New-Object System.Collections.Generic.List[object]
     foreach ($e in $sortedEvents) { if ($e.TimeMs -ge $fromMs -and $e.TimeMs -le $toMs) { $events.Add($e) } }
     # scans: paired scan-start / scan-end over the whole file; an open scan lasts until the end of the measurement

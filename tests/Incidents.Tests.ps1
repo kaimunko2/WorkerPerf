@@ -2,9 +2,9 @@ BeforeAll {
     Set-StrictMode -Version 2
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
     $script:T0 = 1700000000000
-    function New-TestFinding([string]$Resource, [double]$StartSec, [double]$EndSec, [int]$Severity = 1, [int]$SessionIndex = -1, [string]$SignalId = '') {
+    function New-TestFinding([string]$Resource, [double]$StartSec, [double]$EndSec, [int]$Severity = 1, [int]$SessionIndex = -1, [string]$SignalId = '', [string]$Instance = '') {
         $scope = if ($Resource -in 'input', 'profile', 'network') { 'session' } else { 'global' }
-        @{ SignalId = $(if ($SignalId) { $SignalId } else { "$Resource.test" }); Resource = $Resource; Instance = ''; Label = $Resource; Scope = $scope; SessionIndex = $SessionIndex
+        @{ SignalId = $(if ($SignalId) { $SignalId } else { "$Resource.test" }); Resource = $Resource; Instance = $Instance; Label = $Resource; Scope = $scope; SessionIndex = $SessionIndex
            StartMs = [long]($script:T0 + $StartSec * 1000); EndMs = [long]($script:T0 + $EndSec * 1000); Severity = $Severity; PeakValue = 1.0
            PeakTimeMs = [long]($script:T0 + $StartSec * 1000); BadPoints = 3 }
     }
@@ -51,6 +51,38 @@ Describe 'Join-WorkerPerfIncidents' {
     It 'nennt eine traege Gegenstelle, ohne sie als Engpass zu werten' {
         $i = Join-Test (New-TestFinding input 100 110 -SessionIndex 1) (New-TestFinding endpoint 95 130)
         $i.Count | Should -Be 1; $i[0].Type | Should -Be 'ohne-engpass'; $i[0].Resources | Should -Be @('endpoint')
+    }
+    It 'nennt einen Dauerzustand einer Sitzung nur bei Vorfaellen derselben Sitzung' {     # Task 14b, Punkt 2
+        $net = { New-TestFinding network 0 3600 -SessionIndex 4 -SignalId 'ica.rtt' }
+        $own = (Join-Test (& $net) (New-TestFinding input 1200 1202 -SessionIndex 4)) | Where-Object { -not $_.Chronic }
+        @($own.ChronicContext).Count | Should -Be 1; $own.ChronicContext[0].SignalId | Should -Be 'ica.rtt'
+        $other = (Join-Test (& $net) (New-TestFinding input 1200 1202 -SessionIndex 5)) | Where-Object { -not $_.Chronic }
+        @($other.ChronicContext).Count | Should -Be 0
+        $cpu = (Join-Test (& $net) (New-TestFinding cpu 1200 1260)) | Where-Object { -not $_.Chronic }
+        @($cpu.ChronicContext).Count | Should -Be 0
+    }
+    It 'nennt einen globalen Dauerzustand bei allen ueberschneidenden Vorfaellen' {
+        $i = Join-Test (New-TestFinding memory 0 3600 -SignalId 'mem.used') (New-TestFinding input 1200 1202 -SessionIndex 5) (New-TestFinding cpu 1800 1860) (New-TestFinding network 600 700 -SessionIndex 4)
+        $short = @($i | Where-Object { -not $_.Chronic }); $short.Count | Should -Be 3
+        foreach ($x in $short) { @($x.ChronicContext).Count | Should -Be 1; $x.ChronicContext[0].SignalId | Should -Be 'mem.used' }
+    }
+    It 'typisiert einen Dauerzustand nur aus den eigenen Befunden' {                    # Task 14b, Punkt 3
+        $i = Join-Test (New-TestFinding network 0 3600 -SessionIndex 4 -SignalId 'ica.rtt') (New-TestFinding cpu 0 2400 -Severity 2 -SignalId 'cpu.host')
+        $net = $i | Where-Object { $_.Findings[0].Resource -eq 'network' }; $cpu = $i | Where-Object { $_.Findings[0].Resource -eq 'cpu' }
+        $net.Type | Should -Be 'umfeld'; $net.Lead | Should -BeNullOrEmpty
+        @($net.ChronicContext).Count | Should -Be 1; $net.ChronicContext[0].SignalId | Should -Be 'cpu.host'; $net.ChronicContext[0].Explains | Should -BeFalse
+        $cpu.Type | Should -Be 'engpass'; $cpu.Lead | Should -Be 'cpu'; @($cpu.ChronicContext).Count | Should -Be 0
+    }
+    It 'gruppiert Befunde ohne bekannte Sitzung je Instanz' {                          # Task 14b, Punkt 4
+        $i = Join-Test (New-TestFinding profile 100 110 -Instance 'HarddiskVolume7') (New-TestFinding profile 100 110 -Instance 'HarddiskVolume8')
+        $i.Count | Should -Be 2
+        foreach ($x in $i) { @($x.Findings).Count | Should -Be 1 }
+    }
+    It 'haengt einen Befund ohne bekannte Sitzung an keine Eingabeverzoegerung' {
+        $i = Join-Test (New-TestFinding input 100 110) (New-TestFinding profile 98 112 -Instance 'HarddiskVolume7')
+        $in = $i | Where-Object { @($_.Findings | Where-Object { $_.Resource -eq 'input' }).Count -gt 0 }
+        @($in.Findings | Where-Object { $_.Resource -eq 'profile' }).Count | Should -Be 0
+        $i.Count | Should -Be 2
     }
     It 'liefert ohne Befunde nichts' { @(Join-WorkerPerfIncidents -Findings @()).Count | Should -Be 0 }
 }

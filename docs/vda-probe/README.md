@@ -32,6 +32,8 @@ Mit `-EndpointFile` misst das Skript zusätzlich die Dauer des TCP-Verbindungsau
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources.ps1 -OutFile C:\Temp -EndpointFile C:\Temp\endpoints.json
 ```
 
+Ohne `-EndpointFile` steht die Prüfung der Gegenstellen in der Tabelle mit dem Status „uebersprungen“: Es wurde keine `endpoints.json` übergeben, ein Fehler ist das nicht.
+
 ## Weitere Parameter
 
 | Parameter | Bedeutung |
@@ -43,3 +45,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources
 ## Ergebnis zurückgeben
 
 Die JSON-Datei enthält außer dem Computernamen keine Namen: Benutzernamen werden durch `<user>`, Servernamen in UNC-Pfaden durch `<server>` ersetzt, Hostnamen der Gegenstellen werden nicht ausgegeben. Bitte die Datei zur Auswertung zurückgeben.
+
+Kann das Skript die Benutzernamen nicht ermitteln (weder über die WTS-Schnittstelle noch über die Benutzerprofile), bricht es mit einer Meldung ab und schreibt keine Datei, denn ohne die Namen könnte es sie nicht maskieren.

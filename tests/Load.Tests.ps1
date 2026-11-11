@@ -23,6 +23,35 @@ Describe 'Import-WorkerPerfRun: Takte' {
     }
     It 'meldet eine Aufzeichnung ohne Schnappschuss verstaendlich' { { Import-TestRun 'e' @{ 'ticks.csv' = $Ticks } } | Should -Throw '*Schnappschuss*' }
 }
+Describe 'Import-WorkerPerfRun: Robustheit' {                                     # Task 14b
+    It 'paart Scan-Beginn und -Ende in derselben Millisekunde in der Reihenfolge der Datei' {
+        $ev = @("$(Get-Ts 3),Defender,1002,info,a") + @(1..40 | ForEach-Object { "$(Get-Ts 5),Defender,1000,info,x$_" }) +
+              @("$(Get-Ts 5),Defender,1000,scan-start,Scan", "$(Get-Ts 5),Defender,1001,scan-end,Scan") + @(1..40 | ForEach-Object { "$(Get-Ts 5),Defender,1000,info,y$_" })
+        $m = Import-TestRun 'ev' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = $ev }
+        $m.Scans.Count | Should -Be 1; $m.Scans[0].EndMs - $m.Scans[0].StartMs | Should -Be 0
+        $m.Events[0].Text | Should -Be 'a'; $m.Events[1].Text | Should -Be 'x1'; $m.Events[$m.Events.Count - 1].Text | Should -Be 'y40'
+        $m.Events[41].Kind | Should -Be 'scan-start'; $m.Events[42].Kind | Should -Be 'scan-end'
+    }
+    It 'ueberspringt einen Takt mit unlesbarer Dauer' {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+        $t = @(0..7 | ForEach-Object { New-TickLine $_ $(if ($_ -ge 2 -and $_ -le 5) { 95 } else { 50 }) })
+        $t[2] = $t[2] -replace '^(2,[^,]+),2,', '$1,abc,'
+        $m = Import-TestRun 'nan' @{ 'ticks.csv' = $t; 'snapshots.csv' = $SnapLines }
+        $m.Tick.N | Should -Be 7; $m.Tick.TimeMs.Length | Should -Be 7; $m.Tick.ElapsedSec.Length | Should -Be 7
+        @($m.Tick.ElapsedSec | Where-Object { [double]::IsNaN($_) }).Count | Should -Be 0
+        $f = @(Get-WorkerPerfFindings -Series @(Get-WorkerPerfSeries -Model $m -Thresholds $Th) -Thresholds $Th)
+        @($f | Where-Object SignalId -eq 'cpu.host').Count | Should -Be 1
+    }
+    It 'ueberspringt einen Schnappschuss mit unlesbarer Dauer' {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+        $sn = @($SnapLines); $sn[0] = $sn[0] -replace '^(0,1,[^,]+),4,', '$1,abc,'; $sn[2] = $sn[2] -replace '^(2,5,[^,]+),4,', '$1,NaN,'
+        $rtt = @(0..3 | ForEach-Object { "$_,Citrix_Euem_RoundTrip,5,,RoundtripTime,400" })
+        $m = Import-TestRun 'nansnap' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $sn; 'citrix.csv' = $rtt
+            'sessions.csv' = @(0..3 | ForEach-Object { "$_,5,alice,DOM,Active,ICA#5,PC1,,0" }) }
+        $m.Snap.N | Should -Be 2; $m.Snap.ElapsedSec | Should -Be @(4, 4); $m.Snap.TickPos | Should -Be @(3, 7)
+        { Get-WorkerPerfFindings -Series @(Get-WorkerPerfSeries -Model $m -Thresholds $Th) -Thresholds $Th } | Should -Not -Throw
+    }
+}
 Describe 'Import-WorkerPerfRun: Sitzungen und Instanzen' {
     BeforeAll {
         $script:Umlaut = "M$([char]0xFC)ller, K"

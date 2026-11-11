@@ -361,8 +361,10 @@ $sourceIds = @($model.Sources.Keys | Sort-Object -Property @{ Expression = { $ix
 $sourcesOut = New-Object System.Collections.Generic.List[object]
 foreach ($id in $sourceIds) {
     $src = $model.Sources[$id]
+    # signals take the threshold's label, other sources their text; an unknown id stays as it is
     $label = [string]$id
     if ($thresholds.Contains($id)) { $label = [string]$thresholds[$id].label }
+    elseif ($texts.ContainsKey('source.' + $id)) { $label = $texts['source.' + $id] }
     $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail })
 }
 $quality = [ordered]@{

@@ -89,3 +89,21 @@ Describe 'Pruefregeln fuer Windows PowerShell 5.1' {
 Describe 'Quelltext' {
     It '<_.Name> haelt die Regeln ein' -ForEach $Sources { Get-CompatViolations $_.FullName | Should -BeNullOrEmpty }
 }
+
+Describe 'Funktionsnamen' {
+    It 'definiert keinen Funktionsnamen in mehr als einer Datei' {               # Task 14b: Format-WorkerPerfNumber stand in zwei Dateien
+        # The data sources WorkerPerf.Sources.*.ps1 define the same fixed names on purpose: they are not compared with each other.
+        $owners = @{}
+        foreach ($file in Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.ps1) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$null)
+            $group = $(if ($file.Name -like 'WorkerPerf.Sources.*.ps1') { 'sources' } else { $file.Name })
+            $names = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { $_.Name } | Sort-Object -Unique)
+            foreach ($n in $names) {
+                if (-not $owners.ContainsKey($n)) { $owners[$n] = [System.Collections.Generic.List[string]]::new() }
+                if (-not $owners[$n].Contains($group)) { $owners[$n].Add($group) }
+            }
+        }
+        $clashes = @($owners.Keys | Where-Object { $owners[$_].Count -gt 1 } | Sort-Object | ForEach-Object { "$_ ($($owners[$_] -join ', '))" })
+        $clashes | Should -BeNullOrEmpty
+    }
+}

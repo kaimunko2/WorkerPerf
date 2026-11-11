@@ -62,5 +62,16 @@ Describe 'Get-WorkerPerfSollIst' {
         $r = Get-WorkerPerfSollIst -Series @($a, $b) -Thresholds $Th | Where-Object Id -eq 'disk.latency'
         $r.Max | Should -Be 30; [Math]::Round($r.PctNormal) | Should -Be 33; $r.WorstInstance | Should -Be 'Laufwerk C:'
     }
+    It 'waehlt die schlechteste Instanz bei Gleichstand nach dem Maximum, dann nach der Bezeichnung' {   # Task 14b, Punkt 5
+        $quiet = foreach ($x in @(@('I1', 2), @('I2', 3), @('I3', 4), @('I4', 9), @('I5', 5), @('I6', 1))) {          # kein auffaelliger Punkt
+            $s = New-TestSeries 'disk.latency' 1, $x[1], 1 -Ops 50,50,50; $s.Label = $x[0]; $s }
+        (Get-WorkerPerfSollIst -Series @($quiet) -Thresholds $Th | Where-Object Id -eq 'disk.latency').WorstInstance | Should -Be 'I4'
+        $tie = foreach ($l in 'b', 'c', 'a', 'D', 'e', 'F') {                                # voller Gleichstand; ordinal steht 'D' vor 'a'
+            $s = New-TestSeries 'disk.latency' 1, 30, 1 -Ops 50,50,50; $s.Label = $l; $s }
+        (Get-WorkerPerfSollIst -Series @($tie) -Thresholds $Th | Where-Object Id -eq 'disk.latency').WorstInstance | Should -BeExactly 'D'
+        $more = @($tie) + @(& { $s = New-TestSeries 'disk.latency' 12, 1, 1 -Ops 50,50,50; $s.Label = 'z'; $s })     # mehr auffaellige Punkte gehen vor
+        $more[6].Value = [double[]](12, 12, 1)
+        (Get-WorkerPerfSollIst -Series $more -Thresholds $Th | Where-Object Id -eq 'disk.latency').WorstInstance | Should -Be 'z'
+    }
 }
 

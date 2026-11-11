@@ -16,5 +16,18 @@
   "ohne.cause": " Die Ursache liegt außerhalb des Workers oder in der Anwendung selbst (Datenbank, Proxy, Netz).",
   "endpoint.context": " Gegenstelle {0}: {1}.", "chronic.context": " Dauerhaft erhöht: {0}.",
   "chronic.item": "{0} – {1}",
-  "probe.error": "Verbindungsfehler", "user.system": "Dienste/System", "user.unknown": "unbekannt"
+  "probe.error": "Verbindungsfehler", "user.system": "Dienste/System", "user.unknown": "unbekannt",
+  "source.process": "Prozesse (CPU, Speicher, I/O je Prozess)", "source.sessions": "Sitzungen",
+  "source.input.process": "Eingabeverzögerung je Prozess", "source.profile.map": "Zuordnung der Profilcontainer zu Sitzungen",
+  "source.events.defender": "Ereignisprotokoll Microsoft Defender", "source.events.applocker": "Ereignisprotokolle AppLocker",
+  "source.system": "Kerne, RAM, Hersteller, VMware Tools", "source.process.snapshot": "Prozess-Schnappschuss (Win32_Process)",
+  "source.sessions.wts": "Sitzungen über die WTS-Schnittstelle", "source.services.map": "Dienste und ihre Prozesse (Win32_Service)",
+  "source.perf.cpu": "Leistungszähler CPU-Auslastung", "source.perf.queue": "Leistungszähler Prozessor-Warteschlange",
+  "source.perf.steal": "Leistungszähler CPU-Wartezeit der VM (VMware)", "source.perf.memory": "Leistungszähler Arbeitsspeicher",
+  "source.perf.disk.total": "Leistungszähler physische Datenträger gesamt", "source.perf.network": "Leistungszähler Netzwerkdurchsatz je Adapter",
+  "source.perf.volumes": "Leistungszähler Antwortzeiten je Laufwerk", "source.perf.shares": "Leistungszähler Antwortzeiten je SMB-Freigabe",
+  "source.perf.input.session": "Leistungszähler Eingabeverzögerung je Sitzung", "source.perf.input.process": "Leistungszähler Eingabeverzögerung je Prozess",
+  "source.perf.ica": "ICA-Sitzungswerte und Citrix EUEM", "source.profile.volumes": "Eingebundene Profilcontainer",
+  "source.security.products": "Sicherheitsprodukte (Prozesse und Dienste in Sitzung 0)", "source.user.processes": "Prozesse in Benutzersitzungen",
+  "source.endpoints": "TCP-Verbindungsaufbau zu den Gegenstellen"
 }

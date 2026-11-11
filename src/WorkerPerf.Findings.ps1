@@ -99,13 +99,14 @@ function Get-WorkerPerfSollIst {
         $warn = [double]$th.warn; $crit = [double]$th.crit
         $low = ([string]$th.direction -eq 'low')
         $perTime = New-Object 'System.Collections.Generic.Dictionary[long,double]'
-        $instBad = @{}; $instPeak = @{}
+        # per instance: number of bad points and worst rateable value
+        $instBad = @{}; $instWorst = @{}
         foreach ($s in $mine) {
             $label = [string]$s['Label']
-            if (-not $instBad.ContainsKey($label)) { $instBad[$label] = 0; $instPeak[$label] = [double]::NaN }
+            if (-not $instBad.ContainsKey($label)) { $instBad[$label] = 0; $instWorst[$label] = [double]::NaN }
             $values = $s['Value']; $times = $s['TimeMs']; $ops = $s['Ops']
             $useOps = ($minOps -gt 0 -and $null -ne $ops)
-            $nBad = 0; $peak = [double]$instPeak[$label]
+            $nBad = 0; $worst = [double]$instWorst[$label]
             for ($i = 0; $i -lt $values.Length; $i++) {
                 if ($useOps -and [double]$ops[$i] -lt $minOps) { continue }
                 $v = [double]$values[$i]
@@ -117,20 +118,13 @@ function Get-WorkerPerfSollIst {
                     elseif ($v -gt $old) { $perTime[$t] = $v }
                 }
                 else { $perTime[$t] = $v }
-                if ($low) { $isBad = ($v -le $warn -or $v -le $crit) } else { $isBad = ($v -ge $warn -or $v -ge $crit) }
-                if ($isBad) {
-                    $nBad++
-                    if ([double]::IsNaN($peak)) { $peak = $v }
-                    elseif ($low) { if ($v -lt $peak) { $peak = $v } }
-                    elseif ($v -gt $peak) { $peak = $v }
-                }
+                if ($low) { if ($v -le $warn -or $v -le $crit) { $nBad++ } } elseif ($v -ge $warn -or $v -ge $crit) { $nBad++ }
+                if ([double]::IsNaN($worst)) { $worst = $v }
+                elseif ($low) { if ($v -lt $worst) { $worst = $v } }
+                elseif ($v -gt $worst) { $worst = $v }
             }
-            # Write only when there was a bad point, as the per-point update did: a write to an existing key can grow the
-            # Hashtable, and that changes the order of $instBad.Keys, which breaks ties for WorstInstance below.
-            if ($nBad -gt 0) {
-                $instBad[$label] = $instBad[$label] + $nBad
-                $instPeak[$label] = $peak
-            }
+            $instBad[$label] = $instBad[$label] + $nBad
+            $instWorst[$label] = $worst
         }
         $row = @{
             Id = $id; Label = $th.label; Unit = $th.unit; Ideal = $th.ideal; Warn = $th.warn; Crit = $th.crit
@@ -154,13 +148,19 @@ function Get-WorkerPerfSollIst {
             $row.Avg = $sum / $sorted.Length; $row.P95 = $sorted[$p]; $row.Max = $sorted[$sorted.Length - 1]
             $row.PctNormal = 100.0 * $c[0] / $vals.Length; $row.PctWarn = 100.0 * $c[1] / $vals.Length; $row.PctCrit = 100.0 * $c[2] / $vals.Length
             if ($mine.Count -gt 1) {
+                # most bad points, then the worst value (the highest maximum; the lowest minimum for direction 'low'),
+                # then the label in ordinal order: independent of the order of the Hashtable keys
                 $best = $null
                 foreach ($label in $instBad.Keys) {
                     $take = $false
                     if ($null -eq $best) { $take = $true }
-                    elseif ($instBad[$label] -gt $instBad[$best]) { $take = $true }
-                    elseif ($instBad[$label] -eq $instBad[$best] -and -not [double]::IsNaN($instPeak[$label]) -and
-                            ([double]::IsNaN($instPeak[$best]) -or (Test-WorkerPerfWorse $instPeak[$label] $instPeak[$best] $th))) { $take = $true }
+                    elseif ($instBad[$label] -ne $instBad[$best]) { $take = ($instBad[$label] -gt $instBad[$best]) }
+                    else {
+                        $wl = [double]$instWorst[$label]; $wb = [double]$instWorst[$best]
+                        if ([double]::IsNaN($wl) -ne [double]::IsNaN($wb)) { $take = [double]::IsNaN($wb) }
+                        elseif (-not [double]::IsNaN($wl) -and $wl -ne $wb) { $take = (Test-WorkerPerfWorse $wl $wb $th) }
+                        else { $take = ([string]::CompareOrdinal($label, $best) -lt 0) }
+                    }
                     if ($take) { $best = $label }
                 }
                 $row.WorstInstance = [string]$best
@@ -222,20 +222,27 @@ function Join-WorkerPerfIncidents {
         $inc = @{ Chronic = $false; StartMs = $start; EndMs = $end; List = $g }
         $raw.Add($inc); $coreIncidents.Add($inc)
     }
-    # session-bound causes: attach to the core incident with an input finding of the same session, else stand alone
-    $standalone = @{}
+    # session-bound causes: attach to the core incident with an input finding of the same session, else stand alone.
+    # SessionIndex -1 means the owner is unknown: such a finding attaches to nothing and stands alone per instance.
+    # The ordered dictionary keeps the groups in the order of their first finding (no Hashtable order in the numbering).
+    $standalone = New-Object System.Collections.Specialized.OrderedDictionary
+    $coreByStart = @($coreIncidents.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } })
     foreach ($f in @($sessionFindings.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } })) {
         $target = $null
-        foreach ($inc in @($coreIncidents.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } })) {
-            foreach ($x in $inc.List) {
-                if ($x.Resource -eq 'input' -and $x.SessionIndex -eq $f.SessionIndex -and
-                    $f.StartMs -le ($x.EndMs + $gapMs) -and $f.EndMs -ge ($x.StartMs - $gapMs)) { $target = $inc; break }
+        $known = ([int]$f.SessionIndex -ne -1)
+        if ($known) {
+            foreach ($inc in $coreByStart) {
+                foreach ($x in $inc.List) {
+                    if ($x.Resource -eq 'input' -and $x.SessionIndex -eq $f.SessionIndex -and
+                        $f.StartMs -le ($x.EndMs + $gapMs) -and $f.EndMs -ge ($x.StartMs - $gapMs)) { $target = $inc; break }
+                }
+                if ($null -ne $target) { break }
             }
-            if ($null -ne $target) { break }
         }
         if ($null -ne $target) { $target.List.Add($f); continue }
-        $key = [string]$f.SessionIndex
-        if (-not $standalone.ContainsKey($key)) { $standalone[$key] = New-Object System.Collections.Generic.List[object] }
+        $key = 's' + [string]$f.SessionIndex
+        if (-not $known) { $key = 'i' + [string]$f.Instance }
+        if (-not $standalone.Contains($key)) { $standalone[$key] = New-Object System.Collections.Generic.List[object] }
         $standalone[$key].Add($f)
     }
     foreach ($key in $standalone.Keys) {
@@ -262,14 +269,19 @@ function Join-WorkerPerfIncidents {
         $fs = @($r.List.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } })
         $severity = 0
         foreach ($f in $fs) { if ([int]$f.Severity -gt $severity) { $severity = [int]$f.Severity } }
-        # chronic states overlapping the window (never the incident itself)
+        # chronic states overlapping the window (never the incident itself). A state of one session is background only
+        # for incidents with a finding of that session; a chronic incident is typed from its own findings only, so the
+        # states in its context explain nothing.
+        $ownSessions = @{}
+        foreach ($f in $fs) { if ([int]$f.SessionIndex -ne -1) { $ownSessions[[int]$f.SessionIndex] = $true } }
         $context = New-Object System.Collections.Generic.List[object]
         $explainers = New-Object System.Collections.Generic.List[object]
         foreach ($c in $ordered) {
             if (-not $c.Chronic -or $c.Id -eq $r.Id) { continue }
             if (-not ($c.StartMs -le $r.EndMs -and $c.EndMs -ge $r.StartMs)) { continue }
             $cf = $c.List[0]
-            $explains = ($workerOrder -contains $cf.Resource) -and ([int]$cf.Severity -ge 2)
+            if ($cf.Scope -eq 'session' -and -not $ownSessions.ContainsKey([int]$cf.SessionIndex)) { continue }
+            $explains = (-not $r.Chronic) -and ($workerOrder -contains $cf.Resource) -and ([int]$cf.Severity -ge 2)
             $context.Add(@{ IncidentId = [int]$c.Id; SignalId = $cf.SignalId; Label = $cf.Label; Severity = [int]$cf.Severity; Explains = $explains; Resource = [string]$cf.Resource })
             if ($explains) { $explainers.Add($cf) }
         }
@@ -310,7 +322,7 @@ function Join-WorkerPerfIncidents {
 # Minimum share (%) of a security process in a contributor ranking to count as a companion
 $script:WorkerPerfCompanionMinPct = 10
 
-function Format-WorkerPerfNumber([double]$Value) {
+function Format-WorkerPerfTextNumber([double]$Value) {
     # German number: below 10 one decimal unless whole, else whole; decimal comma, independent of the installed culture.
     $inv = [System.Globalization.CultureInfo]::InvariantCulture
     $r = [Math]::Round($Value, 1, [MidpointRounding]::AwayFromZero)
@@ -322,7 +334,7 @@ function Format-WorkerPerfNumber([double]$Value) {
 }
 
 function Format-WorkerPerfValue([double]$Value, [string]$Unit) {
-    $n = Format-WorkerPerfNumber $Value
+    $n = Format-WorkerPerfTextNumber $Value
     if ($Unit -ne '') { return ($n + ' ' + $Unit) }
     return $n
 }
@@ -689,9 +701,14 @@ function Add-WorkerPerfIncidentDetail {
             if ($failed -or $null -ne $max) { $endpoints.Add(@{ Name = [string]$pb.Name; Role = [string]$pb.Role; MaxMs = $max; Failed = $failed }) }
         }
         $inc['Endpoints'] = @($endpoints.ToArray() | Sort-Object -Property @{ Expression = { $_.Failed }; Descending = $true }, @{ Expression = { if ($null -eq $_.MaxMs) { -1.0 } else { $_.MaxMs } }; Descending = $true }, @{ Expression = { $_.Name } })
+        # ICA round trip only for sessions of the incident: affected ones and owners of a session-scoped finding
+        $icaSessions = @{}
+        foreach ($a in $inc['Affected']) { $icaSessions[[int]$a.SessionIndex] = $true }
+        foreach ($f in @($inc.Findings)) { if ($f.Scope -eq 'session' -and [int]$f.SessionIndex -ne -1) { $icaSessions[[int]$f.SessionIndex] = $true } }
         $ica = New-Object System.Collections.Generic.List[object]
         if (-not [double]::IsNaN($icaWarn)) {
             foreach ($s in @($Model.Sessions)) {
+                if (-not $icaSessions.ContainsKey([int]$s.Index)) { continue }
                 $max = [double]::NaN
                 foreach ($p in $wideSnaps) {
                     $v = [double]$s.Rtt[$p]
@@ -787,14 +804,14 @@ function Get-WorkerPerfIncidentText {
             $m = $rank.Main
             $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
             $measure = $Texts['measure.' + [string]$rank.Measure]
-            if ($null -eq $m.BaselinePct) { $text += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfNumber $m.SharePct), $measure) }
-            else { $text += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfNumber $m.SharePct), $measure, (Format-WorkerPerfNumber $m.BaselinePct)) }
+            if ($null -eq $m.BaselinePct) { $text += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
+            else { $text += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
         }
         $c = $Incident.Companion
         if ($null -ne $c) {
             $cm = $Texts['measure.' + [string]$Incident.Contributors[[string]$c.Resource].Measure]
             $who = & $userText ([int]$c.TopIoSessionIndex) ([string]$c.TopIoUser)
-            $text += & $fmt 'companion' @($c.Label, (Format-WorkerPerfNumber $c.SharePct), $cm, $c.TopIoApp, $who)
+            $text += & $fmt 'companion' @($c.Label, (Format-WorkerPerfTextNumber $c.SharePct), $cm, $c.TopIoApp, $who)
         }
     }
     elseif ($Incident.Type -eq 'ohne-engpass' -and $null -ne $lead) {

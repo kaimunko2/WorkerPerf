@@ -148,6 +148,17 @@ Describe 'Signalnamen im Klartext' {
         Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Match ([regex]::Escape('(' + $Th['disk.latency'].label + ' – Laufwerk D: dauerhaft'))
     }
 }
+Describe 'ICA Round Trip im Vorfall' {                                            # Task 14b, Punkt 7
+    It 'nennt nur betroffene Sitzungen und Sitzungen mit eigenem Befund' {
+        $m = New-TestModel; $m.Sessions[0].Rtt = [double[]](250, 250, 250, 250); $m.Sessions[1].Rtt = [double[]](300, 300, 300, 300)
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Affected.SessionIndex | Should -Be @(0)
+        @($i.Ica).Count | Should -Be 1; $i.Ica[0].SessionIndex | Should -Be 0; $i.Ica[0].MaxMs | Should -Be 250
+        $n = New-TestIncident 'network' 'ica.rtt' 300; $n.Type = 'umfeld'; $n.Lead = $null
+        $n.Findings[0].Scope = 'session'; $n.Findings[0].SessionIndex = 1; Add-Detail $m $n
+        @($n.Ica).Count | Should -Be 1; $n.Ica[0].SessionIndex | Should -Be 1
+    }
+}
 Describe 'Begleiter' {
     It 'setzt bei einem Sicherheitsprozess unter 10 % keinen Begleiter' {
         $m = New-TestModel; $m.Rows.CpuMs[5] = 100; $m.Rows.CpuMs[8] = 100
