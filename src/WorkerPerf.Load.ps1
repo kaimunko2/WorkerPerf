@@ -6,7 +6,7 @@
 function Open-WorkerPerfCsvReader {
     # Opens one capture file for reading line by line and reads its header line.
     # Returns @{ Col = column name -> index; Need = number of columns of the format; Reader = StreamReader, or $null for a
-    # missing file }. The caller disposes Reader. Callers split each non-empty line with Split(',') when it holds no quote,
+    # missing file }. The caller disposes Reader: it calls this as the first statement inside its try and disposes in finally. Callers split each non-empty line with Split(',') when it holds no quote,
     # else with Split-WorkerPerfCsvLine, and skip rows with fewer than Need fields (as Read-WorkerPerfCsvFile does).
     param([string]$Path, [string]$FileName)
     $col = @{}
@@ -15,15 +15,20 @@ function Open-WorkerPerfCsvReader {
     $full = Join-Path $Path $FileName
     if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Need = $canon.Length; Reader = $null } }
     $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-    $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
+    $reader = $null
     try {
+        $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
         $header = $reader.ReadLine()
         if ($null -ne $header -and $header.Length -gt 0) {
             $names = $header.Split(',')
             for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
         }
     }
-    catch { $reader.Dispose(); throw }
+    catch {
+        # close what was opened here; the reader owns the stream once it exists
+        if ($null -ne $reader) { $reader.Dispose() } else { $stream.Dispose() }
+        throw
+    }
     return @{ Col = $col; Need = $canon.Length; Reader = $reader }
 }
 
@@ -31,19 +36,18 @@ function Read-WorkerPerfCsvFile {
     # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]] }.
     # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped.
     param([string]$Path, [string]$FileName)
-    $csv = Open-WorkerPerfCsvReader $Path $FileName
     $rows = New-Object System.Collections.Generic.List[string[]]
-    $reader = $csv.Reader
-    if ($null -eq $reader) { return @{ Col = $csv.Col; Rows = $rows } }
-    $need = $csv.Need
+    $reader = $null
     try {
-        while ($null -ne ($line = $reader.ReadLine())) {
+        $csv = Open-WorkerPerfCsvReader $Path $FileName
+        $reader = $csv.Reader; $need = $csv.Need
+        while ($null -ne $reader -and $null -ne ($line = $reader.ReadLine())) {
             if ($line.Length -eq 0) { continue }
             if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
             if ($f.Length -ge $need) { $rows.Add($f) }
         }
     }
-    finally { $reader.Dispose() }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
     return @{ Col = $csv.Col; Rows = $rows }
 }
 
@@ -52,6 +56,15 @@ function ConvertTo-WorkerPerfTimestamp([string]$Text) {
     $dto = [DateTimeOffset]::MinValue
     if ([DateTimeOffset]::TryParse($Text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$dto)) { return $dto }
     return $null
+}
+
+function ConvertTo-WorkerPerfCachedDouble([System.Collections.Hashtable]$Cache, [string]$Text) {
+    # Parses an invariant number (NaN for an empty or unreadable text), stores it in $Cache under the text and returns it.
+    # Callers look the text up in $Cache first and call this only on a miss.
+    $v = [double]::NaN
+    if ($Text.Length -gt 0 -and -not [double]::TryParse($Text, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { $v = [double]::NaN }
+    $Cache[$Text] = $v
+    return $v
 }
 
 function New-WorkerPerfNanArray([int]$Length) {
@@ -246,12 +259,13 @@ function Import-WorkerPerfRun {
         $sessions.Add($e)
         return $e
     }
-    $csv = Open-WorkerPerfCsvReader $Path 'sessions.csv'
-    $col = $csv.Col
-    $cP = [int]$col['P']; $cSid = [int]$col['SessionId']; $cUser = [int]$col['User']; $cDom = [int]$col['Domain']
-    $cState = [int]$col['State']; $cClient = [int]$col['ClientName']; $cLogon = [int]$col['LogonTime']; $cIdle = [int]$col['IdleSec']
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'sessions.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cP = [int]$col['P']; $cSid = [int]$col['SessionId']; $cUser = [int]$col['User']; $cDom = [int]$col['Domain']
+        $cState = [int]$col['State']; $cClient = [int]$col['ClientName']; $cLogon = [int]$col['LogonTime']; $cIdle = [int]$col['IdleSec']
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
@@ -314,19 +328,21 @@ function Import-WorkerPerfRun {
     #endregion
 
     #region input delay
-    $csv = Open-WorkerPerfCsvReader $Path 'inputdelay.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cDelay = [int]$col['DelayMs']
-    $lastT = $null; $tp = -1; $bySid = $null
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'inputdelay.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cDelay = [int]$col['DelayMs']
+        $lastT = $null; $tp = -1; $bySid = $null
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
             if ($line.Length -eq 0) { continue }
             if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
             if ($f.Length -lt $need) { continue }
-            # rows come grouped by T: parse T and find its tick position once per group (-1: unreadable or out of range)
+            # T is parsed again only when its text changes (-1: unreadable or out of range); rows grouped by T make this
+            # cache hit, rows in any order give the same result
             $tText = $f[$cT]
             if (-not [string]::Equals($tText, $lastT)) {
                 $lastT = $tText; $tp = -1; $t = 0
@@ -339,11 +355,7 @@ function Import-WorkerPerfRun {
             if ($tp -lt 0) { continue }
             $txt = $f[$cDelay]
             $d = $numByText[$txt]
-            if ($null -eq $d) {
-                $d = $nan
-                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$d)) { $d = $nan }
-                $numByText[$txt] = $d
-            }
+            if ($null -eq $d) { $d = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             if ([double]::IsNaN($d)) { continue }
             $sidText = $f[$cSid]
             $e = $bySid[$sidText]
@@ -372,17 +384,18 @@ function Import-WorkerPerfRun {
     if ($mainPatterns.Count -gt 0) { $mainDelay = New-Object double[] $nT }
     $mainByName = @{}
 
-    $csv = Open-WorkerPerfCsvReader $Path 'inputdelay_proc.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cPid = [int]$col['Pid']; $cName = [int]$col['Name']; $cDelay = [int]$col['DelayMs']
-    $ipTick = New-Object System.Collections.Generic.List[int]
-    $ipSess = New-Object System.Collections.Generic.List[int]
-    $ipPid = New-Object System.Collections.Generic.List[int]
-    $ipName = New-Object System.Collections.Generic.List[string]
-    $ipDelay = New-Object System.Collections.Generic.List[double]
-    $lastT = $null; $tp = -1; $bySid = $null
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'inputdelay_proc.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cPid = [int]$col['Pid']; $cName = [int]$col['Name']; $cDelay = [int]$col['DelayMs']
+        $ipTick = New-Object System.Collections.Generic.List[int]
+        $ipSess = New-Object System.Collections.Generic.List[int]
+        $ipPid = New-Object System.Collections.Generic.List[int]
+        $ipName = New-Object System.Collections.Generic.List[string]
+        $ipDelay = New-Object System.Collections.Generic.List[double]
+        $lastT = $null; $tp = -1; $bySid = $null
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
@@ -401,11 +414,7 @@ function Import-WorkerPerfRun {
             if ($tp -lt 0) { continue }
             $txt = $f[$cDelay]
             $d = $numByText[$txt]
-            if ($null -eq $d) {
-                $d = $nan
-                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$d)) { $d = $nan }
-                $numByText[$txt] = $d
-            }
+            if ($null -eq $d) { $d = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             if ([double]::IsNaN($d)) { continue }
             $sidText = $f[$cSid]
             $e = $bySid[$sidText]
@@ -437,12 +446,13 @@ function Import-WorkerPerfRun {
     $volByKey = @{}
     $volAt = New-Object object[] ($nP + 1)      # snapshot position -> (volume|kind|session id text -> volume)
     $lastT = $null; $tp = -1; $bySid = $null; $volAtSnap = $null
-    $csv = Open-WorkerPerfCsvReader $Path 'volumes.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cVol = [int]$col['Volume']; $cKind = [int]$col['Kind']; $cSid = [int]$col['SessionId']; $cBack = [int]$col['Backing']
-    $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'volumes.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cVol = [int]$col['Volume']; $cKind = [int]$col['Kind']; $cSid = [int]$col['SessionId']; $cBack = [int]$col['Backing']
+        $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
@@ -491,13 +501,13 @@ function Import-WorkerPerfRun {
             if ($v.Backing.Length -eq 0 -and $f[$cBack].Length -gt 0) { $v.Backing = $f[$cBack] }
             # latencies NaN and operations 0 when empty or unreadable
             $txt = $f[$cRl]; $rl = $numByText[$txt]
-            if ($null -eq $rl) { $rl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }; $numByText[$txt] = $rl }
+            if ($null -eq $rl) { $rl = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cWl]; $wl = $numByText[$txt]
-            if ($null -eq $wl) { $wl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }; $numByText[$txt] = $wl }
+            if ($null -eq $wl) { $wl = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cRo]; $ro = $numByText[$txt]
-            if ($null -eq $ro) { $ro = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = $nan }; $numByText[$txt] = $ro }
+            if ($null -eq $ro) { $ro = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cWo]; $wo = $numByText[$txt]
-            if ($null -eq $wo) { $wo = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = $nan }; $numByText[$txt] = $wo }
+            if ($null -eq $wo) { $wo = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             if ([double]::IsNaN($ro)) { $ro = 0.0 }
             if ([double]::IsNaN($wo)) { $wo = 0.0 }
             $v.ReadMs[$tp] = $rl; $v.WriteMs[$tp] = $wl
@@ -512,13 +522,14 @@ function Import-WorkerPerfRun {
 
     $shares = New-Object System.Collections.Generic.List[object]
     $shareByName = @{}
-    $csv = Open-WorkerPerfCsvReader $Path 'shares.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cSh = [int]$col['Share']
-    $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
-    $lastT = $null; $tp = -1
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'shares.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cSh = [int]$col['Share']
+        $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
+        $lastT = $null; $tp = -1
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
@@ -542,13 +553,13 @@ function Import-WorkerPerfRun {
             }
             # latencies NaN and operations 0 when empty or unreadable
             $txt = $f[$cRl]; $rl = $numByText[$txt]
-            if ($null -eq $rl) { $rl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }; $numByText[$txt] = $rl }
+            if ($null -eq $rl) { $rl = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cWl]; $wl = $numByText[$txt]
-            if ($null -eq $wl) { $wl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }; $numByText[$txt] = $wl }
+            if ($null -eq $wl) { $wl = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cRo]; $ro = $numByText[$txt]
-            if ($null -eq $ro) { $ro = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = $nan }; $numByText[$txt] = $ro }
+            if ($null -eq $ro) { $ro = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             $txt = $f[$cWo]; $wo = $numByText[$txt]
-            if ($null -eq $wo) { $wo = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = $nan }; $numByText[$txt] = $wo }
+            if ($null -eq $wo) { $wo = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             if ([double]::IsNaN($ro)) { $ro = 0.0 }
             if ([double]::IsNaN($wo)) { $wo = 0.0 }
             $s.ReadMs[$tp] = $rl; $s.WriteMs[$tp] = $wl
@@ -565,12 +576,13 @@ function Import-WorkerPerfRun {
     #region probes, citrix, events
     $probes = New-Object System.Collections.Generic.List[object]
     $probeByName = @{}
-    $csv = Open-WorkerPerfCsvReader $Path 'probes.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cName = [int]$col['Name']; $cRole = [int]$col['Role']; $cHost = [int]$col['Host']; $cPort = [int]$col['Port']
-    $cMs = [int]$col['ConnectMs']; $cErr = [int]$col['Error']
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'probes.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cName = [int]$col['Name']; $cRole = [int]$col['Role']; $cHost = [int]$col['Host']; $cPort = [int]$col['Port']
+        $cMs = [int]$col['ConnectMs']; $cErr = [int]$col['Error']
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
@@ -607,20 +619,22 @@ function Import-WorkerPerfRun {
     $citrixOrder = New-Object System.Collections.Generic.List[string]
     $ctxTmp = @{}      # session index -> RoundtripTime and the three latency metrics per snapshot
     $latencyMetrics = 'NetworkLatency', 'Latency - Last Recorded', 'LatencyLastRecorded'
-    $csv = Open-WorkerPerfCsvReader $Path 'citrix.csv'
-    $col = $csv.Col
-    $cT = [int]$col['T']; $cSrc = [int]$col['Source']; $cSid = [int]$col['SessionId']; $cInst = [int]$col['Instance']
-    $cMetric = [int]$col['Metric']; $cVal = [int]$col['Value']
-    $lastT = $null; $sp = -1
-    $reader = $csv.Reader; $need = $csv.Need
+    $reader = $null      # opened first thing inside try, so that finally always closes it
     try {
+        $csv = Open-WorkerPerfCsvReader $Path 'citrix.csv'
+        $reader = $csv.Reader; $need = $csv.Need
+        $col = $csv.Col
+        $cT = [int]$col['T']; $cSrc = [int]$col['Source']; $cSid = [int]$col['SessionId']; $cInst = [int]$col['Instance']
+        $cMetric = [int]$col['Metric']; $cVal = [int]$col['Value']
+        $lastT = $null; $sp = -1
         while ($null -ne $reader) {
             $line = $reader.ReadLine()
             if ($null -eq $line) { break }
             if ($line.Length -eq 0) { continue }
             if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
             if ($f.Length -lt $need) { continue }
-            # rows come grouped by T: find the snapshot position once per group (-1: unreadable or outside the range)
+            # the snapshot position is found again only when the T text changes (-1: unreadable or outside the range);
+            # rows grouped by T make this cache hit, rows in any order give the same result
             $tText = $f[$cT]
             if (-not [string]::Equals($tText, $lastT)) {
                 $lastT = $tText; $sp = -1; $t = 0
@@ -633,11 +647,7 @@ function Import-WorkerPerfRun {
             if ($sp -lt 0) { continue }
             $txt = $f[$cVal]
             $val = $numByText[$txt]
-            if ($null -eq $val) {
-                $val = $nan
-                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$val)) { $val = $nan }
-                $numByText[$txt] = $val
-            }
+            if ($null -eq $val) { $val = ConvertTo-WorkerPerfCachedDouble $numByText $txt }
             if ([double]::IsNaN($val)) { continue }
             $sessIdx = -1
             $sid = 0

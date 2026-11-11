@@ -91,38 +91,38 @@ function Format-JsonNumber([double]$Value, [int]$Decimals) {
     return [Math]::Round($Value, $Decimals).ToString($inv)
 }
 
-function ConvertTo-JsonText($Value, [System.Text.StringBuilder]$Sb) {
-    # Small JSON writer for ordered records. A StringBuilder value is inserted verbatim (pre-rendered series).
-    if ($null -eq $Value) { [void]$Sb.Append('null'); return }
-    if ($Value -is [System.Text.StringBuilder]) { [void]$Sb.Append($Value.ToString()); return }
-    if ($Value -is [string]) { [void]$Sb.Append((Format-JsonString $Value)); return }
-    if ($Value -is [bool]) { if ($Value) { [void]$Sb.Append('true') } else { [void]$Sb.Append('false') }; return }
-    if ($Value -is [double] -or $Value -is [single] -or $Value -is [decimal]) { [void]$Sb.Append((Format-JsonNumber ([double]$Value) 3)); return }
-    if ($Value -is [ValueType]) { [void]$Sb.Append(([IConvertible]$Value).ToString($inv)); return }
+function ConvertTo-JsonText($Value, [System.IO.TextWriter]$Out) {
+    # Small JSON writer for ordered records, writing to $Out. A StringBuilder value is inserted verbatim (pre-rendered series).
+    if ($null -eq $Value) { $Out.Write('null'); return }
+    if ($Value -is [System.Text.StringBuilder]) { $Out.Write($Value.ToString()); return }
+    if ($Value -is [string]) { $Out.Write((Format-JsonString $Value)); return }
+    if ($Value -is [bool]) { if ($Value) { $Out.Write('true') } else { $Out.Write('false') }; return }
+    if ($Value -is [double] -or $Value -is [single] -or $Value -is [decimal]) { $Out.Write((Format-JsonNumber ([double]$Value) 3)); return }
+    if ($Value -is [ValueType]) { $Out.Write(([IConvertible]$Value).ToString($inv)); return }
     if ($Value -is [System.Collections.IDictionary]) {
-        [void]$Sb.Append('{')
+        $Out.Write('{')
         $first = $true
         foreach ($k in $Value.Keys) {
-            if (-not $first) { [void]$Sb.Append(',') }
+            if (-not $first) { $Out.Write(',') }
             $first = $false
-            [void]$Sb.Append((Format-JsonString ([string]$k))).Append(':')
-            ConvertTo-JsonText $Value[$k] $Sb
+            $Out.Write((Format-JsonString ([string]$k))); $Out.Write(':')
+            ConvertTo-JsonText $Value[$k] $Out
         }
-        [void]$Sb.Append('}')
+        $Out.Write('}')
         return
     }
     if ($Value -is [System.Collections.IEnumerable]) {
-        [void]$Sb.Append('[')
+        $Out.Write('[')
         $first = $true
         foreach ($v in $Value) {
-            if (-not $first) { [void]$Sb.Append(',') }
+            if (-not $first) { $Out.Write(',') }
             $first = $false
-            ConvertTo-JsonText $v $Sb
+            ConvertTo-JsonText $v $Out
         }
-        [void]$Sb.Append(']')
+        $Out.Write(']')
         return
     }
-    [void]$Sb.Append((Format-JsonString ([string]$Value)))
+    $Out.Write((Format-JsonString ([string]$Value)))
 }
 
 function New-JsonSeries([double[]]$Values, [int]$Decimals, [int]$Start = 0, [int]$End = -1) {
@@ -773,18 +773,30 @@ $data = [ordered]@{
 }
 
 Write-Host 'Schreibe Bericht ...'
-$json = New-Object System.Text.StringBuilder (4MB)
-ConvertTo-JsonText $data $json
 $template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
 $marker = '<script id="wp-data" type="application/json">null</script>'
 $at = $template.IndexOf($marker)
 if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
 $open = '<script id="wp-data" type="application/json">'
-$html = New-Object System.Text.StringBuilder ($template.Length + $json.Length)
-[void]$html.Append($template, 0, $at + $open.Length)
-[void]$html.Append($json.ToString())
-[void]$html.Append($template, $at + $open.Length + 4, $template.Length - $at - $open.Length - 4)
-[IO.File]::WriteAllText($OutFile, $html.ToString(), (New-Object System.Text.UTF8Encoding $false))
+# The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
+# never held in memory as a whole. It goes to a temporary file next to the target first, which then replaces the
+# target: an error while writing leaves the previous report (or none), never a half-written one.
+$tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+try {
+    $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
+    try {
+        $writer.Write($template.Substring(0, $at + $open.Length))
+        ConvertTo-JsonText $data $writer
+        $writer.Write($template.Substring($at + $open.Length + 4))
+    }
+    finally { $writer.Dispose() }
+    if (Test-Path -LiteralPath $OutFile) { [IO.File]::Replace($tmpFile, $OutFile, [NullString]::Value) }
+    else { [IO.File]::Move($tmpFile, $OutFile) }
+}
+catch {
+    if (Test-Path -LiteralPath $tmpFile) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
+    throw
+}
 
 $timer.Stop()
 Write-Host ("Bericht erstellt in {0} s (davon Einlesen {1} s): {2}" -f $timer.Elapsed.TotalSeconds.ToString('0.0', $inv), $loadSec.ToString('0.0', $inv), $OutFile)
