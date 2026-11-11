@@ -104,4 +104,11 @@ Describe 'Get-WorkerPerfIncidentText' {
         $text = Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts
         $text | Should -Match '^Dauerzustand: 23:13:35–23:14:05: CPU-Engpass'; $text | Should -Match ' Dauerhaft erhöht: RAM-Auslastung\.$'
     }
+    It 'nennt bei einer nur durch einen Dauerzustand erklaerten Ursache diesen im Kopfsatz' {
+        $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; $i.Type = 'engpass'; $i.Lead = 'cpu'
+        $i.ChronicContext = @(@{ IncidentId = 9; SignalId = 'cpu.host'; Label = 'CPU-Auslastung'; Severity = 2; Explains = $true }); Add-Detail $m $i
+        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be ('23:13:35–23:14:05: CPU-Engpass als Dauerzustand (CPU-Auslastung dauerhaft über dem Soll); im Fenster Eingabeverzögerung Spitze 300 ms, Soll unter 150 ms. ' +
+            'Betroffen: 1 Sitzung. Hauptverursacher: EXCEL.EXE in der Sitzung von user017 mit 41 % der CPU-Zeit (sonst 2 %). ' +
+            'Begleiter: Microsoft Defender mit 29 % der CPU-Zeit; größter I/O-Erzeuger im Fenster: chrome.exe (user018). Scan-Ausschlüsse prüfen.')
+    }
 }

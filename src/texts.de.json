@@ -3,6 +3,7 @@
   "resource.profile": "Profilcontainer", "resource.network": "Netzstrecke", "resource.endpoint": "Gegenstelle", "resource.input": "Eingabeverzögerung",
   "measure.cpu": "der CPU-Zeit", "measure.memory": "des belegten Arbeitsspeichers", "measure.io": "der I/O-Menge",
   "engpass": "{0}–{1}: {2}-Engpass ({3} Spitze {4}, Soll {5}).",
+  "engpass.chronic": "{0}–{1}: {2}-Engpass als Dauerzustand ({3} dauerhaft über dem Soll); im Fenster {4} Spitze {5}, Soll {6}.",
   "ohne": "{0}–{1}: Eingabeverzögerung ohne Engpass auf dem Worker (Spitze {2}, Soll {3}).",
   "umfeld.network": "{0}–{1}: Netzstrecke von {2} auffällig ({3} Spitze {4}, Soll {5}). Betrifft die Sitzung, nicht den Worker.",
   "umfeld.endpoint": "{0}–{1}: Gegenstelle {2} träge oder nicht erreichbar (Spitze {3}).",

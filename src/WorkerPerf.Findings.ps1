@@ -458,7 +458,7 @@ function Group-WorkerPerfShareTable {
         if ($null -ne $e.Base) { if ($null -eq $g.Base) { $g.Base = 0.0 }; $g.Base += $e.Base }
         if ($null -ne $e.Growth) { if ($null -eq $g.Growth) { $g.Growth = 0.0 }; $g.Growth += $e.Growth }
     }
-    $sorted = @($groups.Values | Sort-Object -Property @{ Expression = { $_.Share }; Descending = $true }, @{ Expression = { $_.Name } })
+    $sorted = @($groups.Values | Sort-Object -Property @{ Expression = { $_.Share }; Descending = $true }, @{ Expression = { $_.Name } }, @{ Expression = { $_.SessionIndex } }, @{ Expression = { $_.AppIndex } })
     $sorted
 }
 
@@ -470,7 +470,7 @@ function Format-WorkerPerfRound($Value) {
 function New-WorkerPerfRanking {
     param($Model, [string]$Measure, $Table)
     $take = 5
-    $procSorted = @($Table | Where-Object { $_.Value -gt 0 } | Sort-Object -Property @{ Expression = { $_.Share }; Descending = $true }, @{ Expression = { [string]$Model.Proc[$_.K].Name } })
+    $procSorted = @($Table | Where-Object { $_.Value -gt 0 } | Sort-Object -Property @{ Expression = { $_.Share }; Descending = $true }, @{ Expression = { [string]$Model.Proc[$_.K].Name } }, @{ Expression = { $_.K } })
     $procs = New-Object System.Collections.Generic.List[object]
     foreach ($e in @($procSorted | Select-Object -First $take)) {
         $pr = $Model.Proc[$e.K]
@@ -502,6 +502,7 @@ function New-WorkerPerfRanking {
 
 function Add-WorkerPerfIncidentDetail {
     param([AllowEmptyCollection()][object[]]$Incidents, $Model, $Thresholds)
+    if (@($Incidents).Count -eq 0) { return }
     $workerOrder = @('cpu', 'memory', 'disk', 'share', 'profile')
     $measureOf = @{ cpu = 'cpu'; memory = 'memory'; disk = 'io'; share = 'io'; profile = 'io' }
     $pad = 15000L
@@ -585,7 +586,8 @@ function Add-WorkerPerfIncidentDetail {
 
         # companion: a security process among the contributors, plus the biggest I/O producer
         $companion = $null
-        foreach ($r in $resources) {
+        $companionOrder = @(@($resources | Where-Object { $_ -eq $inc.Lead }) + @($resources | Where-Object { $_ -ne $inc.Lead }))
+        foreach ($r in $companionOrder) {
             $sec = @($contrib[$r].Processes | Where-Object { $_.Role -eq 'Sicherheit' })
             if ($sec.Count -eq 0) { continue }
             $byLabel = @{}
@@ -618,7 +620,7 @@ function Add-WorkerPerfIncidentDetail {
                 $delay[$key] = @{ Name = [string]$ip.Name[$j]; Pid = [int]$ip.Pid[$j]; K = $k; SessionIndex = [int]$ip.SessionIndex[$j]; MaxMs = $d; Role = $role }
             }
         }
-        $inc['DelayProcesses'] = @(@($delay.Values | Sort-Object -Property @{ Expression = { $_.MaxMs }; Descending = $true }, @{ Expression = { $_.Name } }) | Select-Object -First 5)
+        $inc['DelayProcesses'] = @(@($delay.Values | Sort-Object -Property @{ Expression = { $_.MaxMs }; Descending = $true }, @{ Expression = { $_.Name } }, @{ Expression = { $_.Pid } }, @{ Expression = { $_.K } }, @{ Expression = { $_.SessionIndex } }) | Select-Object -First 5)
 
         # endpoint probes and ICA round trip in the widened window
         $endpoints = New-Object System.Collections.Generic.List[object]
@@ -699,9 +701,23 @@ function Get-WorkerPerfIncidentText {
     if ($affectedCount -eq 1) { $affectedText = $Texts['affected.one'] }
     elseif ($affectedCount -gt 1) { $affectedText = & $fmt 'affected.many' @($affectedCount) }
 
+    $headLabel = ''
     if ($Incident.Type -eq 'engpass' -and $null -ne $lead) {
         $peak = Format-WorkerPerfValue ([double]$lead.PeakValue) $unit
-        $text = & $fmt 'engpass' @($t0, $t1, $Texts['resource.' + [string]$lead.Resource], $label, $peak, $ideal)
+        $ownLead = $false
+        if ($null -ne $Incident.Lead) { $ownLead = (@(@($Incident.Findings) | Where-Object { $_.Resource -eq $Incident.Lead }).Count -gt 0) }
+        if ($null -ne $Incident.Lead -and -not $ownLead) {
+            # the lead resource comes from a chronic state only: name that state in the head
+            $prefix = @{ cpu = 'cpu.'; memory = 'mem.'; disk = 'disk.'; share = 'smb.' }[[string]$Incident.Lead]
+            $expl = @(@($Incident.ChronicContext) | Where-Object { $_.Explains })
+            $match = @($expl | Where-Object { $null -ne $prefix -and ([string]$_.SignalId).StartsWith($prefix) })
+            if ($match.Count -eq 0) { $match = $expl }
+            if ($match.Count -gt 0) { $headLabel = [string]@($match | Sort-Object -Property @{ Expression = { [int]$_.Severity }; Descending = $true })[0].Label }
+            $text = & $fmt 'engpass.chronic' @($t0, $t1, $Texts['resource.' + [string]$Incident.Lead], $headLabel, $label, $peak, $ideal)
+        }
+        else {
+            $text = & $fmt 'engpass' @($t0, $t1, $Texts['resource.' + [string]$lead.Resource], $label, $peak, $ideal)
+        }
         $text += $affectedText
         $rank = $null
         if ($null -ne $Incident.Lead -and $Incident.Contributors.ContainsKey([string]$Incident.Lead)) { $rank = $Incident.Contributors[[string]$Incident.Lead] }
@@ -746,7 +762,7 @@ function Get-WorkerPerfIncidentText {
         }
     }
     if ($Incident.Chronic) { $text = $Texts['chronic.prefix'] + $text }
-    $ctx = @(@($Incident.ChronicContext) | ForEach-Object { [string]$_.Label })
+    $ctx = @(@($Incident.ChronicContext) | ForEach-Object { [string]$_.Label } | Where-Object { $headLabel -eq '' -or $_ -ne $headLabel })
     if ($ctx.Count -gt 0) { $text += & $fmt 'chronic.context' @(($ctx -join ', ')) }
     return $text
 }
