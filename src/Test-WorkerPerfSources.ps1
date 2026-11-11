@@ -90,8 +90,8 @@ function New-WorkerPerfNameMask([string[]]$Users, [string[]]$Domains = @(), [str
         $fallback = $mask.User
         $mask.Evaluator = [System.Text.RegularExpressions.MatchEvaluator] {
             param($m)
-            $found = $token[$m.Value]
-            if ($null -eq $found) { $fallback } else { $found }
+            $found = $null
+            if ($token.TryGetValue($m.Value, [ref]$found)) { $found } else { $fallback }
         }.GetNewClosure()
     }
     return $mask
@@ -105,7 +105,8 @@ function Hide-WorkerPerfMaskedText([string]$Text, $Mask) {
     # A text is masked once, when all names are known: masking with a part of the names can cut a longer name
     # apart (anna.meier -> <user>.meier while only anna is known), and no later pass can repair that.
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $result = $Text
+    # the two private-use characters are reserved for the replacements below; a text that brings its own loses them
+    $result = $Text.Replace([string][char]0xE000, '').Replace([string][char]0xE001, '')
     # account SIDs of domain and Entra ID accounts (well-known SIDs such as S-1-5-18 stay), then the user name that
     # container folders carry beside the SID (<sid>_name, name_<sid>) and container files carry after their prefix
     # (Profile_name.vhdx, ODFC_name.vhdx): these hold for users that are in no list.
@@ -174,25 +175,27 @@ function Hide-ProbeText([string]$Text) {
 }
 
 function Copy-ProbeValue($Value, [scriptblock]$Text, [int]$Depth = 0) {
-    # Deep copy of a result in which every text, dictionary keys included, has passed $Text. Numbers, booleans and
-    # dates stay as they are. Any other object is taken apart into its properties, so that ConvertTo-Json never
-    # serialises something that has not been through here.
+    # Deep copy of a result in which every text has passed $Text, dictionary keys and property names included.
+    # Numbers, booleans, enums, times and GUIDs stay as they are. Anything else that is neither a dictionary nor a
+    # list is taken apart into its properties (also a value type such as a key/value pair), so that ConvertTo-Json
+    # never serialises something that has not been through here.
     if ($null -eq $Value) { return $null }
     if ($Value -is [string]) { return (& $Text $Value) }
     if ($Value -is [char]) { return (& $Text ([string]$Value)) }
-    if ($Value -is [ValueType]) { return $Value }
+    if ($Value -is [ValueType]) {
+        $type = $Value.GetType()
+        if ($type.IsPrimitive -or $type.IsEnum -or $Value -is [decimal] -or $Value -is [datetime] -or $Value -is [System.DateTimeOffset] -or
+            $Value -is [timespan] -or $Value -is [guid]) { return $Value }
+    }
     if ($Depth -ge 16) { return (& $Text ([string]$Value)) }
     if ($Value -is [System.Collections.IDictionary]) {
         $copy = [ordered]@{}
         foreach ($entry in $Value.GetEnumerator()) {
-            $key = $entry.Key
-            if ($key -is [string]) {
-                # two keys may read the same after masking: both entries are kept
-                $base = & $Text $key
-                $key = $base
-                $n = 1
-                while ($copy.Contains($key)) { $n++; $key = '{0} ({1})' -f $base, $n }
-            }
+            # keys become texts (JSON knows no others); two keys may read the same after masking: both entries are kept
+            $base = & $Text ([string]$entry.Key)
+            $key = $base
+            $n = 1
+            while ($copy.Contains($key)) { $n++; $key = '{0} ({1})' -f $base, $n }
             $copy.Add($key, (Copy-ProbeValue $entry.Value $Text ($Depth + 1)))
         }
         return $copy
@@ -206,7 +209,11 @@ function Copy-ProbeValue($Value, [scriptblock]$Text, [int]$Depth = 0) {
     foreach ($p in $Value.PSObject.Properties) {
         $v = $null
         try { $v = $p.Value } catch { $v = $null }
-        $copy.Add([string]$p.Name, (Copy-ProbeValue $v $Text ($Depth + 1)))
+        $base = & $Text ([string]$p.Name)
+        $key = $base
+        $n = 1
+        while ($copy.Contains($key)) { $n++; $key = '{0} ({1})' -f $base, $n }
+        $copy.Add($key, (Copy-ProbeValue $v $Text ($Depth + 1)))
     }
     return $copy
 }
@@ -225,9 +232,10 @@ function Get-ProbeTexts($Value) {
 }
 
 function Get-ProbeUncHosts([string[]]$Texts) {
-    # The server names of the UNC paths in the given texts, in the forms the masking knows.
+    # The server names of the UNC paths in the given texts, in the forms the masking knows. Left out: what is no
+    # server name (a path with doubled backslashes after a drive letter, a wildcard, localhost, a single character).
     $patterns = @(
-        '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)([^\\\s''"<>]+)'
+        '(?<![\p{L}\p{N}_\\:])\\\\(?![?.]\\)([^\\\s''"<>]+)'
         '(?i)(?:\\\\\?\\UNC\\|\\\?\?\\UNC\\)([^\\\s''"<>]+)'
         '(?i)\\Device\\(?:Mup|LanmanRedirector)\\(?:;[^\\\s''"]*\\)*([^\\\s''";<>][^\\\s''"<>]*)'
     )
@@ -235,7 +243,10 @@ function Get-ProbeUncHosts([string[]]$Texts) {
     foreach ($t in @($Texts)) {
         if ([string]::IsNullOrEmpty($t)) { continue }
         foreach ($p in $patterns) {
-            foreach ($m in [regex]::Matches($t, $p)) { $found.Add($m.Groups[1].Value) }
+            foreach ($m in [regex]::Matches($t, $p)) {
+                $name = $m.Groups[1].Value.TrimEnd('.', ',', ';', ':', ')', ']')
+                if ($name.Length -ge 2 -and $name -ne 'localhost' -and $name -notmatch '[*?]') { $found.Add($name) }
+            }
         }
     }
     return Join-ProbeNames @() $found.ToArray()
@@ -243,8 +254,9 @@ function Get-ProbeUncHosts([string[]]$Texts) {
 
 function Add-ProbeServerNames([string[]]$Hosts) {
     # Server names (from UNC paths, SMB share instances and the endpoint file) join the names to mask, so that they
-    # are replaced in free text as well: the whole name, of a DNS name also its first label, and the rest of the DNS
-    # name as a domain. Returns how many names were new.
+    # are replaced in free text as well: the whole name, of a DNS name also its first label (unless that is a known
+    # domain, as in a DFS root \\domain.tld\...), and the rest of the DNS name as a domain when it has more than one
+    # label ("local" alone is a word, not a name). Returns how many names were new.
     $servers = New-Object 'System.Collections.Generic.List[string]'
     $domains = New-Object 'System.Collections.Generic.List[string]'
     foreach ($h in @($Hosts)) {
@@ -252,8 +264,11 @@ function Add-ProbeServerNames([string[]]$Hosts) {
         $servers.Add($h)
         $dot = $h.IndexOf('.')
         if ($dot -gt 0 -and $dot -lt $h.Length - 1 -and $h -notmatch '^[0-9.]+$' -and -not $h.Contains(':')) {
-            $servers.Add($h.Substring(0, $dot))
-            $domains.Add($h.Substring($dot + 1))
+            $label = $h.Substring(0, $dot)
+            $rest = $h.Substring($dot + 1)
+            $isDomain = @($script:ProbeDomains | Where-Object { [string]::Equals($_, $label, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+            if (-not $isDomain) { $servers.Add($label) }
+            if ($rest.Contains('.')) { $domains.Add($rest) }
         }
     }
     return Add-ProbeMaskNames -Computers $servers.ToArray() -Domains $domains.ToArray()

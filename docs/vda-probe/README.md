@@ -57,13 +57,13 @@ In der JSON-Datei sind Namen maskiert, auch der des Workers (er steht weder im D
 | Name | Ersatz | Woran das Skript ihn erkennt |
 |---|---|---|
 | Benutzernamen | `<user>` | Sitzungen (WTS), Ordner der Benutzerprofile, angemeldeter Benutzer; außerdem ohne Liste der Name neben einer Konten-SID (`<sid>_name`, `name_<sid>`) und in Containerdateien (`Profile_name.vhdx`, `ODFC_name.vhdx`) |
-| Domänennamen | `<domain>` | Domäne jeder Sitzung, `USERDOMAIN`, `USERDNSDOMAIN`, Zusatz an Profilordnern, DNS-Anteil eines Servernamens; neben einem Benutzernamen auch unbekannte (`<user>.<domain>`, `<domain>\<user>`, `<user>@<domain>`) |
+| Domänennamen | `<domain>` | Domäne jeder Sitzung, `USERDOMAIN`, `USERDNSDOMAIN`, Zusatz an Profilordnern, mehrteiliger DNS-Anteil eines Servernamens; neben einem Benutzernamen auch unbekannte (`<user>.<domain>`, `<domain>\<user>`, `<user>@<domain>`) |
 | Clientnamen | `<client>` | Clientname jeder Sitzung |
 | Name des Workers | `<server>` | Computername und Hostname |
 | Servernamen | `<server>` | jeder Pfad der Form `\\server\…`, `\\?\UNC\server\…`, `\??\UNC\server\…`, `\Device\Mup\server\…` oder `\Device\LanmanRedirector\…\server\…`; die so gefundenen Server, die Server der SMB-Freigaben und die Hosts der Datei für `-EndpointFile` werden auch in freiem Text ersetzt |
 | Konten-SIDs | `<sid>` | Muster `S-1-5-21-…` (Domänenkonten) und `S-1-12-1-…` (Entra-ID-Konten); bekannte SIDs wie `S-1-5-18` bleiben stehen |
 
-Die Prüfungen behalten ihre Texte zunächst unverändert; maskiert wird das Ergebnis einmal als Ganzes, nach der letzten Prüfung und mit allen Namen, die bis dahin bekannt sind. Sitzungen kommen und gehen, während das Skript läuft: Es liest sie deshalb beim Start, nach jeder Prüfung und vor dem Maskieren noch einmal, die Profilordner beim Start und vor dem Maskieren. Wer sich während des Laufs anmeldet, wird so ebenfalls maskiert. Eine Lücke bleibt: Wer sich innerhalb einer einzelnen Prüfung an- und wieder abmeldet (die längste dauert 40 Sekunden) und dessen Profilordner beim Abmelden gelöscht wird, steht in keiner Liste; für ihn greifen nur die festen Muster der Tabelle. Hostnamen und Adressen der Gegenstellen werden nicht ausgegeben.
+Die Prüfungen behalten ihre Texte zunächst unverändert; maskiert wird das Ergebnis einmal als Ganzes, nach der letzten Prüfung und mit allen Namen, die bis dahin bekannt sind. Sitzungen kommen und gehen, während das Skript läuft: Es liest sie deshalb beim Start, nach jeder Prüfung und vor dem Maskieren noch einmal, die Profilordner beim Start und vor dem Maskieren. Wer sich während des Laufs anmeldet, wird so ebenfalls maskiert. Eine Lücke bleibt: Wer sich innerhalb einer einzelnen Prüfung an- und wieder abmeldet und dessen Profilordner beim Abmelden gelöscht wird, steht in keiner Liste; für ihn greifen nur die festen Muster der Tabelle. Die längsten Prüfungen sind die der Eingabeverzögerung (mit den Standardwerten 40 Sekunden) und, bei vielen Containern, die der Profilcontainer. Hostnamen und Adressen der Gegenstellen werden nicht ausgegeben.
 
 Das Skript schreibt keine Datei und bricht mit einer Meldung ab,
 

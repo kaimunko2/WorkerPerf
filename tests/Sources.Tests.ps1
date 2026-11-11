@@ -168,6 +168,39 @@ Describe 'Eine Maskierung am Ende ueber das ganze Ergebnis' {
         (Protect-ProbeValue $data | ConvertTo-Json -Depth 8 -Compress) |
             Should -Be '{"ICA-CGP 3 (<domain>\\<user>)":1,"Rows":[{"Instance":"ICA-CGP 3 (<domain>\\<user>)","Value":2.5,"When":"2026-11-11T07:08:09","Inner":{"Client":"<client>"}}],"Flag":true,"Count":7,"Nothing":null}'
     }
+    It 'nimmt auch Wertetypen mit Eigenschaften auseinander und maskiert Eigenschaftsnamen und andere Schluessel' {
+        $null = Add-ProbeMaskNames -Users @('anna') -Computers @('VDA01')
+        $pair = New-Object 'System.Collections.Generic.KeyValuePair[string,string]' ('anna', 'VDA01')
+        $entry = New-Object System.Collections.DictionaryEntry ('anna', 'Sitzung auf VDA01')
+        $json = Protect-ProbeValue ([ordered]@{ Pair = $pair; Entry = $entry; Object = [pscustomobject]@{ anna = 'VDA01' }; Table = @{ 4711 = 'anna' } }) | ConvertTo-Json -Depth 8 -Compress
+        $json | Should -Not -Match 'anna'
+        $json | Should -Not -Match 'VDA01'
+        $json | Should -Match ([regex]::Escape('"Pair":{"Key":"<user>","Value":"<server>"}'))
+        $json | Should -Match ([regex]::Escape('"Object":{"<user>":"<server>"}'))
+        $json | Should -Match ([regex]::Escape('"Table":{"4711":"<user>"}'))
+    }
+    It 'laesst Zahlen, Wahrheitswerte, Zeiten und Kennungen unveraendert' {
+        $id = [guid]'11111111-2222-3333-4444-555555555555'
+        $safe = Protect-ProbeValue ([ordered]@{ A = 1.5; B = [decimal]2; C = $false; D = [datetime]'2026-11-11T07:08:09'; E = [timespan]::FromSeconds(5); F = $id; G = [System.DayOfWeek]::Monday; H = [uint64]7 })
+        $safe.A | Should -Be 1.5; $safe.B | Should -Be 2; $safe.C | Should -BeFalse
+        $safe.D | Should -Be ([datetime]'2026-11-11T07:08:09'); $safe.E | Should -Be ([timespan]::FromSeconds(5)); $safe.F | Should -Be $id
+        $safe.G | Should -Be ([System.DayOfWeek]::Monday); $safe.H | Should -Be 7
+    }
+    It 'nimmt nur echte Servernamen aus den Texten auf' {
+        @(Get-ProbeUncHosts @('C:\\Users\\x', '\\localhost\c$', '\\*\x', 'siehe \\fs01.', "Pfad '\\fs02' fehlt", '\\a\x')) | Sort-Object | Should -Be @('fs01', 'fs02')
+        $null = Add-ProbeMaskNames -Users @('anna') -Domains @('KLINIK')
+        $null = Add-ProbeServerNames @('klinik.local', 'fs01.klinik.local')
+        Hide-ProbeText 'KLINIK\anna, Local Security Authority, fs01 in klinik.local' | Should -Be '<domain>\<user>, Local Security Authority, <server> in <server>'
+    }
+    It 'entfernt die internen Trennzeichen aus fremdem Text' {
+        $text = [string][char]0xE000 + 'anna' + [char]0xE001 + ' und ' + [char]0xE000 + 'user' + [char]0xE001
+        Hide-WorkerPerfName -Text $text -Users @() | Should -Be 'anna und user'
+        Hide-WorkerPerfName -Text $text -Users @('anna') | Should -Be '<user> und user'
+    }
+    It 'ersetzt auch einen Treffer, den das Verzeichnis der Namen nicht kennt' {
+        # das Muster ignoriert Gross- und Kleinschreibung nach Kulturregeln (Kelvin-Zeichen = k), das Verzeichnis nicht
+        Hide-WorkerPerfName -Text ('Konto ' + [char]0x212A + 'arl gesperrt') -Users @('karl') | Should -Be 'Konto <user> gesperrt'
+    }
     It 'haelt Schluessel auseinander, die nach der Maskierung gleich lauten' {
         $null = Add-ProbeMaskNames -Users @('mueller', 'schmidt')
         $safe = Protect-ProbeValue ([ordered]@{ 'C:\Users\mueller' = 1; 'C:\Users\schmidt' = 2 })
