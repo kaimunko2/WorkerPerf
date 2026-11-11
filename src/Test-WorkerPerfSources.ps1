@@ -8,9 +8,11 @@
     Every check runs on its own; a failing check is reported and the others continue.
     The script only reads; it changes nothing on the system.
 
-    Results are shown as a table and written as JSON to
-    WorkerPerf-Quellen_<COMPUTER>_<yyyyMMdd-HHmmss>.json. The computer name is the only name in
-    the file: user names and UNC server names in paths and instance names are masked.
+    Results are shown as a table and written as JSON to vda-probe_<yyyyMMdd-HHmmss>.json.
+    The file contains no names: user, domain, client and computer names and UNC server names
+    are masked in every text, endpoints are reported without host name or address, and neither
+    the file name nor the content carries the name of the worker. If the names to mask cannot
+    be determined, the script stops without writing a file.
 
     Performance counters are read through System.Diagnostics.PerformanceCounterCategory with
     English names (language neutral). For comparison the matching Win32_PerfRawData_* CIM
@@ -53,20 +55,31 @@ $ErrorActionPreference = 'Stop'
 
 #region ---------- masking --------------------------------------------------------------------
 
-function Hide-WorkerPerfName([string]$Text, [string[]]$Users) {
-    # Replaces user names (case-insensitive, whole names only, longest first) by <user> and UNC
-    # server names (at the start or inside a text) by <server>.
+function Hide-WorkerPerfName([string]$Text, [string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
+    # Replaces names (case-insensitive, whole names only, longest first): user names by <user>, computer names by
+    # <server>, client names by <client>, domain names by <domain>; UNC server names (at the start or inside a text)
+    # by <server>. Next to a masked user the domain part goes as well, known or not: <user>.<domain> as a folder
+    # name, <domain>\<user> and <user>@<domain>.
     # Self-contained: the tests load this function alone.
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
     $result = $Text
-    $names = @(@($Users) | Where-Object { -not [string]::IsNullOrEmpty($_) } | Sort-Object -Unique |
-            Sort-Object -Property { $_.Length } -Descending)
-    if ($names.Count -gt 0) {
+    $token = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($n in @($Users)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<user>' } }
+    foreach ($n in @($Computers)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<server>' } }
+    foreach ($n in @($Clients)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<client>' } }
+    foreach ($n in @($Domains)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<domain>' } }
+    if ($token.Count -gt 0) {
         # One pass with an alternation, so text that was already replaced is never matched again.
+        $names = @($token.Keys | Sort-Object -Property { $_.Length } -Descending)
         $alternatives = ($names | ForEach-Object { [regex]::Escape($_) }) -join '|'
         $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
-        $result = [regex]::Replace($result, $pattern, '<user>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $evaluator = [System.Text.RegularExpressions.MatchEvaluator] { param($m) $token[$m.Value] }
+        $result = [regex]::Replace($result, $pattern, $evaluator, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     }
+    # the domain part beside a user: folder <user>.DOMAIN\ (profile stores), DOMAIN\<user>, <user>@domain
+    $result = [regex]::Replace($result, '<user>\.[\p{L}\p{N}_-]+(?=[\\/])', '<user>.<domain>')
+    $result = [regex]::Replace($result, '<user>@[\p{L}\p{N}][\p{L}\p{N}.-]*', '<user>@<domain>')
+    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}\\:._-])[\p{L}\p{N}_-]+\\<user>', '<domain>\<user>')
     # \\server\... at the start or after a non-word character (e.g. quoted in an error message);
     # device paths such as \\?\Volume{...} and \\.\ are kept.
     $result = [regex]::Replace($result, '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)[^\\\s''"]+', '\\<server>')
@@ -74,21 +87,44 @@ function Hide-WorkerPerfName([string]$Text, [string[]]$Users) {
 }
 
 $script:ProbeUsers = @()
+$script:ProbeDomains = @()
+$script:ProbeClients = @()
+$script:ProbeComputers = @()
 
 function Hide-ProbeText([string]$Text) {
-    return Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers
+    return Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+}
+
+function Protect-ProbeValue($Value) {
+    # Last line of defence before the result is written: every text anywhere in the result passes the masking once
+    # more (dictionaries and lists are walked, keys and other values stay as they are).
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return (Hide-ProbeText $Value) }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($k in @($Value.Keys)) { $copy[$k] = Protect-ProbeValue $Value[$k] }
+        return $copy
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $list = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($item in $Value) { $list.Add((Protect-ProbeValue $item)) }
+        return , $list.ToArray()
+    }
+    return $Value
 }
 
 function Hide-ProbeShareName([string]$Name) {
     # SMB share instances may start with a single backslash (\server\share).
-    if ($Name -match '^\\[^\\]') { return (Hide-WorkerPerfName -Text ('\' + $Name) -Users $script:ProbeUsers).Substring(1) }
+    if ($Name -match '^\\[^\\]') { return (Hide-ProbeText ('\' + $Name)).Substring(1) }
     return Hide-ProbeText $Name
 }
 
 function Test-ProbeUserInText([string]$Text) {
     # True when a known user name occurs in $Text (same matching rules as the masking).
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return (Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers) -ne (Hide-WorkerPerfName -Text $Text -Users @())
+    $with = Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    $without = Hide-WorkerPerfName -Text $Text -Users @() -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    return $with -ne $without
 }
 
 function Get-ProbeMaskNames([string[]]$SessionUsers, [string[]]$ProfilePaths, [string]$CurrentUser) {
@@ -110,6 +146,63 @@ function Get-ProbeMaskNames([string[]]$SessionUsers, [string[]]$ProfilePaths, [s
     return $names.ToArray()
 }
 
+function Get-ProbeMaskDomains([string[]]$SessionDomains, [string]$UserDomain, [string]$UserDnsDomain, [string[]]$ProfilePaths) {
+    # Domain names to mask: the domain of every WTS session, USERDOMAIN and USERDNSDOMAIN of the current user and the
+    # part after the dot of a profile folder such as C:\Users\mueller.KLINIK (not a counter such as .000).
+    $names = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($d in @($SessionDomains) + @($UserDomain, $UserDnsDomain)) {
+        if (-not [string]::IsNullOrEmpty($d) -and -not $names.Contains($d)) { $names.Add($d) }
+    }
+    foreach ($p in @($ProfilePaths)) {
+        if ([string]::IsNullOrEmpty($p)) { continue }
+        $leaf = @($p -split '[\\/]' | Where-Object { $_ -ne '' })
+        if ($leaf.Count -eq 0) { continue }
+        $parts = $leaf[$leaf.Count - 1].Split('.')
+        for ($i = 1; $i -lt $parts.Length; $i++) {
+            if ($parts[$i] -ne '' -and $parts[$i] -notmatch '^[0-9]+$' -and -not $names.Contains($parts[$i])) { $names.Add($parts[$i]) }
+        }
+    }
+    return $names.ToArray()
+}
+
+function Get-ProbeMaskGap($Sessions, [bool]$WtsOk, [bool]$ProfilesOk) {
+    # Empty when the list of user names to mask is complete enough to write a result, else the reason (German).
+    # The profile folders are the second source: with them, a session without a user name is covered.
+    if ($ProfilesOk) { return '' }
+    if (-not $WtsOk) { return 'Benutzernamen fuer die Maskierung nicht ermittelbar (weder ueber die WTS-Schnittstelle noch ueber die Benutzerprofile)' }
+    $unnamed = @(@($Sessions) | Where-Object { $null -ne $_ -and [string]$_.State -eq 'Active' -and [string]::IsNullOrEmpty([string]$_.User) })
+    if ($unnamed.Count -gt 0) {
+        return ('{0} aktive Sitzung(en) ohne Benutzernamen, und die Benutzerprofile sind nicht lesbar: die Namen dieser Benutzer liessen sich nicht maskieren' -f $unnamed.Count)
+    }
+    return ''
+}
+
+function Get-ProbeEndpointErrorClass($Exception) {
+    # Short class of a failed connect: refused, timeout, dns or other. The exception text itself is never reported:
+    # it can end with the address the host name resolved to.
+    $e = $Exception
+    while ($null -ne $e) {
+        if ($e -is [System.Net.Sockets.SocketException]) {
+            switch ($e.SocketErrorCode.ToString()) {
+                'ConnectionRefused' { return 'refused' }
+                'TimedOut' { return 'timeout' }
+                'HostNotFound' { return 'dns' }
+                'TryAgain' { return 'dns' }
+                'NoData' { return 'dns' }
+                'NoRecovery' { return 'dns' }
+                default { return 'other' }
+            }
+        }
+        $e = $e.InnerException
+    }
+    return 'other'
+}
+
+function Get-ProbeFileName([datetime]$Now) {
+    # The name of the worker appears neither in the file name nor in the file.
+    return 'vda-probe_{0}.json' -f $Now.ToString('yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Hide-ProbeEndpointText([string]$Text, [string[]]$HostNames) {
     # Endpoint labels are written by the customer and may quote a host; every host name of the
     # endpoint file and its first label (e.g. ora-db of ora-db.example.local) become <server>.
@@ -122,7 +215,7 @@ function Hide-ProbeEndpointText([string]$Text, [string[]]$HostNames) {
         $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
         $result = [regex]::Replace($result, $pattern, '<server>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     }
-    return Hide-WorkerPerfName -Text $result -Users $script:ProbeUsers
+    return Hide-ProbeText $result
 }
 
 #endregion
@@ -155,13 +248,18 @@ function Get-ProbeMs([System.Diagnostics.Stopwatch]$Stopwatch) {
     return [Math]::Round($Stopwatch.Elapsed.TotalMilliseconds, 1)
 }
 
+# Every CIM query ends after this time instead of blocking the probe on a loaded worker.
+$script:ProbeCimTimeoutSec = 30
+# Event counts are taken over at most this many events per log.
+$script:ProbeMaxEvents = 1000
+
 function Get-ProbeProcesses($Ctx) {
-    if ($null -eq $Ctx.Processes) { $Ctx.Processes = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop) }
+    if ($null -eq $Ctx.Processes) { $Ctx.Processes = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop) }
     return $Ctx.Processes
 }
 
 function Get-ProbeServices($Ctx) {
-    if ($null -eq $Ctx.Services) { $Ctx.Services = @(Get-CimInstance -ClassName Win32_Service -ErrorAction Stop) }
+    if ($null -eq $Ctx.Services) { $Ctx.Services = @(Get-CimInstance -ClassName Win32_Service -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop) }
     return $Ctx.Services
 }
 
@@ -450,7 +548,7 @@ function Get-ProbeCimPerf($Ctx, [string]$Category) {
     # CIM path: names of all Win32_PerfRawData_* classes matching the category name without spaces.
     if ($null -eq $Ctx.CimPerfClasses) {
         try {
-            $Ctx.CimPerfClasses = @(Get-CimClass -Namespace 'root\cimv2' -ClassName 'Win32_PerfRawData_*' -ErrorAction Stop |
+            $Ctx.CimPerfClasses = @(Get-CimClass -Namespace 'root\cimv2' -ClassName 'Win32_PerfRawData_*' -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop |
                     ForEach-Object { [string]$_.CimClassName })
         }
         catch {
@@ -520,7 +618,7 @@ function Invoke-ProbeIcaCheck($Ctx, $Check) {
     $euem = [ordered]@{ Namespace = 'root\citrix\euem'; Available = $false; Classes = @(); Error = '' }
     try {
         $classes = New-Object 'System.Collections.Generic.List[object]'
-        foreach ($c in @(Get-CimClass -Namespace 'root\citrix\euem' -ErrorAction Stop | Sort-Object -Property CimClassName)) {
+        foreach ($c in @(Get-CimClass -Namespace 'root\citrix\euem' -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop | Sort-Object -Property CimClassName)) {
             if ($c.CimClassName.StartsWith('__')) { continue }
             $props = @($c.CimClassProperties | ForEach-Object { '{0}:{1}' -f $_.Name, $_.CimType })
             $classes.Add([ordered]@{ Name = [string]$c.CimClassName; Properties = $props })
@@ -611,11 +709,11 @@ function Invoke-ProbeInputSessionCheck($Ctx, $Check) {
 #region ---------- other checks -----------------------------------------------------------------
 
 function Invoke-ProbeSystemCheck($Ctx, $Check) {
-    $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
-    $cpus = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
+    $cs = Get-CimInstance -ClassName Win32_ComputerSystem -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop
+    $cpus = @(Get-CimInstance -ClassName Win32_Processor -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
     $cores = 0
     foreach ($c in $cpus) { $cores += [int]$c.NumberOfCores }
-    $vmTools = @(Get-CimInstance -ClassName Win32_Service -Filter "Name='VMTools'" -ErrorAction Stop)
+    $vmTools = @(Get-CimInstance -ClassName Win32_Service -Filter "Name='VMTools'" -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
     $vmState = ''
     if ($vmTools.Count -gt 0) { $vmState = [string]$vmTools[0].State }
     $data = [ordered]@{
@@ -638,7 +736,7 @@ function Invoke-ProbeProcessSnapshotCheck($Ctx, $Check) {
     $procs = @()
     for ($k = 0; $k -lt 3; $k++) {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $procs = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+        $procs = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
         $sw.Stop()
         $durations.Add((Get-ProbeMs $sw))
     }
@@ -674,7 +772,7 @@ function Invoke-ProbeSessionsCheck($Ctx, $Check) {
 
 function Invoke-ProbeServicesCheck($Ctx, $Check) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $Ctx.Services = @(Get-CimInstance -ClassName Win32_Service -ErrorAction Stop)
+    $Ctx.Services = @(Get-CimInstance -ClassName Win32_Service -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
     $sw.Stop()
     $rows = New-Object 'System.Collections.Generic.List[object]'
     foreach ($s in @($Ctx.Services | Where-Object { [int]$_.ProcessId -ne 0 } | Sort-Object -Property Name)) {
@@ -696,13 +794,13 @@ function Invoke-ProbeProfileVolumesCheck($Ctx, $Check) {
     catch { $ldError = Get-ProbeErrorText $_ }
 
     $ns = 'root\Microsoft\Windows\Storage'
-    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -ErrorAction Stop)
+    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
     $rows = New-Object 'System.Collections.Generic.List[object]'
     foreach ($d in $disks) {
         $number = [int](Get-Prop $d 'Number')
         $location = [string](Get-Prop $d 'Location')
         $parts = New-Object 'System.Collections.Generic.List[object]'
-        foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -Filter ('DiskNumber = {0}' -f $number) -ErrorAction Stop)) {
+        foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -Filter ('DiskNumber = {0}' -f $number) -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)) {
             $paths = @(@(Get-Prop $p 'AccessPaths') | Where-Object { -not [string]::IsNullOrEmpty($_) })
             $letter = ''
             $dl = Get-Prop $p 'DriveLetter'
@@ -755,7 +853,7 @@ function Invoke-ProbeProfileVolumesCheck($Ctx, $Check) {
 }
 
 function Get-ProbeEventCounts([string]$Log, [int[]]$Ids) {
-    $r = [ordered]@{ Log = $Log; Exists = $false; Enabled = $null; Readable = $false; Counts = [ordered]@{}; Error = '' }
+    $r = [ordered]@{ Log = $Log; Exists = $false; Enabled = $null; Readable = $false; Counts = [ordered]@{}; Capped = $false; Error = '' }
     try {
         $info = Get-WinEvent -ListLog $Log -ErrorAction Stop
         $r.Exists = $true
@@ -768,13 +866,14 @@ function Get-ProbeEventCounts([string]$Log, [int[]]$Ids) {
     try {
         $events = @()
         try {
-            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $Log; Id = $Ids; StartTime = (Get-Date).AddDays(-7) } -ErrorAction Stop)
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $Log; Id = $Ids; StartTime = (Get-Date).AddDays(-7) } -MaxEvents $script:ProbeMaxEvents -ErrorAction Stop)
         }
         catch {
             # No matching events is not an error; the error id is language neutral.
             if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw }
         }
         $r.Readable = $true
+        $r.Capped = ($events.Count -ge $script:ProbeMaxEvents)       # the counts cover the newest events only
         foreach ($id in $Ids) { $r.Counts[[string]$id] = @($events | Where-Object { $_.Id -eq $id }).Count }
     }
     catch { $r.Error = Get-ProbeErrorText $_ }
@@ -796,7 +895,7 @@ function Invoke-ProbeEventsCheck($Ctx, $Check) {
             $parts.Add(('{0}: nicht lesbar ({1})' -f $l.Log, $l.Error))
         }
     }
-    return @{ Ok = $ok; Detail = ($parts.ToArray() -join '; '); Data = [ordered]@{ Days = 7; Logs = $logs.ToArray() } }
+    return @{ Ok = $ok; Detail = ($parts.ToArray() -join '; '); Data = [ordered]@{ Days = 7; MaxEvents = $script:ProbeMaxEvents; Logs = $logs.ToArray() } }
 }
 
 function Get-ProbeProcessGroups($Ctx, [bool]$SessionZero) {
@@ -855,7 +954,10 @@ function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
         # Not configured is not a failed source: Ok stays $null and Data says it was skipped.
         return @{ Ok = $null; Detail = 'kein -EndpointFile angegeben, Pruefung uebersprungen'; Data = [ordered]@{ Skipped = $true; TimeoutMs = 2000; Endpoints = @() } }
     }
-    $cfg = Get-Content -LiteralPath $Ctx.EndpointFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    # an unreadable endpoint file is reported without the engine's message: that can quote the file, host names included
+    $cfg = $null
+    try { $cfg = Get-Content -LiteralPath $Ctx.EndpointFile -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { throw 'Die Datei fuer -EndpointFile ist nicht lesbar oder kein gueltiges JSON.' }
     $rows = New-Object 'System.Collections.Generic.List[object]'
     $reached = 0
     $endpoints = @(Get-Prop $cfg 'endpoints')
@@ -871,27 +973,33 @@ function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
             Role = Hide-ProbeEndpointText ([string](Get-Prop $e 'role')) $hostNames
             Port = Get-Prop $e 'port'; DnsMs = $null; ConnectMs = $null; Error = ''
         }
+        # Error is a short class (dns, refused, timeout, other), never the exception text: under .NET Framework that
+        # ends with the address the name resolved to. The resolved address is used for the connect only.
+        $address = $null
         try {
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
             $addresses = @([System.Net.Dns]::GetHostAddresses($hostName))
             $row.DnsMs = Get-ProbeMs $sw
             $address = @($addresses | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork }) + $addresses | Select-Object -First 1
-            if ($null -eq $address) { throw 'keine Adresse' }
-            $client = New-Object System.Net.Sockets.TcpClient -ArgumentList $address.AddressFamily
-            try {
-                $sw.Restart()
-                $async = $client.BeginConnect($address, [int]$row.Port, $null, $null)
-                if ($async.AsyncWaitHandle.WaitOne(2000)) {
-                    $client.EndConnect($async)
-                    $row.ConnectMs = Get-ProbeMs $sw
-                    $reached++
-                }
-                else { $row.Error = 'Zeitlimit 2 s ueberschritten' }
-            }
-            finally { $client.Close() }
         }
-        catch {
-            $row.Error = Hide-ProbeEndpointText (Get-ProbeErrorText $_) $hostNames
+        catch { $address = $null }
+        if ($null -eq $address) { $row.Error = 'dns' }
+        else {
+            try {
+                $client = New-Object System.Net.Sockets.TcpClient -ArgumentList $address.AddressFamily
+                try {
+                    $sw.Restart()
+                    $async = $client.BeginConnect($address, [int]$row.Port, $null, $null)
+                    if ($async.AsyncWaitHandle.WaitOne(2000)) {
+                        $client.EndConnect($async)
+                        $row.ConnectMs = Get-ProbeMs $sw
+                        $reached++
+                    }
+                    else { $row.Error = 'timeout' }
+                }
+                finally { $client.Close() }
+            }
+            catch { $row.Error = Get-ProbeEndpointErrorClass $_.Exception }
         }
         $rows.Add($row)
     }
@@ -960,7 +1068,7 @@ if ($EndpointFile -and -not (Test-Path -LiteralPath $EndpointFile -PathType Leaf
 }
 
 # Resolve the output file first, so a bad path fails before the checks run.
-$fileName = 'WorkerPerf-Quellen_{0}_{1}.json' -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmmss')
+$fileName = Get-ProbeFileName (Get-Date)
 if ([string]::IsNullOrEmpty($OutFile)) { $OutFile = (Get-Location).ProviderPath }
 $target = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
 if ((Test-Path -LiteralPath $target -PathType Container) -or -not $target.EndsWith('.json', [StringComparison]::OrdinalIgnoreCase)) {
@@ -992,18 +1100,27 @@ catch { $ctx.WtsError = Get-ProbeErrorText $_ }
 # Second source independent of WTS: the folders of all local (non-special) user profiles.
 $profilePaths = @()
 try {
-    $profilePaths = @(Get-CimInstance -ClassName Win32_UserProfile -ErrorAction Stop |
+    $profilePaths = @(Get-CimInstance -ClassName Win32_UserProfile -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop |
             Where-Object { -not (Get-Prop $_ 'Special') } | ForEach-Object { [string](Get-Prop $_ 'LocalPath') })
 }
 catch { $ctx.ProfileError = Get-ProbeErrorText $_ }
 $ctx.ProfileNameCount = $profilePaths.Count
 $wtsOk = $ctx.WtsCompiled -and [string]::IsNullOrEmpty($ctx.WtsError)
-if (-not $wtsOk -and $ctx.ProfileError) {
-    # Without any list of user names the result could leak them, so nothing is written.
-    throw ('Benutzernamen fuer die Maskierung nicht ermittelbar (WTS: {0}; Win32_UserProfile: {1}). Es wird keine Datei geschrieben.' -f $ctx.WtsError, $ctx.ProfileError)
+# Fail closed: without the user names (no list at all, or an active session whose name neither source supplies) the
+# result could leak them, so nothing is written.
+$gap = Get-ProbeMaskGap -Sessions $ctx.Sessions -WtsOk $wtsOk -ProfilesOk ([string]::IsNullOrEmpty($ctx.ProfileError))
+if ($gap) {
+    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben.' -f $gap, $ctx.WtsError, $ctx.ProfileError)
 }
 $sessionUsers = @($ctx.Sessions | ForEach-Object { [string]$_.User })
 $script:ProbeUsers = @(Get-ProbeMaskNames -SessionUsers $sessionUsers -ProfilePaths $profilePaths -CurrentUser $env:USERNAME)
+$script:ProbeDomains = @(Get-ProbeMaskDomains -SessionDomains @($ctx.Sessions | ForEach-Object { [string]$_.Domain }) -UserDomain $env:USERDOMAIN `
+        -UserDnsDomain $env:USERDNSDOMAIN -ProfilePaths $profilePaths)
+$script:ProbeClients = @($ctx.Sessions | ForEach-Object { [string]$_.ClientName } | Where-Object { $_ -ne '' } | Sort-Object -Unique)
+# the worker's own name: the NetBIOS name and the host name (they differ when the name is longer than 15 characters)
+$hostName = ''
+try { $hostName = [System.Net.Dns]::GetHostName() } catch { $hostName = '' }
+$script:ProbeComputers = @(@($env:COMPUTERNAME, $hostName) | Where-Object { -not [string]::IsNullOrEmpty($_) } | Sort-Object -Unique)
 $ctx.Users = $script:ProbeUsers
 
 $isElevated = $false
@@ -1016,7 +1133,7 @@ if (-not $isElevated) { Write-Warning 'Konsole ohne erhoehte Rechte: einige Prue
 
 $os = ''
 try {
-    $o = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+    $o = Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop
     $os = '{0} {1}' -f $o.Caption, $o.Version
 }
 catch { $os = 'unbekannt' }
@@ -1038,9 +1155,9 @@ foreach ($c in $script:Catalogue) {
     $results.Add($r)
 }
 
+# No name of the worker in the result: several workers are told apart by the time stamp of the file.
 $report = [ordered]@{
-    SchemaVersion = 1
-    Computer      = $env:COMPUTERNAME
+    SchemaVersion = 2
     OS            = $os
     PSVersion     = $PSVersionTable.PSVersion.ToString()
     Culture       = (Get-Culture).Name
@@ -1048,6 +1165,7 @@ $report = [ordered]@{
     IsElevated    = $isElevated
     Checks        = $results.ToArray()
 }
+$report = Protect-ProbeValue $report
 $json = ConvertTo-Json -InputObject $report -Depth 16
 [System.IO.File]::WriteAllText($target, $json, (New-Object System.Text.UTF8Encoding $false))
 
