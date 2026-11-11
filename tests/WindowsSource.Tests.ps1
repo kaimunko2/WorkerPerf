@@ -1,6 +1,7 @@
 BeforeAll {
     Set-StrictMode -Version 2
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Capture.ps1')
     # Die Probe-Klasse wird einmal vorab uebersetzt, damit die Zeitmessung unten nur den Start der Proben misst.
     Start-WorkerPerfProbes -Endpoints @(); [void](Receive-WorkerPerfProbes)
 }
@@ -47,7 +48,7 @@ Describe 'Windows-Datenquelle: Instanznamen und Zuordnungen' {
     It 'nimmt nur ganze Zahlen als Sitzungsinstanz der Eingabeverzoegerung' {
         ConvertFrom-WorkerPerfSessionInstance '55' | Should -Be 55
         foreach ($n in 'Average', 'Max', '_Total', 'Durchschnitt', '', '5a') { ConvertFrom-WorkerPerfSessionInstance $n | Should -BeNullOrEmpty }
-        (ConvertFrom-WorkerPerfInputInstance '0:10024 <w3wp.exe>').SessionId | Should -Be 0
+        (ConvertFrom-WorkerPerfInputInstance '0:4120 <dienst.exe>').SessionId | Should -Be 0
         (ConvertFrom-WorkerPerfInputInstance '12:880 <Name mit Leerzeichen.exe>').Name | Should -Be 'Name mit Leerzeichen.exe'
     }
     It 'erkennt Summeninstanzen ohne englischen Namen' {
@@ -116,46 +117,46 @@ Describe 'Windows-Datenquelle: Umrechnung der Leistungsindikatoren' {
     BeforeAll {
         # Werte, wie sie CounterSample.Calculate liefert: Antwortzeiten in s, Raten je s, Steal laut Zaehlertyp Timer100Ns in %
         $script:Values = @{
-            cpu = @{ '% Processor Time' = @{ '_Total' = 28.8; '0,_Total' = 30.0 } }
+            cpu = @{ '% Processor Time' = @{ '_Total' = 31.5; '0,_Total' = 33.0 } }
             queue = @{ 'Processor Queue Length' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 3.0 } }
-            steal = @{ 'CPU stolen time' = @{ '_Total' = 0.00015 } }
-            memory = @{ 'Available Bytes' = @{ '' = 33381543936.0 }; 'Committed Bytes' = @{ '' = 36549353472.0 }; 'Commit Limit' = @{ '' = 83750830080.0 }; 'Pages Input/sec' = @{ '' = 42.95 } }
-            disk = @{ 'Disk Read Bytes/sec' = @{ '_Total' = 5110.5 }; 'Disk Write Bytes/sec' = @{ '_Total' = 115498.6 }; 'Disk Reads/sec' = @{ '_Total' = 2.0 }
-                'Disk Writes/sec' = @{ '_Total' = 21.9 }; 'Current Disk Queue Length' = @{ '_Total' = 1.0 } }
-            network = @{ 'Bytes Received/sec' = @{ 'vmxnet3 Ethernet Adapter' = 6000.0; 'isatap' = 322.7 }; 'Bytes Sent/sec' = @{ 'vmxnet3 Ethernet Adapter' = 10303.2; 'isatap' = 0.0 } }
+            steal = @{ 'CPU stolen time' = @{ '_Total' = 1.5 } }
+            memory = @{ 'Available Bytes' = @{ '' = 34359738368.0 }; 'Committed Bytes' = @{ '' = 38654705664.0 }; 'Commit Limit' = @{ '' = 85899345920.0 }; 'Pages Input/sec' = @{ '' = 12.5 } }
+            disk = @{ 'Disk Read Bytes/sec' = @{ '_Total' = 4096.0 }; 'Disk Write Bytes/sec' = @{ '_Total' = 120000.0 }; 'Disk Reads/sec' = @{ '_Total' = 2.0 }
+                'Disk Writes/sec' = @{ '_Total' = 20.5 }; 'Current Disk Queue Length' = @{ '_Total' = 1.0 } }
+            network = @{ 'Bytes Received/sec' = @{ 'Ethernet-Adapter 1' = 6000.0; 'isatap' = 300.5 }; 'Bytes Sent/sec' = @{ 'Ethernet-Adapter 1' = 10000.0; 'isatap' = 0.0 } }
             volumes = @{
                 'Avg. Disk sec/Read' = @{ 'C:' = 0.0021; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.044; '_Total' = 0.003 }
                 'Avg. Disk sec/Write' = @{ 'C:' = 0.000075; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.0 ; '_Total' = 0.001 }
                 'Disk Reads/sec' = @{ 'C:' = 10.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 25.0; '_Total' = 35.0 }
-                'Disk Writes/sec' = @{ 'C:' = 5.994595; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.0; '_Total' = 5.99 }
+                'Disk Writes/sec' = @{ 'C:' = 6.2; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.0; '_Total' = 5.99 }
                 'Disk Read Bytes/sec' = @{ 'C:' = 81920.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 6291456.0; '_Total' = 1.0 }
-                'Disk Write Bytes/sec' = @{ 'C:' = 20973.1; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.0; '_Total' = 1.0 }
+                'Disk Write Bytes/sec' = @{ 'C:' = 20000.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 0.0; '_Total' = 1.0 }
                 'Current Disk Queue Length' = @{ 'C:' = 0.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 3.0; '_Total' = 3.0 } }
             shares = @{
                 'Avg. sec/Read' = @{ '\fs01\daten' = 0.08; '_Total' = 0.08 }; 'Avg. sec/Write' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 }
                 'Read Requests/sec' = @{ '\fs01\daten' = 50.0; '_Total' = 50.0 }; 'Write Requests/sec' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 }
                 'Read Bytes/sec' = @{ '\fs01\daten' = 1048576.0; '_Total' = 1048576.0 }; 'Write Bytes/sec' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 } }
             inputSession = @{ 'Max Input Delay' = @{ '0' = 0.0; '2' = 16.0; '55' = 312.0; 'Average' = 0.29; 'Max' = 312.0 } }
-            inputProcess = @{ 'Max Input Delay' = @{ '0:10024 <w3wp.exe>' = 0.0; '55:7964 <EXCEL.EXE>' = 312.0; '2:880 <explorer.exe>' = 16.0 } }
+            inputProcess = @{ 'Max Input Delay' = @{ '0:4120 <dienst.exe>' = 0.0; '55:7964 <EXCEL.EXE>' = 312.0; '2:880 <explorer.exe>' = 16.0 } }
         }
         $script:Map = New-WorkerPerfProfileMap -Disks @(@{ Location = '\\fs01\upm$\mueller.KLINIK\ProfileContainer_RW.vhdx'
                 Partitions = @(@{ DriveLetter = ''; AccessPaths = @('C:\Users\mueller_UPM_local\UpmTempMount\'); DeviceName = '' }) }) `
             -Sessions @([pscustomobject]@{ SessionId = 55; User = 'mueller' }) -Known @('C:')
         $script:Time = [datetime]::Now
-        $script:S = ConvertTo-WorkerPerfWinFastSample -Values $Values -ElapsedSec 2 -Time $Time -ProfileMap $Map
+        $script:S = ConvertTo-WorkerPerfWinFastSample -Values $Values -ElapsedSec 2 -Time $Time -ProfileMap $Map -LogicalProcessors 6
     }
     It 'liefert die Host-Werte laut Zaehlertabelle' {
         $S.Time | Should -Be $Time; $S.Time.Kind | Should -Be 'Local'
-        $S.CpuPct | Should -Be 28.8; $S.ProcQueue | Should -Be 3; $S.StealPct | Should -Be 0.00015
-        [Math]::Round($S.MemAvailMB) | Should -Be 31835; [Math]::Round($S.MemCommitLimitMB) | Should -Be 79871; $S.PagesInPerSec | Should -Be 42.95
-        $S.DiskReadBps | Should -Be 5110.5; $S.DiskWriteIops | Should -Be 21.9; $S.DiskQueue | Should -Be 1
-        $S.NetRecvBps | Should -Be 6322.7; $S.NetSentBps | Should -Be 10303.2
+        $S.CpuPct | Should -Be 31.5; $S.ProcQueue | Should -Be 3; $S.StealPct | Should -Be 0.25        # _Total ueber 6 vCPUs
+        $S.MemAvailMB | Should -Be 32768; $S.MemCommittedMB | Should -Be 36864; $S.MemCommitLimitMB | Should -Be 81920; $S.PagesInPerSec | Should -Be 12.5
+        $S.DiskReadBps | Should -Be 4096; $S.DiskWriteIops | Should -Be 20.5; $S.DiskQueue | Should -Be 1
+        $S.NetRecvBps | Should -Be 6300.5; $S.NetSentBps | Should -Be 10000
     }
     It 'rechnet Laufwerke in ms und Zugriffe im Takt um, ohne Summe' {
         @($S.Volumes).Count | Should -Be 2
         $c = $S.Volumes | Where-Object Volume -eq 'C:'
         $c.Kind | Should -Be 'disk'; $c.SessionId | Should -BeNullOrEmpty; $c.Backing | Should -Be ''
-        $c.ReadLatMs | Should -Be 2.1; $c.WriteLatMs | Should -Be 0.075; $c.ReadOps | Should -Be 20; $c.WriteOps | Should -Be 12; $c.ReadBps | Should -Be 81920
+        $c.ReadLatMs | Should -Be 2.1; $c.WriteLatMs | Should -Be 0.075; $c.ReadOps | Should -Be 20; $c.WriteOps | Should -Be 12; $c.ReadBps | Should -Be 81920; $c.WriteBps | Should -Be 20000
         $p = $S.Volumes | Where-Object Kind -eq 'profile'
         $p.SessionId | Should -Be 55; $p.Backing | Should -Be '\\fs01\upm$'; $p.ReadLatMs | Should -Be 44; $p.ReadOps | Should -Be 50; $p.Queue | Should -Be 3
     }
@@ -168,7 +169,7 @@ Describe 'Windows-Datenquelle: Umrechnung der Leistungsindikatoren' {
     }
     It 'meldet eine fehlende Kategorie als leere Werte, ohne abzubrechen' {
         $v = $Values.Clone(); $v.cpu = $null; $v.volumes = $null; $v.inputProcess = $null; $v.steal = $null
-        $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null
+        $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null -LogicalProcessors 6
         $x.CpuPct | Should -BeNullOrEmpty; $x.StealPct | Should -BeNullOrEmpty; $x.MemAvailMB | Should -Not -BeNullOrEmpty
         @($x.Volumes).Count | Should -Be 0; @($x.InputProcesses).Count | Should -Be 0; @($x.InputSessions).Count | Should -Be 3
     }
@@ -181,6 +182,27 @@ Describe 'Windows-Datenquelle: Umrechnung der Leistungsindikatoren' {
         $r['Max Input Delay']['2'] | Should -Be 9; $r['Max Input Delay']['3'] | Should -Be 31; $r['Max Input Delay'].ContainsKey('4') | Should -BeFalse
         $z = Get-WorkerPerfWinCounterValues -Previous $prev -Current $cur -Counters @('Max Input Delay', 'fehlt') -ZeroUnchanged
         $z['Max Input Delay']['2'] | Should -Be 0; $z['Max Input Delay']['3'] | Should -Be 31; $z['fehlt'].Count | Should -Be 0
+    }
+    It 'rechnet die entzogene CPU-Zeit aus Millisekunden in Prozent um' {
+        # Groessenordnung des Pruefergebnisses: der Rohwert waechst um 15 in gut 1 s (erfundene Zahlen)
+        $p = ConvertTo-WorkerPerfStealPct -Raw1 500000 -Raw2 500015 -Time1 100000000000000000 -Time2 100000000010010000
+        [Math]::Round($p, 4) | Should -Be 1.4985
+        ConvertTo-WorkerPerfStealPct -Raw1 5 -Raw2 5 -Time1 0 -Time2 20000000 | Should -Be 0
+        ConvertTo-WorkerPerfStealPct -Raw1 5 -Raw2 9 -Time1 7 -Time2 7 | Should -BeNullOrEmpty                 # ohne Zeitabstand kein Wert
+        ConvertTo-WorkerPerfStealPct -Raw1 9 -Raw2 5 -Time1 0 -Time2 20000000 | Should -BeNullOrEmpty           # Zaehler zurueckgesetzt
+        $mk = { param([hashtable]$Inst) $c = @{}; foreach ($k in $Inst.Keys) { $c[$k] = [pscustomobject]@{ InstanceName = $k; Sample = $Inst[$k] } }; $c }
+        $prev = @{ 'cpu stolen time' = (& $mk @{ '_Total' = @{ RawValue = 500000; TimeStamp100nSec = 100000000000000000 } }) }
+        $cur = @{ 'cpu stolen time' = (& $mk @{ '_Total' = @{ RawValue = 500030; TimeStamp100nSec = 100000000020000000 } }) }
+        $r = Get-WorkerPerfWinCounterValues -Previous $prev -Current $cur -Counters @('CPU stolen time') -MsPercent
+        $r['CPU stolen time']['_Total'] | Should -Be 1.5
+    }
+    It 'schreibt die entzogene CPU-Zeit je vCPU, ohne sie auf 0 zu runden' {
+        $v = $Values.Clone(); $v.steal = @{ 'CPU stolen time' = @{ '_Total' = 0.05 } }            # 1 ms in 2 s auf 6 vCPUs
+        $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null -LogicalProcessors 6
+        $row = ConvertTo-WorkerPerfFastRows -Sample $x -T 0 -ElapsedSec 2 -Burst $false -CollectMs 1
+        $row.Tick.Split(',')[5] | Should -Be '0.008'
+        $v.steal = @{ 'CPU stolen time' = @{ '_Total' = 3.0; '0' = 1.0; '1' = 2.0 } }             # Instanzen je vCPU haben Vorrang
+        (ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null -LogicalProcessors 6).StealPct | Should -Be 1.5
     }
 }
 
@@ -197,6 +219,20 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
         $rows[1].Metric | Should -Be 'Output Session Bandwidth'
         @(ConvertTo-WorkerPerfIcaRows -Values @{ 'Latency - Last Recorded' = @{} } -Sessions $s).Count | Should -Be 0     # ohne ICA-Sitzung
     }
+    It 'ordnet 60 Sitzungen mit 54 Zaehlern zuegig zu' {
+        $sessions = @(foreach ($k in 0..60) { [pscustomobject]@{ SessionId = $k + 2; WinStation = "ICA-CGP#$k"; User = "user$k" } })
+        $values = @{}
+        foreach ($c in 1..54) {
+            $inst = @{ '_Server gesamt' = 1.0 }
+            foreach ($k in 0..59) { $inst["ICA-CGP $k (user$k)"] = [double]$c }
+            $values["Latency $c"] = $inst
+        }
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $rows = @(ConvertTo-WorkerPerfIcaRows -Values $values -Sessions $sessions)
+        $sw.Elapsed.TotalSeconds | Should -BeLessThan 3
+        $rows.Count | Should -Be 3240
+        @($rows | Where-Object Instance -eq 'ICA-CGP 7 (user7)' | ForEach-Object SessionId | Sort-Object -Unique) | Should -Be @(9)
+    }
     It 'liest Citrix-EUEM-Werte nach dem Filter' {
         $inst = @([pscustomobject]@{ SessionID = [uint32]7; RoundtripTime = [uint32]42; NetworkLatency = [uint32]0; InputBandwidthUsed = [uint32]0; ProcessId = '1234'; InstanceId = 'x'; Timestamp = [datetime]::Now })
         $rows = @(ConvertTo-WorkerPerfCimCitrixRows -Instances $inst -Source 'Citrix_Euem_RoundTrip' -MetricFilter 'Latency|Round|Bandwidth')
@@ -212,6 +248,18 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
         Get-WorkerPerfEventText "Scan gestartet.`r`n Scan-ID: {1}" | Should -Be 'Scan gestartet.'
         (Get-WorkerPerfEventText ('x' * 300)).Length | Should -Be 200
         Get-WorkerPerfEventText $null | Should -Be ''
+    }
+    It 'behaelt bei mehr als 200 Ereignissen die neuesten und warnt einmal je Protokoll' {
+        . (Join-Path $PSScriptRoot 'WindowsStandIns.ps1'); Reset-WinStandIns
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
+        $script:WinFake.ManyEvents = 250
+        $out = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>&1)
+        $warn = @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+        $ev = @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] })
+        $ev.Count | Should -Be 200
+        ($ev | Measure-Object -Property Time -Minimum).Minimum | Should -BeGreaterThan ([datetime]::Now.AddSeconds(-202))
+        $warn.Count | Should -Be 1; $warn[0].Message | Should -Match 'Defender'
+        @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
     }
     It 'wartet bis zur Zielzeit und meldet die Stopp-Datei' {
         $flag = Join-Path $TestDrive 'stop.flag'
@@ -239,7 +287,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -Endpoints @([pscustomobject]@{ name = 'Oracle'; host = '127.0.0.1'; port = 1; role = 'Datenbank' }) `
             -CitrixMetricFilter 'Latency|Round' 3>$null
         $info.Computer | Should -Be 'VDA-TEST'; $info.LogicalProcessors | Should -Be 6; $info.PhysicalMemoryMB | Should -Be 59392; $info.CollectorPid | Should -Be $PID
-        $info.OS | Should -Be 'Microsoft Windows Server 2022 Datacenter 10.0.20348'
+        $info.OS | Should -Be 'Microsoft Windows Server 2022 Standard 10.0.20348'
         @($info.Endpoints).Count | Should -Be 1
         foreach ($id in 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'input.session', 'disk.latency', 'smb.latency',
             'ica.rtt', 'ica.latency', 'probe.connect', 'process', 'sessions', 'input.process', 'profile.map', 'events.defender', 'events.applocker') {
@@ -261,35 +309,53 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
         $first = Get-WorkerPerfFastSample
         $first.CpuPct | Should -BeNullOrEmpty
+        [void](Get-WorkerPerfSnapshot -Kind K)                                       # wie im Collector: Grundlage mit Stuetzpunkt
         $s = Get-WorkerPerfFastSample
-        $s.CpuPct | Should -Be 28.8; $s.Time.Kind | Should -Be 'Local'
+        $s.CpuPct | Should -Be 27.5; $s.Time.Kind | Should -Be 'Local'
+        [Math]::Round($s.StealPct, 4) | Should -Be 0.0083                          # 1 ms je 2 s der Nachbildung, auf 6 vCPUs
         $p = @($s.Volumes | Where-Object Kind -eq 'profile')
         $p.Count | Should -Be 2
         ($p | Where-Object Volume -eq 'C:\Users\mueller_UPM_local\UpmTempMount').SessionId | Should -Be 2
         ($p | Where-Object Volume -eq 'C:\Users\gast_UPM_local\UpmTempMount').SessionId | Should -BeNullOrEmpty
         @($s.InputSessions).Count | Should -Be 2; @($s.Shares).Share | Should -Be @('\\fs01\daten')
     }
-    It 'baut die Profilzuordnung neu, sobald ein unbekanntes Laufwerk erscheint, sonst nicht' {
+    It 'baut die Profilzuordnung beim Stuetzpunkt und fuer neue Laufwerke beim naechsten regulaeren Schnappschuss neu' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
-        [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfFastSample)
+        [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfSnapshot -Kind K); [void](Get-WorkerPerfFastSample)
         $builds = $script:WinFake.DiskQueries
-        [void](Get-WorkerPerfFastSample)
-        $script:WinFake.DiskQueries | Should -Be $builds
+        [void](Get-WorkerPerfSnapshot -Kind R); [void](Get-WorkerPerfFastSample)
+        $script:WinFake.DiskQueries | Should -Be $builds                                # nichts Neues: kein Neuaufbau
         Add-WinStandInUser -SessionId 3 -User 'neu' -Volume 'C:\Users\neu_UPM_local\UpmTempMount'
         [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
+        $script:WinFake.DiskQueries | Should -Be $builds                                # nie im schnellen Takt
+        $n = $s.Volumes | Where-Object Volume -eq 'C:\Users\neu_UPM_local\UpmTempMount'
+        $n.Kind | Should -Be 'profile'; $n.SessionId | Should -BeNullOrEmpty
+        [void](Get-WorkerPerfSnapshot -Kind B)
+        $script:WinFake.DiskQueries | Should -Be $builds                                # nicht im verdichteten Schnappschuss
+        [void](Get-WorkerPerfSnapshot -Kind R)
         $script:WinFake.DiskQueries | Should -Be ($builds + 1)
+        ($s = Get-WorkerPerfFastSample) | Out-Null
         ($s.Volumes | Where-Object Volume -eq 'C:\Users\neu_UPM_local\UpmTempMount').SessionId | Should -Be 3
+        ($s.Volumes | Where-Object Volume -eq 'C:').Kind | Should -Be 'disk'
+        [void](Get-WorkerPerfSnapshot -Kind K)
+        $script:WinFake.DiskQueries | Should -Be ($builds + 2)                          # jeder Stuetzpunkt baut neu
+    }
+    It 'startet, wenn die Pruefung eines Zaehlers scheitert, und meldet das Signal als nicht verfuegbar' {
+        $script:WinFake.ThrowCheck = 'LogicalDisk'
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null
+        $info.Sources['disk.latency'].Available | Should -BeFalse; $info.Sources['disk.latency'].Detail | Should -Match 'Leistungsindikatoren beschaedigt'
+        $info.Sources['cpu.host'].Available | Should -BeTrue
     }
     It 'laeuft weiter, wenn eine Kategorie beim Lesen scheitert' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
         [void](Get-WorkerPerfFastSample)
         $script:WinFake.FailRead = 'LogicalDisk'
         $s = Get-WorkerPerfFastSample 3>$null
-        @($s.Volumes).Count | Should -Be 0; $s.CpuPct | Should -Be 28.8
+        @($s.Volumes).Count | Should -Be 0; $s.CpuPct | Should -Be 27.5
     }
     It 'liefert Schnappschuss, Dienste und Ereignisse' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -CitrixMetricFilter 'Latency|Round' 3>$null)
-        $snap = Get-WorkerPerfSnapshot
+        $snap = Get-WorkerPerfSnapshot -Kind K
         $snap.Time.Kind | Should -Be 'Local'
         @($snap.Processes).Count | Should -Be 2; @($snap.Sessions).Count | Should -Be 2
         $ica = @($snap.Citrix | Where-Object Source -eq 'ICA Session'); $ica.Count | Should -Be 1; $ica[0].SessionId | Should -Be 2

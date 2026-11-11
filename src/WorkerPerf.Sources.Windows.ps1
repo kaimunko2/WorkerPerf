@@ -331,19 +331,20 @@ namespace WorkerPerf
 # Performance counters as the probe found them on a VDA (Windows Server 2022, de-DE): read through
 # System.Diagnostics.PerformanceCounterCategory with the English names, which works in every display language. One
 # group per category; the collector reads each group once per fast tick and calculates every value from two readings.
-# ZeroUnchanged: the counter type (AverageCount64) yields 0 when the raw value did not change, so unchanged instances
-# are not calculated (the per-process input delay has one instance per process).
+# Mode: 'Calculate' (CounterSample.Calculate); 'ZeroUnchanged' like Calculate, but an instance whose raw value did not
+# change is 0 without calculating (true for AverageCount64; the per-process input delay has one instance per process);
+# 'MsPercent' for 'CPU stolen time': its raw value is taken as milliseconds of stolen time, see ConvertTo-WorkerPerfStealPct.
 $script:WorkerPerfWinCounters = [ordered]@{
-    cpu          = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); ZeroUnchanged = $false }
-    queue        = @{ Category = 'System'; Counters = @('Processor Queue Length'); ZeroUnchanged = $false }
-    steal        = @{ Category = 'VM Processor'; Counters = @('CPU stolen time'); ZeroUnchanged = $false }
-    memory       = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec'); ZeroUnchanged = $false }
-    disk         = @{ Category = 'PhysicalDisk'; Counters = @('Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Disk Reads/sec', 'Disk Writes/sec', 'Current Disk Queue Length'); ZeroUnchanged = $false }
-    network      = @{ Category = 'Network Interface'; Counters = @('Bytes Received/sec', 'Bytes Sent/sec'); ZeroUnchanged = $false }
-    volumes      = @{ Category = 'LogicalDisk'; Counters = @('Avg. Disk sec/Read', 'Avg. Disk sec/Write', 'Disk Reads/sec', 'Disk Writes/sec', 'Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Current Disk Queue Length'); ZeroUnchanged = $false }
-    shares       = @{ Category = 'SMB Client Shares'; Counters = @('Avg. sec/Read', 'Avg. sec/Write', 'Read Requests/sec', 'Write Requests/sec', 'Read Bytes/sec', 'Write Bytes/sec'); ZeroUnchanged = $false }
-    inputSession = @{ Category = 'User Input Delay per Session'; Counters = @('Max Input Delay'); ZeroUnchanged = $false }
-    inputProcess = @{ Category = 'User Input Delay per Process'; Counters = @('Max Input Delay'); ZeroUnchanged = $true }
+    cpu          = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); Mode = 'Calculate' }
+    queue        = @{ Category = 'System'; Counters = @('Processor Queue Length'); Mode = 'Calculate' }
+    steal        = @{ Category = 'VM Processor'; Counters = @('CPU stolen time'); Mode = 'MsPercent' }
+    memory       = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec'); Mode = 'Calculate' }
+    disk         = @{ Category = 'PhysicalDisk'; Counters = @('Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Disk Reads/sec', 'Disk Writes/sec', 'Current Disk Queue Length'); Mode = 'Calculate' }
+    network      = @{ Category = 'Network Interface'; Counters = @('Bytes Received/sec', 'Bytes Sent/sec'); Mode = 'Calculate' }
+    volumes      = @{ Category = 'LogicalDisk'; Counters = @('Avg. Disk sec/Read', 'Avg. Disk sec/Write', 'Disk Reads/sec', 'Disk Writes/sec', 'Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Current Disk Queue Length'); Mode = 'Calculate' }
+    shares       = @{ Category = 'SMB Client Shares'; Counters = @('Avg. sec/Read', 'Avg. sec/Write', 'Read Requests/sec', 'Write Requests/sec', 'Read Bytes/sec', 'Write Bytes/sec'); Mode = 'Calculate' }
+    inputSession = @{ Category = 'User Input Delay per Session'; Counters = @('Max Input Delay'); Mode = 'Calculate' }
+    inputProcess = @{ Category = 'User Input Delay per Process'; Counters = @('Max Input Delay'); Mode = 'ZeroUnchanged' }
 }
 
 # Signal id -> counter group. Order of the signal ids as in meta.json of the simulation.
@@ -375,9 +376,9 @@ $script:WorkerPerfWinProcessProperties = @('ProcessId', 'ParentProcessId', 'Name
 
 $script:WorkerPerfWinCimTimeoutSec = 30
 $script:WorkerPerfWinProbeTimeoutMs = 2000
-# The profile container map is rebuilt after this time (a keyframe interval at the default settings) and whenever a
-# volume appears that was not there at the last build.
-$script:WorkerPerfWinProfileMapMaxAgeSec = 300
+# Timeout of the storage queries of the profile container map (they run in a snapshot, so a hanging storage provider
+# delays one snapshot by at most twice this time).
+$script:WorkerPerfWinStorageTimeoutSec = 10
 
 # State of a capture (set by Initialize-WorkerPerfSource).
 $script:WinState = $null
@@ -430,36 +431,50 @@ function Get-WorkerPerfShareRoot([string]$Path) {
     return ''
 }
 
-function Test-WorkerPerfUserInPaths([string]$User, [string[]]$Paths) {
-    # A path names a user when one of its folders is the user name, or starts with it followed by "." or "_"
-    # (Citrix UPM: "<user>.<domain>", "<user>_UPM_local"), or ends with "_" and the user name (FSLogix "<sid>_<user>").
-    foreach ($path in @($Paths)) {
-        if ([string]::IsNullOrEmpty($path)) { continue }
-        foreach ($seg in $path.Split([char[]]@('\', '/'))) {
-            if ($seg.Length -lt $User.Length) { continue }
-            if ([string]::Equals($seg, $User, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-            if ($seg.StartsWith($User + '.', [StringComparison]::OrdinalIgnoreCase)) { return $true }
-            if ($seg.StartsWith($User + '_', [StringComparison]::OrdinalIgnoreCase)) { return $true }
-            if ($seg.EndsWith('_' + $User, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-        }
+function New-WorkerPerfUserIndex([object[]]$Sessions) {
+    # user name (case-insensitive) -> session ids; built once per map or snapshot instead of once per path
+    $index = @{}
+    foreach ($s in @($Sessions)) {
+        if ($null -eq $s) { continue }
+        $user = [string](Get-WorkerPerfField $s 'User')
+        if ([string]::IsNullOrEmpty($user)) { continue }
+        if (-not $index.ContainsKey($user)) { $index[$user] = New-Object System.Collections.Generic.List[int] }
+        $id = [int](Get-WorkerPerfField $s 'SessionId')
+        if (-not $index[$user].Contains($id)) { $index[$user].Add($id) }
     }
-    return $false
+    return $index
+}
+
+function Get-WorkerPerfUserCandidates([string]$Segment) {
+    # The user names a folder can stand for: the folder itself, every part before a "." or "_" (Citrix UPM:
+    # "<user>.<domain>", "<user>_UPM_local") and every part after a "_" (FSLogix "<sid>_<user>").
+    $Segment
+    for ($i = 1; $i -lt $Segment.Length; $i++) {
+        $c = $Segment[$i]
+        if ($c -eq '.' -or $c -eq '_') { $Segment.Substring(0, $i) }
+        if ($c -eq '_' -and $i -lt $Segment.Length - 1) { $Segment.Substring($i + 1) }
+    }
 }
 
 function Resolve-WorkerPerfProfileOwner {
     # Session of the user a profile container belongs to, from its location and access paths. The longest matching user
-    # name wins ("anna.meier" before "anna"); when that user has more than one session, the owner stays unknown.
-    param([string[]]$Paths, [object[]]$Sessions)
+    # name wins ("anna.meier" before "anna"); when that user has more than one session, or two names of the same
+    # length match, the owner stays unknown. Index: from New-WorkerPerfUserIndex (built here when missing).
+    param([string[]]$Paths, [object[]]$Sessions, $Index = $null)
+    if ($null -eq $Index) { $Index = New-WorkerPerfUserIndex $Sessions }
+    if ($Index.Count -eq 0) { return $null }
     $bestLength = 0
     $ids = New-Object System.Collections.Generic.List[int]
-    foreach ($s in @($Sessions)) {
-        if ($null -eq $s) { continue }
-        $user = [string](Get-WorkerPerfField $s 'User')
-        if ([string]::IsNullOrEmpty($user) -or $user.Length -lt $bestLength) { continue }
-        if (-not (Test-WorkerPerfUserInPaths $user $Paths)) { continue }
-        if ($user.Length -gt $bestLength) { $bestLength = $user.Length; $ids.Clear() }
-        $id = [int](Get-WorkerPerfField $s 'SessionId')
-        if (-not $ids.Contains($id)) { $ids.Add($id) }
+    foreach ($path in @($Paths)) {
+        if ([string]::IsNullOrEmpty($path)) { continue }
+        foreach ($seg in $path.Split([char[]]@('\', '/'))) {
+            if ($seg.Length -eq 0) { continue }
+            foreach ($cand in @(Get-WorkerPerfUserCandidates $seg)) {
+                if ($cand.Length -lt $bestLength -or -not $Index.ContainsKey($cand)) { continue }
+                if ($cand.Length -gt $bestLength) { $bestLength = $cand.Length; $ids.Clear() }
+                foreach ($id in $Index[$cand]) { if (-not $ids.Contains($id)) { $ids.Add($id) } }
+            }
+        }
     }
     if ($ids.Count -eq 1) { return $ids[0] }
     return $null
@@ -473,6 +488,7 @@ function New-WorkerPerfProfileMap {
     param([object[]]$Disks, [object[]]$Sessions, [string[]]$Known = @())
     $entries = @{}
     $knownSet = @{}
+    $userIndex = New-WorkerPerfUserIndex $Sessions
     foreach ($k in @($Known)) { if (-not [string]::IsNullOrEmpty($k)) { $knownSet[$k] = $true } }
     foreach ($d in @($Disks)) {
         if ($null -eq $d) { continue }
@@ -493,7 +509,7 @@ function New-WorkerPerfProfileMap {
             $device = [string](Get-WorkerPerfField $p 'DeviceName')
             if ($device) { $names.Add($device.Substring($device.LastIndexOf('\') + 1)) }
         }
-        $entry = @{ Kind = 'profile'; SessionId = (Resolve-WorkerPerfProfileOwner -Paths $paths.ToArray() -Sessions $Sessions); Backing = (Get-WorkerPerfShareRoot $location) }
+        $entry = @{ Kind = 'profile'; SessionId = (Resolve-WorkerPerfProfileOwner -Paths $paths.ToArray() -Sessions $Sessions -Index $userIndex); Backing = (Get-WorkerPerfShareRoot $location) }
         foreach ($n in $names) {
             if ([string]::IsNullOrEmpty($n)) { continue }
             $entries[$n] = $entry
@@ -523,12 +539,12 @@ function Get-WorkerPerfWinGroup($Values, [string]$Group, [string]$Counter) {
 
 function Get-WorkerPerfWinHostValue($Values, [string]$Group, [string]$Counter, [string]$Mode) {
     # One host value of a counter: 'total' (the _Total instance), 'first' (single-instance category), 'sum' over all
-    # instances, or 'totalOrAverage'. $null when the category was not read or the instance is missing.
+    # instances. $null when the category was not read or the instance is missing.
     $inst = Get-WorkerPerfWinGroup $Values $Group $Counter
     if ($null -eq $inst) { return $null }
-    if ($Mode -eq 'total' -or $Mode -eq 'totalOrAverage') {
+    if ($Mode -eq 'total') {
         if ($inst.ContainsKey('_Total')) { return [double]$inst['_Total'] }
-        if ($Mode -eq 'total') { return $null }
+        return $null
     }
     if ($Mode -eq 'first') {
         foreach ($k in $inst.Keys) { return [double]$inst[$k] }
@@ -540,8 +556,17 @@ function Get-WorkerPerfWinHostValue($Values, [string]$Group, [string]$Counter, [
         $sum += [double]$inst[$k]; $n++
     }
     if ($n -eq 0) { return $null }
-    if ($Mode -eq 'totalOrAverage') { return $sum / $n }
     return [Math]::Round($sum, 3)
+}
+
+function ConvertTo-WorkerPerfStealPct([long]$Raw1, [long]$Raw2, [long]$Time1, [long]$Time2) {
+    # 'CPU stolen time' (VMware Tools) declares the type Timer100Ns, but its raw value grows like the milliseconds of
+    # the Guest SDK value behind it (VMGuestLib_GetCpuStolenMs): the probe saw 15 per second, which as 100 ns would be
+    # 1.5 microseconds of steal per second. So: stolen ms over elapsed wall time in ms (from the sample time stamps,
+    # 100 ns units), in percent. $null without elapsed time or when the counter went back.
+    $ms = ($Time2 - $Time1) / 10000.0
+    if ($ms -le 0 -or $Raw2 -lt $Raw1) { return $null }
+    return ($Raw2 - $Raw1) / $ms * 100.0
 }
 
 function Get-WorkerPerfWinInstanceValue($Instances, [string]$Name, [double]$Factor, [int]$Decimals) {
@@ -552,9 +577,12 @@ function Get-WorkerPerfWinInstanceValue($Instances, [string]$Name, [double]$Fact
 function ConvertTo-WorkerPerfWinFastSample {
     # The fast sample (capture format, Task 6) from calculated counter values. Values: group -> counter -> instance ->
     # value as CounterSample.Calculate returns it ($null for a group that was not read). Response times come in
-    # seconds and go out in ms; operations come as rates and go out as counts over ElapsedSec. StealPct is the value of
-    # 'CPU stolen time' as its counter type (Timer100Ns) defines it, in percent.
-    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap)
+    # seconds and go out in ms; operations come as rates and go out as counts over ElapsedSec. StealPct is the
+    # stolen CPU time in percent per vCPU: the average of per-vCPU instances when there are any, else the _Total
+    # instance (the whole VM, as the probe found it) divided by the number of logical processors.
+    # A LogicalDisk instance unknown to the profile map (mounted since its last build) counts as a profile container
+    # without session until the next rebuild.
+    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1)
 
     $mb = 1048576.0
     $avail = Get-WorkerPerfWinHostValue $Values 'memory' 'Available Bytes' 'first'
@@ -573,9 +601,12 @@ function ConvertTo-WorkerPerfWinFastSample {
         foreach ($name in @($rOps.Keys | Sort-Object)) {
             if (Test-WorkerPerfTotalInstance $name) { continue }
             $kind = 'disk'; $sid = $null; $backing = ''
-            if ($null -ne $ProfileMap -and $ProfileMap.Entries.ContainsKey($name)) {
-                $e = $ProfileMap.Entries[$name]
-                $kind = $e.Kind; $sid = $e.SessionId; $backing = $e.Backing
+            if ($null -ne $ProfileMap) {
+                if ($ProfileMap.Entries.ContainsKey($name)) {
+                    $e = $ProfileMap.Entries[$name]
+                    $kind = $e.Kind; $sid = $e.SessionId; $backing = $e.Backing
+                }
+                elseif (-not $ProfileMap.Known.ContainsKey($name)) { $kind = 'profile' }
             }
             $volumes.Add([pscustomobject]@{
                     Volume = $name; Kind = $kind; SessionId = $sid; Backing = $backing
@@ -606,6 +637,15 @@ function ConvertTo-WorkerPerfWinFastSample {
         }
     }
 
+    $steal = $null
+    $inst = Get-WorkerPerfWinGroup $Values 'steal' 'CPU stolen time'
+    if ($null -ne $inst) {
+        $sum = 0.0; $n = 0
+        foreach ($k in $inst.Keys) { if (-not (Test-WorkerPerfTotalInstance $k)) { $sum += [double]$inst[$k]; $n++ } }
+        if ($n -gt 0) { $steal = $sum / $n }
+        elseif ($inst.ContainsKey('_Total')) { $steal = [double]$inst['_Total'] / [Math]::Max(1, $LogicalProcessors) }
+    }
+
     $inSessions = New-Object System.Collections.Generic.List[object]
     $inst = Get-WorkerPerfWinGroup $Values 'inputSession' 'Max Input Delay'
     if ($null -ne $inst) {
@@ -631,7 +671,7 @@ function ConvertTo-WorkerPerfWinFastSample {
         Time             = $Time
         CpuPct           = Get-WorkerPerfWinHostValue $Values 'cpu' '% Processor Time' 'total'
         ProcQueue        = Get-WorkerPerfWinHostValue $Values 'queue' 'Processor Queue Length' 'first'
-        StealPct         = Get-WorkerPerfWinHostValue $Values 'steal' 'CPU stolen time' 'totalOrAverage'
+        StealPct         = $steal
         MemAvailMB       = $(if ($null -ne $avail) { $avail / $mb } else { $null })
         MemCommittedMB   = $(if ($null -ne $committed) { $committed / $mb } else { $null })
         MemCommitLimitMB = $(if ($null -ne $limit) { $limit / $mb } else { $null })
@@ -654,7 +694,7 @@ function Get-WorkerPerfWinCounterValues {
     # Counter -> instance -> value from two readings of a category (ReadCategory: counter -> instance -> InstanceData
     # with InstanceName and Sample). Instances without a previous reading are left out. get_Item, as in the probe
     # script: the string indexers of the ReadCategory collections lower-case the name like their keys.
-    param($Previous, $Current, [string[]]$Counters, [switch]$ZeroUnchanged)
+    param($Previous, $Current, [string[]]$Counters, [switch]$ZeroUnchanged, [switch]$MsPercent)
     $out = @{}
     foreach ($cn in $Counters) {
         $values = @{}
@@ -666,6 +706,11 @@ function Get-WorkerPerfWinCounterValues {
                 $i1 = $c1.get_Item($name)
                 if ($null -eq $i1) { continue }
                 if ($ZeroUnchanged -and $i1.Sample.RawValue -eq $i2.Sample.RawValue) { $values[$name] = 0.0; continue }
+                if ($MsPercent) {
+                    $pct = ConvertTo-WorkerPerfStealPct $i1.Sample.RawValue $i2.Sample.RawValue $i1.Sample.TimeStamp100nSec $i2.Sample.TimeStamp100nSec
+                    if ($null -ne $pct) { $values[$name] = [double]$pct }
+                    continue
+                }
                 $values[$name] = [double](Get-WorkerPerfWinSampleValue $i1.Sample $i2.Sample)
             }
         }
@@ -695,27 +740,39 @@ function Get-WorkerPerfWinInstanceNames($Reading, [string]$Counter) {
     foreach ($i in $c.Values) { [string]$i.InstanceName }
 }
 
-function Resolve-WorkerPerfIcaSession([string]$Instance, [object[]]$Sessions) {
-    # Session id of an 'ICA Session' instance "<WinStation> (<user>)", also with "<domain>\" before the user: by the
-    # WinStation name ("ICA-CGP 2" against "ICA-CGP#2"), else by the user name when that user has exactly one
-    # session. $null for totals.
-    $m = [regex]::Match($Instance, '^(.+?)\s*\(([^()]*)\)\s*$')
-    if (-not $m.Success) { return $null }
-    $station = $m.Groups[1].Value.Trim()
-    $user = $m.Groups[2].Value
-    if ($user.Contains('\')) { $user = $user.Substring($user.LastIndexOf('\') + 1) }
-    $byStation = New-Object System.Collections.Generic.List[int]
-    $byUser = New-Object System.Collections.Generic.List[int]
+function New-WorkerPerfSessionIndex([object[]]$Sessions) {
+    # WinStation name ("#" read as a blank, case-insensitive) and user name -> session ids, once per snapshot
+    $station = @{}
+    $user = @{}
     foreach ($s in @($Sessions)) {
         if ($null -eq $s) { continue }
         $id = [int](Get-WorkerPerfField $s 'SessionId')
         $ws = ([string](Get-WorkerPerfField $s 'WinStation')).Replace('#', ' ')
-        if ($ws -and [string]::Equals($ws, $station, [StringComparison]::OrdinalIgnoreCase) -and -not $byStation.Contains($id)) { $byStation.Add($id) }
+        if ($ws) {
+            if (-not $station.ContainsKey($ws)) { $station[$ws] = New-Object System.Collections.Generic.List[int] }
+            if (-not $station[$ws].Contains($id)) { $station[$ws].Add($id) }
+        }
         $u = [string](Get-WorkerPerfField $s 'User')
-        if ($u -and $user -and [string]::Equals($u, $user, [StringComparison]::OrdinalIgnoreCase) -and -not $byUser.Contains($id)) { $byUser.Add($id) }
+        if ($u) {
+            if (-not $user.ContainsKey($u)) { $user[$u] = New-Object System.Collections.Generic.List[int] }
+            if (-not $user[$u].Contains($id)) { $user[$u].Add($id) }
+        }
     }
-    if ($byStation.Count -eq 1) { return $byStation[0] }
-    if ($byUser.Count -eq 1) { return $byUser[0] }
+    return @{ Station = $station; User = $user }
+}
+
+function Resolve-WorkerPerfIcaSession([string]$Instance, [object[]]$Sessions, $Index = $null) {
+    # Session id of an 'ICA Session' instance "<WinStation> (<user>)", also with "<domain>\" before the user: by the
+    # WinStation name ("ICA-CGP 2" against "ICA-CGP#2"), else by the user name when that user has exactly one
+    # session. $null for totals. Index: from New-WorkerPerfSessionIndex (built here when missing).
+    $m = [regex]::Match($Instance, '^(.+?)\s*\(([^()]*)\)\s*$')
+    if (-not $m.Success) { return $null }
+    if ($null -eq $Index) { $Index = New-WorkerPerfSessionIndex $Sessions }
+    $station = $m.Groups[1].Value.Trim()
+    $user = $m.Groups[2].Value
+    if ($user.Contains('\')) { $user = $user.Substring($user.LastIndexOf('\') + 1) }
+    if ($Index.Station.ContainsKey($station) -and $Index.Station[$station].Count -eq 1) { return $Index.Station[$station][0] }
+    if ($user -and $Index.User.ContainsKey($user) -and $Index.User[$user].Count -eq 1) { return $Index.User[$user][0] }
     return $null
 }
 
@@ -723,6 +780,8 @@ function ConvertTo-WorkerPerfIcaRows {
     # Rows for citrix.csv from the 'ICA Session' counters (counter -> instance -> value): one row per session and
     # counter, without the total; a value of 0 only for latency metrics.
     param($Values, [object[]]$Sessions, [string]$MetricFilter = '')
+    $index = New-WorkerPerfSessionIndex $Sessions
+    $resolved = @{}        # instance -> session id, resolved once per call
     foreach ($counter in @($Values.Keys | Sort-Object)) {
         if ($MetricFilter -and $counter -notmatch $MetricFilter) { continue }
         $inst = $Values[$counter]
@@ -733,7 +792,8 @@ function ConvertTo-WorkerPerfIcaRows {
             $v = $inst[$name]
             if ($null -eq $v) { continue }
             if ([double]$v -eq 0 -and -not $keepZero) { continue }
-            [pscustomobject]@{ Source = $script:WorkerPerfWinIcaCategory; SessionId = (Resolve-WorkerPerfIcaSession $name $Sessions); Instance = $name
+            if (-not $resolved.ContainsKey($name)) { $resolved[$name] = Resolve-WorkerPerfIcaSession $name $Sessions $index }
+            [pscustomobject]@{ Source = $script:WorkerPerfWinIcaCategory; SessionId = $resolved[$name]; Instance = $name
                 Metric = $counter; Value = [double]$v }
         }
     }
@@ -925,10 +985,10 @@ function Get-WorkerPerfProfileDisks {
     # Profile containers: disks with BusType 15 (file-backed virtual disk) and their partitions, as plain records for
     # New-WorkerPerfProfileMap.
     $ns = 'root\Microsoft\Windows\Storage'
-    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
+    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $script:WorkerPerfWinStorageTimeoutSec -ErrorAction Stop)
     if ($disks.Count -eq 0) { return }
     $byDisk = @{}
-    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)) {
+    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec $script:WorkerPerfWinStorageTimeoutSec -ErrorAction Stop)) {
         if ($null -eq $p) { continue }
         $n = [int](Get-WorkerPerfField $p 'DiskNumber')
         if (-not $byDisk.ContainsKey($n)) { $byDisk[$n] = New-Object System.Collections.Generic.List[object] }
@@ -958,24 +1018,29 @@ function Get-WorkerPerfProfileDisks {
     }
 }
 
-function Update-WorkerPerfProfileMap($State, [string[]]$Instances) {
-    # Rebuilds the profile container map when it is missing, too old, or a LogicalDisk instance is unknown to it.
-    $unknown = @(Get-WorkerPerfUnknownVolumes -Instances $Instances -Map $State.Map)
-    $age = ([datetime]::UtcNow - $State.MapBuiltUtc).TotalSeconds
-    if ($null -ne $State.Map -and $unknown.Count -eq 0 -and $age -lt $script:WorkerPerfWinProfileMapMaxAgeSec) { return }
+function Update-WorkerPerfProfileMap($State, [object[]]$Sessions) {
+    # Rebuilds the profile container map; called from the snapshot (at every keyframe, and at a regular snapshot after
+    # the fast cadence saw an unknown LogicalDisk instance), never from the fast cadence. A failure keeps the old map.
+    $State.MapPending = $false
+    $known = $State.VolumeNames
+    if ($null -eq $known) {
+        # no fast reading yet: the instances of now are the known ones
+        $known = @()
+        $cat = $State.Categories['volumes']
+        if ($null -ne $cat) {
+            try { $known = [string[]]@(Get-WorkerPerfWinInstanceNames (Read-WorkerPerfWinCategory $cat) 'Disk Reads/sec') } catch { $known = @() }
+        }
+    }
     if ($State.ProfileMapOk) {
         try {
             $disks = @(Get-WorkerPerfProfileDisks)
-            $State.Map = New-WorkerPerfProfileMap -Disks $disks -Sessions @(Get-WinSessionRaw) -Known $Instances
-            $State.MapBuiltUtc = [datetime]::UtcNow
+            $State.Map = New-WorkerPerfProfileMap -Disks $disks -Sessions $Sessions -Known $known
             return
         }
-        catch { Write-WarningOnce 'profile.map' "Zuordnung der Profilcontainer fehlgeschlagen, Laufwerke erscheinen als Datentraeger: $($_.Exception.Message)" }
+        catch { Write-WarningOnce 'profile.map' "Zuordnung der Profilcontainer fehlgeschlagen, neue Laufwerke erscheinen als Profilcontainer ohne Sitzung: $($_.Exception.Message)" }
     }
-    # Without a map the volumes count as plain disks; they are taken as known so that the query is not repeated every tick.
-    if ($null -eq $State.Map) { $State.Map = New-WorkerPerfProfileMap -Disks @() -Sessions @() -Known $Instances }
-    else { foreach ($u in $unknown) { $State.Map.Known[$u] = $true } }
-    $State.MapBuiltUtc = [datetime]::UtcNow
+    # without the storage classes every volume is a plain disk
+    if ($null -eq $State.Map -or -not $State.ProfileMapOk) { $State.Map = New-WorkerPerfProfileMap -Disks @() -Sessions @() -Known $known }
 }
 
 #endregion
@@ -997,7 +1062,8 @@ function Initialize-WorkerPerfSource {
     $os = @(Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)[0]
 
     $state = @{
-        Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapBuiltUtc = [datetime]::MinValue; ProfileMapOk = $false
+        Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapPending = $false; VolumeNames = $null; ProfileMapOk = $false
+        LogicalProcessors = 1
         IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; NoCitrix = [bool]$NoCitrix
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
     }
@@ -1007,19 +1073,22 @@ function Initialize-WorkerPerfSource {
     foreach ($key in $script:WorkerPerfWinCounters.Keys) {
         $def = $script:WorkerPerfWinCounters[$key]
         $reason = ''
-        foreach ($c in $def.Counters) {
-            $reason = [string](Test-WorkerPerfWinCounter $def.Category $c)
-            if ($reason) { break }
+        try {
+            foreach ($c in $def.Counters) {
+                $reason = [string](Test-WorkerPerfWinCounter $def.Category $c)
+                if ($reason) { break }
+            }
+            if (-not $reason) {
+                $cat = Open-WorkerPerfWinCategory $def.Category
+                if ($null -eq $cat) { $reason = 'Kategorie nicht vorhanden' } else { $state.Categories[$key] = $cat }
+            }
         }
-        if (-not $reason) {
-            $cat = Open-WorkerPerfWinCategory $def.Category
-            if ($null -eq $cat) { $reason = 'Kategorie nicht vorhanden' } else { $state.Categories[$key] = $cat }
-        }
+        catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message }
         if ($reason) { $groupStatus[$key] = @{ Available = $false; Detail = ('{0}: {1}' -f $def.Category, $reason) } }
         else { $groupStatus[$key] = @{ Available = $true; Detail = ('{0} / {1}' -f $def.Category, ($def.Counters -join ', ')) } }
     }
     if ($groupStatus['steal'].Available) {
-        $groupStatus['steal'].Detail += ' (Zaehlertyp Timer100Ns, Einheit auf dem VDA nicht bestaetigt)'
+        $groupStatus['steal'].Detail += ' (Rohwert als Millisekunden gelesen, Einheit auf dem VDA nicht bestaetigt; je vCPU: _Total geteilt durch die logischen Prozessoren)'
     }
 
     $sources = [ordered]@{}
@@ -1039,8 +1108,11 @@ function Initialize-WorkerPerfSource {
             $sources['ica.rtt'] = @{ Available = $true; Detail = ('{0}: {1}' -f $script:WorkerPerfWinEuemNamespace, $script:WorkerPerfWinEuemClass) }
         }
         catch { $sources['ica.rtt'] = @{ Available = $false; Detail = ('{0}: Klasse {1} nicht vorhanden' -f $script:WorkerPerfWinEuemNamespace, $script:WorkerPerfWinEuemClass) } }
-        $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinIcaCategory $script:WorkerPerfWinIcaLatency)
-        if (-not $reason) { $state.Ica = Open-WorkerPerfWinCategory $script:WorkerPerfWinIcaCategory }
+        try {
+            $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinIcaCategory $script:WorkerPerfWinIcaLatency)
+            if (-not $reason) { $state.Ica = Open-WorkerPerfWinCategory $script:WorkerPerfWinIcaCategory }
+        }
+        catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.Ica = $null }
         if ($null -ne $state.Ica) {
             $sources['ica.latency'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinIcaCategory, $script:WorkerPerfWinIcaLatency) }
         }
@@ -1083,6 +1155,7 @@ function Initialize-WorkerPerfSource {
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
 
+    $state.LogicalProcessors = [Math]::Max(1, [int]$cs.NumberOfLogicalProcessors)
     $script:WinState = $state
     $script:WinProbe = $null
 
@@ -1137,22 +1210,31 @@ function Get-WorkerPerfFastSample {
         }
         $previous = $st.Prev[$key]
         if ($null -ne $previous) {
-            $values[$key] = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $def.Counters -ZeroUnchanged:([bool]$def['ZeroUnchanged'])
+            $values[$key] = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $def.Counters `
+                -ZeroUnchanged:($def.Mode -eq 'ZeroUnchanged') -MsPercent:($def.Mode -eq 'MsPercent')
         }
         $st.Prev[$key] = $current
         if ($key -eq 'volumes') { $volumeNames = [string[]]@(Get-WorkerPerfWinInstanceNames $current 'Disk Reads/sec') }
     }
-    if ($null -ne $volumeNames) { Update-WorkerPerfProfileMap $st $volumeNames }
+    if ($null -ne $volumeNames) {
+        # a new instance (for example a container mounted at a logon) is mapped by the next regular snapshot
+        $st.VolumeNames = $volumeNames
+        if ($null -ne $st.Map -and @(Get-WorkerPerfUnknownVolumes -Instances $volumeNames -Map $st.Map).Count -gt 0) { $st.MapPending = $true }
+    }
 
-    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map
+    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map -LogicalProcessors $st.LogicalProcessors
 }
 
 function Get-WorkerPerfSnapshot {
+    param([string]$Kind = 'R')
+    # Kind: 'K' keyframe, 'R' regular, 'B' burst snapshot. The profile container map is rebuilt here: at every keyframe,
+    # and at a regular snapshot when the fast cadence has seen a LogicalDisk instance unknown to the map.
     $st = $script:WinState
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
     $time = [datetime]::Now
     $processes = @(Get-WinProcessRaw)
     $sessions = @(Get-WinSessionRaw)
+    if ($Kind -eq 'K' -or $null -eq $st.Map -or ($Kind -eq 'R' -and $st.MapPending)) { Update-WorkerPerfProfileMap $st $sessions }
     $citrix = @()
     if (-not $st.NoCitrix) { $citrix = @(Get-WinCitrixRaw -Sessions $sessions) }
     return @{ Time = $time; Processes = $processes; Sessions = $sessions; Citrix = $citrix }
@@ -1195,7 +1277,8 @@ function Receive-WorkerPerfProbes {
 
 function Get-WorkerPerfEvents {
     param([datetime]$Since)
-    # Events of the logs found at the start with Since < Time <= now, oldest first; at most 200 per log and call.
+    # Events of the logs found at the start with Since < Time <= now, oldest first; at most the newest 200 per log and
+    # call (one warning per log when more were there).
     $st = $script:WinState
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
     $now = [datetime]::Now
@@ -1203,7 +1286,8 @@ function Get-WorkerPerfEvents {
     foreach ($l in $st.Logs) {
         $events = @()
         try {
-            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $l.Log; Id = $l.Ids; StartTime = $Since } -MaxEvents $script:WorkerPerfWinMaxEvents -ErrorAction Stop)
+            # one more than kept, to notice that events were dropped
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $l.Log; Id = $l.Ids; StartTime = $Since } -MaxEvents ($script:WorkerPerfWinMaxEvents + 1) -ErrorAction Stop)
         }
         catch {
             # no matching events is not an error; the error id is language neutral
@@ -1211,6 +1295,11 @@ function Get-WorkerPerfEvents {
                 Write-WarningOnce ('events:' + $l.Log) ("Ereignisprotokoll '{0}' nicht lesbar: {1}" -f $l.Log, $_.Exception.Message)
             }
             continue
+        }
+        if ($events.Count -gt $script:WorkerPerfWinMaxEvents) {
+            # Get-WinEvent returns the newest first: the newest 200 are kept, the older ones of this window are lost
+            Write-WarningOnce ('events.dropped:' + $l.Log) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die aelteren fehlen in events.csv." -f $l.Log, $script:WorkerPerfWinMaxEvents)
+            $events = @($events[0..($script:WorkerPerfWinMaxEvents - 1)])
         }
         foreach ($ev in $events) {
             if ($null -eq $ev -or $null -eq $ev.TimeCreated) { continue }

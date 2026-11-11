@@ -224,7 +224,7 @@ function ConvertTo-WorkerPerfFastRows {
                 $T, $time, $ElapsedSec, $Sample.CpuPct, $Sample.ProcQueue, $Sample.StealPct, $Sample.MemAvailMB, $Sample.MemCommittedMB,
                 $Sample.MemCommitLimitMB, $Sample.PagesInPerSec, $Sample.DiskReadBps, $Sample.DiskWriteBps, $Sample.DiskReadIops,
                 $Sample.DiskWriteIops, $Sample.DiskQueue, $Sample.NetRecvBps, $Sample.NetSentBps, $burstFlag, $CollectMs),
-            [int[]]@(-2, -2, 3, 2, 0, 2, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, -2, 0)))
+            [int[]]@(-2, -2, 3, 2, 0, 3, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, -2, 0)))
 
     $volCodes = [int[]]@(-2, -1, -1, 0, -1, 2, 2, 0, 0, 0, 0, 0)
     foreach ($v in @($Sample.Volumes)) {

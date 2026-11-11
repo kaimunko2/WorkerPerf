@@ -289,14 +289,15 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 
 Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
 `System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
-der Sprache der Oberfläche; auf dem geprüften deutschen VDA lieferte dieser Weg für jede Kategorie Werte. Jeder
-Wert entsteht aus zwei Lesungen im Abstand eines schnellen Takts (`CounterSample.Calculate`).
+der Sprache der Oberfläche; auf dem geprüften deutschen VDA lieferte dieser Weg für jede Kategorie Werte. Die
+Werte des schnellen Takts entstehen aus zwei Lesungen im Abstand eines Takts (`CounterSample.Calculate`); die
+Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schnappschuss gelesen.
 
 | Signal | Quelle (Kategorie / Zähler, Klasse) | Ergebnis des Prüfskripts |
 |---|---|---|
 | CPU-Auslastung | `Processor Information` / `% Processor Time`, Instanz `_Total` | vorhanden |
 | Prozessor-Warteschlange | `System` / `Processor Queue Length` | vorhanden |
-| Entzogene CPU-Zeit | `VM Processor` / `CPU stolen time` (VMware Tools), Instanz `_Total` | vorhanden; Zählertyp `Timer100Ns`, der Wert wird als Prozent übernommen, wie der Zählertyp ihn definiert. Ob die VMware Tools den Rohwert in dieser Einheit liefern, ließ sich aus dem Prüfergebnis nicht entscheiden (siehe Offene Punkte) |
+| Entzogene CPU-Zeit | `VM Processor` / `CPU stolen time` (VMware Tools), einzige Instanz `_Total` | vorhanden; Zählertyp `Timer100Ns`, der Rohwert wächst aber wie Millisekunden. Der Collector rechnet ihn als Millisekunden entzogener Zeit je Sekunde Laufzeit in Prozent um und teilt `_Total` durch die Zahl der logischen Prozessoren (Prozent je vCPU). Einheit und Bezug sind nicht bestätigt (siehe Offene Punkte) |
 | Arbeitsspeicher | `Memory` / `Available Bytes`, `Committed Bytes`, `Commit Limit`, `Pages Input/sec` | vorhanden |
 | Datenträger gesamt | `PhysicalDisk` / Bytes, Zugriffe und Warteschlange, Instanz `_Total` | vorhanden |
 | Netzwerk | `Network Interface` / `Bytes Received/sec`, `Bytes Sent/sec`, Summe aller Adapter | vorhanden |
@@ -316,11 +317,12 @@ anderen Worker, meldet der Collector das Signal beim Start als nicht verfügbar 
 erscheint im Bericht als „nicht gemessen". Die CIM-Klassen `Win32_PerfRawData_*` nutzt der Collector nicht; für
 `VM Processor` gab es auf dem VDA keine.
 
-**Schneller Takt 2 s und Eingabeverzögerung:** `Max Input Delay` ist ein fortlaufender Zähler (`AverageCount64`):
-Der Rohwert wächst um die höchste Verzögerung seit der letzten Abfrage, der Basiswert um eins je Abfrage. Im
-Prüfergebnis wuchs der Basiswert bei Abfragen im Abstand von 1 s und von 2 s jeweils um eins; der Wert einer
-Abfrage alle 2 s ist also die höchste Verzögerung der ganzen 2 Sekunden. Der Standard von `-FastIntervalSeconds`
-bleibt deshalb 2 s. Liest ein zweites Programm denselben Zähler gleichzeitig (etwa die Leistungsüberwachung),
+**Schneller Takt 2 s und Eingabeverzögerung:** `Max Input Delay` ist ein fortlaufender Zähler (`AverageCount64`).
+Im Prüfergebnis wuchs sein Basiswert bei Abfragen im Abstand von 1 s und von 2 s jeweils um genau eins, und jeder
+berechnete Wert war der Zuwachs des Rohwerts. Daraus folgt – als Schluss aus dieser Rechnung, nicht gemessen –,
+dass eine Abfrage alle 2 s die höchste Verzögerung seit der vorigen Abfrage liefert, also das Maximum beider
+Sekunden; ein 2-s-Abstand mit zwei verschiedenen Spitzen kam im Prüfergebnis nicht vor. Der Standard von
+`-FastIntervalSeconds` bleibt deshalb 2 s; die erste echte Messung soll das bestätigen (siehe Offene Punkte). Liest ein zweites Programm denselben Zähler gleichzeitig (etwa die Leistungsüberwachung),
 teilen sich die Abfragen auf, und der Collector sieht den Mittelwert zweier Höchstwerte.
 
 Der Collector spricht seine Datenquelle über eine feste Schnittstelle an: die Simulation (`-Simulate`) oder die
@@ -346,10 +348,17 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; nach einer Durchsich
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
-- **Einheit der entzogenen CPU-Zeit:** Der Zähler `VM Processor` / `CPU stolen time` meldet den Typ
-  `Timer100Ns`; der Collector übernimmt den Wert so als Prozent. Auf dem geprüften VDA war er sehr klein
-  (0,00015 %). Liefern die VMware Tools den Rohwert in Millisekunden statt in 100 ns, ist der wahre Wert
-  10.000-mal größer. Bei der ersten Messung mit der CPU-Bereitschaft (CPU Ready) des Hypervisors vergleichen.
+- **Einheit der entzogenen CPU-Zeit:** Der Collector liest den Rohwert von `VM Processor` / `CPU stolen time`
+  als Millisekunden der ganzen VM und teilt durch die Zahl der vCPUs; der Zählertyp `Timer100Ns` würde 100 ns
+  bedeuten, was Werte im Bereich von Millionstel Prozent ergäbe. Bestätigen oder widerlegen lässt sich das bei
+  der ersten Messung: dieselbe Stunde im vCenter ansehen (Leistungsdiagramm der VM, „Bereitschaft" in
+  Millisekunden je Intervall oder in Prozent, je vCPU). Stimmt `StealPct` in `ticks.csv` in der Größenordnung mit
+  der Bereitschaft je vCPU überein, ist die Annahme richtig; liegt es um den Faktor der vCPU-Zahl darüber oder
+  darunter, ist der Bezug (ganze VM oder je vCPU) falsch; weicht es um Größenordnungen ab, die Einheit.
+- **Eingabeverzögerung bei 2 s:** dass eine Abfrage alle 2 s das Maximum beider Sekunden liefert, ist aus dem
+  Basiswert des Zählers geschlossen, nicht gemessen. Bei der ersten Messung in einer Sitzung tippen und in
+  `inputdelay.csv` prüfen, dass kurze Spitzen erscheinen; laufen gleichzeitig die Leistungsüberwachung oder ein
+  anderes Werkzeug mit diesem Zähler, sieht der Collector Mittelwerte zweier Spitzen.
 - **Zuordnung der ICA-Werte zur Sitzung:** über den Namen der WinStation (`ICA-CGP 2` gegen `ICA-CGP#2`),
   sonst über den Benutzernamen, wenn er nur eine Sitzung hat. Die Schreibweise der WinStation-Namen hat das
   Prüfskript nicht erfasst.

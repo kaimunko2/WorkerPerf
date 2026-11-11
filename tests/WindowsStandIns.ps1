@@ -10,28 +10,28 @@ function Reset-WinStandIns {
     $ops = @{ 'C:' = 10.0; 'D:' = 2.0; 'HarddiskVolume1' = 0.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 25.0
         'C:\Users\gast_UPM_local\UpmTempMount' = 1.0; '_Total' = 38.0 }
     $script:WinFake = @{
-        Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true
+        Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true; ThrowCheck = ''; ManyEvents = 0
         Logs = @('Microsoft-Windows-Windows Defender/Operational', 'Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script')
         Perf = @{
-            'Processor Information' = @{ '% Processor Time' = @{ '_Total' = 28.8; '0,_Total' = 30.0; '0,0' = 31.0 } }
+            'Processor Information' = @{ '% Processor Time' = @{ '_Total' = 27.5; '0,_Total' = 30.0; '0,0' = 31.0 } }
             'System' = @{ 'Processor Queue Length' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 3.0 } }
-            'VM Processor' = @{ 'CPU stolen time' = @{ '_Total' = 0.00015 } }
-            'Memory' = @{ 'Available Bytes' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 33381543936.0 }
-                'Committed Bytes' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 36549353472.0 }
-                'Commit Limit' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 83750830080.0 }
-                'Pages Input/sec' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 42.95 } }
-            'PhysicalDisk' = @{ 'Disk Read Bytes/sec' = @{ '_Total' = 5110.5 }; 'Disk Write Bytes/sec' = @{ '_Total' = 115498.6 }; 'Disk Reads/sec' = @{ '_Total' = 2.0 }
-                'Disk Writes/sec' = @{ '_Total' = 21.9 }; 'Current Disk Queue Length' = @{ '_Total' = 0.0 } }
-            'Network Interface' = @{ 'Bytes Received/sec' = @{ 'vmxnet3 Ethernet Adapter' = 6322.7 }; 'Bytes Sent/sec' = @{ 'vmxnet3 Ethernet Adapter' = 10303.2 } }
+            'VM Processor' = @{ 'CPU stolen time' = @{ '_Total' = 0.0 } }
+            'Memory' = @{ 'Available Bytes' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 34359738368.0 }
+                'Committed Bytes' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 38654705664.0 }
+                'Commit Limit' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 85899345920.0 }
+                'Pages Input/sec' = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 12.5 } }
+            'PhysicalDisk' = @{ 'Disk Read Bytes/sec' = @{ '_Total' = 4096.0 }; 'Disk Write Bytes/sec' = @{ '_Total' = 120000.0 }; 'Disk Reads/sec' = @{ '_Total' = 2.0 }
+                'Disk Writes/sec' = @{ '_Total' = 20.5 }; 'Current Disk Queue Length' = @{ '_Total' = 0.0 } }
+            'Network Interface' = @{ 'Bytes Received/sec' = @{ 'Ethernet-Adapter 1' = 6000.0 }; 'Bytes Sent/sec' = @{ 'Ethernet-Adapter 1' = 10000.0 } }
             'LogicalDisk' = @{ 'Avg. Disk sec/Read' = $lat.Clone(); 'Avg. Disk sec/Write' = $lat.Clone(); 'Disk Reads/sec' = $ops.Clone(); 'Disk Writes/sec' = $ops.Clone()
                 'Disk Read Bytes/sec' = $ops.Clone(); 'Disk Write Bytes/sec' = $ops.Clone(); 'Current Disk Queue Length' = $ops.Clone() }
             'SMB Client Shares' = @{ 'Avg. sec/Read' = @{ '\fs01\daten' = 0.004; '_Total' = 0.004 }; 'Avg. sec/Write' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 }
                 'Read Requests/sec' = @{ '\fs01\daten' = 6.0; '_Total' = 6.0 }; 'Write Requests/sec' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 }
                 'Read Bytes/sec' = @{ '\fs01\daten' = 60000.0; '_Total' = 60000.0 }; 'Write Bytes/sec' = @{ '\fs01\daten' = 0.0; '_Total' = 0.0 } }
             'User Input Delay per Session' = @{ 'Max Input Delay' = @{ '0' = 0.0; '2' = 312.0; 'Average' = 0.3; 'Max' = 312.0 } }
-            'User Input Delay per Process' = @{ 'Max Input Delay' = @{ '0:10024 <w3wp.exe>' = 0.0; '2:7964 <EXCEL.EXE>' = 312.0 } }
+            'User Input Delay per Process' = @{ 'Max Input Delay' = @{ '0:4120 <dienst.exe>' = 0.0; '2:7964 <EXCEL.EXE>' = 312.0 } }
             'ICA Session' = @{ 'Latency - Last Recorded' = @{ '_Server gesamt' = 0.0; 'ICA-CGP 0 (mueller)' = 12.0 }
-                'Output Session Bandwidth' = @{ '_Server gesamt' = 4104.0; 'ICA-CGP 0 (mueller)' = 280.0 } }
+                'Output Session Bandwidth' = @{ '_Server gesamt' = 5000.0; 'ICA-CGP 0 (mueller)' = 300.0 } }
         }
         Sessions = [System.Collections.Generic.List[object]]::new()
         Disks = [System.Collections.Generic.List[object]]::new()
@@ -64,6 +64,7 @@ function Add-WinStandInUser([int]$SessionId, [string]$User, [string]$Volume) {
 function Test-WorkerPerfElevated { return $true }
 
 function Test-WorkerPerfWinCounter([string]$Category, [string]$Counter) {
+    if ($script:WinFake.ThrowCheck -eq $Category) { throw (New-Object InvalidOperationException 'Leistungsindikatoren beschaedigt') }
     if (-not $script:WinFake.Perf.ContainsKey($Category)) { return 'Kategorie nicht vorhanden' }
     if ($Counter -and -not $script:WinFake.Perf[$Category].ContainsKey($Counter)) { return "Zaehler '$Counter' fehlt" }
     return ''
@@ -84,7 +85,7 @@ function Read-WorkerPerfWinCategory($Category) {
         $coll = @{}
         $inst = $script:WinFake.Perf[$name][$counter]
         foreach ($i in $inst.Keys) {
-            $coll[$i] = [pscustomobject]@{ InstanceName = $i; Sample = [pscustomobject]@{ RawValue = $script:WinFake.Reads; Value = $inst[$i] } }
+            $coll[$i] = [pscustomobject]@{ InstanceName = $i; Sample = [pscustomobject]@{ RawValue = $script:WinFake.Reads; TimeStamp100nSec = [long]$script:WinFake.Reads * 20000000; Value = $inst[$i] } }
         }
         $result[$counter.ToLowerInvariant()] = $coll
     }
@@ -107,7 +108,7 @@ function Get-CimInstance {
     [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [string]$Filter, [string[]]$Property, [int]$OperationTimeoutSec)
     switch ($ClassName) {
         'Win32_ComputerSystem' { [pscustomobject]@{ Name = 'VDA-TEST'; NumberOfLogicalProcessors = 6; TotalPhysicalMemory = [uint64]62277025792 } }
-        'Win32_OperatingSystem' { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Datacenter'; Version = '10.0.20348' } }
+        'Win32_OperatingSystem' { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
         'Win32_Process' {
             $start = [datetime]::Now.AddHours(-2)
             foreach ($p in @(@(900, 'svchost.exe', 0), @(7964, 'EXCEL.EXE', 2))) {
@@ -138,7 +139,11 @@ function Get-WinEvent {
     $log = $FilterHashtable.LogName
     if ($script:WinFake.Logs -notcontains $log) { throw "Protokoll $log nicht vorhanden" }
     $events = @()
-    if ($log -like '*Defender*') {
+    if ($log -like '*Defender*' -and $script:WinFake.ManyEvents -gt 0) {
+        # newest first, one event per second
+        $events = @(foreach ($k in 1..$script:WinFake.ManyEvents) { [pscustomobject]@{ TimeCreated = [datetime]::Now.AddSeconds(-$k); Id = 1000; Message = "Ereignis $k" } })
+    }
+    elseif ($log -like '*Defender*') {
         $events = @(
             [pscustomobject]@{ TimeCreated = [datetime]::Now.AddMinutes(-1); Id = 1001; Message = "Die Ueberpruefung wurde beendet.`r`nScan-ID: {1}" }
             [pscustomobject]@{ TimeCreated = [datetime]::Now.AddMinutes(-2); Id = 1000; Message = 'Die Ueberpruefung wurde gestartet.' }

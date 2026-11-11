@@ -414,6 +414,8 @@ function Get-WorkerPerfFastSample {
 }
 
 function Get-WorkerPerfSnapshot {
+    param([string]$Kind = 'R')
+    # Kind (K, R, B) is part of the interface; the simulation does not need it.
     $e = Get-WorkerPerfSimElapsed
     $nz = Get-WorkerPerfSimNoise $e
     $now = $script:WorkerPerfSimNow

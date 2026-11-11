@@ -126,16 +126,17 @@ Grenzen, die im Bericht stehen müssen:
 | Signal | Quelle | Status |
 |---|---|---|
 | Prozesse, Sitzungen, Host-CPU/Speicher/Datenträger/Netz | `Win32_Process`, WTS-API; Leistungsindikatoren `Processor Information`, `System`, `Memory`, `PhysicalDisk`, `Network Interface` über `PerformanceCounterCategory` mit englischen Namen | geprüft (VDA, Server 2022, de-DE): vorhanden, .NET-Weg liefert Werte |
-| Eingabeverzögerung | Leistungsindikatoren „User Input Delay per Session" / „per Process", Zähler `Max Input Delay` | geprüft: vorhanden; Typ `AverageCount64`, eine Abfrage alle 2 s liefert den Höchstwert seit der letzten Abfrage |
+| Eingabeverzögerung | Leistungsindikatoren „User Input Delay per Session" / „per Process", Zähler `Max Input Delay` | geprüft: vorhanden; Typ `AverageCount64`, Basiswert +1 je Abfrage bei 1 s und 2 s Abstand; daraus geschlossen (nicht gemessen): eine Abfrage alle 2 s liefert den Höchstwert seit der vorigen Abfrage |
 | Antwortzeit je Laufwerk | `LogicalDisk` (Avg. Disk sec/Read, /Write, Typ `AverageTimer32`) | geprüft: vorhanden, Werte in Sekunden |
 | Antwortzeit je Freigabe | Leistungsindikator „SMB Client Shares" (Avg. sec/Read, /Write) | geprüft: vorhanden; Instanzen `\server\share` mit einem Schrägstrich |
-| Entzogene CPU-Zeit | VMware-Tools-Leistungsindikator „VM Processor" / `CPU stolen time` | geprüft: vorhanden (nur .NET, keine CIM-Klasse); Typ `Timer100Ns`, Einheit des Rohwerts nicht bestätigt |
+| Entzogene CPU-Zeit | VMware-Tools-Leistungsindikator „VM Processor" / `CPU stolen time` | geprüft: vorhanden (nur .NET, keine CIM-Klasse), einzige Instanz `_Total`; Typ `Timer100Ns`, der Rohwert wird als Millisekunden der ganzen VM gelesen und je vCPU umgerechnet; Einheit und Bezug nicht bestätigt |
 | ICA Round Trip, Latenz | `root\citrix\euem` `Citrix_Euem_RoundTrip`; Leistungsindikator „ICA Session" (`Latency - Last Recorded`) | geprüft: Klasse und Kategorie vorhanden; Instanzen `<WinStation> (<Benutzer>)`, Summe lokalisiert |
 
-Alle als ungeprüft markierten Quellen klärt das Quellen-Prüfskript (Abschnitt 9.1) auf einem
-echten VDA, bevor Collector und Bericht darauf aufbauen. Offen ist dabei auch, ob die
-Eingabeverzögerung bei einem Abfragetakt von 2 s das Maximum des ganzen Intervalls liefert;
-falls nicht, wird der schnelle Takt auf 1 s gesetzt.
+Das Quellen-Prüfskript (Abschnitt 9.1) hat diese Quellen auf einem echten VDA geprüft. Dass die
+Eingabeverzögerung bei einem Abfragetakt von 2 s das Maximum des ganzen Intervalls liefert, ist aus
+dem Basiswert des Zählers geschlossen; die erste echte Messung soll es bestätigen. Bestätigt sie es
+nicht, wird der schnelle Takt auf 1 s gesetzt. Ebenso bestätigt sie Einheit und Bezug der entzogenen
+CPU-Zeit (Vergleich mit der CPU-Bereitschaft der VM im vCenter).
 
 ## 6. Schwellwerte und Soll-Zustand
 

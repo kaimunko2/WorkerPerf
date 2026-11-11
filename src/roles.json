@@ -24,7 +24,7 @@
       "services": [
         "CylanceSvc"
       ],
-      "note": "aus dem Prüfskript: Dienst CylanceSvc in Sitzung 0 (Aurora ist das frühere CylancePROTECT); Prozesse in Benutzersitzungen nicht gefunden"
+      "note": "Aurora ist das frühere CylancePROTECT; Dienst und Prozess heißen weiter CylanceSvc"
     },
     {
       "role": "Sicherheit",

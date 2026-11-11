@@ -225,7 +225,7 @@ try {
     $prevSample = Get-WorkerPerfFastSample
     $services = Get-WorkerPerfServices
     $procState = New-WorkerPerfProcessState
-    $base = Get-WorkerPerfSnapshot
+    $base = Get-WorkerPerfSnapshot -Kind K
     [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
             -IncludeCommandLine:$IncludeCommandLine)
     $prevSnapTime = [datetime]$base.Time
@@ -284,12 +284,13 @@ try {
             if ($due -ne 'none') {
                 $regular = ($due -eq 'regular')
                 $keyframe = ($regular -and ($regularCount % 20) -eq 0)
+                $kind = $(if ($keyframe) { 'K' } elseif ($regular) { 'R' } else { 'B' })
                 $sw.Restart()
                 # A snapshot that fails is skipped; the next one comes at its usual time (a failed keyframe is made up
                 # for by the next regular snapshot). The service map of the last keyframe stays in use when its query fails.
                 if ($keyframe) { try { $services = Get-WorkerPerfServices } catch { Register-SourceError 'services' $_ } }
                 $snap = $null
-                try { $snap = Get-WorkerPerfSnapshot } catch { Register-SourceError 'snapshot' $_ }
+                try { $snap = Get-WorkerPerfSnapshot -Kind $kind } catch { Register-SourceError 'snapshot' $_ }
                 $lastSnapTryUtc = $now
                 if ($null -ne $snap) {
                     $P = $snapCount
@@ -322,7 +323,6 @@ try {
 
                     $snapTime = [datetime]$snap.Time
                     $snapUtc = $snapTime.ToUniversalTime()
-                    $kind = $(if ($keyframe) { 'K' } elseif ($regular) { 'R' } else { 'B' })
                     $sw.Stop()
                     $wSnaps.WriteLine([string]::Concat($P, ',', $T, ',', $snapTime.ToString('o', $inv), ',', (Format-WorkerPerfNumber ($snapUtc - $prevSnapUtc).TotalSeconds 3), ',',
                             $kind, ',', $userSessions, ',', $activeSessions, ',', $res.Total, ',', $res.Rows.Count, ',', (Format-WorkerPerfNumber $sw.Elapsed.TotalMilliseconds 0)))
