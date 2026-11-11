@@ -886,16 +886,6 @@ function ConvertTo-WorkerPerfEventKind([string]$Source, [int]$EventId) {
     return $null
 }
 
-function Get-WorkerPerfEventText([string]$Text) {
-    # First line of an event message, at most 200 characters.
-    if ([string]::IsNullOrEmpty($Text)) { return '' }
-    $t = $Text.Trim()
-    $cut = $t.IndexOfAny([char[]]@("`r", "`n"))
-    if ($cut -ge 0) { $t = $t.Substring(0, $cut).Trim() }
-    if ($t.Length -gt 200) { $t = $t.Substring(0, 200) }
-    return $t
-}
-
 #endregion
 
 #region ---------- Windows calls (thin; replaced by stand-ins in the tests) --------------------------------------------

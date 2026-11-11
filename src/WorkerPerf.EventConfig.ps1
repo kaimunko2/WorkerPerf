@@ -5,6 +5,7 @@
 $script:WorkerPerfEventGroups = @('app', 'service', 'storage', 'memory', 'fileserver', 'profile', 'print', 'session', 'security')
 $script:WorkerPerfEventKinds = @('crash', 'hang', 'app-detail', 'service', 'print', 'profileerror', 'system', 'logon', 'logoff',
     'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'info')
+$script:WorkerPerfEventNumberKeys = @('pid', 'session')
 $script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object')
 
 function ConvertTo-WorkerPerfEventInt($Value) {
@@ -81,9 +82,22 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             foreach ($p in $rawFields.PSObject.Properties) {
                 if ($script:WorkerPerfEventFieldKeys -cnotcontains $p.Name) { throw "$where`: Feld 'fields.$($p.Name)' ist kein bekannter Feldschluessel." }
                 $ref = $p.Value
-                if ($ref -isnot [string] -or [string]::IsNullOrWhiteSpace($ref)) { throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n' oder 'binary:utf16' sein." }
-                if ($ref.StartsWith('#') -and $ref -notmatch '^#\d+$') { throw "$where`: Feld 'fields.$($p.Name)' hat eine ungueltige Position ('$ref')." }
-                $fields[$p.Name] = $ref
+                $format = 'decimal'
+                if ($ref -is [string]) { $refText = $ref }
+                else {
+                    # object form: { "field": <reference>, "format": "hex" | "decimal" }, only for the numeric keys
+                    $refText = Get-WorkerPerfField $ref 'field'
+                    $fmt = Get-WorkerPerfField $ref 'format'
+                    if ($null -ne $fmt) {
+                        if ($script:WorkerPerfEventNumberKeys -cnotcontains $p.Name) { throw "$where`: Feld 'fields.$($p.Name).format' ist nur fuer pid und session erlaubt." }
+                        if ($fmt -isnot [string] -or @('hex', 'decimal') -cnotcontains $fmt) { throw "$where`: Feld 'fields.$($p.Name).format' muss 'hex' oder 'decimal' sein." }
+                        $format = $fmt
+                    }
+                    if ($refText -isnot [string] -or [string]::IsNullOrWhiteSpace($refText)) { throw "$where`: Feld 'fields.$($p.Name).field' muss ein Datenname, '#n' oder 'binary:utf16' sein." }
+                }
+                if ($refText -isnot [string] -or [string]::IsNullOrWhiteSpace($refText)) { throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n' oder 'binary:utf16' sein." }
+                if ($refText.StartsWith('#') -and $refText -notmatch '^#\d+$') { throw "$where`: Feld 'fields.$($p.Name)' hat eine ungueltige Position ('$refText')." }
+                $fields[$p.Name] = @{ Field = $refText; Format = $format }
             }
         }
         foreach ($i in $ids) {
@@ -190,15 +204,18 @@ function Get-WorkerPerfEventFieldValue($Parsed, [string]$Reference) {
     return ([string]$value).Trim()
 }
 
-function ConvertTo-WorkerPerfEventNumber([string]$Text) {
-    # '8012' (decimal), '0x1f2c' or '1f2c' (hex) -> [int]; $null when empty or not a number.
+function ConvertTo-WorkerPerfEventNumber([string]$Text, [string]$Format = 'decimal') {
+    # Number of a process or session id; the format comes from events.json and is never guessed from the text.
+    # 'decimal': digits, or hex with a 0x prefix. 'hex': hex digits with or without 0x. Anything else -> $null.
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
     $t = $Text.Trim()
     $v = [int64]0
     $ok = $false
-    if ($t -match '^\d+$') { $ok = [int64]::TryParse($t, [ref]$v) }
-    elseif ($t -match '^0[xX][0-9a-fA-F]+$') { $ok = [int64]::TryParse($t.Substring(2), [Globalization.NumberStyles]::AllowHexSpecifier, [Globalization.CultureInfo]::InvariantCulture, [ref]$v) }
-    elseif ($t -match '^[0-9a-fA-F]+$') { $ok = [int64]::TryParse($t, [Globalization.NumberStyles]::AllowHexSpecifier, [Globalization.CultureInfo]::InvariantCulture, [ref]$v) }
+    $hexStyle = [Globalization.NumberStyles]::AllowHexSpecifier
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    if ($t -match '^0[xX]([0-9a-fA-F]+)$') { $ok = [int64]::TryParse($Matches[1], $hexStyle, $inv, [ref]$v) }
+    elseif ($Format -eq 'hex' -and $t -match '^[0-9a-fA-F]+$') { $ok = [int64]::TryParse($t, $hexStyle, $inv, [ref]$v) }
+    elseif ($Format -ne 'hex' -and $t -match '^\d+$') { $ok = [int64]::TryParse($t, [ref]$v) }
     if (-not $ok -or $v -lt 0 -or $v -gt [int]::MaxValue) { return $null }
     return [int]$v
 }
@@ -227,8 +244,13 @@ function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [stri
     $f = $Entry.fields
     $get = {
         param($key)
-        if ($f.ContainsKey($key)) { return (Get-WorkerPerfEventFieldValue $Parsed $f[$key]) }
+        if ($f.ContainsKey($key)) { return (Get-WorkerPerfEventFieldValue $Parsed $f[$key].Field) }
         return ''
+    }
+    $fmt = {
+        param($key)
+        if ($f.ContainsKey($key)) { return $f[$key].Format }
+        return 'decimal'
     }
     $user = & $get 'user'
     $slash = $user.LastIndexOf('\')
@@ -246,8 +268,8 @@ function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [stri
         Module        = (& $get 'module')
         ModuleVersion = (& $get 'moduleVersion')
         Code          = (Format-WorkerPerfErrorCode (& $get 'code'))
-        Pid           = (ConvertTo-WorkerPerfEventNumber (& $get 'pid'))
-        SessionId     = (ConvertTo-WorkerPerfEventNumber (& $get 'session'))
+        Pid           = (ConvertTo-WorkerPerfEventNumber (& $get 'pid') (& $fmt 'pid'))
+        SessionId     = (ConvertTo-WorkerPerfEventNumber (& $get 'session') (& $fmt 'session'))
         User          = $user
         Printer       = (& $get 'printer')
         Driver        = (& $get 'driver')

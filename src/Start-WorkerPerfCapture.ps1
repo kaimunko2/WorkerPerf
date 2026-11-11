@@ -114,6 +114,7 @@ if ($Simulate) {
 }
 else {
     if (-not (Test-WorkerPerfWindows)) { throw 'Die Aufzeichnung realer Daten ist nur unter Windows moeglich. Fuer Testdaten -Simulate verwenden.' }
+    . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Windows.ps1')
 }
 

@@ -1,6 +1,6 @@
 BeforeAll {
     Set-StrictMode -Version 2
-    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.EventConfig.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1')
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Capture.ps1')
     # Die Probe-Klasse wird einmal vorab uebersetzt, damit die Zeitmessung unten nur den Start der Proben misst.
     Start-WorkerPerfProbes -Endpoints @(); [void](Receive-WorkerPerfProbes)
@@ -282,9 +282,9 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
             [pscustomobject]@{ Name = 'Spooler'; ProcessId = 0 }, [pscustomobject]@{ Name = 'CylanceSvc'; ProcessId = 4000 })
         $m[900] | Should -Be 'RpcEptMapper;RpcSs'; $m[4000] | Should -Be 'CylanceSvc'; $m.ContainsKey(0) | Should -BeFalse
     }
-    It 'kuerzt Ereignistexte auf die erste Zeile und 200 Zeichen' {
+    It 'kuerzt Ereignistexte auf die erste Zeile und 300 Zeichen' {
         Get-WorkerPerfEventText "Scan gestartet.`r`n Scan-ID: {1}" | Should -Be 'Scan gestartet.'
-        (Get-WorkerPerfEventText ('x' * 300)).Length | Should -Be 200
+        (Get-WorkerPerfEventText ('x' * 400)).Length | Should -Be 300
         Get-WorkerPerfEventText $null | Should -Be ''
     }
     It 'behaelt bei mehr als 200 Ereignissen die neuesten und warnt einmal je Protokoll' {

@@ -32,6 +32,9 @@ Describe 'events.json' {
         @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"xyz","kind":"crash"}]}'; Msg = "*Eintrag 1 (P 1)*Feld 'group'*" }
         @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[],"group":"app","kind":"crash"}]}'; Msg = "*Eintrag 1 (P )*Feld 'ids'*" }
         @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"},{"log":"a","provider":"p","ids":[2,1],"group":"app","kind":"crash"}]}'; Msg = "*Eintrag 2 (p 2, 1)*Feld 'ids'*doppelte*" }
+        @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash","fields":{"pid":{"field":"X","format":"octal"}}}]}'; Msg = "*Eintrag 1 (P 1)*Feld 'fields.pid.format'*" }
+        @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash","fields":{"app":{"field":"X","format":"hex"}}}]}'; Msg = "*Eintrag 1 (P 1)*Feld 'fields.app.format'*" }
+        @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash","fields":{"pid":{"format":"hex"}}}]}'; Msg = "*Eintrag 1 (P 1)*Feld 'fields.pid.field'*" }
         @{ Json = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash","fields":{"app":"#x"}}]}'; Msg = "*Eintrag 1 (P 1)*Feld 'fields.app'*" }
     ) {
         $f = Join-Path $TestDrive 'e.json'; [IO.File]::WriteAllText($f, $Json)
@@ -54,14 +57,34 @@ Describe 'Rohereignis -> Datensatz' {
         $r.Group | Should -Be 'app'; $r.Kind | Should -Be 'crash'; $r.Level | Should -Be 2; $r.Text | Should -Be 'Name der fehlerhaften Anwendung: WORD.EXE'
         $r.Source | Should -Be 'Application Error'; $r.Log | Should -Be 'application'; $r.Time | Should -Be ([datetime]'2026-01-15 08:00')
     }
-    It 'liest die Prozess-ID dezimal' {
-        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 "<EventData><Data Name='ProcessId'>8012</Data></EventData>")
-        (ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) '').Pid | Should -Be 8012
+    It 'liest die Prozess-ID nach dem Zahlenformat des Eintrags' -TestCases @(
+        @{ Fmt = 'hex'; Val = '1234'; Want = 4660 }
+        @{ Fmt = 'hex'; Val = '0x1f2c'; Want = 7980 }
+        @{ Fmt = 'hex'; Val = '1f2c'; Want = 7980 }
+        @{ Fmt = $null; Val = '8012'; Want = 8012 }
+        @{ Fmt = $null; Val = '0x1f2c'; Want = 7980 }
+        @{ Fmt = $null; Val = '1f2c'; Want = $null }
+        @{ Fmt = 'hex'; Val = 'abc!'; Want = $null }
+        @{ Fmt = 'hex'; Val = 'zz'; Want = $null }
+    ) {
+        $ref = $(if ($Fmt) { '{"field":"P","format":"' + $Fmt + '"}' } else { '"P"' })
+        $f = Join-Path $TestDrive 'fmt.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"X","ids":[1],"group":"app","kind":"crash","fields":{"pid":' + $ref + '}}]}')
+        $c = Read-WorkerPerfEventConfig $f
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'X' 1 "<EventData><Data Name='P'>$Val</Data></EventData>")
+        $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1) $p ([datetime]::Now) ''
+        if ($null -eq $Want) { $r.Pid | Should -BeNullOrEmpty } else { $r.Pid | Should -Be $Want }
+    }
+    It 'verlangt hex fuer die Prozess-ID von Absturz und Haenger' {
+        foreach ($id in 1000, 1002) {
+            $e = Resolve-WorkerPerfEventEntry $Cfg 'application' $(if ($id -eq 1000) { 'Application Error' } else { 'Application Hang' }) $id
+            $e.fields['pid'].Format | Should -Be 'hex'
+        }
     }
     It 'liest unbenannte Felder nach Position und Benutzer aus UserData' {
         $h = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Hang' 1002 '<EventData><Data>WINWORD.EXE</Data><Data>16.0</Data><Data>1a2c</Data></EventData>')
         $hr = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $h.Provider 1002) $h ([datetime]::Now) ''
-        $hr.App | Should -Be 'WINWORD.EXE'; $hr.AppVersion | Should -Be '16.0'; $hr.Pid | Should -Be 6700
+        $hr.App | Should -Be 'WINWORD.EXE'; $hr.AppVersion | Should -Be '16.0'; $hr.Pid | Should -Be 6700   # 1a2c hex
         $s = ConvertFrom-WorkerPerfEventXml (New-Xml 'Microsoft-Windows-TerminalServices-LocalSessionManager' 21 '' "<UserData><EventXML xmlns='x'><User>KLINIK\mueller</User><SessionID>3</SessionID></EventXML></UserData>")
         $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'session' $s.Provider 21) $s ([datetime]::Now) ''
         $r.User | Should -Be 'mueller'; $r.SessionId | Should -Be 3; $r.Kind | Should -Be 'logon'

@@ -11,9 +11,9 @@
   ],
   "events": [
     { "log": "application", "provider": "Application Error", "ids": [1000], "group": "app", "kind": "crash",
-      "fields": { "app": "AppName", "appVersion": "AppVersion", "module": "ModuleName", "moduleVersion": "ModuleVersion", "code": "ExceptionCode", "pid": "ProcessId" } },
+      "fields": { "app": "AppName", "appVersion": "AppVersion", "module": "ModuleName", "moduleVersion": "ModuleVersion", "code": "ExceptionCode", "pid": { "field": "ProcessId", "format": "hex" } } },
     { "log": "application", "provider": "Application Hang", "ids": [1002], "group": "app", "kind": "hang",
-      "fields": { "app": "#0", "appVersion": "#1", "pid": "#2" } },
+      "fields": { "app": "#0", "appVersion": "#1", "pid": { "field": "#2", "format": "hex" } } },
     { "log": "application", "provider": ".NET Runtime", "ids": [1026], "group": "app", "kind": "app-detail" },
     { "log": "application", "provider": "Windows Error Reporting", "ids": [1001], "group": "app", "kind": "app-detail" },
     { "log": "application", "provider": "Microsoft-Windows-User Profiles Service", "ids": [1500, 1502, 1508, 1511, 1515, 1533], "group": "profile", "kind": "profileerror" },
