@@ -72,9 +72,29 @@ Register-ScheduledTask -TaskName 'WorkerPerf' -Action $action -Trigger $trigger 
 .\src\New-WorkerPerfReport.ps1 -Path D:\WorkerPerf\VDA01_20260101-070000
 # nur einen Ausschnitt bewerten:
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -From '2026-01-01 09:00' -To '2026-01-01 11:30'
+# Meldung eines Benutzers: seine Vorfälle und die um die gemeldete Uhrzeit hervorheben
+.\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -FocusUser 'CONTOSO\mmuster' -ReportedTime '2026-01-01 10:15'
 ```
 
-Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`).
+Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`). Die Auswertung bewertet jede Messreihe
+gegen die Schwellwerte, fasst die Befunde zu Vorfällen zusammen (Engpass auf dem Worker, Verzögerung
+ohne Engpass, Umfeld, Dauerzustand), nennt Betroffene und Verursacher im Klartext und stellt alle
+Messwerte dem Soll gegenüber. Findet sie nichts, sagt der Bericht das ausdrücklich.
+
+| Parameter | Bedeutung |
+|---|---|
+| `-Path` | Aufzeichnungsordner |
+| `-OutFile` | Zieldatei, Standard `<Path>\report.html` |
+| `-From`, `-To` | nur Messungen in diesem Zeitraum bewerten |
+| `-ThresholdFile` | Schwellwerte, Standard `thresholds.json` neben dem Skript |
+| `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System), Standard `roles.json` neben dem Skript |
+| `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
+| `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben |
+| `-TopProcesses` | Zahl der Einzelprozesse je Rangliste (CPU-Zeit, Spitzenspeicher), Standard 150 |
+
+Schwellwerte und Rollen werden erst bei der Auswertung gelesen. Eine Messung lässt sich deshalb
+jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der Hauptanwendung in
+`roles.json` eingetragen sind.
 
 ### Ohne VDA ausprobieren
 
@@ -111,22 +131,31 @@ Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des
 
 ## Datenformat
 
-Je Lauf ein Ordner mit:
+Je Lauf ein Ordner mit (Format 2):
 
 | Datei | Zeilen | Inhalt |
 |---|---|---|
-| `meta.json` | – | Host, Betriebssystem, CPUs, RAM, Intervall, Start/Ende |
-| `system.csv` | je Messung | CPU %, Warteschlange, Speicher, Paging, Datenträger, Netzwerk, Sitzungs- und Prozesszahl |
-| `sessions.csv` | je Messung × Sitzung | Benutzer, Domäne, Zustand, Client, Anmeldezeit, Leerlauf |
-| `procinfo.csv` | je Prozessinstanz | Schlüssel `K`, PID, Name, Sitzung, Startzeit, Pfad, optional Befehlszeile |
-| `processes.csv` | je Messung × Prozess | CPU-ms, Working Set, Private Bytes, I/O-Bytes und -Operationen im Intervall, Handles, Threads |
-| `citrix.csv` | je Messung × Sitzung × Messwert | Citrix-WMI-Werte (z. B. `RoundtripTime`) |
+| `meta.json` | – | Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund, Collector-PID, Gegenstellen, verfügbare Datenquellen |
+| `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
+| `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
+| `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
+| `shares.csv` | je Takt × Freigabe | Antwortzeiten, Operationen und Durchsatz je SMB-Freigabe |
+| `inputdelay.csv` | je Takt × Sitzung | höchste Eingabeverzögerung der Sitzung |
+| `inputdelay_proc.csv` | je Takt × Prozess | Eingabeverzögerung je Prozess (ab 50 ms) |
+| `snapshots.csv` | je Schnappschuss | Nummer `P`, Takt `T`, Art (`K` Stützpunkt, `R` regulär, `B` verdichtet), Sitzungs- und Prozesszahl |
+| `sessions.csv` | je Schnappschuss × Sitzung | Benutzer, Domäne, Zustand, Client, Anmeldezeit, Leerlauf |
+| `procinfo.csv` | je Prozessinstanz | Schlüssel `K`, PID, Name, Sitzung, Startzeit, Pfad, Dienste, optional Befehlszeile |
+| `processes.csv` | je Schnappschuss × geändertem Prozess | CPU-ms, Working Set, Private Bytes, I/O im Intervall, Handles, Threads; im Stützpunkt alle Prozesse |
+| `procend.csv` | je beendetem Prozess | Schnappschuss und Schlüssel `K` |
+| `citrix.csv` | je Schnappschuss × Sitzung × Messwert | Citrix-WMI-Werte (z. B. `RoundtripTime`) |
+| `probes.csv` | je Probe | Verbindungszeit oder Fehler je Gegenstelle |
+| `events.csv` | je Ereignis | Defender-Scans, AppLocker-Sperren und andere relevante Ereignisse |
 
-`S` ist die laufende Nummer der Messung, `K` verweist auf `procinfo.csv`. Die CSVs lassen sich
-auch direkt in Excel, Power BI o. ä. weiterverwenden.
+`T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
+Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden.
 
-**Größenordnung:** ca. 45 Byte je Prozess und Messung. 1.500 Prozesse × 15 s × 8 h ≈ 2,9 Mio. Zeilen
-≈ 130 MB. Die Auswertung verarbeitet grob 15.000–20.000 Zeilen pro Sekunde.
+**Größenordnung:** Die simulierte Stunde (25 Sitzungen, rund 280 Prozesse) belegt etwa 5 MB;
+Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschuss verändert haben.
 
 ## Datenquellen
 

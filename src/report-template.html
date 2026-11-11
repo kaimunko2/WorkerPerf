@@ -139,9 +139,10 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; }
 </main>
 <footer id="footer"></footer>
 
+<script id="wp-data" type="application/json">null</script>
 <script>
 "use strict";
-const D = /*__WORKERPERF_DATA__*/null;
+const D = JSON.parse(document.getElementById('wp-data').textContent);
 
 // ---------- formatting ----------
 const nf = (d) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
