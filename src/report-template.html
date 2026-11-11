@@ -73,9 +73,6 @@ section[hidden] { display: none; }
 .chart { position: relative; touch-action: none; }
 .chart svg { display: block; overflow: hidden; user-select: none; }
 .chart text { fill: var(--text2); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
-.chart .xlabels { position: relative; width: 100%; height: 100%; font-size: 11px; line-height: 1; color: var(--text2); font-variant-numeric: tabular-nums; }
-.chart .xlabels text { display: block; position: absolute; top: 6px; white-space: nowrap; }
-.chart .xlabels text.middle { transform: translateX(-50%); } .chart .xlabels text.end { transform: translateX(-100%); }
 .chart .band-warn line { stroke: var(--warn); }
 .chart .band-crit line { stroke: var(--crit); }
 .chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
@@ -216,7 +213,8 @@ const fmtSpan = (ms) => {
   return ms < 59500 ? r(ms / 1000) + " s" : ms < 3570000 ? r(ms / 60000) + " min" : r(ms / 3600000) + " h";
 };
 const fmtMB = (mb) => mb == null ? "–" : mb >= 1024 ? fmt(mb / 1024, 2) + " GB" : fmt(mb, 0) + " MB";
-const withUnit = (unit) => unit ? (unit === "%" ? " %" : " " + unit) : "";
+// returns HTML: the unit comes from the threshold file and is escaped like every data value
+const withUnit = (unit) => unit ? (unit === "%" ? " %" : " " + esc(unit)) : "";
 // Decimals for a measured value: small numbers keep more digits.
 const autoDec = (v, unit) => v == null ? 0 : unit === "" ? 2 : Math.abs(v) >= 100 ? 0 : 1;
 const fmtVal = (v, unit) => fmt(v, autoDec(v, unit)) + (v == null ? "" : withUnit(unit));
@@ -438,9 +436,9 @@ function drawChart(host) {
     g += `<text class="yaxis" x="${m.l - 6}" y="${f1(Y(v) + 4)}" text-anchor="end">${fmt(v, dec)}</text>`;
   }
   // time axis
-  // Time labels are HTML elements in a foreignObject, so their text can be read like any page text.
+  // first label anchored at its start, last at its end, so neither runs out of the plot
   const labelW = sec ? 50 : 34, ticks = timeTicks(z.t0, z.t1, pw, labelW);
-  const xl = (x, a, txt) => `<text class="xaxis ${a}" style="left:${f1(x)}px">${txt}</text>`;
+  const xl = (x, a, txt) => `<text class="xaxis" x="${f1(x)}" y="${H - 5}" text-anchor="${a}">${txt}</text>`;
   let xlab = xl(m.l, "start", fmtTime(z.t0, sec));
   for (const t of ticks.mid) {
     const x = X(t);
@@ -450,7 +448,7 @@ function drawChart(host) {
   }
   xlab += xl(W - m.r, "end", fmtTime(z.t1, sec));
   g += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--border)"/>`;
-  g += `<foreignObject x="0" y="${m.t + ph}" width="${W}" height="${m.b}"><div class="xlabels">${xlab}</div></foreignObject>`;
+  g += xlab;
 
   // marks
   const clip = "clip" + st.id;
@@ -504,13 +502,14 @@ function drawChart(host) {
       (anyFail ? '<span><i class="failmark"></i>Verbindungsfehler (Strich am oberen Rand)</span>' : "") + "</div>";
   }
   const reduced = red.find((r) => r.bucket);
-  const notes = [opt.note, bandNote, reduced ? `Verdichtet: ${agg === "max" ? "Maximum" : "Mittelwert"} je ${fmtSpan(Math.round(reduced.bucket))}.` : ""].filter(Boolean);
+  // bandNote is already HTML (escaped unit); the other notes are plain text
+  const notes = [esc(opt.note || ""), bandNote, reduced ? esc(`Verdichtet: ${agg === "max" ? "Maximum" : "Mittelwert"} je ${fmtSpan(Math.round(reduced.bucket))}.`) : ""].filter(Boolean);
   host.innerHTML = legend + `<div class="chart"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(st.label)}">` +
     `<defs><clipPath id="${clip}"><rect x="${m.l}" y="${m.t - 2}" width="${pw}" height="${ph + 4}"/></clipPath></defs>${g}` +
     `<line class="cross" y1="${m.t}" y2="${m.t + ph}" stroke="var(--text2)" stroke-width="1" visibility="hidden"/>` +
     `<rect class="selbox" y="${m.t}" height="${ph}" width="0" visibility="hidden"/>` +
     `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg><div class="tip"></div></div>` +
-    (notes.length ? `<div class="chartnote">${esc(notes.join(" "))}</div>` : "");
+    (notes.length ? `<div class="chartnote">${notes.join(" ")}</div>` : "");
 
   const svg = host.querySelector("svg"), cross = svg.querySelector(".cross"), sel = svg.querySelector(".selbox"), tip = host.querySelector(".tip");
   const hit = svg.querySelector(".hit"), unitTxt = withUnit(unit);

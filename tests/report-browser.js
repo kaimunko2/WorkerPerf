@@ -30,7 +30,7 @@ async function checkPage(browser, dir, scheme) {                    // Task 13
   const inc = D.incidents.find((i) => i.lead === 'cpu');
   await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [inc.start, inc.end]);
   ok(await page.locator('#zoomReset').isVisible(), 'Ruecksetz-Schaltflaeche sichtbar');
-  ok((await page.locator('#chCpu svg text.xaxis').first().innerText()).startsWith(hhmm(inc.start, D.meta.offsetMin)), 'Zeitachse beginnt am Fensteranfang');
+  ok((await page.locator('#chCpu svg text.xaxis').first().textContent()).startsWith(hhmm(inc.start, D.meta.offsetMin)), 'Zeitachse beginnt am Fensteranfang');
   await page.click('#zoomReset');
   ok(await page.evaluate(() => window.WP.zoom === null), 'Zoom zurueckgesetzt');
   await page.click('nav button[data-tab=apps]');
