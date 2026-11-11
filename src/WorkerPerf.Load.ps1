@@ -418,6 +418,7 @@ function Import-WorkerPerfRun {
     foreach ($f in $csv.Rows) {
         $t = 0
         if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
+        if ($t -lt $tickTArr[0] -or $t -gt $tickTArr[$nT - 1]) { continue }     # outside the selected range
         $sp = [Array]::BinarySearch($snapT, [int]$t)
         if ($sp -lt 0) { $sp = -bnot $sp }
         if ($sp -ge $nP) { continue }
@@ -451,6 +452,7 @@ function Import-WorkerPerfRun {
         if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
         $val = ConvertTo-WorkerPerfDouble $f[$cVal]
         if ([double]::IsNaN($val)) { continue }
+        if ($t -lt $tickTArr[0] -or $t -gt $tickTArr[$nT - 1]) { continue }     # outside the selected range
         $sp = [Array]::BinarySearch($snapT, [int]$t)
         if ($sp -lt 0) { $sp = -bnot $sp }
         if ($sp -ge $nP) { continue }

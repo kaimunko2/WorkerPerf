@@ -86,3 +86,25 @@ Describe 'Import-WorkerPerfRun: Sitzungen und Instanzen' {
         ($s | Where-Object Id -eq 'ica.rtt').Resource | Should -Be 'network'
     }
 }
+Describe 'Import-WorkerPerfRun: Zeitraum und T-Zeilen' {
+    BeforeAll {
+        $script:Files = @{
+            'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines
+            'sessions.csv' = @('0,5,alice,DOM,Active,ICA#5,PC1,,0', '1,5,alice,DOM,Active,ICA#5,PC1,,0', '2,5,alice,DOM,Active,ICA#5,PC1,,0', '3,5,alice,DOM,Active,ICA#5,PC1,,0')
+            'probes.csv' = @('1,DB,Datenbank,h,1521,100,', '3,DB,Datenbank,h,1521,101,', '5,DB,Datenbank,h,1521,102,', '7,DB,Datenbank,h,1521,103,')
+            'citrix.csv' = @('1,Citrix_Euem_RoundTrip,5,,RoundtripTime,100', '3,Citrix_Euem_RoundTrip,5,,RoundtripTime,101', '5,Citrix_Euem_RoundTrip,5,,RoundtripTime,102', '7,Citrix_Euem_RoundTrip,5,,RoundtripTime,103')
+        }
+    }
+    It 'ordnet Zeilen vor -From keinem Schnappschuss im Zeitraum zu' {
+        $m = Import-TestRun 'f' $Files @{ From = $Base.AddSeconds(9).LocalDateTime }
+        $m.Snap.N | Should -Be 2
+        $m.Sessions[0].Rtt[0] | Should -Be 102; $m.Sessions[0].Rtt[1] | Should -Be 103
+        $m.Citrix[0].N | Should -Be 2; $m.Citrix[0].Avg | Should -Be 102.5
+        $m.Probes[0].Ms[0] | Should -Be 102; $m.Probes[0].Ms[1] | Should -Be 103
+    }
+    It 'ordnet Zeilen nach -To keinem Schnappschuss zu' {
+        $m = Import-TestRun 'g' $Files @{ To = $Base.AddSeconds(9).LocalDateTime }
+        $m.Snap.N | Should -Be 2
+        $m.Sessions[0].Rtt[1] | Should -Be 101; $m.Citrix[0].N | Should -Be 2; $m.Probes[0].Ms[1] | Should -Be 101
+    }
+}
