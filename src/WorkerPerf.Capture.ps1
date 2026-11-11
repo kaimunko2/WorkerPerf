@@ -160,6 +160,7 @@ function Get-WorkerPerfTriggerSignals {
         return $max
     }
 
+    $result = [System.Collections.Generic.List[string]]::new()
     foreach ($id in @($Thresholds.Keys)) {
         $th = $Thresholds[$id]
         if (-not [bool]$th.trigger) { continue }
@@ -169,8 +170,9 @@ function Get-WorkerPerfTriggerSignals {
         elseif ($id -eq 'disk.latency') { $value = & $maxOf $Sample.Volumes @('ReadLatMs', 'WriteLatMs') ([double]$th.minOps) }
         elseif ($id -eq 'smb.latency') { $value = & $maxOf $Sample.Shares @('ReadLatMs', 'WriteLatMs') ([double]$th.minOps) }
         $status = Get-WorkerPerfStatus $value $th
-        if ($null -ne $status -and $status -ge 1) { $id }
+        if ($null -ne $status -and $status -ge 1) { $result.Add([string]$id) }
     }
+    return [string[]]$result.ToArray()
 }
 
 function Get-WorkerPerfSnapshotDue {
@@ -259,9 +261,10 @@ function New-WorkerPerfWriters {
         foreach ($name in $script:WorkerPerfHeaders.Keys) {
             $stream = New-Object System.IO.FileStream((Join-Path $RunDir $name), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
             $w = New-Object System.IO.StreamWriter($stream, $encoding)
-            $w.AutoFlush = $true
+            $w.AutoFlush = $false
             $writers[$name] = $w
             $w.WriteLine([string]$script:WorkerPerfHeaders[$name])
+            $w.Flush()
         }
     }
     catch {
