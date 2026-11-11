@@ -1,6 +1,6 @@
 # Geführter Bericht und Expertenansicht – Entwurf
 
-Stand: 11.11.2026. Baut auf `2026-11-10-engpassanalyse-design.md` auf und ersetzt dort den Abschnitt zum Aufbau der Berichtsseite.
+Stand: 11.11.2026. Baut auf `2026-11-10-engpassanalyse-design.md` auf und ersetzt dort den Abschnitt zum Aufbau der Berichtsseite. Wird nach `2026-11-11-ereignisse-abstuerze-drucken-design.md` und `2026-11-11-maskierung-design.md` umgesetzt und setzt deren Daten voraus: Vorfälle aus Ereignissen mit ihren Mustern, den Rückblick, den Druckzustand und die Maskierung.
 
 ## 1. Ziel
 
@@ -35,12 +35,12 @@ Eine Datei, zwei Ansichten. Ein Umschalter „Geführt | Experte" sitzt oben rec
 Drei Ebenen:
 
 1. **Lagebild** (Startseite)
-   - Ein farbiges Band nennt den Gesamtzustand in einem Satz und vier Kennzahlen: Engpässe auf dem Server, Verzögerungen von außen, Dauerzustände, Minuten mit spürbarer Störung. Das ist die Gesamtdauer der Zeitfenster aller Vorfälle, die keine Dauerzustände sind; überlappende Fenster zählen einmal.
-   - Die Bandfarbe folgt dem Zustand: rot bei mindestens einem Engpass oder einer kritischen Verzögerung, gelb bei bloßen Auffälligkeiten und Dauerzuständen, grün ohne Vorfall. Der Zustand steht zusätzlich als Symbol und Wort im Band.
+   - Ein farbiges Band nennt den Gesamtzustand in einem Satz und fünf Kennzahlen: Engpässe auf dem Server, Verzögerungen von außen, Abstürze und Fehler (Vorfälle aus Ereignissen), Dauerzustände, Minuten mit spürbarer Störung. Das ist die Gesamtdauer der Zeitfenster aller Vorfälle, die keine Dauerzustände sind; überlappende Fenster zählen einmal.
+   - Die Bandfarbe folgt dem Zustand: rot bei mindestens einem Engpass, einer kritischen Verzögerung oder einem Vorfall aus Ereignissen in einer Benutzersitzung, gelb bei bloßen Auffälligkeiten und Dauerzuständen, grün ohne Vorfall. Der Zustand steht zusätzlich als Symbol und Wort im Band.
    - Knöpfe im Band: „Wichtigsten Vorfall öffnen", „Zusammenfassung kopieren".
    - Unter dem Band stehen Hinweise zur Messung, wenn sie die Aussage einschränken: fehlende Messwerte, nicht regulär oder mit Fehler beendete Aufzeichnung.
    - Darunter die Zeitleiste der Messung; eine Markierung öffnet ihren Vorfall.
-2. **Vorfallskarten**, die wichtigsten zuerst. Reihenfolge: Engpässe und kritische Verzögerungen vor Dauerzuständen; darin nach Zahl der betroffenen Sitzungen, dann nach Dauer, dann nach Uhrzeit. Eine Karte zeigt: Einordnung in Benutzersicht, Uhrzeit und Dauer, Titel in Alltagssprache, einen Satz zur Wirkung, Verursacher oder Hinweis, den ersten Schritt, die Knöpfe „Öffnen" und „Kopieren" sowie ein Kürzel der betroffenen Ressource.
+2. **Vorfallskarten**, die wichtigsten zuerst. Reihenfolge: Engpässe, kritische Verzögerungen und Vorfälle aus Ereignissen vor Dauerzuständen; darin nach Zahl der betroffenen Sitzungen, dann nach Dauer, dann nach Uhrzeit. Eine Karte zeigt: Einordnung in Benutzersicht, Uhrzeit und Dauer, Titel in Alltagssprache, einen Satz zur Wirkung, Verursacher oder Hinweis, den ersten Schritt, die Knöpfe „Öffnen" und „Kopieren" sowie ein Kürzel der betroffenen Ressource.
 3. **Vorfallsansicht** (Abschnitt 4), erreichbar über Karte oder Zeitleiste, mit „Zurück zum Lagebild" und „Nächster Vorfall".
 
 Unter den Karten folgen eingeklappt „Was wurde gemessen, was nicht" und „Messqualität" mit den heutigen Inhalten.
@@ -100,6 +100,12 @@ Eine Situation ist die Art des Vorfalls plus die führende Ressource. Zum Start:
 | `delay.single` | Verzögerung ohne Engpass, eine Sitzung oder Anwendung |
 | `chronic.network` | Dauerzustand der Netzstrecke eines Benutzers |
 | `chronic.resource` | Dauerzustand einer Server-Ressource |
+| `crash` | Anwendungsabsturz |
+| `hang` | Anwendungshänger |
+| `service` | Dienstausfall |
+| `print` | Druckproblem |
+| `profileerror` | Profilproblem |
+| `system` | Systemfehler (Datenträger, Speichermangel, Verbindungsabbruch) |
 | `fallback` | Auffang-Eintrag |
 
 Jede Situation, die die Auswertung erzeugen kann, wird genau einer Kennung zugeordnet; was nicht zuzuordnen ist, erhält `fallback`.
@@ -134,6 +140,14 @@ Schritte, Vorschläge und Kontakte können an Bedingungen hängen. Eine Bedingun
 | `unmeasured.<Signal>` | dieses Signal war nicht gemessen |
 | `affected.many`, `affected.one`, `affected.unknown` | Zahl der betroffenen Sitzungen |
 | `chronic` | der Vorfall ist ein Dauerzustand |
+| `pattern.<Muster>` | dieses Muster des Abgleichs trifft zu (`resource`, `afterhang`, `sharedmodule`, `printdriver`, `securitymodule`, `manyusers`, `oneuser`, `companion`, `overlap`) |
+| `pattern.none` | kein Muster trifft zu |
+| `driver.v3`, `driver.v4` | Bauart des beteiligten Druckertreibers |
+| `driver.shared`, `driver.isolated` | der beteiligte Druckertreiber läuft nicht isoliert bzw. isoliert |
+| `driver.vendor.<Hersteller>` | Hersteller des beteiligten Druckertreibers |
+| `spooler.crash` | die Druckwarteschlange ist ausgefallen |
+| `queue.stuck` | Aufträge blieben hängen oder Drucker waren „nicht bereit" |
+| `before` | der Vorfall stammt aus dem Rückblick vor der Messung |
 
 Ein Element ohne Bedingung gilt immer. Ein Element mit Bedingung erscheint nur, wenn sie zutrifft; mehrere Bedingungen eines Elements müssen alle zutreffen. Elemente mit zutreffender Bedingung stehen vor denen ohne Bedingung, sonst gilt die Reihenfolge der Datei.
 
@@ -147,7 +161,11 @@ Texte können Platzhalter enthalten: Benutzer, Anwendung, Anteil, üblicher Wert
 - **Auffang:** Der Eintrag `fallback` erklärt, dass keine spezifische Anleitung vorliegt, und nennt nur allgemeine Prüfschritte.
 - **Prüfung der Datei:** Beim Laden werden Aufbau, Pflichtfelder, bekannte Bedingungen und bekannte Platzhalter geprüft. Ein Fehler bricht die Auswertung mit einer Meldung ab, die Eintrag und Feld nennt.
 
-### 5.7 Inhalt
+### 5.7 Druckempfehlungen
+
+Die Situation `print` und die Varianten zu `pattern.printdriver` enthalten die Empfehlungen zum Drucken in Citrix-Umgebungen von Microsoft, Citrix, HP, Kyocera und Brother. Sie werden für den Katalog recherchiert. Jedes Element nennt in einem Feld `source` den Hersteller und den Titel der Quelle; der Bericht zeigt die Quelle beim Element. Eine Empfehlung ohne belegbare Quelle wird nicht aufgenommen. Herstellerspezifische Elemente hängen an `driver.vendor.<Hersteller>` und erscheinen nur, wenn ein Treiber dieses Herstellers beteiligt war.
+
+### 5.8 Inhalt
 
 Die Texte entstehen auf Grundlage der Herstellerempfehlungen von Microsoft und Citrix und der Eigenheiten der Zielumgebung (Citrix-Profilcontainer, Schutzsoftware, AppLocker, Proxy, Fachanwendung mit Datenbank). Der fertige Katalog wird dem Auftraggeber vor der Übernahme gesondert zur fachlichen Durchsicht vorgelegt. Nach den ersten realen Messungen wird er einmal nachgeschärft.
 
@@ -158,7 +176,7 @@ Die Texte entstehen auf Grundlage der Herstellerempfehlungen von Microsoft und C
 
 Format: reiner Text ohne Formatierung, Zeilen höchstens 78 Zeichen. Ein Vorfall enthält: Kopfzeile mit Server und Datum, Zeit und Dauer mit Titel, Wirkung, Messwert mit Soll, Verursacher oder Hinweis, Betroffene, empfohlene Prüfschritte, mögliche Abhilfe als Vorschlag. Der Text stimmt inhaltlich mit der Vorfallsansicht überein.
 
-**Schalter „ohne Namen":** Benutzer, Clients, Server und Freigaben werden durch „Benutzer A", „Client A", „Server 1", „Freigabe 1" ersetzt, innerhalb eines Textes durchgehend gleich. Anwendungsnamen bleiben.
+**Schalter „ohne Namen":** Der Text nutzt die Ersatznamen der Maskierung in der Stufe `Alles` (siehe `2026-11-11-maskierung-design.md`), also dieselben wie ein maskierter Bericht derselben Aufzeichnung. Anwendungsnamen bleiben.
 
 Das Auswertungsskript setzt beide Fassungen zusammen und legt sie in die Berichtsdaten.
 
@@ -180,6 +198,8 @@ Das Auswertungsskript setzt beide Fassungen zusammen und legt sie in die Bericht
 - **Unvollständige Messung:** Hinweise stehen direkt unter dem Band (Abschnitt 3.1).
 - **Katalog ohne passenden Eintrag:** Auffang-Eintrag mit sichtbarem Hinweis.
 - **Kurzer Zeitraum in der Expertenansicht:** Angabe der Zahl der Schnappschüsse (Abschnitt 3.2).
+- **Vorfälle vor der Messung:** Der Rückblick erscheint in der geführten Ansicht als eigener Bereich „Vor der Messung" unter den Karten, mit denselben Karten und derselben Vorfallsansicht. Abschnitt 1 der Vorfallsansicht sagt dort, dass für diese Zeit keine Messwerte vorliegen; das Diagramm entfällt. Diese Vorfälle zählen nicht in die Kennzahlen des Bands. In der Expertenansicht stehen sie in einem eigenen Reiter.
+- **Maskierter Bericht:** Alle Texte der Anleitung und der Kopiertexte entstehen vor der Maskierung und werden mit den übrigen Berichtsdaten maskiert; der Schalter „ohne Namen" entfällt dann.
 
 ## 9. Bausteine
 
@@ -200,7 +220,8 @@ Die Auswahl der Anleitung, die Rangfolge und die Kopiertexte entstehen im Auswer
 
 - **Auswahlregeln:** je Situation und Bedingung genau die erwarteten Elemente; nicht gestützte Elemente erscheinen nicht; ein Element mit fehlendem Platzhalterwert entfällt.
 - **Katalog:** jeder Eintrag vollständig; jede Bedingung und jeder Platzhalter bekannt; jede erzeugbare Situation hat einen Eintrag; fehlerhafte Datei ergibt die Meldung mit Eintrag und Feld.
-- **Simulierte Stunde:** für alle acht Vorfälle stehen Kennung, Titel, Wirkung, erster Schritt, Rangfolge und Kopiertext fest; das Lagebild nennt 5 Engpässe, 2 Verzögerungen und 1 Dauerzustand.
+- **Simulierte Stunde:** für alle Vorfälle, die acht Leistungsvorfälle und die Vorfälle aus Ereignissen, stehen Kennung, Titel, Wirkung, erster Schritt, Rangfolge und Kopiertext fest; das Lagebild nennt die erwarteten Kennzahlen.
+- **Druckempfehlungen:** jedes Element der Situation `print` trägt eine Quelle; herstellerspezifische Elemente erscheinen nur beim passenden Hersteller.
 - **Kopiertext:** die Fassung ohne Namen enthält keinen Benutzer-, Client-, Server- oder Freigabenamen der Messung; Zeilenlänge eingehalten.
 - **Seite im Browser:** Umschalten der Ansichten; Öffnen eines Vorfalls über Karte und Zeitleiste; gemeinsamer Zeitraum über Diagramme, Kacheln und Tabellen; Zurück-Taste; Adresse; Kopieren mit beiden Wegen und dem Ausweichfeld; Tastaturbedienung; schmale Breite ohne seitliches Scrollen; kein Vorfall; viele Vorfälle.
 - **Bestand:** die bisherigen Tests bleiben grün; die Browser-Prüfungen werden auf den neuen Aufbau umgestellt, ohne eine Aussage fallen zu lassen.
