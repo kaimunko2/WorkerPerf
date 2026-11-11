@@ -125,12 +125,12 @@ Grenzen, die im Bericht stehen müssen:
 
 | Signal | Quelle | Status |
 |---|---|---|
-| Prozesse, Sitzungen, Host-CPU/Speicher/Datenträger/Netz | wie bisher (`Win32_Process`, WTS-API, `Win32_PerfRawData_PerfOS_*`, `..._PerfDisk_*`, `..._Tcpip_*`) | Namen bekannt, auf VDA ungeprüft |
-| Eingabeverzögerung | Leistungsindikatoren „User Input Delay per Session" / „per Process" (ab Server 2019) | CIM-Klassenname ungeprüft |
-| Antwortzeit je Laufwerk | `Win32_PerfRawData_PerfDisk_LogicalDisk` (Avg. Disk sec/Read, /Write mit Basiszähler) | Berechnung aus Rohwerten ungeprüft |
-| Antwortzeit je Freigabe | Leistungsindikator „SMB Client Shares" (Avg. sec/Read, /Write) | CIM-Klassenname ungeprüft |
-| Entzogene CPU-Zeit | VMware-Tools-Leistungsindikator „VM Processor" | Name und Verfügbarkeit ungeprüft |
-| ICA Round Trip, Latenz | `root\citrix\euem`, ICA-Session-Zähler | wie bisher, ungeprüft |
+| Prozesse, Sitzungen, Host-CPU/Speicher/Datenträger/Netz | `Win32_Process`, WTS-API; Leistungsindikatoren `Processor Information`, `System`, `Memory`, `PhysicalDisk`, `Network Interface` über `PerformanceCounterCategory` mit englischen Namen | geprüft (VDA, Server 2022, de-DE): vorhanden, .NET-Weg liefert Werte |
+| Eingabeverzögerung | Leistungsindikatoren „User Input Delay per Session" / „per Process", Zähler `Max Input Delay` | geprüft: vorhanden; Typ `AverageCount64`, eine Abfrage alle 2 s liefert den Höchstwert seit der letzten Abfrage |
+| Antwortzeit je Laufwerk | `LogicalDisk` (Avg. Disk sec/Read, /Write, Typ `AverageTimer32`) | geprüft: vorhanden, Werte in Sekunden |
+| Antwortzeit je Freigabe | Leistungsindikator „SMB Client Shares" (Avg. sec/Read, /Write) | geprüft: vorhanden; Instanzen `\server\share` mit einem Schrägstrich |
+| Entzogene CPU-Zeit | VMware-Tools-Leistungsindikator „VM Processor" / `CPU stolen time` | geprüft: vorhanden (nur .NET, keine CIM-Klasse); Typ `Timer100Ns`, Einheit des Rohwerts nicht bestätigt |
+| ICA Round Trip, Latenz | `root\citrix\euem` `Citrix_Euem_RoundTrip`; Leistungsindikator „ICA Session" (`Latency - Last Recorded`) | geprüft: Klasse und Kategorie vorhanden; Instanzen `<WinStation> (<Benutzer>)`, Summe lokalisiert |
 
 Alle als ungeprüft markierten Quellen klärt das Quellen-Prüfskript (Abschnitt 9.1) auf einem
 echten VDA, bevor Collector und Bericht darauf aufbauen. Offen ist dabei auch, ob die

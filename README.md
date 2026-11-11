@@ -2,13 +2,14 @@
 
 > **Stand – bitte zuerst lesen**
 >
-> - Der Collector zeichnet heute **nur simulierte Daten** auf (`-Simulate`). Die Datenquelle für einen echten
->   Windows-Worker gibt es noch nicht; ohne `-Simulate` bricht `Start-WorkerPerfCapture.ps1` mit einer Meldung ab.
-> - Die Windows-Datenquelle wird geschrieben, sobald das Ergebnis des Quellen-Prüfskripts von einem echten VDA
->   vorliegt: Es zeigt, welche Zähler, Klassen und Namen dort tatsächlich vorhanden sind.
-> - **Schritt 1 für den Auftraggeber** ist deshalb dieses Prüfskript. Es liest nur, dauert einige Minuten und
->   schreibt eine JSON-Datei, in der Benutzer-, Client- und Servernamen maskiert sind; die Datei vor der Weitergabe
->   bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Worker:
+> - Die **Windows-Datenquelle** des Collectors ist geschrieben. Sie beruht auf dem Ergebnis des Quellen-Prüfskripts
+>   von einem echten VDA (Windows Server 2022, deutsche Oberfläche, Citrix): welche Zähler, Klassen und Namen dort
+>   vorhanden sind (siehe [Datenquellen](#datenquellen)). Getestet ist sie bisher nur unter Linux mit
+>   nachgestellten Windows-Aufrufen; **auf einem echten Server ist sie noch nicht gelaufen.** Der nächste Schritt
+>   ist eine Kurzmessung auf einem Worker (siehe [Offene Punkte](#offene-punkte)).
+> - Das **Quellen-Prüfskript** bleibt der erste Schritt auf jedem weiteren Worker. Es liest nur, dauert einige
+>   Minuten und schreibt eine JSON-Datei, in der Benutzer-, Client- und Servernamen maskiert sind; die Datei vor der
+>   Weitergabe bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Worker:
 >
 >   ```powershell
 >   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources.ps1 -OutFile C:\Temp
@@ -41,9 +42,9 @@ Start-WorkerPerfCapture.ps1  ──►  CSV-Ordner  ──►  New-WorkerPerfRep
 
 ### 1. Aufzeichnen
 
-> **Geplant, noch nicht nutzbar:** die Aufzeichnung auf einem echten Worker. Bis die Windows-Datenquelle vorliegt,
-> läuft der Collector nur mit `-Simulate` (siehe [Ohne VDA ausprobieren](#ohne-vda-ausprobieren)). Dieser Abschnitt
-> beschreibt, wie der Collector arbeitet und wie er später aufgerufen wird.
+> **Noch nicht auf einem echten Worker erprobt:** Die Windows-Datenquelle ist geschrieben, aber bisher nur mit
+> nachgestellten Windows-Aufrufen getestet. Die erste Messung auf einem Worker sollte eine Kurzmessung von etwa
+> 10 Minuten sein (siehe [Offene Punkte](#offene-punkte)).
 
 Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Host-Signale (CPU, Speicher,
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
@@ -54,7 +55,7 @@ denn ein Schnappschuss entsteht immer in einem schnellen Takt, also im ersten Ta
 `-BurstIntervalSeconds` (5 s) – bei einem Takt von 2 s jeder dritte.
 
 ```powershell
-# geplant: Messung über vier Stunden auf dem Worker, mit erhöhten Rechten
+# Messung über vier Stunden auf dem Worker, in einer administrativen Konsole
 .\src\Start-WorkerPerfCapture.ps1 -OutputPath D:\WorkerPerf -DurationMinutes 240
 ```
 
@@ -71,9 +72,9 @@ die Fehler je Quelle mit Zeit und Meldung des ersten (`SourceErrors`). Der Beric
 Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
 `src\endpoints.json`; als Vorlage dient `src\endpoints.example.json`. Fehlt die Datei, entfallen die Proben.
 
-> **Geplant, noch nicht nutzbar:** der Betrieb als geplante Aufgabe unter SYSTEM. Ohne Windows-Datenquelle
-> würde die Aufgabe bei jedem Start sofort mit einer Meldung enden, die niemand sieht. Das Rezept folgt zusammen
-> mit der Datenquelle.
+> **Geplant, noch nicht beschrieben:** der Betrieb als geplante Aufgabe unter SYSTEM. Das Rezept folgt, sobald
+> der Collector auf einem Worker im Vordergrund gelaufen ist; bis dahin bitte interaktiv in einer administrativen
+> Konsole messen, damit Warnungen sichtbar sind.
 
 | Parameter | Bedeutung |
 |---|---|
@@ -283,11 +284,47 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 | Bereich | Quelle | Stand |
 |---|---|---|
 | Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Vorfällen (`-Simulate`) | vorhanden, in den Tests geprüft |
-| Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1`: Leistungsindikatoren, Sitzungen, Prozesse, Dienste, Profilcontainer, Ereignisprotokolle, Gegenstellen | vorhanden; auf einem echten VDA noch nicht gelaufen |
-| Windows-Datenquelle des Collectors | Prozesse, Sitzungen (WTS-Schnittstelle), Leistungsindikatoren für Host, Laufwerke, Freigaben und Eingabeverzögerung, Citrix-Werte, Ereignisprotokolle, Verbindungsproben | **geplant**; Namen und Zugriffsweg (.NET-Schnittstelle für Leistungsindikatoren mit englischen Namen oder CIM-Klassen) entscheidet das Ergebnis des Prüfskripts |
+| Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
+| Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
 
-Der Collector spricht seine Datenquelle über eine feste Schnittstelle an; die Simulation ist heute ihre
-einzige Umsetzung. Was die Aufzeichnung als verfügbar oder nicht verfügbar meldet, steht in `meta.json`
+Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
+`System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
+der Sprache der Oberfläche; auf dem geprüften deutschen VDA lieferte dieser Weg für jede Kategorie Werte. Jeder
+Wert entsteht aus zwei Lesungen im Abstand eines schnellen Takts (`CounterSample.Calculate`).
+
+| Signal | Quelle (Kategorie / Zähler, Klasse) | Ergebnis des Prüfskripts |
+|---|---|---|
+| CPU-Auslastung | `Processor Information` / `% Processor Time`, Instanz `_Total` | vorhanden |
+| Prozessor-Warteschlange | `System` / `Processor Queue Length` | vorhanden |
+| Entzogene CPU-Zeit | `VM Processor` / `CPU stolen time` (VMware Tools), Instanz `_Total` | vorhanden; Zählertyp `Timer100Ns`, der Wert wird als Prozent übernommen, wie der Zählertyp ihn definiert. Ob die VMware Tools den Rohwert in dieser Einheit liefern, ließ sich aus dem Prüfergebnis nicht entscheiden (siehe Offene Punkte) |
+| Arbeitsspeicher | `Memory` / `Available Bytes`, `Committed Bytes`, `Commit Limit`, `Pages Input/sec` | vorhanden |
+| Datenträger gesamt | `PhysicalDisk` / Bytes, Zugriffe und Warteschlange, Instanz `_Total` | vorhanden |
+| Netzwerk | `Network Interface` / `Bytes Received/sec`, `Bytes Sent/sec`, Summe aller Adapter | vorhanden |
+| Antwortzeit je Laufwerk | `LogicalDisk` / `Avg. Disk sec/Read`, `Avg. Disk sec/Write`, Zugriffe, Bytes, Warteschlange | vorhanden; eingebundene Profilcontainer erscheinen als eigene Instanz unter ihrem Einhängepfad |
+| Antwortzeit je Freigabe | `SMB Client Shares` / `Avg. sec/Read`, `Avg. sec/Write`, Anfragen, Bytes | vorhanden; Instanzen heißen `\server\freigabe` mit einem Schrägstrich, `shares.csv` schreibt `\\server\freigabe` |
+| Eingabeverzögerung je Sitzung | `User Input Delay per Session` / `Max Input Delay`, Instanz = Sitzungs-ID | vorhanden; Zählertyp `AverageCount64` (siehe unten) |
+| Eingabeverzögerung je Prozess | `User Input Delay per Process` / `Max Input Delay`, Instanz `<Sitzung>:<PID> <Name>` | vorhanden |
+| ICA-Latenz | `ICA Session` / `Latency - Last Recorded` (und weitere Zähler nach `-CitrixMetricFilter`), Instanz `<WinStation> (<Benutzer>)` | vorhanden; ohne verbundene ICA-Sitzung hat die Kategorie keine Instanzen |
+| ICA Round Trip | `root\citrix\euem` / `Citrix_Euem_RoundTrip` (`RoundtripTime`, `NetworkLatency`) | Klasse vorhanden; Werte zeigte das Prüfskript nicht |
+| Profilcontainer | `MSFT_Disk` mit `BusType` 15, Partitionen und Zugriffspfade | vorhanden: Citrix Profile Management, drei Container je Benutzer; Speicherort und Einhängepfad nennen beide den Benutzer |
+| Prozesse, Dienste, Sitzungen | `Win32_Process`, `Win32_Service`, WTS-Schnittstelle | vorhanden; ein Prozess-Schnappschuss von 800 Prozessen dauerte etwa 0,4 s |
+| Ereignisse | Protokolle `Microsoft-Windows-Windows Defender/Operational` (1000, 1001, 1002, 2000) und `Microsoft-Windows-AppLocker/EXE and DLL`, `.../MSI and Script` (8004, 8007) | lesbar |
+| Verbindungsproben | TCP-Verbindungsaufbau zu den Gegenstellen aus `endpoints.json`, Zeitlimit 2 s | nicht geprüft (beim Prüflauf keine Datei mit Gegenstellen) |
+
+Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
+anderen Worker, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es
+erscheint im Bericht als „nicht gemessen". Die CIM-Klassen `Win32_PerfRawData_*` nutzt der Collector nicht; für
+`VM Processor` gab es auf dem VDA keine.
+
+**Schneller Takt 2 s und Eingabeverzögerung:** `Max Input Delay` ist ein fortlaufender Zähler (`AverageCount64`):
+Der Rohwert wächst um die höchste Verzögerung seit der letzten Abfrage, der Basiswert um eins je Abfrage. Im
+Prüfergebnis wuchs der Basiswert bei Abfragen im Abstand von 1 s und von 2 s jeweils um eins; der Wert einer
+Abfrage alle 2 s ist also die höchste Verzögerung der ganzen 2 Sekunden. Der Standard von `-FastIntervalSeconds`
+bleibt deshalb 2 s. Liest ein zweites Programm denselben Zähler gleichzeitig (etwa die Leistungsüberwachung),
+teilen sich die Abfragen auf, und der Collector sieht den Mittelwert zweier Höchstwerte.
+
+Der Collector spricht seine Datenquelle über eine feste Schnittstelle an: die Simulation (`-Simulate`) oder die
+Windows-Datenquelle. Was die Aufzeichnung als verfügbar oder nicht verfügbar meldet, steht in `meta.json`
 und im Bericht unter „Messqualität"; nicht verfügbare Signale erscheinen als „nicht gemessen" und werden
 nicht bewertet.
 
@@ -304,10 +341,25 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; nach einer Durchsich
 
 ## Offene Punkte
 
-- **Windows-Datenquelle:** fehlt; sie wartet auf das Ergebnis des Prüfskripts von einem echten VDA. Bis dahin
-  sind Aufzeichnung und Auswertung nur mit simulierten Daten erprobt.
+- **Windows-Datenquelle auf einem echten Server:** noch nicht gelaufen. Erster Schritt ist eine Kurzmessung
+  (`Start-WorkerPerfCapture.ps1 -DurationMinutes 10` in einer administrativen Konsole auf einem Worker mit
+  angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
+  Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
+  Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
+- **Einheit der entzogenen CPU-Zeit:** Der Zähler `VM Processor` / `CPU stolen time` meldet den Typ
+  `Timer100Ns`; der Collector übernimmt den Wert so als Prozent. Auf dem geprüften VDA war er sehr klein
+  (0,00015 %). Liefern die VMware Tools den Rohwert in Millisekunden statt in 100 ns, ist der wahre Wert
+  10.000-mal größer. Bei der ersten Messung mit der CPU-Bereitschaft (CPU Ready) des Hypervisors vergleichen.
+- **Zuordnung der ICA-Werte zur Sitzung:** über den Namen der WinStation (`ICA-CGP 2` gegen `ICA-CGP#2`),
+  sonst über den Benutzernamen, wenn er nur eine Sitzung hat. Die Schreibweise der WinStation-Namen hat das
+  Prüfskript nicht erfasst.
+- **Rollen:** In `roles.json` sind für Arctic Wolf Aurora der Dienst und Prozess `CylanceSvc` eingetragen. Für
+  Nexus KIS und den Oracle-Client zeigte das Prüfergebnis keinen eindeutigen Prozess; ihre Prozessnamen bei der
+  ersten Messung mit angemeldeten Anwendern ergänzen.
 - **Datenmenge:** Ob eine Messung über 8 Stunden mit vielen Prozessen (1.500) unter 100 MB bleibt, ist nicht
-  geprüft; `sessions.csv` und `citrix.csv` schreiben jede Sitzung bei jedem Schnappschuss.
+  geprüft; `sessions.csv` und `citrix.csv` schreiben jede Sitzung bei jedem Schnappschuss. Die Kategorie
+  `ICA Session` hat rund 80 Zähler je Sitzung; mit dem Standard von `-CitrixMetricFilter` (Latenz, Round Trip,
+  Bandbreite) und ohne Bandbreiten von 0 bleiben je Sitzung und Schnappschuss etwa 5 bis 10 Zeilen.
 - **Eingabeverzögerung mit `minTicks` 1:** Jeder einzelne Takt ab 150 ms bildet einen Befund. Auf einem echten
   Worker kann das viele kurze Vorfälle erzeugen und Sitzungen als „betroffen" zählen, die nur einen kurzen
   Ausschlag hatten. Mit der ersten echten Aufzeichnung ansehen und `minTicks` in `thresholds.json` anpassen.

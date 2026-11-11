@@ -18,9 +18,13 @@
     {
       "role": "Sicherheit",
       "label": "Arctic Wolf Aurora Endpoint Protection",
-      "processes": [],
-      "services": [],
-      "note": "Prozessnamen per Prüfskript ermitteln"
+      "processes": [
+        "CylanceSvc.exe"
+      ],
+      "services": [
+        "CylanceSvc"
+      ],
+      "note": "aus dem Prüfskript: Dienst CylanceSvc in Sitzung 0 (Aurora ist das frühere CylancePROTECT); Prozesse in Benutzersitzungen nicht gefunden"
     },
     {
       "role": "Sicherheit",
@@ -45,14 +49,14 @@
       "label": "Nexus KIS",
       "processes": [],
       "services": [],
-      "note": "Prozessnamen per Prüfskript ermitteln"
+      "note": "im Prüfergebnis kein Prozess der Anwendung in einer Benutzersitzung; Prozessnamen bei der ersten Messung mit angemeldeten KIS-Benutzern ergänzen"
     },
     {
       "role": "Hauptanwendung",
       "label": "Oracle-Client",
       "processes": [],
       "services": [],
-      "note": "Prozessnamen per Prüfskript ermitteln"
+      "note": "im Prüfergebnis kein eigener Prozess; der Client läuft vermutlich in der Anwendung, die ihn nutzt"
     },
     {
       "role": "Citrix",

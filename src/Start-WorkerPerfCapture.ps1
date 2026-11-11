@@ -116,9 +116,6 @@ else {
     if (-not (Test-WorkerPerfWindows)) { throw 'Die Aufzeichnung realer Daten ist nur unter Windows moeglich. Fuer Testdaten -Simulate verwenden.' }
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Windows.ps1')
 }
-if (-not (Get-Command -Name 'Initialize-WorkerPerfSource' -CommandType Function -ErrorAction SilentlyContinue)) {
-    throw 'Die Windows-Datenquelle ist noch nicht fertiggestellt. Bis dahin ist nur die Simulation (-Simulate) moeglich.'
-}
 
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $EndpointFile) { $EndpointFile = Join-Path $PSScriptRoot 'endpoints.json' }
@@ -138,7 +135,9 @@ $ramMB = [double]$source.PhysicalMemoryMB
 $startTime = Get-WorkerPerfNow
 $runDir = Join-Path $OutputPath ('{0}_{1}' -f $source.Computer, $startTime.ToString('yyyyMMdd-HHmmss', $inv))
 [void](New-Item -ItemType Directory -Path $runDir -Force)
-$runDir = (Resolve-Path -LiteralPath $runDir).Path
+# ProviderPath: for a UNC folder .Path is provider-qualified (Microsoft.PowerShell.Core\FileSystem::\\...), which the
+# .NET file calls below do not accept
+$runDir = (Resolve-Path -LiteralPath $runDir).ProviderPath
 $stopFlag = Join-Path $runDir 'stop.flag'
 
 $guard = Test-WorkerPerfGuard -FreeMB (Get-WorkerPerfFreeSpaceMB -Path $runDir) -SizeMB 0 -MaxSizeMB $MaxSizeMB -Phase start
