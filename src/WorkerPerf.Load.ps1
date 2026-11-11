@@ -172,6 +172,8 @@ function Import-WorkerPerfRun {
     $snapMsL = New-Object System.Collections.Generic.List[long]
     $snapKind = New-Object System.Collections.Generic.List[string]
     $snapNum = @{}
+    $preP = New-Object System.Collections.Generic.List[int]          # snapshots before -From: they only build process state
+    $preKind = New-Object System.Collections.Generic.List[string]
     foreach ($name in 'ElapsedSec', 'Sessions', 'ActiveSessions', 'Processes', 'RowsWritten', 'CollectMs') { $snapNum[$name] = New-Object System.Collections.Generic.List[double] }
     foreach ($f in $csv.Rows) {
         $p = 0; $t = 0
@@ -180,7 +182,8 @@ function Import-WorkerPerfRun {
         $dto = ConvertTo-WorkerPerfTimestamp $f[[int]$col['Timestamp']]
         if ($null -eq $dto) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
-        if ($ms -lt $fromMs -or $ms -gt $toMs) { continue }
+        if ($ms -lt $fromMs) { $preP.Add($p); $preKind.Add($f[[int]$col['Kind']]); continue }
+        if ($ms -gt $toMs) { continue }
         $snapPos[$p] = $snapP.Count
         $snapP.Add($p); $snapTL.Add($t); $snapMsL.Add($ms); $snapKind.Add($f[[int]$col['Kind']])
         foreach ($name in $snapNum.Keys) { $snapNum[$name].Add((ConvertTo-WorkerPerfDouble $f[[int]$col[$name]])) }
@@ -222,6 +225,8 @@ function Import-WorkerPerfRun {
             FirstP = -1; LastP = -1; SeenN = 0; ActiveN = 0; IdleMaxSec = [double]::NaN
             Input = (New-Object double[] $nT); Rtt = (New-WorkerPerfNanArray $nP); Latency = (New-WorkerPerfNanArray $nP)
             ProfileVolume = -1
+            CpuMs = (New-Object double[] $nP); Ws = (New-Object double[] $nP); Priv = (New-Object double[] $nP); Io = (New-Object double[] $nP)
+            N = (New-Object int[] $nP)
         }
         $sessions.Add($e)
         return $e
@@ -528,6 +533,300 @@ function Import-WorkerPerfRun {
     foreach ($s in $scans) { if ($s.EndMs -ge $fromMs -and $s.StartMs -le $toMs) { $scanList.Add($s) } }
     #endregion
 
+    #region processes
+    # procinfo: one line per process number K; the first line for a K wins, a line with unreadable numbers is skipped
+    $csv = Read-WorkerPerfCsvFile $Path 'procinfo.csv'
+    $col = $csv.Col
+    $cK = [int]$col['K']; $cPid = [int]$col['Pid']; $cName = [int]$col['Name']; $cSid = [int]$col['SessionId']; $cStart = [int]$col['StartTime']
+    $cPath = [int]$col['Path']; $cSvc = [int]$col['Services']; $cCmd = [int]$col['CommandLine']
+    $infoRows = New-Object System.Collections.Generic.List[object]
+    $nK = 0
+    foreach ($f in $csv.Rows) {
+        $k = 0; $procId = 0; $sid = 0
+        if (-not [int]::TryParse($f[$cK], [ref]$k) -or -not [int]::TryParse($f[$cPid], [ref]$procId) -or -not [int]::TryParse($f[$cSid], [ref]$sid)) { continue }
+        if ($k -lt 0) { continue }
+        $infoRows.Add(@($k, $procId, $sid, $f))
+        if ($k + 1 -gt $nK) { $nK = $k + 1 }
+    }
+    $known = New-Object bool[] $nK
+    $iPid = New-Object int[] $nK; $iSid = New-Object int[] $nK; $iName = New-Object string[] $nK; $iStart = New-Object object[] $nK
+    $iPath = New-Object string[] $nK; $iSvc = New-Object string[] $nK; $iCmd = New-Object string[] $nK
+    foreach ($r in $infoRows) {
+        $k = [int]$r[0]
+        if ($known[$k]) { continue }
+        $f = $r[3]
+        $known[$k] = $true; $iPid[$k] = [int]$r[1]; $iSid[$k] = [int]$r[2]; $iName[$k] = $f[$cName]
+        $iPath[$k] = $f[$cPath]; $iSvc[$k] = $f[$cSvc]; $iCmd[$k] = $f[$cCmd]
+        $sd = ConvertTo-WorkerPerfTimestamp $f[$cStart]
+        if ($null -ne $sd) { $iStart[$k] = $sd.ToUnixTimeMilliseconds() }
+    }
+
+    $endByP = @{}                      # P -> process numbers that ended at that snapshot
+    $csv = Read-WorkerPerfCsvFile $Path 'procend.csv'
+    $col = $csv.Col
+    $cP = [int]$col['P']; $cK = [int]$col['K']
+    foreach ($f in $csv.Rows) {
+        $p = 0; $k = 0
+        if (-not [int]::TryParse($f[$cP], [ref]$p) -or -not [int]::TryParse($f[$cK], [ref]$k)) { continue }
+        if ($k -lt 0 -or $k -ge $nK) { continue }
+        if (-not $endByP.ContainsKey($p)) { $endByP[$p] = New-Object System.Collections.Generic.List[int] }
+        $endByP[$p].Add($k)
+    }
+
+    # Snapshots to read: from the last keyframe not after the first snapshot of the range (rows before the range only
+    # build the carried-forward state) through the last snapshot of the range. $seqPos is -1 for the snapshots before the range.
+    $preFrom = 0
+    if ($snapKind[0] -eq 'K') { $preFrom = $preP.Count }
+    else { for ($i = $preP.Count - 1; $i -ge 0; $i--) { if ($preKind[$i] -eq 'K') { $preFrom = $i; break } } }
+    $seqN = $preP.Count - $preFrom + $nP
+    $seqP = New-Object int[] $seqN; $seqPos = New-Object int[] $seqN; $seqKey = New-Object bool[] $seqN
+    for ($i = $preFrom; $i -lt $preP.Count; $i++) { $j = $i - $preFrom; $seqP[$j] = $preP[$i]; $seqPos[$j] = -1; $seqKey[$j] = ($preKind[$i] -eq 'K') }
+    for ($i = 0; $i -lt $nP; $i++) { $j = $preP.Count - $preFrom + $i; $seqP[$j] = $snapP[$i]; $seqPos[$j] = $i; $seqKey[$j] = ($snapKind[$i] -eq 'K') }
+
+    # CPU share of the host capacity per snapshot (ElapsedSec * 1000 * Cores), as a factor for CPU milliseconds
+    $pctPerMs = New-Object double[] $nP
+    for ($i = 0; $i -lt $nP; $i++) {
+        $capMs = $snapNum['ElapsedSec'][$i] * 1000.0 * $cores
+        if ($capMs -gt 0) { $pctPerMs[$i] = 100.0 / $capMs }
+    }
+
+    # per-process state, indexed by K. State: 0 = not seen yet, 1 = alive, 2 = ended.
+    $pState = New-Object int[] $nK; $pLastJ = New-Object int[] $nK
+    $pWs = New-Object double[] $nK; $pPriv = New-Object double[] $nK
+    $pSess = New-Object int[] $nK; $pApp = New-Object int[] $nK; $pPair = New-Object int[] $nK
+    for ($k = 0; $k -lt $nK; $k++) { $pSess[$k] = -1 }
+    $pFirst = New-Object int[] $nK; $pLast = New-Object int[] $nK; $pWsSince = New-Object int[] $nK
+    $pCpu = New-Object double[] $nK; $pCpuMax = New-Object double[] $nK; $pIo = New-Object double[] $nK
+    $pWsMax = New-Object double[] $nK; $pWsSum = New-Object double[] $nK; $pPrivMax = New-Object double[] $nK
+    $pHandles = New-Object int[] $nK; $pThreads = New-Object int[] $nK
+    $pRole = New-Object string[] $nK; $pRoleLabel = New-Object string[] $nK
+    $alive = New-Object System.Collections.Generic.List[int]
+    # running sums per session index (orphan sessions can still be added), application index and session x application pair
+    $maxS = $sessions.Count + $nK + 1
+    $sWs = New-Object double[] $maxS; $sPriv = New-Object double[] $maxS; $sN = New-Object int[] $maxS
+    $sCpuA = New-Object object[] $maxS; $sIoA = New-Object object[] $maxS; $sWsA = New-Object object[] $maxS; $sPrivA = New-Object object[] $maxS; $sNA = New-Object object[] $maxS
+    $usedSess = New-Object System.Collections.Generic.List[int]
+    $apps = New-Object System.Collections.Generic.List[object]
+    $appByName = @{}
+    $aWs = New-Object double[] ($nK + 1); $aPriv = New-Object double[] ($nK + 1); $aN = New-Object int[] ($nK + 1)
+    $aCpuA = New-Object object[] ($nK + 1); $aIoA = New-Object object[] ($nK + 1); $aWsA = New-Object object[] ($nK + 1); $aPrivA = New-Object object[] ($nK + 1); $aNA = New-Object object[] ($nK + 1)
+    $pairKeys = New-Object System.Collections.Generic.List[string]
+    $pairByKey = @{}
+    # pair working set: Cur holds from position Since on; Sum and Max cover the positions before Since
+    $prS = New-Object int[] ($nK + 1); $prA = New-Object int[] ($nK + 1); $prInst = New-Object int[] ($nK + 1)
+    $prCpu = New-Object double[] ($nK + 1); $prIo = New-Object double[] ($nK + 1)
+    $prCur = New-Object double[] ($nK + 1); $prSince = New-Object int[] ($nK + 1); $prSum = New-Object double[] ($nK + 1); $prMax = New-Object double[] ($nK + 1)
+    $rowStart = New-Object int[] ($nP + 1)
+    $rowK = New-Object System.Collections.Generic.List[int]
+    $rowCpu = New-Object System.Collections.Generic.List[double]
+    $rowIo = New-Object System.Collections.Generic.List[double]
+    $rowWs = New-Object System.Collections.Generic.List[double]
+    $totalCpuMs = 0.0
+
+    # Called once per process when it first counts in the range (position $Pos): links session, application and pair
+    # and adds its current state to their sums.
+    $attachProcess = {
+        param([int]$K, [int]$Pos)
+        $sid = $iSid[$K]
+        $h = $sessBySnap[$Pos]
+        if ($null -ne $h -and $h.ContainsKey($sid)) { $si = [int]$h[$sid].Index }
+        else { $si = [int](& $resolveSession $snapTickPos[$Pos] $sid).Index }
+        if ($null -eq $sCpuA[$si]) {
+            $e = $sessions[$si]
+            $sCpuA[$si] = $e.CpuMs; $sIoA[$si] = $e.Io; $sWsA[$si] = $e.Ws; $sPrivA[$si] = $e.Priv; $sNA[$si] = $e.N
+            $usedSess.Add($si)
+        }
+        $name = [string]$iName[$K]
+        $appKey = $name.ToLowerInvariant()
+        if ($appByName.ContainsKey($appKey)) { $ai = [int]$appByName[$appKey] }
+        else {
+            $ai = $apps.Count
+            $ar = Resolve-WorkerPerfRole $Roles $name '' $sid
+            $a = @{
+                Index = $ai; Name = $name; Role = $ar.Role; RoleLabel = $ar.Label; Path = [string]$iPath[$K]; Instances = 0
+                CpuMs = (New-Object double[] $nP); Ws = (New-Object double[] $nP); Priv = (New-Object double[] $nP); Io = (New-Object double[] $nP)
+                N = (New-Object int[] $nP)
+            }
+            $apps.Add($a); $appByName[$appKey] = $ai
+            $aCpuA[$ai] = $a.CpuMs; $aIoA[$ai] = $a.Io; $aWsA[$ai] = $a.Ws; $aPrivA[$ai] = $a.Priv; $aNA[$ai] = $a.N
+        }
+        $apps[$ai].Instances++
+        $pairKey = [string]$si + '|' + $ai
+        if ($pairByKey.ContainsKey($pairKey)) { $pi = [int]$pairByKey[$pairKey] }
+        else {
+            $pi = $pairKeys.Count
+            $pairKeys.Add($pairKey); $pairByKey[$pairKey] = $pi
+            $prS[$pi] = $si; $prA[$pi] = $ai; $prSince[$pi] = $Pos
+        }
+        $prInst[$pi]++
+        $pr = Resolve-WorkerPerfRole $Roles $name ([string]$iSvc[$K]) $sid
+        $pRole[$K] = $pr.Role; $pRoleLabel[$K] = $pr.Label
+        $pSess[$K] = $si; $pApp[$K] = $ai; $pPair[$K] = $pi
+        $pFirst[$K] = $Pos; $pWsSince[$K] = $Pos; $pWsMax[$K] = $pWs[$K]; $pPrivMax[$K] = $pPriv[$K]
+        $sWs[$si] += $pWs[$K]; $sPriv[$si] += $pPriv[$K]; $sN[$si]++
+        $aWs[$ai] += $pWs[$K]; $aPriv[$ai] += $pPriv[$K]; $aN[$ai]++
+        if ($prSince[$pi] -lt $Pos) {
+            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
+            if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
+            $prSince[$pi] = $Pos
+        }
+        $prCur[$pi] += $pWs[$K]
+    }
+    # Called once per process when it ends at snapshot position $Pos (not counted there; -1 before the range).
+    $endProcess = {
+        param([int]$K, [int]$Pos)
+        if ($pState[$K] -ne 1) { return }
+        $pState[$K] = 2
+        if ($pSess[$K] -lt 0) { return }
+        $si = $pSess[$K]; $ai = $pApp[$K]; $pi = $pPair[$K]
+        $sWs[$si] -= $pWs[$K]; $sPriv[$si] -= $pPriv[$K]; $sN[$si]--
+        $aWs[$ai] -= $pWs[$K]; $aPriv[$ai] -= $pPriv[$K]; $aN[$ai]--
+        if ($prSince[$pi] -lt $Pos) {
+            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
+            if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
+            $prSince[$pi] = $Pos
+        }
+        $prCur[$pi] -= $pWs[$K]
+        $pWsSum[$K] += $pWs[$K] * ($Pos - $pWsSince[$K])
+        $pLast[$K] = $Pos - 1
+    }
+
+    # One pass over processes.csv (sorted by P). Snapshot j begins with its ended lines and ends, at a keyframe, by ending
+    # every living process without a row, then writes the session and application sums of its position.
+    # This loop is the hot spot of the analysis: no function call and no pipeline per row.
+    $j = 0
+    if ($endByP.ContainsKey($seqP[0])) { foreach ($k in $endByP[$seqP[0]]) { & $endProcess $k $seqPos[0] } }
+    $full = Join-Path $Path 'processes.csv'
+    $reader = $null
+    if (Test-Path -LiteralPath $full) {
+        $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
+    }
+    try {
+        # column positions from the header line, like Read-WorkerPerfCsvFile
+        $col = @{}
+        $canon = $script:WorkerPerfHeaders['processes.csv'].Split(',')
+        for ($i = 0; $i -lt $canon.Length; $i++) { $col[$canon[$i]] = $i }
+        $header = $null
+        if ($null -ne $reader) { $header = $reader.ReadLine() }
+        if ($null -ne $header -and $header.Length -gt 0) {
+            $names = $header.Split(',')
+            for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
+        }
+        $need = $canon.Length
+        $cP = [int]$col['P']; $cK = [int]$col['K']; $cCpu = [int]$col['CpuMs']; $cWs = [int]$col['WsKB']; $cPriv = [int]$col['PrivKB']
+        $cRd = [int]$col['ReadBytes']; $cWr = [int]$col['WriteBytes']; $cHandles = [int]$col['Handles']; $cThreads = [int]$col['Threads']
+        $rowP = 0
+        while ($true) {
+            $line = $null
+            if ($null -ne $reader) { $line = $reader.ReadLine() }
+            if ($null -eq $line) { $rowP = [int]::MaxValue }
+            else {
+                $f = $line.Split(',')
+                if ($f.Length -lt $need -or -not [int]::TryParse($f[$cP], [ref]$rowP)) { continue }
+            }
+            while ($j -lt $seqN -and $seqP[$j] -lt $rowP) {
+                # end of snapshot j
+                $pos = $seqPos[$j]
+                if ($seqKey[$j]) {
+                    foreach ($k in $alive) { if ($pState[$k] -eq 1 -and $pLastJ[$k] -ne $j) { & $endProcess $k $pos } }
+                    $still = New-Object System.Collections.Generic.List[int]
+                    foreach ($k in $alive) { if ($pState[$k] -eq 1) { $still.Add($k) } }
+                    $alive = $still
+                }
+                if ($pos -eq 0) { foreach ($k in $alive) { if ($pState[$k] -eq 1 -and $pSess[$k] -lt 0) { & $attachProcess $k 0 } } }
+                if ($pos -ge 0) {
+                    foreach ($si in $usedSess) { $sWsA[$si][$pos] = $sWs[$si]; $sPrivA[$si][$pos] = $sPriv[$si]; $sNA[$si][$pos] = $sN[$si] }
+                    for ($ai = 0; $ai -lt $apps.Count; $ai++) { $aWsA[$ai][$pos] = $aWs[$ai]; $aPrivA[$ai][$pos] = $aPriv[$ai]; $aNA[$ai][$pos] = $aN[$ai] }
+                    $rowStart[$pos + 1] = $rowK.Count
+                }
+                # begin of snapshot j + 1
+                $j++
+                if ($j -lt $seqN -and $endByP.ContainsKey($seqP[$j])) { foreach ($k in $endByP[$seqP[$j]]) { & $endProcess $k $seqPos[$j] } }
+            }
+            if ($j -ge $seqN) { break }
+            if ($seqP[$j] -ne $rowP) { continue }          # before the first snapshot read, or a P without snapshot line
+            $k = 0
+            if (-not [int]::TryParse($f[$cK], [ref]$k) -or $k -lt 0 -or $k -ge $nK) { continue }
+            if (-not $known[$k] -or $pState[$k] -eq 2) { continue }
+            try {
+                $cpu = [double]$f[$cCpu]; $ws = [double]$f[$cWs]; $priv = [double]$f[$cPriv]; $io = [double]$f[$cRd] + [double]$f[$cWr]
+                $pHandles[$k] = [int]$f[$cHandles]; $pThreads[$k] = [int]$f[$cThreads]
+            }
+            catch { continue }
+            if ($pState[$k] -eq 0) { $pState[$k] = 1; $alive.Add($k) }
+            $pLastJ[$k] = $j
+            $pos = $seqPos[$j]
+            if ($pos -lt 0) { $pWs[$k] = $ws; $pPriv[$k] = $priv; continue }
+            if ($pSess[$k] -lt 0) { & $attachProcess $k $pos }
+            $si = $pSess[$k]; $ai = $pApp[$k]; $pi = $pPair[$k]
+            $dWs = $ws - $pWs[$k]; $dPriv = $priv - $pPriv[$k]
+            $sWs[$si] += $dWs; $sPriv[$si] += $dPriv; $aWs[$ai] += $dWs; $aPriv[$ai] += $dPriv
+            if ($dWs -ne 0) {
+                if ($prSince[$pi] -lt $pos) {
+                    $prSum[$pi] += $prCur[$pi] * ($pos - $prSince[$pi])
+                    if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
+                    $prSince[$pi] = $pos
+                }
+                $prCur[$pi] += $dWs
+                $pWsSum[$k] += $pWs[$k] * ($pos - $pWsSince[$k]); $pWsSince[$k] = $pos
+                $pWs[$k] = $ws
+                if ($ws -gt $pWsMax[$k]) { $pWsMax[$k] = $ws }
+            }
+            $pPriv[$k] = $priv
+            if ($priv -gt $pPrivMax[$k]) { $pPrivMax[$k] = $priv }
+            $pCpu[$k] += $cpu; $pIo[$k] += $io
+            $pct = $cpu * $pctPerMs[$pos]
+            if ($pct -gt $pCpuMax[$k]) { $pCpuMax[$k] = $pct }
+            $sCpuA[$si][$pos] += $cpu; $sIoA[$si][$pos] += $io; $aCpuA[$ai][$pos] += $cpu; $aIoA[$ai][$pos] += $io
+            $prCpu[$pi] += $cpu; $prIo[$pi] += $io
+            $rowK.Add($k); $rowCpu.Add($cpu); $rowIo.Add($io); $rowWs.Add($ws)
+            $totalCpuMs += $cpu
+        }
+    }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
+
+    $collectorPid = -1
+    if ($null -ne $meta['CollectorPid']) {
+        $cp = 0
+        if ([int]::TryParse([string]$meta['CollectorPid'], [ref]$cp)) { $collectorPid = $cp }
+    }
+    $procs = New-Object object[] $nK
+    $kByPid = @{}
+    for ($k = 0; $k -lt $nK; $k++) {
+        if ($pSess[$k] -lt 0) { continue }              # unknown or not alive in the range
+        if ($pState[$k] -eq 1) { $pWsSum[$k] += $pWs[$k] * ($nP - $pWsSince[$k]); $pLast[$k] = $nP - 1 }
+        $span = $pLast[$k] - $pFirst[$k] + 1
+        $procs[$k] = @{
+            K = $k; Pid = $iPid[$k]; Name = $iName[$k]; Sid = $iSid[$k]; StartMs = $iStart[$k]; Path = $iPath[$k]; Services = $iSvc[$k]; Cmd = $iCmd[$k]
+            SessionIndex = $pSess[$k]; AppIndex = $pApp[$k]; Role = $pRole[$k]; RoleLabel = $pRoleLabel[$k]; IsCollector = ($iPid[$k] -eq $collectorPid)
+            FirstP = $pFirst[$k]; LastP = $pLast[$k]; CpuMs = $pCpu[$k]; CpuMaxPct = $pCpuMax[$k]; WsMaxKB = $pWsMax[$k]; WsAvgKB = ($pWsSum[$k] / $span)
+            PrivMaxKB = $pPrivMax[$k]; IoBytes = $pIo[$k]; Handles = $pHandles[$k]; Threads = $pThreads[$k]
+        }
+        if (-not $kByPid.ContainsKey($iPid[$k])) { $kByPid[$iPid[$k]] = New-Object System.Collections.Generic.List[int] }
+        $kByPid[$iPid[$k]].Add($k)
+    }
+    $pairs = @{}
+    for ($pi = 0; $pi -lt $pairKeys.Count; $pi++) {
+        if ($prSince[$pi] -lt $nP) {
+            $prSum[$pi] += $prCur[$pi] * ($nP - $prSince[$pi])
+            if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
+        }
+        $pairs[$pairKeys[$pi]] = @{ S = $prS[$pi]; A = $prA[$pi]; Instances = $prInst[$pi]; CpuMs = $prCpu[$pi]; IoBytes = $prIo[$pi]; WsSumKB = $prSum[$pi]; WsMaxKB = $prMax[$pi] }
+    }
+
+    # input delay per process: the process that had the PID at the snapshot of the tick
+    $ipTickArr = $ipTick.ToArray(); $ipPidArr = $ipPid.ToArray()
+    $ipK = New-Object int[] $ipTickArr.Length
+    for ($i = 0; $i -lt $ipK.Length; $i++) {
+        $ipK[$i] = -1
+        if (-not $kByPid.ContainsKey($ipPidArr[$i])) { continue }
+        $sp = $firstSnapAt[$ipTickArr[$i]]
+        if ($sp -ge $nP) { $sp = $nP - 1 }
+        foreach ($k in $kByPid[$ipPidArr[$i]]) { if ($pFirst[$k] -le $sp -and $pLast[$k] -ge $sp) { $ipK[$i] = $k; break } }
+    }
+    #endregion
+
     #region labels and links
     foreach ($s in $sessions) {
         if ($s.User.Length -gt 0) { $s.Label = $s.User + ' (#' + $s.Sid + ')' }
@@ -573,7 +872,12 @@ function Import-WorkerPerfRun {
         Probes = $probes.ToArray()
         Events = $events.ToArray()
         Scans = $scanList.ToArray()
-        InputProc = @{ TickPos = $ipTick.ToArray(); SessionIndex = $ipSess.ToArray(); Pid = $ipPid.ToArray(); Name = $ipName.ToArray(); DelayMs = $ipDelay.ToArray() }
+        InputProc = @{ TickPos = $ipTickArr; SessionIndex = $ipSess.ToArray(); Pid = $ipPidArr; Name = $ipName.ToArray(); DelayMs = $ipDelay.ToArray(); K = $ipK }
+        Apps = $apps.ToArray()
+        Proc = $procs
+        Pairs = $pairs
+        Rows = @{ Start = $rowStart; K = $rowK.ToArray(); CpuMs = $rowCpu.ToArray(); Io = $rowIo.ToArray(); WsKB = $rowWs.ToArray() }
+        TotalCpuMs = $totalCpuMs
         MainApp = $mainApp
         Citrix = $citrix.ToArray()
     }
