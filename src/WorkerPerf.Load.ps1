@@ -3,17 +3,17 @@
 # Defines functions only. Callers dot-source WorkerPerf.Common.ps1 as well.
 # The model is a hashtable; its lists are arrays. Get-WorkerPerfSeries emits plain pipeline output: wrap calls in @(...).
 
-function Read-WorkerPerfCsvFile {
-    # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]] }.
-    # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped.
+function Open-WorkerPerfCsvReader {
+    # Opens one capture file for reading line by line and reads its header line.
+    # Returns @{ Col = column name -> index; Need = number of columns of the format; Reader = StreamReader, or $null for a
+    # missing file }. The caller disposes Reader. Callers split each non-empty line with Split(',') when it holds no quote,
+    # else with Split-WorkerPerfCsvLine, and skip rows with fewer than Need fields (as Read-WorkerPerfCsvFile does).
     param([string]$Path, [string]$FileName)
     $col = @{}
     $canon = $script:WorkerPerfHeaders[$FileName].Split(',')
     for ($i = 0; $i -lt $canon.Length; $i++) { $col[$canon[$i]] = $i }
-    $rows = New-Object System.Collections.Generic.List[string[]]
     $full = Join-Path $Path $FileName
-    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Rows = $rows } }
-    $need = $canon.Length
+    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Need = $canon.Length; Reader = $null } }
     $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
     try {
@@ -22,6 +22,21 @@ function Read-WorkerPerfCsvFile {
             $names = $header.Split(',')
             for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
         }
+    }
+    catch { $reader.Dispose(); throw }
+    return @{ Col = $col; Need = $canon.Length; Reader = $reader }
+}
+
+function Read-WorkerPerfCsvFile {
+    # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]] }.
+    # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped.
+    param([string]$Path, [string]$FileName)
+    $csv = Open-WorkerPerfCsvReader $Path $FileName
+    $rows = New-Object System.Collections.Generic.List[string[]]
+    $reader = $csv.Reader
+    if ($null -eq $reader) { return @{ Col = $csv.Col; Rows = $rows } }
+    $need = $csv.Need
+    try {
         while ($null -ne ($line = $reader.ReadLine())) {
             if ($line.Length -eq 0) { continue }
             if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
@@ -29,7 +44,7 @@ function Read-WorkerPerfCsvFile {
         }
     }
     finally { $reader.Dispose() }
-    return @{ Col = $col; Rows = $rows }
+    return @{ Col = $csv.Col; Rows = $rows }
 }
 
 function ConvertTo-WorkerPerfTimestamp([string]$Text) {
@@ -39,24 +54,10 @@ function ConvertTo-WorkerPerfTimestamp([string]$Text) {
     return $null
 }
 
-function ConvertTo-WorkerPerfDouble([string]$Text) {
-    # Invariant number or NaN.
-    $v = [double]::NaN
-    if ($Text.Length -gt 0 -and -not [double]::TryParse($Text, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { $v = [double]::NaN }
-    return $v
-}
-
 function New-WorkerPerfNanArray([int]$Length) {
     $a = New-Object double[] $Length
     for ($i = 0; $i -lt $Length; $i++) { $a[$i] = [double]::NaN }
     return , $a
-}
-
-function Get-WorkerPerfMaxIgnoringNaN([double]$A, [double]$B) {
-    if ([double]::IsNaN($A)) { return $B }
-    if ([double]::IsNaN($B)) { return $A }
-    if ($B -gt $A) { return $B }
-    return $A
 }
 
 function Set-WorkerPerfUniqueLabels($Items) {
@@ -122,19 +123,21 @@ function Import-WorkerPerfRun {
     $tickMs = New-Object System.Collections.Generic.List[long]
     $cT = [int]$col['T']; $cTs = [int]$col['Timestamp']
     $offsetMinutes = 0.0; $haveOffset = $false
+    $numRef = [ref]0.0
     foreach ($f in $csv.Rows) {
         $t = 0
         if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
-        $dto = ConvertTo-WorkerPerfTimestamp $f[$cTs]
-        if ($null -eq $dto) { continue }
+        $dto = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse($f[$cTs], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
         if ($ms -lt $fromMs -or $ms -gt $toMs) { continue }
         if (-not $haveOffset) { $offsetMinutes = $dto.Offset.TotalMinutes; $haveOffset = $true }
         $tickT.Add($t); $tickMs.Add($ms)
         for ($i = 0; $i -lt $numIdx.Length; $i++) {
+            # NaN when empty or unreadable; one reused reference costs less than [ref]$v per value
             $v = $nan
             $txt = $f[$numIdx[$i]]
-            if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$v)) { $v = $nan }
+            if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
             $numLists[$i].Add($v)
         }
     }
@@ -152,14 +155,21 @@ function Import-WorkerPerfRun {
     $signalIds = 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin'
     $signal = @{}
     foreach ($id in $signalIds) { $signal[$id] = New-Object double[] $nT }
+    # host signals per tick, computed as in Get-WorkerPerfHostSignals
+    $rCpu = $raw['CpuPct']; $rQueue = $raw['ProcQueue']; $rSteal = $raw['StealPct']; $rAvail = $raw['MemAvailMB']
+    $rCommitted = $raw['MemCommittedMB']; $rLimit = $raw['MemCommitLimitMB']; $rPagesIn = $raw['PagesInPerSec']
+    $sCpu = $signal['cpu.host']; $sQueue = $signal['cpu.queue']; $sSteal = $signal['cpu.steal']
+    $sUsed = $signal['mem.used']; $sCommit = $signal['mem.commit']; $sPagesIn = $signal['mem.pagesin']
     for ($i = 0; $i -lt $nT; $i++) {
-        $row = @{
-            CpuPct = $raw['CpuPct'][$i]; ProcQueue = $raw['ProcQueue'][$i]; StealPct = $raw['StealPct'][$i]
-            MemAvailMB = $raw['MemAvailMB'][$i]; MemCommittedMB = $raw['MemCommittedMB'][$i]
-            MemCommitLimitMB = $raw['MemCommitLimitMB'][$i]; PagesInPerSec = $raw['PagesInPerSec'][$i]
-        }
-        $sig = Get-WorkerPerfHostSignals -Tick $row -LogicalProcessors $cores -PhysicalMemoryMB $ramMb
-        foreach ($id in $signalIds) { $signal[$id][$i] = [double]$sig[$id] }
+        $queuePerCpu = $nan
+        if ($cores -gt 0) { $queuePerCpu = $rQueue[$i] / $cores }
+        $used = $nan
+        if ($ramMb -gt 0) { $used = 100 * (1 - $rAvail[$i] / $ramMb) }
+        $commit = $nan
+        $limit = $rLimit[$i]
+        if ($limit -gt 0) { $commit = 100 * $rCommitted[$i] / $limit }
+        $sCpu[$i] = $rCpu[$i]; $sQueue[$i] = $queuePerCpu; $sSteal[$i] = $rSteal[$i]
+        $sUsed[$i] = $used; $sCommit[$i] = $commit; $sPagesIn[$i] = $rPagesIn[$i]
     }
     #endregion
 
@@ -179,14 +189,19 @@ function Import-WorkerPerfRun {
         $p = 0; $t = 0
         if (-not [int]::TryParse($f[[int]$col['P']], [ref]$p)) { continue }
         if (-not [int]::TryParse($f[[int]$col['T']], [ref]$t)) { continue }
-        $dto = ConvertTo-WorkerPerfTimestamp $f[[int]$col['Timestamp']]
-        if ($null -eq $dto) { continue }
+        $dto = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse($f[[int]$col['Timestamp']], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
         if ($ms -lt $fromMs) { $preP.Add($p); $preKind.Add($f[[int]$col['Kind']]); continue }
         if ($ms -gt $toMs) { continue }
         $snapPos[$p] = $snapP.Count
         $snapP.Add($p); $snapTL.Add($t); $snapMsL.Add($ms); $snapKind.Add($f[[int]$col['Kind']])
-        foreach ($name in $snapNum.Keys) { $snapNum[$name].Add((ConvertTo-WorkerPerfDouble $f[[int]$col[$name]])) }
+        foreach ($name in $snapNum.Keys) {
+            $v = $nan
+            $txt = $f[[int]$col[$name]]
+            if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
+            $snapNum[$name].Add($v)
+        }
     }
     $nP = $snapP.Count
     if ($nP -eq 0) { throw "Die Aufzeichnung enthaelt im gewaehlten Zeitraum keinen Schnappschuss (snapshots.csv ohne lesbare Zeilen)." }
@@ -231,39 +246,49 @@ function Import-WorkerPerfRun {
         $sessions.Add($e)
         return $e
     }
-    $csv = Read-WorkerPerfCsvFile $Path 'sessions.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'sessions.csv'
     $col = $csv.Col
     $cP = [int]$col['P']; $cSid = [int]$col['SessionId']; $cUser = [int]$col['User']; $cDom = [int]$col['Domain']
     $cState = [int]$col['State']; $cClient = [int]$col['ClientName']; $cLogon = [int]$col['LogonTime']; $cIdle = [int]$col['IdleSec']
-    foreach ($f in $csv.Rows) {
-        $p = 0; $sid = 0
-        if (-not [int]::TryParse($f[$cP], [ref]$p) -or -not [int]::TryParse($f[$cSid], [ref]$sid)) { continue }
-        if (-not $snapPos.ContainsKey($p)) { continue }
-        $pos = [int]$snapPos[$p]
-        $user = $f[$cUser]
-        $e = $null
-        if ($curBySid.ContainsKey($sid)) { $e = $curBySid[$sid] }
-        # A session id is reused after logoff: a new session starts when the id was missing for a snapshot
-        # or when a different user owns it now. Session 0 (services) is always one session.
-        if ($null -ne $e -and $sid -ne 0) {
-            if ($e.LastP -lt $pos - 1) { $e = $null }
-            elseif ($user.Length -gt 0 -and $e.User.Length -gt 0 -and ($user -ne $e.User -or $f[$cDom] -ne $e.Domain)) { $e = $null }
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            $p = 0; $sid = 0
+            if (-not [int]::TryParse($f[$cP], [ref]$p) -or -not [int]::TryParse($f[$cSid], [ref]$sid)) { continue }
+            if (-not $snapPos.ContainsKey($p)) { continue }
+            $pos = [int]$snapPos[$p]
+            $user = $f[$cUser]
+            $e = $null
+            if ($curBySid.ContainsKey($sid)) { $e = $curBySid[$sid] }
+            # A session id is reused after logoff: a new session starts when the id was missing for a snapshot
+            # or when a different user owns it now. Session 0 (services) is always one session.
+            if ($null -ne $e -and $sid -ne 0) {
+                if ($e.LastP -lt $pos - 1) { $e = $null }
+                elseif ($user.Length -gt 0 -and $e.User.Length -gt 0 -and ($user -ne $e.User -or $f[$cDom] -ne $e.Domain)) { $e = $null }
+            }
+            if ($null -eq $e) { $e = & $newSession $sid; $curBySid[$sid] = $e }
+            if ($user.Length -gt 0) { $e.User = $user; $e.Domain = $f[$cDom] }
+            if ($f[$cClient].Length -gt 0) { $e.Client = $f[$cClient] }
+            if ($f[$cLogon].Length -gt 0 -and $null -eq $e.Logon) {
+                $ld = ConvertTo-WorkerPerfTimestamp $f[$cLogon]
+                if ($null -ne $ld) { $e.Logon = $ld.ToUnixTimeMilliseconds() }
+            }
+            if ($e.FirstP -lt 0) { $e.FirstP = $pos }
+            $e.LastP = $pos; $e.SeenN++
+            if ($f[$cState] -eq 'Active') { $e.ActiveN++ }
+            $idle = $nan
+            $txt = $f[$cIdle]; if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $idle = $numRef.Value }
+            if (-not [double]::IsNaN($idle) -and $idle -ge 0 -and -not ($e.IdleMaxSec -ge $idle)) { $e.IdleMaxSec = $idle }
+            if ($null -eq $sessBySnap[$pos]) { $sessBySnap[$pos] = @{} }
+            $sessBySnap[$pos][$sid] = $e
         }
-        if ($null -eq $e) { $e = & $newSession $sid; $curBySid[$sid] = $e }
-        if ($user.Length -gt 0) { $e.User = $user; $e.Domain = $f[$cDom] }
-        if ($f[$cClient].Length -gt 0) { $e.Client = $f[$cClient] }
-        if ($f[$cLogon].Length -gt 0 -and $null -eq $e.Logon) {
-            $ld = ConvertTo-WorkerPerfTimestamp $f[$cLogon]
-            if ($null -ne $ld) { $e.Logon = $ld.ToUnixTimeMilliseconds() }
-        }
-        if ($e.FirstP -lt 0) { $e.FirstP = $pos }
-        $e.LastP = $pos; $e.SeenN++
-        if ($f[$cState] -eq 'Active') { $e.ActiveN++ }
-        $idle = ConvertTo-WorkerPerfDouble $f[$cIdle]
-        if (-not [double]::IsNaN($idle) -and $idle -ge 0 -and -not ($e.IdleMaxSec -ge $idle)) { $e.IdleMaxSec = $idle }
-        if ($null -eq $sessBySnap[$pos]) { $sessBySnap[$pos] = @{} }
-        $sessBySnap[$pos][$sid] = $e
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
     # Session of a row stamped with tick position $tp: first snapshot at or after the tick, else the one before,
     # else a stand-in session for the id.
     $resolveSession = {
@@ -280,22 +305,58 @@ function Import-WorkerPerfRun {
         if (-not $orphans.ContainsKey($Sid)) { $orphans[$Sid] = & $newSession $Sid }
         return $orphans[$Sid]
     }
+    # The answer depends only on the snapshot position $firstSnapAt[$TickPos] and the id, and stays the same once given
+    # (an orphan is created on the first call). Rows look it up here: snapshot position -> (session id text -> session).
+    $sessionAt = New-Object object[] ($nP + 1)
+    # Parsed numbers by text (invariant culture; NaN for an empty or unreadable text): the capture repeats few
+    # distinct texts, and a lookup costs far less than [double]::TryParse in PowerShell.
+    $numByText = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
     #endregion
 
     #region input delay
-    $csv = Read-WorkerPerfCsvFile $Path 'inputdelay.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'inputdelay.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cDelay = [int]$col['DelayMs']
-    foreach ($f in $csv.Rows) {
-        $t = 0; $sid = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t) -or -not [int]::TryParse($f[$cSid], [ref]$sid)) { continue }
-        if (-not $tickPosByT.ContainsKey($t)) { continue }
-        $d = ConvertTo-WorkerPerfDouble $f[$cDelay]
-        if ([double]::IsNaN($d)) { continue }
-        $tp = [int]$tickPosByT[$t]
-        $e = & $resolveSession $tp $sid
-        if ($d -gt $e.Input[$tp]) { $e.Input[$tp] = $d }
+    $lastT = $null; $tp = -1; $bySid = $null
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            # rows come grouped by T: parse T and find its tick position once per group (-1: unreadable or out of range)
+            $tText = $f[$cT]
+            if (-not [string]::Equals($tText, $lastT)) {
+                $lastT = $tText; $tp = -1; $t = 0
+                if ([int]::TryParse($tText, [ref]$t) -and $tickPosByT.ContainsKey($t)) {
+                    $tp = [int]$tickPosByT[$t]
+                    $bySid = $sessionAt[$firstSnapAt[$tp]]
+                    if ($null -eq $bySid) { $bySid = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal); $sessionAt[$firstSnapAt[$tp]] = $bySid }
+                }
+            }
+            if ($tp -lt 0) { continue }
+            $txt = $f[$cDelay]
+            $d = $numByText[$txt]
+            if ($null -eq $d) {
+                $d = $nan
+                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$d)) { $d = $nan }
+                $numByText[$txt] = $d
+            }
+            if ([double]::IsNaN($d)) { continue }
+            $sidText = $f[$cSid]
+            $e = $bySid[$sidText]
+            if ($null -eq $e) {
+                $sid = 0
+                if (-not [int]::TryParse($sidText, [ref]$sid)) { continue }
+                $e = & $resolveSession $tp $sid; $bySid[$sidText] = $e
+            }
+            $input_ = $e.Input
+            if ($d -gt $input_[$tp]) { $input_[$tp] = $d }
+        }
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
 
     $mainPatterns = New-Object System.Collections.Generic.List[string]
     $mainLabels = New-Object System.Collections.Generic.List[string]
@@ -311,7 +372,7 @@ function Import-WorkerPerfRun {
     if ($mainPatterns.Count -gt 0) { $mainDelay = New-Object double[] $nT }
     $mainByName = @{}
 
-    $csv = Read-WorkerPerfCsvFile $Path 'inputdelay_proc.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'inputdelay_proc.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cSid = [int]$col['SessionId']; $cPid = [int]$col['Pid']; $cName = [int]$col['Name']; $cDelay = [int]$col['DelayMs']
     $ipTick = New-Object System.Collections.Generic.List[int]
@@ -319,175 +380,294 @@ function Import-WorkerPerfRun {
     $ipPid = New-Object System.Collections.Generic.List[int]
     $ipName = New-Object System.Collections.Generic.List[string]
     $ipDelay = New-Object System.Collections.Generic.List[double]
-    foreach ($f in $csv.Rows) {
-        $t = 0; $sid = 0; $procId = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t) -or -not [int]::TryParse($f[$cSid], [ref]$sid)) { continue }
-        if (-not $tickPosByT.ContainsKey($t)) { continue }
-        $d = ConvertTo-WorkerPerfDouble $f[$cDelay]
-        if ([double]::IsNaN($d)) { continue }
-        if (-not [int]::TryParse($f[$cPid], [ref]$procId)) { $procId = -1 }
-        $tp = [int]$tickPosByT[$t]
-        $e = & $resolveSession $tp $sid
-        $name = $f[$cName]
-        $ipTick.Add($tp); $ipSess.Add([int]$e.Index); $ipPid.Add($procId); $ipName.Add($name); $ipDelay.Add($d)
-        if ($null -ne $mainDelay) {
-            if (-not $mainByName.ContainsKey($name)) {
-                $hit = $false
-                foreach ($pt in $mainPatterns) { if ($name -like $pt) { $hit = $true; break } }
-                $mainByName[$name] = $hit
+    $lastT = $null; $tp = -1; $bySid = $null
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            $tText = $f[$cT]
+            if (-not [string]::Equals($tText, $lastT)) {
+                $lastT = $tText; $tp = -1; $t = 0
+                if ([int]::TryParse($tText, [ref]$t) -and $tickPosByT.ContainsKey($t)) {
+                    $tp = [int]$tickPosByT[$t]
+                    $bySid = $sessionAt[$firstSnapAt[$tp]]
+                    if ($null -eq $bySid) { $bySid = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal); $sessionAt[$firstSnapAt[$tp]] = $bySid }
+                }
             }
-            if ($mainByName[$name] -and $d -gt $mainDelay[$tp]) { $mainDelay[$tp] = $d }
+            if ($tp -lt 0) { continue }
+            $txt = $f[$cDelay]
+            $d = $numByText[$txt]
+            if ($null -eq $d) {
+                $d = $nan
+                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$d)) { $d = $nan }
+                $numByText[$txt] = $d
+            }
+            if ([double]::IsNaN($d)) { continue }
+            $sidText = $f[$cSid]
+            $e = $bySid[$sidText]
+            if ($null -eq $e) {
+                $sid = 0
+                if (-not [int]::TryParse($sidText, [ref]$sid)) { continue }
+                $e = & $resolveSession $tp $sid; $bySid[$sidText] = $e
+            }
+            $procId = 0
+            if (-not [int]::TryParse($f[$cPid], [ref]$procId)) { $procId = -1 }
+            $name = $f[$cName]
+            $ipTick.Add($tp); $ipSess.Add([int]$e.Index); $ipPid.Add($procId); $ipName.Add($name); $ipDelay.Add($d)
+            if ($null -ne $mainDelay) {
+                if (-not $mainByName.ContainsKey($name)) {
+                    $hit = $false
+                    foreach ($pt in $mainPatterns) { if ($name -like $pt) { $hit = $true; break } }
+                    $mainByName[$name] = $hit
+                }
+                if ($mainByName[$name] -and $d -gt $mainDelay[$tp]) { $mainDelay[$tp] = $d }
+            }
         }
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
     if ($null -ne $mainDelay) { $mainApp = @{ Label = ($mainLabels.ToArray() -join ' / '); Delay = $mainDelay } }
     #endregion
 
     #region volumes and shares
     $volumes = New-Object System.Collections.Generic.List[object]
     $volByKey = @{}
-    $csv = Read-WorkerPerfCsvFile $Path 'volumes.csv'
+    $volAt = New-Object object[] ($nP + 1)      # snapshot position -> (volume|kind|session id text -> volume)
+    $lastT = $null; $tp = -1; $bySid = $null; $volAtSnap = $null
+    $csv = Open-WorkerPerfCsvReader $Path 'volumes.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cVol = [int]$col['Volume']; $cKind = [int]$col['Kind']; $cSid = [int]$col['SessionId']; $cBack = [int]$col['Backing']
     $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
-    foreach ($f in $csv.Rows) {
-        $t = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
-        if (-not $tickPosByT.ContainsKey($t)) { continue }
-        $tp = [int]$tickPosByT[$t]
-        $sessIdx = -1
-        $sid = 0
-        if ($f[$cSid].Length -gt 0 -and [int]::TryParse($f[$cSid], [ref]$sid)) { $sessIdx = [int]((& $resolveSession $tp $sid).Index) }
-        $key = $f[$cVol] + '|' + $f[$cKind] + '|' + $sessIdx
-        $v = $volByKey[$key]
-        if ($null -eq $v) {
-            $v = @{
-                Name = $f[$cVol]; Kind = $f[$cKind]; SessionIndex = $sessIdx; Backing = ''; Label = ''
-                ReadMs = (New-WorkerPerfNanArray $nT); WriteMs = (New-WorkerPerfNanArray $nT); Latency = (New-WorkerPerfNanArray $nT)
-                Ops = (New-Object double[] $nT)
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            $tText = $f[$cT]
+            if (-not [string]::Equals($tText, $lastT)) {
+                $lastT = $tText; $tp = -1; $t = 0
+                if ([int]::TryParse($tText, [ref]$t) -and $tickPosByT.ContainsKey($t)) {
+                    $tp = [int]$tickPosByT[$t]
+                    $snapOfTick = $firstSnapAt[$tp]
+                    $bySid = $sessionAt[$snapOfTick]
+                    if ($null -eq $bySid) { $bySid = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal); $sessionAt[$snapOfTick] = $bySid }
+                    $volAtSnap = $volAt[$snapOfTick]
+                    if ($null -eq $volAtSnap) { $volAtSnap = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal); $volAt[$snapOfTick] = $volAtSnap }
+                }
             }
-            $volByKey[$key] = $v; $volumes.Add($v)
+            if ($tp -lt 0) { continue }
+            # the volume of a row: one lookup per snapshot position, volume, kind and session id text
+            $atKey = [string]::Concat($f[$cVol], '|', $f[$cKind], '|', $f[$cSid])
+            $v = $volAtSnap[$atKey]
+            if ($null -eq $v) {
+                $sessIdx = -1
+                $sidText = $f[$cSid]
+                if ($sidText.Length -gt 0) {
+                    $e = $bySid[$sidText]
+                    if ($null -eq $e) {
+                        $sid = 0
+                        if ([int]::TryParse($sidText, [ref]$sid)) { $e = & $resolveSession $tp $sid; $bySid[$sidText] = $e }
+                    }
+                    if ($null -ne $e) { $sessIdx = [int]$e.Index }
+                }
+                $key = $f[$cVol] + '|' + $f[$cKind] + '|' + $sessIdx
+                $v = $volByKey[$key]
+                if ($null -eq $v) {
+                    $v = @{
+                        Name = $f[$cVol]; Kind = $f[$cKind]; SessionIndex = $sessIdx; Backing = ''; Label = ''
+                        ReadMs = (New-WorkerPerfNanArray $nT); WriteMs = (New-WorkerPerfNanArray $nT); Latency = (New-WorkerPerfNanArray $nT)
+                        Ops = (New-Object double[] $nT)
+                    }
+                    $volByKey[$key] = $v; $volumes.Add($v)
+                }
+                $volAtSnap[$atKey] = $v
+            }
+            if ($v.Backing.Length -eq 0 -and $f[$cBack].Length -gt 0) { $v.Backing = $f[$cBack] }
+            # latencies NaN and operations 0 when empty or unreadable
+            $txt = $f[$cRl]; $rl = $numByText[$txt]
+            if ($null -eq $rl) { $rl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }; $numByText[$txt] = $rl }
+            $txt = $f[$cWl]; $wl = $numByText[$txt]
+            if ($null -eq $wl) { $wl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }; $numByText[$txt] = $wl }
+            $txt = $f[$cRo]; $ro = $numByText[$txt]
+            if ($null -eq $ro) { $ro = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = $nan }; $numByText[$txt] = $ro }
+            $txt = $f[$cWo]; $wo = $numByText[$txt]
+            if ($null -eq $wo) { $wo = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = $nan }; $numByText[$txt] = $wo }
+            if ([double]::IsNaN($ro)) { $ro = 0.0 }
+            if ([double]::IsNaN($wo)) { $wo = 0.0 }
+            $v.ReadMs[$tp] = $rl; $v.WriteMs[$tp] = $wl
+            # latency: the larger of the two, ignoring NaN
+            $lat = $rl
+            if ([double]::IsNaN($rl)) { $lat = $wl } elseif (-not [double]::IsNaN($wl) -and $wl -gt $rl) { $lat = $wl }
+            $v.Latency[$tp] = $lat
+            $v.Ops[$tp] = $ro + $wo
         }
-        if ($v.Backing.Length -eq 0 -and $f[$cBack].Length -gt 0) { $v.Backing = $f[$cBack] }
-        $rl = $nan; $wl = $nan; $ro = 0.0; $wo = 0.0
-        $txt = $f[$cRl]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }
-        $txt = $f[$cWl]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }
-        $txt = $f[$cRo]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = 0.0 }
-        $txt = $f[$cWo]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = 0.0 }
-        if ([double]::IsNaN($ro)) { $ro = 0.0 }
-        if ([double]::IsNaN($wo)) { $wo = 0.0 }
-        $v.ReadMs[$tp] = $rl; $v.WriteMs[$tp] = $wl
-        $v.Latency[$tp] = Get-WorkerPerfMaxIgnoringNaN $rl $wl
-        $v.Ops[$tp] = $ro + $wo
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
 
     $shares = New-Object System.Collections.Generic.List[object]
     $shareByName = @{}
-    $csv = Read-WorkerPerfCsvFile $Path 'shares.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'shares.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cSh = [int]$col['Share']
     $cRl = [int]$col['ReadLatMs']; $cWl = [int]$col['WriteLatMs']; $cRo = [int]$col['ReadOps']; $cWo = [int]$col['WriteOps']
-    foreach ($f in $csv.Rows) {
-        $t = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
-        if (-not $tickPosByT.ContainsKey($t)) { continue }
-        $tp = [int]$tickPosByT[$t]
-        $s = $shareByName[$f[$cSh]]
-        if ($null -eq $s) {
-            $s = @{
-                Name = $f[$cSh]; Label = ''
-                ReadMs = (New-WorkerPerfNanArray $nT); WriteMs = (New-WorkerPerfNanArray $nT); Latency = (New-WorkerPerfNanArray $nT)
-                Ops = (New-Object double[] $nT)
+    $lastT = $null; $tp = -1
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            $tText = $f[$cT]
+            if (-not [string]::Equals($tText, $lastT)) {
+                $lastT = $tText; $tp = -1; $t = 0
+                if ([int]::TryParse($tText, [ref]$t) -and $tickPosByT.ContainsKey($t)) { $tp = [int]$tickPosByT[$t] }
             }
-            $shareByName[$f[$cSh]] = $s; $shares.Add($s)
+            if ($tp -lt 0) { continue }
+            $s = $shareByName[$f[$cSh]]
+            if ($null -eq $s) {
+                $s = @{
+                    Name = $f[$cSh]; Label = ''
+                    ReadMs = (New-WorkerPerfNanArray $nT); WriteMs = (New-WorkerPerfNanArray $nT); Latency = (New-WorkerPerfNanArray $nT)
+                    Ops = (New-Object double[] $nT)
+                }
+                $shareByName[$f[$cSh]] = $s; $shares.Add($s)
+            }
+            # latencies NaN and operations 0 when empty or unreadable
+            $txt = $f[$cRl]; $rl = $numByText[$txt]
+            if ($null -eq $rl) { $rl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }; $numByText[$txt] = $rl }
+            $txt = $f[$cWl]; $wl = $numByText[$txt]
+            if ($null -eq $wl) { $wl = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }; $numByText[$txt] = $wl }
+            $txt = $f[$cRo]; $ro = $numByText[$txt]
+            if ($null -eq $ro) { $ro = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = $nan }; $numByText[$txt] = $ro }
+            $txt = $f[$cWo]; $wo = $numByText[$txt]
+            if ($null -eq $wo) { $wo = $nan; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = $nan }; $numByText[$txt] = $wo }
+            if ([double]::IsNaN($ro)) { $ro = 0.0 }
+            if ([double]::IsNaN($wo)) { $wo = 0.0 }
+            $s.ReadMs[$tp] = $rl; $s.WriteMs[$tp] = $wl
+            # latency: the larger of the two, ignoring NaN
+            $lat = $rl
+            if ([double]::IsNaN($rl)) { $lat = $wl } elseif (-not [double]::IsNaN($wl) -and $wl -gt $rl) { $lat = $wl }
+            $s.Latency[$tp] = $lat
+            $s.Ops[$tp] = $ro + $wo
         }
-        $rl = $nan; $wl = $nan; $ro = 0.0; $wo = 0.0
-        $txt = $f[$cRl]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$rl)) { $rl = $nan }
-        $txt = $f[$cWl]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wl)) { $wl = $nan }
-        $txt = $f[$cRo]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ro)) { $ro = 0.0 }
-        $txt = $f[$cWo]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$wo)) { $wo = 0.0 }
-        if ([double]::IsNaN($ro)) { $ro = 0.0 }
-        if ([double]::IsNaN($wo)) { $wo = 0.0 }
-        $s.ReadMs[$tp] = $rl; $s.WriteMs[$tp] = $wl
-        $s.Latency[$tp] = Get-WorkerPerfMaxIgnoringNaN $rl $wl
-        $s.Ops[$tp] = $ro + $wo
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
     #endregion
 
     #region probes, citrix, events
     $probes = New-Object System.Collections.Generic.List[object]
     $probeByName = @{}
-    $csv = Read-WorkerPerfCsvFile $Path 'probes.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'probes.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cName = [int]$col['Name']; $cRole = [int]$col['Role']; $cHost = [int]$col['Host']; $cPort = [int]$col['Port']
     $cMs = [int]$col['ConnectMs']; $cErr = [int]$col['Error']
-    foreach ($f in $csv.Rows) {
-        $t = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
-        if ($t -lt $tickTArr[0] -or $t -gt $tickTArr[$nT - 1]) { continue }     # outside the selected range
-        $sp = [Array]::BinarySearch($snapT, [int]$t)
-        if ($sp -lt 0) { $sp = -bnot $sp }
-        if ($sp -ge $nP) { continue }
-        $pr = $probeByName[$f[$cName]]
-        if ($null -eq $pr) {
-            $port = 0
-            if (-not [int]::TryParse($f[$cPort], [ref]$port)) { $port = 0 }
-            $pr = @{ Name = $f[$cName]; Role = $f[$cRole]; Host = $f[$cHost]; Port = $port; Ms = (New-WorkerPerfNanArray $nP); Error = (New-Object string[] $nP) }
-            for ($i = 0; $i -lt $nP; $i++) { $pr.Error[$i] = '' }
-            $probeByName[$f[$cName]] = $pr; $probes.Add($pr)
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            $t = 0
+            if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
+            if ($t -lt $tickTArr[0] -or $t -gt $tickTArr[$nT - 1]) { continue }     # outside the selected range
+            $sp = [Array]::BinarySearch($snapT, [int]$t)
+            if ($sp -lt 0) { $sp = -bnot $sp }
+            if ($sp -ge $nP) { continue }
+            $pr = $probeByName[$f[$cName]]
+            if ($null -eq $pr) {
+                $port = 0
+                if (-not [int]::TryParse($f[$cPort], [ref]$port)) { $port = 0 }
+                $pr = @{ Name = $f[$cName]; Role = $f[$cRole]; Host = $f[$cHost]; Port = $port; Ms = (New-WorkerPerfNanArray $nP); Error = (New-Object string[] $nP) }
+                for ($i = 0; $i -lt $nP; $i++) { $pr.Error[$i] = '' }
+                $probeByName[$f[$cName]] = $pr; $probes.Add($pr)
+            }
+            $ms = $nan
+            $txt = $f[$cMs]; if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$ms)) { $ms = $nan }
+            if ([double]::IsNaN($ms)) {
+                if ($f[$cErr].Length -eq 0) { continue }
+                $ms = [double]::PositiveInfinity
+                $pr.Error[$sp] = $f[$cErr]
+            }
+            if ([double]::IsNaN($pr.Ms[$sp]) -or $ms -gt $pr.Ms[$sp]) { $pr.Ms[$sp] = $ms }
         }
-        $ms = ConvertTo-WorkerPerfDouble $f[$cMs]
-        if ([double]::IsNaN($ms)) {
-            if ($f[$cErr].Length -eq 0) { continue }
-            $ms = [double]::PositiveInfinity
-            $pr.Error[$sp] = $f[$cErr]
-        }
-        if ([double]::IsNaN($pr.Ms[$sp]) -or $ms -gt $pr.Ms[$sp]) { $pr.Ms[$sp] = $ms }
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
 
     $citrixAgg = @{}
     $citrixOrder = New-Object System.Collections.Generic.List[string]
     $ctxTmp = @{}      # session index -> RoundtripTime and the three latency metrics per snapshot
     $latencyMetrics = 'NetworkLatency', 'Latency - Last Recorded', 'LatencyLastRecorded'
-    $csv = Read-WorkerPerfCsvFile $Path 'citrix.csv'
+    $csv = Open-WorkerPerfCsvReader $Path 'citrix.csv'
     $col = $csv.Col
     $cT = [int]$col['T']; $cSrc = [int]$col['Source']; $cSid = [int]$col['SessionId']; $cInst = [int]$col['Instance']
     $cMetric = [int]$col['Metric']; $cVal = [int]$col['Value']
-    foreach ($f in $csv.Rows) {
-        $t = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
-        $val = ConvertTo-WorkerPerfDouble $f[$cVal]
-        if ([double]::IsNaN($val)) { continue }
-        if ($t -lt $tickTArr[0] -or $t -gt $tickTArr[$nT - 1]) { continue }     # outside the selected range
-        $sp = [Array]::BinarySearch($snapT, [int]$t)
-        if ($sp -lt 0) { $sp = -bnot $sp }
-        if ($sp -ge $nP) { continue }
-        $sessIdx = -1
-        $sid = 0
-        if ($f[$cSid].Length -gt 0 -and [int]::TryParse($f[$cSid], [ref]$sid)) {
-            $h = $sessBySnap[$sp]
-            if ($null -eq $h -or -not $h.ContainsKey($sid)) { continue }
-            $sessIdx = [int]$h[$sid].Index
-        }
-        $metric = $f[$cMetric]
-        $key = $f[$cSrc] + '|' + $sessIdx + '|' + $f[$cInst] + '|' + $metric
-        $a = $citrixAgg[$key]
-        if ($null -eq $a) {
-            $a = @{ Source = $f[$cSrc]; SessionIndex = $sessIdx; Instance = $f[$cInst]; Metric = $metric; Sum = 0.0; Max = $nan; N = 0 }
-            $citrixAgg[$key] = $a; $citrixOrder.Add($key)
-        }
-        $a.Sum += $val; $a.N++
-        if ([double]::IsNaN($a.Max) -or $val -gt $a.Max) { $a.Max = $val }
-        if ($sessIdx -ge 0) {
-            $slot = -1
-            if ($metric -eq 'RoundtripTime') { $slot = 0 }
-            else { $li = [array]::IndexOf($latencyMetrics, $metric); if ($li -ge 0) { $slot = $li + 1 } }
-            if ($slot -ge 0) {
-                if (-not $ctxTmp.ContainsKey($sessIdx)) { $ctxTmp[$sessIdx] = @((New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP)) }
-                $arr = $ctxTmp[$sessIdx][$slot]
-                if ([double]::IsNaN($arr[$sp])) { $arr[$sp] = $val }
+    $lastT = $null; $sp = -1
+    $reader = $csv.Reader; $need = $csv.Need
+    try {
+        while ($null -ne $reader) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            if ($line.Length -eq 0) { continue }
+            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
+            if ($f.Length -lt $need) { continue }
+            # rows come grouped by T: find the snapshot position once per group (-1: unreadable or outside the range)
+            $tText = $f[$cT]
+            if (-not [string]::Equals($tText, $lastT)) {
+                $lastT = $tText; $sp = -1; $t = 0
+                if ([int]::TryParse($tText, [ref]$t) -and $t -ge $tickTArr[0] -and $t -le $tickTArr[$nT - 1]) {
+                    $sp = [Array]::BinarySearch($snapT, [int]$t)
+                    if ($sp -lt 0) { $sp = -bnot $sp }
+                    if ($sp -ge $nP) { $sp = -1 }
+                }
+            }
+            if ($sp -lt 0) { continue }
+            $txt = $f[$cVal]
+            $val = $numByText[$txt]
+            if ($null -eq $val) {
+                $val = $nan
+                if ($txt.Length -gt 0 -and -not [double]::TryParse($txt, $numStyle, $inv, [ref]$val)) { $val = $nan }
+                $numByText[$txt] = $val
+            }
+            if ([double]::IsNaN($val)) { continue }
+            $sessIdx = -1
+            $sid = 0
+            if ($f[$cSid].Length -gt 0 -and [int]::TryParse($f[$cSid], [ref]$sid)) {
+                $h = $sessBySnap[$sp]
+                if ($null -eq $h -or -not $h.ContainsKey($sid)) { continue }
+                $sessIdx = [int]$h[$sid].Index
+            }
+            $metric = $f[$cMetric]
+            $key = $f[$cSrc] + '|' + $sessIdx + '|' + $f[$cInst] + '|' + $metric
+            $a = $citrixAgg[$key]
+            if ($null -eq $a) {
+                $a = @{ Source = $f[$cSrc]; SessionIndex = $sessIdx; Instance = $f[$cInst]; Metric = $metric; Sum = 0.0; Max = $nan; N = 0 }
+                $citrixAgg[$key] = $a; $citrixOrder.Add($key)
+            }
+            $a.Sum += $val; $a.N++
+            if ([double]::IsNaN($a.Max) -or $val -gt $a.Max) { $a.Max = $val }
+            if ($sessIdx -ge 0) {
+                $slot = -1
+                if ($metric -eq 'RoundtripTime') { $slot = 0 }
+                else { $li = [array]::IndexOf($latencyMetrics, $metric); if ($li -ge 0) { $slot = $li + 1 } }
+                if ($slot -ge 0) {
+                    if (-not $ctxTmp.ContainsKey($sessIdx)) { $ctxTmp[$sessIdx] = @((New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP), (New-WorkerPerfNanArray $nP)) }
+                    $arr = $ctxTmp[$sessIdx][$slot]
+                    if ([double]::IsNaN($arr[$sp])) { $arr[$sp] = $val }
+                }
             }
         }
     }
+    finally { if ($null -ne $reader) { $reader.Dispose() } }
     $citrix = New-Object System.Collections.Generic.List[object]
     foreach ($key in $citrixOrder) {
         $a = $citrixAgg[$key]

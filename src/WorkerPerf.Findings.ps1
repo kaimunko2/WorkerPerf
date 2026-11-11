@@ -27,12 +27,25 @@ function Get-WorkerPerfFindings {
         if (-not $Thresholds.Contains($id)) { continue }
         $th = $Thresholds[$id]
         $minTicks = [int]$th.minTicks
-        $n = $s['Value'].Length
+        $values = $s['Value']
+        $n = $values.Length
         $bad = New-Object System.Collections.Generic.List[int]
         $status = @{}
+        # rating of a point as in Get-WorkerPerfPointStatus, computed here because this loop runs for every point
+        $minOps = [double]$th.minOps
+        $ops = $s['Ops']
+        $useOps = ($minOps -gt 0 -and $null -ne $ops)
+        $warn = [double]$th.warn; $crit = [double]$th.crit
+        $low = ([string]$th.direction -eq 'low')
         for ($i = 0; $i -lt $n; $i++) {
-            $st = Get-WorkerPerfPointStatus $s $i $th
-            if ($null -ne $st -and $st -ge 1) { $bad.Add($i); $status[$i] = [int]$st }
+            if ($useOps -and [double]$ops[$i] -lt $minOps) { continue }
+            $x = [double]$values[$i]
+            if ($low) {
+                if ($x -le $crit) { $bad.Add($i); $status[$i] = 2 }
+                elseif ($x -le $warn) { $bad.Add($i); $status[$i] = 1 }
+            }
+            elseif ($x -ge $crit) { $bad.Add($i); $status[$i] = 2 }
+            elseif ($x -ge $warn) { $bad.Add($i); $status[$i] = 1 }
         }
         $group = New-Object System.Collections.Generic.List[int]
         for ($k = 0; $k -le $bad.Count; $k++) {
@@ -72,28 +85,51 @@ function Get-WorkerPerfSollIst {
     param([AllowEmptyCollection()][object[]]$Series, $Thresholds, [hashtable]$Sources = @{})
     foreach ($th in $Thresholds.Values) {
         $id = [string]$th.id
-        $mine = @(@($Series) | Where-Object { $_['Id'] -eq $id })
+        $mineList = New-Object System.Collections.Generic.List[object]
+        foreach ($s in @($Series)) { if ($s['Id'] -eq $id) { $mineList.Add($s) } }
+        $mine = $mineList.ToArray()
         $detail = ''
         if ($Sources.ContainsKey($id)) {
             $src = $Sources[$id]
             if ($src -is [hashtable] -and $src.ContainsKey('Detail') -and $null -ne $src['Detail']) { $detail = [string]$src['Detail'] }
         }
         # worst rateable value per measurement time over all instances
-        $perTime = @{}
+        # (point rating as in Get-WorkerPerfPointStatus and comparison as in Test-WorkerPerfWorse, computed in the loop)
+        $minOps = [double]$th.minOps
+        $warn = [double]$th.warn; $crit = [double]$th.crit
+        $low = ([string]$th.direction -eq 'low')
+        $perTime = New-Object 'System.Collections.Generic.Dictionary[long,double]'
         $instBad = @{}; $instPeak = @{}
         foreach ($s in $mine) {
             $label = [string]$s['Label']
             if (-not $instBad.ContainsKey($label)) { $instBad[$label] = 0; $instPeak[$label] = [double]::NaN }
-            for ($i = 0; $i -lt $s['Value'].Length; $i++) {
-                $st = Get-WorkerPerfPointStatus $s $i $th
-                if ($null -eq $st) { continue }
-                $v = [double]$s['Value'][$i]
-                $t = [long]$s['TimeMs'][$i]
-                if (-not $perTime.ContainsKey($t) -or (Test-WorkerPerfWorse $v $perTime[$t] $th)) { $perTime[$t] = $v }
-                if ($st -ge 1) {
-                    $instBad[$label] = $instBad[$label] + 1
-                    if ([double]::IsNaN($instPeak[$label]) -or (Test-WorkerPerfWorse $v $instPeak[$label] $th)) { $instPeak[$label] = $v }
+            $values = $s['Value']; $times = $s['TimeMs']; $ops = $s['Ops']
+            $useOps = ($minOps -gt 0 -and $null -ne $ops)
+            $nBad = 0; $peak = [double]$instPeak[$label]
+            for ($i = 0; $i -lt $values.Length; $i++) {
+                if ($useOps -and [double]$ops[$i] -lt $minOps) { continue }
+                $v = [double]$values[$i]
+                if ([double]::IsNaN($v)) { continue }
+                $t = [long]$times[$i]
+                $old = 0.0
+                if ($perTime.TryGetValue($t, [ref]$old)) {
+                    if ($low) { if ($v -lt $old) { $perTime[$t] = $v } }
+                    elseif ($v -gt $old) { $perTime[$t] = $v }
                 }
+                else { $perTime[$t] = $v }
+                if ($low) { $isBad = ($v -le $warn -or $v -le $crit) } else { $isBad = ($v -ge $warn -or $v -ge $crit) }
+                if ($isBad) {
+                    $nBad++
+                    if ([double]::IsNaN($peak)) { $peak = $v }
+                    elseif ($low) { if ($v -lt $peak) { $peak = $v } }
+                    elseif ($v -gt $peak) { $peak = $v }
+                }
+            }
+            # Write only when there was a bad point, as the per-point update did: a write to an existing key can grow the
+            # Hashtable, and that changes the order of $instBad.Keys, which breaks ties for WorstInstance below.
+            if ($nBad -gt 0) {
+                $instBad[$label] = $instBad[$label] + $nBad
+                $instPeak[$label] = $peak
             }
         }
         $row = @{
@@ -111,7 +147,10 @@ function Get-WorkerPerfSollIst {
             $p = [int][Math]::Ceiling(0.95 * $sorted.Length) - 1
             if ($p -lt 0) { $p = 0 }
             $c = @(0, 0, 0)
-            foreach ($v in $vals) { $c[[int](Get-WorkerPerfStatus $v $th)]++ }
+            foreach ($v in $vals) {
+                if ($low) { if ($v -le $crit) { $c[2]++ } elseif ($v -le $warn) { $c[1]++ } else { $c[0]++ } }
+                elseif ($v -ge $crit) { $c[2]++ } elseif ($v -ge $warn) { $c[1]++ } else { $c[0]++ }
+            }
             $row.Avg = $sum / $sorted.Length; $row.P95 = $sorted[$p]; $row.Max = $sorted[$sorted.Length - 1]
             $row.PctNormal = 100.0 * $c[0] / $vals.Length; $row.PctWarn = 100.0 * $c[1] / $vals.Length; $row.PctCrit = 100.0 * $c[2] / $vals.Length
             if ($mine.Count -gt 1) {

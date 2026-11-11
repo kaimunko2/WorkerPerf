@@ -206,49 +206,85 @@ function Test-WorkerPerfGuard {
 function ConvertTo-WorkerPerfFastRows {
     param($Sample, [int]$T, [double]$ElapsedSec, [bool]$Burst, [double]$CollectMs)
 
-    $n = { param($v, [int]$d) Format-WorkerPerfNumber $v $d }
+    # Runs every fast tick: no function or scriptblock call per value. Each row is a list of values and a list of
+    # format codes: a code >= 0 formats a number like Format-WorkerPerfNumber with that many decimals, -1 formats
+    # a text like Format-WorkerPerfCsvText, -2 takes the value as it is.
     $inv = [Globalization.CultureInfo]::InvariantCulture
     $burstFlag = $(if ($Burst) { 1 } else { 0 })
+    $time = $Sample.Time.ToString('o', $inv)
 
-    $tick = (@(
-            $T, $Sample.Time.ToString('o', $inv), (& $n $ElapsedSec 3), (& $n $Sample.CpuPct 2), (& $n $Sample.ProcQueue 0),
-            (& $n $Sample.StealPct 2), (& $n $Sample.MemAvailMB 0), (& $n $Sample.MemCommittedMB 0), (& $n $Sample.MemCommitLimitMB 0),
-            (& $n $Sample.PagesInPerSec 1), (& $n $Sample.DiskReadBps 0), (& $n $Sample.DiskWriteBps 0),
-            (& $n $Sample.DiskReadIops 1), (& $n $Sample.DiskWriteIops 1), (& $n $Sample.DiskQueue 0),
-            (& $n $Sample.NetRecvBps 0), (& $n $Sample.NetSentBps 0), $burstFlag, (& $n $CollectMs 0)) -join ',')
-
+    $pending = [System.Collections.Generic.List[object]]::new()      # @(target, values, codes)
     $volumes = [System.Collections.Generic.List[string]]::new()
+    $shares = [System.Collections.Generic.List[string]]::new()
+    $sessions = [System.Collections.Generic.List[string]]::new()
+    $procs = [System.Collections.Generic.List[string]]::new()
+    $tickRow = [System.Collections.Generic.List[string]]::new()
+
+    $pending.Add(@($tickRow, @(
+                $T, $time, $ElapsedSec, $Sample.CpuPct, $Sample.ProcQueue, $Sample.StealPct, $Sample.MemAvailMB, $Sample.MemCommittedMB,
+                $Sample.MemCommitLimitMB, $Sample.PagesInPerSec, $Sample.DiskReadBps, $Sample.DiskWriteBps, $Sample.DiskReadIops,
+                $Sample.DiskWriteIops, $Sample.DiskQueue, $Sample.NetRecvBps, $Sample.NetSentBps, $burstFlag, $CollectMs),
+            [int[]]@(-2, -2, 3, 2, 0, 2, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, -2, 0)))
+
+    $volCodes = [int[]]@(-2, -1, -1, 0, -1, 2, 2, 0, 0, 0, 0, 0)
     foreach ($v in @($Sample.Volumes)) {
         if ($null -eq $v) { continue }
         if (([double]$v.ReadOps + [double]$v.WriteOps) -le 0) { continue }
-        $volumes.Add((@($T, (Format-WorkerPerfCsvText ([string]$v.Volume)), (Format-WorkerPerfCsvText ([string]$v.Kind)),
-                    (& $n $v.SessionId 0), (Format-WorkerPerfCsvText ([string]$v.Backing)), (& $n $v.ReadLatMs 2), (& $n $v.WriteLatMs 2),
-                    (& $n $v.ReadOps 0), (& $n $v.WriteOps 0), (& $n $v.ReadBps 0), (& $n $v.WriteBps 0), (& $n $v.Queue 0)) -join ','))
+        $pending.Add(@($volumes, @($T, $v.Volume, $v.Kind, $v.SessionId, $v.Backing, $v.ReadLatMs, $v.WriteLatMs,
+                    $v.ReadOps, $v.WriteOps, $v.ReadBps, $v.WriteBps, $v.Queue), $volCodes))
     }
 
-    $shares = [System.Collections.Generic.List[string]]::new()
+    $shareCodes = [int[]]@(-2, -1, 2, 2, 0, 0, 0, 0)
     foreach ($s in @($Sample.Shares)) {
         if ($null -eq $s) { continue }
         if (([double]$s.ReadOps + [double]$s.WriteOps) -le 0) { continue }
-        $shares.Add((@($T, (Format-WorkerPerfCsvText ([string]$s.Share)), (& $n $s.ReadLatMs 2), (& $n $s.WriteLatMs 2),
-                    (& $n $s.ReadOps 0), (& $n $s.WriteOps 0), (& $n $s.ReadBps 0), (& $n $s.WriteBps 0)) -join ','))
+        $pending.Add(@($shares, @($T, $s.Share, $s.ReadLatMs, $s.WriteLatMs, $s.ReadOps, $s.WriteOps, $s.ReadBps, $s.WriteBps), $shareCodes))
     }
 
-    $sessions = [System.Collections.Generic.List[string]]::new()
+    $sessionCodes = [int[]]@(-2, 0, 0)
     foreach ($i in @($Sample.InputSessions)) {
         if ($null -eq $i -or $null -eq $i.DelayMs) { continue }
         if ([double]$i.DelayMs -le 0) { continue }
-        $sessions.Add((@($T, (& $n $i.SessionId 0), (& $n $i.DelayMs 0)) -join ','))
+        $pending.Add(@($sessions, @($T, $i.SessionId, $i.DelayMs), $sessionCodes))
     }
 
-    $procs = [System.Collections.Generic.List[string]]::new()
+    $procCodes = [int[]]@(-2, 0, 0, -1, 0)
     foreach ($p in @($Sample.InputProcesses)) {
         if ($null -eq $p -or $null -eq $p.DelayMs) { continue }
         if ([double]$p.DelayMs -lt 50) { continue }
-        $procs.Add((@($T, (& $n $p.SessionId 0), (& $n $p.Pid 0), (Format-WorkerPerfCsvText ([string]$p.Name)), (& $n $p.DelayMs 0)) -join ','))
+        $pending.Add(@($procs, @($T, $p.SessionId, $p.Pid, $p.Name, $p.DelayMs), $procCodes))
     }
 
-    return @{ Tick = [string]$tick; Volumes = [string[]]$volumes.ToArray(); Shares = [string[]]$shares.ToArray()
+    $quoteChars = [char[]]@(',', '"')
+    foreach ($row in $pending) {
+        $values = $row[1]; $codes = $row[2]
+        $n = $values.Length
+        $parts = [string[]]::new($n)
+        for ($k = 0; $k -lt $n; $k++) {
+            $x = $values[$k]
+            $code = $codes[$k]
+            if ($code -ge 0) {
+                $text = ''
+                if ($null -ne $x) {
+                    $d = [double]$x
+                    if (-not ([double]::IsNaN($d) -or [double]::IsInfinity($d))) { $text = [Math]::Round($d, $code).ToString($inv) }
+                }
+                $parts[$k] = $text
+            }
+            elseif ($code -eq -1) {
+                $text = [string]$x
+                if ($text.Length -gt 0) {
+                    $text = $text.Replace("`r", ' ').Replace("`n", ' ')
+                    if ($text.IndexOfAny($quoteChars) -ge 0) { $text = '"' + $text.Replace('"', '""') + '"' }
+                }
+                $parts[$k] = $text
+            }
+            else { $parts[$k] = [string]$x }
+        }
+        $row[0].Add([string]::Join(',', $parts))
+    }
+
+    return @{ Tick = [string]$tickRow[0]; Volumes = [string[]]$volumes.ToArray(); Shares = [string[]]$shares.ToArray()
         InputSessions = [string[]]$sessions.ToArray(); InputProcesses = [string[]]$procs.ToArray() }
 }
 

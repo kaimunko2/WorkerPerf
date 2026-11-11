@@ -67,6 +67,40 @@ Describe 'ConvertTo-WorkerPerfFastRows' {
         $r.Shares.Count | Should -Be 0
         $r.InputSessions | Should -Be @('7,6,300'); $r.InputProcesses | Should -Be @('7,6,200,b.exe,80')
     }
+    It 'formatiert Rundung, leere Werte und Texte wie bisher' {                # Task 14a: recorded with the former version
+        [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+        $nan = [double]::NaN
+        $vol = { param($Name, $Kind, $Sid, $Back, $Rl, $Wl, $Ro, $Wo, $Rb, $Wb, $Q)
+            [pscustomobject]@{ Volume = $Name; Kind = $Kind; SessionId = $Sid; Backing = $Back; ReadLatMs = $Rl; WriteLatMs = $Wl; ReadOps = $Ro; WriteOps = $Wo; ReadBps = $Rb; WriteBps = $Wb; Queue = $Q } }
+        $s = [pscustomobject]@{
+            Time = [datetime]'2026-01-15T08:00:02.5'; CpuPct = 99.996; ProcQueue = 2.5; StealPct = $nan; MemAvailMB = 20000.5; MemCommittedMB = 30001.5
+            MemCommitLimitMB = [double]::PositiveInfinity; PagesInPerSec = 0.25; DiskReadBps = 1234567.891; DiskWriteBps = $null; DiskReadIops = 10.06
+            DiskWriteIops = -3.75; DiskQueue = 3.5; NetRecvBps = 123456789012; NetSentBps = 0.0
+            Volumes = @(
+                (& $vol 'C:' 'disk' $null '' 2.347 0.125 12 0 5000.5 0 1),
+                (& $vol 'D:' 'disk' $null '' $null $nan 0 0 0 0 0),
+                (& $vol 'HarddiskVolume12' 'profile' 4 '\\fs01\profile$' 1.006 44.4449 30 20.5 6291456 4194304 3),
+                (& $vol 'Vol,"x"' 'profile' '' 'Ärzte, "Daten"' $nan $null 0 1 2.5 3.5 ([double]::NegativeInfinity)),
+                $null)
+            Shares = @(
+                [pscustomobject]@{ Share = '\\fs01\daten'; ReadLatMs = 78.125; WriteLatMs = $null; ReadOps = 100; WriteOps = 0.4; ReadBps = 20971520; WriteBps = 0 },
+                [pscustomobject]@{ Share = '\\fs01\leer'; ReadLatMs = 1; WriteLatMs = 1; ReadOps = 0; WriteOps = 0; ReadBps = 0; WriteBps = 0 },
+                [pscustomobject]@{ Share = "\\fs01\Büro,""neu""`r`nZeile"; ReadLatMs = $nan; WriteLatMs = 2.676; ReadOps = 1.5; WriteOps = 0; ReadBps = 1.5; WriteBps = 0 })
+            InputSessions = @([pscustomobject]@{ SessionId = 5; DelayMs = 0 }, [pscustomobject]@{ SessionId = 6; DelayMs = 300.5 },
+                [pscustomobject]@{ SessionId = 7; DelayMs = $null }, [pscustomobject]@{ SessionId = 8; DelayMs = 1.5 }, $null)
+            InputProcesses = @([pscustomobject]@{ SessionId = 6; Pid = 100; Name = 'a.exe'; DelayMs = 49.9 },
+                [pscustomobject]@{ SessionId = 6; Pid = 200; Name = 'Übersicht, "alt".exe'; DelayMs = 80.5 },
+                [pscustomobject]@{ SessionId = 8; Pid = 300; Name = 'c.exe'; DelayMs = $null }, [pscustomobject]@{ SessionId = 8; Pid = 301; Name = ''; DelayMs = 50 })
+        }
+        $r = ConvertTo-WorkerPerfFastRows -Sample $s -T 42 -ElapsedSec 2.0006 -Burst $false -CollectMs 12.5
+        $r.Tick | Should -BeExactly '42,2026-01-15T08:00:02.5000000,2.001,100,2,,20000,30002,,0.2,1234568,,10.1,-3.8,4,123456789012,0,0,12'
+        $r.Volumes | Should -BeExactly @('42,C:,disk,,,2.35,0.12,12,0,5000,0,1', '42,HarddiskVolume12,profile,4,\\fs01\profile$,1.01,44.44,30,20,6291456,4194304,3',
+            '42,"Vol,""x""",profile,0,"Ärzte, ""Daten""",,,0,1,2,4,')
+        $r.Shares | Should -BeExactly @('42,\\fs01\daten,78.12,,100,0,20971520,0', '42,"\\fs01\Büro,""neu""  Zeile",,2.68,2,0,2,0')
+        $r.InputSessions | Should -BeExactly @('42,6,300', '42,8,2')
+        $r.InputProcesses | Should -BeExactly @('42,6,200,"Übersicht, ""alt"".exe",80', '42,8,301,,50')
+        foreach ($k in 'Volumes', 'Shares', 'InputSessions', 'InputProcesses') { , $r[$k] | Should -BeOfType [string[]] }
+    }
 }
 Describe 'Get-WorkerPerfTriggerSignals' {
     It 'meldet nur Ausloeser ueber der Schwelle und beachtet minOps' {
