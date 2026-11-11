@@ -9,7 +9,8 @@ BeforeAll {
         'Read-ProbeNames', 'Update-ProbeMaskFromSessions', 'Invoke-ProbeCatalogue', 'Add-ProbeServerNames', 'Add-ProbeShareServer', 'Get-ProbeUncHosts', 'Get-ProbeTexts', 'Copy-ProbeValue',
         'Get-Prop', 'Get-ProbeEventFieldNames', 'Get-ProbeEventSummary', 'Get-ProbeDriverSummary', 'Get-ProbeEventQuery', 'Resolve-ProbeEventProviders',
         'Select-ProbeDriverValueNames', 'Split-ProbeProviderChunks', 'ConvertTo-ProbeProviderInfo', 'Read-ProbeEventRecords', 'Get-ProbeChunkSize',
-        'Get-ProbeDriverAttributeCounts', 'Get-ProbeIsolationPolicy', 'Get-ProbeInstanceCount', 'ConvertTo-ProbeDword', 'Test-ProbeQueryName') {
+        'Get-ProbeDriverAttributeCounts', 'Get-ProbeIsolationPolicy', 'Get-ProbeInstanceCount', 'ConvertTo-ProbeDword', 'Test-ProbeQueryName',
+        'Get-ProbeEventLog', 'Get-ProbeCitrixRoots', 'Get-ProbeEffectiveIsolation', 'Get-ProbeIsolationGroupMap') {
         $f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
         if ($null -ne $f) { . ([scriptblock]::Create($f.Extent.Text)) }
     }
@@ -33,7 +34,9 @@ BeforeAll {
             $item = $this.Items[$this.Next]; $this.Next++
             if ($item.Fail) { throw 'Die Daten sind ungueltig' }
             $owner = $this
-            $rec = [pscustomobject]@{ ProviderName = $owner.Provider; Id = $item.Id; Owner = $owner }
+            $time = $null
+            if ($null -ne $item.PSObject.Properties['Time']) { $time = $item.Time }
+            $rec = [pscustomobject]@{ ProviderName = $owner.Provider; Id = $item.Id; Owner = $owner; TimeCreated = $time }
             $rec | Add-Member ScriptMethod ToXml { $this.Owner.XmlCalls++; "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><EventData><Data Name='F'>geheim</Data></EventData></Event>" }
             $rec | Add-Member ScriptMethod Dispose { $this.Owner.Disposed++ }
             $rec
@@ -47,6 +50,15 @@ Describe 'Quellen-Pruefskript' {
             'perf.disk.total', 'perf.network', 'perf.volumes', 'perf.shares', 'perf.input.session', 'perf.input.process', 'perf.ica',
             'profile.volumes', 'events.defender', 'events.applocker', 'events.application', 'events.system', 'events.printservice',
             'events.smbclient', 'events.profileservice', 'events.session', 'print.drivers', 'print.queues', 'security.products', 'user.processes', 'endpoints')
+    }
+    It 'ruft in jeder Pruefung eine Funktion auf, die das Skript definiert' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($Probe, [ref]$null, [ref]$null)
+        $defined = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { $_.Name })
+        $assignment = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$script:Catalogue' }, $false)
+        $entries = @(& ([scriptblock]::Create($assignment.Right.Extent.Text)))
+        @($entries).Count | Should -Be @($Checks).Count
+        @($entries | Where-Object { -not ($_.Run -is [string]) } | ForEach-Object { $_.Id }) | Should -BeNullOrEmpty
+        @($entries | Where-Object { $defined -notcontains $_.Run } | ForEach-Object { '{0} -> {1}' -f $_.Id, $_.Run }) | Should -BeNullOrEmpty
     }
     It 'deckt jedes bewertete Signal ab' {
         $covered = @($Checks | ForEach-Object { $_.Signals })
@@ -420,17 +432,35 @@ Describe 'Ereignisse und Drucken im Pruefskript' {
             (& $info 'Citrix ETW Trace' @('C:\Program Files\Citrix\Trace\trace.dll') @('Citrix-Trace/Debug'))        # schreibt nicht in das Protokoll
             $null                                                                                                     # Metadaten nicht lesbar
             (& $info "Citrix 'A' `"B`"" @('C:\Program Files\Citrix\x.dll') @('Application'))                         # nicht in die Abfrage schreibbar
+            (& $info 'Citrix Skripte Klinikum' @('D:\Citrix\Skripte\msg.dll') @('Application'))                      # Citrix-Ordner, aber nicht unter den Programmen
+            (& $info 'Citrix Umweg Klinikum' @('C:\Program Files\Citrix\..\Tools\msg.dll') @('Application'))        # verlaesst den Citrix-Ordner
         )
+        $roots = @('C:\Program Files\Citrix\', 'C:\Program Files (x86)\Citrix\')
         $asked = New-Object 'System.Collections.Generic.List[string]'
-        $r = Resolve-ProbeEventProviders @('Application Error', 'Citrix Profile Management', 'Citrix*', 'Citrix*') 'Application' { param($p) $asked.Add($p); $listed }
+        $r = Resolve-ProbeEventProviders @('Application Error', 'Citrix Profile Management', 'Citrix*', 'Citrix*') 'Application' { param($p) $asked.Add($p); $listed } $roots
         @($r.Names) | Should -Be @('Application Error', 'Citrix Profile Management', 'Citrix Print Manager Service')
-        $r.Dropped | Should -Be 6
+        $r.Dropped | Should -Be 8
         $r.NotLinked | Should -Be 1
+        $nothing = Resolve-ProbeEventProviders @('Citrix*') 'Application' { param($p) $listed } @()             # ohne Programmordner bleibt keine Quelle
+        @($nothing.Names).Count | Should -Be 0
         @($asked) | Should -Be @('Citrix*')
-        $q = Resolve-ProbeEventProviders @("Exakt 'A' `"B`"", 'Application Error') 'Application' { throw 'nicht fragen' }
+        $q = Resolve-ProbeEventProviders @("Exakt 'A' `"B`"", 'Application Error') 'Application' { throw 'nicht fragen' } $roots
         @($q.Names) | Should -Be @('Application Error'); $q.Dropped | Should -Be 1
-        $none = Resolve-ProbeEventProviders @() 'Application' { throw 'nicht fragen' }
+        $none = Resolve-ProbeEventProviders @() 'Application' { throw 'nicht fragen' } $roots
         @($none.Names).Count | Should -Be 0; $none.Dropped | Should -Be 0
+    }
+    It 'leitet die Citrix-Ordner aus den Programmordnern ab' {
+        $saved = @{}
+        foreach ($n in 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432') { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
+        try {
+            [Environment]::SetEnvironmentVariable('ProgramFiles', 'C:\Program Files\')
+            [Environment]::SetEnvironmentVariable('ProgramFiles(x86)', 'C:\Program Files (x86)')
+            [Environment]::SetEnvironmentVariable('ProgramW6432', 'C:\Program Files')
+            @(Get-ProbeCitrixRoots) | Should -Be @('C:\Program Files\Citrix\', 'C:\Program Files (x86)\Citrix\')
+            foreach ($n in 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432') { [Environment]::SetEnvironmentVariable($n, $null) }
+            @(Get-ProbeCitrixRoots).Count | Should -Be 0
+        }
+        finally { foreach ($n in $saved.Keys) { [Environment]::SetEnvironmentVariable($n, $saved[$n]) } }
     }
     It 'liest Name, eigene Dateien und Protokolle einer Quelle und meldet unlesbare Metadaten als leer' {
         $env:WP_TEST_CITRIX = 'C:\Program Files\Citrix'
@@ -448,7 +478,7 @@ Describe 'Ereignisse und Drucken im Pruefskript' {
             $bad | Add-Member ScriptProperty MessageFilePath { throw 'Metadaten nicht verfuegbar' }
             $b = ConvertTo-ProbeProviderInfo $bad
             @($b.Logs).Count | Should -Be 0; @($b.Files).Count | Should -Be 0
-            $r = Resolve-ProbeEventProviders @('Citrix*') 'Application' { param($p) @($b) }
+            $r = Resolve-ProbeEventProviders @('Citrix*') 'Application' { param($p) @($b) } @('C:\Program Files\Citrix\')
             @($r.Names).Count | Should -Be 0; $r.NotLinked | Should -Be 1
         }
         finally { Remove-Item Env:\WP_TEST_CITRIX }
@@ -457,21 +487,45 @@ Describe 'Ereignisse und Drucken im Pruefskript' {
         $mk = { param($Id, [switch]$Fail) [pscustomobject]@{ Id = $Id; Fail = [bool]$Fail } }
         $reader = New-TestEventReader @((& $mk 1), (& $mk 1), (& $mk 2), (& $mk 0 -Fail), (& $mk 1), (& $mk 3), (& $mk 3))
         $seen = New-Object 'System.Collections.Generic.List[int]'
-        $r = Read-ProbeEventRecords $reader 1000 { param($n) $seen.Add($n) }
+        $labels = New-Object 'System.Collections.Generic.List[string]'
+        $r = Read-ProbeEventRecords $reader 1000 { param($Label, $Count) $labels.Add($Label); $seen.Add($Count) } 'Application' 10
         @($r.Events).Count | Should -Be 6
         $r.RecordErrors | Should -Be 1
         $r.Capped | Should -BeFalse
         @(Get-ProbeEventSummary $r.Events | ForEach-Object { '{0}={1}' -f $_.Id, $_.Count }) | Should -Be @('1=3', '2=1', '3=2')
         $reader.XmlCalls | Should -Be 3                                                                          # nur das erste Ereignis je Kennung
         $reader.Disposed | Should -Be 6                                                                          # jeder gelesene Datensatz wird freigegeben
-        $seen[$seen.Count - 1] | Should -Be 6
+        $seen[$seen.Count - 1] | Should -Be 16                                                                   # gezaehlt ab dem Stand davor
+        @($labels | Sort-Object -Unique) | Should -Be @('Application')
     }
     It 'haelt bei der Obergrenze an und bricht nach zu vielen unlesbaren Datensaetzen in Folge ab' {
         $mk = { param($Id, [switch]$Fail) [pscustomobject]@{ Id = $Id; Fail = [bool]$Fail } }
-        $capped = Read-ProbeEventRecords (New-TestEventReader @(1..5 | ForEach-Object { & $mk $_ })) 2 { }
+        $capped = Read-ProbeEventRecords (New-TestEventReader @(1..5 | ForEach-Object { & $mk $_ })) 2 { param($Label, $Count) }
         @($capped.Events).Count | Should -Be 2; $capped.Capped | Should -BeTrue
-        $broken = Read-ProbeEventRecords (New-TestEventReader @(1..50 | ForEach-Object { & $mk 0 -Fail })) 1000 { }
+        $broken = Read-ProbeEventRecords (New-TestEventReader @(1..50 | ForEach-Object { & $mk 0 -Fail })) 1000 { param($Label, $Count) }
         @($broken.Events).Count | Should -Be 0; $broken.RecordErrors | Should -Be 10; $broken.Capped | Should -BeFalse
+    }
+    It 'nennt den aeltesten gelesenen Datensatz als Zeitstempel' {
+        $t = { param($Id, $Time) [pscustomobject]@{ Id = $Id; Fail = $false; Time = [datetime]::SpecifyKind([datetime]$Time, 'Utc') } }
+        $r = Read-ProbeEventRecords (New-TestEventReader @((& $t 1 '2026-11-10T08:00:00'), (& $t 2 '2026-11-05T07:30:00'), (& $t 1 '2026-11-09T00:00:00'))) 1000 { param($Label, $Count) }
+        $r.OldestUtc | Should -Be '2026-11-05T07:30:00Z'
+        (Read-ProbeEventRecords (New-TestEventReader @()) 1000 { param($Label, $Count) }).OldestUtc | Should -Be ''
+    }
+    It 'meldet, wie viele Gruppen von Quellen wegen der Obergrenze ungelesen blieben' {
+        function Get-WinEvent { param([string]$ListLog, $ErrorAction) [pscustomobject]@{ LogName = $ListLog; IsEnabled = $true } }
+        $script:OpenedQueries = New-Object 'System.Collections.Generic.List[string]'
+        function Open-ProbeEventReader([string]$Log, [string]$Query) {
+            $OpenedQueries.Add($Query)
+            $items = @(1..1200 | ForEach-Object { [pscustomobject]@{ Id = 7; Fail = $false; Time = [datetime]::SpecifyKind([datetime]'2026-11-10T12:00:00', 'Utc').AddMinutes(-$_) } })
+            New-TestEventReader $items 'Quelle1'
+        }
+        $providers = @(1..40 | ForEach-Object { 'Quelle{0}' -f $_ })                    # mit drei Stufen: Gruppen zu 16, also drei Abfragen
+        $r = Get-ProbeEventLog 'System' $providers @(1, 2, 3) @() 6>$null
+        $r.Readable | Should -BeTrue; $r.Capped | Should -BeTrue
+        $r.Chunks | Should -Be 3; $r.ChunksNotRead | Should -Be 2
+        @($OpenedQueries).Count | Should -Be 1
+        $r.OldestUtc | Should -Be '2026-11-09T19:20:00Z'                                 # der 1000. von 1200: 1000 Minuten vor 12:00
+        $r.Ids[0].Count | Should -Be 1000
     }
     It 'bemisst die Gruppen nach den 20 Ausdruecken einer Abfrage' {
         Get-ProbeChunkSize 3 0 | Should -Be 16
@@ -494,6 +548,19 @@ Describe 'Ereignisse und Drucken im Pruefskript' {
         $p.PrintDriverIsolationExecutionPolicy | Should -Be 1; $p.PrintDriverIsolationOverrideCompat | Should -Be 'kein Zahlenwert'
         $n = Get-ProbeIsolationPolicy @{}
         $n.PrintDriverIsolationExecutionPolicy | Should -Be 'nicht gesetzt'; $n.PrintDriverIsolationOverrideCompat | Should -Be 'nicht gesetzt'
+    }
+    It 'zaehlt die wirksame Isolierung je Treiber nach der Entscheidung von Microsoft' {
+        $d = @('A', 'B', 'C', 'D', 'E', 'F') | ForEach-Object { [pscustomobject]@{ Name = "Treiber $_" } }
+        $groups = 'Treiber E\\Treiber A\\Treiber F'                                        # E im Druckdienst, A gemeinsam, F allein
+        $attr = @(0, 4, 0, $null, 4, 0)
+        $set = Get-ProbeIsolationPolicy @{}
+        $e = Get-ProbeEffectiveIsolation $d $groups $attr $set
+        "$($e.none)/$($e.shared)/$($e.isolated)/$($e.unbekannt)" | Should -Be '2/2/1/1'          # A Gruppe, B Attribut, C ohne Attribut, D nicht gelesen
+        $override = Get-ProbeEffectiveIsolation $d $groups $attr (Get-ProbeIsolationPolicy @{ PrintDriverIsolationOverrideCompat = 1 })
+        "$($override.none)/$($override.shared)/$($override.isolated)/$($override.unbekannt)" | Should -Be '1/4/1/0'
+        $off = Get-ProbeEffectiveIsolation $d $groups $attr (Get-ProbeIsolationPolicy @{ PrintDriverIsolationExecutionPolicy = 0 })
+        "$($off.none)/$($off.shared)/$($off.isolated)/$($off.unbekannt)" | Should -Be '6/0/0/0'
+        ((Get-ProbeEffectiveIsolation $d $groups $attr $set) | ConvertTo-Json) | Should -Not -Match 'Treiber'
     }
     It 'zaehlt Instanzen ohne _Total' {
         Get-ProbeInstanceCount @('_Total', 'Drucker A', 'Drucker B') | Should -Be 2
@@ -560,6 +627,12 @@ namespace WorkerPerfProbe
                 [pscustomobject]@{ Name = 'ICA-CGP 6 (KLINIK\anna.meier)'; ProcessId = 4711 }
                 [pscustomobject]@{ Name = 'Spooler'; ProcessId = 0 }
             }
+            elseif ($ClassName -eq 'Win32_Process') {
+                [pscustomobject]@{ Name = 'svchost.exe'; ProcessId = 4711; SessionId = 0; ExecutablePath = 'C:\Windows\System32\svchost.exe' }
+                [pscustomobject]@{ Name = 'svchost.exe'; ProcessId = 4712; SessionId = 0; ExecutablePath = '' }
+                [pscustomobject]@{ Name = 'WINWORD.EXE'; ProcessId = 5001; SessionId = 2; ExecutablePath = 'C:\Program Files\Microsoft Office\WINWORD.EXE' }
+                [pscustomobject]@{ Name = 'WINWORD.EXE'; ProcessId = 5002; SessionId = 3; ExecutablePath = 'C:\Program Files\Microsoft Office\WINWORD.EXE' }
+            }
             elseif ($ClassName -eq 'Win32_OperatingSystem') { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
             elseif ($ClassName -eq 'MSFT_PrinterDriver' -and $Namespace -eq 'root/StandardCimv2') {
                 [pscustomobject]@{ Name = 'Zeta Station 3 Klinikum'; Manufacturer = 'HP'; MajorVersion = 3; PrinterEnvironment = 'Windows x64' }
@@ -574,7 +647,8 @@ namespace WorkerPerfProbe
         $script:EventQueries = New-Object 'System.Collections.Generic.List[string]'
         $script:ListProviderCalls = New-Object 'System.Collections.Generic.List[string]'
         $script:NewEvent = { param($Provider, $Id, $Xml, [switch]$Fail)
-            $o = [pscustomobject]@{ ProviderName = $Provider; Id = $Id; Message = 'Fehler bei mueller auf \\fs01\upm$ geheim'; X = $Xml; Fail = [bool]$Fail }
+            $o = [pscustomobject]@{ ProviderName = $Provider; Id = $Id; Message = 'Fehler bei mueller auf \\fs01\upm$ geheim'; X = $Xml; Fail = [bool]$Fail
+                TimeCreated = [datetime]'2026-11-10T09:00:00' }
             $o | Add-Member ScriptMethod ToXml { $this.X }
             $o | Add-Member ScriptMethod Dispose { }
             $o
@@ -706,8 +780,10 @@ namespace WorkerPerfProbe
         $script:TestCatalogue = @(@($RealCatalogue | Where-Object { $_.Id -like 'events.*' -or $_.Id -eq 'print.drivers' }) + $onlyPattern)
         $EventQueries.Clear(); $ListProviderCalls.Clear()
         $console = $null
+        $savedProgramFiles = $env:ProgramFiles
+        $env:ProgramFiles = 'C:\Program Files'
         try { $console = @(& $ProbeMain -OutFile $OutDir 3>$null 6>&1 | ForEach-Object { [string]$_ }) }
-        finally { $script:TestCatalogue = $TestCatalogueSaved }
+        finally { $script:TestCatalogue = $TestCatalogueSaved; $env:ProgramFiles = $savedProgramFiles }
         $json = [IO.File]::ReadAllText(@(Get-ChildItem -LiteralPath $OutDir -Filter 'vda-probe_*.json')[0].FullName)
         foreach ($name in 'geheim', 'mueller', 'KLINIK', 'Klinikum', 'Zeta', 'Station', 'fs01', 'WS-0001', 'Spooler', 'C5535') { $json | Should -Not -Match $name }
         $r = $json | ConvertFrom-Json
@@ -722,6 +798,8 @@ namespace WorkerPerfProbe
         $log = @($app.Data.Logs)[0]
         $log.Log | Should -Be 'Application'; $log.Exists | Should -BeTrue; $log.Readable | Should -BeTrue; $log.Capped | Should -BeTrue
         $log.RecordErrors | Should -Be 1
+        $log.Chunks | Should -Be 1; $log.ChunksNotRead | Should -Be 0
+        $json | Should -Match '"OldestUtc":\s*"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"'                       # ConvertFrom-Json machte daraus eine Zeit
         @($log.Ids).Count | Should -Be 1
         $log.Ids[0].Provider | Should -Be 'Application Error'; $log.Ids[0].Id | Should -Be 1000; $log.Ids[0].Count | Should -Be $app.Data.MaxEvents
         @($log.Ids[0].Fields) | Should -Be @('AppName', 'ModuleName')
@@ -767,6 +845,40 @@ namespace WorkerPerfProbe
         $drv.Data.DriverAttributes.Read | Should -Be 3; $drv.Data.DriverAttributes.NotRead | Should -Be 1; $drv.Data.DriverAttributes.SandboxEnabled | Should -Be 2
         $drv.Data.IsolationPolicy.PrintDriverIsolationExecutionPolicy | Should -Be 1
         $drv.Data.IsolationPolicy.PrintDriverIsolationOverrideCompat | Should -Be 'nicht gesetzt'
+        # Etiketten in Gruppe 1 (none), Station 3 in Gruppe 2 (shared), C5535 mit Attribut 0x4 (shared), ohne Schluessel unbekannt
+        $eff = $drv.Data.ByEffectiveIsolation
+        "$($eff.none)/$($eff.shared)/$($eff.isolated)/$($eff.unbekannt)" | Should -Be '1/2/0/1'
+    }
+    It 'fuehrt die Pruefungen der Prozesse und der Gegenstellen aus und liefert Daten' {
+        # eine erreichbare Gegenstelle (eigener Listener) und eine, deren Port geschlossen ist
+        $open = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0); $open.Start()
+        $closed = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0); $closed.Start()
+        $closedPort = $closed.LocalEndpoint.Port; $closed.Stop()
+        $endpointFile = Join-Path ([IO.Path]::GetTempPath()) ('wp-endpoints-' + [guid]::NewGuid().ToString('N') + '.json')
+        $json = '{{ "endpoints": [ {{ "name": "Datenbank", "host": "127.0.0.1", "port": {0}, "role": "db" }}, {{ "name": "Lizenz", "host": "127.0.0.1", "port": {1}, "role": "lic" }} ] }}' -f $open.LocalEndpoint.Port, $closedPort
+        [IO.File]::WriteAllText($endpointFile, $json)
+        $script:TestCatalogueSaved = $TestCatalogue
+        $script:TestCatalogue = @($RealCatalogue | Where-Object { @('security.products', 'user.processes', 'endpoints') -contains $_.Id })
+        try { & $ProbeMain -OutFile $OutDir -EndpointFile $endpointFile 3>$null 6>$null | Out-Null }
+        finally { $script:TestCatalogue = $TestCatalogueSaved; $open.Stop(); Remove-Item -LiteralPath $endpointFile -Force }
+        $text = [IO.File]::ReadAllText(@(Get-ChildItem -LiteralPath $OutDir -Filter 'vda-probe_*.json')[0].FullName)
+        foreach ($name in 'anna', 'meier', 'KLINIK', '127.0.0.1') { $text | Should -Not -Match ([regex]::Escape($name)) }
+        $r = $text | ConvertFrom-Json
+        @($r.Checks | ForEach-Object { $_.Id }) | Should -Be @('security.products', 'user.processes', 'endpoints')
+        $sec = $r.Checks[0]
+        $sec.Ok | Should -BeTrue
+        $svchost = @($sec.Data.Processes | Where-Object { $_.Name -eq 'svchost.exe' })[0]
+        $svchost.Instances | Should -Be 2
+        @($svchost.Services) | Should -Be @('ICA-CGP 6 (<domain>\<user>)')
+        $usr = $r.Checks[1]
+        $usr.Ok | Should -BeTrue
+        @($usr.Data.Processes | ForEach-Object { '{0}={1}' -f $_.Name, $_.Instances }) | Should -Be @('WINWORD.EXE=2')
+        $ep = $r.Checks[2]
+        $ep.Ok | Should -BeFalse
+        $ep.Detail | Should -Be '1 von 2 Gegenstellen erreichbar'
+        @($ep.Data.Endpoints | ForEach-Object { $_.Index }) | Should -Be @(1, 2)
+        $ep.Data.Endpoints[0].ConnectMs | Should -Not -BeNullOrEmpty
+        $ep.Data.Endpoints[1].Error | Should -Be 'refused'
     }
     It 'zerschneidet keinen Namen, von dem beim Lesen erst ein Teil bekannt ist' {
         # die echte Pruefung der Dienste, mit nachgestellter CIM-Abfrage: sie liefert einen Text mit dem Namen einer
