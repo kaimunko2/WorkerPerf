@@ -100,3 +100,173 @@ function Get-WorkerPerfProcessRows {
     return @{ Rows = [string[]]$rows.ToArray(); Info = [string[]]$info.ToArray(); Ended = [string[]]$ended.ToArray()
         Total = [int]$total; CpuMs = [double]$cpuMsTotal }
 }
+
+# ---- Burst control, scheduling, guards, fast cadence rows and writers ----
+
+function New-WorkerPerfBurstState {
+    # Signals: signal id -> @{ Armed; Start } for signals that are currently over their threshold.
+    # A signal without an entry is armed. HasTrigger/LastTrigger: time of the latest trigger of any signal.
+    return @{ Signals = @{}; HasTrigger = $false; LastTrigger = [datetime]::MinValue }
+}
+
+function Update-WorkerPerfBurstState {
+    param($State, [datetime]$Now, [AllowEmptyCollection()][string[]]$BadSignals, [int]$HoldSeconds = 60, [int]$MaxEpisodeSeconds = 300)
+
+    $bad = @{}
+    foreach ($id in @($BadSignals)) { if (-not [string]::IsNullOrEmpty($id)) { $bad[$id] = $true } }
+
+    # A signal that is no longer bad is armed again.
+    foreach ($id in @($State.Signals.Keys)) {
+        if (-not $bad.ContainsKey($id)) { $State.Signals.Remove($id) }
+    }
+
+    $triggered = $false
+    foreach ($id in $bad.Keys) {
+        if (-not $State.Signals.ContainsKey($id)) {
+            # Armed: a new episode begins.
+            $State.Signals[$id] = @{ Armed = $false; Start = $Now }
+            $triggered = $true
+        }
+        elseif (($Now - $State.Signals[$id].Start).TotalSeconds -le $MaxEpisodeSeconds) {
+            $triggered = $true
+        }
+    }
+    if ($triggered) {
+        $State.HasTrigger = $true
+        $State.LastTrigger = $Now
+    }
+    if (-not $State.HasTrigger) { return $false }
+    return [bool](($Now - $State.LastTrigger).TotalSeconds -le $HoldSeconds)
+}
+
+function Get-WorkerPerfTriggerSignals {
+    param($Sample, $Thresholds, [int]$LogicalProcessors, [double]$PhysicalMemoryMB)
+
+    $host_ = Get-WorkerPerfHostSignals -Tick $Sample -LogicalProcessors $LogicalProcessors -PhysicalMemoryMB $PhysicalMemoryMB
+    $maxOf = {
+        param($Items, [string[]]$Fields, [double]$MinOps)
+        $max = [double]::NaN
+        foreach ($item in @($Items)) {
+            if ($null -eq $item) { continue }
+            if ($MinOps -gt 0 -and (([double]$item.ReadOps + [double]$item.WriteOps) -lt $MinOps)) { continue }
+            foreach ($f in $Fields) {
+                $v = $item.$f
+                if ($null -eq $v) { continue }
+                $d = [double]$v
+                if ([double]::IsNaN($d)) { continue }
+                if ([double]::IsNaN($max) -or $d -gt $max) { $max = $d }
+            }
+        }
+        return $max
+    }
+
+    foreach ($id in @($Thresholds.Keys)) {
+        $th = $Thresholds[$id]
+        if (-not [bool]$th.trigger) { continue }
+        $value = [double]::NaN
+        if ($host_.ContainsKey($id)) { $value = [double]$host_[$id] }
+        elseif ($id -eq 'input.session') { $value = & $maxOf $Sample.InputSessions @('DelayMs') 0 }
+        elseif ($id -eq 'disk.latency') { $value = & $maxOf $Sample.Volumes @('ReadLatMs', 'WriteLatMs') ([double]$th.minOps) }
+        elseif ($id -eq 'smb.latency') { $value = & $maxOf $Sample.Shares @('ReadLatMs', 'WriteLatMs') ([double]$th.minOps) }
+        $status = Get-WorkerPerfStatus $value $th
+        if ($null -ne $status -and $status -ge 1) { $id }
+    }
+}
+
+function Get-WorkerPerfSnapshotDue {
+    param([datetime]$Now, [datetime]$NextRegular, [datetime]$LastSnapshot, [bool]$BurstActive, [int]$BurstIntervalSeconds = 5)
+
+    if ($Now -ge $NextRegular) { return 'regular' }
+    if ($BurstActive -and (($Now - $LastSnapshot).TotalSeconds -ge $BurstIntervalSeconds)) { return 'burst' }
+    return 'none'
+}
+
+function Get-WorkerPerfNextTick {
+    param([datetime]$Scheduled, [datetime]$Now, [double]$IntervalSeconds)
+
+    $next = $Scheduled.AddSeconds($IntervalSeconds)
+    if ($next -gt $Now) { return @{ Next = $next; Skipped = 0 } }
+    $k = [int][Math]::Floor(($Now - $Scheduled).TotalSeconds / $IntervalSeconds) + 1
+    return @{ Next = $Scheduled.AddSeconds($k * $IntervalSeconds); Skipped = [int]($k - 1) }
+}
+
+function Test-WorkerPerfGuard {
+    param([double]$FreeMB, [double]$SizeMB, [double]$MaxSizeMB, [ValidateSet('start', 'run')][string]$Phase)
+
+    if ($FreeMB -lt 200) { return 'diskspace' }
+    if ($Phase -eq 'start' -and $FreeMB -lt 1024) {
+        Write-Warning ('Nur noch {0} MB Speicherplatz frei (unter 1024 MB).' -f [Math]::Round($FreeMB))
+    }
+    if ($SizeMB -ge $MaxSizeMB) { return 'maxsize' }
+    return $null
+}
+
+function ConvertTo-WorkerPerfFastRows {
+    param($Sample, [int]$T, [double]$ElapsedSec, [bool]$Burst, [double]$CollectMs)
+
+    $n = { param($v, [int]$d) Format-WorkerPerfNumber $v $d }
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $burstFlag = $(if ($Burst) { 1 } else { 0 })
+
+    $tick = (@(
+            $T, $Sample.Time.ToString('o', $inv), (& $n $ElapsedSec 3), (& $n $Sample.CpuPct 2), (& $n $Sample.ProcQueue 0),
+            (& $n $Sample.StealPct 2), (& $n $Sample.MemAvailMB 0), (& $n $Sample.MemCommittedMB 0), (& $n $Sample.MemCommitLimitMB 0),
+            (& $n $Sample.PagesInPerSec 1), (& $n $Sample.DiskReadBps 0), (& $n $Sample.DiskWriteBps 0),
+            (& $n $Sample.DiskReadIops 1), (& $n $Sample.DiskWriteIops 1), (& $n $Sample.DiskQueue 0),
+            (& $n $Sample.NetRecvBps 0), (& $n $Sample.NetSentBps 0), $burstFlag, (& $n $CollectMs 0)) -join ',')
+
+    $volumes = [System.Collections.Generic.List[string]]::new()
+    foreach ($v in @($Sample.Volumes)) {
+        if ($null -eq $v) { continue }
+        if (([double]$v.ReadOps + [double]$v.WriteOps) -le 0) { continue }
+        $volumes.Add((@($T, (Format-WorkerPerfCsvText ([string]$v.Volume)), (Format-WorkerPerfCsvText ([string]$v.Kind)),
+                    (& $n $v.SessionId 0), (Format-WorkerPerfCsvText ([string]$v.Backing)), (& $n $v.ReadLatMs 2), (& $n $v.WriteLatMs 2),
+                    (& $n $v.ReadOps 0), (& $n $v.WriteOps 0), (& $n $v.ReadBps 0), (& $n $v.WriteBps 0), (& $n $v.Queue 0)) -join ','))
+    }
+
+    $shares = [System.Collections.Generic.List[string]]::new()
+    foreach ($s in @($Sample.Shares)) {
+        if ($null -eq $s) { continue }
+        if (([double]$s.ReadOps + [double]$s.WriteOps) -le 0) { continue }
+        $shares.Add((@($T, (Format-WorkerPerfCsvText ([string]$s.Share)), (& $n $s.ReadLatMs 2), (& $n $s.WriteLatMs 2),
+                    (& $n $s.ReadOps 0), (& $n $s.WriteOps 0), (& $n $s.ReadBps 0), (& $n $s.WriteBps 0)) -join ','))
+    }
+
+    $sessions = [System.Collections.Generic.List[string]]::new()
+    foreach ($i in @($Sample.InputSessions)) {
+        if ($null -eq $i -or $null -eq $i.DelayMs) { continue }
+        if ([double]$i.DelayMs -le 0) { continue }
+        $sessions.Add((@($T, (& $n $i.SessionId 0), (& $n $i.DelayMs 0)) -join ','))
+    }
+
+    $procs = [System.Collections.Generic.List[string]]::new()
+    foreach ($p in @($Sample.InputProcesses)) {
+        if ($null -eq $p -or $null -eq $p.DelayMs) { continue }
+        if ([double]$p.DelayMs -lt 50) { continue }
+        $procs.Add((@($T, (& $n $p.SessionId 0), (& $n $p.Pid 0), (Format-WorkerPerfCsvText ([string]$p.Name)), (& $n $p.DelayMs 0)) -join ','))
+    }
+
+    return @{ Tick = [string]$tick; Volumes = [string[]]$volumes.ToArray(); Shares = [string[]]$shares.ToArray()
+        InputSessions = [string[]]$sessions.ToArray(); InputProcesses = [string[]]$procs.ToArray() }
+}
+
+function New-WorkerPerfWriters {
+    param([string]$RunDir)
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    $writers = @{}
+    try {
+        foreach ($name in $script:WorkerPerfHeaders.Keys) {
+            $stream = New-Object System.IO.FileStream((Join-Path $RunDir $name), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            $w = New-Object System.IO.StreamWriter($stream, $encoding)
+            $w.AutoFlush = $true
+            $writers[$name] = $w
+            $w.WriteLine([string]$script:WorkerPerfHeaders[$name])
+        }
+    }
+    catch {
+        foreach ($w in $writers.Values) { $w.Dispose() }
+        throw
+    }
+    return $writers
+}
