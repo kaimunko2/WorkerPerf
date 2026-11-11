@@ -29,6 +29,7 @@ Describe 'Schwellwerte' {
     It 'kennt zwoelf Signale und Mindestaktivitaet nur bei Antwortzeiten' {
         $Th.Count | Should -Be 12
         $Th['disk.latency'].minOps | Should -Be 5; $Th['smb.latency'].minOps | Should -Be 5; $Th['cpu.host'].minOps | Should -Be 0
+        $Th['cpu.queue'].unit | Should -Be ''
     }
     It 'nennt den fehlerhaften Eintrag oder die Datei' {
         { Read-WorkerPerfThresholds (Write-Json 'a.json' ('{"thresholds":[' + ($Entry -f 'cpu.host', 95, 90, 'Faustregel') + ']}')) } | Should -Throw '*cpu.host*'

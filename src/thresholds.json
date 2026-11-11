@@ -17,7 +17,7 @@
     {
       "id": "cpu.queue",
       "label": "Prozessor-Warteschlange je CPU",
-      "unit": "–",
+      "unit": "",
       "direction": "high",
       "warn": 2,
       "crit": 5,
