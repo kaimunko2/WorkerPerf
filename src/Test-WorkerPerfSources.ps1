@@ -9,10 +9,15 @@
     The script only reads; it changes nothing on the system.
 
     Results are shown as a table and written as JSON to vda-probe_<yyyyMMdd-HHmmss>.json.
-    The file contains no names: user, domain, client and computer names and UNC server names
-    are masked in every text, endpoints are reported without host name or address, and neither
-    the file name nor the content carries the name of the worker. If the names to mask cannot
-    be determined, the script stops without writing a file.
+    Names are masked in every text of the file: user, domain, client and computer names, account
+    SIDs and UNC server names. Endpoints are reported without host name or address, and neither
+    the file name nor the content carries the name of the worker. The names are read at the
+    start, after every check and once more before the file is written, so a user who logs on
+    during the run is masked as well. If the names cannot be determined, or an active session
+    delivers no user name, the script stops without writing a file.
+    The masking knows the names of its sources and a few fixed patterns. It cannot recognise a
+    server name or address in free text, a display name or an organisation name: look through
+    the file before passing it on (docs/vda-probe/README.md).
 
     Performance counters are read through System.Diagnostics.PerformanceCounterCategory with
     English names (language neutral). For comparison the matching Win32_PerfRawData_* CIM
@@ -55,44 +60,98 @@ $ErrorActionPreference = 'Stop'
 
 #region ---------- masking --------------------------------------------------------------------
 
-function Hide-WorkerPerfName([string]$Text, [string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
-    # Replaces names (case-insensitive, whole names only, longest first): user names by <user>, computer names by
-    # <server>, client names by <client>, domain names by <domain>; UNC server names (at the start or inside a text)
-    # by <server>. Next to a masked user the domain part goes as well, known or not: <user>.<domain> as a folder
-    # name, <domain>\<user> and <user>@<domain>.
-    # Self-contained: the tests load this function alone.
-    if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $result = $Text
+function New-WorkerPerfNameMask([string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
+    # The lookup (name -> replacement) and the pattern for a set of names, built once and used for every text:
+    # building them per text costs several milliseconds with the names of a full worker.
     $token = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($n in @($Users)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<user>' } }
     foreach ($n in @($Computers)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<server>' } }
     foreach ($n in @($Clients)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<client>' } }
     foreach ($n in @($Domains)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<domain>' } }
+    $regex = $null
+    $evaluator = $null
     if ($token.Count -gt 0) {
-        # One pass with an alternation, so text that was already replaced is never matched again.
+        # One pass with an alternation (longest name first), so text that was already replaced is never matched again.
         $names = @($token.Keys | Sort-Object -Property { $_.Length } -Descending)
         $alternatives = ($names | ForEach-Object { [regex]::Escape($_) }) -join '|'
         $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
-        $evaluator = [System.Text.RegularExpressions.MatchEvaluator] { param($m) $token[$m.Value] }
-        $result = [regex]::Replace($result, $pattern, $evaluator, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $regex = New-Object System.Text.RegularExpressions.Regex ($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $evaluator = [System.Text.RegularExpressions.MatchEvaluator] { param($m) $token[$m.Value] }.GetNewClosure()
     }
+    return @{ Regex = $regex; Evaluator = $evaluator }
+}
+
+function Hide-WorkerPerfMaskedText([string]$Text, $Mask) {
+    # Replaces names (case-insensitive, whole names only): user names by <user>, computer names by <server>, client
+    # names by <client>, domain names by <domain>. Rules that need no list follow: account SIDs become <sid>, the
+    # name beside a SID and in a container file name becomes <user>, the domain part beside a masked user becomes
+    # <domain>, UNC server names (at the start or inside a text) become <server>.
+    # Masking a text twice gives the same text: the result is masked once more before it is written.
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $result = $Text
+    if ($null -ne $Mask.Regex) { $result = $Mask.Regex.Replace($result, $Mask.Evaluator) }
+    # account SIDs of domain and Entra ID accounts (well-known SIDs such as S-1-5-18 stay), then the user name that
+    # container folders carry beside the SID (<sid>_name, name_<sid>) and container files carry after their prefix
+    # (Profile_name.vhdx, ODFC_name.vhdx): these hold for users that are in no list.
+    $result = [regex]::Replace($result, '(?i)(?<![\p{L}\p{N}])S-1-(?:5-21|12-1)(?:-[0-9]+){3,4}(?![\p{L}\p{N}])', '<sid>')
+    $result = [regex]::Replace($result, '<sid>_[^\\/\s''"<>]+', '<sid>_<user>')
+    $result = [regex]::Replace($result, '[^\\/\s''"<>]+_<sid>', '<user>_<sid>')
+    $result = [regex]::Replace($result, '(?i)(?<=^|[\\/])(Profile|ODFC)_[^\\/\s''"<>]+?(\.vhdx?)(?![\p{L}\p{N}])', '${1}_<user>${2}')
     # the domain part beside a user: folder <user>.DOMAIN\ (profile stores), DOMAIN\<user>, <user>@domain
     $result = [regex]::Replace($result, '<user>\.[\p{L}\p{N}_-]+(?=[\\/])', '<user>.<domain>')
     $result = [regex]::Replace($result, '<user>@[\p{L}\p{N}][\p{L}\p{N}.-]*', '<user>@<domain>')
     $result = [regex]::Replace($result, '(?<![\p{L}\p{N}\\:._-])[\p{L}\p{N}_-]+\\<user>', '<domain>\<user>')
     # \\server\... at the start or after a non-word character (e.g. quoted in an error message);
-    # device paths such as \\?\Volume{...} and \\.\ are kept.
+    # device paths such as \\?\Volume{...} and \\.\ are kept, the long forms \\?\UNC\server\ and \Device\Mup\server\ are not.
     $result = [regex]::Replace($result, '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)[^\\\s''"]+', '\\<server>')
+    $result = [regex]::Replace($result, '(?i)(\\\\\?\\UNC\\)[^\\\s''"<>]+', '${1}<server>')
+    $result = [regex]::Replace($result, '(?i)(\\Device\\Mup\\)[^\\\s''"<>]+', '${1}<server>')
     return $result
 }
 
+function Hide-WorkerPerfName([string]$Text, [string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
+    # One text with one set of names (see Hide-WorkerPerfMaskedText for the rules). The probe itself keeps the
+    # pattern between texts (Hide-ProbeText).
+    return Hide-WorkerPerfMaskedText -Text $Text -Mask (New-WorkerPerfNameMask -Users $Users -Domains $Domains -Clients $Clients -Computers $Computers)
+}
+
+# The names to mask. They only grow while the probe runs (Add-ProbeMaskNames); the patterns are built from them on the
+# next text and kept until a name is added.
 $script:ProbeUsers = @()
 $script:ProbeDomains = @()
 $script:ProbeClients = @()
 $script:ProbeComputers = @()
+$script:ProbeMask = $null
+$script:ProbeMaskNoUsers = $null
+
+function Join-ProbeNames([string[]]$Known, [string[]]$More) {
+    # $Known plus every name of $More that is not among them yet (case-insensitive); empty names are dropped.
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $list = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($n in @($Known) + @($More)) {
+        if (-not [string]::IsNullOrEmpty($n) -and $seen.Add($n)) { $list.Add($n) }
+    }
+    return $list.ToArray()
+}
+
+function Add-ProbeMaskNames([string[]]$Users = @(), [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
+    # Adds names to the lists to mask and returns how many were new. A name stays in its list for the whole run, so
+    # a user who logged off meanwhile is still masked.
+    $before = @($script:ProbeUsers).Count + @($script:ProbeDomains).Count + @($script:ProbeClients).Count + @($script:ProbeComputers).Count
+    $script:ProbeUsers = @(Join-ProbeNames $script:ProbeUsers $Users)
+    $script:ProbeDomains = @(Join-ProbeNames $script:ProbeDomains $Domains)
+    $script:ProbeClients = @(Join-ProbeNames $script:ProbeClients $Clients)
+    $script:ProbeComputers = @(Join-ProbeNames $script:ProbeComputers $Computers)
+    $added = @($script:ProbeUsers).Count + @($script:ProbeDomains).Count + @($script:ProbeClients).Count + @($script:ProbeComputers).Count - $before
+    if ($added -gt 0) { $script:ProbeMask = $null; $script:ProbeMaskNoUsers = $null }
+    return $added
+}
 
 function Hide-ProbeText([string]$Text) {
-    return Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    if ($null -eq $script:ProbeMask) {
+        $script:ProbeMask = New-WorkerPerfNameMask -Users $script:ProbeUsers -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    }
+    return Hide-WorkerPerfMaskedText -Text $Text -Mask $script:ProbeMask
 }
 
 function Protect-ProbeValue($Value) {
@@ -122,8 +181,11 @@ function Hide-ProbeShareName([string]$Name) {
 function Test-ProbeUserInText([string]$Text) {
     # True when a known user name occurs in $Text (same matching rules as the masking).
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    $with = Hide-WorkerPerfName -Text $Text -Users $script:ProbeUsers -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
-    $without = Hide-WorkerPerfName -Text $Text -Users @() -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    $with = Hide-ProbeText $Text
+    if ($null -eq $script:ProbeMaskNoUsers) {
+        $script:ProbeMaskNoUsers = New-WorkerPerfNameMask -Users @() -Domains $script:ProbeDomains -Clients $script:ProbeClients -Computers $script:ProbeComputers
+    }
+    $without = Hide-WorkerPerfMaskedText -Text $Text -Mask $script:ProbeMaskNoUsers
     return $with -ne $without
 }
 
@@ -166,15 +228,68 @@ function Get-ProbeMaskDomains([string[]]$SessionDomains, [string]$UserDomain, [s
 }
 
 function Get-ProbeMaskGap($Sessions, [bool]$WtsOk, [bool]$ProfilesOk) {
-    # Empty when the list of user names to mask is complete enough to write a result, else the reason (German).
-    # The profile folders are the second source: with them, a session without a user name is covered.
-    if ($ProfilesOk) { return '' }
-    if (-not $WtsOk) { return 'Benutzernamen fuer die Maskierung nicht ermittelbar (weder ueber die WTS-Schnittstelle noch ueber die Benutzerprofile)' }
+    # Empty when the names to mask are known well enough to write a result, else the reason (German).
+    # An active session without a user name stops the result whatever the profile folders say: they do not prove
+    # that the name of this user is among them (temporary profile, no local folder, folder named differently).
+    if (-not $WtsOk -and -not $ProfilesOk) {
+        return 'Benutzernamen fuer die Maskierung nicht ermittelbar (weder ueber die WTS-Schnittstelle noch ueber die Benutzerprofile)'
+    }
     $unnamed = @(@($Sessions) | Where-Object { $null -ne $_ -and [string]$_.State -eq 'Active' -and [string]::IsNullOrEmpty([string]$_.User) })
     if ($unnamed.Count -gt 0) {
-        return ('{0} aktive Sitzung(en) ohne Benutzernamen, und die Benutzerprofile sind nicht lesbar: die Namen dieser Benutzer liessen sich nicht maskieren' -f $unnamed.Count)
+        return ('{0} aktive Sitzung(en) ohne Benutzernamen: die Namen dieser Benutzer liessen sich nicht maskieren. Bitte das Skript in einer administrativen Konsole starten' -f $unnamed.Count)
     }
     return ''
+}
+
+function Read-ProbeNames([scriptblock]$ReadSessions, [scriptblock]$ReadProfiles) {
+    # One reading of the names to mask: the sessions (WTS) and, independent of WTS, the folders of the local user
+    # profiles. Every name found joins the lists. Gap says why no result may be written (empty: nothing in the way).
+    # The probe reads at its start and once more before it writes: sessions come and go while it runs.
+    $r = @{ Sessions = @(); WtsError = ''; ProfilePaths = @(); ProfileError = ''; Gap = '' }
+    $wtsFailure = $null
+    $profileFailure = $null
+    try { $r.Sessions = @(& $ReadSessions) } catch { $wtsFailure = $_ }
+    try { $r.ProfilePaths = @(& $ReadProfiles | ForEach-Object { [string]$_ }) } catch { $profileFailure = $_ }
+    $null = Add-ProbeMaskNames -Users (Get-ProbeMaskNames -SessionUsers @($r.Sessions | ForEach-Object { [string]$_.User }) -ProfilePaths $r.ProfilePaths -CurrentUser '') `
+        -Domains (Get-ProbeMaskDomains -SessionDomains @($r.Sessions | ForEach-Object { [string]$_.Domain }) -UserDomain '' -UserDnsDomain '' -ProfilePaths $r.ProfilePaths) `
+        -Clients @($r.Sessions | ForEach-Object { [string]$_.ClientName })
+    # the error texts last, so that they are masked with every name known by now
+    if ($null -ne $wtsFailure) { $r.WtsError = Get-ProbeErrorText $wtsFailure; if ($r.WtsError -eq '') { $r.WtsError = 'unbekannter Fehler' } }
+    if ($null -ne $profileFailure) { $r.ProfileError = Get-ProbeErrorText $profileFailure; if ($r.ProfileError -eq '') { $r.ProfileError = 'unbekannter Fehler' } }
+    $r.Gap = Get-ProbeMaskGap -Sessions $r.Sessions -WtsOk ($null -eq $wtsFailure) -ProfilesOk ($null -eq $profileFailure)
+    return $r
+}
+
+function Update-ProbeMaskFromSessions([scriptblock]$ReadSessions) {
+    # Adds the user, domain and client names of the sessions that exist now. A reading that fails changes nothing:
+    # the reading before the result is written decides whether a file may be written.
+    try { $now = @(& $ReadSessions) } catch { return }
+    $null = Add-ProbeMaskNames -Users @($now | ForEach-Object { [string]$_.User }) -Domains @($now | ForEach-Object { [string]$_.Domain }) `
+        -Clients @($now | ForEach-Object { [string]$_.ClientName })
+}
+
+function Invoke-ProbeCatalogue($Catalogue, $Ctx, [scriptblock]$ReadSessions) {
+    # Runs every check on its own; a failing check is reported and the others continue. After each check the sessions
+    # are read again, so that a user who logged on while it ran is in the lists before the next check and before
+    # the result is written.
+    $results = New-Object 'System.Collections.Generic.List[object]'
+    $n = 0
+    foreach ($c in @($Catalogue)) {
+        $n++
+        Write-Host ('[{0,2}/{1}] {2} - {3}' -f $n, @($Catalogue).Count, $c.Id, $c.Title)
+        $r = [ordered]@{ Id = $c.Id; Signals = [string[]]$c.Signals; Title = $c.Title; Ok = $false; Detail = ''; Data = $null }
+        try {
+            $out = @(& $c.Run $Ctx $c)[-1]
+            if ($null -eq $out.Ok) { $r.Ok = $null } else { $r.Ok = [bool]$out.Ok }   # $null = skipped
+            $r.Detail = [string]$out.Detail
+            $r.Data = $out.Data
+        }
+        catch { $r.Detail = Get-ProbeErrorText $_ }
+        Update-ProbeMaskFromSessions $ReadSessions
+        $r.Detail = Hide-ProbeText $r.Detail
+        $results.Add($r)
+    }
+    return $results.ToArray()                                  # plain output: callers wrap in @(...)
 }
 
 function Get-ProbeEndpointErrorClass($Exception) {
@@ -1081,7 +1196,7 @@ else {
 }
 
 $ctx = @{
-    Users = @(); Sessions = @(); WtsCompiled = $false; WtsError = ''
+    Sessions = @(); WtsCompiled = $false; WtsError = ''
     Processes = $null; Services = $null; FileInfo = @{}
     CimPerfClasses = $null; CimPerfError = ''
     InputSeconds = $InputSeconds
@@ -1090,38 +1205,38 @@ $ctx = @{
 }
 if ($EndpointFile) { $ctx.EndpointFile = (Resolve-Path -LiteralPath $EndpointFile).ProviderPath }
 
-# Sessions first: their user names are needed to mask every later result.
-try {
-    if (-not ('WorkerPerfProbe.Wts' -as [type])) { Add-Type -TypeDefinition $script:WtsSource -Language CSharp }
-    $ctx.WtsCompiled = $true
-    $ctx.Sessions = @([WorkerPerfProbe.Wts]::GetSessions())
+# The two sources of the names to mask: the sessions, and independent of WTS the folders of all local (non-special)
+# user profiles.
+# The WTS helper is compiled once; when that fails, every reading of the sessions reports the same error.
+$wtsCompileError = $null
+try { if (-not ('WorkerPerfProbe.Wts' -as [type])) { Add-Type -TypeDefinition $script:WtsSource -Language CSharp } }
+catch { $wtsCompileError = $_ }
+$readSessions = {
+    if ($null -ne $wtsCompileError) { throw $wtsCompileError }
+    [WorkerPerfProbe.Wts]::GetSessions()
 }
-catch { $ctx.WtsError = Get-ProbeErrorText $_ }
-# Second source independent of WTS: the folders of all local (non-special) user profiles.
-$profilePaths = @()
-try {
-    $profilePaths = @(Get-CimInstance -ClassName Win32_UserProfile -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop |
-            Where-Object { -not (Get-Prop $_ 'Special') } | ForEach-Object { [string](Get-Prop $_ 'LocalPath') })
+$readProfiles = {
+    Get-CimInstance -ClassName Win32_UserProfile -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop |
+        Where-Object { -not (Get-Prop $_ 'Special') } | ForEach-Object { [string](Get-Prop $_ 'LocalPath') }
 }
-catch { $ctx.ProfileError = Get-ProbeErrorText $_ }
-$ctx.ProfileNameCount = $profilePaths.Count
-$wtsOk = $ctx.WtsCompiled -and [string]::IsNullOrEmpty($ctx.WtsError)
-# Fail closed: without the user names (no list at all, or an active session whose name neither source supplies) the
-# result could leak them, so nothing is written.
-$gap = Get-ProbeMaskGap -Sessions $ctx.Sessions -WtsOk $wtsOk -ProfilesOk ([string]::IsNullOrEmpty($ctx.ProfileError))
-if ($gap) {
-    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben.' -f $gap, $ctx.WtsError, $ctx.ProfileError)
-}
-$sessionUsers = @($ctx.Sessions | ForEach-Object { [string]$_.User })
-$script:ProbeUsers = @(Get-ProbeMaskNames -SessionUsers $sessionUsers -ProfilePaths $profilePaths -CurrentUser $env:USERNAME)
-$script:ProbeDomains = @(Get-ProbeMaskDomains -SessionDomains @($ctx.Sessions | ForEach-Object { [string]$_.Domain }) -UserDomain $env:USERDOMAIN `
-        -UserDnsDomain $env:USERDNSDOMAIN -ProfilePaths $profilePaths)
-$script:ProbeClients = @($ctx.Sessions | ForEach-Object { [string]$_.ClientName } | Where-Object { $_ -ne '' } | Sort-Object -Unique)
-# the worker's own name: the NetBIOS name and the host name (they differ when the name is longer than 15 characters)
+# the names that do not change during the run: the current user, and the worker's own NetBIOS and host name (they
+# differ when the name is longer than 15 characters)
 $hostName = ''
 try { $hostName = [System.Net.Dns]::GetHostName() } catch { $hostName = '' }
-$script:ProbeComputers = @(@($env:COMPUTERNAME, $hostName) | Where-Object { -not [string]::IsNullOrEmpty($_) } | Sort-Object -Unique)
-$ctx.Users = $script:ProbeUsers
+$null = Add-ProbeMaskNames -Users @($env:USERNAME) -Domains @($env:USERDOMAIN, $env:USERDNSDOMAIN) -Computers @($env:COMPUTERNAME, $hostName)
+
+# Sessions first: their user names are needed to mask every later result.
+$first = Read-ProbeNames $readSessions $readProfiles
+$ctx.Sessions = @($first.Sessions)
+$ctx.WtsCompiled = [bool]('WorkerPerfProbe.Wts' -as [type])
+$ctx.WtsError = $first.WtsError
+$ctx.ProfileNameCount = @($first.ProfilePaths).Count
+$ctx.ProfileError = $first.ProfileError
+# Fail closed: without the user names (no list at all, or an active session without a name) the result could leak
+# them, so nothing is measured and nothing is written.
+if ($first.Gap) {
+    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben.' -f $first.Gap, $first.WtsError, $first.ProfileError)
+}
 
 $isElevated = $false
 try {
@@ -1138,21 +1253,14 @@ try {
 }
 catch { $os = 'unbekannt' }
 
-$results = New-Object 'System.Collections.Generic.List[object]'
-$n = 0
-foreach ($c in $script:Catalogue) {
-    $n++
-    Write-Host ('[{0,2}/{1}] {2} - {3}' -f $n, $script:Catalogue.Count, $c.Id, $c.Title)
-    $r = [ordered]@{ Id = $c.Id; Signals = [string[]]$c.Signals; Title = $c.Title; Ok = $false; Detail = ''; Data = $null }
-    try {
-        $out = @(& $c.Run $ctx $c)[-1]
-        if ($null -eq $out.Ok) { $r.Ok = $null } else { $r.Ok = [bool]$out.Ok }   # $null = skipped
-        $r.Detail = [string]$out.Detail
-        $r.Data = $out.Data
-    }
-    catch { $r.Detail = Get-ProbeErrorText $_ }
-    $r.Detail = Hide-ProbeText $r.Detail
-    $results.Add($r)
+$results = @(Invoke-ProbeCatalogue $script:Catalogue $ctx $readSessions)
+
+# Sessions and profiles once more: whoever logged on since the start is masked as well, and an active session
+# without a user name stops the result here like at the start.
+Write-Host 'Namen werden erneut gelesen, das Ergebnis wird maskiert und geschrieben ...'
+$last = Read-ProbeNames $readSessions $readProfiles
+if ($last.Gap) {
+    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben; bitte das Skript erneut starten.' -f $last.Gap, $last.WtsError, $last.ProfileError)
 }
 
 # No name of the worker in the result: several workers are told apart by the time stamp of the file.
@@ -1163,13 +1271,14 @@ $report = [ordered]@{
     Culture       = (Get-Culture).Name
     UICulture     = (Get-UICulture).Name
     IsElevated    = $isElevated
-    Checks        = $results.ToArray()
+    Checks        = $results
 }
 $report = Protect-ProbeValue $report
 $json = ConvertTo-Json -InputObject $report -Depth 16
 [System.IO.File]::WriteAllText($target, $json, (New-Object System.Text.UTF8Encoding $false))
 
-$results | ForEach-Object {
+# the table shows what the file holds
+$report.Checks | ForEach-Object {
     $shownOk = $_.Ok
     if ($null -eq $shownOk) { $shownOk = 'uebersprungen' }
     [pscustomobject]@{ Id = $_.Id; Ok = $shownOk; Detail = $_.Detail }

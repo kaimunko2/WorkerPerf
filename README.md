@@ -6,8 +6,9 @@
 >   Windows-Worker gibt es noch nicht; ohne `-Simulate` bricht `Start-WorkerPerfCapture.ps1` mit einer Meldung ab.
 > - Die Windows-Datenquelle wird geschrieben, sobald das Ergebnis des Quellen-Prüfskripts von einem echten VDA
 >   vorliegt: Es zeigt, welche Zähler, Klassen und Namen dort tatsächlich vorhanden sind.
-> - **Schritt 1 für den Auftraggeber** ist deshalb dieses Prüfskript. Es liest nur, dauert zwei bis drei Minuten und
->   schreibt eine JSON-Datei ohne Benutzer-, Client- oder Servernamen. Aufruf in einer administrativen Konsole auf dem Worker:
+> - **Schritt 1 für den Auftraggeber** ist deshalb dieses Prüfskript. Es liest nur, dauert einige Minuten und
+>   schreibt eine JSON-Datei, in der Benutzer-, Client- und Servernamen maskiert sind; die Datei vor der Weitergabe
+>   bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Worker:
 >
 >   ```powershell
 >   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources.ps1 -OutFile C:\Temp
@@ -269,7 +270,9 @@ Die Aufzeichnung enthält personenbezogene Daten (Benutzernamen, Clientnamen, ge
 und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf. die Beteiligung
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
-Das Ergebnis des Prüfskripts enthält keine Benutzer-, Client- oder Servernamen und darf unter
+Im Ergebnis des Prüfskripts sind Benutzer-, Domänen-, Client- und Servernamen sowie Konten-SIDs maskiert.
+Namen in freiem Text kann das Skript nicht sicher erkennen; nach einer Durchsicht
+([docs/vda-probe/README.md](docs/vda-probe/README.md#vor-der-weitergabe-durchsehen)) darf die Datei unter
 `docs/vda-probe/` abgelegt werden.
 
 ## Offene Punkte

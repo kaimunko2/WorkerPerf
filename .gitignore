@@ -12,4 +12,4 @@ expected.json
 *.html
 !src/report-template.html
 src/endpoints.json
-# Ergebnisse des Quellen-Pruefskripts (docs/vda-probe/vda-probe_*.json) enthalten keine Namen und werden eingecheckt
+# Ergebnisse des Quellen-Pruefskripts (docs/vda-probe/vda-probe_*.json) werden nach einer Durchsicht eingecheckt: Namen sind darin maskiert
