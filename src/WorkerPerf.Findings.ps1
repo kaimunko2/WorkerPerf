@@ -231,7 +231,7 @@ function Join-WorkerPerfIncidents {
             if (-not ($c.StartMs -le $r.EndMs -and $c.EndMs -ge $r.StartMs)) { continue }
             $cf = $c.List[0]
             $explains = ($workerOrder -contains $cf.Resource) -and ([int]$cf.Severity -ge 2)
-            $context.Add(@{ IncidentId = [int]$c.Id; SignalId = $cf.SignalId; Label = $cf.Label; Severity = [int]$cf.Severity; Explains = $explains })
+            $context.Add(@{ IncidentId = [int]$c.Id; SignalId = $cf.SignalId; Label = $cf.Label; Severity = [int]$cf.Severity; Explains = $explains; Resource = [string]$cf.Resource })
             if ($explains) { $explainers.Add($cf) }
         }
         $workerFindings = @($fs | Where-Object { $workerOrder -contains $_.Resource })
@@ -267,6 +267,9 @@ function Join-WorkerPerfIncidents {
 # ---------------------------------------------------------------------------------------------
 # Incident details (who was affected, who contributed) and plain-language text
 # ---------------------------------------------------------------------------------------------
+
+# Minimum share (%) of a security process in a contributor ranking to count as a companion
+$script:WorkerPerfCompanionMinPct = 10
 
 function Format-WorkerPerfNumber([double]$Value) {
     # German number: below 10 one decimal unless whole, else whole; decimal comma, independent of the installed culture.
@@ -518,6 +521,13 @@ function Add-WorkerPerfIncidentDetail {
     for ($p = 0; $p -lt $Model.Snap.TimeMs.Length; $p++) { if (-not $inIncident.ContainsKey($p)) { $baseList.Add($p) } }
     $baseSnaps = $baseList.ToArray()
 
+    # ticks inside a non-chronic incident do not count for chronic incidents
+    $shortTicks = @{}
+    foreach ($inc in @($Incidents)) {
+        if ($inc.Chronic) { continue }
+        foreach ($i in @(Get-WorkerPerfWindowTicks $Model ([long]$inc.StartMs) ([long]$inc.EndMs))) { $shortTicks[$i] = $true }
+    }
+
     $inputTh = $null; if ($Thresholds.Contains('input.session')) { $inputTh = $Thresholds['input.session'] }
     $icaWarn = [double]::NaN; if ($Thresholds.Contains('ica.rtt')) { $icaWarn = [double]$Thresholds['ica.rtt'].warn }
 
@@ -529,10 +539,16 @@ function Add-WorkerPerfIncidentDetail {
 
         # affected sessions: input delay at or above the "auffaellig" threshold
         $affected = New-Object System.Collections.Generic.List[object]
+        $ownSessions = $null
+        if ($inc.Type -eq 'umfeld') {
+            $ownSessions = @(@($inc.Findings) | Where-Object { $_.Scope -eq 'session' } | ForEach-Object { [int]$_.SessionIndex })
+        }
         if ($null -ne $inputTh) {
             foreach ($s in @($Model.Sessions)) {
+                if ($null -ne $ownSessions -and $ownSessions -notcontains [int]$s.Index) { continue }
                 $peak = [double]::NaN
                 foreach ($i in $ticks) {
+                    if ($inc.Chronic -and $shortTicks.ContainsKey($i)) { continue }
                     $v = [double]$s.Input[$i]
                     $st = Get-WorkerPerfStatus $v $inputTh
                     if ($null -ne $st -and $st -ge 1 -and ([double]::IsNaN($peak) -or $v -gt $peak)) { $peak = $v }
@@ -588,7 +604,7 @@ function Add-WorkerPerfIncidentDetail {
         $companion = $null
         $companionOrder = @(@($resources | Where-Object { $_ -eq $inc.Lead }) + @($resources | Where-Object { $_ -ne $inc.Lead }))
         foreach ($r in $companionOrder) {
-            $sec = @($contrib[$r].Processes | Where-Object { $_.Role -eq 'Sicherheit' })
+            $sec = @($contrib[$r].Processes | Where-Object { $_.Role -eq 'Sicherheit' -and $_.SharePct -ge $script:WorkerPerfCompanionMinPct })
             if ($sec.Count -eq 0) { continue }
             $byLabel = @{}
             foreach ($x in $sec) { if (-not $byLabel.ContainsKey($x.RoleLabel)) { $byLabel[$x.RoleLabel] = 0.0 }; $byLabel[$x.RoleLabel] += $x.SharePct }
@@ -694,25 +710,32 @@ function Get-WorkerPerfIncidentText {
         $unit = Get-WorkerPerfThresholdField $Thresholds ([string]$lead.SignalId) 'unit'
         $ideal = Get-WorkerPerfThresholdField $Thresholds ([string]$lead.SignalId) 'ideal'
         $label = [string]$lead.Label
+        if ($lead.Resource -eq 'input' -or $lead.Resource -eq 'network') { $label = Get-WorkerPerfThresholdField $Thresholds ([string]$lead.SignalId) 'label' }
     }
     $text = ''
     $affectedCount = @($Incident.Affected).Count
     $affectedText = $Texts['affected.none']
     if ($affectedCount -eq 1) { $affectedText = $Texts['affected.one'] }
     elseif ($affectedCount -gt 1) { $affectedText = & $fmt 'affected.many' @($affectedCount) }
+    elseif ($Incident.Chronic) { $affectedText = '' }
 
     $headLabel = ''
+    $ctxItem = {
+        param($Entry)
+        $thLabel = Get-WorkerPerfThresholdField $Thresholds ([string]$Entry.SignalId) 'label'
+        if ($thLabel -eq '' -or [string]$Entry.Label -eq '' -or [string]$Entry.Label -eq $thLabel) { if ($thLabel -eq '') { return [string]$Entry.Label }; return $thLabel }
+        return (& $fmt 'chronic.item' @($thLabel, [string]$Entry.Label))
+    }
     if ($Incident.Type -eq 'engpass' -and $null -ne $lead) {
         $peak = Format-WorkerPerfValue ([double]$lead.PeakValue) $unit
         $ownLead = $false
         if ($null -ne $Incident.Lead) { $ownLead = (@(@($Incident.Findings) | Where-Object { $_.Resource -eq $Incident.Lead }).Count -gt 0) }
         if ($null -ne $Incident.Lead -and -not $ownLead) {
             # the lead resource comes from a chronic state only: name that state in the head
-            $prefix = @{ cpu = 'cpu.'; memory = 'mem.'; disk = 'disk.'; share = 'smb.' }[[string]$Incident.Lead]
             $expl = @(@($Incident.ChronicContext) | Where-Object { $_.Explains })
-            $match = @($expl | Where-Object { $null -ne $prefix -and ([string]$_.SignalId).StartsWith($prefix) })
+            $match = @($expl | Where-Object { $_ -is [hashtable] -and $_.ContainsKey('Resource') -and $_['Resource'] -eq $Incident.Lead })
             if ($match.Count -eq 0) { $match = $expl }
-            if ($match.Count -gt 0) { $headLabel = [string]@($match | Sort-Object -Property @{ Expression = { [int]$_.Severity }; Descending = $true })[0].Label }
+            if ($match.Count -gt 0) { $headLabel = & $ctxItem @($match | Sort-Object -Property @{ Expression = { [int]$_.Severity }; Descending = $true })[0] }
             $text = & $fmt 'engpass.chronic' @($t0, $t1, $Texts['resource.' + [string]$Incident.Lead], $headLabel, $label, $peak, $ideal)
         }
         else {
@@ -762,7 +785,7 @@ function Get-WorkerPerfIncidentText {
         }
     }
     if ($Incident.Chronic) { $text = $Texts['chronic.prefix'] + $text }
-    $ctx = @(@($Incident.ChronicContext) | ForEach-Object { [string]$_.Label } | Where-Object { $headLabel -eq '' -or $_ -ne $headLabel })
+    $ctx = @(@($Incident.ChronicContext) | ForEach-Object { & $ctxItem $_ } | Where-Object { $headLabel -eq '' -or $_ -ne $headLabel })
     if ($ctx.Count -gt 0) { $text += & $fmt 'chronic.context' @(($ctx -join ', ')) }
     return $text
 }

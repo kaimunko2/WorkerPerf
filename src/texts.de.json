@@ -15,5 +15,6 @@
   "ohne.process": " Höchste Verzögerung in {0} ({1}).",
   "ohne.cause": " Die Ursache liegt außerhalb des Workers oder in der Anwendung selbst (Datenbank, Proxy, Netz).",
   "endpoint.context": " Gegenstelle {0}: {1}.", "chronic.context": " Dauerhaft erhöht: {0}.",
+  "chronic.item": "{0} – {1}",
   "probe.error": "Verbindungsfehler", "user.system": "Dienste/System", "user.unknown": "unbekannt"
 }

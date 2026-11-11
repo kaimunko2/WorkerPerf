@@ -29,7 +29,7 @@ Describe 'Join-WorkerPerfIncidents' {
     It 'laesst einen kritischen Dauerzustand als Erklaerung gelten' {
         $i = Join-Test (New-TestFinding cpu 0 2400 -Severity 2) (New-TestFinding input 1200 1202 -SessionIndex 3)
         $x = $i | Where-Object { -not $_.Chronic }
-        $x.Type | Should -Be 'engpass'; $x.Lead | Should -Be 'cpu'; $x.ChronicContext[0].Explains | Should -BeTrue
+        $x.Type | Should -Be 'engpass'; $x.Lead | Should -Be 'cpu'; $x.ChronicContext[0].Explains | Should -BeTrue; $x.ChronicContext[0].Resource | Should -Be 'cpu'
     }
     It 'fuehrt gleichzeitige Verzoegerungen mehrerer Sitzungen zusammen' {
         $i = Join-Test (New-TestFinding input 100 104 -SessionIndex 1) (New-TestFinding input 102 110 -SessionIndex 2)

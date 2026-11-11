@@ -112,3 +112,47 @@ Describe 'Get-WorkerPerfIncidentText' {
             'Begleiter: Microsoft Defender mit 29 % der CPU-Zeit; größter I/O-Erzeuger im Fenster: chrome.exe (user018). Scan-Ausschlüsse prüfen.')
     }
 }
+Describe 'Betroffene bei Dauerzustaenden und Umfeld' {
+    It 'zaehlt bei einem Dauerzustand im Umfeld nur Sitzungen mit eigenem Befund' {
+        $m = New-TestModel; $i = New-TestIncident 'network' 'ica.rtt' 225; $i.Type = 'umfeld'; $i.Lead = $null; $i.Chronic = $true
+        $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1; $i.StartMs = $T0; $i.EndMs = $T0 + 70000
+        Add-Detail $m $i
+        @($i.Affected).Count | Should -Be 0
+    }
+    It 'laesst bei einem Dauerzustand die Takte kurzer Vorfaelle aus' {
+        $m = New-TestModel; $short = New-TestIncident 'cpu' 'cpu.host' 97
+        $chr = New-TestIncident 'cpu' 'cpu.host' 80; $chr.Id = 2; $chr.Chronic = $true; $chr.StartMs = $T0; $chr.EndMs = $T0 + 70000
+        Add-WorkerPerfIncidentDetail -Incidents @($short, $chr) -Model $m -Thresholds $Th
+        @($short.Affected).Count | Should -Be 1; @($chr.Affected).Count | Should -Be 0
+        $text = Get-WorkerPerfIncidentText -Incident $chr -Model $m -Thresholds $Th -Texts $Texts
+        $text | Should -Not -Match 'Betroffen'; $text | Should -Not -Match 'Keine Sitzung'
+    }
+}
+Describe 'Signalnamen im Klartext' {
+    It 'nennt bei Netzstrecken die Bezeichnung des Schwellwerts statt der Sitzungsbezeichnung' {
+        $m = New-TestModel; $i = New-TestIncident 'network' 'ica.rtt' 225; $i.Type = 'umfeld'; $i.Lead = $null
+        $i.Findings[0].Label = 'user018 (#3)'; $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1; Add-Detail $m $i
+        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be '23:13:35–23:14:05: Netzstrecke von user018 auffällig (ICA Round Trip Spitze 225 ms, Soll unter 150 ms). Betrifft die Sitzung, nicht den Worker.'
+    }
+    It 'nennt dauerhaft erhoehte Signale mit Instanz nur, wenn die Bezeichnung abweicht' {
+        $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97
+        $i.ChronicContext = @(@{ IncidentId = 8; SignalId = 'cpu.host'; Label = 'CPU-Auslastung'; Severity = 1; Explains = $false }
+                              @{ IncidentId = 9; SignalId = 'disk.latency'; Label = 'Laufwerk D:'; Severity = 1; Explains = $false }); Add-Detail $m $i
+        $text = Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts
+        $text | Should -Match ([regex]::Escape(' Dauerhaft erhöht: CPU-Auslastung, ' + $Th['disk.latency'].label + ' – Laufwerk D:.') + '$')
+    }
+    It 'waehlt den erklaerenden Dauerzustand nach der Ressource' {
+        $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; $i.Type = 'engpass'; $i.Lead = 'profile'
+        $i.ChronicContext = @(@{ IncidentId = 8; SignalId = 'cpu.host'; Label = 'CPU-Auslastung'; Severity = 2; Explains = $true; Resource = 'cpu' }
+                              @{ IncidentId = 9; SignalId = 'disk.latency'; Label = 'Laufwerk D:'; Severity = 2; Explains = $true; Resource = 'profile' }); Add-Detail $m $i
+        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Match ([regex]::Escape('(' + $Th['disk.latency'].label + ' – Laufwerk D: dauerhaft'))
+    }
+}
+Describe 'Begleiter' {
+    It 'setzt bei einem Sicherheitsprozess unter 10 % keinen Begleiter' {
+        $m = New-TestModel; $m.Rows.CpuMs[5] = 100; $m.Rows.CpuMs[8] = 100
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Companion | Should -BeNullOrEmpty; $i.Security.TotalPct | Should -BeGreaterThan 0
+        $i.Contributors['cpu'].Processes[2].Role | Should -Be 'Sicherheit'
+    }
+}
