@@ -25,6 +25,9 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
         $chrome = $M.Apps | Where-Object Name -eq 'chrome.exe'
         $chrome.Instances | Should -Be 2; $chrome.Ws | Should -Be @(102400, 102400, 51200, 51200)
         $M.Pairs["$($A.Index)|$($chrome.Index)"].Instances | Should -Be 2
+        $M.Pairs["$($A.Index)|$($chrome.Index)"].Snaps | Should -Be 4                 # K1 bis P1, K2 ruht durchgehend
+        $notepad = $M.Apps | Where-Object Name -eq 'notepad.exe'
+        $M.Pairs["$($A.Index)|$($notepad.Index)"].Snaps | Should -Be 1                # K4 erst ab P3
     }
     It 'fuehrt Kennzahlen je Prozess' {
         $M.Proc[0].CpuMs | Should -Be 600; $M.Proc[0].WsMaxKB | Should -Be 204800; $M.Proc[0].FirstP | Should -Be 0; $M.Proc[0].LastP | Should -Be 3
@@ -51,6 +54,13 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
         $m = Import-TestRun 'cut' $Files @{ From = $Base.AddSeconds(11).LocalDateTime }
         $a = $m.Sessions | Where-Object User -eq 'alice'
         $m.Snap.N | Should -Be 2; $a.Ws | Should -Be @(153600, 266240); $a.CpuMs | Should -Be @(0, 140); $m.Proc[0].CpuMs | Should -Be 100
+    }
+    It 'zaehlt den Stand vor dem Zeitausschnitt nicht als Hoechstwert' {
+        $f = $Files.Clone()
+        $f['processes.csv'] = @('0,0,0,921600,921600,0,0,0,10,2', '3,0,0,51200,51200,0,0,0,10,2')
+        $m = Import-TestRun 'cutmax' $f @{ From = $Base.AddSeconds(15).LocalDateTime }
+        $m.Snap.N | Should -Be 1
+        $m.Proc[0].WsMaxKB | Should -Be 51200; $m.Proc[0].PrivMaxKB | Should -Be 51200
     }
     It 'uebergeht Zeilen jenseits des letzten vollstaendigen Schnappschusses' {        # Review Focus 3
         $f = $Files.Clone(); $f['processes.csv'] = @($Files['processes.csv']) + '4,0,999,1,1,0,0,0,1,1' + '4,0,12'; $f['procend.csv'] = @('2,1', '9,77')

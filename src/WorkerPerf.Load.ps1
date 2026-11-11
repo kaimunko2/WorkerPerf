@@ -616,6 +616,7 @@ function Import-WorkerPerfRun {
     $prS = New-Object int[] ($nK + 1); $prA = New-Object int[] ($nK + 1); $prInst = New-Object int[] ($nK + 1)
     $prCpu = New-Object double[] ($nK + 1); $prIo = New-Object double[] ($nK + 1)
     $prCur = New-Object double[] ($nK + 1); $prSince = New-Object int[] ($nK + 1); $prSum = New-Object double[] ($nK + 1); $prMax = New-Object double[] ($nK + 1)
+    $prAlive = New-Object int[] ($nK + 1); $prSnaps = New-Object int[] ($nK + 1)      # living processes; positions with at least one
     $rowStart = New-Object int[] ($nP + 1)
     $rowK = New-Object System.Collections.Generic.List[int]
     $rowCpu = New-Object System.Collections.Generic.List[double]
@@ -624,9 +625,9 @@ function Import-WorkerPerfRun {
     $totalCpuMs = 0.0
 
     # Called once per process when it first counts in the range (position $Pos): links session, application and pair
-    # and adds its current state to their sums.
+    # and adds its current state to their sums. $Carried: the state from before the range holds at $Pos (no row there).
     $attachProcess = {
-        param([int]$K, [int]$Pos)
+        param([int]$K, [int]$Pos, [bool]$Carried)
         $sid = $iSid[$K]
         $h = $sessBySnap[$Pos]
         if ($null -ne $h -and $h.ContainsKey($sid)) { $si = [int]$h[$sid].Index }
@@ -662,15 +663,17 @@ function Import-WorkerPerfRun {
         $pr = Resolve-WorkerPerfRole $Roles $name ([string]$iSvc[$K]) $sid
         $pRole[$K] = $pr.Role; $pRoleLabel[$K] = $pr.Label
         $pSess[$K] = $si; $pApp[$K] = $ai; $pPair[$K] = $pi
-        $pFirst[$K] = $Pos; $pWsSince[$K] = $Pos; $pWsMax[$K] = $pWs[$K]; $pPrivMax[$K] = $pPriv[$K]
+        $pFirst[$K] = $Pos; $pWsSince[$K] = $Pos
+        if ($Carried) { $pWsMax[$K] = $pWs[$K]; $pPrivMax[$K] = $pPriv[$K] }
         $sWs[$si] += $pWs[$K]; $sPriv[$si] += $pPriv[$K]; $sN[$si]++
         $aWs[$ai] += $pWs[$K]; $aPriv[$ai] += $pPriv[$K]; $aN[$ai]++
         if ($prSince[$pi] -lt $Pos) {
             $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi] }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
             $prSince[$pi] = $Pos
         }
-        $prCur[$pi] += $pWs[$K]
+        $prCur[$pi] += $pWs[$K]; $prAlive[$pi]++
     }
     # Called once per process when it ends at snapshot position $Pos (not counted there; -1 before the range).
     $endProcess = {
@@ -683,10 +686,11 @@ function Import-WorkerPerfRun {
         $aWs[$ai] -= $pWs[$K]; $aPriv[$ai] -= $pPriv[$K]; $aN[$ai]--
         if ($prSince[$pi] -lt $Pos) {
             $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi] }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
             $prSince[$pi] = $Pos
         }
-        $prCur[$pi] -= $pWs[$K]
+        $prCur[$pi] -= $pWs[$K]; $prAlive[$pi]--
         $pWsSum[$K] += $pWs[$K] * ($Pos - $pWsSince[$K])
         $pLast[$K] = $Pos - 1
     }
@@ -734,7 +738,7 @@ function Import-WorkerPerfRun {
                     foreach ($k in $alive) { if ($pState[$k] -eq 1) { $still.Add($k) } }
                     $alive = $still
                 }
-                if ($pos -eq 0) { foreach ($k in $alive) { if ($pState[$k] -eq 1 -and $pSess[$k] -lt 0) { & $attachProcess $k 0 } } }
+                if ($pos -eq 0) { foreach ($k in $alive) { if ($pState[$k] -eq 1 -and $pSess[$k] -lt 0) { & $attachProcess $k 0 $true } } }
                 if ($pos -ge 0) {
                     foreach ($si in $usedSess) { $sWsA[$si][$pos] = $sWs[$si]; $sPrivA[$si][$pos] = $sPriv[$si]; $sNA[$si][$pos] = $sN[$si] }
                     for ($ai = 0; $ai -lt $apps.Count; $ai++) { $aWsA[$ai][$pos] = $aWs[$ai]; $aPrivA[$ai][$pos] = $aPriv[$ai]; $aNA[$ai][$pos] = $aN[$ai] }
@@ -758,21 +762,22 @@ function Import-WorkerPerfRun {
             $pLastJ[$k] = $j
             $pos = $seqPos[$j]
             if ($pos -lt 0) { $pWs[$k] = $ws; $pPriv[$k] = $priv; continue }
-            if ($pSess[$k] -lt 0) { & $attachProcess $k $pos }
+            if ($pSess[$k] -lt 0) { & $attachProcess $k $pos $false }
             $si = $pSess[$k]; $ai = $pApp[$k]; $pi = $pPair[$k]
             $dWs = $ws - $pWs[$k]; $dPriv = $priv - $pPriv[$k]
             $sWs[$si] += $dWs; $sPriv[$si] += $dPriv; $aWs[$ai] += $dWs; $aPriv[$ai] += $dPriv
             if ($dWs -ne 0) {
                 if ($prSince[$pi] -lt $pos) {
                     $prSum[$pi] += $prCur[$pi] * ($pos - $prSince[$pi])
+                    if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $pos - $prSince[$pi] }
                     if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
                     $prSince[$pi] = $pos
                 }
                 $prCur[$pi] += $dWs
                 $pWsSum[$k] += $pWs[$k] * ($pos - $pWsSince[$k]); $pWsSince[$k] = $pos
                 $pWs[$k] = $ws
-                if ($ws -gt $pWsMax[$k]) { $pWsMax[$k] = $ws }
             }
+            if ($ws -gt $pWsMax[$k]) { $pWsMax[$k] = $ws }
             $pPriv[$k] = $priv
             if ($priv -gt $pPrivMax[$k]) { $pPrivMax[$k] = $priv }
             $pCpu[$k] += $cpu; $pIo[$k] += $io
@@ -810,9 +815,10 @@ function Import-WorkerPerfRun {
     for ($pi = 0; $pi -lt $pairKeys.Count; $pi++) {
         if ($prSince[$pi] -lt $nP) {
             $prSum[$pi] += $prCur[$pi] * ($nP - $prSince[$pi])
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $nP - $prSince[$pi] }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
         }
-        $pairs[$pairKeys[$pi]] = @{ S = $prS[$pi]; A = $prA[$pi]; Instances = $prInst[$pi]; CpuMs = $prCpu[$pi]; IoBytes = $prIo[$pi]; WsSumKB = $prSum[$pi]; WsMaxKB = $prMax[$pi] }
+        $pairs[$pairKeys[$pi]] = @{ S = $prS[$pi]; A = $prA[$pi]; Instances = $prInst[$pi]; CpuMs = $prCpu[$pi]; IoBytes = $prIo[$pi]; WsSumKB = $prSum[$pi]; WsMaxKB = $prMax[$pi]; Snaps = $prSnaps[$pi] }
     }
 
     # input delay per process: the process that had the PID at the snapshot of the tick
