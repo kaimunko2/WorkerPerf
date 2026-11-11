@@ -16,6 +16,8 @@
 >   ```
 >
 >   Anleitung: [docs/vda-probe/README.md](docs/vda-probe/README.md).
+> - Was die laufende Messung den Worker selbst kostet und woran man es ablesen kann:
+>   [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker).
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
 > - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Vorfällen](https://kaimunko2.github.io/WorkerPerf/)
@@ -137,6 +139,110 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 ```
 
 Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle, die die Auswertung finden soll.
+
+## Auswirkung der Messung auf den Worker
+
+Der Collector ist ein einzelner Prozess `powershell.exe`, der nur liest und in den Ausgabeordner schreibt. Was er auf
+einem Windows-Worker kostet, ist **noch nicht gemessen**, weil die Windows-Datenquelle noch nicht auf einem echten
+Server gelaufen ist. Dieser Abschnitt beschreibt, was der Collector wann tut, was das Prüfskript auf dem geprüften VDA
+(6 vCPUs, 11 Sitzungen, rund 800 Prozesse) dazu gemessen hat, und woran man die Last während einer Messung abliest.
+Zahlen ohne Messung sind als Schätzung gekennzeichnet.
+
+### Was der Collector wann tut
+
+| Wann | Was | Umfang auf dem geprüften VDA |
+|---|---|---|
+| jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
+| jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
+| jeder reguläre Schnappschuss zusätzlich | Ereignisprotokolle Defender und AppLocker seit dem letzten Abruf (höchstens 200 je Protokoll); Verbindungsproben, nur mit `endpoints.json` | – |
+| jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
+| Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
+
+Alles läuft nacheinander in einer Schleife: Ein Schnappschuss entsteht innerhalb eines schnellen Takts. Dauert er
+länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
+
+### Welche Last das bedeutet
+
+- **CPU:** Die Arbeit verteilt sich auf den Collector selbst (`powershell.exe`), den WMI-Anbieterhost
+  (`WmiPrvSE.exe`, er beantwortet die CIM-Abfragen) und die Anbieter der Leistungsindikatoren.
+  *Schätzung für den geprüften VDA:* Ein Schnappschuss dauerte dort 0,4 s. Selbst wenn diese 0,4 s vollständig
+  einen Kern belegten, wären das alle 15 s 2,7 % eines Kerns, auf 6 vCPUs also **rund 0,4 % des Hosts**; während
+  einer Verdichtung (alle 6 s) 6,7 % eines Kerns, **rund 1,1 % des Hosts**. Hinzu kommt der schnelle Takt. Was er
+  unter Windows PowerShell 5.1 kostet, ist **nicht gemessen**; die erste Kurzmessung zeigt es (siehe unten).
+- **Arbeitsspeicher:** ein PowerShell-Prozess. Seine Größe ist nicht gemessen; der Bericht führt ihn in der
+  Prozessliste als Collector, mit Working Set und CPU-Zeit.
+- **Datenträger:** Die Dateien werden fortlaufend angehängt. Die simulierte Stunde (25 Sitzungen, rund 280
+  Prozesse) belegt etwa 5 MB; ob 8 Stunden mit vielen Prozessen unter 100 MB bleiben, ist offen
+  (siehe [Offene Punkte](#offene-punkte)).
+- **Netzwerk:** keine Last, außer den optionalen Verbindungsproben (ein TCP-Verbindungsaufbau je Gegenstelle alle
+  15 s, ohne Daten).
+
+### Was die Messung über ihre eigenen Kosten aufzeichnet
+
+Der Bericht zeigt im Block **„Messqualität"**:
+
+| Angabe im Bericht | woraus sie berechnet wird |
+|---|---|
+| Verspätete oder ausgelassene Takte | Takte, deren Abstand zum vorigen Takt mehr als das 1,5-Fache des schnellen Takts beträgt (`ElapsedSec` in `ticks.csv`) |
+| Messdauer je Takt (Ø, Max) | Dauer der Lesung aller Leistungsindikatoren eines Takts (`CollectMs` in `ticks.csv`) |
+| je Schnappschuss (Ø, Max) | Dauer eines Schnappschusses von der Abfrage bis zum Schreiben der Zeilen, am Stützpunkt mit der Dienstliste und der Abfrage der Profilcontainer (`CollectMs` in `snapshots.csv`); Proben und Ereignisse zählen nicht mit |
+| Verdichtung | Dauer, Zahl der Takte und der zusätzlichen Schnappschüsse und ihr gemessener Abstand |
+| WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Hosts) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Hosts; die Spitze ist der höchste Anteil an der Host-Kapazität in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei `WmiPrvSE.exe` |
+| Übersprungene unlesbare Zeilen | nur, wenn `ticks.csv` oder `snapshots.csv` unlesbare Zeilen enthalten |
+| Fehlgeschlagene Abfragen während der Aufzeichnung | je Quelle Anzahl, Zeitpunkt und Meldung des ersten Fehlers (`SourceErrors` in `meta.json`) |
+| Tabelle der Quellen | welche Quellen beim Start verfügbar waren, mit Hinweis |
+
+### Orientierungswerte
+
+Startwerte bis zur ersten echten Messung. Maßgeblich ist der schnelle Takt (Standard 2 s): Ein Schnappschuss läuft
+innerhalb der Schleife, also entscheidet seine Dauer im Vergleich zum Takt, ob Takte ausfallen.
+
+| Angabe in „Messqualität" | unkritisch | beobachten | Messung anpassen |
+|---|---|---|---|
+| je Schnappschuss, Max | unter der Hälfte des Takts (unter 1 s) | bis zum Takt (1–2 s) | über dem Takt (über 2 s): dann fällt mindestens ein Takt aus |
+| Messdauer je Takt, Ø | unter 10 % des Takts (unter 200 ms) | 10–25 % (200–500 ms) | über 25 % (über 500 ms): der Collector ist dann ein Viertel der Zeit beschäftigt |
+| Verspätete oder ausgelassene Takte, Anteil an allen Takten | unter 1 % | 1–5 % | über 5 % |
+| WorkerPerf selbst, Spitze in % des Hosts | unter 2 % | 2–5 % | über 5 % |
+| Fehlgeschlagene Abfragen | keine | einzelne | dieselbe Quelle wiederholt |
+
+### Was bei welcher Stufe zu tun ist
+
+- **unkritisch:** nichts; die Messung kann über Stunden laufen.
+- **beobachten:** die Messung weiterlaufen lassen und die Angaben nach einer Stunde erneut ansehen; bei
+  Messungen über viele Stunden die erste Maßnahme unten erwägen.
+- **Messung anpassen:** neu starten mit einer oder mehreren dieser Änderungen. Jede kostet Aussagekraft:
+
+| Änderung | spart | kostet |
+|---|---|---|
+| `-IntervalSeconds 30` | die Hälfte der Schnappschüsse | gröbere Zuordnung zu Prozessen; kurzlebige Prozesse fehlen öfter |
+| `-BurstIntervalSeconds 10`, `-BurstHoldSeconds 30` | Schnappschüsse während der Vorfälle | weniger Einzelheiten zum Verursacher genau dann, wenn es zählt |
+| `-NoCitrix` | ICA- und EUEM-Abfragen | ICA Round Trip und Latenz „nicht gemessen" |
+| `-CitrixMetricFilter 'Latency\|Round'` | Zeilen in `citrix.csv` | keine Bandbreiten je Sitzung |
+| `-FastIntervalSeconds 3` oder `5` | ein Drittel bzw. drei Fünftel der Zählerlesungen | gröbere Zeitauflösung; kurze Spitzen erscheinen gemittelt |
+| `-IncludeCommandLine` weglassen (Standard) | Befehlszeilen in der Prozessabfrage | – |
+| keine `endpoints.json` | die Verbindungsproben | keine Aussage über Gegenstellen |
+
+Den Ausgabeordner auf ein lokales Datenlaufwerk legen, nicht auf eine Freigabe und nicht in das Benutzerprofil
+oder einen Profilcontainer: Sonst gehen die eigenen Schreibzugriffe über das Netz und verfälschen die gemessenen
+Antwortzeiten von Freigabe oder Profil. Schon eingebaut sind: Höchstgröße `-MaxSizeMB` (Standard 500 MB), Abbruch
+unter 200 MB freiem Speicherplatz (Warnung beim Start unter 1 GB), Ende über eine Datei `stop.flag` im
+Ausgabeordner und über `-DurationMinutes`.
+
+### Nebenwirkungen
+
+- Die Skripte lesen nur; sie ändern keine Einstellungen.
+- Microsoft Defender prüft die Dateien, die der Collector schreibt. Eine Ausnahme für den Ausgabeordner ist möglich,
+  aber nicht nötig; die Entscheidung liegt beim Betreiber.
+- Die CIM-Abfragen laufen im WMI-Anbieterhost (`WmiPrvSE.exe`) und erscheinen dort in Prozessliste und CPU-Zeit.
+- Für die WTS-Schnittstelle und die Verbindungsproben übersetzt PowerShell beim Start kleine C#-Klassen (Add-Type);
+  dabei entstehen kurz temporäre Dateien im Temp-Ordner des Benutzers.
+- Es wird nichts installiert, kein Dienst und keine Aufgabe eingerichtet; nach dem Ende läuft nichts weiter.
+
+### Empfehlung für den ersten Einsatz
+
+Zuerst eine Kurzmessung von 10 Minuten auf dem Test-Worker mit angemeldeten Benutzern, in einer administrativen
+Konsole (`-DurationMinutes 10`), danach den Bericht erstellen und den Block „Messqualität" mit der Tabelle oben
+vergleichen. Erst dann eine Messung über mehrere Stunden starten.
 
 ## Demo-Bericht
 
@@ -348,6 +454,9 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; nach einer Durchsich
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
+- **Kosten des schnellen Takts unter Windows PowerShell 5.1:** nicht gemessen. Gemessen ist nur die Prozessabfrage
+  des Prüfskripts (0,4 s für 800 Prozesse). Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
+  „Messqualität" (siehe [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker)).
 - **Einheit der entzogenen CPU-Zeit:** Der Collector liest den Rohwert von `VM Processor` / `CPU stolen time`
   als Millisekunden der ganzen VM und teilt durch die Zahl der vCPUs; der Zählertyp `Timer100Ns` würde 100 ns
   bedeuten, was Werte im Bereich von Millionstel Prozent ergäbe. Bestätigen oder widerlegen lässt sich das bei
