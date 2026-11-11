@@ -1,7 +1,15 @@
 # Aufzeichnungen und erzeugte Berichte gehoeren nicht ins Repository
 WorkerPerfData/
 demo/
-report.html
+# Aufzeichnungsordner <COMPUTER>_<yyyyMMdd-HHmmss>, egal unter welchem Basisordner
+*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]/
+# Dateien einer Aufzeichnung und Berichte, auch ausserhalb eines solchen Ordners
+*.csv
+meta.json
+meta.json.tmp
+expected.json
 *.flag
+*.html
+!src/report-template.html
 src/endpoints.json
-docs/vda-probe/*.json
+# Ergebnisse des Quellen-Pruefskripts (docs/vda-probe/vda-probe_*.json) enthalten keine Namen und werden eingecheckt
