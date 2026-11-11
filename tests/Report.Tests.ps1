@@ -75,6 +75,15 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         $c.incidents.Count | Should -Be 2; @($c.incidents | Where-Object chronic).Count | Should -Be 0     # vier Minuten sind kein Dauerzustand
         ($c.incidents | Where-Object type -eq 'engpass').lead | Should -Be 'cpu'
     }
+    It 'ersetzt einen vorhandenen Bericht ohne Reste' {                          # Task 14a: delete and move, no *.tmp
+        $dir = Join-Path $TestDrive 'over'; [void](New-Item -ItemType Directory $dir)
+        $out = Join-Path $dir 'report.html'; Copy-Item $R.Report $out
+        $from = [DateTimeOffset]::FromUnixTimeMilliseconds($R.StartMs + 240000).LocalDateTime
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -From $from -To $from.AddMinutes(4) 6>$null)
+        (Get-ReportData $out).tickT.Count | Should -BeLessThan $D.tickT.Count
+        @(Get-ChildItem -LiteralPath $dir -Filter '*.tmp').Count | Should -Be 0
+        @(Get-ChildItem -LiteralPath $dir).Count | Should -Be 1
+    }
     It 'nennt den fehlerhaften Schwellwert' {
         $bad = Join-Path $TestDrive 'bad.json'; [IO.File]::WriteAllText($bad, '{"thresholds":[{"id":"cpu.host"}]}')
         { & (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile (Join-Path $TestDrive 'x.html') -ThresholdFile $bad 6>$null } | Should -Throw '*cpu.host*'

@@ -779,8 +779,11 @@ $at = $template.IndexOf($marker)
 if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
 $open = '<script id="wp-data" type="application/json">'
 # The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
-# never held in memory as a whole. It goes to a temporary file next to the target first, which then replaces the
-# target: an error while writing leaves the previous report (or none), never a half-written one.
+# never held in memory as a whole. It goes to a temporary file next to the target first; only when it is complete is an
+# existing target deleted and the temporary file moved onto its name. An error while writing, or a target that cannot
+# be deleted (read-only, locked), leaves the previous report as it was. Only an error between the delete and the move
+# leaves no report. The temporary file is removed on any error. No File.Replace: some file systems used for reports
+# (FAT/exFAT, some SMB/NAS and DFS shares) do not support it.
 $tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
 try {
     $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
@@ -790,11 +793,11 @@ try {
         $writer.Write($template.Substring($at + $open.Length + 4))
     }
     finally { $writer.Dispose() }
-    if (Test-Path -LiteralPath $OutFile) { [IO.File]::Replace($tmpFile, $OutFile, [NullString]::Value) }
-    else { [IO.File]::Move($tmpFile, $OutFile) }
+    if ([IO.File]::Exists($OutFile)) { [IO.File]::Delete($OutFile) }
+    [IO.File]::Move($tmpFile, $OutFile)
 }
 catch {
-    if (Test-Path -LiteralPath $tmpFile) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
+    if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
     throw
 }
 
