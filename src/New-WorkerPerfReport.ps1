@@ -233,12 +233,16 @@ function Get-TopIndices([double[]]$Keys, [int[]]$Items, [int]$Count) {
 #region ---------- inputs -----------------------------------------------------------------
 
 $timer = [Diagnostics.Stopwatch]::StartNew()
+if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "Aufzeichnungsordner '$Path' nicht gefunden." }
 $Path = (Resolve-Path -LiteralPath $Path).Path
 if (-not $OutFile) { $OutFile = Join-Path $Path 'report.html' }
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
 if (-not (Test-Path -LiteralPath $templateFile)) { throw "Vorlage nicht gefunden: $templateFile" }
+$OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
+$outDir = Split-Path -Parent $OutFile
+if ($outDir -and -not (Test-Path -LiteralPath $outDir -PathType Container)) { throw "Ausgabeordner '$outDir' nicht gefunden." }
 
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $roles = @(Read-WorkerPerfRoles $RoleFile)
@@ -780,7 +784,6 @@ $html = New-Object System.Text.StringBuilder ($template.Length + $json.Length)
 [void]$html.Append($template, 0, $at + $open.Length)
 [void]$html.Append($json.ToString())
 [void]$html.Append($template, $at + $open.Length + 4, $template.Length - $at - $open.Length - 4)
-$OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
 [IO.File]::WriteAllText($OutFile, $html.ToString(), (New-Object System.Text.UTF8Encoding $false))
 
 $timer.Stop()

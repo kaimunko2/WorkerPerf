@@ -80,3 +80,47 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         { & (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile (Join-Path $TestDrive 'x.html') -ThresholdFile $bad 6>$null } | Should -Throw '*cpu.host*'
     }
 }
+Describe 'Kleine Aufzeichnung: Maskierung, Fokus, Uhrzeit, Fehlermeldungen' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'LoadHelpers.ps1')
+        $script:Report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
+        $script:Base = [DateTimeOffset]'2026-01-15T08:00:00+02:00'                  # Server-Versatz 120 Minuten
+        $script:Nasty = '</script> <b>&amp; "q" back\slash ' + [char]1 + " tab`t " + [char]::ConvertFromUtf32(0x1F600) + ' ' + [char]0x2028 + ' Ende'
+        $csv = Format-WorkerPerfCsvText $Nasty
+        $sess = 0..3 | ForEach-Object { "$_,2,user1,DOM,Active,ICA-1,CL1,,0" }
+        $script:Small = Write-TestRun 'small' @{
+            'ticks.csv' = @(0..7 | ForEach-Object { New-TickLine $_ }); 'snapshots.csv' = @(0..3 | ForEach-Object { New-SnapLine $_ $(if ($_ -eq 0) { 'K' } else { 'R' }) })
+            'sessions.csv' = $sess; 'procinfo.csv' = @("0,100,1,EXCEL.EXE,2,,C:\x.exe,,$csv"); 'processes.csv' = @('0,0,100,1024,1024,0,0,0,10,2')
+            'events.csv' = @("$(Get-Ts 5),Test,1,info,$csv")
+        }
+        function Invoke-Small([string]$Name, [hashtable]$Extra = @{}) {
+            $out = Join-Path $TestDrive "$Name.html"
+            [void](& $Report -Path $Small -OutFile $out @Extra 6>$null); $out
+        }
+        $script:SmallHtml = Invoke-Small 'small'
+    }
+    It 'maskiert Sonderzeichen im Datenblock' {
+        $text = [IO.File]::ReadAllText($SmallHtml); $open = '<script id="wp-data" type="application/json">'
+        $a = $text.IndexOf($open) + $open.Length; $block = $text.Substring($a, $text.IndexOf('</script>', $a) - $a)
+        $block.IndexOfAny([char[]]@('<', '>', '&', [char]0x2028)) | Should -Be -1
+        ([regex]::Matches($text, '</script>')).Count | Should -Be 2
+        $d = Get-ReportData $SmallHtml
+        $d.procs[0].cmd | Should -BeExactly $Nasty; $d.events[0].text | Should -BeExactly $Nasty
+    }
+    It 'findet den Fokus-Benutzer als Domaene\Benutzer ohne Ruecksicht auf Schreibweise' {
+        (Get-ReportData (Invoke-Small 'dom' @{ FocusUser = 'dom\USER1' })).meta.focus.found | Should -BeTrue
+    }
+    It 'rechnet die gemeldete Uhrzeit mit dem Versatz des Servers um' {
+        $expected = ([DateTimeOffset]'2026-01-15T08:00:10+02:00').ToUnixTimeMilliseconds()
+        foreach ($kind in 'Unspecified', 'Utc') {
+            $t = [datetime]::SpecifyKind([datetime]'2026-01-15 08:00:10', $kind)
+            (Get-ReportData (Invoke-Small "rt$kind" @{ ReportedTime = $t })).meta.focus.reportedMs | Should -Be $expected -Because $kind
+        }
+    }
+    It 'nennt einen fehlenden Aufzeichnungsordner' {
+        { & $Report -Path (Join-Path $TestDrive 'fehlt') -OutFile (Join-Path $TestDrive 'y.html') 6>$null } | Should -Throw '*Aufzeichnungsordner*'
+    }
+    It 'nennt einen fehlenden Ausgabeordner' {
+        { & $Report -Path $Small -OutFile (Join-Path $TestDrive 'fehlt/z.html') 6>$null } | Should -Throw '*Ausgabeordner*'
+    }
+}
