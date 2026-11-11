@@ -161,8 +161,9 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Last trägt, weil es die Dateien des eigentlichen Verursachers prüft. Der Bericht nennt dann auch den größten
   I/O-Erzeuger im Fenster; meist hilft ein Scan-Ausschluss.
 - **Normalwert** („sonst … %") ist der Anteil desselben Prozesses, derselben Anwendung oder Sitzung außerhalb
-  der Vorfälle (Dauerzustände ausgenommen); ohne solche Messungen steht ein Strich. Ein hoher Anteil mit niedrigem Normalwert zeigt einen Ausreißer, ein hoher Anteil mit gleich
-  hohem Normalwert einen gewohnten Großverbraucher.
+  der Vorfälle (Dauerzustände ausgenommen); ohne solche Messungen steht ein Strich. Ein hoher Anteil mit
+  niedrigem Normalwert zeigt einen Ausreißer, ein hoher Anteil mit gleich hohem Normalwert einen gewohnten
+  Großverbraucher.
 - Prozesse, die zwischen zwei Messungen starten *und* enden, werden nicht erfasst. Ein Prozess,
   der im Intervall startet, bekommt seine bis dahin verbrauchte CPU-Zeit diesem Intervall zugerechnet.
 

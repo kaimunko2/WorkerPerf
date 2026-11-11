@@ -1,6 +1,7 @@
 // Aufruf: node tests/report-browser.js <Ordner aus tests/New-TestReports.ps1>
 const { chromium } = require('playwright');
 const path = require('path');
+const fs = require('fs');
 const assert = require('assert');
 let checks = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); checks++; };
@@ -67,6 +68,23 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
   ok(await page.locator('#sollist tbody tr').count() === D.sollIst.length, 'Soll-Ist-Tabelle vollstaendig');
   ok((await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()).includes('unter 75 %'), 'Idealbereich genannt');
   ok(await page.locator('#sollist tbody tr[data-id="cpu.host"] a[href]').count() === 1, 'Herkunft verlinkt');
+  {                                                                  // only http(s) links from the threshold file
+    const src = fs.readFileSync(path.join(dir, 'report.html'), 'utf8'), tag = '<script id="wp-data" type="application/json">';
+    const a = src.indexOf(tag) + tag.length, b = src.indexOf('</script>', a), J = JSON.parse(src.substring(a, b));
+    J.sollIst.find((r) => r.id === 'cpu.queue').url = 'javascript:alert(1)';
+    const bad = path.join(dir, 'report-badurl.html');
+    fs.writeFileSync(bad, src.substring(0, a) + JSON.stringify(J).replace(/</g, '\\u003c') + src.substring(b));
+    const u = await open(browser, bad, scheme);
+    ok(await u.page.locator('#sollist tbody tr[data-id="cpu.queue"] a[href]').count() === 0, 'kein Link auf javascript:');
+    ok(await u.page.locator('#sollist tbody tr[data-id="cpu.host"] a[href]').count() === 1, 'https-Link bleibt');
+    ok(u.page.errors.length === 0, 'Skriptfehler mit javascript:-URL: ' + u.page.errors.join(' | '));
+    await u.page.close();
+  }
+  await page.click('#eventList summary');
+  ok(await page.locator('#tEvents tbody tr').count() === Math.min(200, D.events.length), 'Ereignisliste');
+  await page.click('#tEvents tbody tr >> nth=0');
+  const ez = await page.evaluate(() => window.WP.zoom);
+  ok(ez && Math.abs((ez.t0 + ez.t1) / 2 - D.events[0].t) <= 60000, 'Ereignis stellt den Zoom ein');
   ok((await page.locator('#quality').innerText()).includes('WorkerPerf'), 'Messqualitaet nennt den Collector');
   ok((await page.locator('#limits').innerText()).includes('SYSTEM'), 'Grenzen der Aussage genannt');
   ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));

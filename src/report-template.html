@@ -97,6 +97,7 @@ th { position: sticky; top: 0; background: var(--surface); color: var(--text2); 
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 th[aria-sort]::after { content: " ▾"; } th[aria-sort="ascending"]::after { content: " ▴"; }
 tbody tr[tabindex] { cursor: pointer; }
+tbody tr { scroll-margin-top: 36px; }
 tbody tr:hover { background: var(--hover); }
 tbody tr.selected { background: var(--sel); }
 tbody tr.collector td:first-child { box-shadow: inset 3px 0 var(--s7); }
@@ -128,12 +129,12 @@ td .sig { margin-right: 4px; }
 .tl-axis { border-bottom: 0; }
 .tl-tick { position: absolute; top: 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; transform: translateX(-50%); }
 .tl-tick.first { transform: none; } .tl-tick.last { transform: translateX(-100%); }
-.tl-overlay { position: absolute; left: 108px; right: 0; top: 0; bottom: 20px; pointer-events: none; }
+.tl-overlay { position: absolute; left: 108px; right: 0; top: 0; bottom: 20px; pointer-events: none; z-index: 1; }
 .tl-zoom { position: absolute; top: 18px; bottom: 0; background: var(--s1); opacity: .12; border-left: 1px solid var(--s1); border-right: 1px solid var(--s1); }
 .reported { position: absolute; top: 14px; bottom: 0; border-left: 2px dashed var(--text); }
 .reported span { position: absolute; top: -15px; left: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--text); background: var(--surface); padding: 0 3px; }
 .reported.end span { left: auto; right: 4px; }
-.mark { position: absolute; height: 20px; border: 0; border-radius: 4px; padding: 0 5px; margin: 0; font: 600 11px/20px "Segoe UI", system-ui, sans-serif; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; cursor: pointer; }
+.mark { position: absolute; z-index: 2; height: 20px; border: 0; border-radius: 4px; padding: 0 5px; margin: 0; font: 600 11px/20px "Segoe UI", system-ui, sans-serif; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; cursor: pointer; }
 .mark.narrow { padding: 0; text-align: center; overflow: visible; }
 .mark.sev1 { background: var(--warn); color: #1d1600; }
 .mark.sev2 { background: var(--crit); color: #fff; }
@@ -142,13 +143,18 @@ td .sig { margin-right: 4px; }
 .mark.chronic { height: 16px; background: none; color: var(--text); font-weight: 400; padding: 0; line-height: 16px; }
 .mark.chronic::before { content: ""; position: absolute; left: 0; right: 0; top: 7px; height: 3px; border-radius: 2px; }
 .mark.chronic.sev1::before { background: var(--warn); } .mark.chronic.sev2::before { background: var(--crit); }
-.mark.chronic span { position: relative; background: var(--surface); padding: 0 6px 0 0; }
+.mark.chronic > span { position: relative; background: var(--surface); padding: 0 6px 0 0; }
 .mark.chronic .sym { font-style: normal; }
 .mark.chronic.sev1 .sym { color: var(--warn); } .mark.chronic.sev2 .sym { color: var(--crit); }
 .event { position: absolute; top: 3px; width: 7px; height: 16px; margin-left: -3px; cursor: help; }
 .event::before { content: ""; position: absolute; left: 2px; top: 0; width: 2px; height: 16px; background: var(--text2); opacity: .8; }
 .event:hover::before { opacity: 1; width: 3px; }
 .event[data-kind^="applocker"]::before { background: var(--s7); }
+.evlist { margin-top: 10px; font-size: 13px; }
+.evlist[hidden] { display: none; }
+.evlist summary { cursor: pointer; color: var(--text2); padding: 2px 0; }
+.evlist .tablewrap { margin-top: 6px; }
+.evlist .note { margin-top: 4px; }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text2); margin-top: 8px; }
 .tl-legend .sym { font-style: normal; }
 .tl-legend .st-warn .sym { color: var(--warn); } .tl-legend .st-crit .sym { color: var(--crit); }
@@ -230,7 +236,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
   <section id="tab-findings" role="tabpanel">
     <div class="fhead"><h2 id="findHead"></h2><p class="focusinfo" id="focusInfo" hidden></p></div>
     <div class="card wide nofinding" id="noFinding" hidden></div>
-    <div class="card wide"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div></div>
+    <div class="card wide"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div>
+      <details class="evlist" id="eventList" hidden><summary></summary><div class="tablewrap small" style="max-height:360px"><table id="tEvents"></table></div><div class="note" id="eventMore"></div></details></div>
     <div id="incidents"></div>
     <h2>Soll-Ist-Vergleich</h2>
     <div class="tablewrap" style="margin-bottom:12px;max-height:none"><table id="sollist"></table></div>
@@ -303,6 +310,8 @@ const M = D.meta, Q = D.quality;
 const nf = (d) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
 const NF = [nf(0), nf(1), nf(2), nf(3)];
 const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : NF[d].format(v);
+// links from data files (thresholds.json can be replaced) only for http and https, never javascript: or data:
+const isWebUrl = (u) => typeof u === "string" && /^https?:\/\//i.test(u);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
 // Times are shown in the local time of the recorded server, independent of the viewer's time zone.
@@ -685,11 +694,15 @@ function table(id, cols, rows, opt) {
   const st = { key: opt.sort, dir: -1, filter: "", role: "", selected: null };
   const maxOf = {};
   for (const c of cols) if (c.bar) maxOf[c.key] = Math.max(1e-9, ...rows.map((r) => r[c.key] || 0));
-  function render() {
-    const col = cols.find((c) => c.key === st.key);
+  function filtered() {
     let list = rows;
     if (st.filter) { const q = st.filter.toLowerCase(); list = list.filter((r) => opt.text(r).toLowerCase().includes(q)); }
     if (st.role) list = list.filter((r) => r.role === st.role);
+    return list;
+  }
+  function render() {
+    const col = cols.find((c) => c.key === st.key);
+    let list = filtered();
     if (col) list = list.slice().sort((a, b) => {
       const va = col.sortVal ? col.sortVal(a) : a[col.key], vb = col.sortVal ? col.sortVal(b) : b[col.key];
       if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
@@ -728,7 +741,19 @@ function table(id, cols, rows, opt) {
     sel.addEventListener("change", () => { st.role = sel.value; render(); });
   }
   render();
-  return { select(id) { st.selected = id; render(); if (opt.onSelect) opt.onSelect(id); } };
+  return {
+    select(id) {
+      // a row selected from elsewhere must be visible: clear filters that hide it, then scroll it into view
+      if (!filtered().some((r) => opt.id(r) === id)) {
+        st.filter = ""; st.role = "";
+        if (opt.filterInput) document.getElementById(opt.filterInput).value = "";
+        if (opt.roleSelect) document.getElementById(opt.roleSelect).value = "";
+      }
+      st.selected = id; render();
+      el.querySelector("tbody tr.selected")?.scrollIntoView({ block: "nearest" });
+      if (opt.onSelect) opt.onSelect(id);
+    }
+  };
 }
 const cNum = (key, head, d, title, extra) => Object.assign({ key, head, num: true, title, fmt: (v) => fmt(v, d) }, extra || {});
 // numeric column with a status symbol once the value reaches the target band of a signal
@@ -1009,7 +1034,7 @@ const incTime = (inc) => rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc
   const el = document.getElementById("focusInfo"), parts = [];
   if (FOCUS.user) {
     parts.push(FOCUS.found
-      ? `Gemeldeter Benutzer <b>${esc(FOCUS.user)}</b> (${FOCUS.sessions.map((s) => esc(sessName(s))).join(", ") || "–"})`
+      ? `Gemeldeter Benutzer <b>${esc(FOCUS.user)}</b>` + (FOCUS.sessions.length ? (FOCUS.sessions.length === 1 ? ", Sitzung " : ", Sitzungen ") + FOCUS.sessions.map((s) => "#" + esc(sessByIdx.get(s)?.id ?? "?")).join(", ") : "")
       : `Benutzer <b>${esc(FOCUS.user)}</b> in der Messung nicht gefunden`);
   }
   if (FOCUS.reportedMs != null) {
@@ -1078,8 +1103,8 @@ function drawTimeline(force) {
     const inc = it.inc, st = STATUS[sevKey(inc.severity)], open = document.querySelector(`#incidents .incident[data-id="${inc.id}"].open`) ? " open" : "";
     const label = markLabel(inc), aria = `${st[1]}: ${typeText(inc)}, ${label}, ${incTime(inc)}`;
     const narrow = it.w < 20, inner = inc.chronic
-      ? `<span><i class="sym" aria-hidden="true">${st[0]}</i> ${esc(label)}</span>`
-      : (it.w >= 18 + label.length * 6.6 ? `${st[0]} ${esc(label)}` : st[0]);
+      ? `<span><i class="sym" aria-hidden="true">${st[0]}</i> <span class="lbl">${esc(label)}</span></span>`
+      : (narrow ? st[0] : `${st[0]}<span class="lbl"> ${esc(label)}</span>`);
     return `<button type="button" class="mark sev${sevKey(inc.severity)} type-${inc.type}${inc.chronic ? " chronic" : ""}${narrow && !inc.chronic ? " narrow" : ""}${open}" data-incident="${inc.id}" ` +
       `style="left:${it.x.toFixed(1)}px;width:${it.w.toFixed(1)}px;top:${top}px" aria-label="${esc(aria)}" title="${esc(inc.text)}">${inner}</button>`;
   };
@@ -1102,6 +1127,8 @@ function drawTimeline(force) {
     ov += `<div class="reported${x > pw - 120 ? " end" : ""}" style="left:${x.toFixed(1)}px"><span>gemeldet ${fmtTime(FOCUS.reportedMs)}</span></div>`;
   }
   host.innerHTML = h + `<div class="tl-overlay">${ov}</div>`;
+  // the word on a mark is shown only when it fits completely; it stays in the accessible name and tooltip
+  for (const m of host.querySelectorAll(".mark")) if (m.scrollWidth > m.clientWidth) m.querySelector(".lbl")?.remove();
   host._X = X;
   updateTimelineZoom();
 }
@@ -1117,6 +1144,23 @@ document.getElementById("tlLegend").innerHTML =
   (FOCUS.reportedMs != null ? '<span><i class="rep"></i>gemeldete Uhrzeit</span>' : "") +
   (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
 WP.onZoom(updateTimelineZoom);
+
+// events as a list as well: the timeline ticks are reachable by mouse only
+{
+  const KIND_WORD = { "scan-start": "Scan gestartet", "scan-end": "Scan beendet", "applocker-block": "Start blockiert" };
+  const MAX_EVENTS = 200, evs = D.events.map((e, k) => Object.assign({ k }, e)), box = document.getElementById("eventList");
+  if (evs.length) {
+    box.hidden = false;
+    box.querySelector("summary").textContent = `Ereignisse (${fmt(evs.length, 0)})`;
+    table("tEvents", [
+      { key: "t", head: "Zeit", num: true, fmt: (v) => fmtTime(v, true) },
+      { key: "source", head: "Quelle", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.id)}</span>` },
+      { key: "kind", head: "Art", fmt: (v) => esc(KIND_WORD[v] || v || "–") },
+      { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
+    ], evs.slice(0, MAX_EVENTS), { sort: null, id: (r) => r.k, text: () => "", onSelect: (k) => { const t = evs[k].t; window.WP.setZoom(t - 60000, t + 60000); } });
+    if (evs.length > MAX_EVENTS) document.getElementById("eventMore").textContent = `weitere ${fmt(evs.length - MAX_EVENTS, 0)} Ereignisse nicht aufgeführt`;
+  }
+}
 window.addEventListener("resize", () => { clearTimeout(drawTimeline._t); drawTimeline._t = setTimeout(() => drawTimeline(false), 150); });
 
 // ---------- findings: incident list ----------
@@ -1306,7 +1350,7 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
     { key: "pctNormal", head: "Zeitanteile normal / auffällig / kritisch", fmt: (v, r) => shares(r), sortVal: (r) => r.measured ? r.pctNormal : null },
     { key: "worstInstance", head: "Am stärksten", cls: "wrap", fmt: (v) => esc(v || "–") },
     { key: "origin", head: "Herkunft", cls: "wrap src", fmt: (v, r) => esc(v || "–") + (r.note ? `<span class="note">${esc(r.note)}</span>` : "") +
-      (r.source ? `<span class="note">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.source)}</a>` : esc(r.source)}</span>` : "") }
+      (r.source ? `<span class="note">${isWebUrl(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.source)}</a>` : esc(r.source)}</span>` : "") }
   ], D.sollIst, { sort: null, id: (r) => r.id, text: () => "", rowAttr: (r) => `data-measured="${r.measured ? "true" : "false"}"` });
 
   document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>
