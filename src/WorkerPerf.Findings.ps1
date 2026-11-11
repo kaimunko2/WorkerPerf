@@ -130,3 +130,136 @@ function Get-WorkerPerfSollIst {
         $row
     }
 }
+
+function Group-WorkerPerfFindingsByTime {
+    # Transitive grouping of findings: the next one joins while it starts at most $GapMs after the group's end.
+    # Returns one list holding one list per group (the comma keeps the outer list intact).
+    param([AllowEmptyCollection()][object[]]$Items, [long]$GapMs)
+    $groups = New-Object System.Collections.Generic.List[object]
+    $sorted = @(@($Items) | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } })
+    $cur = $null; $curEnd = 0L
+    foreach ($f in $sorted) {
+        if ($null -ne $cur -and $f.StartMs -le ($curEnd + $GapMs)) {
+            $cur.Add($f)
+            if ($f.EndMs -gt $curEnd) { $curEnd = [long]$f.EndMs }
+        } else {
+            $cur = New-Object System.Collections.Generic.List[object]
+            $cur.Add($f)
+            $curEnd = [long]$f.EndMs
+            $groups.Add($cur)
+        }
+    }
+    , $groups
+}
+
+function Join-WorkerPerfIncidents {
+    param([AllowEmptyCollection()][object[]]$Findings, [int]$MergeSeconds = 10, [int]$ChronicMinutes = 15)
+    $workerOrder = @('cpu', 'memory', 'disk', 'share', 'profile')
+    $gapMs = [long]$MergeSeconds * 1000
+    $chronicMs = [long]$ChronicMinutes * 60000
+    $chronicFindings = New-Object System.Collections.Generic.List[object]
+    $coreFindings = New-Object System.Collections.Generic.List[object]
+    $sessionFindings = New-Object System.Collections.Generic.List[object]
+    foreach ($f in @($Findings)) {
+        if (($f.EndMs - $f.StartMs) -gt $chronicMs) { $chronicFindings.Add($f) }
+        elseif ($f.Resource -eq 'profile' -or $f.Resource -eq 'network') { $sessionFindings.Add($f) }
+        else { $coreFindings.Add($f) }
+    }
+
+    # phase 1: incidents with window and findings only
+    $raw = New-Object System.Collections.Generic.List[object]
+    foreach ($f in $chronicFindings) {
+        $l = New-Object System.Collections.Generic.List[object]; $l.Add($f)
+        $raw.Add(@{ Chronic = $true; StartMs = [long]$f.StartMs; EndMs = [long]$f.EndMs; List = $l })
+    }
+    $coreIncidents = New-Object System.Collections.Generic.List[object]
+    $coreGroups = Group-WorkerPerfFindingsByTime -Items $coreFindings.ToArray() -GapMs $gapMs
+    foreach ($g in $coreGroups) {
+        $start = [long]::MaxValue; $end = [long]::MinValue
+        foreach ($f in $g) {
+            if ($f.StartMs -lt $start) { $start = [long]$f.StartMs }
+            if ($f.EndMs -gt $end) { $end = [long]$f.EndMs }
+        }
+        $inc = @{ Chronic = $false; StartMs = $start; EndMs = $end; List = $g }
+        $raw.Add($inc); $coreIncidents.Add($inc)
+    }
+    # session-bound causes: attach to the core incident with an input finding of the same session, else stand alone
+    $standalone = @{}
+    foreach ($f in @($sessionFindings.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } })) {
+        $target = $null
+        foreach ($inc in @($coreIncidents.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } })) {
+            foreach ($x in $inc.List) {
+                if ($x.Resource -eq 'input' -and $x.SessionIndex -eq $f.SessionIndex -and
+                    $f.StartMs -le ($x.EndMs + $gapMs) -and $f.EndMs -ge ($x.StartMs - $gapMs)) { $target = $inc; break }
+            }
+            if ($null -ne $target) { break }
+        }
+        if ($null -ne $target) { $target.List.Add($f); continue }
+        $key = [string]$f.SessionIndex
+        if (-not $standalone.ContainsKey($key)) { $standalone[$key] = New-Object System.Collections.Generic.List[object] }
+        $standalone[$key].Add($f)
+    }
+    foreach ($key in $standalone.Keys) {
+        foreach ($g in (Group-WorkerPerfFindingsByTime -Items $standalone[$key].ToArray() -GapMs $gapMs)) {
+            $start = [long]::MaxValue; $end = [long]::MinValue
+            foreach ($f in $g) {
+                if ($f.StartMs -lt $start) { $start = [long]$f.StartMs }
+                if ($f.EndMs -gt $end) { $end = [long]$f.EndMs }
+            }
+            $raw.Add(@{ Chronic = $false; StartMs = $start; EndMs = $end; List = $g })
+        }
+    }
+
+    # number by window (original position as final tie-break keeps the order deterministic)
+    $pos = 0
+    $keyed = foreach ($r in $raw) { $r['Pos'] = $pos; $pos++; $r }
+    $ordered = @(@($keyed) | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } }, @{ Expression = { $_.Pos } })
+
+    # phase 2: classify
+    $incidents = New-Object System.Collections.Generic.List[object]
+    $id = 0
+    foreach ($r in $ordered) { $id++; $r['Id'] = $id }
+    foreach ($r in $ordered) {
+        $fs = @($r.List.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.EndMs } })
+        $severity = 0
+        foreach ($f in $fs) { if ([int]$f.Severity -gt $severity) { $severity = [int]$f.Severity } }
+        # chronic states overlapping the window (never the incident itself)
+        $context = New-Object System.Collections.Generic.List[object]
+        $explainers = New-Object System.Collections.Generic.List[object]
+        foreach ($c in $ordered) {
+            if (-not $c.Chronic -or $c.Id -eq $r.Id) { continue }
+            if (-not ($c.StartMs -le $r.EndMs -and $c.EndMs -ge $r.StartMs)) { continue }
+            $cf = $c.List[0]
+            $explains = ($workerOrder -contains $cf.Resource) -and ([int]$cf.Severity -ge 2)
+            $context.Add(@{ IncidentId = [int]$c.Id; SignalId = $cf.SignalId; Label = $cf.Label; Severity = [int]$cf.Severity; Explains = $explains })
+            if ($explains) { $explainers.Add($cf) }
+        }
+        $workerFindings = @($fs | Where-Object { $workerOrder -contains $_.Resource })
+        $hasInput = (@($fs | Where-Object { $_.Resource -eq 'input' }).Count -gt 0)
+        $type = 'umfeld'
+        if ($workerFindings.Count -gt 0 -or $explainers.Count -gt 0) { $type = 'engpass' }
+        elseif ($hasInput) { $type = 'ohne-engpass' }
+        $lead = $null
+        $leadPool = $workerFindings
+        if ($leadPool.Count -eq 0) { $leadPool = $explainers.ToArray() }
+        $best = $null
+        foreach ($f in $leadPool) {
+            if ($null -eq $best) { $best = $f; continue }
+            if ($f.StartMs -lt $best.StartMs -or ($f.StartMs -eq $best.StartMs -and [array]::IndexOf($workerOrder, $f.Resource) -lt [array]::IndexOf($workerOrder, $best.Resource))) { $best = $f }
+        }
+        if ($null -ne $best) { $lead = [string]$best.Resource }
+        # resources except input, by earliest start (ties in canonical order)
+        $resStart = @{}
+        foreach ($f in $fs) {
+            if ($f.Resource -eq 'input') { continue }
+            if (-not $resStart.ContainsKey($f.Resource) -or $f.StartMs -lt $resStart[$f.Resource]) { $resStart[$f.Resource] = [long]$f.StartMs }
+        }
+        $canon = @('cpu', 'memory', 'disk', 'share', 'profile', 'network', 'endpoint')
+        $resources = [string[]]@($resStart.Keys | Sort-Object -Property @{ Expression = { $resStart[$_] } }, @{ Expression = { [array]::IndexOf($canon, $_) } })
+        $incidents.Add(@{
+            Id = [int]$r.Id; StartMs = [long]$r.StartMs; EndMs = [long]$r.EndMs; Severity = $severity; Chronic = [bool]$r.Chronic
+            Type = $type; Lead = $lead; Resources = $resources; Findings = [object[]]$fs; ChronicContext = [object[]]$context.ToArray()
+        })
+    }
+    $incidents.ToArray()
+}
