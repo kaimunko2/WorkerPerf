@@ -59,7 +59,8 @@ function Read-WorkerPerfEventConfig([string]$Path) {
     foreach ($e in (Get-WorkerPerfJsonList $json 'events' $Path)) {
         $n++
         $provider = [string](Get-WorkerPerfField $e 'provider')
-        $rawIds = @(Get-WorkerPerfField $e 'ids')
+        $idsValue = Get-WorkerPerfField $e 'ids'
+        $rawIds = $(if ($null -eq $idsValue) { @() } else { @($idsValue) })
         $shown = ($rawIds | ForEach-Object { [string]$_ }) -join ', '
         $where = "events.json: Eintrag $n ($provider $shown)"
         $log = [string](Get-WorkerPerfField $e 'log')
@@ -79,11 +80,13 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         $fields = @{}
         $rawFields = Get-WorkerPerfField $e 'fields'
         if ($null -ne $rawFields) {
+            if ($rawFields -isnot [pscustomobject]) { throw "$where`: Feld 'fields' muss ein Objekt sein." }
             foreach ($p in $rawFields.PSObject.Properties) {
                 if ($script:WorkerPerfEventFieldKeys -cnotcontains $p.Name) { throw "$where`: Feld 'fields.$($p.Name)' ist kein bekannter Feldschluessel." }
                 $ref = $p.Value
                 $format = 'decimal'
                 if ($ref -is [string]) { $refText = $ref }
+                elseif ($ref -isnot [pscustomobject]) { throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n', 'binary:utf16' oder ein Objekt mit 'field' sein." }
                 else {
                     # object form: { "field": <reference>, "format": "hex" | "decimal" }, only for the numeric keys
                     $refText = Get-WorkerPerfField $ref 'field'
@@ -100,9 +103,11 @@ function Read-WorkerPerfEventConfig([string]$Path) {
                 $fields[$p.Name] = @{ Field = $refText; Format = $format }
             }
         }
+        $seen = @{}
         foreach ($i in $ids) {
             $key = "$log|$($provider.ToLowerInvariant())|$i"
-            if ($index.ContainsKey($key)) { throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $i fuer Protokoll und Quelle." }
+            if ($index.ContainsKey($key) -or $seen.ContainsKey($key)) { throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $i fuer Protokoll und Quelle." }
+            $seen[$key] = $true
         }
         $entry = [pscustomobject]@{ log = $log; provider = $provider; ids = $ids.ToArray(); group = $group; kind = $kind; fields = $fields }
         foreach ($i in $ids) { $index["$log|$($provider.ToLowerInvariant())|$i"] = $entry }
@@ -119,7 +124,9 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             $text = [string](Get-WorkerPerfField $c 'text')
             if ([string]::IsNullOrWhiteSpace($code)) { throw "events.json: Fehlercode $n (): Feld 'code' fehlt." }
             if ([string]::IsNullOrWhiteSpace($text)) { throw "events.json: Fehlercode $n ($code): Feld 'text' fehlt." }
-            $codes[(Format-WorkerPerfErrorCode $code)] = $text
+            $codeKey = Format-WorkerPerfErrorCode $code
+            if ($codes.ContainsKey($codeKey)) { throw "events.json: Fehlercode $n ($code): Feld 'code' ist doppelt vorhanden (gleich nach der Vereinheitlichung wie '$codeKey')." }
+            $codes[$codeKey] = $text
         }
     }
 
@@ -144,11 +151,12 @@ function Resolve-WorkerPerfEventEntry($Config, [string]$LogId, [string]$Provider
 function ConvertFrom-WorkerPerfEventXml([string]$Xml) {
     $doc = New-Object System.Xml.XmlDocument
     $doc.XmlResolver = $null
-    $doc.LoadXml($Xml)
+    try { $doc.LoadXml($Xml) } catch { return $null }
     $ns = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
     $ns.AddNamespace('e', 'http://schemas.microsoft.com/win/2004/08/events/event')
     $provider = ''
     $node = $doc.SelectSingleNode('//e:System/e:Provider', $ns)
+    if ($null -eq $node) { return $null }   # not an event of the Windows event namespace
     if ($null -ne $node -and $null -ne $node.Attributes['Name']) { $provider = $node.Attributes['Name'].Value }
     $eventId = 0
     $node = $doc.SelectSingleNode('//e:System/e:EventID', $ns)
@@ -241,6 +249,7 @@ function Get-WorkerPerfEventText([string]$Text) {
 }
 
 function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [string]$Message) {
+    if ($null -eq $Entry -or $null -eq $Parsed) { return $null }
     $f = $Entry.fields
     $get = {
         param($key)

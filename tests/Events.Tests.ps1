@@ -108,3 +108,138 @@ Describe 'Rohereignis -> Datensatz' {
         (Get-WorkerPerfEventText ('x' * 400)).Length | Should -Be 300
     }
 }
+
+Describe 'Inhalt von events.json' {
+    It 'legt Gruppe, Art und Felder jedes Eintrags fest: <Log> <Provider> <Id>' -TestCases @(
+        @{ Log = 'application'; Provider = 'Application Error'; Id = 1000; Group = 'app'; Kind = 'crash'; Fields = 'app=AppName;appVersion=AppVersion;module=ModuleName;moduleVersion=ModuleVersion;code=ExceptionCode;pid=ProcessId/hex' }
+        @{ Log = 'application'; Provider = 'Application Hang'; Id = 1002; Group = 'app'; Kind = 'hang'; Fields = 'app=#0;appVersion=#1;pid=#2/hex' }
+        @{ Log = 'application'; Provider = '.NET Runtime'; Id = 1026; Group = 'app'; Kind = 'app-detail'; Fields = '' }
+        @{ Log = 'application'; Provider = 'Windows Error Reporting'; Id = 1001; Group = 'app'; Kind = 'app-detail'; Fields = '' }
+        @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 21; Group = 'session'; Kind = 'logon'; Fields = 'user=User;session=SessionID' }
+        @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 23; Group = 'session'; Kind = 'logoff'; Fields = 'user=User;session=SessionID' }
+        @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 24; Group = 'session'; Kind = 'disconnect'; Fields = 'user=User;session=SessionID' }
+        @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 25; Group = 'session'; Kind = 'reconnect'; Fields = 'user=User;session=SessionID' }
+        @{ Log = 'system'; Provider = 'Service Control Manager'; Id = 7031; Group = 'service'; Kind = 'service'; Fields = 'service=binary:utf16' }
+        @{ Log = 'system'; Provider = 'Service Control Manager'; Id = 7034; Group = 'service'; Kind = 'service'; Fields = 'service=binary:utf16' }
+        @{ Log = 'system'; Provider = 'disk'; Id = 7; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'disk'; Id = 11; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'disk'; Id = 51; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'disk'; Id = 153; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'Ntfs'; Id = 55; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'Ntfs'; Id = 98; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'Ntfs'; Id = 137; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'Ntfs'; Id = 140; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
+        @{ Log = 'system'; Provider = 'Microsoft-Windows-Resource-Exhaustion-Detector'; Id = 2004; Group = 'memory'; Kind = 'system'; Fields = '' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 372; Group = 'print'; Kind = 'print'; Fields = '' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 808; Group = 'print'; Kind = 'print'; Fields = '' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 6161; Group = 'print'; Kind = 'print'; Fields = '' }
+        @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30803; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
+        @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30807; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
+        @{ Log = 'profileservice'; Provider = 'Microsoft-Windows-User Profiles Service'; Id = 1511; Group = 'profile'; Kind = 'profileerror'; Fields = '' }
+        @{ Log = 'application'; Provider = 'Microsoft-Windows-User Profiles Service'; Id = 1533; Group = 'profile'; Kind = 'profileerror'; Fields = '' }
+        @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 1000; Group = 'security'; Kind = 'scan-start'; Fields = '' }
+        @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 1001; Group = 'security'; Kind = 'scan-end'; Fields = '' }
+        @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 1002; Group = 'security'; Kind = 'scan-end'; Fields = '' }
+        @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 2000; Group = 'security'; Kind = 'signature-update'; Fields = '' }
+        @{ Log = 'applocker'; Provider = 'Microsoft-Windows-AppLocker'; Id = 8004; Group = 'security'; Kind = 'applocker-block'; Fields = '' }
+        @{ Log = 'applocker'; Provider = 'Microsoft-Windows-AppLocker'; Id = 8007; Group = 'security'; Kind = 'applocker-block'; Fields = '' }
+    ) {
+        $e = Resolve-WorkerPerfEventEntry $Cfg $Log $Provider $Id
+        $e | Should -Not -BeNullOrEmpty
+        $e.group | Should -Be $Group; $e.kind | Should -Be $Kind
+        $actual = @($e.fields.Keys | Sort-Object | ForEach-Object {
+                $f = $e.fields[$_]; "$_=$($f.Field)" + $(if ($f.Format -eq 'hex') { '/hex' } else { '' }) }) -join ';'
+        $expected = (@($Fields -split ';' | Where-Object { $_ } | Sort-Object) -join ';')
+        $actual | Should -Be $expected
+    }
+    It 'hat genau die erwarteten Kennungen je Quelle' {
+        $count = 0; foreach ($e in $Cfg.Entries) { $count += @($e.ids).Count }
+        $count | Should -Be 45
+        @((Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 7), (Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 153)) | ForEach-Object { $_.ids -join ',' } | Select-Object -Unique | Should -Be '7,11,51,153'
+        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30805).ids -join ',' | Should -Be '30803,30804,30805,30806,30807'
+        (Resolve-WorkerPerfEventEntry $Cfg 'applocker' 'Microsoft-Windows-AppLocker' 8004).ids -join ',' | Should -Be '8004,8007'
+    }
+    It 'findet nichts bei unbekannter Quelle oder falschem Protokoll' {
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Unbekannte Quelle' 1000 | Should -BeNullOrEmpty
+        Resolve-WorkerPerfEventEntry $Cfg 'system' 'Application Error' 1000 | Should -BeNullOrEmpty
+        Resolve-WorkerPerfEventEntry $Cfg 'nolog' 'Application Error' 1000 | Should -BeNullOrEmpty
+    }
+    It 'vereinheitlicht die Schluessel der Fehlercodetabelle' {
+        $Cfg.ErrorCodes['0xC0000005'] | Should -Be 'Zugriffsverletzung'
+        $Cfg.ErrorCodes[(Format-WorkerPerfErrorCode 'C0000005')] | Should -Be 'Zugriffsverletzung'
+        $Cfg.ErrorCodes[(Format-WorkerPerfErrorCode '3221225477')] | Should -Be 'Zugriffsverletzung'
+        $Cfg.ErrorCodes.ContainsKey('0xe0434352') | Should -BeTrue
+        $Cfg.ErrorCodes.Count | Should -Be 10
+    }
+    It 'liest Zahlenformat der Sitzung, Drucker und Treiber aus eigenen Eintraegen' {
+        $f = Join-Path $TestDrive 'pd.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"X","ids":[1],"group":"print","kind":"print","fields":{"printer":"PrinterName","driver":"#1","session":{"field":"S","format":"hex"},"user":"U"}}]}')
+        $c = Read-WorkerPerfEventConfig $f
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'X' 1 "<EventData><Data Name='PrinterName'>Drucker A</Data><Data Name='Other'>Treiber B</Data><Data Name='S'>1f</Data><Data Name='U'>dom\\anna</Data></EventData>")
+        $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1) $p ([datetime]::Now) ''
+        $r.Printer | Should -Be 'Drucker A'; $r.Driver | Should -Be 'Treiber B'; $r.SessionId | Should -Be 31; $r.User | Should -Be 'anna'
+        $r.Group | Should -Be 'print'
+    }
+    It 'liest die Sitzungsnummer der Sitzungsereignisse dezimal' {
+        $s = ConvertFrom-WorkerPerfEventXml (New-Xml 'Microsoft-Windows-TerminalServices-LocalSessionManager' 24 '' "<UserData><EventXML xmlns='x'><User>a\b</User><SessionID>12</SessionID></EventXML></UserData>")
+        (ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'session' $s.Provider 24) $s ([datetime]::Now) '').SessionId | Should -Be 12
+    }
+    It 'findet benannte Felder ohne Ruecksicht auf die Schreibweise' {
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 "<EventData><Data Name='appname'>kleinschrift.exe</Data></EventData>")
+        $p.Named.ContainsKey('APPNAME') | Should -BeTrue
+        (ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) '').App | Should -Be 'kleinschrift.exe'
+    }
+    It 'schneidet den Dienstnamen vor dem ersten NUL ab' {
+        $hex = (([Text.Encoding]::Unicode.GetBytes("Spooler`0Rest`0")) | ForEach-Object { $_.ToString('X2') }) -join ''
+        (ConvertFrom-WorkerPerfHexUtf16 $hex).Length | Should -Be 7
+        (ConvertFrom-WorkerPerfHexUtf16 $hex) | Should -BeExactly 'Spooler'
+    }
+    It 'schreibt ein vorhandenes, leeres Datenfeld als leeren Wert' {
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 "<EventData><Data Name='AppName'></Data><Data Name='ProcessId'/></EventData>")
+        $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) ''
+        $r.App | Should -Be ''; $r.Pid | Should -BeNullOrEmpty
+    }
+}
+Describe 'Fehlerfaelle' {
+    It 'weist doppelte Kennungen im selben Eintrag ab' {
+        $f = Join-Path $TestDrive 'd.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1,1],"group":"app","kind":"crash"}]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*Eintrag 1 (P 1, 1)*Feld 'ids'*doppelte*"
+    }
+    It 'meldet fehlende oder leere Kennungen' -TestCases @(
+        @{ Ids = '' } ; @{ Ids = ',"ids":[]' }
+    ) {
+        $f = Join-Path $TestDrive 'i.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","group":"app","kind":"crash"' + $Ids + '}]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*Eintrag 1 (P )*Feld 'ids' fehlt oder ist leer*"
+    }
+    It 'legt Fehlercodes unter dem vereinheitlichten Schluessel ab' {
+        $f = Join-Path $TestDrive 'c2.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}],"errorCodes":[{"code":"C0000005","text":"a"},{"code":"3221225477x","text":"b"}]}')
+        $c = Read-WorkerPerfEventConfig $f
+        $c.ErrorCodes.ContainsKey('0xc0000005') | Should -BeTrue; $c.ErrorCodes['0xc0000005'] | Should -Be 'a'; $c.ErrorCodes.ContainsKey('3221225477x') | Should -BeTrue
+    }
+    It 'weist Fehlercodes ab, die nach der Vereinheitlichung gleich sind' {
+        $f = Join-Path $TestDrive 'c.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}],"errorCodes":[{"code":"C0000005","text":"a"},{"code":"0xc0000005","text":"b"}]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*Fehlercode 2 (0xc0000005)*Feld 'code'*doppelt*"
+    }
+    It 'benennt fields und Feldverweise richtig, wenn der Typ nicht passt' -TestCases @(
+        @{ Fields = '"x"'; Msg = "*Eintrag 1 (P 1)*Feld 'fields' muss ein Objekt sein*" }
+        @{ Fields = '{"app":5}'; Msg = "*Eintrag 1 (P 1)*Feld 'fields.app'*Objekt*" }
+    ) {
+        $f = Join-Path $TestDrive 'ft.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash","fields":' + $Fields + '}]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw $Msg
+    }
+    It 'gibt fuer ungueltiges XML und fremde Namensraeume $null zurueck' {
+        ConvertFrom-WorkerPerfEventXml '<Event><nicht zu' | Should -BeNullOrEmpty
+        ConvertFrom-WorkerPerfEventXml '' | Should -BeNullOrEmpty
+        ConvertFrom-WorkerPerfEventXml '<Event><System><Provider Name="X"/><EventID>1</EventID></System></Event>' | Should -BeNullOrEmpty
+    }
+    It 'gibt fuer fehlenden Eintrag oder fehlendes Ereignis $null zurueck' {
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 '')
+        ConvertTo-WorkerPerfEventRecord $null $p ([datetime]::Now) 'x' | Should -BeNullOrEmpty
+        ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Application Error' 1000) $null ([datetime]::Now) 'x' | Should -BeNullOrEmpty
+    }
+}
