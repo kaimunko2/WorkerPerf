@@ -23,13 +23,22 @@ Start-WorkerPerfCapture.ps1  ──►  CSV-Ordner  ──►  New-WorkerPerfRep
 
 ### 1. Aufzeichnen (auf dem VDA, mit erhöhten Rechten)
 
+Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Host-Signale (CPU, Speicher,
+Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
+nimmt er einen Schnappschuss der Prozesse, Sitzungen und Citrix-Werte, prüft die Gegenstellen und liest
+die Ereignisse – solange ein Auslöser-Signal über seiner Schwelle liegt (und 60 Sekunden danach) sogar alle 5 Sekunden.
+
 ```powershell
-# 8 Stunden, alle 15 Sekunden
-.\src\Start-WorkerPerfCapture.ps1 -OutputPath D:\WorkerPerf -IntervalSeconds 15 -DurationMinutes 480
+# Messung über vier Stunden
+.\src\Start-WorkerPerfCapture.ps1 -OutputPath D:\WorkerPerf -DurationMinutes 240
 ```
 
-Beenden: automatisch nach `-DurationMinutes`, mit `Strg+C` oder durch Anlegen einer Datei
-`stop.flag` im Aufzeichnungsordner (praktisch bei geplanten Aufgaben).
+Beenden: automatisch nach `-DurationMinutes`, mit `Strg+C`, beim Erreichen von `-MaxSizeMB`, bei
+weniger als 200 MB freiem Speicherplatz oder durch Anlegen einer Datei `stop.flag` im
+Aufzeichnungsordner (praktisch bei geplanten Aufgaben). Den Grund vermerkt `meta.json` (`EndReason`).
+
+Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
+`src\endpoints.json`; als Vorlage dient `src\endpoints.example.json`. Fehlt die Datei, entfallen die Proben.
 
 Als geplante Aufgabe unter SYSTEM (sieht alle Prozesse aller Sitzungen):
 
@@ -42,12 +51,20 @@ Register-ScheduledTask -TaskName 'WorkerPerf' -Action $action -Trigger $trigger 
 | Parameter | Bedeutung |
 |---|---|
 | `-OutputPath` | Basisordner; je Lauf entsteht `<COMPUTER>_<yyyyMMdd-HHmmss>`. Standard: `%ProgramData%\WorkerPerf` |
-| `-IntervalSeconds` | Messintervall, Standard 15 s (5 s für kurze, detaillierte Messungen) |
+| `-FastIntervalSeconds` | schneller Takt für Host-Signale und Eingabeverzögerung, 1–60 s, Standard 2 s |
+| `-IntervalSeconds` | Abstand der regulären Schnappschüsse (Prozesse, Sitzungen), 5–3600 s, Standard 15 s |
+| `-BurstIntervalSeconds` | Abstand der Schnappschüsse, solange ein Auslöser-Signal über der Schwelle liegt, Standard 5 s |
+| `-BurstHoldSeconds` | so lange nach dem letzten Auslöser bleibt die Verdichtung aktiv, Standard 60 s |
 | `-DurationMinutes` | Laufzeit; 0 = bis zum manuellen Stopp |
+| `-MaxSizeMB` | Höchstgröße des Aufzeichnungsordners, Standard 500 MB |
+| `-ThresholdFile` | Schwellwerte und Auslöser-Signale, Standard `thresholds.json` neben dem Skript |
+| `-EndpointFile` | Gegenstellen für die Proben, Standard `endpoints.json` neben dem Skript; fehlt sie, gibt es keine Proben |
 | `-IncludeCommandLine` | Befehlszeilen der Prozesse mitschreiben (können sensible Daten enthalten) |
 | `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
-| `-Simulate` | Testdaten erzeugen statt das lokale System zu messen (läuft auch unter Linux/macOS) |
+| `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Vorfällen ab statt das lokale System zu messen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
+
+> Die Windows-Datenquelle des neuen Formats wird noch fertiggestellt; bis dahin läuft der Collector nur mit `-Simulate`.
 
 ### 2. Auswerten (auf dem VDA oder einem anderen Rechner)
 
@@ -62,9 +79,11 @@ Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`).
 ### Ohne VDA ausprobieren
 
 ```powershell
-$run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 240 -OutputPath .\demo
+$run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPath .\demo
 .\src\New-WorkerPerfReport.ps1 -Path $run
 ```
+
+Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle, die die Auswertung finden soll.
 
 ## Der Bericht
 

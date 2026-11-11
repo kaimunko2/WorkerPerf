@@ -3,3 +3,5 @@ WorkerPerfData/
 demo/
 report.html
 *.flag
+src/endpoints.json
+docs/vda-probe/*.json
