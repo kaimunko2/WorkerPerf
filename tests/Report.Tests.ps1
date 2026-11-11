@@ -27,6 +27,14 @@ Describe 'Durchlauf Simulation -> Bericht' {
         @($i.chronicContext).Count | Should -Be 0; $i.text | Should -Not -Match 'Dauerhaft erhöht'
     }
     It 'fuehrt Speicher und Datentraeger in einem Vorfall' { (Get-Hit 'memory').resources | Should -Be @('memory', 'disk') }
+    It 'nennt beim Speicher-Engpass den Prozess, der mit dem Vorfall endet' {          # Abschlussrunde C1
+        $i = Get-Hit 'memory'
+        $i.main.app | Should -Be 'ms-teams.exe'; $i.main.user | Should -Be 'user007'; $i.main.sharePct | Should -BeGreaterThan 35; $i.main.growthMB | Should -BeGreaterThan 20000
+        $top = $i.contributors.memory.procs[0]; $top.name | Should -Be 'ms-teams.exe'
+        $p = $D.procs | Where-Object k -eq $top.k
+        $p.last | Should -BeLessThan $i.end                                         # im letzten Schnappschuss des Fensters ist der Prozess schon beendet
+        $i.text | Should -Match 'Hauptverursacher: ms-teams\.exe in der Sitzung von user007 mit \d+ % des Arbeitsspeichers aller Prozesse \(Working Set\)'
+    }
     It 'nennt den Begleiter beim Datentraeger-Engpass' {
         $i = Get-Hit 'disk'; $i.companion.label | Should -Be 'Microsoft Defender'; $i.scanActive | Should -BeTrue
     }
@@ -59,6 +67,27 @@ Describe 'Durchlauf Simulation -> Bericht' {
         ($D.sessions | Measure-Object cpuShare -Sum).Sum | Should -BeGreaterThan 99
     }
     It 'bleibt unter 8 MB' { (Get-Item $R.Report).Length | Should -BeLessThan 8MB }
+    It 'leitet die Bewertung der Messwerte aus den Befunden ab' {                    # Abschlussrunde I4
+        ($D.sollIst | Where-Object id -eq 'cpu.host').status | Should -Be 2           # der CPU-Engpass ist ein kritischer Befund
+        ($D.sollIst | Where-Object id -eq 'ica.rtt').status | Should -Be 1            # die Netzstrecke von user020 ist dauerhaft auffaellig
+        ($D.sollIst | Where-Object id -eq 'cpu.steal').status | Should -Be 0; ($D.sollIst | Where-Object id -eq 'cpu.steal').exceeded | Should -BeFalse
+        $D.unmeasured.input | Should -BeFalse; @($D.unmeasured.worker).Count | Should -Be 0
+    }
+    It 'nennt beim Dauerzustand der Netzstrecke nur Belege der eigenen Sitzung' {     # Abschlussrunde I2
+        $i = Get-Hit 'homeoffice'; $own = @($i.signals | ForEach-Object { $_.s } | Sort-Object -Unique)
+        $own.Count | Should -Be 1
+        @($i.delayProcs | Where-Object { $_.s -ne $own[0] }).Count | Should -Be 0; @($i.endpoints).Count | Should -Be 0
+        @($i.events).Count | Should -Be 0; $i.scanActive | Should -BeFalse; @($i.ica | Where-Object { $_.s -ne $own[0] }).Count | Should -Be 0
+        $i.cause | Should -BeNullOrEmpty; $i.main | Should -BeNullOrEmpty
+    }
+    It 'gibt die Aussage zum Verursacher an die Seite weiter' {                       # Abschlussrunde I1 und I2
+        $disk = Get-Hit 'disk'
+        $disk.cause.kind | Should -Be 'main'; $disk.cause.measure | Should -Be 'io'; $disk.cause.scan | Should -BeTrue; $disk.cause.minSharePct | Should -Be 10
+        $disk.text | Should -Match 'Hauptverursacher: robocopy\.exe in der Sitzung von user011 mit \d+ % der I/O-Menge \(sonst \d+(,\d)? %\)\. Begleiter: Microsoft Defender mit \d+ % der I/O-Menge; größter I/O-Erzeuger im Fenster: robocopy\.exe \(user011\)\. Scan-Ausschlüsse prüfen\.$'
+        $profile = Get-Hit 'profile'
+        $profile.contributors.profile.scope | Should -Be 'session'; $profile.text | Should -Match 'OUTLOOK\.EXE in der Sitzung von user009 mit \d+ % der I/O-Menge dieser Sitzung'
+        (Get-Hit 'backend').cause | Should -BeNullOrEmpty
+    }
 }
 Describe 'Fokus, kein Befund, Zeitausschnitt' {
     It 'hebt Vorfaelle des gemeldeten Benutzers und der gemeldeten Uhrzeit hervor' {
@@ -75,6 +104,30 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
     }
     It 'sagt ausdruecklich, wenn nichts gefunden wurde' {
         $n = Get-ReportData $R.None; $n.noFinding | Should -BeTrue; $n.incidents.Count | Should -Be 0; $n.sollIst.Count | Should -Be 12
+        @($n.sollIst | Where-Object { $_.exceeded -or $_.status -ne 0 }).Count | Should -Be 0
+    }
+    It 'nennt einzelne Ueberschreitungen ohne Befund, statt sie zu verneinen' {       # Abschlussrunde I4
+        $n = Get-ReportData $R.Spike; $n.noFinding | Should -BeTrue; $n.incidents.Count | Should -Be 0
+        $cpu = $n.sollIst | Where-Object id -eq 'cpu.host'
+        $cpu.max | Should -Be 96.5; $cpu.pctCrit | Should -BeGreaterThan 0; $cpu.status | Should -Be 0; $cpu.exceeded | Should -BeTrue
+        @($n.sollIst | Where-Object exceeded).id | Should -Be @('cpu.host')
+        @($n.sollIst | Where-Object { -not $_.measured }).id | Should -Be @('ica.rtt', 'ica.latency')
+    }
+    It 'sagt bei einem Engpass ohne Prozessdaten und ohne gemessene Eingabeverzoegerung, was fehlt' {   # Abschlussrunde I1, I2 und I3
+        $n = Get-ReportData $R.NoData
+        $i = @($n.incidents | Where-Object { $_.type -eq 'engpass' -and $_.lead -eq 'cpu' }); $i.Count | Should -Be 1
+        $i[0].cause.kind | Should -Be 'nodata'; $i[0].main | Should -BeNullOrEmpty; $n.unmeasured.input | Should -BeTrue
+        $i[0].text | Should -Match 'CPU-Engpass \(.+\)\. Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar\. Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor\.$'
+    }
+    It 'schliesst einen Engpass in einer nicht gemessenen Worker-Ressource nicht aus' {   # Abschlussrunde I3
+        $disk = $Exp | Where-Object Key -eq 'disk'; $out = Join-Path $TestDrive 'novol.html'
+        $bare = Copy-SimRun $R.Run (Join-Path $TestDrive 'novol') @('volumes.csv')
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $bare -OutFile $out -From (Get-ServerTime $R.Run ($disk.StartMs - 60000)) -To (Get-ServerTime $R.Run ($disk.EndMs + 60000)) 6>$null)
+        $n = Get-ReportData $out
+        $n.unmeasured.worker | Should -Be @('Datenträger-Antwortzeit'); ($n.sollIst | Where-Object id -eq 'disk.latency').measured | Should -BeFalse
+        $i = @($n.incidents | Where-Object type -eq 'ohne-engpass'); $i.Count | Should -Be 1
+        $i[0].text | Should -Match 'Kein Engpass in den gemessenen Worker-Ressourcen\. Nicht gemessen: Datenträger-Antwortzeit; ein Engpass dort ist nicht ausgeschlossen\.'
+        $i[0].text | Should -Not -Match 'außerhalb des Workers'
     }
     It 'wertet einen Zeitausschnitt aus' {
         $out = Join-Path $TestDrive 'cut.html'; $from = [DateTimeOffset]::FromUnixTimeMilliseconds($R.StartMs + 240000).LocalDateTime
@@ -82,6 +135,25 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         $c = Get-ReportData $out
         $c.incidents.Count | Should -Be 2; @($c.incidents | Where-Object chronic).Count | Should -Be 0     # vier Minuten sind kein Dauerzustand
         ($c.incidents | Where-Object type -eq 'engpass').lead | Should -Be 'cpu'
+    }
+    It 'nennt beim Speicher-Engpass denselben Hauptverursacher mit demselben Anteil, auch wenn der Ausschnitt kurz vor oder nach einem Stuetzpunkt beginnt' {   # Abschlussrunde I5
+        $mem = $Exp | Where-Object Key -eq 'memory'; $full = Get-Hit 'memory'
+        # der Stuetzpunkt im Speicher-Fenster (15 s nach dessen Beginn); Uhrzeiten als Ortszeit des Servers
+        $key = @(Import-Csv (Join-Path $R.Run 'snapshots.csv') | Where-Object Kind -eq 'K' | ForEach-Object { [DateTimeOffset]::Parse($_.Timestamp, [cultureinfo]::InvariantCulture) } |
+            Where-Object { $_.ToUnixTimeMilliseconds() -gt $mem.StartMs -and $_.ToUnixTimeMilliseconds() -lt $mem.EndMs })[0]
+        $key | Should -Not -BeNullOrEmpty
+        foreach ($shift in -5, 5) {
+            $out = Join-Path $TestDrive "mem$shift.html"
+            [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -From $key.AddSeconds($shift).DateTime -To $key.AddMinutes(8).DateTime 6>$null)
+            $c = Get-ReportData $out
+            $i = @($c.incidents | Where-Object lead -eq 'memory'); $i.Count | Should -Be 1 -Because "Schnitt $shift s"
+            $i[0].main.app | Should -Be $full.main.app -Because "Schnitt $shift s"; $i[0].main.user | Should -Be $full.main.user
+            [Math]::Abs($i[0].main.sharePct - $full.main.sharePct) | Should -BeLessOrEqual 0.2 -Because "Schnitt $shift s"
+            $fullTop = @($full.contributors.memory.sessions | ForEach-Object { '{0}:{1:0}' -f $_.user, $_.sharePct })
+            @($i[0].contributors.memory.sessions | ForEach-Object { '{0}:{1:0}' -f $_.user, $_.sharePct }) | Should -Be $fullTop -Because "Schnitt $shift s"
+            # jeder Prozess, der am ersten Schnappschuss des Ausschnitts lebt, hat dort einen Speicherwert
+            @($c.procs | Where-Object { $_.o -eq 0 -and $null -eq $_.ws[0] }).Count | Should -Be 0 -Because "Schnitt $shift s"
+        }
     }
     It 'ersetzt einen vorhandenen Bericht ohne Reste' {                          # Task 14a: delete and move, no *.tmp
         $dir = Join-Path $TestDrive 'over'; [void](New-Item -ItemType Directory $dir)
@@ -133,6 +205,12 @@ Describe 'Kleine Aufzeichnung: Maskierung, Fokus, Uhrzeit, Fehlermeldungen' {
             $t = [datetime]::SpecifyKind([datetime]'2026-01-15 08:00:10', $kind)
             (Get-ReportData (Invoke-Small "rt$kind" @{ ReportedTime = $t })).meta.focus.reportedMs | Should -Be $expected -Because $kind
         }
+    }
+    It 'liest -From und -To als Ortszeit des Servers' {                               # Abschlussrunde Minor 3: der Server liegt zwei Stunden vor UTC
+        $d = Get-ReportData (Invoke-Small 'cutsrv' @{ From = [datetime]'2026-01-15 08:00:09'; To = [datetime]'2026-01-15 08:00:13' })
+        $d.tickT.Count | Should -Be 2
+        $d.meta.start | Should -Be ([DateTimeOffset]'2026-01-15T08:00:10+02:00').ToUnixTimeMilliseconds()
+        { Invoke-Small 'cutout' @{ From = [datetime]'2026-01-15 10:00:09' } } | Should -Throw '*liegt ausserhalb der Aufzeichnung (15.01.2026 08:00:02 bis 15.01.2026 08:00:16, Ortszeit des Servers)*'
     }
     It 'nennt einen fehlenden Aufzeichnungsordner' {
         { & $Report -Path (Join-Path $TestDrive 'fehlt') -OutFile (Join-Path $TestDrive 'y.html') 6>$null } | Should -Throw '*Aufzeichnungsordner*'

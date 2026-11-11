@@ -31,6 +31,11 @@ Describe 'Schwellwerte' {
         $Th['disk.latency'].minOps | Should -Be 5; $Th['smb.latency'].minOps | Should -Be 5; $Th['cpu.host'].minOps | Should -Be 0
         $Th['cpu.queue'].unit | Should -Be ''
     }
+    It 'kennzeichnet die Citrix-Werte als zu pruefende Startwerte' {             # Abschlussrunde: Vorbehalt aus Abschnitt 6 der Spezifikation
+        $citrix = @($Th.Values | Where-Object { $_.source -like 'Citrix*' })
+        $citrix.id | Should -Be @('cpu.host', 'mem.used', 'ica.rtt', 'ica.latency')
+        foreach ($e in $citrix) { $e.note | Should -Match 'Startwert aus der Citrix-Dokumentation; vor produktiver Nutzung zu prüfen' }
+    }
     It 'nennt den fehlerhaften Eintrag oder die Datei' {
         { Read-WorkerPerfThresholds (Write-Json 'a.json' ('{"thresholds":[' + ($Entry -f 'cpu.host', 95, 90, 'Faustregel') + ']}')) } | Should -Throw '*cpu.host*'
         { Read-WorkerPerfThresholds (Write-Json 'b.json' ('{"thresholds":[' + ($Entry -f 'x.y', 1, 2, 'geraten') + ']}')) } | Should -Throw '*x.y*'

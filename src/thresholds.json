@@ -12,7 +12,8 @@
       "trigger": true,
       "origin": "Herstellerangabe",
       "source": "Citrix DaaS Monitor, vordefinierte Schwellen",
-      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds"
+      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds",
+      "note": "Startwert aus der Citrix-Dokumentation; vor produktiver Nutzung zu prüfen"
     },
     {
       "id": "cpu.queue",
@@ -54,7 +55,8 @@
       "trigger": true,
       "origin": "Herstellerangabe",
       "source": "Citrix DaaS Monitor, vordefinierte Schwellen",
-      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds"
+      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds",
+      "note": "Startwert aus der Citrix-Dokumentation; vor produktiver Nutzung zu prüfen"
     },
     {
       "id": "mem.commit",
@@ -142,7 +144,8 @@
       "trigger": false,
       "origin": "Herstellerangabe",
       "source": "Citrix, CTX204274",
-      "url": "https://support.citrix.com/s/article/CTX204274-how-ica-rtt-is-calculated-on-netscaler-insight"
+      "url": "https://support.citrix.com/s/article/CTX204274-how-ica-rtt-is-calculated-on-netscaler-insight",
+      "note": "Startwert aus der Citrix-Dokumentation; vor produktiver Nutzung zu prüfen"
     },
     {
       "id": "ica.latency",
@@ -156,7 +159,8 @@
       "trigger": false,
       "origin": "Herstellerangabe",
       "source": "Citrix DaaS Monitor, vordefinierte Schwellen",
-      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds"
+      "url": "https://docs.citrix.com/en-us/citrix-daas/monitor/site-analytics/thresholds",
+      "note": "Startwert aus der Citrix-Dokumentation; vor produktiver Nutzung zu prüfen"
     },
     {
       "id": "probe.connect",

@@ -210,10 +210,15 @@ td.wrap .note { display: block; }
 #quality .kv { margin-bottom: 10px; }
 @media print { .incident .detail[hidden] { display: none; } }
 footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 1500px; }
+#oldBrowser { margin: 16px 24px; padding: 12px 16px; border: 1px solid #d03b3b; border-radius: 8px; font-weight: 600; }
+.tablenote { margin: -6px 0 14px; max-width: 110ch; }
+.mainline + .mainline { margin-top: 4px; }
+#quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } #quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }
 @media print { nav, .toolbar, .zoombar { display: none; } .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
 </style>
 </head>
 <body>
+<div id="oldBrowser">Dieser Bericht benötigt einen aktuellen Browser (Microsoft Edge, Chrome oder Firefox).</div>
 <header>
   <h1 id="title">WorkerPerf</h1>
   <div class="sub" id="subtitle"></div>
@@ -241,6 +246,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
     <div id="incidents"></div>
     <h2>Soll-Ist-Vergleich</h2>
     <div class="tablewrap" style="margin-bottom:12px;max-height:none"><table id="sollist"></table></div>
+    <p class="note tablenote" id="sollNote">Bei Messwerten mit mehreren Instanzen (Sitzungen, Laufwerke, Freigaben, Gegenstellen) gelten Ø, P95 und Max für die jeweils schlechteste Instanz je Zeitpunkt.
+      Die Bewertung folgt den Befunden: Überschreitungen, die kürzer als die Mindestdauer eines Befunds sind, ändern sie nicht und stehen als „einzelne Überschreitungen“ dabei.</p>
     <div class="grid2" style="align-items:start">
       <div class="card" id="limits"></div>
       <div class="card" id="quality"></div>
@@ -303,6 +310,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 <script id="wp-data" type="application/json">null</script>
 <script>
 "use strict";
+// The static message above stays visible where this script cannot run (a browser without current JavaScript).
+document.getElementById("oldBrowser").remove();
 const D = JSON.parse(document.getElementById('wp-data').textContent);
 const M = D.meta, Q = D.quality;
 
@@ -392,7 +401,8 @@ function zoomChanged() { updateZoomBar(); refreshCharts(); for (const fn of zoom
 document.getElementById("zoomReset").addEventListener("click", () => window.WP.resetZoom());
 
 // ---------- chart ----------
-// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window })
+// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window, legend })
+// legend: true names the series even when there is only one (charts of instances: which drive, share, endpoint, session).
 // window { t0, t1 } fixes the time range of a chart independent of the shared zoom (incident details).
 // A series is dense ({ values, o }) or sparse ({ t, v }). Sparse series with missing: 0 count absent points as 0 (input delay);
 // otherwise absent points are a gap (response times; dense series with resp: true drop their null values the same way).
@@ -608,11 +618,11 @@ function drawChart(host) {
     g += `<text x="${m.l + 6}" y="${f1(Y(opt.limit) + (Y(opt.limit) - m.t < 14 ? 13 : -4))}">${esc(opt.limitLabel || "")}</text></g>`;
   }
 
-  // legend from two series on; identity never by colour alone
-  const anyFail = red.some((r) => r.failT.length);
+  // legend from two series on, or for a single series when asked for; identity never by colour alone
+  const anyFail = red.some((r) => r.failT.length), named = red.length > 1 || !!opt.legend;
   let legend = "";
-  if (red.length > 1 || anyFail) {
-    legend = '<div class="legend">' + (red.length > 1 ? red.map((r) => `<span><i class="${r.s.dashed ? "dash" : ""}" style="${r.s.dashed ? "border-color" : "background"}:var(${r.s.color})"></i>${esc(r.s.name)}</span>`).join("") : "") +
+  if (named || anyFail) {
+    legend = '<div class="legend">' + (named ? red.map((r) => `<span><i class="${r.s.dashed ? "dash" : ""}" style="${r.s.dashed ? "border-color" : "background"}:var(${r.s.color})"></i>${esc(r.s.name)}</span>`).join("") : "") +
       (anyFail ? '<span><i class="failmark"></i>Verbindungsfehler (Strich am oberen Rand)</span>' : "") + "</div>";
   }
   const reduced = red.find((r) => r.bucket);
@@ -769,7 +779,9 @@ document.getElementById("title").textContent = "WorkerPerf – " + M.computer + 
     `Takt ${fmt(M.fastSec, 0)} s, Schnappschuss ${fmt(M.snapSec, 0)} s`, `${M.cores} logische CPUs`, `${fmt(M.ramGB, 0)} GB RAM`];
   if (M.os) parts.push(esc(M.os));
   let html = parts.join(" · ");
-  if (M.endReason && M.endReason !== "duration") html += ` · <span class="endreason">Aufzeichnung ${esc(END_REASON[M.endReason] || M.endReason)}</span>`;
+  if (!M.endReason) html += ` · <span class="endreason">Aufzeichnung nicht regulär beendet (kein Abschluss in meta.json).</span>`;
+  else if (M.endReason === "error") html += ` · <span class="endreason">Aufzeichnung mit Fehler beendet: ${esc(M.endMessage || "ohne Meldung")}</span>`;
+  else if (M.endReason !== "duration") html += ` · <span class="endreason">Aufzeichnung ${esc(END_REASON[M.endReason] || M.endReason)}</span>`;
   document.getElementById("subtitle").innerHTML = html;
 }
 document.getElementById("footer").textContent = `${fmt(M.ticks, 0)} Takte, ${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. ` +
@@ -777,14 +789,19 @@ document.getElementById("footer").textContent = `${fmt(M.ticks, 0)} Takte, ${fmt
   `Diagramme zeigen die volle Auflösung; mit mehr als ${fmt(MAX_POINTS, 0)} Punkten im Ausschnitt werden sie auf ${fmt(BUCKETS, 0)} Abschnitte verdichtet. Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated)}.`;
 
 // ---------- overview: tiles ----------
+// Status of a measured value, one rule for tiles, target table and incidents: from the findings of the signal (kritisch with a
+// critical finding, auffällig with any finding). Points over a threshold that form no finding leave it normal and are named.
+const sollStatus = (r) => !r.measured ? "na" : String(r.status || 0);
+const loneExceed = (r) => !!r.measured && !r.status && !!r.exceeded;
+const LONE = "einzelne Überschreitungen";
 function sollTile(r) {
-  const st = !r.measured ? "na" : r.pctCrit > 0 ? "2" : r.pctWarn > 0 ? "1" : "0";
+  const st = sollStatus(r);
   const title = [r.ideal ? "Soll " + r.ideal : "", r.origin, r.source, r.note].filter(Boolean).join(" · ");
   if (!r.measured) {
     return `<div class="tile" data-signal="${esc(r.id)}" data-status="na" title="${esc(title)}"><div class="label">${esc(r.label)}</div><div class="value">–</div>` +
       `${statusHtml("na")}<div class="extra">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</div></div>`;
   }
-  const share = st === "2" ? `${fmt(r.pctCrit, 1)} % der Zeit` : st === "1" ? `${fmt(r.pctWarn, 1)} % der Zeit` : "";
+  const share = st === "2" ? `${fmt(r.pctCrit, 1)} % der Zeit` : st === "1" ? `${fmt((r.pctWarn || 0) + (r.pctCrit || 0), 1)} % der Zeit` : loneExceed(r) ? LONE : "";
   return `<div class="tile" data-signal="${esc(r.id)}" data-status="${st}" title="${esc(title)}"><div class="label">${esc(r.label)}</div>` +
     `<div class="value">${fmt(r.max, autoDec(r.max, r.unit))}<small>${withUnit(r.unit)} Max</small></div>` +
     `<div class="extra">Ø ${fmtVal(r.avg, r.unit)} · P95 ${fmtVal(r.p95, r.unit)}</div>${statusHtml(st, share)}` +
@@ -794,10 +811,10 @@ function mainAppTile(a) {
   const th = TH.get("input.session"), v = a.ms.filter((x) => x != null).sort((p, q) => p - q);
   const max = v.length ? v[v.length - 1] : null, avg = v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
   const p95 = v.length ? v[Math.min(v.length - 1, Math.ceil(0.95 * v.length) - 1)] : null;
-  const st = String(levelOf(max, th));
+  const st = String(a.status || 0), lone = st === "0" && levelOf(max, th) > 0;
   return `<div class="tile" data-signal="mainapp" data-status="${st}"><div class="label">Eingabeverzögerung ${esc(a.label)}</div>` +
     `<div class="value">${fmt(max, autoDec(max, "ms"))}<small> ms Max</small></div><div class="extra">Ø ${fmtVal(avg, "ms")} · P95 ${fmtVal(p95, "ms")} (${fmt(v.length, 0)} Takte mit Verzögerung)</div>` +
-    `${statusHtml(st)}<div class="extra">Soll ${esc(th ? th.ideal : "–")}</div></div>`;
+    `${statusHtml(st, lone ? LONE : "")}<div class="extra">Soll ${esc(th ? th.ideal : "–")}</div></div>`;
 }
 {
   const users = D.sessions.filter((s) => s.user).length;
@@ -835,10 +852,10 @@ if (D.mainApp) {
 } else document.getElementById("cardMainApp").remove();
 {
   const vols = D.volumes.map((v) => ({ v, peak: maxOf(v.ms) })).filter((o) => o.peak != null).sort((a, b) => b.peak - a.peak).slice(0, 5);
-  chart("chVolumes", { series: vols.map((o, k) => ({ name: o.v.label || o.v.name, color: SERIES[k], t: o.v.t, v: o.v.ms })), unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Laufwerke gemessen." });
-  chart("chShares", { series: D.shares.slice(0, 8).map((s, k) => ({ name: s.label || s.name, color: SERIES[k], t: s.t, v: s.ms })), unit: "ms", decimals: 1, signal: "smb.latency", agg: "max", empty: "Keine Freigaben gemessen.",
+  chart("chVolumes", { series: vols.map((o, k) => ({ name: o.v.label || o.v.name, color: SERIES[k], t: o.v.t, v: o.v.ms })), unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", legend: true, empty: "Keine Laufwerke gemessen." });
+  chart("chShares", { series: D.shares.slice(0, 8).map((s, k) => ({ name: s.label || s.name, color: SERIES[k], t: s.t, v: s.ms })), unit: "ms", decimals: 1, signal: "smb.latency", agg: "max", legend: true, empty: "Keine Freigaben gemessen.",
     note: D.shares.length > 8 ? `Die ersten 8 von ${D.shares.length} Freigaben.` : "" });
-  chart("chProbes", { axis: "snap", series: D.probes.slice(0, 8).map((p, k) => ({ name: p.name + (p.role ? " (" + p.role + ")" : ""), color: SERIES[k], values: p.ms, fail: p.failed, resp: true })), unit: "ms", decimals: 1, signal: "probe.connect", agg: "max",
+  chart("chProbes", { axis: "snap", series: D.probes.slice(0, 8).map((p, k) => ({ name: p.name + (p.role ? " (" + p.role + ")" : ""), color: SERIES[k], values: p.ms, fail: p.failed, resp: true })), unit: "ms", decimals: 1, signal: "probe.connect", agg: "max", legend: true,
     empty: "Keine Gegenstellen konfiguriert.", note: D.probes.length > 8 ? `Die ersten 8 von ${D.probes.length} Gegenstellen.` : "" });
 }
 chart("chDisk", { series: [{ name: "Lesen", values: scaleS(H_.diskR, KB2MB) }, { name: "Schreiben", color: "--s2", values: scaleS(H_.diskW, KB2MB) }], unit: "MB/s", decimals: 2 });
@@ -997,8 +1014,12 @@ document.querySelector("nav").addEventListener("keydown", (ev) => {
 const INC = D.incidents || [], FOCUS = M.focus || { user: null, found: false, sessions: [], reportedMs: null };
 const TYPE_WORD = { "engpass": "Engpass", "ohne-engpass": "Verzögerung ohne Engpass", "umfeld": "Umfeld" };
 const RES_WORD = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", share: "Freigabe", profile: "Profilcontainer", network: "Netzstrecke", endpoint: "Gegenstelle", input: "Eingabeverzögerung" };
-const MEASURE_WORD = { cpu: "Anteil an der CPU-Zeit", memory: "Anteil am belegten Arbeitsspeicher", io: "Anteil an der I/O-Menge" };
-const MAIN_MEASURE = { cpu: "der CPU-Zeit", memory: "des belegten Arbeitsspeichers", io: "der I/O-Menge" };
+// measure of a ranking; the I/O share of a profile container is a share within the owning session (scope "session")
+const MEASURE_WORD = { cpu: "Anteil an der CPU-Zeit", memory: "Anteil am Arbeitsspeicher aller Prozesse (Working Set)", io: "Anteil an der I/O-Menge", "io.session": "Anteil an der I/O-Menge dieser Sitzung" };
+const MAIN_MEASURE = { cpu: "der CPU-Zeit", memory: "des Arbeitsspeichers aller Prozesse (Working Set)", io: "der I/O-Menge", "io.session": "der I/O-Menge dieser Sitzung" };
+const measureKey = (measure, scope) => measure === "io" && scope === "session" ? "io.session" : measure;
+// what the target comparison shows as not measured: the input delay, and the labels of the worker-resource signals
+const UNM = D.unmeasured || { input: false, worker: [] };
 const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 const pct = (v) => v == null ? "–" : (Number.isInteger(v) ? fmt(v, 0) : fmt(v, 1)) + " %";
 const sevKey = (sev) => sev >= 2 ? "2" : "1";
@@ -1053,8 +1074,14 @@ const incTime = (inc) => rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc
 // no finding: explicit statement and what was (not) measured
 if (D.noFinding) {
   const el = document.getElementById("noFinding"), meas = D.sollIst.filter((r) => r.measured), notm = D.sollIst.filter((r) => !r.measured);
-  el.innerHTML = `<p class="lead"><i class="sym" aria-hidden="true">●</i> Keine Schwelle wurde überschritten.</p>
-    <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. Die Werte stehen im Soll-Ist-Vergleich unten.</div>
+  // values that crossed a threshold without forming a finding (fewer points than the minimum) are named, not denied
+  const lone = meas.filter((r) => r.exceeded), below = (r) => (TH.get(r.id) || {}).direction === "low" ? "über" : "unter";
+  el.innerHTML = (lone.length
+    ? `<p class="lead"><i class="sym" aria-hidden="true">●</i> Kein Vorfall.</p>
+    <div>Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): ${lone.map((r) => `${esc(r.label)} Max ${fmtVal(r.max, r.unit)} (Soll ${below(r)} ${fmtLimit(r.warn, r.unit)})`).join("; ")}.</div>
+    <div class="note">Die Werte stehen im Soll-Ist-Vergleich unten.</div>`
+    : `<p class="lead"><i class="sym" aria-hidden="true">●</i> Keine Schwelle wurde überschritten.</p>
+    <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. Die Werte stehen im Soll-Ist-Vergleich unten.</div>`) + `
     <div class="grid2" style="margin:10px 0 0">
       <div><h3>Gemessen (${meas.length})</h3><ul>${meas.map((r) => `<li>${esc(r.label)}: Max ${fmtVal(r.max, r.unit)} <span class="note">(Soll ${esc(r.ideal || "–")})</span></li>`).join("") || "<li>keine</li>"}</ul></div>
       <div><h3>Nicht gemessen (${notm.length})</h3><ul>${notm.map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("") || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
@@ -1175,30 +1202,52 @@ document.getElementById("incidents").innerHTML = incOrder.map((inc) => {
     <div class="detail" id="incd${inc.id}" hidden></div></article>`;
 }).join("");
 
+// Cause box of an opened incident: the same statement as the incident's text, by type.
+// engpass: the main cause, a security product as the largest consumer, or why no main cause is named.
+// ohne-engpass: no bottleneck on the worker (as far as measured) and the process with the highest input delay.
+// umfeld: the finding concerns a session's network path or an endpoint, not the worker.
+function mainEntryHtml(m, measure) {
+  const who = m.s != null && m.s >= 0 ? ` in der Sitzung ${lnkS(m.s)}` : "";
+  return `${lnkA(m.a, m.app)}${who}: <b>${pct(m.sharePct)}</b> <span class="num">${measure}</span>` +
+    ` <span class="num">(sonst ${m.baselinePct == null ? "–" : pct(m.baselinePct)})</span>${m.growthMB != null ? ` <span class="num">· Zuwachs ${fmtMB(m.growthMB)}</span>` : ""}`;
+}
 function mainHtml(inc) {
-  const m = inc.main;
-  if (m) {
-    const who = m.s != null && m.s >= 0 ? ` in der Sitzung ${lnkS(m.s)}` : "";
-    const measure = MAIN_MEASURE[(inc.contributors[m.resource] || {}).measure] || "";
-    return `<div class="mainline">${lnkA(m.a, m.app)}${who}: <b>${pct(m.sharePct)}</b> <span class="num">${measure}</span>` +
-      ` <span class="num">(sonst ${m.baselinePct == null ? "–" : pct(m.baselinePct)})</span>${m.growthMB != null ? ` <span class="num">· Zuwachs ${fmtMB(m.growthMB)}</span>` : ""}</div>`;
+  const c = inc.cause;
+  if (inc.type === "engpass") {
+    if (!c) return '<div class="mainline note">Kein Hauptverursacher ermittelt.</div>';
+    const measure = MAIN_MEASURE[measureKey(c.measure, c.scope)] || "";
+    if (c.kind === "main" && inc.main) return `<div class="mainline">${mainEntryHtml(inc.main, measure)}</div>`;
+    if (c.kind === "security" && c.security) {
+      return `<div class="mainline">Größter Verbraucher: ${esc(c.security.label || "Schutzsoftware")} mit <b>${pct(c.security.sharePct)}</b> <span class="num">${measure}</span>. ` +
+        (c.scan ? "Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen." : "Scan-Ausschlüsse prüfen.") + "</div>" +
+        (c.other ? `<div class="mainline">Größter Anteil außerhalb der Schutzsoftware: ${mainEntryHtml(c.other, measure)}</div>` : "");
+    }
+    if (c.kind === "nodata") return '<div class="mainline">Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.</div>';
+    return `<div class="mainline">Kein einzelner Hauptverursacher: kein Prozess erreicht ${pct(c.minSharePct)} ${measure}.</div>`;
   }
-  const d = inc.delayProcs[0];
-  if (d) return `<div class="mainline">Kein Engpass auf dem Worker. Höchste Eingabeverzögerung in ${lnkK(d.k, d.name)} (${lnkS(d.s)}): <b>${fmt(d.maxMs, 0)} ms</b></div>`;
-  return '<div class="mainline note">Kein Verursacher auf dem Worker ermittelt.</div>';
+  if (inc.type === "ohne-engpass") {
+    const d = inc.delayProcs[0];
+    const head = UNM.worker.length
+      ? `Kein Engpass in den gemessenen Worker-Ressourcen. Nicht gemessen: ${esc(UNM.worker.join(", "))}; ein Engpass dort ist nicht ausgeschlossen.`
+      : "Kein Engpass auf dem Worker.";
+    return `<div class="mainline">${head}${d ? ` Höchste Eingabeverzögerung in ${lnkK(d.k, d.name)} (${lnkS(d.s)}): <b>${fmt(d.maxMs, 0)} ms</b>` : ""}</div>`;
+  }
+  const net = inc.signals.some((sg) => sg.resource === "network"), ep = inc.signals.some((sg) => sg.resource === "endpoint");
+  return `<div class="mainline">${net && ep ? "Auffällig sind die Netzstrecke einer Sitzung und eine Gegenstelle, nicht der Worker." : ep ? "Auffällig ist eine Gegenstelle, nicht der Worker." : "Betrifft die Netzstrecke der Sitzung, nicht den Worker."}</div>`;
 }
 function contribTables(inc, u) {
   const out = [];
   for (const [res, c] of Object.entries(inc.contributors || {})) {
-    const share = { key: "sharePct", head: "Anteil", num: true, fmt: (v) => pct(v), title: MEASURE_WORD[c.measure] };
+    const word = MEASURE_WORD[measureKey(c.measure, c.scope)] || c.measure;
+    const share = { key: "sharePct", head: "Anteil", num: true, fmt: (v) => pct(v), title: word };
     const base = { key: "baselinePct", head: "Normalwert", num: true, fmt: (v) => v == null ? "–" : "sonst " + pct(v), title: "Anteil derselben Größe außerhalb der Vorfälle" };
     const tag = (r) => (r.role === "Sicherheit" ? ` <span class="tag">Sicherheit${r.roleLabel ? " · " + esc(r.roleLabel) : ""}</span>` : "") + (r.isCollector ? ' <span class="tag">(WorkerPerf selbst)</span>' : "");
     const id = `ic${u}${res}`;
     out.push({ res, c, id });
-    out[out.length - 1].html = `<h4>${esc(RES_WORD[res] || res)} – ${esc(MEASURE_WORD[c.measure] || c.measure)}</h4><div class="grid3 contrib">` +
+    out[out.length - 1].html = `<h4>${esc(RES_WORD[res] || res)} – ${esc(word)}</h4><div class="grid3 contrib">` +
       `<div class="tablewrap small"><table id="${id}p"></table></div><div class="tablewrap small"><table id="${id}a"></table></div><div class="tablewrap small"><table id="${id}s"></table></div></div>`;
     out[out.length - 1].build = () => {
-      const growth = c.measure === "memory" ? [{ key: "growthMB", head: "Zuwachs", num: true, fmt: (v) => v == null ? "–" : fmtMB(v), title: "Zuwachs des Working Set im Fenster" }] : [];
+      const growth = c.measure === "memory" ? [{ key: "growthMB", head: "Zuwachs", num: true, fmt: (v) => v == null ? "–" : fmtMB(v), title: "Höchster Stand des Working Set im Fenster gegenüber dem Stand davor" }] : [];
       table(id + "p", [{ key: "name", head: "Prozess", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.pid)}</span>` + tag(r) }, { key: "s", head: "Sitzung", fmt: (v) => esc(sessName(v)) }, share, base, ...growth], c.procs,
         { sort: null, id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => { activate("procs"); procTable.select(k); } });
       table(id + "a", [{ key: "name", head: "Anwendung" }, share, base], c.apps, { sort: null, id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
@@ -1235,8 +1284,9 @@ function signalCharts(inc) {
   const rank = (g) => g.resource === inc.lead ? 0 : g.resource === "input" ? 2 : 1;
   return [...groups.values()].sort((a, b) => rank(a) - rank(b)).map((g) => {
     const parts = g.sigs.map(signalSeries).filter(Boolean), th = TH.get(g.id);
+    // a chart of instances (drive, share, endpoint, session) names them even when there is only one
     return { g, axis: parts.length ? parts[0].axis : "tick", series: parts.slice(0, 8).map((p, k) => Object.assign(p.s, { color: SERIES[k] })), total: parts.length, missing: g.sigs.length - parts.length,
-      title: (th ? th.label : g.id) + (g.unit ? " (" + g.unit + ")" : "") };
+      legend: parts.some((p) => p.s.name !== (th ? th.label : g.id)), title: (th ? th.label : g.id) + (g.unit ? " (" + g.unit + ")" : "") };
   });
 }
 const decOf = (unit) => unit === "" ? 2 : unit === "%" ? 1 : 0;
@@ -1246,16 +1296,20 @@ function renderDetail(inc, host) {
   const charts = signalCharts(inc);
   const contrib = contribTables(inc, u);
   const sigRows = inc.signals.map((sg, k) => Object.assign({ k }, sg));
+  // umfeld incidents and chronic states show only evidence of their own findings: no events and no scan of the window,
+  // and the share of the security products only where a worker resource is ranked
+  const narrow = inc.type === "umfeld" || inc.chronic;
   const evid = [];
   if (inc.delayProcs.length) evid.push(`<div><h4>Höchste Eingabeverzögerung je Prozess</h4><ul class="plain">${inc.delayProcs.map((d) =>
     `<li>${lnkK(d.k, d.name)} <span class="tag">${esc(d.pid)}</span>${d.role ? ` <span class="tag">${esc(d.role)}</span>` : ""} · ${lnkS(d.s)} <span class="num">${sigMark(d.maxMs, TH.get("input.session"))}${fmt(d.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
   if (inc.endpoints.length) evid.push(`<div><h4>Gegenstellen (Verbindungsaufbau, Spitze)</h4><ul class="plain">${inc.endpoints.map((e) =>
     `<li>${esc(e.name)}${e.role && e.role !== e.name ? ` <span class="tag">${esc(e.role)}</span>` : ""} <span class="num">${e.maxMs == null ? "keine Antwort" : sigMark(e.maxMs, TH.get("probe.connect")) + fmt(e.maxMs, 1) + " ms"}${e.failed && e.maxMs != null ? " · mit Verbindungsfehlern" : ""}</span></li>`).join("")}</ul></div>`);
   if (inc.ica.length) evid.push(`<div><h4>ICA Round Trip (Spitze)</h4><ul class="plain">${inc.ica.map((r) => `<li>${lnkS(r.s)} <span class="num">${sigMark(r.maxMs, TH.get("ica.rtt"))}${fmt(r.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
-  {
+  if (inc.type !== "umfeld") {
     const sec = inc.security || { products: [], totalPct: 0 };
     const leadMeasure = { memory: "memory", disk: "io", share: "io", profile: "io" }[inc.lead] || "cpu";
-    let h = `<div><h4>Schutzprodukte – ${esc(MEASURE_WORD[leadMeasure])}</h4><ul class="plain">${sec.products.map((p) => `<li>${esc(p.label || "ohne Bezeichnung")} <span class="num">${pct(p.sharePct)}</span></li>`).join("") || "<li class=\"note\">keine Prozesse mit der Rolle Sicherheit</li>"}` +
+    const leadScope = ((inc.contributors || {})[inc.lead] || {}).scope;
+    let h = `<div><h4>Schutzprodukte – ${esc(MEASURE_WORD[measureKey(leadMeasure, leadScope)])}</h4><ul class="plain">${sec.products.map((p) => `<li>${esc(p.label || "ohne Bezeichnung")} <span class="num">${pct(p.sharePct)}</span></li>`).join("") || "<li class=\"note\">keine Prozesse mit der Rolle Sicherheit</li>"}` +
       (sec.products.length ? `<li><b>zusammen ${pct(sec.totalPct)}</b></li>` : "") + "</ul>";
     if (inc.companion) {
       const c = inc.companion;
@@ -1263,16 +1317,20 @@ function renderDetail(inc, host) {
     }
     evid.push(h + "</div>");
   }
-  evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${fmtTime(e.t, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
+  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${fmtTime(e.t, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
   if (inc.chronicContext.length) evid.push(`<div><h4>Dauerzustände im Hintergrund</h4><ul class="plain">${inc.chronicContext.map((c) => {
     const th = TH.get(c.signalId), st = STATUS[sevKey(c.severity)];
     return `<li><button type="button" class="lnk" data-incident="${c.incidentId}">${esc((th ? th.label : c.signalId) + " – " + c.label)}</button> <span class="status st-${st[2]}"><i class="sym" aria-hidden="true">${st[0]}</i> ${st[1]}</span>` +
       `<div class="note">${c.explains ? "betrifft dieselbe Ressource und kann den Vorfall miterklären" : "erklärt den Vorfall nicht"}</div></li>`;
   }).join("")}</ul></div>`);
 
+  const noneAffected = UNM.input ? "Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar."
+    : inc.type === "umfeld" ? "Keine Eingabeverzögerung über dem Soll in den Sitzungen dieses Befunds."
+    : inc.chronic ? "Keine Sitzung mit Eingabeverzögerung über dem Soll außerhalb der kurzen Vorfälle im selben Zeitraum."
+    : "Keine Sitzung mit Eingabeverzögerung über dem Soll.";
   host.innerHTML = `<div class="essentials">
-      <div><h4>Betroffen (${inc.affected.length})</h4>${inc.affected.length ? `<ul class="plain affected">${affected}</ul>` : '<ul class="plain affected"></ul><div class="note">Keine Sitzung mit Eingabeverzögerung über dem Soll.</div>'}</div>
-      <div><h4>${inc.main ? "Hauptverursacher" : "Verursacher"}</h4>${mainHtml(inc)}</div>
+      <div><h4>Betroffen (${inc.affected.length})</h4>${inc.affected.length ? `<ul class="plain affected">${affected}</ul>` : `<ul class="plain affected"></ul><div class="note">${noneAffected}</div>`}</div>
+      <div class="causebox"><h4>${inc.main ? "Hauptverursacher" : "Verursacher"}</h4>${mainHtml(inc)}</div>
     </div>
     <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>
       <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button></h4>
@@ -1281,7 +1339,7 @@ function renderDetail(inc, host) {
     <div class="evidence">${evid.join("")}</div>
     <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>`;
   charts.forEach((c, k) => chart(host.querySelector(".sc" + k), {
-    axis: c.axis, series: c.series, window: win, unit: c.g.unit, decimals: decOf(c.g.unit), signal: c.g.id, agg: "max", label: c.title,
+    axis: c.axis, series: c.series, window: win, unit: c.g.unit, decimals: decOf(c.g.unit), signal: c.g.id, agg: "max", label: c.title, legend: c.legend,
     yMax: c.g.id === "cpu.host" || c.g.id === "mem.used" ? 100 : undefined, yMaxFixed: c.g.id === "cpu.host" || c.g.id === "mem.used",
     empty: "Für diesen Messwert ist kein Verlauf gespeichert.",
     note: c.total > 8 ? `Die ersten 8 von ${c.total} Messreihen.` : c.missing ? "Nicht für alle Messreihen ist ein Verlauf gespeichert." : ""
@@ -1335,7 +1393,7 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
 
 // ---------- findings: target table, limits, quality ----------
 {
-  const stOf = (r) => !r.measured ? "na" : r.pctCrit > 0 ? "2" : r.pctWarn > 0 ? "1" : "0";
+  const stOf = sollStatus;
   const shares = (r) => !r.measured ? "–" :
     `<span class="sharebar" aria-hidden="true"><i class="b0" style="width:${r.pctNormal || 0}%"></i><i class="b1" style="width:${r.pctWarn || 0}%"></i><i class="b2" style="width:${r.pctCrit || 0}%"></i></span>` +
     `<span class="shares"><i class="sym st-good" aria-hidden="true">●</i> ${pct(r.pctNormal)} · <i class="sym st-warn" aria-hidden="true">▲</i> ${pct(r.pctWarn)} · <i class="sym st-crit" aria-hidden="true">◆</i> ${pct(r.pctCrit)}</span>`;
@@ -1343,7 +1401,9 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
   table("sollist", [
     { key: "label", head: "Messwert" },
     { key: "ideal", head: "Soll", fmt: (v) => esc(v || "–") },
-    { key: "pctCrit", head: "Bewertung", title: "schlechteste Bewertung im Messzeitraum", cls: "wrap", fmt: (v, r) => statusHtml(stOf(r)) + (r.measured ? "" : `<span class="note">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</span>`), sortVal: (r) => r.measured ? r.pctCrit * 1000 + r.pctWarn : -1 },
+    { key: "pctCrit", head: "Bewertung", title: "aus den Befunden des Messwerts im Messzeitraum: kritisch mit einem kritischen Befund, auffällig mit einem Befund", cls: "wrap",
+      fmt: (v, r) => statusHtml(stOf(r)) + (r.measured ? (loneExceed(r) ? `<span class="note">${LONE}</span>` : "") : `<span class="note">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</span>`),
+      sortVal: (r) => r.measured ? (r.status || 0) * 1e6 + r.pctCrit * 1000 + r.pctWarn : -1 },
     cNum("avg", "Ø", 1, "", { fmt: dash((v, r) => fmtVal(v, r.unit)) }),
     cNum("p95", "P95", 1, "", { fmt: dash((v, r) => fmtVal(v, r.unit)) }),
     cNum("max", "Max", 1, "", { fmt: dash((v, r) => fmtVal(v, r.unit)) }),
@@ -1356,16 +1416,23 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
   document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>
     <li>Bei Datenträgern und Freigaben ist sichtbar, dass ein Ziel langsam antwortet und welche Prozesse viel I/O erzeugen, nicht aber, welcher Prozess auf welche Datei wartet.</li>
     <li>Die Eingabeverzögerung enthält keine Prozesse, die als SYSTEM laufen.</li>
-    <li>Entzogene CPU-Zeit ist nur verfügbar, wenn die VMware Tools den Zähler bereitstellen.</li></ul>`;
+    <li>Entzogene CPU-Zeit ist nur verfügbar, wenn die VMware Tools den Zähler bereitstellen.</li>
+    <li>Prozesse, die zwischen zwei Schnappschüssen starten und wieder enden, werden nicht erfasst; für einen beendeten Prozess fehlt der Verbrauch seit dem letzten Schnappschuss.</li></ul>`;
 
-  const burstMin = Q.burstSec != null ? (Q.burstSnapshots * Q.burstSec) / 60 : null;
+  // burst mode: its duration from the tick flags, the spacing of its snapshots as measured
+  const burstText = !Q.burstTicks ? "nicht aktiv" : `${fmtSpan((Q.burstMin || 0) * 60000)} (${fmt(Q.burstTicks, 0)} Takte), ${fmt(Q.burstSnapshots, 0)} zusätzliche Schnappschüsse` +
+    (Q.burstSnapSec != null ? ` im Abstand von ${fmt(Q.burstSnapSec, Number.isInteger(Q.burstSnapSec) ? 0 : 1)} s` : "");
+  const unread = Q.unreadable || { ticks: 0, snapshots: 0 }, srcErr = Q.sourceErrors || [];
   document.getElementById("quality").innerHTML = `<h3 style="margin-bottom:8px">Messqualität</h3>
     <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
       <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
       <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
-      <span>Verdichtung <b>${fmt(Q.burstSnapshots, 0)} Schnappschüsse${Q.burstSec != null ? ` alle ${fmt(Q.burstSec, 0)} s, etwa ${fmtDur(burstMin)}` : ""}</b></span>
-      <span>WorkerPerf selbst <b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)</span></div>
-    <div class="tablewrap small"><table id="tSources"></table></div>`;
+      <span>Verdichtung <b>${burstText}</b></span>
+      <span>WorkerPerf selbst <b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)</span>` +
+      (unread.ticks || unread.snapshots ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>ticks.csv: ${fmt(unread.ticks, 0)} · snapshots.csv: ${fmt(unread.snapshots, 0)}</b></span>` : "") + `</div>` +
+    (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
+      `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || "ohne Meldung")}</li>`).join("")}</ul>` : "") +
+    `<div class="tablewrap small"><table id="tSources"></table></div>`;
   table("tSources", [
     { key: "label", head: "Quelle" },
     { key: "available", head: "Verfügbar", fmt: (v) => v ? '<span class="status st-good"><i class="sym" aria-hidden="true">●</i> verfügbar</span>' : '<span class="status st-na"><i class="sym" aria-hidden="true">○</i> nicht verfügbar</span>', sortVal: (r) => r.available ? 1 : 0 },

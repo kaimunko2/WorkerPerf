@@ -18,10 +18,11 @@
     Target file. Default: <Path>\report.html
 
 .PARAMETER From
-    Only analyse measurements at or after this time (passed to Import-WorkerPerfRun).
+    Only analyse measurements at or after this time, as local time of the measured server
+    (like -ReportedTime and every time the report shows).
 
 .PARAMETER To
-    Only analyse measurements at or before this time (passed to Import-WorkerPerfRun).
+    Only analyse measurements at or before this time, as local time of the measured server.
 
 .PARAMETER ThresholdFile
     Threshold file. Default: thresholds.json next to this script.
@@ -257,7 +258,9 @@ $series = @(Get-WorkerPerfSeries $model $thresholds)
 $findings = @(Get-WorkerPerfFindings -Series $series -Thresholds $thresholds)
 $incidents = @(Join-WorkerPerfIncidents -Findings $findings)
 Add-WorkerPerfIncidentDetail -Incidents $incidents -Model $model -Thresholds $thresholds
-$sollIst = @(Get-WorkerPerfSollIst -Series $series -Thresholds $thresholds -Sources $model.Sources)
+# one result for the status of tiles and table rows (from the findings) and for what the texts call "nicht gemessen"
+$sollIst = @(Get-WorkerPerfSollIst -Series $series -Thresholds $thresholds -Sources $model.Sources -Findings $findings)
+$unmeasured = Get-WorkerPerfUnmeasured -SollIst $sollIst
 
 #endregion
 
@@ -324,6 +327,8 @@ $simulated = Get-MetaValue 'Simulated'
 if ($null -ne $simulated) { $simulated = [bool]$simulated }
 $endReason = Get-MetaValue 'EndReason'
 if ($null -ne $endReason) { $endReason = [string]$endReason }
+$endMessage = Get-MetaValue 'EndMessage'
+if ($null -ne $endMessage) { $endMessage = [string]$endMessage }
 $ramGB = $null
 if ([double]$model.Meta.RamMB -gt 0) { $ramGB = [Math]::Round([double]$model.Meta.RamMB / 1024.0, 1) }
 
@@ -332,7 +337,7 @@ $meta = [ordered]@{
     computer = (Get-MetaValue 'Computer'); os = (Get-MetaValue 'OS'); cores = $cores; ramGB = $ramGB
     start = [long]$tick.TimeMs[0]; end = [long]$tick.TimeMs[$nT - 1]; offsetMin = $offsetMin
     fastSec = $fastSec; snapSec = [double]$model.Meta.SnapSec; durationMin = [Math]::Round($durationSec / 60.0, 2)
-    ticks = $nT; snapshots = $nP; simulated = $simulated; endReason = $endReason; usersPerCore = $usersPerCore
+    ticks = $nT; snapshots = $nP; simulated = $simulated; endReason = $endReason; endMessage = $endMessage; usersPerCore = $usersPerCore
     processRows = $model.Rows.K.Length; processCount = $validK.Count; totalCpuSec = [Math]::Round($totalCpuMs / 1000.0, 1)
     generated = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     focus = $focusOut
@@ -342,8 +347,23 @@ $skippedTicks = 0
 foreach ($e in $tick.ElapsedSec) { if ($e -gt 1.5 * $fastSec) { $skippedTicks++ } }
 $tickMsSt = Get-CleanStats ([double[]]$tick.CollectMs)
 $snapMsSt = Get-CleanStats ([double[]]$snap.CollectMs)
+# burst mode: its duration from the tick flags; the spacing of the burst snapshots as measured (median)
 $burstSnapshots = 0
-foreach ($kind in $snap.Kind) { if ($kind -eq 'B') { $burstSnapshots++ } }
+$burstGaps = New-Object System.Collections.Generic.List[double]
+for ($i = 0; $i -lt $nP; $i++) {
+    if ($snap.Kind[$i] -ne 'B') { continue }
+    $burstSnapshots++
+    if ($snapSecArr[$i] -gt 0) { $burstGaps.Add($snapSecArr[$i]) }
+}
+$burstSnapSec = $null
+if ($burstGaps.Count -gt 0) { $g = $burstGaps.ToArray(); [Array]::Sort($g); $burstSnapSec = [Math]::Round($g[[int][Math]::Floor(($g.Length - 1) / 2)], 1) }
+$burstTicks = 0; $burstTickSec = 0.0
+for ($i = 0; $i -lt $nT; $i++) {
+    if (-not $tick.Burst[$i]) { continue }
+    $burstTicks++
+    $e = $tick.ElapsedSec[$i]
+    if ($e -gt 0) { $burstTickSec += $e }
+}
 $collectorMs = 0.0; $collectorMax = $null
 foreach ($k in $validK) {
     $pr = $procAll[$k]
@@ -367,12 +387,22 @@ foreach ($id in $sourceIds) {
     elseif ($texts.ContainsKey('source.' + $id)) { $label = $texts['source.' + $id] }
     $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail })
 }
+# failed source calls of the capture: the source's text, else its key
+$sourceErrorsOut = New-Object System.Collections.Generic.List[object]
+foreach ($e in @($model.SourceErrors | Sort-Object -Property @{ Expression = { $_.Source } })) {
+    $label = [string]$e.Source
+    if ($texts.ContainsKey('sourcecall.' + $label)) { $label = $texts['sourcecall.' + $label] }
+    $sourceErrorsOut.Add([ordered]@{ source = [string]$e.Source; label = $label; count = [int]$e.Count; firstMs = $e.FirstMs; firstMessage = [string]$e.FirstMessage })
+}
 $quality = [ordered]@{
     skippedTicks = $skippedTicks
     tickMsAvg = (Get-Round $tickMsSt.Avg 1); tickMsMax = (Get-Round $tickMsSt.Max 1)
     snapMsAvg = (Get-Round $snapMsSt.Avg 1); snapMsMax = (Get-Round $snapMsSt.Max 1)
-    burstSec = $burstSec; burstSnapshots = $burstSnapshots
+    burstSec = $burstSec; burstSnapshots = $burstSnapshots; burstSnapSec = $burstSnapSec
+    burstTicks = $burstTicks; burstMin = [Math]::Round($burstTickSec / 60.0, 2)
     collectorCpuPct = $collectorPct; collectorCpuMaxPct = (Get-Round $collectorMax 2)
+    unreadable = [ordered]@{ ticks = [int]$model.Unreadable.Ticks; snapshots = [int]$model.Unreadable.Snapshots }
+    sourceErrors = $sourceErrorsOut.ToArray()
     sources = $sourcesOut.ToArray()
 }
 
@@ -450,7 +480,14 @@ if ($null -ne $model.MainApp) {
     $t = New-Object System.Collections.Generic.List[int]; $ms = New-Object System.Collections.Generic.List[double]
     $d = $model.MainApp.Delay
     for ($i = 0; $i -lt $nT; $i++) { if ($d[$i] -gt 0) { $t.Add($i); $ms.Add($d[$i]) } }
-    $mainAppOut = [ordered]@{ label = [string]$model.MainApp.Label; t = (New-JsonIntegers $t); ms = (New-JsonSeries $ms.ToArray() 1) }
+    # status like every tile: from the findings the delay series of the main application forms under the input-delay threshold
+    $mainStatus = 0
+    if ($thresholds.Contains('input.session')) {
+        $mainSeries = @{ Id = 'input.session'; Resource = 'input'; Scope = 'global'; Instance = ''; Label = [string]$model.MainApp.Label; SessionIndex = -1
+            TimeMs = $tick.TimeMs; ElapsedSec = $tick.ElapsedSec; Value = $d; Ops = $null }
+        foreach ($f in @(Get-WorkerPerfFindings -Series @($mainSeries) -Thresholds $thresholds)) { if ([int]$f.Severity -gt $mainStatus) { $mainStatus = [int]$f.Severity } }
+    }
+    $mainAppOut = [ordered]@{ label = [string]$model.MainApp.Label; status = $mainStatus; t = (New-JsonIntegers $t); ms = (New-JsonSeries $ms.ToArray() 1) }
 }
 function ConvertTo-EventEntry($Event) {
     return [ordered]@{ t = [long]$Event.TimeMs; source = [string]$Event.Source; id = [int]$Event.EventId; kind = [string]$Event.Kind; text = [string]$Event.Text }
@@ -614,8 +651,22 @@ foreach ($inc in $incidents) {
         foreach ($p in @($rank.Apps)) { $apps.Add([ordered]@{ a = [int]$p.AppIndex; name = [string]$p.Name; sharePct = (Get-Round $p.SharePct 1); baselinePct = (Get-Round $p.BaselinePct 1) }) }
         $sess = New-Object System.Collections.Generic.List[object]
         foreach ($p in @($rank.Sessions)) { $sess.Add([ordered]@{ s = [int]$p.SessionIndex; user = [string]$p.User; sharePct = (Get-Round $p.SharePct 1); baselinePct = (Get-Round $p.BaselinePct 1) }) }
-        $contrib[[string]$r] = [ordered]@{ measure = [string]$rank.Measure; procs = $procs.ToArray(); apps = $apps.ToArray(); sessions = $sess.ToArray() }
-        if ($null -ne $inc.Lead -and [string]$r -eq [string]$inc.Lead) { $main = ConvertTo-MainEntry $rank.Main ([string]$r) }
+        $contrib[[string]$r] = [ordered]@{ measure = [string]$rank.Measure; scope = [string]$rank.Scope; procs = $procs.ToArray(); apps = $apps.ToArray(); sessions = $sess.ToArray() }
+    }
+    # what the text says about the cause of an 'engpass', for the page: main (the main cause) only when the text names one
+    $cause = $null
+    if ($null -ne $inc.Cause) {
+        $c = $inc.Cause
+        $causeSec = $null; $causeOther = $null
+        if ([string]$c.Kind -eq 'main') { $main = ConvertTo-MainEntry $c.Main ([string]$c.Resource) }
+        elseif ([string]$c.Kind -eq 'security') {
+            $causeSec = [ordered]@{ label = [string]$c.Security.Label; sharePct = (Get-Round $c.Security.SharePct 1) }
+            $causeOther = ConvertTo-MainEntry $c.Main ([string]$c.Resource)
+        }
+        $cause = [ordered]@{
+            kind = [string]$c.Kind; resource = [string]$c.Resource; measure = [string]$c.Measure; scope = [string]$c.Scope
+            minSharePct = [double]$c.MinSharePct; scan = [bool]$c.Scan; security = $causeSec; other = $causeOther
+        }
     }
     $delayProcs = New-Object System.Collections.Generic.List[object]
     foreach ($p in @($inc.DelayProcesses)) {
@@ -650,9 +701,9 @@ foreach ($inc in $incidents) {
     $incOut.Add([ordered]@{
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
-            text = [string](Get-WorkerPerfIncidentText -Incident $inc -Model $model -Thresholds $thresholds -Texts $texts)
+            text = [string](Get-WorkerPerfIncidentText -Incident $inc -Model $model -Thresholds $thresholds -Texts $texts -Unmeasured $unmeasured)
             focus = $focus; nearReported = $near; scanActive = [bool]$inc.ScanActive; events = $incEvents.ToArray()
-            signals = $signals.ToArray(); affected = $affected.ToArray(); main = $main; contributors = $contrib
+            signals = $signals.ToArray(); affected = $affected.ToArray(); main = $main; cause = $cause; contributors = $contrib
             delayProcs = $delayProcs.ToArray(); endpoints = $endpoints.ToArray(); ica = $ica.ToArray()
             security = [ordered]@{ products = $products.ToArray(); totalPct = (Get-Round $inc.Security.TotalPct 1) }
             companion = $companion; chronicContext = $context.ToArray()
@@ -700,6 +751,12 @@ $pCpu = @{}; $pWs = @{}
 foreach ($k in $selK) { $isSel[$k] = $true; $pCpu[$k] = New-Object double[] $nP; $pWs[$k] = New-WorkerPerfNanArray $nP }
 $rows = $model.Rows
 $rStart = $rows.Start; $rK = $rows.K; $rCpu = $rows.CpuMs; $rWs = $rows.WsKB
+# the working set carried over a -From cut holds at the first snapshot for processes without a row there
+$carried = $model.Carried
+for ($i = 0; $i -lt $carried.K.Length; $i++) {
+    $k = [int]$carried.K[$i]
+    if ($k -ge 0 -and $isSel[$k]) { $pWs[$k][0] = [double]$carried.WsKB[$i] }
+}
 for ($p = 0; $p -lt $nP; $p++) {
     for ($r = $rStart[$p]; $r -lt $rStart[$p + 1]; $r++) {
         $k = $rK[$r]
@@ -752,7 +809,7 @@ foreach ($row in $sollIst) {
     $sollOut.Add([ordered]@{
             id = [string]$row.Id; label = [string]$row.Label; unit = [string]$row.Unit; ideal = [string]$row.Ideal
             warn = [double]$row.Warn; crit = [double]$row.Crit; origin = [string]$row.Origin; source = [string]$row.Source; url = [string]$row.Url; note = [string]$row.Note
-            measured = [bool]$row.Measured; detail = $detail
+            measured = [bool]$row.Measured; detail = $detail; status = [int]$row.Status; exceeded = [bool]$row.Exceeded
             avg = (Get-Round $row.Avg 2); p95 = (Get-Round $row.P95 2); max = (Get-Round $row.Max 2)
             pctNormal = (Get-Round $row.PctNormal 1); pctWarn = (Get-Round $row.PctWarn 1); pctCrit = (Get-Round $row.PctCrit 1)
             worstInstance = [string]$row.WorstInstance
@@ -771,6 +828,7 @@ $data = [ordered]@{
     mainApp = $mainAppOut; events = $eventsOut.ToArray()
     sessions = $sessOut.ToArray(); apps = $appsOut.ToArray(); pairs = $pairsOut.ToArray(); procs = $procOut.ToArray()
     citrix = $citrixOut.ToArray(); sollIst = $sollOut.ToArray(); incidents = $incOut.ToArray()
+    unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
     noFinding = ($incOut.Count -eq 0)
 }
 
