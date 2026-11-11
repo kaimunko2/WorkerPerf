@@ -109,12 +109,38 @@ Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle, die die Auswe
 
 | Reiter | Inhalt |
 |---|---|
+| **Befunde** (Startreiter) | ein Satz mit der Zahl der Vorfälle je Typ, Zeitleiste, Vorfallsliste, Soll-Ist-Tabelle, Grenzen der Aussage, Messqualität |
 | **Übersicht** | Kennzahlen (CPU Ø/P95/Max, RAM, Sitzungen, IOPS, ICA Round Trip), CPU und RAM gestapelt nach Sitzung oder Anwendung, Host-Verläufe für CPU, Speicher, Datenträger, Netzwerk, Sitzungszahl |
 | **Sitzungen** | je Sitzung: Benutzer, Client, Dauer, Aktiv-Anteil, CPU-Anteil/-Zeit/Ø/P95/Max, RAM, Commit, I/O, ICA RTT. Detail: Verläufe, Anwendungen und Prozesse der Sitzung, Citrix-Messwerte |
 | **Anwendungen** | je Prozessname über alle Sitzungen: Instanzen, CPU, RAM gesamt und je Instanz, I/O. Detail: Verläufe und betroffene Sitzungen |
 | **Prozesse** | die ressourcenintensivsten Einzelprozesse mit Verlauf (CPU, Working Set), Handles, Threads |
 
 Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des gemessenen Servers.
+
+Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten:
+
+- **Zeitleiste:** ein Balken über die ganze Messung. Jeder Vorfall ist eine Markierung von Beginn bis Ende
+  mit Symbol und Farbe der Schwere (`▲ auffällig`, `◆ kritisch`); überlappende Vorfälle liegen in eigenen
+  Zeilen. Dauerzustände stehen als schmale Linie darunter, Defender- und AppLocker-Ereignisse als kleine
+  Striche (Text im Tooltip), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung
+  öffnet den Vorfall und stellt alle Diagramme auf sein Zeitfenster mit Rand.
+- **Vorfallstypen:** *Engpass* – eine Ressource des Workers (CPU, Arbeitsspeicher, Datenträger, Freigabe,
+  Profilcontainer) lag über dem Soll und Benutzer spürten es. *Verzögerung ohne Engpass* – Benutzer warteten,
+  ohne dass der Worker ausgelastet war; die Ursache liegt in der Anwendung oder dahinter (Datenbank, Proxy,
+  Netz). *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine Gegenstelle, nicht der Worker.
+- **Vorfallsliste:** je Vorfall Schwere, Typ und ein Absatz im Klartext. Ein Klick auf den Text klappt die
+  Belege auf: Betroffene mit ihrer höchsten Eingabeverzögerung, Hauptverursacher, Verlauf der beteiligten
+  Messwerte, je Ressource die Ranglisten der Prozesse, Anwendungen und Sitzungen mit Anteil und Normalwert,
+  Prozesse mit der höchsten Eingabeverzögerung, Gegenstellen, ICA Round Trip, Anteil der Schutzprodukte,
+  Ereignisse und Dauerzustände im Hintergrund. Ein Klick auf einen Benutzer, eine Anwendung oder einen
+  Prozess öffnet ihn im jeweiligen Reiter.
+- **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
+  Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet.
+- **Soll-Ist-Tabelle:** je Messwert Soll, Bewertung, Ø, P95, Maximum, die Zeitanteile normal / auffällig /
+  kritisch als Balken und in Zahlen, die am stärksten betroffene Instanz und die Herkunft des Sollwerts mit
+  Link auf die Quelle. Nicht gemessene Werte stehen mit `○ nicht gemessen` und dem Grund darin.
+- Ohne Vorfall sagt der Reiter ausdrücklich „Keine Schwelle wurde überschritten." und listet die gemessenen
+  und die nicht gemessenen Werte.
 
 ### Lesehilfe zu den Messwerten
 
@@ -126,6 +152,17 @@ Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des
   gezählt – die Summe über alle Sitzungen kann über dem physisch belegten Speicher liegen.
   **Commit** (Private Bytes) ist die belastbarere Größe für Sizing-Fragen.
 - **I/O** umfasst alle Lese-/Schreibvorgänge eines Prozesses (Datei, Netzwerk, Geräte).
+- **Eingabeverzögerung** ist die Zeit, die eine Eingabe des Benutzers (Taste, Maus) wartet, bis die Anwendung
+  sie verarbeitet – die Messgröße für „alles war zäh". Prozesse, die als SYSTEM laufen, sind nicht enthalten.
+- **Dauerzustand** ist ein Befund, der länger als 15 Minuten anhält, etwa eine dauerhaft langsame Netzstrecke
+  eines Benutzers. Er steht als eigener Vorfall am Ende der Liste und bei jedem Vorfall, in dessen Zeitraum er
+  fortbesteht, als Hintergrund.
+- **Begleiter** ist ein Schutzprodukt (etwa Microsoft Defender), das in einem Vorfall einen spürbaren Anteil der
+  Last trägt, weil es die Dateien des eigentlichen Verursachers prüft. Der Bericht nennt dann auch den größten
+  I/O-Erzeuger im Fenster; meist hilft ein Scan-Ausschluss.
+- **Normalwert** („sonst … %") ist der Anteil desselben Prozesses, derselben Anwendung oder Sitzung außerhalb
+  der Vorfälle (Dauerzustände ausgenommen); ohne solche Messungen steht ein Strich. Ein hoher Anteil mit niedrigem Normalwert zeigt einen Ausreißer, ein hoher Anteil mit gleich
+  hohem Normalwert einen gewohnten Großverbraucher.
 - Prozesse, die zwischen zwei Messungen starten *und* enden, werden nicht erfasst. Ein Prozess,
   der im Intervall startet, bekommt seine bis dahin verbrauchte CPU-Zeit diesem Intervall zugerechnet.
 

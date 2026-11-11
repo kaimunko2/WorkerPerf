@@ -46,10 +46,50 @@ async function checkPage(browser, dir, scheme) {                    // Task 13
   await page.close();
 }
 
+async function checkFindings(browser, dir, scheme) {                // Task 14
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  ok(await page.locator('#tab-findings').isVisible(), 'Befunde ist der Startreiter');
+  ok(await page.locator('#incidents .incident').count() === D.incidents.length, 'ein Eintrag je Vorfall');
+  ok(await page.locator('#timeline .mark').count() === D.incidents.length, 'eine Markierung je Vorfall');
+  ok(await page.locator('#timeline .event').count() === D.events.length, 'Ereignisse in der Zeitleiste');
+  ok(!(await page.locator('#noFinding').isVisible()), 'kein Hinweis auf fehlende Befunde');
+  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  const entry = page.locator(`#incidents .incident[data-id="${cpu.id}"]`);
+  ok((await entry.locator('.text').innerText()).includes('CPU-Engpass'), 'Klartext sichtbar');
+  ok((await entry.locator('.badge').innerText()).includes('kritisch'), 'Schwere als Wort');
+  await entry.locator('.text').click();
+  ok(await entry.locator('.detail .affected li').count() === cpu.affected.length, 'Betroffene aufgelistet');
+  ok((await entry.locator('.detail .contributors').innerText()).includes('EXCEL.EXE'), 'Verursacher aufgelistet');
+  ok(await entry.locator('.detail svg path').count() > 0, 'Verlauf im Vorfall');
+  await page.click(`#timeline .mark[data-incident="${cpu.id}"]`);
+  const z = await page.evaluate(() => window.WP.zoom);
+  ok(z && z.t0 < cpu.start && z.t1 > cpu.end && z.t1 - z.t0 < (cpu.end - cpu.start) * 3, 'Klick stellt die Diagramme auf das Fenster ein');
+  ok(await page.locator('#sollist tbody tr').count() === D.sollIst.length, 'Soll-Ist-Tabelle vollstaendig');
+  ok((await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()).includes('unter 75 %'), 'Idealbereich genannt');
+  ok(await page.locator('#sollist tbody tr[data-id="cpu.host"] a[href]').count() === 1, 'Herkunft verlinkt');
+  ok((await page.locator('#quality').innerText()).includes('WorkerPerf'), 'Messqualitaet nennt den Collector');
+  ok((await page.locator('#limits').innerText()).includes('SYSTEM'), 'Grenzen der Aussage genannt');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await page.close();
+
+  const f = await open(browser, path.join(dir, 'report-focus.html'), scheme);
+  ok((await f.page.locator('#incidents .incident').first().getAttribute('class')).includes('focus'), 'Vorfall des Benutzers steht vorn');
+  ok(await f.page.locator('#timeline .reported').count() === 1, 'gemeldete Uhrzeit markiert');
+  ok((await f.page.locator('#focusInfo').innerText()).includes('user003'), 'Fokus genannt');
+  await f.page.close();
+
+  const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
+  ok(await n.page.locator('#noFinding').isVisible(), 'Hinweis ohne Befund');
+  ok((await n.page.locator('#noFinding').innerText()).includes('Keine Schwelle wurde überschritten'), 'ausdrueckliche Aussage');
+  ok(await n.page.locator('#incidents .incident').count() === 0, 'keine Vorfaelle');
+  ok(n.page.errors.length === 0, 'Skriptfehler ohne Befund: ' + n.page.errors.join(' | '));
+  await n.page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
-  for (const scheme of ['light', 'dark']) await checkPage(browser, dir, scheme);
+  for (const scheme of ['light', 'dark']) { await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); }
   console.log('browser checks passed: ' + checks);
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });
