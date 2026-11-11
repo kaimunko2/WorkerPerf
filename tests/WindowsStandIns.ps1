@@ -10,7 +10,7 @@ function Reset-WinStandIns {
     $ops = @{ 'C:' = 10.0; 'D:' = 2.0; 'HarddiskVolume1' = 0.0; 'C:\Users\mueller_UPM_local\UpmTempMount' = 25.0
         'C:\Users\gast_UPM_local\UpmTempMount' = 1.0; '_Total' = 38.0 }
     $script:WinFake = @{
-        Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true; ThrowCheck = ''; ManyEvents = 0
+        Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true; ThrowCheck = ''; ManyEvents = 0; FailStorage = $false
         Logs = @('Microsoft-Windows-Windows Defender/Operational', 'Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script')
         Perf = @{
             'Processor Information' = @{ '% Processor Time' = @{ '_Total' = 27.5; '0,_Total' = 30.0; '0,0' = 31.0 } }
@@ -120,7 +120,7 @@ function Get-CimInstance {
             }
         }
         'Win32_Service' { [pscustomobject]@{ Name = 'RpcSs'; ProcessId = [uint32]900 }; [pscustomobject]@{ Name = 'Spooler'; ProcessId = [uint32]0 } }
-        'MSFT_Disk' { $script:WinFake.DiskQueries++; $script:WinFake.Disks.ToArray() }
+        'MSFT_Disk' { $script:WinFake.DiskQueries++; if ($script:WinFake.FailStorage) { throw 'Zeitlimit der Speicherabfrage' }; $script:WinFake.Disks.ToArray() }
         'MSFT_Partition' { foreach ($d in $script:WinFake.Disks) { $d.Partitions } }
         'Citrix_Euem_RoundTrip' {
             if ($script:WinFake.FailCitrix) { throw 'Citrix-WMI antwortet nicht' }

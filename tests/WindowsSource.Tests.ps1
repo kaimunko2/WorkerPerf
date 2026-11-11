@@ -71,6 +71,16 @@ Describe 'Windows-Datenquelle: Instanznamen und Zuordnungen' {
         Resolve-WorkerPerfProfileOwner -Paths @('\\fs01\upm$\muellerin.KLINIK\x.vhdx') -Sessions $s | Should -BeNullOrEmpty
         Resolve-WorkerPerfProfileOwner -Paths @() -Sessions $s | Should -BeNullOrEmpty
     }
+    It 'laesst feste Ordnernamen keinen Container beanspruchen' {
+        # Benutzer, die wie feste Ordner heissen, duerfen die UPM-Container eines anderen nicht an sich ziehen
+        $s = @([pscustomobject]@{ SessionId = 3; User = 'local' }, [pscustomobject]@{ SessionId = 4; User = 'profiles' },
+            [pscustomobject]@{ SessionId = 5; User = 'upm' }, [pscustomobject]@{ SessionId = 6; User = 'Microsoft' }, [pscustomobject]@{ SessionId = 7; User = 'mueller' })
+        $paths = @('\\fs01\upm$\mueller.KLINIK\Win2022\UPM_Profile\OutlookOST.vhdx',
+            'C:\Users\mueller_UPM_local\UpmTempMount\Profiles\mueller\AppData\Local\Microsoft\Outlook\')
+        Resolve-WorkerPerfProfileOwner -Paths $paths -Sessions $s | Should -Be 7
+        Resolve-WorkerPerfProfileOwner -Paths @('C:\Users\local_UPM_local\UpmTempMount\') -Sessions $s | Should -Be 3
+        Resolve-WorkerPerfProfileOwner -Paths @('\\fs01\upm$\mueller.KLINIK\x.vhdx') -Sessions @($s | Where-Object User -ne 'mueller') | Should -BeNullOrEmpty
+    }
     It 'ordnet nicht zu, wenn ein Benutzer zwei Sitzungen hat' {
         $s = @([pscustomobject]@{ SessionId = 3; User = 'mueller' }, [pscustomobject]@{ SessionId = 9; User = 'Mueller' }, [pscustomobject]@{ SessionId = 0; User = '' })
         Resolve-WorkerPerfProfileOwner -Paths @('\\fs01\upm$\mueller.KLINIK\x.vhdx') -Sessions $s | Should -BeNullOrEmpty
@@ -227,9 +237,14 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
             foreach ($k in 0..59) { $inst["ICA-CGP $k (user$k)"] = [double]$c }
             $values["Latency $c"] = $inst
         }
+        # Vergleich mit einer Grundlinie auf demselben Rechner: so viele Zeilen nur anlegen; die alte Zuordnung je Zeile
+        # brauchte rund das Hundertfache, die jetzige etwa das Dreifache
+        $base = [Diagnostics.Stopwatch]::StartNew()
+        $plain = foreach ($c in $values.Keys) { foreach ($k in $values[$c].Keys) { [pscustomobject]@{ Source = 'x'; SessionId = 1; Instance = $k; Metric = $c; Value = 1.0 } } }
+        $base.Stop()
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $rows = @(ConvertTo-WorkerPerfIcaRows -Values $values -Sessions $sessions)
-        $sw.Elapsed.TotalSeconds | Should -BeLessThan 3
+        $sw.Elapsed.TotalSeconds | Should -BeLessThan (20 * $base.Elapsed.TotalSeconds + 1)
         $rows.Count | Should -Be 3240
         @($rows | Where-Object Instance -eq 'ICA-CGP 7 (user7)' | ForEach-Object SessionId | Sort-Object -Unique) | Should -Be @(9)
     }
@@ -329,7 +344,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
         $script:WinFake.DiskQueries | Should -Be $builds                                # nie im schnellen Takt
         $n = $s.Volumes | Where-Object Volume -eq 'C:\Users\neu_UPM_local\UpmTempMount'
-        $n.Kind | Should -Be 'profile'; $n.SessionId | Should -BeNullOrEmpty
+        $n.Kind | Should -Be 'disk'; $n.SessionId | Should -BeNullOrEmpty               # erst die Zuordnung macht es zum Container
         [void](Get-WorkerPerfSnapshot -Kind B)
         $script:WinFake.DiskQueries | Should -Be $builds                                # nicht im verdichteten Schnappschuss
         [void](Get-WorkerPerfSnapshot -Kind R)
@@ -339,6 +354,23 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         ($s.Volumes | Where-Object Volume -eq 'C:').Kind | Should -Be 'disk'
         [void](Get-WorkerPerfSnapshot -Kind K)
         $script:WinFake.DiskQueries | Should -Be ($builds + 2)                          # jeder Stuetzpunkt baut neu
+    }
+    It 'versucht eine gescheiterte Zuordnung erst beim naechsten Stuetzpunkt wieder' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
+        [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfSnapshot -Kind K); [void](Get-WorkerPerfFastSample)
+        $script:WinFake.FailStorage = $true
+        Add-WinStandInUser -SessionId 3 -User 'neu' -Volume 'C:\Users\neu_UPM_local\UpmTempMount'
+        $before = $script:WinFake.DiskQueries
+        $out = @(foreach ($k in 1..4) { Get-WorkerPerfFastSample 3>&1; Get-WorkerPerfSnapshot -Kind R 3>&1 })
+        $script:WinFake.DiskQueries | Should -Be ($before + 1)                          # ein Versuch, nicht einer je Schnappschuss
+        @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 1
+        Add-WinStandInUser -SessionId 4 -User 'neu2' -Volume 'C:\Users\neu2_UPM_local\UpmTempMount'
+        [void](Get-WorkerPerfFastSample 3>$null); [void](Get-WorkerPerfSnapshot -Kind R 3>$null)
+        $script:WinFake.DiskQueries | Should -Be ($before + 1)                          # nach einem Fehler nur am Stuetzpunkt
+        $script:WinFake.FailStorage = $false
+        [void](Get-WorkerPerfSnapshot -Kind K); $s = Get-WorkerPerfFastSample
+        $script:WinFake.DiskQueries | Should -Be ($before + 2)
+        ($s.Volumes | Where-Object Volume -eq 'C:\Users\neu2_UPM_local\UpmTempMount').SessionId | Should -Be 4
     }
     It 'startet, wenn die Pruefung eines Zaehlers scheitert, und meldet das Signal als nicht verfuegbar' {
         $script:WinFake.ThrowCheck = 'LogicalDisk'

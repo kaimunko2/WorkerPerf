@@ -445,14 +445,35 @@ function New-WorkerPerfUserIndex([object[]]$Sessions) {
     return $index
 }
 
-function Get-WorkerPerfUserCandidates([string]$Segment) {
-    # The user names a folder can stand for: the folder itself, every part before a "." or "_" (Citrix UPM:
-    # "<user>.<domain>", "<user>_UPM_local") and every part after a "_" (FSLogix "<sid>_<user>").
-    $Segment
-    for ($i = 1; $i -lt $Segment.Length; $i++) {
-        $c = $Segment[$i]
-        if ($c -eq '.' -or $c -eq '_') { $Segment.Substring(0, $i) }
-        if ($c -eq '_' -and $i -lt $Segment.Length - 1) { $Segment.Substring($i + 1) }
+function Get-WorkerPerfPathUserCandidates([string]$Path) {
+    # The user names a container path can stand for, only from the folders that carry the user, so that a user named
+    # like a fixed folder ("local", "Profiles", "Microsoft") does not claim every container:
+    # - location (UNC path), the folders after \\server\share: the folder itself, every part before a "." (Citrix UPM
+    #   "<user>.<domain>"), and the user part of FSLogix "<sid>_<user>" / "<user>_<sid>";
+    # - access path: the folder "<user>_UPM_local" (Citrix UPM) and the folder directly under "Users".
+    if ([string]::IsNullOrEmpty($Path)) { return }
+    $parts = $Path.Split([char[]]@('\', '/'))
+    if ($Path.StartsWith('\\')) {
+        # parts 0 and 1 are empty, 2 is the server, 3 the share
+        for ($k = 4; $k -lt $parts.Length; $k++) {
+            $seg = $parts[$k]
+            if ($seg.Length -eq 0) { continue }
+            $seg
+            for ($i = 1; $i -lt $seg.Length; $i++) { if ($seg[$i] -eq '.') { $seg.Substring(0, $i) } }
+            $u = $seg.IndexOf('_')
+            if ($u -gt 0 -and $u -lt $seg.Length - 1) {
+                if ($seg.Substring(0, $u) -match '^S-1-\d') { $seg.Substring($u + 1) }
+                $l = $seg.LastIndexOf('_')
+                if ($seg.Substring($l + 1) -match '^S-1-\d') { $seg.Substring(0, $l) }
+            }
+        }
+        return
+    }
+    for ($k = 0; $k -lt $parts.Length; $k++) {
+        $seg = $parts[$k]
+        if ($seg.Length -eq 0) { continue }
+        if ($seg.Length -gt 10 -and $seg.EndsWith('_UPM_local', [StringComparison]::OrdinalIgnoreCase)) { $seg.Substring(0, $seg.Length - 10) }
+        if ($k -gt 0 -and [string]::Equals($parts[$k - 1], 'Users', [StringComparison]::OrdinalIgnoreCase)) { $seg }
     }
 }
 
@@ -466,14 +487,10 @@ function Resolve-WorkerPerfProfileOwner {
     $bestLength = 0
     $ids = New-Object System.Collections.Generic.List[int]
     foreach ($path in @($Paths)) {
-        if ([string]::IsNullOrEmpty($path)) { continue }
-        foreach ($seg in $path.Split([char[]]@('\', '/'))) {
-            if ($seg.Length -eq 0) { continue }
-            foreach ($cand in @(Get-WorkerPerfUserCandidates $seg)) {
-                if ($cand.Length -lt $bestLength -or -not $Index.ContainsKey($cand)) { continue }
-                if ($cand.Length -gt $bestLength) { $bestLength = $cand.Length; $ids.Clear() }
-                foreach ($id in $Index[$cand]) { if (-not $ids.Contains($id)) { $ids.Add($id) } }
-            }
+        foreach ($cand in @(Get-WorkerPerfPathUserCandidates $path)) {
+            if ($cand.Length -lt $bestLength -or -not $Index.ContainsKey($cand)) { continue }
+            if ($cand.Length -gt $bestLength) { $bestLength = $cand.Length; $ids.Clear() }
+            foreach ($id in $Index[$cand]) { if (-not $ids.Contains($id)) { $ids.Add($id) } }
         }
     }
     if ($ids.Count -eq 1) { return $ids[0] }
@@ -580,8 +597,8 @@ function ConvertTo-WorkerPerfWinFastSample {
     # seconds and go out in ms; operations come as rates and go out as counts over ElapsedSec. StealPct is the
     # stolen CPU time in percent per vCPU: the average of per-vCPU instances when there are any, else the _Total
     # instance (the whole VM, as the probe found it) divided by the number of logical processors.
-    # A LogicalDisk instance unknown to the profile map (mounted since its last build) counts as a profile container
-    # without session until the next rebuild.
+    # Only a volume the profile map identifies as a container is 'profile'; one mounted since the last build is an
+    # ordinary 'disk' until the next rebuild, so that it cannot raise a profile container finding by mistake.
     param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1)
 
     $mb = 1048576.0
@@ -601,12 +618,9 @@ function ConvertTo-WorkerPerfWinFastSample {
         foreach ($name in @($rOps.Keys | Sort-Object)) {
             if (Test-WorkerPerfTotalInstance $name) { continue }
             $kind = 'disk'; $sid = $null; $backing = ''
-            if ($null -ne $ProfileMap) {
-                if ($ProfileMap.Entries.ContainsKey($name)) {
-                    $e = $ProfileMap.Entries[$name]
-                    $kind = $e.Kind; $sid = $e.SessionId; $backing = $e.Backing
-                }
-                elseif (-not $ProfileMap.Known.ContainsKey($name)) { $kind = 'profile' }
+            if ($null -ne $ProfileMap -and $ProfileMap.Entries.ContainsKey($name)) {
+                $e = $ProfileMap.Entries[$name]
+                $kind = $e.Kind; $sid = $e.SessionId; $backing = $e.Backing
             }
             $volumes.Add([pscustomobject]@{
                     Volume = $name; Kind = $kind; SessionId = $sid; Backing = $backing
@@ -1020,7 +1034,9 @@ function Get-WorkerPerfProfileDisks {
 
 function Update-WorkerPerfProfileMap($State, [object[]]$Sessions) {
     # Rebuilds the profile container map; called from the snapshot (at every keyframe, and at a regular snapshot after
-    # the fast cadence saw an unknown LogicalDisk instance), never from the fast cadence. A failure keeps the old map.
+    # the fast cadence saw an unknown LogicalDisk instance), never from the fast cadence. A failure keeps the old map,
+    # takes the instances of now as known (they stay plain disks) and leaves the next attempt to the next keyframe, so
+    # that a hanging storage provider does not stall every regular snapshot.
     $State.MapPending = $false
     $known = $State.VolumeNames
     if ($null -eq $known) {
@@ -1035,9 +1051,17 @@ function Update-WorkerPerfProfileMap($State, [object[]]$Sessions) {
         try {
             $disks = @(Get-WorkerPerfProfileDisks)
             $State.Map = New-WorkerPerfProfileMap -Disks $disks -Sessions $Sessions -Known $known
+            $State.MapFailed = $false
             return
         }
-        catch { Write-WarningOnce 'profile.map' "Zuordnung der Profilcontainer fehlgeschlagen, neue Laufwerke erscheinen als Profilcontainer ohne Sitzung: $($_.Exception.Message)" }
+        catch {
+            Write-WarningOnce 'profile.map' "Zuordnung der Profilcontainer fehlgeschlagen; neue Laufwerke erscheinen bis zum naechsten erfolgreichen Versuch an einem Stuetzpunkt als Datentraeger: $($_.Exception.Message)"
+            $State.MapFailed = $true
+            if ($null -ne $State.Map) {
+                foreach ($k in @($known)) { if (-not [string]::IsNullOrEmpty($k)) { $State.Map.Known[$k] = $true } }
+                return
+            }
+        }
     }
     # without the storage classes every volume is a plain disk
     if ($null -eq $State.Map -or -not $State.ProfileMapOk) { $State.Map = New-WorkerPerfProfileMap -Disks @() -Sessions @() -Known $known }
@@ -1062,7 +1086,7 @@ function Initialize-WorkerPerfSource {
     $os = @(Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)[0]
 
     $state = @{
-        Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapPending = $false; VolumeNames = $null; ProfileMapOk = $false
+        Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapPending = $false; MapFailed = $false; VolumeNames = $null; ProfileMapOk = $false
         LogicalProcessors = 1
         IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; NoCitrix = [bool]$NoCitrix
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
@@ -1234,7 +1258,7 @@ function Get-WorkerPerfSnapshot {
     $time = [datetime]::Now
     $processes = @(Get-WinProcessRaw)
     $sessions = @(Get-WinSessionRaw)
-    if ($Kind -eq 'K' -or $null -eq $st.Map -or ($Kind -eq 'R' -and $st.MapPending)) { Update-WorkerPerfProfileMap $st $sessions }
+    if ($Kind -eq 'K' -or $null -eq $st.Map -or ($Kind -eq 'R' -and $st.MapPending -and -not $st.MapFailed)) { Update-WorkerPerfProfileMap $st $sessions }
     $citrix = @()
     if (-not $st.NoCitrix) { $citrix = @(Get-WinCitrixRaw -Sessions $sessions) }
     return @{ Time = $time; Processes = $processes; Sessions = $sessions; Citrix = $citrix }
