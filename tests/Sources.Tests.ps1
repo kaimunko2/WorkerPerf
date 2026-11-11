@@ -6,7 +6,9 @@ BeforeAll {
     # Further pure helpers that run on Linux.
     foreach ($name in 'New-WorkerPerfNameMask', 'Hide-WorkerPerfMaskedText', 'Get-ProbeMaskNames', 'Get-ProbeMaskDomains', 'Hide-ProbeText',
         'Get-ProbeEndpointErrorClass', 'Get-ProbeMaskGap', 'Protect-ProbeValue', 'Get-ProbeFileName', 'Join-ProbeNames', 'Add-ProbeMaskNames', 'Get-ProbeErrorText',
-        'Read-ProbeNames', 'Update-ProbeMaskFromSessions', 'Invoke-ProbeCatalogue', 'Add-ProbeServerNames', 'Add-ProbeShareServer', 'Get-ProbeUncHosts', 'Get-ProbeTexts', 'Copy-ProbeValue') {
+        'Read-ProbeNames', 'Update-ProbeMaskFromSessions', 'Invoke-ProbeCatalogue', 'Add-ProbeServerNames', 'Add-ProbeShareServer', 'Get-ProbeUncHosts', 'Get-ProbeTexts', 'Copy-ProbeValue',
+        'Get-Prop', 'Get-ProbeEventFieldNames', 'Get-ProbeEventSummary', 'Get-ProbeDriverSummary', 'Get-ProbeEventQuery', 'Resolve-ProbeEventProviders',
+        'Select-ProbeDriverValueNames', 'Split-ProbeProviderChunks') {
         $f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
         if ($null -ne $f) { . ([scriptblock]::Create($f.Extent.Text)) }
     }
@@ -22,7 +24,8 @@ Describe 'Quellen-Pruefskript' {
     It 'listet die Pruefungen ohne Systemzugriff' {
         $Checks.Id | Should -Be @('system', 'process.snapshot', 'sessions.wts', 'services.map', 'perf.cpu', 'perf.queue', 'perf.steal', 'perf.memory',
             'perf.disk.total', 'perf.network', 'perf.volumes', 'perf.shares', 'perf.input.session', 'perf.input.process', 'perf.ica',
-            'profile.volumes', 'events.defender', 'events.applocker', 'security.products', 'user.processes', 'endpoints')
+            'profile.volumes', 'events.defender', 'events.applocker', 'events.application', 'events.system', 'events.printservice',
+            'events.smbclient', 'events.profileservice', 'events.session', 'print.drivers', 'print.queues', 'security.products', 'user.processes', 'endpoints')
     }
     It 'deckt jedes bewertete Signal ab' {
         $covered = @($Checks | ForEach-Object { $_.Signals })
@@ -338,6 +341,94 @@ Describe 'Namen, die sich waehrend des Laufs aendern' {
         $protect[0] | Should -BeLessThan $write[0]
     }
 }
+Describe 'Ereignisse und Drucken im Pruefskript' {
+    It 'nennt die Namen der Datenfelder, nie ihre Werte' {
+        $x = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Application Error'/><EventID>1000</EventID></System>" +
+             "<EventData><Data Name='AppName'>geheim.exe</Data><Data Name='ModuleName'>geheim.dll</Data></EventData></Event>"
+        Get-ProbeEventFieldNames $x | Should -Be @('AppName', 'ModuleName')
+        Get-ProbeEventFieldNames ($x -replace " Name='\w+'", '') | Should -Be @('#0', '#1')
+        $u = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><UserData><EventXML xmlns='x'><User>KLINIK\mueller</User><SessionID>3</SessionID></EventXML></UserData></Event>"
+        Get-ProbeEventFieldNames $u | Should -Be @('User', 'SessionID')
+    }
+    It 'zaehlt je Quelle und Kennung ohne Meldungstext' {
+        $ev = foreach ($k in 1..3) { $o = [pscustomobject]@{ ProviderName = 'Application Error'; Id = 1000; Message = 'geheimer Text' }
+            $o | Add-Member ScriptMethod ToXml { "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><EventData><Data Name='AppName'>geheim.exe</Data></EventData></Event>" }; $o }
+        $s = @(Get-ProbeEventSummary @($ev))
+        $s.Count | Should -Be 1; $s[0].Provider | Should -Be 'Application Error'; $s[0].Id | Should -Be 1000; $s[0].Count | Should -Be 3; $s[0].Fields | Should -Be @('AppName')
+        ($s | ConvertTo-Json -Depth 5) | Should -Not -Match 'geheim'
+    }
+    It 'fasst Druckertreiber nach Hersteller, Bauart und Isolierung zusammen, ohne Treibernamen' {
+        $d = @([pscustomobject]@{ Name = 'Treiber A'; Manufacturer = 'HP'; MajorVersion = 3 }, [pscustomobject]@{ Name = 'Treiber B'; Manufacturer = 'HP'; MajorVersion = 4 },
+               [pscustomobject]@{ Name = 'Treiber C'; Manufacturer = 'Kyocera'; MajorVersion = 3 })
+        $r = Get-ProbeDriverSummary $d 'Treiber A\\Treiber B\\Treiber C'
+        $r.Count | Should -Be 3; $r.ByManufacturer['HP'] | Should -Be 2; $r.ByType['3'] | Should -Be 2; $r.ByType['4'] | Should -Be 1
+        $r.ByIsolation['none'] | Should -Be 1; $r.ByIsolation['shared'] | Should -Be 1; $r.ByIsolation['isolated'] | Should -Be 1
+        ($r | ConvertTo-Json -Depth 5) | Should -Not -Match 'Treiber'
+    }
+    It 'nennt weitere Feldarten und uebersteht kaputtes XML' {
+        $x = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><EventData><Data>a</Data><Data Name='Code'>1</Data><Binary>00FF</Binary></EventData></Event>"
+        Get-ProbeEventFieldNames $x | Should -Be @('#0', 'Code', 'binary')
+        @(Get-ProbeEventFieldNames '<Event><kaputt') | Should -Be @()
+        @(Get-ProbeEventFieldNames "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System/></Event>") | Should -Be @()
+    }
+    It 'sortiert nach Quelle und Kennung und nimmt die Felder des ersten Ereignisses' {
+        $mk = { param($P, $Id, $Xml) $o = [pscustomobject]@{ ProviderName = $P; Id = $Id }; $o | Add-Member NoteProperty X $Xml; $o | Add-Member ScriptMethod ToXml { $this.X }; $o }
+        $ns = "xmlns='http://schemas.microsoft.com/win/2004/08/events/event'"
+        $ev = @((& $mk 'disk' 153 "<Event $ns><EventData><Data Name='Neu'>1</Data></EventData></Event>"), (& $mk 'Ntfs' 55 "<Event $ns/>"),
+                (& $mk 'disk' 7 "<Event $ns/>"), (& $mk 'disk' 153 "<Event $ns><EventData><Data Name='Alt'>1</Data></EventData></Event>"))
+        $s = @(Get-ProbeEventSummary $ev)
+        @($s | ForEach-Object { '{0}/{1}={2}' -f $_.Provider, $_.Id, $_.Count }) | Should -Be @('disk/7=1', 'disk/153=2', 'Ntfs/55=1')
+        $s[1].Fields | Should -Be @('Neu')
+        @(Get-ProbeEventSummary @()).Count | Should -Be 0
+    }
+    It 'baut die Abfrage aus Quellen, Stufen, Kennungen und Zeitraum' {
+        Get-ProbeEventQuery @('Application Error', '.NET Runtime') @(1, 2) @() 7 |
+            Should -Be "*[System[(Provider[@Name='Application Error' or @Name='.NET Runtime']) and (Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) <= 604800000]]]"
+        Get-ProbeEventQuery @() @() @(21, 23) 7 | Should -Be '*[System[(EventID=21 or EventID=23) and TimeCreated[timediff(@SystemTime) <= 604800000]]]'
+        Get-ProbeEventQuery @() @() @() 1 | Should -Be '*[System[TimeCreated[timediff(@SystemTime) <= 86400000]]]'
+    }
+    It 'loest Muster nur in Quellen von Produkten auf, nicht in selbst angelegte' {
+        $listed = @(
+            [pscustomobject]@{ Name = 'Citrix Print Manager Service'; MessageFilePath = 'C:\Program Files\Citrix\System32\CpSvcMsg.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+            [pscustomobject]@{ Name = 'Citrix Anmeldeskript Klinikum'; MessageFilePath = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+            [pscustomobject]@{ Name = 'Citrix Wartung Klinikum'; MessageFilePath = '%SystemRoot%\System32\EventCreate.exe'; ResourceFilePath = ''; ParameterFilePath = '' }
+            [pscustomobject]@{ Name = 'Citrix ohne Datei Klinikum'; MessageFilePath = ''; ResourceFilePath = $null; ParameterFilePath = $null }
+            [pscustomobject]@{ Name = 'Citrix Profile Management'; MessageFilePath = $null; ResourceFilePath = 'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'; ParameterFilePath = $null }
+            [pscustomobject]@{ Name = 'Citrix Druck Klinikum'; MessageFilePath = 'C:\Windows\System32\EventCreate.exe; %SystemRoot%\Microsoft.NET\Framework\v4.0.30319\EventLogMessages.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+            [pscustomobject]@{ Name = 'Citrix Print Manager Service'; MessageFilePath = 'C:\Windows\System32\EventCreate.exe;C:\Program Files\Citrix\System32\CpSvcMsg.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+        )
+        $asked = New-Object 'System.Collections.Generic.List[string]'
+        $r = Resolve-ProbeEventProviders @('Application Error', 'Citrix Profile Management', 'Citrix*', 'Citrix*') { param($p) $asked.Add($p); $listed }
+        @($r.Names) | Should -Be @('Application Error', 'Citrix Profile Management', 'Citrix Print Manager Service')
+        $r.Dropped | Should -Be 4
+        @($asked) | Should -Be @('Citrix*')
+        $none = Resolve-ProbeEventProviders @() { throw 'nicht fragen' }
+        @($none.Names).Count | Should -Be 0; $none.Dropped | Should -Be 0
+    }
+    It 'fragt viele Quellen in Gruppen ab, damit die Abfrage gueltig bleibt' {
+        $c = @(Split-ProbeProviderChunks @(1..32 | ForEach-Object { 'P{0}' -f $_ }) 15)
+        $c.Count | Should -Be 3
+        @($c | ForEach-Object { @($_).Count }) | Should -Be @(15, 15, 2)
+        $c[2] | Should -Be @('P31', 'P32')
+        $one = @(Split-ProbeProviderChunks @() 15)
+        $one.Count | Should -Be 1; @($one[0]).Count | Should -Be 0
+        @(Split-ProbeProviderChunks @('A') 15).Count | Should -Be 1
+    }
+    It 'nennt Namen von Registrierungswerten ohne solche, die einen Treibernamen enthalten' {
+        Select-ProbeDriverValueNames @('Driver', 'Data File', 'driver', 'Treiber A Einstellungen', '', 'Version') @('Treiber A', 'Treiber B') |
+            Should -Be @('Data File', 'Driver', 'Version')
+    }
+    It 'ordnet Treiber ausserhalb der Gruppen als unbekannt ein und liest auch mehrere Zeichenketten' {
+        $d = @([pscustomobject]@{ Name = 'Treiber A'; Manufacturer = ''; MajorVersion = 4 }, [pscustomobject]@{ Name = 'Treiber Z'; Manufacturer = 'HP'; MajorVersion = 2 })
+        $r = Get-ProbeDriverSummary $d @('', 'treiber a\Treiber Q')
+        $r.ByIsolation['shared'] | Should -Be 1; $r.ByIsolation['unbekannt'] | Should -Be 1; $r.ByIsolation['none'] | Should -Be 0
+        $r.ByType['unbekannt'] | Should -Be 1; $r.ByManufacturer['unbekannt'] | Should -Be 1
+        $r.IsolationSource | Should -Be 'PrintDriverIsolationGroups'
+        @($r.PropertyNames) | Should -Be @('Name', 'Manufacturer', 'MajorVersion')
+        $empty = Get-ProbeDriverSummary @() $null
+        $empty.Count | Should -Be 0; $empty.IsolationSource | Should -Be 'keine'; @($empty.PropertyNames).Count | Should -Be 0
+    }
+}
 Describe 'Ablauf des Pruefskripts mit nachgestellten Quellen' -Skip:$IsWindows {
     # Der Hauptteil des Skripts laeuft nur unter Windows. Hier wird er mit nachgestellten Quellen ausgefuehrt: die
     # Sitzungen liefert eine Klasse gleichen Namens, die Profile eine Funktion Get-CimInstance, die Pruefungen ein
@@ -375,6 +466,74 @@ namespace WorkerPerfProbe
                 [pscustomobject]@{ Name = 'Spooler'; ProcessId = 0 }
             }
             elseif ($ClassName -eq 'Win32_OperatingSystem') { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
+            elseif ($ClassName -eq 'MSFT_PrinterDriver' -and $Namespace -eq 'root/StandardCimv2') {
+                [pscustomobject]@{ Name = 'Zeta Station 3 Klinikum'; Manufacturer = 'HP'; MajorVersion = 3; PrinterEnvironment = 'Windows x64' }
+                [pscustomobject]@{ Name = 'Zeta Etiketten Klinikum'; Manufacturer = 'Zebra'; MajorVersion = 4; PrinterEnvironment = 'Windows x64' }
+                [pscustomobject]@{ Name = 'Zeta ohne Schluessel Klinikum'; Manufacturer = 'HP'; MajorVersion = 3; PrinterEnvironment = 'Windows x64' }
+            }
+        }
+        # Ereignisprotokolle: je Protokoll ein Eintrag mit Exists, Readable und den Ereignissen. Die Ereignisse tragen Texte und
+        # Feldwerte, die nicht im Ergebnis stehen duerfen. Die Abfragen werden mitgeschrieben.
+        $script:EventQueries = New-Object 'System.Collections.Generic.List[string]'
+        $script:NewEvent = { param($Provider, $Id, $Xml)
+            $o = [pscustomobject]@{ ProviderName = $Provider; Id = $Id; Message = 'Fehler bei mueller auf \\fs01\upm$ geheim'; X = $Xml }
+            $o | Add-Member ScriptMethod ToXml { $this.X }
+            $o
+        }
+        $ns = "xmlns='http://schemas.microsoft.com/win/2004/08/events/event'"
+        $script:EventLogs = @{
+            'Application' = @{ Exists = $true; Readable = $true; Events = @(
+                    1..1005 | ForEach-Object { & $NewEvent 'Application Error' 1000 "<Event $ns><EventData><Data Name='AppName'>geheim.exe</Data><Data Name='ModuleName'>geheim.dll</Data></EventData></Event>" }
+                    & $NewEvent 'Citrix Anmeldeskript Klinikum' 1 "<Event $ns><EventData><Data>Klinikum</Data></EventData></Event>") }
+            'System' = @{ Exists = $true; Readable = $true; Events = @(
+                    & $NewEvent 'Citrix Print Manager Service' 1116 "<Event $ns><EventData><Data>Station 3</Data><Binary>00</Binary></EventData></Event>"
+                    & $NewEvent 'Service Control Manager' 7031 "<Event $ns><EventData><Data Name='param1'>Spooler</Data></EventData></Event>") }
+            'Microsoft-Windows-PrintService/Admin' = @{ Exists = $true; Readable = $true; Events = @() }
+            'Microsoft-Windows-PrintService/Operational' = @{ Exists = $true; Readable = $true; Enabled = $false; Events = @() }
+            'Microsoft-Windows-SMBClient/Connectivity' = @{ Exists = $true; Readable = $false; Events = @() }
+            'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational' = @{ Exists = $true; Readable = $true; Events = @(
+                    & $NewEvent 'Microsoft-Windows-TerminalServices-LocalSessionManager' 21 "<Event $ns><UserData><EventXML xmlns='x'><User>KLINIK\mueller</User><SessionID>2</SessionID><Address>WS-0001</Address></EventXML></UserData></Event>") }
+        }
+        function Get-WinEvent {
+            [CmdletBinding()] param([string]$ListLog, [string]$ListProvider, [string]$LogName, [string]$FilterXPath, [int]$MaxEvents)
+            if ($ListProvider) {
+                [pscustomobject]@{ Name = 'Citrix Print Manager Service'; MessageFilePath = 'C:\Program Files\Citrix\System32\CpSvcMsg.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+                [pscustomobject]@{ Name = 'Citrix Anmeldeskript Klinikum'; MessageFilePath = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll'; ResourceFilePath = $null; ParameterFilePath = $null }
+                return
+            }
+            if ($ListLog) {
+                if (-not $EventLogs.ContainsKey($ListLog) -or -not $EventLogs[$ListLog].Exists) { throw "There is not an event log on the localhost computer that matches `"$ListLog`"." }
+                $enabled = $true
+                if ($EventLogs[$ListLog].ContainsKey('Enabled')) { $enabled = $EventLogs[$ListLog].Enabled }
+                return [pscustomobject]@{ LogName = $ListLog; IsEnabled = $enabled }
+            }
+            $EventQueries.Add($FilterXPath)
+            $log = $EventLogs[$LogName]
+            if (-not $log.Readable) { throw 'Zugriff verweigert' }
+            $hits = @($log.Events | Where-Object { $FilterXPath -notmatch 'Provider\[' -or $FilterXPath.Contains("@Name='" + $_.ProviderName + "'") })
+            if ($hits.Count -eq 0) {
+                $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord (New-Object System.Exception 'No events were found'), 'NoMatchingEventsFound', 'ObjectNotFound', $null))
+            }
+            $hits | Select-Object -First $MaxEvents
+        }
+        # Registrierung: der Schluessel des Druckdienstes mit den Isolierungsgruppen und die Schluessel der Treiber
+        function Get-Item {
+            [CmdletBinding()] param([string]$LiteralPath)
+            if ($LiteralPath -notlike 'HKLM:*') { return (Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath) }
+            $base = 'HKLM:\SYSTEM\CurrentControlSet\Control\Print'
+            $o = $null
+            if ($LiteralPath -eq $base) {
+                $o = [pscustomobject]@{ Property = @('PrintDriverIsolationGroups') }
+                $o | Add-Member ScriptMethod GetValue { param($Name) if ($Name -eq 'PrintDriverIsolationGroups') { 'Zeta Etiketten Klinikum\\Zeta Station 3 Klinikum' } }
+            }
+            elseif ($LiteralPath -eq "$base\Environments\Windows x64\Drivers\Version-3\Zeta Station 3 Klinikum") {
+                $o = [pscustomobject]@{ Property = @('Configuration File', 'Data File', 'Driver', 'Zeta Station 3 Klinikum Station') }
+            }
+            elseif ($LiteralPath -eq "$base\Environments\Windows x64\Drivers\Version-4\Zeta Etiketten Klinikum") {
+                $o = [pscustomobject]@{ Property = @('Driver', 'PrinterDriverAttributes') }
+            }
+            if ($null -eq $o) { throw "Cannot find path '$LiteralPath' because it does not exist." }
+            $o
         }
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($Probe, [ref]$null, [ref]$null)
         $guard = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Extent.Text -like '*laeuft nur unter Windows*' }, $false)
@@ -384,6 +543,7 @@ namespace WorkerPerfProbe
             $text = $text.Substring(0, $edit.Node.Extent.StartOffset) + $edit.Text + $text.Substring($edit.Node.Extent.EndOffset)
         }
         $script:ProbeMain = [scriptblock]::Create($text)
+        $script:RealCatalogue = @(& ([scriptblock]::Create($catalogue.Right.Extent.Text)))
         $script:TestCatalogue = @(
             @{ Id = 'a'; Signals = @('cpu.host'); Title = 'A'; Run = { param($Ctx, $Check) @{ Ok = $true; Detail = '{0} Sitzungen' -f @($Ctx.Sessions).Count; Data = [ordered]@{ Path = 'C:\Users\mueller\AppData' } } } }
             @{ Id = 'b'; Signals = @(); Title = 'B'; Run = { param($Ctx, $Check)
@@ -412,7 +572,7 @@ namespace WorkerPerfProbe
         $json = [IO.File]::ReadAllText($files[0].FullName)
         foreach ($name in 'mueller', 'neu', 'KLINIK', 'WS-0001', 'WS-0002', 'fs01', 'S-1-5-21') { $json | Should -Not -Match $name }
         $r = $json | ConvertFrom-Json
-        $r.SchemaVersion | Should -Be 2
+        $r.SchemaVersion | Should -Be 3
         @($r.Checks).Count | Should -Be 4
         @($r.Checks | ForEach-Object { $_.Id }) | Should -Be @('a', 'b', 'c', 'd')
         $r.Checks[0].Ok | Should -BeTrue
@@ -424,6 +584,56 @@ namespace WorkerPerfProbe
         $r.Checks[2].Ok | Should -BeFalse
         $r.Checks[2].Detail | Should -Be 'Zugriff verweigert: \\<server>\upm$\<user>.<domain>'
         $r.Checks[3].Ok | Should -Be $null
+    }
+    It 'liest Ereignisprotokolle und Druckertreiber und schreibt nur Anzahlen, Kennungen und Namen von Feldern' {
+        $script:TestCatalogueSaved = $TestCatalogue
+        $script:TestCatalogue = @($RealCatalogue | Where-Object { $_.Id -like 'events.*' -or $_.Id -eq 'print.drivers' })
+        $EventQueries.Clear()
+        try { & $ProbeMain -OutFile $OutDir 3>$null 6>$null | Out-Null }
+        finally { $script:TestCatalogue = $TestCatalogueSaved }
+        $json = [IO.File]::ReadAllText(@(Get-ChildItem -LiteralPath $OutDir -Filter 'vda-probe_*.json')[0].FullName)
+        foreach ($name in 'geheim', 'mueller', 'KLINIK', 'Klinikum', 'Zeta', 'Station', 'fs01', 'WS-0001', 'Spooler') { $json | Should -Not -Match $name }
+        $r = $json | ConvertFrom-Json
+        $byId = @{}; foreach ($c in $r.Checks) { $byId[$c.Id] = $c }
+        @($r.Checks).Count | Should -Be 9
+        # Anwendung: gekappt bei der Obergrenze, nur Quellen von Produkten, die selbst angelegte Quelle wird nicht abgefragt
+        $app = $byId['events.application']
+        $app.Ok | Should -BeTrue
+        $app.Data.Days | Should -Be 7
+        @($app.Data.Providers) | Should -Contain 'Citrix Print Manager Service'
+        $app.Data.ProvidersDropped | Should -Be 1
+        $log = @($app.Data.Logs)[0]
+        $log.Log | Should -Be 'Application'; $log.Exists | Should -BeTrue; $log.Readable | Should -BeTrue; $log.Capped | Should -BeTrue
+        @($log.Ids).Count | Should -Be 1
+        $log.Ids[0].Provider | Should -Be 'Application Error'; $log.Ids[0].Id | Should -Be 1000; $log.Ids[0].Count | Should -Be $app.Data.MaxEvents
+        @($log.Ids[0].Fields) | Should -Be @('AppName', 'ModuleName')
+        @($EventQueries | Where-Object { $_ -match 'Anmeldeskript' }).Count | Should -Be 0
+        # System: Stufen und eine Quelle aus dem Muster
+        $sys = @($byId['events.system'].Data.Logs)[0]
+        @($sys.Ids | ForEach-Object { '{0}/{1}' -f $_.Provider, $_.Id }) | Should -Be @('Citrix Print Manager Service/1116', 'Service Control Manager/7031')
+        @($sys.Ids[0].Fields) | Should -Be @('#0', 'binary')
+        @($EventQueries | Where-Object { $_ -match 'Level=1 or Level=2 or Level=3' }).Count | Should -BeGreaterThan 0
+        # Druckdienst: ohne Ereignisse lesbar, das abgeschaltete Protokoll wird gemeldet, nicht eingeschaltet
+        $print = @($byId['events.printservice'].Data.Logs)
+        $print[0].Readable | Should -BeTrue; @($print[0].Ids).Count | Should -Be 0; $print[1].Enabled | Should -BeFalse
+        # SMB-Client: ein Protokoll nicht lesbar, das andere nicht vorhanden
+        $smb = $byId['events.smbclient']
+        $smb.Ok | Should -BeFalse
+        @($smb.Data.Logs)[0].Exists | Should -BeTrue; @($smb.Data.Logs)[0].Readable | Should -BeFalse; @($smb.Data.Logs)[0].Error | Should -Be 'Zugriff verweigert'
+        @($smb.Data.Logs)[1].Exists | Should -BeFalse
+        $smb.Detail | Should -Match 'nicht lesbar'; $smb.Detail | Should -Match 'nicht vorhanden'
+        $byId['events.defender'].Ok | Should -BeFalse
+        # Sitzungen: Felder aus UserData, ihre Werte nicht
+        $ses = @($byId['events.session'].Data.Logs)[0]
+        @($ses.Ids[0].Fields) | Should -Be @('User', 'SessionID', 'Address')
+        # Druckertreiber
+        $drv = $byId['print.drivers']
+        $drv.Ok | Should -BeTrue
+        $drv.Data.Count | Should -Be 3
+        $drv.Data.ByManufacturer.HP | Should -Be 2; $drv.Data.ByType.'3' | Should -Be 2; $drv.Data.ByType.'4' | Should -Be 1
+        $drv.Data.ByIsolation.none | Should -Be 1; $drv.Data.ByIsolation.shared | Should -Be 1; $drv.Data.ByIsolation.unbekannt | Should -Be 1
+        @($drv.Data.RegistryValueNames) | Should -Be @('Configuration File', 'Data File', 'Driver', 'PrinterDriverAttributes')
+        $drv.Data.RegistryKeysRead | Should -Be 2; $drv.Data.RegistryKeysMissing | Should -Be 1
     }
     It 'zerschneidet keinen Namen, von dem beim Lesen erst ein Teil bekannt ist' {
         # die echte Pruefung der Dienste, mit nachgestellter CIM-Abfrage: sie liefert einen Text mit dem Namen einer

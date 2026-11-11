@@ -443,9 +443,9 @@ und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
 Im Ergebnis des Prüfskripts sind Benutzer-, Domänen-, Client- und Servernamen sowie Konten-SIDs maskiert.
-Namen in freiem Text kann das Skript nicht sicher erkennen; nach einer Durchsicht
-([docs/vda-probe/README.md](docs/vda-probe/README.md#vor-der-weitergabe-durchsehen)) darf die Datei unter
-`docs/vda-probe/` abgelegt werden.
+Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird deshalb nach einer Durchsicht
+([docs/vda-probe/README.md](docs/vda-probe/README.md#vor-der-weitergabe-durchsehen)) außerhalb des Repositorys
+übergeben und nicht eingecheckt (`.gitignore` schließt `vda-probe_*.json` aus).
 
 ## Offene Punkte
 

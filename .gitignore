@@ -14,4 +14,5 @@ expected.json
 # der Demo-Bericht aus simulierten Daten, den GitHub Pages zeigt
 !pages/index.html
 src/endpoints.json
-# Ergebnisse des Quellen-Pruefskripts (docs/vda-probe/vda-probe_*.json) werden nach einer Durchsicht eingecheckt: Namen sind darin maskiert
+# Ergebnisse des Quellen-Pruefskripts werden nicht eingecheckt: sie werden ausserhalb des Repositorys uebergeben
+vda-probe_*.json

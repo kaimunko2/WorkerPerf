@@ -1054,8 +1054,120 @@ function Invoke-ProbeProfileVolumesCheck($Ctx, $Check) {
     return @{ Ok = $true; Detail = ('{0} Datentraeger mit BusType 15' -f $rows.Count); Data = $data }
 }
 
-function Get-ProbeEventCounts([string]$Log, [int[]]$Ids) {
-    $r = [ordered]@{ Log = $Log; Exists = $false; Enabled = $null; Readable = $false; Counts = [ordered]@{}; Capped = $false; Error = '' }
+# Events are counted over this many days.
+$script:ProbeEventDays = 7
+
+function Get-ProbeEventQuery([string[]]$Providers, [int[]]$Levels, [int[]]$Ids, [int]$Days) {
+    # XPath filter for Get-WinEvent: the given providers, levels and event ids (each empty = all) within the last $Days
+    # days. Built here rather than through -FilterHashtable, which looks provider names up on the system first.
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    $names = @($Providers | Where-Object { -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
+            if ($_.Contains("'")) { '@Name="{0}"' -f $_ } else { "@Name='{0}'" -f $_ } })
+    if ($names.Count -gt 0) { $parts.Add(('(Provider[{0}])' -f ($names -join ' or '))) }
+    if (@($Levels).Count -gt 0) { $parts.Add(('({0})' -f (@($Levels | ForEach-Object { 'Level={0}' -f $_ }) -join ' or '))) }
+    if (@($Ids).Count -gt 0) { $parts.Add(('({0})' -f (@($Ids | ForEach-Object { 'EventID={0}' -f $_ }) -join ' or '))) }
+    $parts.Add(('TimeCreated[timediff(@SystemTime) <= {0}]' -f ([int64]$Days * 86400000)))
+    return '*[System[{0}]]' -f ($parts.ToArray() -join ' and ')
+}
+
+function Resolve-ProbeEventProviders([string[]]$Providers, [scriptblock]$List) {
+    # Provider names with every pattern (a name with '*') replaced by the providers $List returns for it. A provider
+    # resolved from a pattern is kept only when a product registered it with its own message or resource file: a
+    # source that a local script created (New-EventLog, Write-EventLog, eventcreate) uses one of the generic message
+    # files below or none, and its name may carry the name of the customer.
+    $generic = @('EventLogMessages.dll', 'System.Diagnostics.EventLog.Messages.dll', 'EventCreate.exe')
+    $names = New-Object 'System.Collections.Generic.List[string]'
+    $dropped = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $done = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($p in @($Providers)) {
+        if ([string]::IsNullOrEmpty($p) -or -not $done.Add($p)) { continue }
+        if (-not $p.Contains('*')) { $names.Add($p); continue }
+        # $done holds every name taken so far, so a provider named exactly and matched by a pattern is listed once
+        foreach ($m in @(& $List $p)) {
+            $name = [string](Get-Prop $m 'Name')
+            if ($name -eq '' -or $name -notlike $p) { continue }
+            # metadata that cannot be read counts as no own file
+            $files = @()
+            try {
+                $files = @(@((Get-Prop $m 'MessageFilePath'), (Get-Prop $m 'ResourceFilePath'), (Get-Prop $m 'ParameterFilePath')) |
+                        ForEach-Object { [string]$_ -split ';' } | Where-Object { $_.Trim() -ne '' } | ForEach-Object { @($_.Trim() -split '[\\/]')[-1] })
+            }
+            catch { $files = @() }
+            $own = @($files | Where-Object { $generic -notcontains $_ })
+            if ($own.Count -eq 0) { $null = $dropped.Add($name); continue }
+            if ($done.Add($name)) { $names.Add($name) }
+        }
+    }
+    return [ordered]@{ Names = $names.ToArray(); Dropped = $dropped.Count }
+}
+
+function Get-ProbeEventFieldNames([string]$Xml) {
+    # The names of the data fields of one event, never their values: EventData/Data/@Name ('#<position>' for a field
+    # without a name), the elements below UserData/* by their local name, 'binary' for EventData/Binary.
+    # The get_ accessors avoid PowerShell's XML adapter, which would prefer a child element of the same name.
+    $doc = New-Object System.Xml.XmlDocument
+    $doc.XmlResolver = $null
+    try { $doc.LoadXml($Xml) } catch { return }
+    $root = $doc.get_DocumentElement()
+    if ($null -eq $root) { return }
+    $element = [System.Xml.XmlNodeType]::Element
+    foreach ($section in $root.get_ChildNodes()) {
+        if ($section.get_NodeType() -ne $element) { continue }
+        if ($section.get_LocalName() -eq 'EventData') {
+            $position = 0
+            $binary = $false
+            foreach ($d in $section.get_ChildNodes()) {
+                if ($d.get_NodeType() -ne $element) { continue }
+                if ($d.get_LocalName() -eq 'Data') {
+                    $name = $d.GetAttribute('Name')
+                    if ([string]::IsNullOrEmpty($name)) { '#{0}' -f $position } else { $name }
+                    $position++
+                }
+                elseif ($d.get_LocalName() -eq 'Binary') { $binary = $true }
+            }
+            if ($binary) { 'binary' }
+        }
+        elseif ($section.get_LocalName() -eq 'UserData') {
+            foreach ($inner in $section.get_ChildNodes()) {
+                if ($inner.get_NodeType() -ne $element) { continue }
+                foreach ($f in $inner.get_ChildNodes()) { if ($f.get_NodeType() -eq $element) { $f.get_LocalName() } }
+            }
+        }
+    }
+}
+
+function Get-ProbeEventSummary([object[]]$Events) {
+    # One row per provider and event id: how often it occurred and the field names of its first (newest) event.
+    # Neither the message nor a field value is taken over.
+    $groups = [ordered]@{}
+    foreach ($e in @($Events)) {
+        if ($null -eq $e) { continue }
+        $provider = [string](Get-Prop $e 'ProviderName')
+        $id = [int](Get-Prop $e 'Id')
+        $key = '{0}|{1}' -f $provider, $id
+        if ($groups.Contains($key)) { $groups[$key]['Count']++; continue }
+        $fields = @()
+        try { $fields = @(Get-ProbeEventFieldNames ([string]$e.ToXml())) } catch { $fields = @() }
+        $groups[$key] = [ordered]@{ Provider = $provider; Id = $id; Count = 1; Fields = [string[]]$fields }
+    }
+    $groups.Values | Sort-Object -Property @{ Expression = { $_['Provider'] } }, @{ Expression = { $_['Id'] } }
+}
+
+# The event log rejects a query with too many alternatives (about two dozen); providers are asked in groups of this size.
+$script:ProbeProvidersPerQuery = 15
+
+function Split-ProbeProviderChunks([string[]]$Providers, [int]$Size) {
+    # The providers in groups of at most $Size, each group emitted as one array; no providers gives one empty group (= all).
+    $list = @($Providers | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    if ($list.Count -eq 0) { return , @() }
+    for ($i = 0; $i -lt $list.Count; $i += $Size) {
+        , @($list[$i..([Math]::Min($i + $Size, $list.Count) - 1)])
+    }
+}
+
+function Get-ProbeEventLog([string]$Log, [string[]]$Providers, [int[]]$Levels, [int[]]$Ids) {
+    # A missing or disabled log is reported as such; nothing is switched on.
+    $r = [ordered]@{ Log = $Log; Exists = $false; Enabled = $null; Readable = $false; Capped = $false; Error = ''; Ids = @() }
     try {
         $info = Get-WinEvent -ListLog $Log -ErrorAction Stop
         $r.Exists = $true
@@ -1066,38 +1178,53 @@ function Get-ProbeEventCounts([string]$Log, [int[]]$Ids) {
         return $r
     }
     try {
-        $events = @()
-        try {
-            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $Log; Id = $Ids; StartTime = (Get-Date).AddDays(-7) } -MaxEvents $script:ProbeMaxEvents -ErrorAction Stop)
-        }
-        catch {
-            # No matching events is not an error; the error id is language neutral.
-            if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw }
+        $events = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($chunk in @(Split-ProbeProviderChunks $Providers $script:ProbeProvidersPerQuery)) {
+            $query = Get-ProbeEventQuery $chunk $Levels $Ids $script:ProbeEventDays
+            $found = @()
+            try {
+                $found = @(Get-WinEvent -LogName $Log -FilterXPath $query -MaxEvents $script:ProbeMaxEvents -ErrorAction Stop)
+            }
+            catch {
+                # No matching events is not an error; the error id is language neutral.
+                if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw }
+            }
+            if ($found.Count -ge $script:ProbeMaxEvents) { $r.Capped = $true }     # the counts cover the newest events only
+            foreach ($e in $found) { $events.Add($e) }
         }
         $r.Readable = $true
-        $r.Capped = ($events.Count -ge $script:ProbeMaxEvents)       # the counts cover the newest events only
-        foreach ($id in $Ids) { $r.Counts[[string]$id] = @($events | Where-Object { $_.Id -eq $id }).Count }
+        $r.Ids = @(Get-ProbeEventSummary $events.ToArray())
     }
     catch { $r.Error = Get-ProbeErrorText $_ }
     return $r
 }
 
 function Invoke-ProbeEventsCheck($Ctx, $Check) {
+    $providers = Resolve-ProbeEventProviders @($Check.Providers) { param($Pattern) Get-WinEvent -ListProvider $Pattern -ErrorAction SilentlyContinue }
     $logs = New-Object 'System.Collections.Generic.List[object]'
-    foreach ($log in $Check.Logs) { $logs.Add((Get-ProbeEventCounts $log $Check.EventIds)) }
+    foreach ($log in $Check.Logs) { $logs.Add((Get-ProbeEventLog $log $providers.Names $Check.Levels $Check.EventIds)) }
     $parts = New-Object 'System.Collections.Generic.List[string]'
     $ok = $true
     foreach ($l in $logs) {
         if ($l.Readable) {
-            $counts = @($l.Counts.Keys | ForEach-Object { '{0}={1}' -f $_, $l.Counts[$_] }) -join ' '
-            $parts.Add(('{0}: {1}' -f $l.Log, $counts))
+            $n = 0
+            foreach ($row in $l.Ids) { $n += $row.Count }
+            $text = '{0}: {1} Ereignisse, {2} Kennungen' -f $l.Log, $n, @($l.Ids).Count
+            if ($l.Capped) { $text += ' (Obergrenze erreicht)' }
+            if ($l.Enabled -eq $false) { $text += ', abgeschaltet' }
+            $parts.Add($text)
+        }
+        elseif (-not $l.Exists) {
+            $ok = $false
+            $parts.Add(('{0}: nicht vorhanden' -f $l.Log))
         }
         else {
             $ok = $false
             $parts.Add(('{0}: nicht lesbar ({1})' -f $l.Log, $l.Error))
         }
     }
-    return @{ Ok = $ok; Detail = ($parts.ToArray() -join '; '); Data = [ordered]@{ Days = 7; MaxEvents = $script:ProbeMaxEvents; Logs = $logs.ToArray() } }
+    $data = [ordered]@{ Days = $script:ProbeEventDays; MaxEvents = $script:ProbeMaxEvents; Providers = $providers.Names; ProvidersDropped = $providers.Dropped; Logs = $logs.ToArray() }
+    return @{ Ok = $ok; Detail = ($parts.ToArray() -join '; '); Data = $data }
 }
 
 function Get-ProbeProcessGroups($Ctx, [bool]$SessionZero) {
@@ -1212,6 +1339,110 @@ function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
 
 #endregion
 
+#region ---------- printing -----------------------------------------------------------------------
+
+function Get-ProbeDriverSummary([object[]]$Drivers, $IsolationGroups) {
+    # Counts of the printer drivers by manufacturer, type (3 or 4) and isolation, without a driver name.
+    # PrintDriverIsolationGroups (a string or several): groups separated by '\\', drivers within a group by '\'. The
+    # first group runs inside the spooler (none), the second in the shared process (shared), every further one alone
+    # (isolated); a driver in no group runs as its own setting says, which is not read here (unbekannt).
+    $text = (@($IsolationGroups) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ }) -join '\\'
+    $isolation = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
+    if ($text -ne '') {
+        $groups = $text -split '\\\\'
+        for ($g = 0; $g -lt $groups.Length; $g++) {
+            $kind = 'isolated'
+            if ($g -eq 0) { $kind = 'none' } elseif ($g -eq 1) { $kind = 'shared' }
+            foreach ($name in ($groups[$g] -split '\\')) {
+                if ($name -ne '' -and -not $isolation.ContainsKey($name)) { $isolation[$name] = $kind }
+            }
+        }
+    }
+    $byManufacturer = @{}
+    $byType = [ordered]@{ '3' = 0; '4' = 0; 'unbekannt' = 0 }
+    $byIsolation = [ordered]@{ 'none' = 0; 'shared' = 0; 'isolated' = 0; 'unbekannt' = 0 }
+    $count = 0
+    foreach ($d in @($Drivers)) {
+        if ($null -eq $d) { continue }
+        $count++
+        $m = [string](Get-Prop $d 'Manufacturer')
+        if ($m -eq '') { $m = 'unbekannt' }
+        if ($byManufacturer.ContainsKey($m)) { $byManufacturer[$m]++ } else { $byManufacturer[$m] = 1 }
+        $type = [string](Get-Prop $d 'MajorVersion')
+        if ($type -ne '3' -and $type -ne '4') { $type = 'unbekannt' }
+        $byType[$type]++
+        $name = [string](Get-Prop $d 'Name')
+        $kind = 'unbekannt'
+        if ($name -ne '' -and $isolation.ContainsKey($name)) { $kind = $isolation[$name] }
+        $byIsolation[$kind]++
+    }
+    $manufacturers = [ordered]@{}
+    foreach ($k in @($byManufacturer.Keys | Sort-Object)) { $manufacturers[$k] = $byManufacturer[$k] }
+    $propertyNames = @()
+    $first = @($Drivers | Where-Object { $null -ne $_ } | Select-Object -First 1)
+    if ($first.Count -gt 0) {
+        $cim = Get-Prop $first[0] 'CimInstanceProperties'
+        if ($null -ne $cim) { $propertyNames = @($cim | ForEach-Object { [string]$_.Name }) }
+        else { $propertyNames = @($first[0].PSObject.Properties | ForEach-Object { [string]$_.Name }) }
+    }
+    $source = 'keine'
+    if ($text -ne '') { $source = 'PrintDriverIsolationGroups' }
+    return [ordered]@{
+        Count = $count; ByManufacturer = $manufacturers; ByType = $byType; ByIsolation = $byIsolation
+        PropertyNames = [string[]]$propertyNames; IsolationSource = $source
+    }
+}
+
+function Select-ProbeDriverValueNames([string[]]$Names, [string[]]$DriverNames) {
+    # The names of the registry values below the driver keys, each once and sorted. A name that contains the name of a
+    # driver is left out: a driver may name a value after itself, and driver names stay out of the result.
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $drivers = @($DriverNames | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $kept = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($n in @($Names)) {
+        if ([string]::IsNullOrEmpty($n)) { continue }
+        $hasDriver = @($drivers | Where-Object { $n.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
+        if ($hasDriver -or -not $seen.Add($n)) { continue }
+        $kept.Add($n)
+    }
+    $kept.ToArray() | Sort-Object
+}
+
+$script:ProbePrintKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Print'
+
+function Invoke-ProbePrintDriversCheck($Ctx, $Check) {
+    $drivers = @(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_PrinterDriver' -OperationTimeoutSec $script:ProbeCimTimeoutSec -ErrorAction Stop)
+    $groups = $null
+    $isolationError = ''
+    try { $groups = (Get-Item -LiteralPath $script:ProbePrintKey -ErrorAction Stop).GetValue('PrintDriverIsolationGroups') }
+    catch { $isolationError = Get-ProbeErrorText $_ }
+    # The value names below each driver key. A failure is only counted: its message quotes the key, the driver name in it.
+    $valueNames = New-Object 'System.Collections.Generic.List[string]'
+    $read = 0
+    $missing = 0
+    foreach ($d in $drivers) {
+        $name = [string](Get-Prop $d 'Name')
+        $environment = [string](Get-Prop $d 'PrinterEnvironment')
+        $version = [string](Get-Prop $d 'MajorVersion')
+        if ($name -eq '' -or $environment -eq '' -or $version -eq '') { $missing++; continue }
+        $path = '{0}\Environments\{1}\Drivers\Version-{2}\{3}' -f $script:ProbePrintKey, $environment, $version, $name
+        try {
+            foreach ($v in @((Get-Item -LiteralPath $path -ErrorAction Stop).Property)) { $valueNames.Add([string]$v) }
+            $read++
+        }
+        catch { $missing++ }
+    }
+    $data = Get-ProbeDriverSummary $drivers $groups
+    $data.IsolationError = $isolationError
+    $data.RegistryValueNames = [string[]]@(Select-ProbeDriverValueNames $valueNames.ToArray() @($drivers | ForEach-Object { [string](Get-Prop $_ 'Name') }))
+    $data.RegistryKeysRead = $read
+    $data.RegistryKeysMissing = $missing
+    $detail = '{0} Druckertreiber von {1} Herstellern (Typ 3: {2}, Typ 4: {3}); Isolierung: {4}' -f $data.Count, @($data.ByManufacturer.Keys).Count, $data.ByType['3'], $data.ByType['4'], $data.IsolationSource
+    return @{ Ok = $true; Detail = $detail; Data = $data }
+}
+
+#endregion
+
 #region ---------- check catalogue -------------------------------------------------------------
 
 # One list drives both -ListChecks and the run, so they cannot drift apart.
@@ -1244,9 +1475,26 @@ $script:Catalogue = @(
         Perf = @{ Category = 'ICA Session'; Counters = @(); Instances = 'all'; MaxInstances = 3 } }
     @{ Id = 'profile.volumes'; Signals = @(); Title = 'Eingebundene Profilcontainer'; Run = 'Invoke-ProbeProfileVolumesCheck' }
     @{ Id = 'events.defender'; Signals = @(); Title = 'Ereignisprotokoll Microsoft Defender'; Run = 'Invoke-ProbeEventsCheck'
-        Logs = @('Microsoft-Windows-Windows Defender/Operational'); EventIds = @(1000, 1001, 1002, 2000) }
+        Logs = @('Microsoft-Windows-Windows Defender/Operational'); Providers = @(); Levels = @(); EventIds = @(1000, 1001, 1002, 2000) }
     @{ Id = 'events.applocker'; Signals = @(); Title = 'Ereignisprotokolle AppLocker'; Run = 'Invoke-ProbeEventsCheck'
-        Logs = @('Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script'); EventIds = @(8004, 8007) }
+        Logs = @('Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script'); Providers = @(); Levels = @(); EventIds = @(8004, 8007) }
+    @{ Id = 'events.application'; Signals = @(); Title = 'Anwendungsprotokoll: Abstuerze, Haenger, Profile, Citrix'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('Application'); Levels = @(); EventIds = @()
+        Providers = @('Application Error', 'Application Hang', '.NET Runtime', 'Windows Error Reporting', 'Microsoft-Windows-User Profiles Service', 'Citrix*') }
+    @{ Id = 'events.system'; Signals = @(); Title = 'Systemprotokoll: Dienste, Datentraeger, Speicher, Citrix'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('System'); Levels = @(1, 2, 3); EventIds = @()
+        Providers = @('Service Control Manager', 'disk', 'Ntfs', 'Microsoft-Windows-Ntfs', 'volmgr', 'storvsc', 'Microsoft-Windows-Resource-Exhaustion-Detector', 'Citrix*') }
+    @{ Id = 'events.printservice'; Signals = @(); Title = 'Ereignisprotokolle des Druckdienstes'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('Microsoft-Windows-PrintService/Admin', 'Microsoft-Windows-PrintService/Operational'); Providers = @(); Levels = @(); EventIds = @() }
+    @{ Id = 'events.smbclient'; Signals = @(); Title = 'Ereignisprotokolle des SMB-Clients'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('Microsoft-Windows-SMBClient/Connectivity', 'Microsoft-Windows-SMBClient/Operational'); Providers = @(); Levels = @(1, 2, 3); EventIds = @() }
+    @{ Id = 'events.profileservice'; Signals = @(); Title = 'Ereignisprotokoll des Benutzerprofildienstes'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('Microsoft-Windows-User Profile Service/Operational'); Providers = @(); Levels = @(1, 2, 3); EventIds = @() }
+    @{ Id = 'events.session'; Signals = @(); Title = 'Sitzungsereignisse: Anmelden, Abmelden, Trennen, Wiederverbinden'; Run = 'Invoke-ProbeEventsCheck'
+        Logs = @('Microsoft-Windows-TerminalServices-LocalSessionManager/Operational'); Providers = @(); Levels = @(); EventIds = @(21, 23, 24, 25) }
+    @{ Id = 'print.drivers'; Signals = @(); Title = 'Druckertreiber: Hersteller, Bauart, Isolierung'; Run = 'Invoke-ProbePrintDriversCheck' }
+    @{ Id = 'print.queues'; Signals = @(); Title = 'Zaehler der Druckwarteschlangen (nur gesamt)'; Run = 'Invoke-ProbePerfCheck'
+        Perf = @{ Category = 'Print Queue'; Counters = @('Jobs', 'Job Errors', 'Not Ready Errors'); Instances = 'total'; MaxInstances = 0 } }
     @{ Id = 'security.products'; Signals = @(); Title = 'Prozesse und Dienste in Sitzung 0'; Run = 'Invoke-ProbeSecurityProductsCheck' }
     @{ Id = 'user.processes'; Signals = @(); Title = 'Prozesse in Benutzersitzungen'; Run = 'Invoke-ProbeUserProcessesCheck' }
     @{ Id = 'endpoints'; Signals = @('probe.connect'); Title = 'TCP-Verbindungsaufbau zu den Gegenstellen'; Run = 'Invoke-ProbeEndpointsCheck' }
@@ -1353,7 +1601,7 @@ if ($last.Gap) {
 
 # No name of the worker in the result: several workers are told apart by the time stamp of the file.
 $report = [ordered]@{
-    SchemaVersion = 2
+    SchemaVersion = 3
     OS            = $os
     PSVersion     = $PSVersionTable.PSVersion.ToString()
     Culture       = (Get-Culture).Name

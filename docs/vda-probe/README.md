@@ -1,6 +1,6 @@
 # Quellen-Prüfskript für den VDA
 
-`Test-WorkerPerfSources.ps1` prüft auf einem Citrix-Worker, welche Datenquellen WorkerPerf dort nutzen kann: Leistungsindikatoren, Sitzungen, Prozesse, Dienste, Profilcontainer, Ereignisprotokolle und die Erreichbarkeit von Gegenstellen.
+`Test-WorkerPerfSources.ps1` prüft auf einem Citrix-Worker, welche Datenquellen WorkerPerf dort nutzen kann: Leistungsindikatoren, Sitzungen, Prozesse, Dienste, Profilcontainer, Ereignisprotokolle, Druckertreiber und Druckwarteschlangen und die Erreichbarkeit von Gegenstellen.
 Das Ergebnis entscheidet, welche Zählernamen und Berechnungen die Aufzeichnung verwendet; das Skript liest nur und ändert nichts am System.
 
 ## Aufruf
@@ -14,7 +14,13 @@ Das Ergebnis entscheidet, welche Zählernamen und Berechnungen die Aufzeichnung 
 
 3. **Während das Skript läuft**, etwa 40 Sekunden lang in einer Benutzersitzung auf dem Worker tippen oder Fenster bewegen. Nur so liefert die Messung der Eingabeverzögerung aussagekräftige Werte. Das Skript meldet sich mit „Bitte jetzt in einer Benutzersitzung tippen …“, sobald dieser Teil beginnt.
 
-Der gesamte Lauf dauert einige Minuten; auf einem Windows-Server ist er noch nicht gemessen, zu rechnen ist mit zwei bis fünf Minuten: 40 Sekunden entfallen auf die Eingabeverzögerung, je eine Sekunde auf elf Zählergruppen, dazu kommen drei Prozessabfragen, die Liste der Leistungsklassen und die Ereignisprotokolle. Jede CIM-Abfrage endet spätestens nach 30 Sekunden; für das Lesen der Leistungsindikatoren, der Ereignisprotokolle und der Sitzungen gibt es kein Zeitlimit. Aus den Ereignisprotokollen der letzten sieben Tage werden je Protokoll höchstens 1.000 Einträge gezählt.
+Der gesamte Lauf dauert einige Minuten; geschätzt sind drei bis acht Minuten, gemessen ist der Lauf mit den Prüfungen der Ereignisse und des Druckens noch nicht: 40 Sekunden entfallen auf die Eingabeverzögerung, je eine Sekunde auf zwölf Zählergruppen, dazu kommen drei Prozessabfragen, die Liste der Leistungsklassen, die Druckertreiber und die Ereignisprotokolle. Die Ereignisprotokolle brauchen am längsten: Windows bereitet beim Lesen jedes Ereignis samt Meldungstext auf, und das Anwendungs- und das Systemprotokoll werden für viele Quellen gelesen; auf einem Server mit vielen Ereignissen kann das je Protokoll eine Minute oder länger dauern. Jede CIM-Abfrage endet spätestens nach 30 Sekunden; für das Lesen der Leistungsindikatoren, der Ereignisprotokolle, der Registrierung und der Sitzungen gibt es kein Zeitlimit. Aus den Ereignisprotokollen der letzten sieben Tage werden je Abfrage höchstens 1.000 Einträge gezählt.
+
+### Ereignisse und Drucken
+
+Für die spätere Aufzeichnung von Abstürzen, Dienst-, Datenträger-, Profil-, SMB- und Druckfehlern und von Sitzungsereignissen zählt das Skript in den Protokollen Anwendung, System, Druckdienst (Admin, Operational), SMB-Client (Connectivity, Operational), Benutzerprofildienst und Sitzungsverwaltung der Terminaldienste, dazu wie bisher Defender und AppLocker, die Ereignisse der letzten sieben Tage: je Protokoll, ob es vorhanden, eingeschaltet und lesbar ist, und je Quelle und Kennung die Anzahl und die **Namen** der Datenfelder des neuesten Ereignisses. Meldungstexte und Feldwerte werden nicht ausgegeben. Ein Protokoll, das fehlt oder abgeschaltet ist, wird gemeldet und nicht eingeschaltet. Quellen, die über ein Muster gesucht werden (`Citrix*`), nimmt das Skript nur auf, wenn ein Produkt sie mit einer eigenen Meldungsdatei eingerichtet hat; Quellen, die ein Skript vor Ort angelegt hat (`New-EventLog`, `eventcreate`), bleiben weg, weil ihr Name den Namen der Einrichtung tragen kann. Wie viele es waren, steht als Zahl im Ergebnis.
+
+Bei den Druckertreibern zählt es Treiber je Hersteller, Bauart (Typ 3 oder 4) und Isolierung (laut `PrintDriverIsolationGroups`), nennt die Eigenschaften von `MSFT_PrinterDriver` und die Namen der Registrierungswerte unter den Treiberschlüsseln, aber keine Treiber- und keine Druckernamen. Von den Zählern der Druckwarteschlangen wird nur die Summe aller Warteschlangen gelesen, damit kein Druckername im Ergebnis steht.
 
 Nach der letzten Prüfung meldet die Konsole „Namen werden erneut gelesen, das Ergebnis wird maskiert und geschrieben ...“. Das dauert noch einige Sekunden; bitte in dieser Zeit nicht abbrechen. Danach zeigt die Konsole eine Tabelle mit allen Prüfungen und den Pfad der Ergebnisdatei `vda-probe_<Datum-Uhrzeit>.json`.
 
@@ -80,9 +86,9 @@ Die Maskierung ersetzt die Namen, die das Skript aus seinen Quellen kennt, und d
 - UNC-Pfade in anderer Schreibweise (`//server/freigabe`, `file://server/…`),
 - Anzeigenamen von Personen („Müller, Hans“),
 - einen Benutzernamen, der ohne Unterstrich an einer SID hängt oder in einem Ordnernamen anderer Bauart steht, solange der Benutzer in keiner Liste ist,
-- Firmen- oder Organisationsnamen in den Angaben zu Diensten, Prozessen und Herstellern,
+- Firmen- oder Organisationsnamen in den Angaben zu Diensten, Prozessen und Herstellern (auch der Druckertreiber),
 - Namen in einer Bezeichnung, die Sie selbst in der Datei für `-EndpointFile` vergeben haben.
 
-Bitte die Datei deshalb vor der Weitergabe und vor dem Einchecken in einem Editor durchsehen und nach bekannten Benutzer- und Servernamen sowie nach `S-1-5-21-` suchen. Findet sich nichts, kann die Datei zur Auswertung zurückgegeben und in diesem Ordner (`docs/vda-probe/`) abgelegt werden. Findet sich doch ein Name, bitte die Stelle mit zurückmelden: Dann fehlt dem Skript eine Regel.
+Bitte die Datei deshalb vor der Weitergabe in einem Editor durchsehen und nach bekannten Benutzer- und Servernamen sowie nach `S-1-5-21-` suchen. Findet sich nichts, kann die Datei zur Auswertung zurückgegeben werden. Sie wird außerhalb des Repositorys übergeben und nicht eingecheckt: Das Repository ist öffentlich, und `.gitignore` schließt `vda-probe_*.json` aus. Findet sich doch ein Name, bitte die Stelle mit zurückmelden: Dann fehlt dem Skript eine Regel.
 
-Das Skript ist bisher nur mit nachgestellten Quellen getestet; auf einem Windows-Server ist es noch nicht gelaufen.
+Die Prüfungen der Ereignisprotokolle in dieser Form, der Druckertreiber und der Druckwarteschlangen sind bisher nur mit nachgestellten Quellen getestet; auf einem Windows-Server sind sie noch nicht gelaufen.
