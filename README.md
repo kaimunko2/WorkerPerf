@@ -17,6 +17,8 @@
 >   Anleitung: [docs/vda-probe/README.md](docs/vda-probe/README.md).
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
+> - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Vorfällen](https://kaimunko2.github.io/WorkerPerf/)
+>   (GitHub Pages; Einrichtung siehe [Demo-Bericht](#demo-bericht)).
 
 Zeichnet Performance und Ressourcenverbrauch eines Citrix-Terminalserver-Workers
 (Citrix DaaS / CVAD Multi-Session VDA, Shared Desktop) auf und wertet sie für einen
@@ -134,6 +136,31 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 ```
 
 Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle, die die Auswertung finden soll.
+
+## Demo-Bericht
+
+**[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
+erfundenen Worker `SIM-VDA01`: acht Vorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver, Profilcontainer, zwei
+Verzögerungen ohne Engpass auf dem Worker, ein Dauerzustand der Netzstrecke eines Benutzers). Alle Namen und Werte
+stammen aus der Simulation; echte Messdaten enthält die Seite nicht.
+
+Die Seite liegt als `pages/index.html` im Repository. Der Workflow `.github/workflows/pages.yml` veröffentlicht bei
+jedem Push auf `main`, der diesen Ordner ändert, **nur den Ordner `pages/`** auf GitHub Pages – nichts sonst aus dem
+Repository. Einmalig einzurichten:
+
+1. *Settings → Pages → Build and deployment → Source*: **GitHub Actions** wählen.
+2. Den Branch nach `main` übernehmen (oder den Workflow unter *Actions* von Hand starten). Danach ist die Demo unter
+   <https://kaimunko2.github.io/WorkerPerf/> erreichbar.
+
+Zu beachten: Für ein privates Repository setzt GitHub Pages einen bezahlten Plan voraus (GitHub Pro, Team oder
+Enterprise), und die veröffentlichte Seite ist **öffentlich**, auch wenn das Repository privat bleibt.
+
+Demo neu erzeugen (zum Beispiel nach Änderungen am Bericht):
+
+```powershell
+$run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPath .\demo
+.\src\New-WorkerPerfReport.ps1 -Path $run -OutFile .\pages\index.html
+```
 
 ## Der Bericht
 

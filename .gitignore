@@ -11,5 +11,7 @@ expected.json
 *.flag
 *.html
 !src/report-template.html
+# der Demo-Bericht aus simulierten Daten, den GitHub Pages zeigt
+!pages/index.html
 src/endpoints.json
 # Ergebnisse des Quellen-Pruefskripts (docs/vda-probe/vda-probe_*.json) werden nach einer Durchsicht eingecheckt: Namen sind darin maskiert
