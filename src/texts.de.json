@@ -1,0 +1,18 @@
+{
+  "resource.cpu": "CPU", "resource.memory": "Arbeitsspeicher", "resource.disk": "Datenträger", "resource.share": "Dateiserver",
+  "resource.profile": "Profilcontainer", "resource.network": "Netzstrecke", "resource.endpoint": "Gegenstelle", "resource.input": "Eingabeverzögerung",
+  "measure.cpu": "der CPU-Zeit", "measure.memory": "des belegten Arbeitsspeichers", "measure.io": "der I/O-Menge",
+  "engpass": "{0}–{1}: {2}-Engpass ({3} Spitze {4}, Soll {5}).",
+  "ohne": "{0}–{1}: Eingabeverzögerung ohne Engpass auf dem Worker (Spitze {2}, Soll {3}).",
+  "umfeld.network": "{0}–{1}: Netzstrecke von {2} auffällig ({3} Spitze {4}, Soll {5}). Betrifft die Sitzung, nicht den Worker.",
+  "umfeld.endpoint": "{0}–{1}: Gegenstelle {2} träge oder nicht erreichbar (Spitze {3}).",
+  "chronic.prefix": "Dauerzustand: ",
+  "affected.one": " Betroffen: 1 Sitzung.", "affected.many": " Betroffen: {0} Sitzungen.", "affected.none": " Keine Sitzung mit messbarer Eingabeverzögerung.",
+  "main": " Hauptverursacher: {0} in der Sitzung von {1} mit {2} % {3} (sonst {4} %).",
+  "main.nobase": " Hauptverursacher: {0} in der Sitzung von {1} mit {2} % {3}.",
+  "companion": " Begleiter: {0} mit {1} % {2}; größter I/O-Erzeuger im Fenster: {3} ({4}). Scan-Ausschlüsse prüfen.",
+  "ohne.process": " Höchste Verzögerung in {0} ({1}).",
+  "ohne.cause": " Die Ursache liegt außerhalb des Workers oder in der Anwendung selbst (Datenbank, Proxy, Netz).",
+  "endpoint.context": " Gegenstelle {0}: {1}.", "chronic.context": " Dauerhaft erhöht: {0}.",
+  "probe.error": "Verbindungsfehler", "user.system": "Dienste/System", "user.unknown": "unbekannt"
+}
