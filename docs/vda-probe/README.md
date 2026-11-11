@@ -57,18 +57,18 @@ In der JSON-Datei sind Namen maskiert, auch der des Workers (er steht weder im D
 | Name | Ersatz | Woran das Skript ihn erkennt |
 |---|---|---|
 | Benutzernamen | `<user>` | Sitzungen (WTS), Ordner der Benutzerprofile, angemeldeter Benutzer; außerdem ohne Liste der Name neben einer Konten-SID (`<sid>_name`, `name_<sid>`) und in Containerdateien (`Profile_name.vhdx`, `ODFC_name.vhdx`) |
-| Domänennamen | `<domain>` | Domäne jeder Sitzung, `USERDOMAIN`, `USERDNSDOMAIN`, Zusatz an Profilordnern; neben einem Benutzernamen auch unbekannte (`<user>.<domain>`, `<domain>\<user>`, `<user>@<domain>`) |
+| Domänennamen | `<domain>` | Domäne jeder Sitzung, `USERDOMAIN`, `USERDNSDOMAIN`, Zusatz an Profilordnern, DNS-Anteil eines Servernamens; neben einem Benutzernamen auch unbekannte (`<user>.<domain>`, `<domain>\<user>`, `<user>@<domain>`) |
 | Clientnamen | `<client>` | Clientname jeder Sitzung |
 | Name des Workers | `<server>` | Computername und Hostname |
-| Servernamen in UNC-Pfaden | `<server>` | jeder Pfad der Form `\\server\…`, `\\?\UNC\server\…` oder `\Device\Mup\server\…` |
+| Servernamen | `<server>` | jeder Pfad der Form `\\server\…`, `\\?\UNC\server\…`, `\??\UNC\server\…`, `\Device\Mup\server\…` oder `\Device\LanmanRedirector\…\server\…`; die so gefundenen Server, die Server der SMB-Freigaben und die Hosts der Datei für `-EndpointFile` werden auch in freiem Text ersetzt |
 | Konten-SIDs | `<sid>` | Muster `S-1-5-21-…` (Domänenkonten) und `S-1-12-1-…` (Entra-ID-Konten); bekannte SIDs wie `S-1-5-18` bleiben stehen |
 
-Sitzungen kommen und gehen, während das Skript läuft. Es liest die Namen deshalb beim Start, nach jeder Prüfung und vor dem Schreiben noch einmal; wer sich während des Laufs anmeldet, wird ebenfalls maskiert. Vor dem Schreiben läuft die Ersetzung mit allen bis dahin bekannten Namen noch einmal über jeden Text des Ergebnisses. Hostnamen und Adressen der Gegenstellen werden nicht ausgegeben.
+Die Prüfungen behalten ihre Texte zunächst unverändert; maskiert wird das Ergebnis einmal als Ganzes, nach der letzten Prüfung und mit allen Namen, die bis dahin bekannt sind. Sitzungen kommen und gehen, während das Skript läuft: Es liest sie deshalb beim Start, nach jeder Prüfung und vor dem Maskieren noch einmal, die Profilordner beim Start und vor dem Maskieren. Wer sich während des Laufs anmeldet, wird so ebenfalls maskiert. Eine Lücke bleibt: Wer sich innerhalb einer einzelnen Prüfung an- und wieder abmeldet (die längste dauert 40 Sekunden) und dessen Profilordner beim Abmelden gelöscht wird, steht in keiner Liste; für ihn greifen nur die festen Muster der Tabelle. Hostnamen und Adressen der Gegenstellen werden nicht ausgegeben.
 
 Das Skript schreibt keine Datei und bricht mit einer Meldung ab,
 
 - wenn weder die WTS-Schnittstelle noch die Benutzerprofile lesbar sind, oder
-- wenn eine aktive Sitzung keinen Benutzernamen liefert, beim Start oder beim erneuten Lesen vor dem Schreiben. Das geschieht vor allem in einer Konsole ohne erhöhte Rechte; dann das Skript in einer administrativen Konsole erneut starten.
+- wenn eine aktive Sitzung keinen Benutzernamen liefert, beim Start oder beim erneuten Lesen vor dem Maskieren. Das geschieht vor allem in einer Konsole ohne erhöhte Rechte; dann das Skript in einer administrativen Konsole erneut starten.
 
 Ohne die Namen könnte es sie nicht maskieren.
 
@@ -76,8 +76,10 @@ Ohne die Namen könnte es sie nicht maskieren.
 
 Die Maskierung ersetzt die Namen, die das Skript aus seinen Quellen kennt, und die festen Muster der Tabelle. **Nicht erkennen kann sie:**
 
-- Servernamen oder IP-Adressen in freiem Text, etwa in einer Fehlermeldung des Systems,
+- Servernamen oder IP-Adressen in freiem Text, wenn derselbe Server im Ergebnis in keinem UNC-Pfad vorkommt,
+- UNC-Pfade in anderer Schreibweise (`//server/freigabe`, `file://server/…`),
 - Anzeigenamen von Personen („Müller, Hans“),
+- einen Benutzernamen, der ohne Unterstrich an einer SID hängt oder in einem Ordnernamen anderer Bauart steht, solange der Benutzer in keiner Liste ist,
 - Firmen- oder Organisationsnamen in den Angaben zu Diensten, Prozessen und Herstellern,
 - Namen in einer Bezeichnung, die Sie selbst in der Datei für `-EndpointFile` vergeben haben.
 

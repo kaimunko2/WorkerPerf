@@ -10,13 +10,14 @@
 
     Results are shown as a table and written as JSON to vda-probe_<yyyyMMdd-HHmmss>.json.
     Names are masked in every text of the file: user, domain, client and computer names, account
-    SIDs and UNC server names. Endpoints are reported without host name or address, and neither
-    the file name nor the content carries the name of the worker. The names are read at the
-    start, after every check and once more before the file is written, so a user who logs on
-    during the run is masked as well. If the names cannot be determined, or an active session
-    delivers no user name, the script stops without writing a file.
+    SIDs and server names. Endpoints are reported without host name or address, and neither the
+    file name nor the content carries the name of the worker. The checks keep their texts as
+    read; the result is masked once, as a whole, after the last check. The sessions are read at
+    the start, after every check and before that masking, so a user who logs on during the run
+    is masked as well. If the names cannot be determined, or an active session delivers no user
+    name, the script stops without writing a file.
     The masking knows the names of its sources and a few fixed patterns. It cannot recognise a
-    server name or address in free text, a display name or an organisation name: look through
+    display name, an organisation name, or a server that appears in no UNC path: look through
     the file before passing it on (docs/vda-probe/README.md).
 
     Performance counters are read through System.Diagnostics.PerformanceCounterCategory with
@@ -57,56 +58,74 @@ if ($languageMode -ne 'FullLanguage') {
 
 Set-StrictMode -Version 2
 $ErrorActionPreference = 'Stop'
+# The masking applies more fixed patterns to every text than the regex cache holds by default.
+if ([regex]::CacheSize -lt 64) { [regex]::CacheSize = 64 }
 
 #region ---------- masking --------------------------------------------------------------------
 
 function New-WorkerPerfNameMask([string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
     # The lookup (name -> replacement) and the pattern for a set of names, built once and used for every text:
     # building them per text costs several milliseconds with the names of a full worker.
+    # While a text is masked, a replacement is written between two private-use characters instead of < and >, so
+    # that no rule and no name (a user called "user" or "sid") can match inside a replacement made before.
+    $open = [string][char]0xE000
+    $close = [string][char]0xE001
+    $mask = @{
+        User = $open + 'user' + $close; Server = $open + 'server' + $close; Client = $open + 'client' + $close
+        Domain = $open + 'domain' + $close; Sid = $open + 'sid' + $close; Regex = $null; Evaluator = $null
+    }
     $token = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($n in @($Users)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<user>' } }
-    foreach ($n in @($Computers)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<server>' } }
-    foreach ($n in @($Clients)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<client>' } }
-    foreach ($n in @($Domains)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = '<domain>' } }
-    $regex = $null
-    $evaluator = $null
+    foreach ($n in @($Users)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = $mask.User } }
+    foreach ($n in @($Computers)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = $mask.Server } }
+    foreach ($n in @($Clients)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = $mask.Client } }
+    foreach ($n in @($Domains)) { if (-not [string]::IsNullOrEmpty($n) -and -not $token.ContainsKey($n)) { $token[$n] = $mask.Domain } }
     if ($token.Count -gt 0) {
-        # One pass with an alternation (longest name first), so text that was already replaced is never matched again.
+        # One pass with an alternation, longest name first.
         $names = @($token.Keys | Sort-Object -Property { $_.Length } -Descending)
         $alternatives = ($names | ForEach-Object { [regex]::Escape($_) }) -join '|'
-        $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
-        $regex = New-Object System.Text.RegularExpressions.Regex ($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        $evaluator = [System.Text.RegularExpressions.MatchEvaluator] { param($m) $token[$m.Value] }.GetNewClosure()
+        $pattern = '(?<![\p{L}\p{N}\uE000])(?:' + $alternatives + ')(?![\p{L}\p{N}\uE001])'
+        $mask.Regex = New-Object System.Text.RegularExpressions.Regex ($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        # The pattern ignores case by the rules of the culture, the lookup by ordinal rules: a match the lookup does
+        # not know is still a name and becomes <user>.
+        $fallback = $mask.User
+        $mask.Evaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+            param($m)
+            $found = $token[$m.Value]
+            if ($null -eq $found) { $fallback } else { $found }
+        }.GetNewClosure()
     }
-    return @{ Regex = $regex; Evaluator = $evaluator }
+    return $mask
 }
 
 function Hide-WorkerPerfMaskedText([string]$Text, $Mask) {
-    # Replaces names (case-insensitive, whole names only): user names by <user>, computer names by <server>, client
-    # names by <client>, domain names by <domain>. Rules that need no list follow: account SIDs become <sid>, the
-    # name beside a SID and in a container file name becomes <user>, the domain part beside a masked user becomes
-    # <domain>, UNC server names (at the start or inside a text) become <server>.
-    # Masking a text twice gives the same text: the result is masked once more before it is written.
+    # Masks one text. Rules that need no list come first: account SIDs become <sid>, the name that container folders
+    # and files carry beside it becomes <user>, UNC server names become <server>. Then the names of the lists
+    # (case-insensitive, whole names only): user names become <user>, computer and server names <server>, client
+    # names <client>, domain names <domain>. Last, the domain part beside a masked user becomes <domain>.
+    # A text is masked once, when all names are known: masking with a part of the names can cut a longer name
+    # apart (anna.meier -> <user>.meier while only anna is known), and no later pass can repair that.
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
     $result = $Text
-    if ($null -ne $Mask.Regex) { $result = $Mask.Regex.Replace($result, $Mask.Evaluator) }
     # account SIDs of domain and Entra ID accounts (well-known SIDs such as S-1-5-18 stay), then the user name that
     # container folders carry beside the SID (<sid>_name, name_<sid>) and container files carry after their prefix
     # (Profile_name.vhdx, ODFC_name.vhdx): these hold for users that are in no list.
-    $result = [regex]::Replace($result, '(?i)(?<![\p{L}\p{N}])S-1-(?:5-21|12-1)(?:-[0-9]+){3,4}(?![\p{L}\p{N}])', '<sid>')
-    $result = [regex]::Replace($result, '<sid>_[^\\/\s''"<>]+', '<sid>_<user>')
-    $result = [regex]::Replace($result, '[^\\/\s''"<>]+_<sid>', '<user>_<sid>')
-    $result = [regex]::Replace($result, '(?i)(?<=^|[\\/])(Profile|ODFC)_[^\\/\s''"<>]+?(\.vhdx?)(?![\p{L}\p{N}])', '${1}_<user>${2}')
+    $result = [regex]::Replace($result, '(?i)(?<![\p{L}\p{N}])S-1-(?:5-21|12-1)(?:-[0-9]+){3,4}(?![\p{L}\p{N}])', $Mask.Sid)
+    $result = [regex]::Replace($result, '(?<=\uE000sid\uE001_)[^\\/\s''"<>\uE000\uE001]+', $Mask.User)
+    $result = [regex]::Replace($result, '(?<=^|[\\/\s''"<>\uE001])[^\\/\s''"<>\uE000\uE001]+(?=_\uE000sid\uE001)', $Mask.User)
+    $result = [regex]::Replace($result, '(?i)(?<=^|[\\/\s''"])(Profile|ODFC)_[^\\/\s''"<>\uE000\uE001]+?(\.vhdx?)(?![\p{L}\p{N}])', ('${1}_' + $Mask.User + '${2}'))
+    # \\server\... at the start or after a non-word character (e.g. quoted in an error message); device paths such
+    # as \\?\Volume{...} and \\.\ are kept. Then the long forms \\?\UNC\server\, \??\UNC\server\ and the device
+    # paths of the redirector, \Device\Mup\server\ and \Device\LanmanRedirector\;X:...\server\.
+    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)[^\\\s''"]+', ('\\' + $Mask.Server))
+    $result = [regex]::Replace($result, '(?i)(\\\\\?\\UNC\\|\\\?\?\\UNC\\)[^\\\s''"<>\uE000\uE001]+', ('${1}' + $Mask.Server))
+    $result = [regex]::Replace($result, '(?i)(\\Device\\(?:Mup|LanmanRedirector)\\(?:;[^\\\s''"]*\\)*)[^\\\s''";<>\uE000\uE001][^\\\s''"<>\uE000\uE001]*', ('${1}' + $Mask.Server))
+    # the names of the lists
+    if ($null -ne $Mask.Regex) { $result = $Mask.Regex.Replace($result, $Mask.Evaluator) }
     # the domain part beside a user: folder <user>.DOMAIN\ (profile stores), DOMAIN\<user>, <user>@domain
-    $result = [regex]::Replace($result, '<user>\.[\p{L}\p{N}_-]+(?=[\\/])', '<user>.<domain>')
-    $result = [regex]::Replace($result, '<user>@[\p{L}\p{N}][\p{L}\p{N}.-]*', '<user>@<domain>')
-    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}\\:._-])[\p{L}\p{N}_-]+\\<user>', '<domain>\<user>')
-    # \\server\... at the start or after a non-word character (e.g. quoted in an error message);
-    # device paths such as \\?\Volume{...} and \\.\ are kept, the long forms \\?\UNC\server\ and \Device\Mup\server\ are not.
-    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)[^\\\s''"]+', '\\<server>')
-    $result = [regex]::Replace($result, '(?i)(\\\\\?\\UNC\\)[^\\\s''"<>]+', '${1}<server>')
-    $result = [regex]::Replace($result, '(?i)(\\Device\\Mup\\)[^\\\s''"<>]+', '${1}<server>')
-    return $result
+    $result = [regex]::Replace($result, '(?<=\uE000user\uE001\.)[\p{L}\p{N}_-]+(?=[\\/])', $Mask.Domain)
+    $result = [regex]::Replace($result, '(?<=\uE000user\uE001@)[\p{L}\p{N}][\p{L}\p{N}.-]*', $Mask.Domain)
+    $result = [regex]::Replace($result, '(?<![\p{L}\p{N}\\:._-])[\p{L}\p{N}_-]+(?=\\\uE000user\uE001)', $Mask.Domain)
+    return $result.Replace([string][char]0xE000, '<').Replace([string][char]0xE001, '>')
 }
 
 function Hide-WorkerPerfName([string]$Text, [string[]]$Users, [string[]]$Domains = @(), [string[]]$Clients = @(), [string[]]$Computers = @()) {
@@ -154,28 +173,97 @@ function Hide-ProbeText([string]$Text) {
     return Hide-WorkerPerfMaskedText -Text $Text -Mask $script:ProbeMask
 }
 
-function Protect-ProbeValue($Value) {
-    # Last line of defence before the result is written: every text anywhere in the result passes the masking once
-    # more (dictionaries and lists are walked, keys and other values stay as they are).
+function Copy-ProbeValue($Value, [scriptblock]$Text, [int]$Depth = 0) {
+    # Deep copy of a result in which every text, dictionary keys included, has passed $Text. Numbers, booleans and
+    # dates stay as they are. Any other object is taken apart into its properties, so that ConvertTo-Json never
+    # serialises something that has not been through here.
     if ($null -eq $Value) { return $null }
-    if ($Value -is [string]) { return (Hide-ProbeText $Value) }
+    if ($Value -is [string]) { return (& $Text $Value) }
+    if ($Value -is [char]) { return (& $Text ([string]$Value)) }
+    if ($Value -is [ValueType]) { return $Value }
+    if ($Depth -ge 16) { return (& $Text ([string]$Value)) }
     if ($Value -is [System.Collections.IDictionary]) {
         $copy = [ordered]@{}
-        foreach ($k in @($Value.Keys)) { $copy[$k] = Protect-ProbeValue $Value[$k] }
+        foreach ($entry in $Value.GetEnumerator()) {
+            $key = $entry.Key
+            if ($key -is [string]) {
+                # two keys may read the same after masking: both entries are kept
+                $base = & $Text $key
+                $key = $base
+                $n = 1
+                while ($copy.Contains($key)) { $n++; $key = '{0} ({1})' -f $base, $n }
+            }
+            $copy.Add($key, (Copy-ProbeValue $entry.Value $Text ($Depth + 1)))
+        }
         return $copy
     }
     if ($Value -is [System.Collections.IEnumerable]) {
         $list = New-Object 'System.Collections.Generic.List[object]'
-        foreach ($item in $Value) { $list.Add((Protect-ProbeValue $item)) }
+        foreach ($item in $Value) { $list.Add((Copy-ProbeValue $item $Text ($Depth + 1))) }
         return , $list.ToArray()
     }
-    return $Value
+    $copy = [ordered]@{}
+    foreach ($p in $Value.PSObject.Properties) {
+        $v = $null
+        try { $v = $p.Value } catch { $v = $null }
+        $copy.Add([string]$p.Name, (Copy-ProbeValue $v $Text ($Depth + 1)))
+    }
+    return $copy
 }
 
-function Hide-ProbeShareName([string]$Name) {
-    # SMB share instances may start with a single backslash (\server\share).
-    if ($Name -match '^\\[^\\]') { return (Hide-ProbeText ('\' + $Name)).Substring(1) }
-    return Hide-ProbeText $Name
+function Protect-ProbeValue($Value) {
+    # The one place where the result is masked: every text anywhere in it, with all names known at that moment.
+    # The checks themselves keep their texts as they read them.
+    return Copy-ProbeValue $Value { param($t) Hide-ProbeText $t }
+}
+
+function Get-ProbeTexts($Value) {
+    # Every text of a result, dictionary keys included.
+    $texts = New-Object 'System.Collections.Generic.List[string]'
+    $null = Copy-ProbeValue $Value { param($t) $texts.Add($t); $t }
+    return $texts.ToArray()
+}
+
+function Get-ProbeUncHosts([string[]]$Texts) {
+    # The server names of the UNC paths in the given texts, in the forms the masking knows.
+    $patterns = @(
+        '(?<![\p{L}\p{N}_\\])\\\\(?![?.]\\)([^\\\s''"<>]+)'
+        '(?i)(?:\\\\\?\\UNC\\|\\\?\?\\UNC\\)([^\\\s''"<>]+)'
+        '(?i)\\Device\\(?:Mup|LanmanRedirector)\\(?:;[^\\\s''"]*\\)*([^\\\s''";<>][^\\\s''"<>]*)'
+    )
+    $found = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($t in @($Texts)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        foreach ($p in $patterns) {
+            foreach ($m in [regex]::Matches($t, $p)) { $found.Add($m.Groups[1].Value) }
+        }
+    }
+    return Join-ProbeNames @() $found.ToArray()
+}
+
+function Add-ProbeServerNames([string[]]$Hosts) {
+    # Server names (from UNC paths, SMB share instances and the endpoint file) join the names to mask, so that they
+    # are replaced in free text as well: the whole name, of a DNS name also its first label, and the rest of the DNS
+    # name as a domain. Returns how many names were new.
+    $servers = New-Object 'System.Collections.Generic.List[string]'
+    $domains = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($h in @($Hosts)) {
+        if ([string]::IsNullOrEmpty($h)) { continue }
+        $servers.Add($h)
+        $dot = $h.IndexOf('.')
+        if ($dot -gt 0 -and $dot -lt $h.Length - 1 -and $h -notmatch '^[0-9.]+$' -and -not $h.Contains(':')) {
+            $servers.Add($h.Substring(0, $dot))
+            $domains.Add($h.Substring($dot + 1))
+        }
+    }
+    return Add-ProbeMaskNames -Computers $servers.ToArray() -Domains $domains.ToArray()
+}
+
+function Add-ProbeShareServer([string]$Instance) {
+    # Instances of 'SMB Client Shares' are named \server\share, with a single backslash, which no general rule can
+    # tell from a device path such as \Device\HarddiskVolume3. Their server name joins the names to mask instead.
+    $m = [regex]::Match($Instance, '^\\{1,2}([^\\]+)\\')
+    if ($m.Success) { $null = Add-ProbeServerNames @($m.Groups[1].Value) }
 }
 
 function Test-ProbeUserInText([string]$Text) {
@@ -253,7 +341,6 @@ function Read-ProbeNames([scriptblock]$ReadSessions, [scriptblock]$ReadProfiles)
     $null = Add-ProbeMaskNames -Users (Get-ProbeMaskNames -SessionUsers @($r.Sessions | ForEach-Object { [string]$_.User }) -ProfilePaths $r.ProfilePaths -CurrentUser '') `
         -Domains (Get-ProbeMaskDomains -SessionDomains @($r.Sessions | ForEach-Object { [string]$_.Domain }) -UserDomain '' -UserDnsDomain '' -ProfilePaths $r.ProfilePaths) `
         -Clients @($r.Sessions | ForEach-Object { [string]$_.ClientName })
-    # the error texts last, so that they are masked with every name known by now
     if ($null -ne $wtsFailure) { $r.WtsError = Get-ProbeErrorText $wtsFailure; if ($r.WtsError -eq '') { $r.WtsError = 'unbekannter Fehler' } }
     if ($null -ne $profileFailure) { $r.ProfileError = Get-ProbeErrorText $profileFailure; if ($r.ProfileError -eq '') { $r.ProfileError = 'unbekannter Fehler' } }
     $r.Gap = Get-ProbeMaskGap -Sessions $r.Sessions -WtsOk ($null -eq $wtsFailure) -ProfilesOk ($null -eq $profileFailure)
@@ -269,9 +356,9 @@ function Update-ProbeMaskFromSessions([scriptblock]$ReadSessions) {
 }
 
 function Invoke-ProbeCatalogue($Catalogue, $Ctx, [scriptblock]$ReadSessions) {
-    # Runs every check on its own; a failing check is reported and the others continue. After each check the sessions
-    # are read again, so that a user who logged on while it ran is in the lists before the next check and before
-    # the result is written.
+    # Runs every check on its own; a failing check is reported and the others continue. The results keep their texts
+    # as read: they are masked once, after the last check (Protect-ProbeValue). After each check the sessions are
+    # read again, so that a user who logged on while it ran is in the lists by then.
     $results = New-Object 'System.Collections.Generic.List[object]'
     $n = 0
     foreach ($c in @($Catalogue)) {
@@ -286,7 +373,6 @@ function Invoke-ProbeCatalogue($Catalogue, $Ctx, [scriptblock]$ReadSessions) {
         }
         catch { $r.Detail = Get-ProbeErrorText $_ }
         Update-ProbeMaskFromSessions $ReadSessions
-        $r.Detail = Hide-ProbeText $r.Detail
         $results.Add($r)
     }
     return $results.ToArray()                                  # plain output: callers wrap in @(...)
@@ -318,21 +404,6 @@ function Get-ProbeFileName([datetime]$Now) {
     return 'vda-probe_{0}.json' -f $Now.ToString('yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture)
 }
 
-function Hide-ProbeEndpointText([string]$Text, [string[]]$HostNames) {
-    # Endpoint labels are written by the customer and may quote a host; every host name of the
-    # endpoint file and its first label (e.g. ora-db of ora-db.example.local) become <server>.
-    if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $result = $Text
-    $hosts = @(@($HostNames) | Where-Object { -not [string]::IsNullOrEmpty($_) } | ForEach-Object { $_; if ($_ -notmatch '^[0-9.:]+$') { $_.Split('.')[0] } } |
-            Where-Object { $_ -ne '' } | Sort-Object -Unique | Sort-Object -Property { $_.Length } -Descending)
-    if ($hosts.Count -gt 0) {
-        $alternatives = ($hosts | ForEach-Object { [regex]::Escape($_) }) -join '|'
-        $pattern = '(?<![\p{L}\p{N}])(?:' + $alternatives + ')(?![\p{L}\p{N}])'
-        $result = [regex]::Replace($result, $pattern, '<server>', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    }
-    return Hide-ProbeText $result
-}
-
 #endregion
 
 #region ---------- helpers --------------------------------------------------------------------
@@ -348,8 +419,8 @@ function Get-Prop($Object, [string]$Name) {
 function Get-ProbeErrorText($ErrorRecord) {
     $e = $ErrorRecord.Exception
     while ($null -ne $e.InnerException) { $e = $e.InnerException }
-    # Messages may quote paths, so they are masked like every other text in the result.
-    return Hide-ProbeText ([string]$e.Message)
+    # Messages may quote paths and names: like every other text they are masked when the result is written.
+    return [string]$e.Message
 }
 
 function ConvertTo-ProbeNumber($Value) {
@@ -598,8 +669,8 @@ function Read-ProbePerf {
     $wanted = $names.ToArray()
     if ($null -ne $Counters -and $Counters.Length -gt 0) { $wanted = $Counters }
 
-    # One entry per real instance; InstanceIndex links the rows of all counters to it, because
-    # masked names are not unique (two mount paths may both end in \<user>).
+    # One entry per real instance; InstanceIndex links the rows of all counters to it, because the
+    # names are not unique once the result is masked (two mount paths may both end in \<user>).
     $instanceNames = New-Object 'System.Collections.Generic.List[string]'
     $instanceIndex = New-Object 'System.Collections.Generic.Dictionary[string,int]' ([StringComparer]::OrdinalIgnoreCase)
     $counterRows = New-Object 'System.Collections.Generic.List[object]'
@@ -632,7 +703,8 @@ function Read-ProbePerf {
                 $shown = ''
                 $index = 0
                 if ($Instances -ne 'none') {
-                    if ($ShareNames) { $shown = Hide-ProbeShareName $name } else { $shown = Hide-ProbeText $name }
+                    $shown = $name
+                    if ($ShareNames) { Add-ProbeShareServer $name }
                     if (-not $instanceIndex.ContainsKey($name)) {
                         $instanceIndex[$name] = $instanceNames.Count
                         $instanceNames.Add($shown)
@@ -766,7 +838,7 @@ function Read-ProbeInputSeries($Category, [string]$Counter, [int]$Count, [int]$I
                 $name = [string]$i.InstanceName
                 $s = $i.Sample
                 $type = $s.CounterType.ToString()
-                $shown = Hide-ProbeText $name
+                $shown = $name
                 if (-not $names.Contains($shown)) { $names.Add($shown) }
                 $p = $null
                 if ($null -ne $prev) { $p = $prev.get_Item($name) }
@@ -891,7 +963,7 @@ function Invoke-ProbeServicesCheck($Ctx, $Check) {
     $sw.Stop()
     $rows = New-Object 'System.Collections.Generic.List[object]'
     foreach ($s in @($Ctx.Services | Where-Object { [int]$_.ProcessId -ne 0 } | Sort-Object -Property Name)) {
-        $rows.Add([ordered]@{ Name = Hide-ProbeText ([string]$s.Name); ProcessId = [int]$s.ProcessId })
+        $rows.Add([ordered]@{ Name = [string]$s.Name; ProcessId = [int]$s.ProcessId })
     }
     $ms = Get-ProbeMs $sw
     $detail = '{0} Dienste mit Prozess, Abfrage {1} ms' -f $rows.Count, $ms.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -944,23 +1016,23 @@ function Invoke-ProbeProfileVolumesCheck($Ctx, $Check) {
                     PartitionNumber     = [int](Get-Prop $p 'PartitionNumber')
                     DriveLetter         = $letter
                     Size                = [uint64](Get-Prop $p 'Size')
-                    AccessPaths         = @($paths | ForEach-Object { Hide-ProbeText $_ })
+                    AccessPaths         = @($paths)
                     DeviceName          = $device
-                    LogicalDiskInstance = Hide-ProbeText $instance
+                    LogicalDiskInstance = $instance
                     UserInAccessPaths   = $userInPaths
                 })
         }
         $rows.Add([ordered]@{
                 Number         = $number
                 Size           = [uint64](Get-Prop $d 'Size')
-                Location       = Hide-ProbeText $location
+                Location       = $location
                 UserInLocation = Test-ProbeUserInText $location
                 Partitions     = $parts.ToArray()
             })
     }
     $data = [ordered]@{
         Disks                = $rows.ToArray()
-        LogicalDiskInstances = @($ldInstances | ForEach-Object { Hide-ProbeText $_ })
+        LogicalDiskInstances = @($ldInstances)
         LogicalDiskError     = $ldError
         QueryDosDeviceError  = $dosError
     }
@@ -1034,10 +1106,10 @@ function Get-ProbeProcessGroups($Ctx, [bool]$SessionZero) {
         }
         $info = Get-ProbeFileInfo $Ctx $path
         $row = [ordered]@{
-            Name        = Hide-ProbeText ([string]$g.Name)
+            Name        = [string]$g.Name
             Instances   = $g.Count
-            Company     = Hide-ProbeText $info.Company
-            Description = Hide-ProbeText $info.Description
+            Company     = [string]$info.Company
+            Description = [string]$info.Description
         }
         if ($SessionZero) {
             $svc = New-Object 'System.Collections.Generic.List[string]'
@@ -1045,7 +1117,7 @@ function Get-ProbeProcessGroups($Ctx, [bool]$SessionZero) {
                 $id = [int]$p.ProcessId
                 if ($pidServices.ContainsKey($id)) { foreach ($n in $pidServices[$id]) { if (-not $svc.Contains($n)) { $svc.Add($n) } } }
             }
-            $row.Services = @($svc.ToArray() | Sort-Object | ForEach-Object { Hide-ProbeText $_ })
+            $row.Services = @($svc.ToArray() | Sort-Object)
         }
         $rows.Add($row)
     }
@@ -1076,16 +1148,17 @@ function Invoke-ProbeEndpointsCheck($Ctx, $Check) {
     $rows = New-Object 'System.Collections.Generic.List[object]'
     $reached = 0
     $endpoints = @(Get-Prop $cfg 'endpoints')
-    # Host names never reach the result; endpoints are identified by position, name and role.
-    $hostNames = @($endpoints | ForEach-Object { [string](Get-Prop $_ 'host') })
+    # Host names never reach the result: endpoints are identified by position, name and role, and the hosts join the
+    # names to mask, so that a label that quotes a host is masked like every other text.
+    $null = Add-ProbeServerNames @($endpoints | ForEach-Object { [string](Get-Prop $_ 'host') })
     $position = 0
     foreach ($e in $endpoints) {
         $position++
         $hostName = [string](Get-Prop $e 'host')
         $row = [ordered]@{
             Index = $position
-            Name = Hide-ProbeEndpointText ([string](Get-Prop $e 'name')) $hostNames
-            Role = Hide-ProbeEndpointText ([string](Get-Prop $e 'role')) $hostNames
+            Name = [string](Get-Prop $e 'name')
+            Role = [string](Get-Prop $e 'role')
             Port = Get-Prop $e 'port'; DnsMs = $null; ConnectMs = $null; Error = ''
         }
         # Error is a short class (dns, refused, timeout, other), never the exception text: under .NET Framework that
@@ -1235,7 +1308,7 @@ $ctx.ProfileError = $first.ProfileError
 # Fail closed: without the user names (no list at all, or an active session without a name) the result could leak
 # them, so nothing is measured and nothing is written.
 if ($first.Gap) {
-    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben.' -f $first.Gap, $first.WtsError, $first.ProfileError)
+    throw (Hide-ProbeText ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben.' -f $first.Gap, $first.WtsError, $first.ProfileError))
 }
 
 $isElevated = $false
@@ -1260,7 +1333,7 @@ $results = @(Invoke-ProbeCatalogue $script:Catalogue $ctx $readSessions)
 Write-Host 'Namen werden erneut gelesen, das Ergebnis wird maskiert und geschrieben ...'
 $last = Read-ProbeNames $readSessions $readProfiles
 if ($last.Gap) {
-    throw ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben; bitte das Skript erneut starten.' -f $last.Gap, $last.WtsError, $last.ProfileError)
+    throw (Hide-ProbeText ('{0} (WTS: {1}; Win32_UserProfile: {2}). Es wird keine Datei geschrieben; bitte das Skript erneut starten.' -f $last.Gap, $last.WtsError, $last.ProfileError))
 }
 
 # No name of the worker in the result: several workers are told apart by the time stamp of the file.
@@ -1273,6 +1346,9 @@ $report = [ordered]@{
     IsElevated    = $isElevated
     Checks        = $results
 }
+# The one masking pass, with every name known by now. Before it, the servers of all UNC paths in the result join
+# the names, so that a server is masked in free text too (an error message that quotes it without a path).
+$null = Add-ProbeServerNames @(Get-ProbeUncHosts @(Get-ProbeTexts $report))
 $report = Protect-ProbeValue $report
 $json = ConvertTo-Json -InputObject $report -Depth 16
 [System.IO.File]::WriteAllText($target, $json, (New-Object System.Text.UTF8Encoding $false))

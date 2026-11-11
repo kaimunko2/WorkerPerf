@@ -4,9 +4,9 @@ BeforeAll {
     $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Hide-WorkerPerfName' }, $true)
     . ([scriptblock]::Create($fn.Extent.Text))
     # Further pure helpers that run on Linux.
-    foreach ($name in 'New-WorkerPerfNameMask', 'Hide-WorkerPerfMaskedText', 'Get-ProbeMaskNames', 'Get-ProbeMaskDomains', 'Hide-ProbeText', 'Hide-ProbeEndpointText',
+    foreach ($name in 'New-WorkerPerfNameMask', 'Hide-WorkerPerfMaskedText', 'Get-ProbeMaskNames', 'Get-ProbeMaskDomains', 'Hide-ProbeText',
         'Get-ProbeEndpointErrorClass', 'Get-ProbeMaskGap', 'Protect-ProbeValue', 'Get-ProbeFileName', 'Join-ProbeNames', 'Add-ProbeMaskNames', 'Get-ProbeErrorText',
-        'Read-ProbeNames', 'Update-ProbeMaskFromSessions', 'Invoke-ProbeCatalogue') {
+        'Read-ProbeNames', 'Update-ProbeMaskFromSessions', 'Invoke-ProbeCatalogue', 'Add-ProbeServerNames', 'Add-ProbeShareServer', 'Get-ProbeUncHosts', 'Get-ProbeTexts', 'Copy-ProbeValue') {
         $f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
         if ($null -ne $f) { . ([scriptblock]::Create($f.Extent.Text)) }
     }
@@ -47,10 +47,13 @@ Describe 'Quellen-Pruefskript' {
         Hide-WorkerPerfName -Text '\\fs01\upm$\schmidt.KLINIK\x.vhdx' -Users $names | Should -Be '\\<server>\upm$\<user>.<domain>\x.vhdx'
     }
     It 'schreibt keine Hostnamen der Gegenstellen' {
-        $hosts = @('ora-db.example.local', '10.1.2.3')
-        Hide-ProbeEndpointText -Text 'Oracle auf ORA-DB' -HostNames $hosts | Should -Be 'Oracle auf <server>'
-        Hide-ProbeEndpointText -Text 'Proxy 10.1.2.3' -HostNames $hosts | Should -Be 'Proxy <server>'
-        Hide-ProbeEndpointText -Text 'Datenbank' -HostNames $hosts | Should -Be 'Datenbank'
+        Reset-TestMask
+        Add-ProbeServerNames @('ora-db.example.local', '10.1.2.3', '') | Should -BeGreaterThan 0
+        Hide-ProbeText 'Oracle auf ORA-DB' | Should -Be 'Oracle auf <server>'                    # auch das erste Namensglied
+        Hide-ProbeText 'Listener ora-db.example.local:1521' | Should -Be 'Listener <server>:1521'
+        Hide-ProbeText 'Proxy 10.1.2.3' | Should -Be 'Proxy <server>'
+        Hide-ProbeText 'Datenbank' | Should -Be 'Datenbank'
+        Reset-TestMask
     }
     It 'verweigert die Messung ausserhalb von Windows' -Skip:$IsWindows { { & $Probe } | Should -Throw '*Windows*' }
 }
@@ -127,12 +130,78 @@ Describe 'Namen, die das Pruefskript nicht aus einer Liste kennt' {
         Hide-WorkerPerfName -Text 'Geraet \Device\Mup\fs01\upm$\x' -Users @() | Should -Be 'Geraet \Device\Mup\<server>\upm$\x'
         Hide-WorkerPerfName -Text 'Volume \\?\Volume{1}\ und \Device\HarddiskVolume3' -Users @() | Should -Be 'Volume \\?\Volume{1}\ und \Device\HarddiskVolume3'
     }
+    It 'wendet die festen Regeln vor den Namen an, auch wenn ein Benutzer wie ein fester Begriff heisst' {
+        $sid = 'S-1-5-21-111-222-333-1105'
+        Hide-WorkerPerfName -Text "\\fs01\p\${sid}_neu\Profile_neu.vhdx" -Users @('profile', 's', '222') | Should -Be '\\<server>\p\<sid>_<user>\<user>_<user>.vhdx'
+        Hide-WorkerPerfName -Text 'Konto <sid> von <user> auf <server>' -Users @('sid', 'user', 'server') | Should -Be 'Konto <<user>> von <<user>> auf <<user>>'   # fremder Text mit spitzen Klammern
+        Hide-WorkerPerfName -Text "Konto $sid" -Users @('sid') | Should -Be 'Konto <sid>'                          # der eigene Ersatz wird nicht noch einmal ersetzt
+        Hide-WorkerPerfName -Text 'C:\Users\user\x und \\fs01\y' -Users @('user', 'server') | Should -Be 'C:\Users\<user>\x und \\<server>\y'
+    }
+    It 'erkennt Containerdateien auch in einem Satz' {
+        Hide-WorkerPerfName -Text 'Datei "Profile_neu.vhdx" fehlt' -Users @() | Should -Be 'Datei "Profile_<user>.vhdx" fehlt'
+        Hide-WorkerPerfName -Text 'Datei Profile_neu.vhdx fehlt' -Users @() | Should -Be 'Datei Profile_<user>.vhdx fehlt'
+        Hide-WorkerPerfName -Text 'UserProfile_Service.vhdx' -Users @() | Should -Be 'UserProfile_Service.vhdx'
+    }
+    It 'ersetzt Servernamen in den Geraetepfaden des Netzwerk-Redirectors' {
+        Hide-WorkerPerfName -Text '\??\UNC\fs01\upm$\x' -Users @() | Should -Be '\??\UNC\<server>\upm$\x'
+        Hide-WorkerPerfName -Text '\Device\LanmanRedirector\;Z:0000000000012345\fs01\daten\x' -Users @() | Should -Be '\Device\LanmanRedirector\;Z:0000000000012345\<server>\daten\x'
+        Hide-WorkerPerfName -Text '\Device\Mup\;LanmanRedirector\;Z:0000000000012345\fs01\daten' -Users @() | Should -Be '\Device\Mup\;LanmanRedirector\;Z:0000000000012345\<server>\daten'
+    }
     It 'liefert beim zweiten Durchgang dasselbe Ergebnis' {
         $a = @{ Users = @('mueller'); Domains = @('KLINIK'); Clients = @('WS-0815'); Computers = @('VDA01') }
         foreach ($text in '\\fs01\profile$\S-1-5-21-1-2-3-1107_mueller\Profile_mueller.VHDX', '\\?\UNC\fs01\upm$\neu_S-1-5-21-1-2-3-1108\x', 'ICA-CGP 3 (KLINIK\mueller) von WS-0815 auf VDA01') {
             $once = Hide-WorkerPerfName -Text $text @a
             Hide-WorkerPerfName -Text $once @a | Should -Be $once
         }
+    }
+}
+Describe 'Eine Maskierung am Ende ueber das ganze Ergebnis' {
+    BeforeEach { Reset-TestMask }
+    AfterAll { Reset-TestMask }
+    It 'maskiert auch Schluessel und die Eigenschaften von Objekten' {
+        $null = Add-ProbeMaskNames -Users @('mueller') -Domains @('KLINIK') -Clients @('WS-0815')
+        $data = [ordered]@{
+            'ICA-CGP 3 (KLINIK\mueller)' = 1
+            Rows = @([pscustomobject]@{ Instance = 'ICA-CGP 3 (KLINIK\mueller)'; Value = 2.5; When = [datetime]'2026-11-11T07:08:09'; Inner = [pscustomobject]@{ Client = 'WS-0815' } })
+            Flag = $true; Count = [uint64]7; Nothing = $null
+        }
+        (Protect-ProbeValue $data | ConvertTo-Json -Depth 8 -Compress) |
+            Should -Be '{"ICA-CGP 3 (<domain>\\<user>)":1,"Rows":[{"Instance":"ICA-CGP 3 (<domain>\\<user>)","Value":2.5,"When":"2026-11-11T07:08:09","Inner":{"Client":"<client>"}}],"Flag":true,"Count":7,"Nothing":null}'
+    }
+    It 'haelt Schluessel auseinander, die nach der Maskierung gleich lauten' {
+        $null = Add-ProbeMaskNames -Users @('mueller', 'schmidt')
+        $safe = Protect-ProbeValue ([ordered]@{ 'C:\Users\mueller' = 1; 'C:\Users\schmidt' = 2 })
+        @($safe.Keys) | Should -Be @('C:\Users\<user>', 'C:\Users\<user> (2)')
+        @($safe.Values) | Should -Be @(1, 2)
+    }
+    It 'nimmt Servernamen aus UNC-Pfaden des Ergebnisses in die Listen auf und maskiert sie dann auch im Fliesstext' {
+        $data = [ordered]@{ Location = '\\fs01.klinik.local\upm$\x.vhdx'; Other = '\\?\UNC\nas7\daten'; Device = '\Device\Mup\dfs9\x'; Volume = '\\?\Volume{1}\'; Detail = 'Der Server FS01 antwortet nicht (nas7, dfs9, klinik.local)' }
+        @(Get-ProbeTexts $data).Count | Should -Be 10                                              # fuenf Schluessel, fuenf Werte
+        @(Get-ProbeUncHosts @(Get-ProbeTexts $data)) | Sort-Object | Should -Be @('dfs9', 'fs01.klinik.local', 'nas7')
+        $null = Add-ProbeServerNames @(Get-ProbeUncHosts @(Get-ProbeTexts $data))
+        (Protect-ProbeValue $data).Detail | Should -Be 'Der Server <server> antwortet nicht (<server>, <server>, <domain>)'
+    }
+    It 'nimmt den Server einer SMB-Freigabe mit einfachem Backslash auf, ohne Geraetepfade anzutasten' {
+        Add-ProbeShareServer '\fs01\daten'
+        Add-ProbeShareServer '_Total'
+        Add-ProbeShareServer '\\fs02\upm$'
+        Hide-ProbeText '\fs01\daten' | Should -Be '\<server>\daten'
+        Hide-ProbeText '\\fs02\upm$' | Should -Be '\\<server>\upm$'
+        Hide-ProbeText '_Total und \Device\HarddiskVolume3' | Should -Be '_Total und \Device\HarddiskVolume3'
+    }
+    It 'maskiert in keiner Pruefung selbst: Texte bleiben bis zum Schreiben unveraendert' {
+        # Eine Pruefung, die mit den Namen ihres Zeitpunkts maskiert, zerschneidet einen Namen, der erst spaeter bekannt
+        # wird (aus anna.meier wird <user>.meier, wenn anna schon bekannt ist). Maskiert wird deshalb nur am Ende.
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($Probe, [ref]$null, [ref]$null)
+        $allowed = @('Hide-ProbeText', 'Protect-ProbeValue', 'Hide-WorkerPerfName', 'Test-ProbeUserInText')
+        $offenders = @()
+        foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+            if ($allowed -contains $f.Name) { continue }
+            $calls = @($f.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
+                    Where-Object { @('Hide-ProbeText', 'Hide-WorkerPerfName', 'Hide-WorkerPerfMaskedText', 'Protect-ProbeValue') -contains $_.GetCommandName() })
+            if ($calls.Count -gt 0) { $offenders += $f.Name }
+        }
+        $offenders | Should -BeNullOrEmpty
     }
 }
 Describe 'Namen, die sich waehrend des Laufs aendern' {
@@ -193,6 +262,11 @@ Describe 'Namen, die sich waehrend des Laufs aendern' {
         (Read-ProbeNames $readSessions { @('C:\Users\mueller') }).Gap | Should -BeNullOrEmpty
         $live.Add((& $NewSession '' 'WS-0004'))
         (Read-ProbeNames $readSessions { @('C:\Users\mueller') }).Gap | Should -Match 'aktive Sitzung'
+    }
+    It 'uebersteht ein fehlgeschlagenes Lesen der Sitzungen mitten im Lauf' {
+        $null = Add-ProbeMaskNames -Users @('mueller')
+        { Update-ProbeMaskFromSessions { throw 'WTS antwortet nicht' } } | Should -Not -Throw
+        Hide-ProbeText 'C:\Users\mueller' | Should -Be 'C:\Users\<user>'
     }
     It 'meldet eine unlesbare Quelle, statt abzubrechen' {
         $r = Read-ProbeNames { throw 'WTS antwortet nicht' } { @('C:\Users\mueller') }
@@ -259,7 +333,13 @@ namespace WorkerPerfProbe
             [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [string]$Filter, [int]$OperationTimeoutSec)
             if ($ClassName -eq 'Win32_UserProfile') {
                 [pscustomobject]@{ Special = $false; LocalPath = 'C:\Users\mueller' }
+                [pscustomobject]@{ Special = $false; LocalPath = 'C:\Users\anna.schmidt' }               # macht "anna" zu einem bekannten Namen
                 [pscustomobject]@{ Special = $true; LocalPath = 'C:\Windows\ServiceProfiles\LocalService' }
+            }
+            elseif ($ClassName -eq 'Win32_Service') {
+                & $AddSession 6 'anna.meier' 'WS-0006'                                             # Anmeldung, waehrend die Dienste gelesen werden
+                [pscustomobject]@{ Name = 'ICA-CGP 6 (KLINIK\anna.meier)'; ProcessId = 4711 }
+                [pscustomobject]@{ Name = 'Spooler'; ProcessId = 0 }
             }
             elseif ($ClassName -eq 'Win32_OperatingSystem') { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
         }
@@ -311,6 +391,19 @@ namespace WorkerPerfProbe
         $r.Checks[2].Ok | Should -BeFalse
         $r.Checks[2].Detail | Should -Be 'Zugriff verweigert: \\<server>\upm$\<user>.<domain>'
         $r.Checks[3].Ok | Should -Be $null
+    }
+    It 'zerschneidet keinen Namen, von dem beim Lesen erst ein Teil bekannt ist' {
+        # die echte Pruefung der Dienste, mit nachgestellter CIM-Abfrage: sie liefert einen Text mit dem Namen einer
+        # Benutzerin, die sich in diesem Augenblick anmeldet; "anna" ist schon aus einem Profilordner bekannt
+        $script:TestCatalogueSaved = $TestCatalogue
+        $script:TestCatalogue = @($TestCatalogue[0], @{ Id = 'services.map'; Signals = @(); Title = 'Dienste'; Run = 'Invoke-ProbeServicesCheck' })
+        try { & $ProbeMain -OutFile $OutDir 3>$null 6>$null | Out-Null }
+        finally { $script:TestCatalogue = $TestCatalogueSaved }
+        $json = [IO.File]::ReadAllText(@(Get-ChildItem -LiteralPath $OutDir -Filter 'vda-probe_*.json')[0].FullName)
+        foreach ($name in 'meier', 'anna', 'schmidt', 'KLINIK') { $json | Should -Not -Match $name }
+        $r = $json | ConvertFrom-Json
+        @($r.Checks[1].Data.Services)[0].Name | Should -Be 'ICA-CGP 6 (<domain>\<user>)'
+        @($r.Checks[1].Data.Services)[0].ProcessId | Should -Be 4711
     }
     It 'schreibt keine Datei, wenn beim Start eine aktive Sitzung keinen Benutzernamen liefert' {
         & $AddSession 4 '' 'WS-0004'
