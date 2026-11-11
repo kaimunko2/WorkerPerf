@@ -1189,6 +1189,9 @@ function Initialize-WorkerPerfSource {
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
 
+    # ---- printing (Task 10 reads the drivers and the queue counters) ----
+    foreach ($id in 'print.drivers', 'print.queues') { $sources[$id] = @{ Available = $false; Detail = 'noch nicht umgesetzt' } }
+
     $state.LogicalProcessors = [Math]::Max(1, [int]$cs.NumberOfLogicalProcessors)
     $script:WinState = $state
     $script:WinProbe = $null
@@ -1352,6 +1355,20 @@ function Get-WorkerPerfEvents {
         }
     }
     $rows.ToArray() | Sort-Object -Property Time
+}
+
+function Get-WorkerPerfEventsBefore {
+    # Placeholder of the common interface: Task 10 reads the lookback of the logs in events.json here.
+    param([int]$Days, [datetime]$Until)
+    return @{ Events = @(); Capped = @() }
+}
+
+function Get-WorkerPerfPrintDrivers {
+    # Placeholder of the common interface (Sources 'print.drivers' says "noch nicht umgesetzt"): Task 10 fills it. No output.
+}
+
+function Get-WorkerPerfPrintQueues {
+    # Placeholder of the common interface (Sources 'print.queues' says "noch nicht umgesetzt"): Task 10 fills it. No output.
 }
 
 function Get-WorkerPerfFreeSpaceMB {

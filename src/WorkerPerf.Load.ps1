@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # WorkerPerf analysis library: reads a capture folder into an in-memory model and derives measurement series.
-# Defines functions only. Callers dot-source WorkerPerf.Common.ps1 as well.
+# Defines functions only. Callers dot-source WorkerPerf.Common.ps1 and WorkerPerf.Events.ps1 as well.
 # The model is a hashtable; its lists are arrays. Get-WorkerPerfSeries emits plain pipeline output: wrap calls in @(...).
 
 function Open-WorkerPerfCsvReader {
@@ -108,15 +108,21 @@ function Import-WorkerPerfRun {
     $metaJson = ConvertFrom-WorkerPerfJsonFile $metaPath
     $meta = @{}
     foreach ($p in $metaJson.PSObject.Properties) { $meta[$p.Name] = $p.Value }
-    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'CollectorPid', 'Simulated', 'Endpoints') {
+    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'CollectorPid', 'Simulated', 'Endpoints', 'EventLookbackDays') {
         if (-not $meta.ContainsKey($k)) { $meta[$k] = $null }
     }
+    # format 3: the logs whose lookback reached its cap (absent in format 2)
+    $capped = @()
+    if ($meta.ContainsKey('LookbackCapped')) { $capped = @($meta['LookbackCapped'] | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ }) }
+    $meta['LookbackCapped'] = [string[]]$capped
     # a capture in another format is not read; a missing field is tolerated (hand-written or damaged meta.json)
     if ($null -ne $meta['SchemaVersion']) {
         $ver = 0.0
         $verText = [string]$meta['SchemaVersion']
-        if (-not [double]::TryParse($verText, $numStyle, $inv, [ref]$ver) -or $ver -ne $script:WorkerPerfFormatVersion) {
-            throw "Die Aufzeichnung '$Path' hat das Format $verText; diese Version von WorkerPerf liest nur das Format $($script:WorkerPerfFormatVersion)."
+        if (-not [double]::TryParse($verText, $numStyle, $inv, [ref]$ver) -or $script:WorkerPerfReadableFormats -notcontains $ver) {
+            $last = $script:WorkerPerfReadableFormats[$script:WorkerPerfReadableFormats.Count - 1]
+            $others = @($script:WorkerPerfReadableFormats | Select-Object -First ($script:WorkerPerfReadableFormats.Count - 1))
+            throw "Die Aufzeichnung '$Path' hat das Format $verText; diese Version von WorkerPerf liest die Formate $($others -join ', ') und $last."
         }
     }
     $cores = 0; $ramMb = 0.0; $fastSec = 2.0; $snapSec = 15.0
@@ -760,23 +766,11 @@ function Import-WorkerPerfRun {
         }
     }
 
-    $allEvents = New-Object System.Collections.Generic.List[object]
-    $csv = Read-WorkerPerfCsvFile $Path 'events.csv'
-    $col = $csv.Col
-    $cTs = [int]$col['Timestamp']; $cSrc = [int]$col['Source']; $cId = [int]$col['EventId']; $cKind = [int]$col['Kind']; $cText = [int]$col['Text']
-    foreach ($f in $csv.Rows) {
-        $dto = ConvertTo-WorkerPerfTimestamp $f[$cTs]
-        if ($null -eq $dto) { continue }
-        $id = 0
-        if (-not [int]::TryParse($f[$cId], [ref]$id)) { $id = 0 }
-        $allEvents.Add(@{ TimeMs = $dto.ToUnixTimeMilliseconds(); Source = $f[$cSrc]; EventId = $id; Kind = $f[$cKind]; Text = $f[$cText] })
-    }
-    # by time, then by position in the file: Sort-Object is not stable, and a scan-start and scan-end in the same
-    # millisecond must keep their order to pair
-    $evList = $allEvents.ToArray()
-    $evOrder = @()
-    if ($evList.Length -gt 0) { $evOrder = @(0..($evList.Length - 1) | Sort-Object -Property @{ Expression = { $evList[$_].TimeMs } }, @{ Expression = { $_ } }) }
-    $sortedEvents = @(foreach ($ix in $evOrder) { $evList[$ix] })
+    # format 2 or 3, by time and then by position in the file (see Read-WorkerPerfEventCsv)
+    $sortedEvents = @(Read-WorkerPerfEventCsv $Path 'events.csv')
+    $eventsBefore = @(Read-WorkerPerfEventCsv $Path 'events_before.csv')
+    $printDrivers = @(Read-WorkerPerfPrintDrivers $Path)
+    $printQueues = @(Read-WorkerPerfPrintQueues $Path $fromMs $toMs)
     $events = New-Object System.Collections.Generic.List[object]
     foreach ($e in $sortedEvents) { if ($e.TimeMs -ge $fromMs -and $e.TimeMs -le $toMs) { $events.Add($e) } }
     # scans: paired scan-start / scan-end over the whole file; an open scan lasts until the end of the measurement
@@ -1145,6 +1139,9 @@ function Import-WorkerPerfRun {
         Shares = $shares.ToArray()
         Probes = $probes.ToArray()
         Events = $events.ToArray()
+        EventsBefore = $eventsBefore
+        PrintDrivers = $printDrivers
+        PrintQueues = $printQueues
         Scans = $scanList.ToArray()
         InputProc = @{ TickPos = $ipTickArr; SessionIndex = $ipSess.ToArray(); Pid = $ipPidArr; Name = $ipName.ToArray(); DelayMs = $ipDelay.ToArray(); K = $ipK }
         Apps = $apps.ToArray()

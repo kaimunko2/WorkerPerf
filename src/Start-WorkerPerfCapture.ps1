@@ -5,14 +5,18 @@
     down to individual sessions and processes.
 
 .DESCRIPTION
-    Measures in two cadences and writes a run folder in capture format 2:
+    Measures in two cadences and writes a run folder in capture format 3:
 
       fast cadence (-FastIntervalSeconds, default 2 s): host signals, volumes, file shares and
           input delay per session and per process (ticks.csv, volumes.csv, shares.csv,
           inputdelay.csv, inputdelay_proc.csv)
       snapshots (-IntervalSeconds, default 15 s): processes, sessions and Citrix metrics
           (snapshots.csv, processes.csv, procinfo.csv, procend.csv, sessions.csv, citrix.csv),
-          with each regular snapshot also endpoint probes (probes.csv) and events (events.csv)
+          with each regular snapshot also endpoint probes (probes.csv), events (events.csv) and the
+          counters of the print queues (printqueues.csv)
+
+    At the start the events of the last -EventLookbackDays days go to events_before.csv and the
+    installed print drivers to printdrivers.csv.
 
     While a trigger signal of thresholds.json is over its threshold (and -BurstHoldSeconds
     afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
@@ -67,6 +71,11 @@
 .PARAMETER CitrixMetricFilter
     Regular expression selecting which numeric Citrix WMI properties are recorded.
 
+.PARAMETER EventLookbackDays
+    At the start, read the events of this many days before the start into events_before.csv
+    (0-90, default 7; 0 = no lookback). Where a log reaches the cap of the lookback, meta.json
+    names it (LookbackCapped).
+
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
     between ticks, runs on any platform). Used for demos and tests.
@@ -91,6 +100,7 @@ param(
     [switch]$IncludeCommandLine,
     [switch]$NoCitrix,
     [string]$CitrixMetricFilter = 'Latency|Round|Bandwidth|FramesPerSecond|Fps',
+    [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [switch]$Simulate
 )
 
@@ -150,6 +160,7 @@ $wInput = $writers['inputdelay.csv']; $wInputProc = $writers['inputdelay_proc.cs
 $wProbes = $writers['probes.csv']; $wEvents = $writers['events.csv']; $wSnaps = $writers['snapshots.csv']
 $wSessions = $writers['sessions.csv']; $wInfo = $writers['procinfo.csv']; $wProcs = $writers['processes.csv']
 $wEnded = $writers['procend.csv']
+$wEventsBefore = $writers['events_before.csv']; $wDrivers = $writers['printdrivers.csv']; $wQueues = $writers['printqueues.csv']
 $fastWriters = @($wTicks, $wVolumes, $wShares, $wInput, $wInputProc)
 $allWriters = @($writers.Values)
 
@@ -174,6 +185,8 @@ $meta = [ordered]@{
     SkippedTicks         = 0
     Simulated            = [bool]$Simulate
     IncludeCommandLine   = [bool]$IncludeCommandLine
+    EventLookbackDays    = $EventLookbackDays
+    LookbackCapped       = @()
     CollectorPid         = $source.CollectorPid
     Endpoints            = @($source.Endpoints)
     Sources              = $source.Sources
@@ -185,7 +198,8 @@ function Save-Meta {
 
 # A failing call of the data source: counted per source in meta.json, one warning per source, the capture goes on.
 $sourceNames = @{ fast = 'schneller Takt'; snapshot = 'Prozess-Schnappschuss'; services = 'Dienste'; probes = 'Antwortzeit-Proben'
-    events = 'Ereignisprotokoll'; diskspace = 'freier Speicherplatz' }
+    events = 'Ereignisprotokoll'; diskspace = 'freier Speicherplatz'; eventsbefore = 'Ereignisse vor der Messung'
+    printdrivers = 'Druckertreiber'; printqueues = 'Druckwarteschlangen' }
 function Register-SourceError([string]$Source, $ErrorRecord) {
     # Ctrl+C is not a failure of the source
     if ($ErrorRecord.Exception -is [System.Management.Automation.PipelineStoppedException]) { throw $ErrorRecord.Exception }
@@ -222,6 +236,26 @@ try {
     [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json'))
     Save-Meta
 
+    # Lookback up to the start: events after the start belong to the measurement (Get-WorkerPerfEvents reads from
+    # Since = start on), so a source that returns later ones does not count them twice.
+    if ($EventLookbackDays -gt 0) {
+        try {
+            $before = Get-WorkerPerfEventsBefore -Days $EventLookbackDays -Until $startTime
+            foreach ($ev in @($before.Events)) {
+                $evTime = Get-WorkerPerfField $ev 'Time'
+                if (-not ($evTime -is [datetime]) -or $evTime -gt $startTime) { continue }
+                $wEventsBefore.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
+            }
+            $meta.LookbackCapped = @(@($before.Capped) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
+            if ($meta.LookbackCapped.Count -gt 0) { Save-Meta }
+        }
+        catch { Register-SourceError 'eventsbefore' $_ }
+        $wEventsBefore.Flush()
+    }
+    try { foreach ($d in @(Get-WorkerPerfPrintDrivers)) { if ($null -ne $d) { $wDrivers.WriteLine((ConvertTo-WorkerPerfPrintDriverRow $d)) } } }
+    catch { Register-SourceError 'printdrivers' $_ }
+    $wDrivers.Flush()
+
     # Baseline: one fast sample to establish the cumulative counters, one snapshot to book every process.
     $prevSample = Get-WorkerPerfFastSample
     $services = Get-WorkerPerfServices
@@ -230,6 +264,8 @@ try {
     [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
             -IncludeCommandLine:$IncludeCommandLine)
     $prevSnapTime = [datetime]$base.Time
+    # the last snapshot that succeeded: the session of an event is found through its process id there
+    $lastSnap = $base
 
     # Scheduling and durations are computed in UTC, so a step of the local clock (end of daylight saving time) neither
     # stalls the capture nor distorts ElapsedSec. The source keeps its own local times: they go to the files, to
@@ -331,6 +367,7 @@ try {
                     $prevSnapUtc = $snapUtc
                     $snapCount++
                     if ($regular) { $regularCount++ }
+                    $lastSnap = $snap
                 }
 
                 if ($regular) {
@@ -338,14 +375,20 @@ try {
                     try { Start-WorkerPerfProbes; $probeT = $T } catch { Register-SourceError 'probes' $_ }
                     $eventsUntil = Get-WorkerPerfNow
                     try {
-                        foreach ($ev in @(Get-WorkerPerfEvents -Since $lastEvents)) {
-                            if ($null -eq $ev) { continue }
-                            $wEvents.WriteLine([string]::Concat(([datetime]$ev.Time).ToString('o', $inv), ',', (Format-WorkerPerfCsvText ([string]$ev.Source)), ',',
-                                    [string]$ev.EventId, ',', (Format-WorkerPerfCsvText ([string]$ev.Kind)), ',', (Format-WorkerPerfCsvText ([string]$ev.Text))))
+                        $newEvents = @(Get-WorkerPerfEvents -Since $lastEvents | Where-Object { $null -ne $_ })
+                        if ($newEvents.Count -gt 0) {
+                            foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes @($lastSnap.Processes) -Sessions @($lastSnap.Sessions))) {
+                                $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
+                            }
                         }
                         $lastEvents = $eventsUntil
                     }
                     catch { Register-SourceError 'events' $_ }
+                    try {
+                        $queueTime = Get-WorkerPerfNow
+                        foreach ($q in @(Get-WorkerPerfPrintQueues)) { if ($null -ne $q) { $wQueues.WriteLine((ConvertTo-WorkerPerfPrintQueueRow $q $queueTime)) } }
+                    }
+                    catch { Register-SourceError 'printqueues' $_ }
                     $nextRegular = (Get-WorkerPerfNextTick -Scheduled $nextRegular -Now $now -IntervalSeconds $IntervalSeconds).Next
                 }
                 foreach ($w in $allWriters) { $w.Flush() }

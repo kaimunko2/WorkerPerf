@@ -115,7 +115,7 @@ Describe 'New-WorkerPerfWriters' {
     It 'legt alle Dateien mit Kopfzeile ohne BOM an' {
         $dir = Join-Path $TestDrive 'w'; [void](New-Item -ItemType Directory $dir)
         $w = New-WorkerPerfWriters -RunDir $dir; foreach ($x in $w.Values) { $x.Dispose() }
-        $w.Count | Should -Be 13
+        $w.Count | Should -Be 16                                                   # 16 statt 13 Dateien: Format 3 bringt drei Dateien dazu
         [IO.File]::ReadAllBytes((Join-Path $dir 'ticks.csv'))[0] | Should -Be ([byte][char]'T')
     }
 }

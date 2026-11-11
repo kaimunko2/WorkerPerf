@@ -2,7 +2,10 @@
 # Shared constants and helpers for the WorkerPerf collector and report generator.
 # Dot-source this file; it only defines variables and functions and runs nothing.
 
-$script:WorkerPerfFormatVersion = 2
+$script:WorkerPerfFormatVersion = 3
+# Formats the report reads. Format 2 has the short events.csv (Timestamp,Source,EventId,Kind,Text) and none of the files
+# events_before.csv, printdrivers.csv and printqueues.csv; the loader reads each file by its own header line.
+$script:WorkerPerfReadableFormats = @(2, 3)
 
 # File name -> header line of the capture format. The only source for file names and headers.
 $script:WorkerPerfHeaders = [ordered]@{
@@ -13,12 +16,15 @@ $script:WorkerPerfHeaders = [ordered]@{
     'inputdelay_proc.csv' = 'T,SessionId,Pid,Name,DelayMs'
     'citrix.csv'          = 'T,Source,SessionId,Instance,Metric,Value'
     'probes.csv'          = 'T,Name,Role,Host,Port,ConnectMs,Error'
-    'events.csv'          = 'Timestamp,Source,EventId,Kind,Text'
+    'events.csv'          = 'Timestamp,Log,Source,EventId,Level,Group,Kind,App,AppVersion,Module,ModuleVersion,Code,Pid,SessionId,User,Printer,Driver,Service,Object,Text'
+    'events_before.csv'   = 'Timestamp,Log,Source,EventId,Level,Group,Kind,App,AppVersion,Module,ModuleVersion,Code,Pid,SessionId,User,Printer,Driver,Service,Object,Text'
     'snapshots.csv'       = 'P,T,Timestamp,ElapsedSec,Kind,Sessions,ActiveSessions,Processes,RowsWritten,CollectMs'
     'sessions.csv'        = 'P,SessionId,User,Domain,State,WinStation,ClientName,LogonTime,IdleSec'
     'procinfo.csv'        = 'K,Pid,ParentPid,Name,SessionId,StartTime,Path,Services,CommandLine'
     'processes.csv'       = 'P,K,CpuMs,WsKB,PrivKB,ReadBytes,WriteBytes,IoOps,Handles,Threads'
     'procend.csv'         = 'P,K'
+    'printdrivers.csv'    = 'Name,Manufacturer,Version,Type,Isolation,Files'
+    'printqueues.csv'     = 'Timestamp,Queue,Jobs,JobErrors,NotReadyErrors'
 }
 
 $script:WorkerPerfOrigins = @('Herstellerangabe', 'Faustregel', 'eigene Annahme')

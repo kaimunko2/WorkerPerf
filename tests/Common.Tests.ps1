@@ -111,8 +111,14 @@ Describe 'CSV-Helfer' {
     }
 }
 Describe 'Formatkonstanten' {
-    It 'kennt die dreizehn Dateien mit ihren Kopfzeilen' {
-        $WorkerPerfHeaders.Count | Should -Be 13
+    It 'kennt die sechzehn Dateien mit ihren Kopfzeilen' {                  # 16 statt 13 Dateien: Format 3 bringt drei Dateien dazu
+        $WorkerPerfHeaders.Count | Should -Be 16; $WorkerPerfFormatVersion | Should -Be 3; $WorkerPerfReadableFormats | Should -Be @(2, 3)
+        $WorkerPerfHeaders['events.csv'].Split(',').Count | Should -Be 20; $WorkerPerfHeaders['events_before.csv'] | Should -Be $WorkerPerfHeaders['events.csv']
+        $WorkerPerfHeaders['events.csv'] | Should -Be 'Timestamp,Log,Source,EventId,Level,Group,Kind,App,AppVersion,Module,ModuleVersion,Code,Pid,SessionId,User,Printer,Driver,Service,Object,Text'
+        $WorkerPerfHeaders['printdrivers.csv'] | Should -Be 'Name,Manufacturer,Version,Type,Isolation,Files'
+        $WorkerPerfHeaders['printqueues.csv'] | Should -Be 'Timestamp,Queue,Jobs,JobErrors,NotReadyErrors'
+        $names = @($WorkerPerfHeaders.Keys)
+        $names.IndexOf('events_before.csv') | Should -Be ($names.IndexOf('events.csv') + 1); $names[14] | Should -Be 'printdrivers.csv'; $names[15] | Should -Be 'printqueues.csv'
         $WorkerPerfHeaders['processes.csv'] | Should -Be 'P,K,CpuMs,WsKB,PrivKB,ReadBytes,WriteBytes,IoOps,Handles,Threads'
         $WorkerPerfHeaders['ticks.csv'].Split(',').Count | Should -Be 19
     }

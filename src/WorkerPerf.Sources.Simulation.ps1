@@ -271,10 +271,14 @@ function Initialize-WorkerPerfSource {
     }
     $script:WorkerPerfSimInputBySid = $bySid
 
+    # Log ids, provider names, groups and kinds as in events.json
     $script:WorkerPerfSimEvents = @(
-        @{ Sec = 1490.0; Source = 'Defender'; EventId = 1000; Kind = 'scan-start'; Text = 'Microsoft Defender Antivirus scan has started.' }
-        @{ Sec = 1620.0; Source = 'Defender'; EventId = 1001; Kind = 'scan-end'; Text = 'Microsoft Defender Antivirus scan has finished.' }
-        @{ Sec = 1800.0; Source = 'AppLocker'; EventId = 8004; Kind = 'applocker-block'; Text = '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.' })
+        @{ Sec = 1490.0; Log = 'defender'; Source = 'Microsoft-Windows-Windows Defender'; EventId = 1000; Level = 4; Group = 'security'; Kind = 'scan-start'
+            Text = 'Microsoft Defender Antivirus scan has started.' }
+        @{ Sec = 1620.0; Log = 'defender'; Source = 'Microsoft-Windows-Windows Defender'; EventId = 1001; Level = 4; Group = 'security'; Kind = 'scan-end'
+            Text = 'Microsoft Defender Antivirus scan has finished.' }
+        @{ Sec = 1800.0; Log = 'applocker'; Source = 'Microsoft-Windows-AppLocker'; EventId = 8004; Level = 2; Group = 'security'; Kind = 'applocker-block'
+            Text = '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.' })
 
     $sources = [ordered]@{}
     foreach ($id in $script:WorkerPerfSimSignalIds) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
@@ -501,9 +505,25 @@ function Get-WorkerPerfEvents {
     foreach ($ev in $script:WorkerPerfSimEvents) {
         $t = $script:WorkerPerfSimStart.AddSeconds($ev.Sec)
         if ($t -gt $Since -and $t -le $script:WorkerPerfSimNow) {
-            [pscustomobject]@{ Time = $t; Source = $ev.Source; EventId = $ev.EventId; Kind = $ev.Kind; Text = $ev.Text }
+            [pscustomobject]@{ Time = $t; Log = $ev.Log; Source = $ev.Source; EventId = $ev.EventId; Level = $ev.Level; Group = $ev.Group; Kind = $ev.Kind
+                App = ''; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $null; SessionId = $null; User = ''
+                Printer = ''; Driver = ''; Service = ''; Object = ''; Text = $ev.Text }
         }
     }
+}
+
+function Get-WorkerPerfEventsBefore {
+    # The scripted hour has no events before the start yet.
+    param([int]$Days, [datetime]$Until)
+    return @{ Events = @(); Capped = @() }
+}
+
+function Get-WorkerPerfPrintDrivers {
+    # The scripted hour has no print drivers yet: no output.
+}
+
+function Get-WorkerPerfPrintQueues {
+    # The scripted hour has no print queues yet: no output.
 }
 
 function Get-WorkerPerfFreeSpaceMB {

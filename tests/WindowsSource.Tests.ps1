@@ -333,6 +333,15 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
             $info.Sources[$id].Available | Should -BeTrue -Because $id
         }
     }
+    It 'erfuellt die Schnittstelle von Format 3 mit leeren Platzhaltern bis Task 10' {
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null
+        foreach ($id in 'print.drivers', 'print.queues') {
+            $info.Sources[$id].Available | Should -BeFalse -Because $id; $info.Sources[$id].Detail | Should -Be 'noch nicht umgesetzt'
+        }
+        $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now)
+        @($b.Events).Count | Should -Be 0; @($b.Capped).Count | Should -Be 0
+        @(Get-WorkerPerfPrintDrivers).Count | Should -Be 0; @(Get-WorkerPerfPrintQueues).Count | Should -Be 0
+    }
     It 'meldet fehlende Kategorien, Klassen und Protokolle als nicht verfuegbar' {
         $script:WinFake.Perf.Remove('VM Processor'); $script:WinFake.Perf.Remove('ICA Session'); $script:WinFake.EuemClass = $false
         $script:WinFake.Logs = @('Microsoft-Windows-Windows Defender/Operational')

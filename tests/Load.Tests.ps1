@@ -47,8 +47,10 @@ Describe 'Import-WorkerPerfRun: Takte' {
     It 'lehnt eine andere Formatversion ab und duldet eine fehlende' {                  # Abschlussrunde Minor 14
         $dir = Write-TestRun 'ver' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
         $text = [IO.File]::ReadAllText($meta)
+        [IO.File]::WriteAllText($meta, $text.Replace('"SchemaVersion":2,', '"SchemaVersion":4,'))       # Format 3 wird gelesen, Format 4 abgelehnt
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles } | Should -Throw '*Format 4*Formate 2 und 3*'
         [IO.File]::WriteAllText($meta, $text.Replace('"SchemaVersion":2,', '"SchemaVersion":3,'))
-        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles } | Should -Throw '*Format 3*Format 2*'
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Tick.N | Should -Be 8
         [IO.File]::WriteAllText($meta, $text.Replace('"SchemaVersion":2,', ''))
         (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Tick.N | Should -Be 8
     }
@@ -164,5 +166,45 @@ Describe 'Import-WorkerPerfRun: Zeitraum und T-Zeilen' {
         $m = Import-TestRun 'g' $Files @{ To = $Base.AddSeconds(9).DateTime }
         $m.Snap.N | Should -Be 2
         $m.Sessions[0].Rtt[1] | Should -Be 101; $m.Citrix[0].N | Should -Be 2; $m.Probes[0].Ms[1] | Should -Be 101
+    }
+}
+Describe 'Import-WorkerPerfRun: Ereignisse und Drucken (Format 3)' {
+    It 'liest Ereignisse im Format 2 und 3, den Rueckblick und die Druckdateien' {
+        $old = Import-TestRun 'ev2' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = @("$(Get-Ts 5),Defender,1000,scan-start,Scan") }
+        $old.Events[0].Group | Should -Be 'security'; $old.Events[0].App | Should -Be ''; $old.Events[0].Pid | Should -Be -1
+        @($old.EventsBefore).Count | Should -Be 0; @($old.PrintDrivers).Count | Should -Be 0
+        $dir = Write-TestRun 'ev3' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        [IO.File]::WriteAllLines((Join-Path $dir 'events.csv'), @($WorkerPerfHeaders['events.csv'], "$(Get-Ts 5),application,Application Error,1000,2,app,crash,EXCEL.EXE,16.0,vbe7.dll,7.1,0xc0000005,812,3,user002,,,,,Absturz"))
+        [IO.File]::WriteAllLines((Join-Path $dir 'events_before.csv'), @($WorkerPerfHeaders['events.csv'], "$($Base.AddDays(-2).ToString('o')),application,Application Error,1000,2,app,crash,EXCEL.EXE,,,,,,,user002,,,,,x"))
+        [IO.File]::WriteAllLines((Join-Path $dir 'printdrivers.csv'), @($WorkerPerfHeaders['printdrivers.csv'], 'Sim PCL 6,HP,61.1.0.0,3,none,hpsimgr.dll;hpsimui.dll'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Events[0].Module | Should -Be 'vbe7.dll'; $m.Events[0].SessionId | Should -Be 3; @($m.EventsBefore).Count | Should -Be 1
+        $m.PrintDrivers[0].Type | Should -Be 3; $m.PrintDrivers[0].Files | Should -Be @('hpsimgr.dll', 'hpsimui.dll')
+    }
+    It 'fuellt jedes Feld von Format 3 und haelt alte Felder' {
+        $m = Import-TestRun 'ev2b' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = @("$(Get-Ts 7),AppLocker,8004,applocker-block,""x, y.exe""", "$(Get-Ts 6),Defender,1000,info,i") }
+        $e = $m.Events
+        $e[0].Text | Should -Be 'i'; $e[0].Group | Should -Be ''; $e[1].Group | Should -Be 'security'; $e[1].Text | Should -Be 'x, y.exe'
+        $e[1].Source | Should -Be 'AppLocker'; $e[1].EventId | Should -Be 8004; $e[1].Level | Should -Be -1; $e[1].SessionId | Should -Be -1; $e[1].Log | Should -Be ''
+        foreach ($k in 'TimeMs', 'Timestamp', 'Log', 'Source', 'EventId', 'Level', 'Group', 'Kind', 'App', 'AppVersion', 'Module', 'ModuleVersion', 'Code', 'Pid', 'SessionId', 'User', 'Printer', 'Driver', 'Service', 'Object', 'Text') {
+            $e[1].ContainsKey($k) | Should -BeTrue -Because $k
+        }
+        $e[1].Pid | Should -BeOfType [int]; $e[1].TimeMs | Should -Be $Base.AddSeconds(7).ToUnixTimeMilliseconds()
+    }
+    It 'liest Warteschlangen im Zeitraum und Treiber ohne Bauart' {
+        $q = @("$(Get-Ts 3),Drucker 1,0,4,1", "$(Get-Ts 9),Drucker 1,2,5,1", "$(Get-Ts 30),Drucker 1,0,5,1", 'kaputt')
+        $m = Import-TestRun 'pq' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'printqueues.csv' = $q; 'printdrivers.csv' = @('Typ 4 Treiber,,,,,') } @{ From = $Base.AddSeconds(5).DateTime; To = $Base.AddSeconds(20).DateTime }
+        @($m.PrintQueues).Count | Should -Be 1; $m.PrintQueues[0].Queue | Should -Be 'Drucker 1'; $m.PrintQueues[0].Jobs | Should -Be 2; $m.PrintQueues[0].JobErrors | Should -Be 5
+        $m.PrintQueues[0].TimeMs | Should -Be $Base.AddSeconds(9).ToUnixTimeMilliseconds()
+        $m.PrintDrivers[0].Type | Should -Be 0; @($m.PrintDrivers[0].Files).Count | Should -Be 0; $m.PrintDrivers[0].Isolation | Should -Be ''
+    }
+    It 'liest Rueckblick und Vermerk aus meta.json und duldet ihr Fehlen' {
+        $dir = Write-TestRun 'lbm' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Meta['EventLookbackDays'] | Should -BeNullOrEmpty; @($m.Meta['LookbackCapped']).Count | Should -Be 0
+        $text = [IO.File]::ReadAllText($meta)
+        [IO.File]::WriteAllText($meta, $text.Replace('"Simulated":false,', '"Simulated":false,"EventLookbackDays":7,"LookbackCapped":["system","application"],'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Meta['EventLookbackDays'] | Should -Be 7; $m.Meta['LookbackCapped'] | Should -Be @('system', 'application')
     }
 }

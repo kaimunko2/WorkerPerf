@@ -30,6 +30,10 @@
   "source.process": "Prozesse (CPU, Speicher, I/O je Prozess)", "source.sessions": "Sitzungen",
   "source.input.process": "Eingabeverzögerung je Prozess", "source.profile.map": "Zuordnung der Profilcontainer zu Sitzungen",
   "source.events.defender": "Ereignisprotokoll Microsoft Defender", "source.events.applocker": "Ereignisprotokolle AppLocker",
+  "source.events.application": "Ereignisprotokoll Anwendung", "source.events.system": "Ereignisprotokoll System",
+  "source.events.printservice": "Ereignisprotokoll Druckdienst", "source.events.smbclient": "Ereignisprotokoll SMB-Client",
+  "source.events.profileservice": "Ereignisprotokoll Benutzerprofildienst", "source.events.session": "Ereignisprotokoll Sitzungsverwaltung",
+  "source.print.drivers": "Druckertreiber", "source.print.queues": "Zähler der Druckwarteschlangen",
   "source.system": "Kerne, RAM, Hersteller, VMware Tools", "source.process.snapshot": "Prozess-Schnappschuss (Win32_Process)",
   "source.sessions.wts": "Sitzungen über die WTS-Schnittstelle", "source.services.map": "Dienste und ihre Prozesse (Win32_Service)",
   "source.perf.cpu": "Leistungszähler CPU-Auslastung", "source.perf.queue": "Leistungszähler Prozessor-Warteschlange",
@@ -43,5 +47,7 @@
   "sourcecall.fast": "Schneller Takt (Host-Signale, Laufwerke, Freigaben, Eingabeverzögerung)",
   "sourcecall.snapshot": "Prozess-Schnappschuss (Prozesse, Sitzungen, Citrix-Werte)",
   "sourcecall.services": "Dienste und ihre Prozesse", "sourcecall.probes": "Antwortzeit-Proben der Gegenstellen",
-  "sourcecall.events": "Ereignisprotokoll", "sourcecall.diskspace": "Freier Speicherplatz"
+  "sourcecall.events": "Ereignisprotokoll", "sourcecall.diskspace": "Freier Speicherplatz",
+  "sourcecall.eventsbefore": "Ereignisse vor der Messung", "sourcecall.printdrivers": "Druckertreiber",
+  "sourcecall.printqueues": "Druckwarteschlangen"
 }

@@ -347,3 +347,94 @@ function New-WorkerPerfWriters {
     }
     return $writers
 }
+
+# ---- Format 3: events, print drivers and print queues ----
+
+function ConvertTo-WorkerPerfEventRow {
+    # One line of events.csv or events_before.csv. $Event carries the fields of ConvertTo-WorkerPerfEventRecord; a
+    # missing field (a record of an older source) or $null is written empty.
+    param($Event)
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $names = $script:WorkerPerfHeaders['events.csv'].Split(',')
+    $parts = [string[]]::new($names.Length)
+    $time = Get-WorkerPerfField $Event 'Time'
+    $parts[0] = $(if ($time -is [datetime]) { $time.ToString('o', $inv) } else { Format-WorkerPerfCsvText ([string]$time) })
+    for ($i = 1; $i -lt $names.Length; $i++) {
+        $v = Get-WorkerPerfField $Event $names[$i]
+        if ($null -eq $v) { $parts[$i] = ''; continue }
+        if ($v -is [IFormattable]) { $parts[$i] = Format-WorkerPerfCsvText ($v.ToString($null, $inv)) }
+        else { $parts[$i] = Format-WorkerPerfCsvText ([string]$v) }
+    }
+    return [string]::Join(',', $parts)
+}
+
+function ConvertTo-WorkerPerfPrintDriverRow {
+    # One line of printdrivers.csv: Files (file names only) joined with ';', Isolation none|shared|isolated or empty.
+    param($Driver)
+    $files = @(Get-WorkerPerfField $Driver 'Files' | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
+    $type = Get-WorkerPerfField $Driver 'Type'
+    return [string]::Concat((Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Driver 'Name'))), ',',
+        (Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Driver 'Manufacturer'))), ',',
+        (Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Driver 'Version'))), ',',
+        $(if ($null -eq $type) { '' } else { [string]$type }), ',',
+        (Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Driver 'Isolation'))), ',',
+        (Format-WorkerPerfCsvText ([string]::Join(';', [string[]]$files))))
+}
+
+function ConvertTo-WorkerPerfPrintQueueRow {
+    # One line of printqueues.csv: the error counters are the running raw values of the queue.
+    param($Queue, [datetime]$Time)
+    return [string]::Concat($Time.ToString('o', [Globalization.CultureInfo]::InvariantCulture), ',',
+        (Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Queue 'Queue'))), ',',
+        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'Jobs') 0), ',',
+        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'JobErrors') 0), ',',
+        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'NotReadyErrors') 0))
+}
+
+function Set-WorkerPerfRecordField($Record, [string]$Name, $Value) {
+    if ($Record -is [System.Collections.IDictionary]) { $Record[$Name] = $Value; return }
+    if ($null -ne $Record.PSObject.Properties[$Name]) { $Record.$Name = $Value }
+    else { $Record | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+}
+
+function Complete-WorkerPerfEventSession {
+    # Fills an empty SessionId from the process with the same Pid in the last snapshot, and an empty User from the
+    # session with that SessionId. A process that started after the event is not the one the event names (its PID
+    # was reused): such an event keeps its empty session. Emits the events (the same objects).
+    param([AllowEmptyCollection()][object[]]$Events, [AllowEmptyCollection()][object[]]$Processes, [AllowEmptyCollection()][object[]]$Sessions)
+    $byPid = @{}
+    foreach ($p in @($Processes)) {
+        if ($null -eq $p) { continue }
+        $id = Get-WorkerPerfField $p 'ProcessId'
+        if ($null -ne $id) { $byPid[[long]$id] = $p }
+    }
+    $userOf = @{}
+    foreach ($s in @($Sessions)) {
+        if ($null -eq $s) { continue }
+        $sid = Get-WorkerPerfField $s 'SessionId'
+        if ($null -ne $sid) { $userOf[[long]$sid] = [string](Get-WorkerPerfField $s 'User') }
+    }
+    foreach ($e in @($Events)) {
+        if ($null -eq $e) { continue }
+        $sid = Get-WorkerPerfField $e 'SessionId'
+        if ($null -eq $sid -or [string]$sid -eq '') {
+            $sid = $null
+            $evPid = Get-WorkerPerfField $e 'Pid'
+            if ($null -ne $evPid -and [string]$evPid -ne '' -and $byPid.ContainsKey([long]$evPid)) {
+                $proc = $byPid[[long]$evPid]
+                $created = Get-WorkerPerfField $proc 'CreationDate'
+                $time = Get-WorkerPerfField $e 'Time'
+                $reused = ($created -is [datetime] -and $time -is [datetime] -and $created -gt $time)
+                $procSid = Get-WorkerPerfField $proc 'SessionId'
+                if (-not $reused -and $null -ne $procSid) {
+                    $sid = [int]$procSid
+                    Set-WorkerPerfRecordField $e 'SessionId' $sid
+                }
+            }
+        }
+        if ($null -ne $sid -and [string]::IsNullOrEmpty([string](Get-WorkerPerfField $e 'User')) -and $userOf.ContainsKey([long]$sid)) {
+            Set-WorkerPerfRecordField $e 'User' $userOf[[long]$sid]
+        }
+        $e
+    }
+}

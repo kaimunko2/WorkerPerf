@@ -71,6 +71,8 @@ $inv = [Globalization.CultureInfo]::InvariantCulture
 $nan = [double]::NaN
 
 . (Join-Path $PSScriptRoot 'WorkerPerf.Common.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.Events.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
 

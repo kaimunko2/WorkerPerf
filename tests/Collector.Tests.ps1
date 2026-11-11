@@ -11,7 +11,8 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         Test-Path (Join-Path $Run 'thresholds.json') | Should -BeTrue
     }
     It 'fuehrt meta.json' {
-        $Meta.SchemaVersion | Should -Be 2; $Meta.EndReason | Should -Be 'duration'; $Meta.Ticks | Should -Be 1800
+        $Meta.SchemaVersion | Should -Be 3; $Meta.EventLookbackDays | Should -Be 7; @($Meta.LookbackCapped).Count | Should -Be 0      # Format 3 statt 2
+        $Meta.EndReason | Should -Be 'duration'; $Meta.Ticks | Should -Be 1800
         $Meta.Snapshots | Should -Be $Snaps.Count; $Meta.SkippedTicks | Should -Be 0; $Meta.CollectorPid | Should -Be 4242
         $Meta.Sources.'input.session'.Available | Should -BeTrue; @($Meta.Endpoints).Count | Should -Be 3
     }
@@ -41,6 +42,18 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         @(Import-Csv (Join-Path $Run 'probes.csv')).Count | Should -Be (240 * 3)
         @(Import-Csv (Join-Path $Run 'events.csv')).Kind | Should -Be @('scan-start', 'scan-end', 'applocker-block')
         @(Get-Content (Join-Path $Run 'citrix.csv')).Count | Should -BeGreaterThan 1000
+    }
+    It 'legt die Druckertreiber und Warteschlangen der Simulation leer an' {
+        @(Get-Content (Join-Path $Run 'events_before.csv')).Count | Should -Be 1
+        @(Get-Content (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 1; @(Get-Content (Join-Path $Run 'printqueues.csv')).Count | Should -Be 1
+        $ev = @(Import-Csv (Join-Path $Run 'events.csv'))
+        $ev.Log | Should -Be @('defender', 'defender', 'applocker'); $ev.Group | Should -Be @('security', 'security', 'security')
+        $ev.Source | Should -Be @('Microsoft-Windows-Windows Defender', 'Microsoft-Windows-Windows Defender', 'Microsoft-Windows-AppLocker')
+    }
+    It 'liest ohne Rueckblick nichts vor dem Start' {                                                 # Review Focus 3
+        $run = (& (Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1') -Simulate -DurationMinutes 60 -EventLookbackDays 0 -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
+        @(Get-Content (Join-Path $run 'events_before.csv')).Count | Should -Be 1
+        (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EventLookbackDays | Should -Be 0
     }
     It 'bleibt unter 10 MB' { (Get-ChildItem $Run | Measure-Object Length -Sum).Sum | Should -BeLessThan 10MB }
     It 'legt das Soll-Ergebnis ab' { $Exp.Count | Should -Be 8; $Exp[1].Key | Should -Be 'cpu' }
@@ -103,6 +116,90 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
         ($q.sourceErrors | Where-Object source -eq 'fast').firstMs | Should -Be ($FailData.meta.start + 596000)
         $q.skippedTicks | Should -Be 1; $q.unreadable.ticks | Should -Be 0             # ein ausgefallener Takt ist eine Luecke, keine unlesbare Zeile
         @($FailData.events).Count | Should -Be 0
+    }
+}
+Describe 'Rueckblick, Ereignisse der Messzeit und Drucken' {                       # Review Focus 3 und 4
+    BeforeAll {
+        # Eine nachlaessige Quelle: der Rueckblick liefert auch Ereignisse nach dem Start, die Messzeit liest sie ab dem Start.
+        # Ereignisse bei -3600 s, -1 s, 0 s (genau der Start), +1 s und +30 s; bei +30 s zusaetzlich ein Absturz eines
+        # Prozesses aus dem Schnappschuss und einer, dessen PID in keinem Schnappschuss vorkommt.
+        $capture = New-PatchedSource (Join-Path $TestDrive 'srclb') @'
+function Get-TestEvents {
+    $p = @($script:WorkerPerfSimProcs | Where-Object { $_.SessionId -gt 1 -and $_.CreatedSec -lt 0 -and $_.EndSec -gt 3600 })[0]
+    $script:TestPid = $p.Pid; $script:TestSid = $p.SessionId
+    foreach ($sec in -3600, -1, 0, 1, 30) {
+        [pscustomobject]@{ Time = $script:WorkerPerfSimStart.AddSeconds($sec); Log = 'system'; Source = 'Sim'; EventId = 7031; Level = 2; Group = 'service'; Kind = 'service'
+            App = ''; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $null; SessionId = $null; User = ''; Printer = ''; Driver = ''; Service = 'Spooler'; Object = ''; Text = "t$sec" }
+    }
+    foreach ($x in @(@($p.Pid, 'crash-known'), @(99999, 'crash-unknown'))) {
+        [pscustomobject]@{ Time = $script:WorkerPerfSimStart.AddSeconds(30); Log = 'application'; Source = 'Application Error'; EventId = 1000; Level = 2; Group = 'app'; Kind = 'crash'
+            App = 'x.exe'; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $x[0]; SessionId = $null; User = ''; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = $x[1] }
+    }
+}
+function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
+    $script:TestBeforeArgs = @($Days, $Until); @{ Events = @(Get-TestEvents); Capped = @('system') } }
+function Get-WorkerPerfEvents { param([datetime]$Since)
+    foreach ($e in @(Get-TestEvents)) { if ($e.Time -gt $Since -and $e.Time -le $script:WorkerPerfSimNow) { $e } } }
+function Get-WorkerPerfPrintDrivers { [pscustomobject]@{ Name = 'Sim PCL 6'; Manufacturer = 'Sim'; Version = '1.0'; Type = 3; Isolation = 'shared'; Files = @('a.dll', 'b.dll') } }
+function Get-WorkerPerfPrintQueues { [pscustomobject]@{ Queue = 'Drucker 1'; Jobs = 1; JobErrors = 2; NotReadyErrors = 3 } }
+'@
+        $script:LbRun = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 3 -OutputPath (Join-Path $TestDrive 'lb') 6>$null) | Select-Object -Last 1
+        $script:LbMeta = Get-Content (Join-Path $LbRun 'meta.json') -Raw | ConvertFrom-Json
+        $script:LbBefore = @(Import-Csv (Join-Path $LbRun 'events_before.csv'))
+        $script:LbEvents = @(Import-Csv (Join-Path $LbRun 'events.csv'))
+    }
+    It 'zaehlt jedes Ereignis genau einmal; der Rueckblick haelt nur Ereignisse bis zum Start' {
+        $LbBefore.Text | Should -Be @('t-3600', 't-1', 't0')
+        @($LbEvents | Where-Object Kind -eq 'service').Text | Should -Be @('t1', 't30')
+        # ConvertFrom-Json liefert Zeiten je nach PowerShell-Version als DateTime oder als Text
+        $start = $(if ($LbMeta.StartTime -is [datetime]) { [DateTimeOffset]$LbMeta.StartTime } else { [DateTimeOffset]::Parse($LbMeta.StartTime, [cultureinfo]::InvariantCulture) })
+        $firstTick = [DateTimeOffset]::Parse((Get-Content (Join-Path $LbRun 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture)
+        foreach ($b in $LbBefore) {
+            $t = [DateTimeOffset]::Parse($b.Timestamp, [cultureinfo]::InvariantCulture)
+            $t | Should -BeLessOrEqual $start; $t | Should -BeLessThan $firstTick
+        }
+    }
+    It 'vermerkt Tage und unvollstaendige Protokolle in meta.json' {
+        $LbMeta.EventLookbackDays | Should -Be 3; @($LbMeta.LookbackCapped) | Should -Be @('system')
+    }
+    It 'ergaenzt die Sitzung nur fuer den Prozess aus dem Schnappschuss' {
+        $known = $LbEvents | Where-Object Text -eq 'crash-known'; $unknown = $LbEvents | Where-Object Text -eq 'crash-unknown'
+        [int]$known.SessionId | Should -BeGreaterThan 1; $known.User | Should -Be ('user{0:d3}' -f ([int]$known.SessionId - 1))
+        $unknown.SessionId | Should -Be ''; $unknown.User | Should -Be ''
+    }
+    It 'schreibt Treiberliste und Warteschlangen je regulaerem Schnappschuss' {
+        @(Get-Content (Join-Path $LbRun 'printdrivers.csv')) | Should -Be @($WorkerPerfHeaders['printdrivers.csv'], 'Sim PCL 6,Sim,1.0,3,shared,a.dll;b.dll')
+        $q = @(Import-Csv (Join-Path $LbRun 'printqueues.csv')); $q.Count | Should -Be 240
+        $q[0].Queue | Should -Be 'Drucker 1'; $q[0].NotReadyErrors | Should -Be '3'
+    }
+}
+Describe 'Fehler der neuen Quellenaufrufe' {
+    BeforeAll {
+        $capture = New-PatchedSource (Join-Path $TestDrive 'srclbfail') @'
+function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until) throw 'Testfehler im Rueckblick' }
+function Get-WorkerPerfPrintDrivers { throw 'Testfehler bei den Treibern' }
+function Get-WorkerPerfPrintQueues { throw 'Testfehler bei den Warteschlangen' }
+'@
+        $out = @(& $capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'lbfail') 6>$null 3>&1)
+        $script:LfWarnings = @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message })
+        $script:LfRun = [string]($out | Where-Object { $_ -is [string] } | Select-Object -Last 1)
+        $script:LfMeta = Get-Content (Join-Path $LfRun 'meta.json') -Raw | ConvertFrom-Json
+    }
+    It 'vermerkt sie je Quelle, warnt einmal und misst weiter' {
+        $e = $LfMeta.SourceErrors
+        $e.eventsbefore.Count | Should -Be 1; $e.eventsbefore.FirstMessage | Should -Be 'Testfehler im Rueckblick'
+        $e.printdrivers.Count | Should -Be 1; $e.printqueues.Count | Should -Be 240
+        foreach ($word in 'Ereignisse vor der Messung', 'Druckertreiber', 'Druckwarteschlangen') { @($LfWarnings | Where-Object { $_ -like "*$word*" }).Count | Should -Be 1 -Because $word }
+        $LfWarnings.Count | Should -Be 3; $LfMeta.EndReason | Should -Be 'duration'; $LfMeta.Ticks | Should -Be 1800
+        @(Get-Content (Join-Path $LfRun 'events.csv')).Count | Should -Be 4
+    }
+    It 'nennt sie im Bericht mit ihren Texten' {
+        $out = Join-Path $TestDrive 'lbfail.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $LfRun -OutFile $out -RoleFile (New-SimRoleFile (Join-Path $TestDrive 'roles.lbfail.json')) 6>$null)
+        $d = Get-ReportData $out
+        $d.incidents.Count | Should -Be 8
+        $labels = @{}; foreach ($e in @($d.quality.sourceErrors)) { $labels[$e.source] = $e.label }
+        $labels['eventsbefore'] | Should -Be 'Ereignisse vor der Messung'; $labels['printdrivers'] | Should -Be 'Druckertreiber'; $labels['printqueues'] | Should -Be 'Druckwarteschlangen'
     }
 }
 Describe 'Ende der Aufzeichnung mit Fehler' {                                       # Abschlussrunde I6, Minor 17
