@@ -12,16 +12,46 @@ Describe 'Import-WorkerPerfRun: Takte' {
     It 'uebergeht eine abgeschnittene letzte Zeile und ein fehlendes Ende' {     # Review Focus 3
         $m = Import-TestRun 'b' @{ 'ticks.csv' = (@($Ticks) + '8,2026-01-15T08:00:18.0000000+01:00,2,5'); 'snapshots.csv' = (@($SnapLines) + '4,9,2026-01-15T08') }
         $m.Tick.N | Should -Be 8; $m.Snap.N | Should -Be 4
+        $m.Unreadable.Ticks | Should -Be 1; $m.Unreadable.Snapshots | Should -Be 1     # Abschlussrunde Minor 6: uebersprungene Zeilen werden gezaehlt
+        $clean = Import-TestRun 'b0' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        $clean.Unreadable.Ticks | Should -Be 0; $clean.Unreadable.Snapshots | Should -Be 0
     }
     It 'kommt ohne optionale Dateien aus' {
         $m = Import-TestRun 'c' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'shares.csv' = $null; 'probes.csv' = $null; 'events.csv' = $null; 'citrix.csv' = $null; 'inputdelay_proc.csv' = $null }
         @($m.Shares).Count | Should -Be 0; @($m.Probes).Count | Should -Be 0; @($m.Events).Count | Should -Be 0
     }
     It 'schneidet auf -From und -To zu' {
-        $m = Import-TestRun 'd' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines } @{ From = $Base.AddSeconds(7).LocalDateTime; To = $Base.AddSeconds(13).LocalDateTime }
+        $m = Import-TestRun 'd' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines } @{ From = $Base.AddSeconds(7).DateTime; To = $Base.AddSeconds(13).DateTime }
         $m.Tick.N | Should -Be 3; $m.Snap.N | Should -Be 2
     }
     It 'meldet eine Aufzeichnung ohne Schnappschuss verstaendlich' { { Import-TestRun 'e' @{ 'ticks.csv' = $Ticks } } | Should -Throw '*Schnappschuss*' }
+    It 'liest -From und -To als Ortszeit des Servers (Versatz <Offset>)' -TestCases @(@{ Offset = '+02:00' }, @{ Offset = '-07:00' }) {   # Abschlussrunde Minor 3
+        $old = $script:Base
+        try {
+            $script:Base = [DateTimeOffset]"2026-01-15T08:00:00$Offset"                # mindestens einer der beiden weicht vom Versatz dieses Rechners ab
+            $files = @{ 'ticks.csv' = @(0..7 | ForEach-Object { New-TickLine $_ }); 'snapshots.csv' = @(0..3 | ForEach-Object { New-SnapLine $_ $(if ($_ -eq 0) { 'K' } else { 'R' }) }) }
+            $m = Import-TestRun "tz$($Offset -replace '\W')" $files @{ From = [datetime]'2026-01-15 08:00:07'; To = [datetime]'2026-01-15 08:00:13' }
+            $m.Tick.N | Should -Be 3; $m.Snap.N | Should -Be 2
+            $m.Tick.TimeMs[0] | Should -Be $Base.AddSeconds(8).ToUnixTimeMilliseconds(); $m.Meta.OffsetMinutes | Should -Be $Base.Offset.TotalMinutes
+        }
+        finally { $script:Base = $old }
+    }
+    It 'meldet einen verdrehten und einen leeren Zeitraum mit dem Zeitraum der Aufzeichnung' {      # Abschlussrunde Minor 4
+        $files = @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        { Import-TestRun 'rev' $files @{ From = $Base.AddSeconds(13).DateTime; To = $Base.AddSeconds(7).DateTime } } | Should -Throw '-From liegt nach -To.'
+        { Import-TestRun 'out' $files @{ From = $Base.AddHours(1).DateTime; To = $Base.AddHours(2).DateTime } } |
+            Should -Throw 'Der Zeitraum 15.01.2026 09:00:00 bis 15.01.2026 10:00:00 liegt ausserhalb der Aufzeichnung (15.01.2026 08:00:02 bis 15.01.2026 08:00:16, Ortszeit des Servers).'
+        { Import-TestRun 'before' $files @{ To = $Base.AddHours(-1).DateTime } } | Should -Throw 'Der Zeitraum bis 15.01.2026 07:00:00 liegt ausserhalb der Aufzeichnung (15.01.2026 08:00:02 bis*'
+        { Import-TestRun 'between' $files @{ From = $Base.AddSeconds(4.5).DateTime; To = $Base.AddSeconds(5.5).DateTime } } | Should -Throw 'Im Zeitraum 15.01.2026 08:00:04 bis 15.01.2026 08:00:05 liegt kein Takt der Aufzeichnung (15.01.2026 08:00:02 bis*'
+    }
+    It 'lehnt eine andere Formatversion ab und duldet eine fehlende' {                  # Abschlussrunde Minor 14
+        $dir = Write-TestRun 'ver' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
+        $text = [IO.File]::ReadAllText($meta)
+        [IO.File]::WriteAllText($meta, $text.Replace('"SchemaVersion":2,', '"SchemaVersion":3,'))
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles } | Should -Throw '*Format 3*Format 2*'
+        [IO.File]::WriteAllText($meta, $text.Replace('"SchemaVersion":2,', ''))
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Tick.N | Should -Be 8
+    }
 }
 Describe 'Import-WorkerPerfRun: Robustheit' {                                     # Task 14b
     It 'paart Scan-Beginn und -Ende in derselben Millisekunde in der Reihenfolge der Datei' {
@@ -38,6 +68,7 @@ Describe 'Import-WorkerPerfRun: Robustheit' {                                   
         $t[2] = $t[2] -replace '^(2,[^,]+),2,', '$1,abc,'
         $m = Import-TestRun 'nan' @{ 'ticks.csv' = $t; 'snapshots.csv' = $SnapLines }
         $m.Tick.N | Should -Be 7; $m.Tick.TimeMs.Length | Should -Be 7; $m.Tick.ElapsedSec.Length | Should -Be 7
+        $m.Unreadable.Ticks | Should -Be 1; $m.Unreadable.Snapshots | Should -Be 0
         @($m.Tick.ElapsedSec | Where-Object { [double]::IsNaN($_) }).Count | Should -Be 0
         $f = @(Get-WorkerPerfFindings -Series @(Get-WorkerPerfSeries -Model $m -Thresholds $Th) -Thresholds $Th)
         @($f | Where-Object SignalId -eq 'cpu.host').Count | Should -Be 1
@@ -49,6 +80,7 @@ Describe 'Import-WorkerPerfRun: Robustheit' {                                   
         $m = Import-TestRun 'nansnap' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $sn; 'citrix.csv' = $rtt
             'sessions.csv' = @(0..3 | ForEach-Object { "$_,5,alice,DOM,Active,ICA#5,PC1,,0" }) }
         $m.Snap.N | Should -Be 2; $m.Snap.ElapsedSec | Should -Be @(4, 4); $m.Snap.TickPos | Should -Be @(3, 7)
+        $m.Unreadable.Snapshots | Should -Be 2; $m.Unreadable.Ticks | Should -Be 0
         { Get-WorkerPerfFindings -Series @(Get-WorkerPerfSeries -Model $m -Thresholds $Th) -Thresholds $Th } | Should -Not -Throw
     }
 }
@@ -103,14 +135,14 @@ Describe 'Import-WorkerPerfRun: Zeitraum und T-Zeilen' {
         }
     }
     It 'ordnet Zeilen vor -From keinem Schnappschuss im Zeitraum zu' {
-        $m = Import-TestRun 'f' $Files @{ From = $Base.AddSeconds(9).LocalDateTime }
+        $m = Import-TestRun 'f' $Files @{ From = $Base.AddSeconds(9).DateTime }
         $m.Snap.N | Should -Be 2
         $m.Sessions[0].Rtt[0] | Should -Be 102; $m.Sessions[0].Rtt[1] | Should -Be 103
         $m.Citrix[0].N | Should -Be 2; $m.Citrix[0].Avg | Should -Be 102.5
         $m.Probes[0].Ms[0] | Should -Be 102; $m.Probes[0].Ms[1] | Should -Be 103
     }
     It 'ordnet Zeilen nach -To keinem Schnappschuss zu' {
-        $m = Import-TestRun 'g' $Files @{ To = $Base.AddSeconds(9).LocalDateTime }
+        $m = Import-TestRun 'g' $Files @{ To = $Base.AddSeconds(9).DateTime }
         $m.Snap.N | Should -Be 2
         $m.Sessions[0].Rtt[1] | Should -Be 101; $m.Citrix[0].N | Should -Be 2; $m.Probes[0].Ms[1] | Should -Be 101
     }

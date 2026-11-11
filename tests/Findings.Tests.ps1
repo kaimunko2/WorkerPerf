@@ -73,5 +73,23 @@ Describe 'Get-WorkerPerfSollIst' {
         $more[6].Value = [double[]](12, 12, 1)
         (Get-WorkerPerfSollIst -Series $more -Thresholds $Th | Where-Object Id -eq 'disk.latency').WorstInstance | Should -Be 'z'
     }
+    It 'leitet die Bewertung aus den Befunden ab und kennzeichnet einzelne Ueberschreitungen' {   # Abschlussrunde I4
+        $spike = New-TestSeries 'cpu.host' 50,96,93,50,50                               # zwei kritische Punkte, unter minTicks
+        $r = Get-WorkerPerfSollIst -Series @($spike) -Thresholds $Th -Findings (Get-Found $spike) | Where-Object Id -eq 'cpu.host'
+        $r.Status | Should -Be 0; $r.Exceeded | Should -BeTrue; $r.PctCrit | Should -Be 40
+        $long = New-TestSeries 'cpu.host' 50,80,95,80,50
+        $r = Get-WorkerPerfSollIst -Series @($long) -Thresholds $Th -Findings (Get-Found $long) | Where-Object Id -eq 'cpu.host'
+        $r.Status | Should -Be 2; $r.Exceeded | Should -BeTrue
+        $quiet = New-TestSeries 'cpu.host' 50,50,50
+        $r = Get-WorkerPerfSollIst -Series @($quiet) -Thresholds $Th -Findings (Get-Found $quiet) | Where-Object Id -eq 'cpu.host'
+        $r.Status | Should -Be 0; $r.Exceeded | Should -BeFalse
+    }
+    It 'nimmt bei mehreren Instanzen die schlechteste Bewertung der Befunde' {
+        $a = New-TestSeries 'disk.latency' 12,12,12,2 -Ops 50,50,50,50; $a.Label = 'Laufwerk C:'; $a.Instance = 'C:'
+        $b = New-TestSeries 'disk.latency' 30,30,30,2 -Ops 50,50,50,50; $b.Label = 'Laufwerk D:'; $b.Instance = 'D:'
+        $r = Get-WorkerPerfSollIst -Series @($a, $b) -Thresholds $Th -Findings (Get-Found @($a, $b)) | Where-Object Id -eq 'disk.latency'
+        $r.Status | Should -Be 2
+        $r = Get-WorkerPerfSollIst -Series @($a, $b) -Thresholds $Th -Findings (Get-Found @($a)) | Where-Object Id -eq 'disk.latency'
+        $r.Status | Should -Be 1
+    }
 }
-

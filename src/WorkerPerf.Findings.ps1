@@ -82,7 +82,16 @@ function Get-WorkerPerfFindings {
 }
 
 function Get-WorkerPerfSollIst {
-    param([AllowEmptyCollection()][object[]]$Series, $Thresholds, [hashtable]$Sources = @{})
+    # -Findings: the findings of the same series. A row's Status is the worst severity among the findings of its signal
+    # (0 without any, over all instances); Exceeded says that at least one rateable point reached the "auffaellig" threshold,
+    # with or without a finding.
+    param([AllowEmptyCollection()][object[]]$Series, $Thresholds, [hashtable]$Sources = @{}, [AllowEmptyCollection()][object[]]$Findings = @())
+    $worstFinding = @{}
+    foreach ($f in @($Findings)) {
+        if ($null -eq $f) { continue }
+        $fid = [string]$f.SignalId
+        if (-not $worstFinding.ContainsKey($fid) -or [int]$f.Severity -gt $worstFinding[$fid]) { $worstFinding[$fid] = [int]$f.Severity }
+    }
     foreach ($th in $Thresholds.Values) {
         $id = [string]$th.id
         $mineList = New-Object System.Collections.Generic.List[object]
@@ -129,9 +138,10 @@ function Get-WorkerPerfSollIst {
         $row = @{
             Id = $id; Label = $th.label; Unit = $th.unit; Ideal = $th.ideal; Warn = $th.warn; Crit = $th.crit
             Origin = $th.origin; Source = $th.source; Url = $th.url; Note = $th.note
-            Measured = ($perTime.Count -gt 0); Detail = $detail
+            Measured = ($perTime.Count -gt 0); Detail = $detail; Status = 0; Exceeded = $false
             Avg = $null; P95 = $null; Max = $null; PctNormal = $null; PctWarn = $null; PctCrit = $null; WorstInstance = ''
         }
+        if ($worstFinding.ContainsKey($id)) { $row.Status = [int]$worstFinding[$id] }
         if ($perTime.Count -gt 0) {
             $vals = [double[]]@($perTime.Values)
             $sorted = [double[]]$vals.Clone()
@@ -147,6 +157,7 @@ function Get-WorkerPerfSollIst {
             }
             $row.Avg = $sum / $sorted.Length; $row.P95 = $sorted[$p]; $row.Max = $sorted[$sorted.Length - 1]
             $row.PctNormal = 100.0 * $c[0] / $vals.Length; $row.PctWarn = 100.0 * $c[1] / $vals.Length; $row.PctCrit = 100.0 * $c[2] / $vals.Length
+            $row.Exceeded = (($c[1] + $c[2]) -gt 0)
             if ($mine.Count -gt 1) {
                 # most bad points, then the worst value (the highest maximum; the lowest minimum for direction 'low'),
                 # then the label in ordinal order: independent of the order of the Hashtable keys
@@ -319,8 +330,26 @@ function Join-WorkerPerfIncidents {
 # Incident details (who was affected, who contributed) and plain-language text
 # ---------------------------------------------------------------------------------------------
 
-# Minimum share (%) of a security process in a contributor ranking to count as a companion
-$script:WorkerPerfCompanionMinPct = 10
+# Minimum share (%) in a contributor ranking: below it no application is named as the main cause and no security
+# product as companion or as the largest consumer
+$script:WorkerPerfMinSharePct = 10
+
+# Signals of the worker resources (cpu, memory, disk, share, profile): a finding of one of them makes an incident an "engpass"
+$script:WorkerPerfWorkerSignalIds = @('cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'disk.latency', 'smb.latency')
+
+function Get-WorkerPerfUnmeasured {
+    # What the target comparison shows as "nicht gemessen": the input delay, and the labels of the worker-resource
+    # signals (in the order of the rows). The incident texts take it from here, so text and table cannot disagree.
+    param([AllowEmptyCollection()][object[]]$SollIst)
+    $inputMissing = $false
+    $labels = New-Object System.Collections.Generic.List[string]
+    foreach ($row in @($SollIst)) {
+        if ($null -eq $row -or [bool]$row.Measured) { continue }
+        if ([string]$row.Id -eq 'input.session') { $inputMissing = $true }
+        elseif ($script:WorkerPerfWorkerSignalIds -contains [string]$row.Id) { $labels.Add([string]$row.Label) }
+    }
+    return @{ Input = $inputMissing; Worker = [string[]]$labels.ToArray() }
+}
 
 function Format-WorkerPerfTextNumber([double]$Value) {
     # German number: below 10 one decimal unless whole, else whole; decimal comma, independent of the installed culture.
@@ -368,41 +397,63 @@ function Get-WorkerPerfWindowSnaps($Model, [long]$StartMs, [long]$EndMs) {
 }
 
 function Get-WorkerPerfMemoryStates {
-    # Carries the working set (KB) of every process forward over the sparse rows. Returns copies of the state at the
-    # snapshots in $Keep (masked to the process' lifetime) and the sum of the states over the snapshots in $Sum.
-    param($Model, [int[]]$Keep, [int[]]$Sum)
+    # Carries the working set (KB) of every process forward over the sparse rows, starting from the state the loader
+    # carried over a -From cut ($Model.Carried: processes alive at position 0 without a row there). Returns copies of
+    # the state at the snapshots in $Keep, the sum of the states over the snapshots in $Sum and the highest state over
+    # the snapshots in $Peak; each masked to the process' lifetime.
+    param($Model, [int[]]$Keep, [int[]]$Sum, [int[]]$Peak = @())
     $proc = @($Model.Proc); $nK = $proc.Count
     $rows = $Model.Rows
     $keepSet = @{}; foreach ($p in $Keep) { $keepSet[$p] = $true }
     $sumSet = @{}; foreach ($p in $Sum) { $sumSet[$p] = $true }
+    $peakSet = @{}; foreach ($p in $Peak) { $peakSet[$p] = $true }
     $last = -1
     foreach ($p in $Keep) { if ($p -gt $last) { $last = $p } }
     foreach ($p in $Sum) { if ($p -gt $last) { $last = $p } }
+    foreach ($p in $Peak) { if ($p -gt $last) { $last = $p } }
+    $firstP = New-Object int[] $nK; $lastP = New-Object int[] $nK
+    for ($k = 0; $k -lt $nK; $k++) {
+        $pr = $proc[$k]
+        if ($null -eq $pr) { $firstP[$k] = 0; $lastP[$k] = -1 } else { $firstP[$k] = [int]$pr.FirstP; $lastP[$k] = [int]$pr.LastP }
+    }
     $ws = New-Object double[] $nK
+    $carried = Get-WorkerPerfField $Model 'Carried'
+    if ($null -ne $carried) {
+        $cK = $carried.K; $cWs = $carried.WsKB
+        for ($i = 0; $i -lt $cK.Length; $i++) {
+            $k = [int]$cK[$i]
+            if ($k -ge 0 -and $k -lt $nK) { $ws[$k] = [double]$cWs[$i] }
+        }
+    }
     $sums = New-Object double[] $nK
+    $peaks = New-Object double[] $nK
     $kept = @{}
     for ($p = 0; $p -le $last; $p++) {
         for ($r = [int]$rows.Start[$p]; $r -lt [int]$rows.Start[$p + 1]; $r++) {
             $k = [int]$rows.K[$r]
             if ($k -ge 0 -and $k -lt $nK) { $ws[$k] = [double]$rows.WsKB[$r] }
         }
-        $isKeep = $keepSet.ContainsKey($p); $isSum = $sumSet.ContainsKey($p)
-        if (-not ($isKeep -or $isSum)) { continue }
-        $copy = New-Object double[] $nK
+        $isKeep = $keepSet.ContainsKey($p); $isSum = $sumSet.ContainsKey($p); $isPeak = $peakSet.ContainsKey($p)
+        if (-not ($isKeep -or $isSum -or $isPeak)) { continue }
+        $copy = $null
+        if ($isKeep) { $copy = New-Object double[] $nK }
         for ($k = 0; $k -lt $nK; $k++) {
-            $pr = $proc[$k]
-            if ($null -eq $pr) { continue }
-            if ($p -ge [int]$pr.FirstP -and $p -le [int]$pr.LastP) { $copy[$k] = $ws[$k] }
+            if ($p -lt $firstP[$k] -or $p -gt $lastP[$k]) { continue }
+            $v = $ws[$k]
+            if ($isKeep) { $copy[$k] = $v }
+            if ($isSum) { $sums[$k] += $v }
+            if ($isPeak -and $v -gt $peaks[$k]) { $peaks[$k] = $v }
         }
         if ($isKeep) { $kept[$p] = $copy }
-        if ($isSum) { for ($k = 0; $k -lt $nK; $k++) { $sums[$k] += $copy[$k] } }
     }
-    return @{ States = $kept; Sums = $sums }
+    return @{ States = $kept; Sums = $sums; Peaks = $peaks }
 }
 
 function Get-WorkerPerfShareTable {
     # One record per living process of the selected sessions: window value, share (%) of the window total,
     # baseline share (%) over the baseline snapshots ($null without any) and, for memory, the growth in MB.
+    # Memory: the value is the peak working set over the window snapshots, so a process that ends inside the window
+    # (often the reason the incident ends) keeps its place; the growth is that peak minus the state before the window.
     param($Model, [string]$Measure, [int[]]$WindowSnaps, [int[]]$BaseSnaps, [int[]]$SessionFilter, [hashtable]$Cache)
     $proc = @($Model.Proc); $nK = $proc.Count
     $rows = $Model.Rows
@@ -416,12 +467,11 @@ function Get-WorkerPerfShareTable {
     $baseVal = New-Object double[] $nK; $baseTotal = 0.0; $hasBase = ($BaseSnaps.Count -gt 0)
     if ($Measure -eq 'memory') {
         if ($WindowSnaps.Count -gt 0) {
-            $first = $WindowSnaps[0]; $lastP = $WindowSnaps[$WindowSnaps.Count - 1]
-            $before = $first - 1; if ($before -lt 0) { $before = $first }
-            $need = @($before, $lastP)
-            $res = Get-WorkerPerfMemoryStates -Model $Model -Keep $need -Sum @()
-            $sNow = $res.States[$lastP]; $sBefore = $res.States[$before]
-            foreach ($k in $keys) { $val[$k] = $sNow[$k]; $grow[$k] = ($sNow[$k] - $sBefore[$k]) / 1024.0 }
+            $first = $WindowSnaps[0]
+            $before = $first - 1; if ($before -lt 0) { $before = $first }      # no snapshot before the window: its first one
+            $res = Get-WorkerPerfMemoryStates -Model $Model -Keep @($before) -Sum @() -Peak $WindowSnaps
+            $peaks = $res.Peaks; $sBefore = $res.States[$before]
+            foreach ($k in $keys) { $val[$k] = $peaks[$k]; $grow[$k] = ($peaks[$k] - $sBefore[$k]) / 1024.0 }
         }
         if ($hasBase) {
             if (-not $Cache.ContainsKey('memBase')) { $Cache['memBase'] = (Get-WorkerPerfMemoryStates -Model $Model -Keep @() -Sum $BaseSnaps).Sums }
@@ -522,7 +572,9 @@ function Format-WorkerPerfRound($Value) {
 }
 
 function New-WorkerPerfRanking {
-    param($Model, [string]$Measure, $Table)
+    # -Scope 'session': the table holds the processes of the owning session only (profile container), else 'host'.
+    # Main: the largest application-in-session outside the role Sicherheit, named only from the minimum share on.
+    param($Model, [string]$Measure, $Table, [string]$Scope = 'host')
     $take = 5
     $procSorted = @($Table | Where-Object { $_.Value -gt 0 } | Sort-Object -Property @{ Expression = { $_.Share }; Descending = $true }, @{ Expression = { [string]$Model.Proc[$_.K].Name } }, @{ Expression = { $_.K } })
     $procs = New-Object System.Collections.Generic.List[object]
@@ -536,7 +588,7 @@ function New-WorkerPerfRanking {
     }
     $main = $null
     $mains = @(Group-WorkerPerfShareTable -Model $Model -Table $Table -By 'app-in-session' -SkipSecurity $true)
-    if ($mains.Count -gt 0) {
+    if ($mains.Count -gt 0 -and (Format-WorkerPerfRound $mains[0].Share) -ge $script:WorkerPerfMinSharePct) {
         $g = $mains[0]
         $main = @{
             App = $g.Name; AppIndex = $g.AppIndex; SessionIndex = $g.SessionIndex; User = (Get-WorkerPerfUserName $Model $g.SessionIndex)
@@ -551,7 +603,7 @@ function New-WorkerPerfRanking {
     foreach ($g in @(@(Group-WorkerPerfShareTable -Model $Model -Table $Table -By 'session') | Select-Object -First $take)) {
         $sess.Add(@{ SessionIndex = $g.SessionIndex; User = $g.Name; SharePct = (Format-WorkerPerfRound $g.Share); BaselinePct = (Format-WorkerPerfRound $g.Base) })
     }
-    return @{ Measure = $Measure; Main = $main; Processes = $procs.ToArray(); Apps = $apps.ToArray(); Sessions = $sess.ToArray() }
+    return @{ Measure = $Measure; Scope = $Scope; Main = $main; Processes = $procs.ToArray(); Apps = $apps.ToArray(); Sessions = $sess.ToArray() }
 }
 
 function Add-WorkerPerfIncidentDetail {
@@ -588,6 +640,12 @@ function Add-WorkerPerfIncidentDetail {
         $snaps = @(Get-WorkerPerfWindowSnaps $Model $start $end)
         $wideSnaps = @(Get-WorkerPerfWindowSnaps $Model ($start - $pad) ($end + $pad))
 
+        # Incidents of type 'umfeld' and chronic states are about their own findings: evidence of other sessions, of
+        # endpoints without a finding and the events of the window have no relation to them and are left out.
+        $narrow = ($inc.Type -eq 'umfeld' -or [bool]$inc.Chronic)
+        $ownSet = @{}
+        foreach ($f in @($inc.Findings)) { if ($f.Scope -eq 'session' -and [int]$f.SessionIndex -ne -1) { $ownSet[[int]$f.SessionIndex] = $true } }
+
         # affected sessions: input delay at or above the "auffaellig" threshold
         $affected = New-Object System.Collections.Generic.List[object]
         $ownSessions = $null
@@ -613,15 +671,17 @@ function Add-WorkerPerfIncidentDetail {
         $resources = New-Object System.Collections.Generic.List[string]
         foreach ($r in @($inc.Resources)) { if ($workerOrder -contains $r -and -not $resources.Contains([string]$r)) { $resources.Add([string]$r) } }
         if ($null -ne $inc.Lead -and $workerOrder -contains $inc.Lead -and -not $resources.Contains([string]$inc.Lead)) { $resources.Add([string]$inc.Lead) }
-        $tables = @{}
+        $tables = @{}; $scopes = @{}
         $getTable = {
             param([string]$Resource)
             if (-not $tables.ContainsKey($Resource)) {
+                # a profile container belongs to its session: its ranking holds the processes of the owning sessions only
                 $filter = @()
                 if ($Resource -eq 'profile') {
                     $ids = @(@($inc.Findings) | Where-Object { $_.Resource -eq 'profile' } | ForEach-Object { [int]$_.SessionIndex } | Sort-Object -Unique)
-                    if ($ids -notcontains -1) { $filter = [int[]]$ids }
+                    if ($ids.Count -gt 0 -and $ids -notcontains -1) { $filter = [int[]]$ids }
                 }
+                $scopes[$Resource] = 'host'; if ($filter.Count -gt 0) { $scopes[$Resource] = 'session' }
                 $tables[$Resource] = @(Get-WorkerPerfShareTable -Model $Model -Measure $measureOf[$Resource] -WindowSnaps ([int[]]$snaps) -BaseSnaps $baseSnaps -SessionFilter ([int[]]$filter) -Cache $cache)
             }
             $tables[$Resource]
@@ -629,7 +689,7 @@ function Add-WorkerPerfIncidentDetail {
         $contrib = @{}
         foreach ($r in $resources) {
             $tbl = @(& $getTable $r)
-            $contrib[$r] = New-WorkerPerfRanking -Model $Model -Measure $measureOf[$r] -Table $tbl
+            $contrib[$r] = New-WorkerPerfRanking -Model $Model -Measure $measureOf[$r] -Table $tbl -Scope $scopes[$r]
         }
         $inc['Contributors'] = $contrib
 
@@ -651,11 +711,48 @@ function Add-WorkerPerfIncidentDetail {
         }
         $inc['Security'] = @{ Products = $products.ToArray(); TotalPct = (Format-WorkerPerfRound $totalPct) }
 
-        # companion: a security process among the contributors, plus the biggest I/O producer
+        # a virus scan that overlaps the window
+        $scan = $false
+        foreach ($sc in @($Model.Scans)) { if ([long]$sc.StartMs -le $end -and [long]$sc.EndMs -ge $start) { $scan = $true; break } }
+
+        # What the text and the page say about the cause of an 'engpass', from the ranking of the lead resource:
+        #   main      the largest application-in-session (from the minimum share on), no security product with a larger share
+        #   security  a security product (from the minimum share on) holds the largest share, or no application reaches the minimum
+        #   none      neither reaches the minimum share
+        #   nodata    no process lived in the snapshots of the window
+        $cause = $null
+        if ($inc.Type -eq 'engpass' -and $null -ne $inc.Lead -and $contrib.ContainsKey([string]$inc.Lead)) {
+            $rank = $contrib[[string]$inc.Lead]
+            $m = $rank.Main
+            $largest = $null                # the security product with the largest share of the lead ranking, from the minimum share on
+            if ($products.Count -gt 0 -and $products[0].SharePct -ge $script:WorkerPerfMinSharePct) { $largest = $products[0] }
+            $hasProcessData = $false
+            if ($snaps.Count -gt 0) {
+                $p0 = [int]$snaps[0]; $p1 = [int]$snaps[$snaps.Count - 1]
+                foreach ($pr in @($Model.Proc)) {
+                    if ($null -ne $pr -and [int]$pr.FirstP -le $p1 -and [int]$pr.LastP -ge $p0) { $hasProcessData = $true; break }
+                }
+            }
+            $kind = 'none'
+            if ($null -ne $largest -and ($null -eq $m -or $largest.SharePct -gt $m.SharePct)) { $kind = 'security' }
+            elseif ($null -ne $m) { $kind = 'main' }
+            elseif (-not $hasProcessData) { $kind = 'nodata' }
+            $causeSec = $null
+            if ($kind -eq 'security') { $causeSec = @{ Label = [string]$largest.Label; SharePct = $largest.SharePct } }
+            $cause = @{
+                Kind = $kind; Resource = [string]$inc.Lead; Measure = [string]$rank.Measure; Scope = [string]$rank.Scope
+                Main = $m; Security = $causeSec; Scan = $scan; MinSharePct = $script:WorkerPerfMinSharePct
+            }
+        }
+        $inc['Cause'] = $cause
+
+        # companion: a security process among the contributors, plus the biggest I/O producer. Named beside a main cause
+        # only: a security product with the largest share is the largest consumer, not a companion.
         $companion = $null
         $companionOrder = @(@($resources | Where-Object { $_ -eq $inc.Lead }) + @($resources | Where-Object { $_ -ne $inc.Lead }))
+        if ($null -ne $cause -and $cause.Kind -ne 'main') { $companionOrder = @() }
         foreach ($r in $companionOrder) {
-            $sec = @($contrib[$r].Processes | Where-Object { $_.Role -eq 'Sicherheit' -and $_.SharePct -ge $script:WorkerPerfCompanionMinPct })
+            $sec = @($contrib[$r].Processes | Where-Object { $_.Role -eq 'Sicherheit' -and $_.SharePct -ge $script:WorkerPerfMinSharePct })
             if ($sec.Count -eq 0) { continue }
             $byLabel = @{}
             foreach ($x in $sec) { if (-not $byLabel.ContainsKey($x.RoleLabel)) { $byLabel[$x.RoleLabel] = 0.0 }; $byLabel[$x.RoleLabel] += $x.SharePct }
@@ -676,6 +773,7 @@ function Add-WorkerPerfIncidentDetail {
         $tickSet = @{}; foreach ($i in $ticks) { $tickSet[$i] = $true }
         for ($j = 0; $j -lt $nIp; $j++) {
             if (-not $tickSet.ContainsKey([int]$ip.TickPos[$j])) { continue }
+            if ($narrow -and -not $ownSet.ContainsKey([int]$ip.SessionIndex[$j])) { continue }
             $d = [double]$ip.DelayMs[$j]
             if ([double]::IsNaN($d)) { continue }
             $k = [int]$ip.K[$j]
@@ -690,8 +788,11 @@ function Add-WorkerPerfIncidentDetail {
         $inc['DelayProcesses'] = @(@($delay.Values | Sort-Object -Property @{ Expression = { $_.MaxMs }; Descending = $true }, @{ Expression = { $_.Name } }, @{ Expression = { $_.Pid } }, @{ Expression = { $_.K } }, @{ Expression = { $_.SessionIndex } }) | Select-Object -First 5)
 
         # endpoint probes and ICA round trip in the widened window
+        $ownEndpoints = @{}
+        foreach ($f in @($inc.Findings)) { if ($f.Resource -eq 'endpoint') { $ownEndpoints[[string]$f.Instance] = $true } }
         $endpoints = New-Object System.Collections.Generic.List[object]
         foreach ($pb in @($Model.Probes)) {
+            if ($narrow -and -not $ownEndpoints.ContainsKey([string]$pb.Name)) { continue }
             $max = $null; $failed = $false
             foreach ($p in $wideSnaps) {
                 if (-not [string]::IsNullOrEmpty([string]$pb.Error[$p])) { $failed = $true; continue }
@@ -703,8 +804,8 @@ function Add-WorkerPerfIncidentDetail {
         $inc['Endpoints'] = @($endpoints.ToArray() | Sort-Object -Property @{ Expression = { $_.Failed }; Descending = $true }, @{ Expression = { if ($null -eq $_.MaxMs) { -1.0 } else { $_.MaxMs } }; Descending = $true }, @{ Expression = { $_.Name } })
         # ICA round trip only for sessions of the incident: affected ones and owners of a session-scoped finding
         $icaSessions = @{}
-        foreach ($a in $inc['Affected']) { $icaSessions[[int]$a.SessionIndex] = $true }
-        foreach ($f in @($inc.Findings)) { if ($f.Scope -eq 'session' -and [int]$f.SessionIndex -ne -1) { $icaSessions[[int]$f.SessionIndex] = $true } }
+        if (-not $narrow) { foreach ($a in $inc['Affected']) { $icaSessions[[int]$a.SessionIndex] = $true } }
+        foreach ($si in $ownSet.Keys) { $icaSessions[[int]$si] = $true }
         $ica = New-Object System.Collections.Generic.List[object]
         if (-not [double]::IsNaN($icaWarn)) {
             foreach ($s in @($Model.Sessions)) {
@@ -720,10 +821,11 @@ function Add-WorkerPerfIncidentDetail {
         $inc['Ica'] = @($ica.ToArray() | Sort-Object -Property @{ Expression = { $_.MaxMs }; Descending = $true }, @{ Expression = { $_.SessionIndex } })
 
         # events and scans in the window
-        $inc['Events'] = @(@($Model.Events) | Where-Object { [long]$_.TimeMs -ge $start -and [long]$_.TimeMs -le $end })
-        $scan = $false
-        foreach ($sc in @($Model.Scans)) { if ([long]$sc.StartMs -le $end -and [long]$sc.EndMs -ge $start) { $scan = $true; break } }
-        $inc['ScanActive'] = $scan
+        if ($narrow) { $inc['Events'] = @(); $inc['ScanActive'] = $false }
+        else {
+            $inc['Events'] = @(@($Model.Events) | Where-Object { [long]$_.TimeMs -ge $start -and [long]$_.TimeMs -le $end })
+            $inc['ScanActive'] = $scan
+        }
     }
 }
 
@@ -746,8 +848,15 @@ function Get-WorkerPerfLeadFinding($Incident) {
     return @($pool | Sort-Object -Property @{ Expression = { [int]$_.Severity }; Descending = $true }, @{ Expression = { $_.StartMs } })[0]
 }
 
+function Get-WorkerPerfMeasureText([hashtable]$Texts, [string]$Measure, [string]$Scope) {
+    # "der CPU-Zeit", ...; the I/O share of a profile container is a share within the owning session
+    if ($Measure -eq 'io' -and $Scope -eq 'session' -and $Texts.ContainsKey('measure.io.session')) { return $Texts['measure.io.session'] }
+    return $Texts['measure.' + $Measure]
+}
+
 function Get-WorkerPerfIncidentText {
-    param($Incident, $Model, $Thresholds, [hashtable]$Texts)
+    # -Unmeasured: result of Get-WorkerPerfUnmeasured ($null: everything counts as measured)
+    param($Incident, $Model, $Thresholds, [hashtable]$Texts, $Unmeasured = $null)
     $inv = [System.Globalization.CultureInfo]::InvariantCulture
     $fmt = { param([string]$Key, [object[]]$A) [string]::Format($inv, $Texts[$Key], $A) }
     $userText = {
@@ -770,10 +879,13 @@ function Get-WorkerPerfIncidentText {
     }
     $text = ''
     $affectedCount = @($Incident.Affected).Count
+    $inputMissing = $false; $workerMissing = @()
+    if ($null -ne $Unmeasured) { $inputMissing = [bool]$Unmeasured.Input; $workerMissing = @($Unmeasured.Worker) }
     $affectedText = $Texts['affected.none']
     if ($affectedCount -eq 1) { $affectedText = $Texts['affected.one'] }
     elseif ($affectedCount -gt 1) { $affectedText = & $fmt 'affected.many' @($affectedCount) }
     elseif ($Incident.Chronic) { $affectedText = '' }
+    elseif ($inputMissing) { $affectedText = $Texts['affected.unmeasured'] }
 
     $headLabel = ''
     $ctxItem = {
@@ -798,18 +910,31 @@ function Get-WorkerPerfIncidentText {
             $text = & $fmt 'engpass' @($t0, $t1, $Texts['resource.' + [string]$lead.Resource], $label, $peak, $ideal)
         }
         $text += $affectedText
-        $rank = $null
-        if ($null -ne $Incident.Lead -and $Incident.Contributors.ContainsKey([string]$Incident.Lead)) { $rank = $Incident.Contributors[[string]$Incident.Lead] }
-        if ($null -ne $rank -and $null -ne $rank.Main) {
-            $m = $rank.Main
-            $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
-            $measure = $Texts['measure.' + [string]$rank.Measure]
-            if ($null -eq $m.BaselinePct) { $text += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
-            else { $text += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
+        $cause = Get-WorkerPerfField $Incident 'Cause'
+        if ($null -ne $cause) {
+            $measure = Get-WorkerPerfMeasureText $Texts ([string]$cause.Measure) ([string]$cause.Scope)
+            $m = $cause.Main
+            if ($cause.Kind -eq 'main') {
+                $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
+                if ($null -eq $m.BaselinePct) { $text += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
+                else { $text += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
+            }
+            elseif ($cause.Kind -eq 'security') {
+                $text += & $fmt 'largest' @($cause.Security.Label, (Format-WorkerPerfTextNumber $cause.Security.SharePct), $measure)
+                if ($cause.Scan) { $text += $Texts['largest.scan'] } else { $text += $Texts['largest.exclusions'] }
+                if ($null -ne $m) {
+                    $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
+                    if ($null -eq $m.BaselinePct) { $text += & $fmt 'largest.other.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
+                    else { $text += & $fmt 'largest.other' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
+                }
+            }
+            elseif ($cause.Kind -eq 'nodata') { $text += $Texts['main.nodata'] }
+            else { $text += & $fmt 'main.none' @((Format-WorkerPerfTextNumber ([double]$cause.MinSharePct)), $measure) }
         }
         $c = $Incident.Companion
         if ($null -ne $c) {
-            $cm = $Texts['measure.' + [string]$Incident.Contributors[[string]$c.Resource].Measure]
+            $cr = $Incident.Contributors[[string]$c.Resource]
+            $cm = Get-WorkerPerfMeasureText $Texts ([string]$cr.Measure) ([string](Get-WorkerPerfField $cr 'Scope'))
             $who = & $userText ([int]$c.TopIoSessionIndex) ([string]$c.TopIoUser)
             $text += & $fmt 'companion' @($c.Label, (Format-WorkerPerfTextNumber $c.SharePct), $cm, $c.TopIoApp, $who)
         }
@@ -822,7 +947,9 @@ function Get-WorkerPerfIncidentText {
             $who = & $userText ([int]$dp[0].SessionIndex) (Get-WorkerPerfUserName $Model ([int]$dp[0].SessionIndex))
             $text += & $fmt 'ohne.process' @($dp[0].Name, $who)
         }
-        $text += $Texts['ohne.cause']
+        # with an unmeasured worker resource the cause cannot be placed outside the worker
+        if ($workerMissing.Count -gt 0) { $text += & $fmt 'ohne.unmeasured' @(($workerMissing -join ', ')) }
+        else { $text += $Texts['ohne.cause'] }
         $probeUnit = Get-WorkerPerfThresholdField $Thresholds 'probe.connect' 'unit'
         foreach ($e in @($Incident.Endpoints)) {
             if ($e.Failed) { $text += & $fmt 'endpoint.context' @($e.Name, $Texts['probe.error']) }

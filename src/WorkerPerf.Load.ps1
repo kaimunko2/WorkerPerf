@@ -33,10 +33,11 @@ function Open-WorkerPerfCsvReader {
 }
 
 function Read-WorkerPerfCsvFile {
-    # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]] }.
-    # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped.
+    # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]]; Skipped = number of rows left out }.
+    # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped (and counted).
     param([string]$Path, [string]$FileName)
     $rows = New-Object System.Collections.Generic.List[string[]]
+    $skipped = 0
     $reader = $null
     try {
         $csv = Open-WorkerPerfCsvReader $Path $FileName
@@ -44,11 +45,11 @@ function Read-WorkerPerfCsvFile {
         while ($null -ne $reader -and $null -ne ($line = $reader.ReadLine())) {
             if ($line.Length -eq 0) { continue }
             if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
-            if ($f.Length -ge $need) { $rows.Add($f) }
+            if ($f.Length -ge $need) { $rows.Add($f) } else { $skipped++ }
         }
     }
     finally { if ($null -ne $reader) { $reader.Dispose() } }
-    return @{ Col = $csv.Col; Rows = $rows }
+    return @{ Col = $csv.Col; Rows = $rows; Skipped = $skipped }
 }
 
 function ConvertTo-WorkerPerfTimestamp([string]$Text) {
@@ -65,6 +66,11 @@ function ConvertTo-WorkerPerfCachedDouble([System.Collections.Hashtable]$Cache, 
     if ($Text.Length -gt 0 -and -not [double]::TryParse($Text, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { $v = [double]::NaN }
     $Cache[$Text] = $v
     return $v
+}
+
+function Format-WorkerPerfWallClock([long]$Ticks) {
+    # Clock time (ticks of a DateTime, no time zone) as dd.MM.yyyy HH:mm:ss for messages.
+    return (New-Object DateTime ($Ticks)).ToString('dd.MM.yyyy HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
 }
 
 function New-WorkerPerfNanArray([int]$Length) {
@@ -88,6 +94,8 @@ function Set-WorkerPerfUniqueLabels($Items) {
 }
 
 function Import-WorkerPerfRun {
+    # -From / -To: local time of the measured server (the clock time the tick timestamps carry), like every time the
+    # report shows; the Kind of the values is ignored.
     param([string]$Path, [datetime]$From = [datetime]::MinValue, [datetime]$To = [datetime]::MaxValue, $Thresholds, [object[]]$Roles)
     $inv = [Globalization.CultureInfo]::InvariantCulture
     $numStyle = [Globalization.NumberStyles]::Float
@@ -98,8 +106,16 @@ function Import-WorkerPerfRun {
     $metaJson = ConvertFrom-WorkerPerfJsonFile $metaPath
     $meta = @{}
     foreach ($p in $metaJson.PSObject.Properties) { $meta[$p.Name] = $p.Value }
-    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'CollectorPid', 'Simulated', 'Endpoints') {
+    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'CollectorPid', 'Simulated', 'Endpoints') {
         if (-not $meta.ContainsKey($k)) { $meta[$k] = $null }
+    }
+    # a capture in another format is not read; a missing field is tolerated (hand-written or damaged meta.json)
+    if ($null -ne $meta['SchemaVersion']) {
+        $ver = 0.0
+        $verText = [string]$meta['SchemaVersion']
+        if (-not [double]::TryParse($verText, $numStyle, $inv, [ref]$ver) -or $ver -ne $script:WorkerPerfFormatVersion) {
+            throw "Die Aufzeichnung '$Path' hat das Format $verText; diese Version von WorkerPerf liest nur das Format $($script:WorkerPerfFormatVersion)."
+        }
     }
     $cores = 0; $ramMb = 0.0; $fastSec = 2.0; $snapSec = 15.0
     if ($null -ne $meta['LogicalProcessors']) { $cores = [int]$meta['LogicalProcessors'] }
@@ -119,10 +135,27 @@ function Import-WorkerPerfRun {
         }
     }
 
-    # time range (local times of this machine) as epoch milliseconds
-    $fromMs = [long]::MinValue; $toMs = [long]::MaxValue
-    if ($From -gt [datetime]::MinValue) { $fromMs = [DateTimeOffset]::new($From).ToUnixTimeMilliseconds() }
-    if ($To -lt [datetime]::MaxValue) { $toMs = [DateTimeOffset]::new($To).ToUnixTimeMilliseconds() }
+    # failed source calls of the capture (optional field SourceErrors: source -> Count, FirstTime, FirstMessage); missing = none
+    $sourceErrors = New-Object System.Collections.Generic.List[object]
+    $errObj = Get-WorkerPerfField $metaJson 'SourceErrors'
+    if ($null -ne $errObj -and $errObj -isnot [string] -and $errObj -isnot [ValueType]) {
+        foreach ($p in $errObj.PSObject.Properties) {
+            $count = 0
+            if (-not [int]::TryParse([string](Get-WorkerPerfField $p.Value 'Count'), [ref]$count) -or $count -lt 1) { continue }
+            $firstMs = $null
+            $ft = ConvertTo-WorkerPerfTimestamp ([string](Get-WorkerPerfField $p.Value 'FirstTime'))
+            if ($null -ne $ft) { $firstMs = $ft.ToUnixTimeMilliseconds() }
+            $sourceErrors.Add(@{ Source = [string]$p.Name; Count = $count; FirstMs = $firstMs; FirstMessage = [string](Get-WorkerPerfField $p.Value 'FirstMessage') })
+        }
+    }
+
+    # time range: clock time of the measured server. A tick is in the range when its own clock time (timestamp with
+    # its own offset) is; the limits as epoch milliseconds for the other files follow from the ticks in the range.
+    $hasFrom = ($From -gt [datetime]::MinValue); $hasTo = ($To -lt [datetime]::MaxValue)
+    $fromTicks = [long]::MinValue; $toTicks = [long]::MaxValue
+    if ($hasFrom) { $fromTicks = $From.Ticks }
+    if ($hasTo) { $toTicks = $To.Ticks }
+    if ($fromTicks -gt $toTicks) { throw '-From liegt nach -To.' }
 
     #region ticks
     $csv = Read-WorkerPerfCsvFile $Path 'ticks.csv'
@@ -135,18 +168,24 @@ function Import-WorkerPerfRun {
     $tickT = New-Object System.Collections.Generic.List[int]
     $tickMs = New-Object System.Collections.Generic.List[long]
     $cT = [int]$col['T']; $cTs = [int]$col['Timestamp']; $cEl = [int]$col['ElapsedSec']
-    $offsetMinutes = 0.0; $haveOffset = $false
+    $offsetMinutes = 0.0; $haveOffset = $false; $lastOffsetMinutes = 0.0
+    $badTicks = [int]$csv.Skipped                 # unreadable rows of ticks.csv: too few fields, or no readable number, time or duration
+    $firstWall = [long]::MinValue; $lastWall = [long]::MinValue      # clock time of the first and last readable tick of the file
     $numRef = [ref]0.0
     foreach ($f in $csv.Rows) {
         $t = 0
-        if (-not [int]::TryParse($f[$cT], [ref]$t)) { continue }
+        if (-not [int]::TryParse($f[$cT], [ref]$t)) { $badTicks++; continue }
         $dto = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParse($f[$cTs], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
+        if (-not [DateTimeOffset]::TryParse($f[$cTs], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { $badTicks++; continue }
         # a tick without a readable, finite duration does not exist for the model (like a row with too few fields)
-        if (-not [double]::TryParse($f[$cEl], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { continue }
+        if (-not [double]::TryParse($f[$cEl], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { $badTicks++; continue }
+        $wall = $dto.Ticks
+        if ($firstWall -eq [long]::MinValue) { $firstWall = $wall }
+        $lastWall = $wall
+        if ($wall -lt $fromTicks -or $wall -gt $toTicks) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
-        if ($ms -lt $fromMs -or $ms -gt $toMs) { continue }
-        if (-not $haveOffset) { $offsetMinutes = $dto.Offset.TotalMinutes; $haveOffset = $true }
+        $lastOffsetMinutes = $dto.Offset.TotalMinutes
+        if (-not $haveOffset) { $offsetMinutes = $lastOffsetMinutes; $haveOffset = $true }
         $tickT.Add($t); $tickMs.Add($ms)
         for ($i = 0; $i -lt $numIdx.Length; $i++) {
             # NaN when empty or unreadable; one reused reference costs less than [ref]$v per value
@@ -157,7 +196,20 @@ function Import-WorkerPerfRun {
         }
     }
     $nT = $tickT.Count
-    if ($nT -eq 0) { throw "Die Aufzeichnung enthaelt im gewaehlten Zeitraum keine Messung (ticks.csv ohne lesbare Takte)." }
+    if ($nT -eq 0) {
+        if ($firstWall -eq [long]::MinValue) { throw "Die Aufzeichnung enthaelt keine Messung (ticks.csv ohne lesbare Takte)." }
+        $range = ''
+        if ($hasFrom -and $hasTo) { $range = (Format-WorkerPerfWallClock $fromTicks) + ' bis ' + (Format-WorkerPerfWallClock $toTicks) }
+        elseif ($hasFrom) { $range = 'ab ' + (Format-WorkerPerfWallClock $fromTicks) }
+        else { $range = 'bis ' + (Format-WorkerPerfWallClock $toTicks) }
+        $own = (Format-WorkerPerfWallClock $firstWall) + ' bis ' + (Format-WorkerPerfWallClock $lastWall) + ', Ortszeit des Servers'
+        if ($fromTicks -gt $lastWall -or $toTicks -lt $firstWall) { throw "Der Zeitraum $range liegt ausserhalb der Aufzeichnung ($own)." }
+        throw "Im Zeitraum $range liegt kein Takt der Aufzeichnung ($own)."
+    }
+    # the limits as epoch milliseconds (snapshots, events, scans): clock time minus the offset of the first / last tick in the range
+    $fromMs = [long]::MinValue; $toMs = [long]::MaxValue
+    if ($hasFrom) { $fromMs = (New-Object DateTimeOffset ([DateTime]::SpecifyKind($From, [DateTimeKind]::Utc))).ToUnixTimeMilliseconds() - [long][Math]::Round($offsetMinutes * 60000.0) }
+    if ($hasTo) { $toMs = (New-Object DateTimeOffset ([DateTime]::SpecifyKind($To, [DateTimeKind]::Utc))).ToUnixTimeMilliseconds() - [long][Math]::Round($lastOffsetMinutes * 60000.0) }
     $raw = @{}
     for ($i = 0; $i -lt $numNames.Count; $i++) { $raw[$numNames[$i]] = $numLists[$i].ToArray() }
     $tickTArr = $tickT.ToArray()
@@ -200,15 +252,16 @@ function Import-WorkerPerfRun {
     $preP = New-Object System.Collections.Generic.List[int]          # snapshots before -From: they only build process state
     $preKind = New-Object System.Collections.Generic.List[string]
     foreach ($name in 'ElapsedSec', 'Sessions', 'ActiveSessions', 'Processes', 'RowsWritten', 'CollectMs') { $snapNum[$name] = New-Object System.Collections.Generic.List[double] }
+    $badSnaps = [int]$csv.Skipped                 # unreadable rows of snapshots.csv, counted like the ticks
     foreach ($f in $csv.Rows) {
         $p = 0; $t = 0
-        if (-not [int]::TryParse($f[[int]$col['P']], [ref]$p)) { continue }
-        if (-not [int]::TryParse($f[[int]$col['T']], [ref]$t)) { continue }
+        if (-not [int]::TryParse($f[[int]$col['P']], [ref]$p)) { $badSnaps++; continue }
+        if (-not [int]::TryParse($f[[int]$col['T']], [ref]$t)) { $badSnaps++; continue }
         $dto = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParse($f[[int]$col['Timestamp']], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { continue }
+        if (-not [DateTimeOffset]::TryParse($f[[int]$col['Timestamp']], $inv, [Globalization.DateTimeStyles]::None, [ref]$dto)) { $badSnaps++; continue }
         # a snapshot without a readable, finite duration is skipped like one with an unreadable time; its process rows
         # are then dropped as rows of a P without snapshot line
-        if (-not [double]::TryParse($f[[int]$col['ElapsedSec']], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { continue }
+        if (-not [double]::TryParse($f[[int]$col['ElapsedSec']], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { $badSnaps++; continue }
         $ms = $dto.ToUnixTimeMilliseconds()
         if ($ms -lt $fromMs) { $preP.Add($p); $preKind.Add($f[[int]$col['Kind']]); continue }
         if ($ms -gt $toMs) { continue }
@@ -823,6 +876,9 @@ function Import-WorkerPerfRun {
     $rowIo = New-Object System.Collections.Generic.List[double]
     $rowWs = New-Object System.Collections.Generic.List[double]
     $totalCpuMs = 0.0
+    # state carried over a -From cut: processes alive at position 0 without a row there, with their working set (KB)
+    $carriedK = New-Object System.Collections.Generic.List[int]
+    $carriedWs = New-Object System.Collections.Generic.List[double]
 
     # Called once per process when it first counts in the range (position $Pos): links session, application and pair
     # and adds its current state to their sums. $Carried: the state from before the range holds at $Pos (no row there).
@@ -938,7 +994,11 @@ function Import-WorkerPerfRun {
                     foreach ($k in $alive) { if ($pState[$k] -eq 1) { $still.Add($k) } }
                     $alive = $still
                 }
-                if ($pos -eq 0) { foreach ($k in $alive) { if ($pState[$k] -eq 1 -and $pSess[$k] -lt 0) { & $attachProcess $k 0 $true } } }
+                if ($pos -eq 0) {
+                    foreach ($k in $alive) {
+                        if ($pState[$k] -eq 1 -and $pSess[$k] -lt 0) { & $attachProcess $k 0 $true; $carriedK.Add($k); $carriedWs.Add($pWs[$k]) }
+                    }
+                }
                 if ($pos -ge 0) {
                     foreach ($si in $usedSess) { $sWsA[$si][$pos] = $sWs[$si]; $sPrivA[$si][$pos] = $sPriv[$si]; $sNA[$si][$pos] = $sN[$si] }
                     for ($ai = 0; $ai -lt $apps.Count; $ai++) { $aWsA[$ai][$pos] = $aWs[$ai]; $aPrivA[$ai][$pos] = $aPriv[$ai]; $aNA[$ai][$pos] = $aN[$ai] }
@@ -1083,6 +1143,9 @@ function Import-WorkerPerfRun {
         Proc = $procs
         Pairs = $pairs
         Rows = @{ Start = $rowStart; K = $rowK.ToArray(); CpuMs = $rowCpu.ToArray(); Io = $rowIo.ToArray(); WsKB = $rowWs.ToArray() }
+        Carried = @{ K = $carriedK.ToArray(); WsKB = $carriedWs.ToArray() }
+        Unreadable = @{ Ticks = $badTicks; Snapshots = $badSnaps }
+        SourceErrors = $sourceErrors.ToArray()
         TotalCpuMs = $totalCpuMs
         MainApp = $mainApp
         Citrix = $citrix.ToArray()

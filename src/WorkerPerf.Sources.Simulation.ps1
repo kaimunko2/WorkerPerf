@@ -11,10 +11,12 @@ $script:WorkerPerfSimCollectorPid = 4242
 $script:WorkerPerfSimDomain = 'CONTOSO'
 
 # Scenario windows in seconds after the start; a window A-B holds for A < t <= B.
+# The memory window ends off the snapshot grid (18:51): the growing process exits between two snapshots, one second
+# after the last tick over the threshold, so the last snapshot of the incident no longer contains it.
 $script:WorkerPerfSimWindows = [ordered]@{
     homeoffice = @{ A = 0.0; B = 3600.0 }
     cpu        = @{ A = 300.0; B = 420.0 }
-    memory     = @{ A = 900.0; B = 1140.0 }
+    memory     = @{ A = 900.0; B = 1131.0 }
     disk       = @{ A = 1500.0; B = 1590.0 }
     share      = @{ A = 1980.0; B = 2040.0 }
     profile    = @{ A = 2400.0; B = 2460.0 }

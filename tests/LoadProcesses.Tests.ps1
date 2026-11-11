@@ -51,14 +51,21 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
         $m.Proc[1].LastP | Should -Be 2
     }
     It 'beginnt einen Zeitausschnitt am vorhergehenden Stuetzpunkt' {
-        $m = Import-TestRun 'cut' $Files @{ From = $Base.AddSeconds(11).LocalDateTime }
+        $m = Import-TestRun 'cut' $Files @{ From = $Base.AddSeconds(11).DateTime }
         $a = $m.Sessions | Where-Object User -eq 'alice'
         $m.Snap.N | Should -Be 2; $a.Ws | Should -Be @(153600, 266240); $a.CpuMs | Should -Be @(0, 140); $m.Proc[0].CpuMs | Should -Be 100
+    }
+    It 'gibt den vor dem Zeitausschnitt fortgefuehrten Stand je Prozess weiter' {              # Abschlussrunde I5
+        $m = Import-TestRun 'carry' $Files @{ From = $Base.AddSeconds(11).DateTime }
+        $state = @{}; for ($i = 0; $i -lt $m.Carried.K.Length; $i++) { $state[[int]$m.Carried.K[$i]] = $m.Carried.WsKB[$i] }
+        @($state.Keys | Sort-Object) | Should -Be @(0, 2, 3)                            # K1 endet am ersten Schnappschuss des Ausschnitts, K4 beginnt spaeter
+        $state[0] | Should -Be 102400; $state[2] | Should -Be 51200; $state[3] | Should -Be 20480
+        $script:M.Carried.K.Length | Should -Be 0                                              # ohne Ausschnitt wird nichts fortgefuehrt
     }
     It 'zaehlt den Stand vor dem Zeitausschnitt nicht als Hoechstwert' {
         $f = $Files.Clone()
         $f['processes.csv'] = @('0,0,0,921600,921600,0,0,0,10,2', '3,0,0,51200,51200,0,0,0,10,2')
-        $m = Import-TestRun 'cutmax' $f @{ From = $Base.AddSeconds(15).LocalDateTime }
+        $m = Import-TestRun 'cutmax' $f @{ From = $Base.AddSeconds(15).DateTime }
         $m.Snap.N | Should -Be 1
         $m.Proc[0].WsMaxKB | Should -Be 51200; $m.Proc[0].PrivMaxKB | Should -Be 51200
     }

@@ -47,6 +47,15 @@ BeforeAll {
            Resources = @($(if ($Type -eq 'engpass') { $Resource })); Findings = @($f); ChronicContext = @() }
     }
     function Add-Detail($Model, $Incident) { Add-WorkerPerfIncidentDetail -Incidents @($Incident) -Model $Model -Thresholds $Th }
+    function Get-Text($Model, $Incident, $Unmeasured = $null) { Get-WorkerPerfIncidentText -Incident $Incident -Model $Model -Thresholds $Th -Texts $Texts -Unmeasured $Unmeasured }
+    function Set-SecurityLoad($Model, [double]$Ms) { $Model.Rows.CpuMs[5] = $Ms; $Model.Rows.CpuMs[8] = $Ms }      # MsMpEng.exe in P1 und P2
+    function New-FlatModel {                                 # zwoelf Anwendungen mit je 8,3 % der CPU-Zeit, keine Schutzsoftware
+        $m = New-TestModel
+        $m.Proc = @(0..11 | ForEach-Object { @{ K = $_; Pid = 100 + $_; Name = "app$_.exe"; SessionIndex = ($_ % 2); AppIndex = 10 + $_; Role = ''; RoleLabel = ''; IsCollector = $false; FirstP = 0; LastP = 3 } })
+        $m.Rows = @{ Start = [int[]](0, 12, 24, 36, 48); K = [int[]](0..47 | ForEach-Object { $_ % 12 }); CpuMs = [double[]](0..47 | ForEach-Object { 1000 })
+                     Io = (New-Object double[] 48); WsKB = [double[]](0..47 | ForEach-Object { 1024 }) }
+        $m
+    }
 }
 Describe 'Add-WorkerPerfIncidentDetail' {
     It 'nennt Betroffene, Verursacher mit Normalwert und den Begleiter' {
@@ -165,5 +174,131 @@ Describe 'Begleiter' {
         $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
         $i.Companion | Should -BeNullOrEmpty; $i.Security.TotalPct | Should -BeGreaterThan 0
         $i.Contributors['cpu'].Processes[2].Role | Should -Be 'Sicherheit'
+    }
+}
+Describe 'Speicher: Verursacher endet im Fenster' {                             # Abschlussrunde C1
+    It 'nennt einen Prozess, der im Fenster waechst und endet, als Hauptverursacher' {
+        $mb = 1024.0; $m = New-TestModel -Memory
+        # K0 waechst in P1 auf 600 MB und endet vor P2; das Fenster trifft P1 und P2
+        $m.Rows = @{ Start = [int[]](0, 3, 4, 4, 4); K = [int[]](0, 1, 2, 0); CpuMs = [double[]](0, 0, 0, 0); Io = [double[]](0, 0, 0, 0)
+                     WsKB = [double[]]((100 * $mb), (300 * $mb), (100 * $mb), (600 * $mb)) }
+        $m.Proc[0].LastP = 1; $m.Sessions[0].Ws = [double[]]((100 * $mb), (600 * $mb), 0, 0)
+        $i = New-TestIncident 'memory' 'mem.used' 93
+        $i.Findings[0].StartMs = [long]($T0 + 16000); $i.StartMs = $i.Findings[0].StartMs
+        Add-Detail $m $i; $c = $i.Contributors['memory']
+        $c.Main.App | Should -Be 'EXCEL.EXE'; $c.Main.User | Should -Be 'user017'; $c.Main.SharePct | Should -Be 60; $c.Main.GrowthMB | Should -Be 500
+        $c.Processes[0].K | Should -Be 0; $c.Sessions[0].SessionIndex | Should -Be 0
+        Get-Text $m $i | Should -Match 'Hauptverursacher: EXCEL\.EXE in der Sitzung von user017 mit 60 % des Arbeitsspeichers aller Prozesse \(Working Set\)'
+    }
+    It 'nimmt den Stand vor dem Schnitt als Ausgangswert' {                            # Abschlussrunde I5
+        $mb = 1024.0; $m = New-TestModel -Memory
+        # wie nach einem Schnitt: K1 und K2 haben im Zeitraum keine Zeile, ihr Stand kommt aus der Zeit davor
+        $m.Rows = @{ Start = [int[]](0, 1, 1, 2, 2); K = [int[]](0, 0); CpuMs = [double[]](0, 0); Io = [double[]](0, 0); WsKB = [double[]]((100 * $mb), (600 * $mb)) }
+        $m.Carried = @{ K = [int[]](1, 2); WsKB = [double[]]((300 * $mb), (100 * $mb)) }
+        $i = New-TestIncident 'memory' 'mem.used' 93
+        $i.Findings[0].StartMs = [long]($T0 + 31000); $i.StartMs = $i.Findings[0].StartMs
+        Add-Detail $m $i; $c = $i.Contributors['memory']
+        $c.Main.App | Should -Be 'EXCEL.EXE'; $c.Main.SharePct | Should -Be 60
+        $c.Processes[1].K | Should -Be 1; $c.Processes[1].SharePct | Should -Be 30
+    }
+}
+Describe 'Hauptverursacher, Untergrenze und Schutzsoftware als groesster Verbraucher' {   # Abschlussrunde I1
+    It 'nennt die Schutzsoftware mit dem groessten Anteil als groessten Verbraucher und den Scan' {
+        $m = New-TestModel; Set-SecurityLoad $m 20000; $m.Scans = @(@{ StartMs = $T0; EndMs = $T0 + 20000 })
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'security'; $i.Cause.Security.Label | Should -Be 'Microsoft Defender'; $i.Cause.Security.SharePct | Should -Be 73.8
+        $i.Cause.Main.App | Should -Be 'EXCEL.EXE'; $i.Cause.Scan | Should -BeTrue; $i.Companion | Should -BeNullOrEmpty
+        Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
+            'Größter Verbraucher: Microsoft Defender mit 74 % der CPU-Zeit. Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen. ' +
+            'Größter Anteil außerhalb der Schutzsoftware: EXCEL.EXE in der Sitzung von user017 mit 15 % der CPU-Zeit (sonst 2 %).')
+    }
+    It 'raet ohne Scan zu Scan-Ausschluessen und nennt keinen Anteil unter der Untergrenze' {
+        $m = New-TestModel; Set-SecurityLoad $m 20000
+        foreach ($r in 3, 4, 6, 7) { $m.Rows.CpuMs[$r] = 100 }                         # EXCEL und chrome im Fenster fast ohne CPU-Zeit
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'security'; $i.Cause.Main | Should -BeNullOrEmpty; $i.Contributors['cpu'].Main | Should -BeNullOrEmpty
+        Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
+            'Größter Verbraucher: Microsoft Defender mit 99 % der CPU-Zeit. Scan-Ausschlüsse prüfen.')
+    }
+    It 'bleibt beim Hauptverursacher mit Begleiter, solange die Schutzsoftware nicht den groesseren Anteil hat' {
+        $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'main'; $i.Cause.Main.App | Should -Be 'EXCEL.EXE'; $i.Companion.Label | Should -Be 'Microsoft Defender'
+    }
+    It 'nennt keinen Hauptverursacher, wenn kein Anteil die Untergrenze erreicht' {
+        $m = New-FlatModel; $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'none'; $i.Contributors['cpu'].Main | Should -BeNullOrEmpty; $i.Contributors['cpu'].Processes[0].SharePct | Should -Be 8.3
+        Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
+            'Kein einzelner Hauptverursacher: kein Prozess erreicht 10 % der CPU-Zeit.')
+    }
+    It 'sagt es, wenn im Fenster keine Prozessdaten vorliegen' {
+        $m = New-TestModel; $m.Proc = @(); $m.Rows = @{ Start = [int[]](0, 0, 0, 0, 0); K = [int[]]@(); CpuMs = [double[]]@(); Io = [double[]]@(); WsKB = [double[]]@() }
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'nodata'
+        Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
+            'Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.')
+    }
+    It 'nennt den Anteil am Profilcontainer als Anteil der Sitzung' {                  # Abschlussrunde Minor 15
+        $m = New-TestModel; $i = New-TestIncident 'profile' 'disk.latency' 45
+        $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1; Add-Detail $m $i
+        $i.Contributors['profile'].Scope | Should -Be 'session'
+        Get-Text $m $i | Should -Match 'Hauptverursacher: chrome\.exe in der Sitzung von user018 mit 100 % der I/O-Menge dieser Sitzung \(sonst 100 %\)\.'
+    }
+}
+Describe 'Nicht gemessene Signale im Klartext' {                                    # Abschlussrunde I3
+    BeforeAll {
+        function New-OneSeries([string]$Id, [string]$Resource) {
+            @{ Id = $Id; Instance = ''; Label = $Th[$Id].label; Resource = $Resource; Scope = 'global'; SessionIndex = -1
+               TimeMs = [long[]](1..5 | ForEach-Object { $T0 + $_ * 2000 }); ElapsedSec = [double[]](2, 2, 2, 2, 2); Value = [double[]](50, 50, 50, 50, 50); Ops = $null }
+        }
+    }
+    It 'leitet die nicht gemessenen Signale aus dem Soll-Ist-Vergleich ab' {
+        $rows = @(Get-WorkerPerfSollIst -Series @((New-OneSeries 'cpu.host' 'cpu'), (New-OneSeries 'ica.rtt' 'network')) -Thresholds $Th)
+        $u = Get-WorkerPerfUnmeasured -SollIst $rows
+        $u.Input | Should -BeTrue
+        $u.Worker | Should -Be @($Th['cpu.queue'].label, $Th['cpu.steal'].label, $Th['mem.used'].label, $Th['mem.commit'].label, $Th['mem.pagesin'].label, $Th['disk.latency'].label, $Th['smb.latency'].label)
+        $all = @($Th.Keys | ForEach-Object { New-OneSeries $_ 'cpu' })
+        $none = Get-WorkerPerfUnmeasured -SollIst @(Get-WorkerPerfSollIst -Series $all -Thresholds $Th)
+        $none.Input | Should -BeFalse; @($none.Worker).Count | Should -Be 0
+    }
+    It 'sagt bei nicht gemessener Eingabeverzoegerung, dass Betroffene nicht bestimmbar sind' {
+        $m = New-TestModel; $m.Sessions[0].Input[10] = 0; $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        Get-Text $m $i | Should -Match ([regex]::Escape('Soll unter 75 %). Keine Sitzung mit messbarer Eingabeverzögerung. Hauptverursacher:'))
+        Get-Text $m $i @{ Input = $true; Worker = @() } | Should -Match ([regex]::Escape('Soll unter 75 %). Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar. Hauptverursacher:'))
+    }
+    It 'schliesst einen Engpass in nicht gemessenen Worker-Ressourcen nicht aus' {
+        $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; Add-Detail $m $i
+        $u = @{ Input = $false; Worker = @($Th['disk.latency'].label, $Th['smb.latency'].label) }
+        Get-Text $m $i $u | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Worker (Spitze 300 ms, Soll unter 150 ms). ' +
+            'Betroffen: 1 Sitzung. Höchste Verzögerung in EXCEL.EXE (user017). ' +
+            'Kein Engpass in den gemessenen Worker-Ressourcen. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen. Gegenstelle DB: 350 ms.')
+        Get-Text $m $i @{ Input = $false; Worker = @() } | Should -Match 'Die Ursache liegt außerhalb des Workers'
+    }
+}
+Describe 'Belege bei Umfeld und Dauerzustand' {                                     # Abschlussrunde I2
+    It 'nennt beim Dauerzustand der Netzstrecke einer Sitzung nichts von anderen Sitzungen' {
+        $m = New-TestModel
+        $m.Sessions[0].Rtt = [double[]](250, 250, 250, 250); $m.Sessions[1].Rtt = [double[]](300, 300, 300, 300)
+        $m.Events = @(@{ TimeMs = $T0 + 20000; Kind = 'applocker-block' }); $m.Scans = @(@{ StartMs = $T0; EndMs = $T0 + 20000 })
+        $i = New-TestIncident 'network' 'ica.rtt' 300; $i.Type = 'umfeld'; $i.Lead = $null; $i.Chronic = $true
+        $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1; Add-Detail $m $i
+        @($i.DelayProcesses).Count | Should -Be 0                                    # EXCEL.EXE gehoert zu Sitzung 0
+        @($i.Endpoints).Count | Should -Be 0; @($i.Events).Count | Should -Be 0; $i.ScanActive | Should -BeFalse
+        @($i.Ica).Count | Should -Be 1; $i.Ica[0].SessionIndex | Should -Be 1
+    }
+    It 'behaelt Prozesse der eigenen Sitzung und Gegenstellen mit eigenem Befund' {
+        $m = New-TestModel
+        $m.InputProc = @{ TickPos = [int[]]@(10, 10); SessionIndex = [int[]]@(0, 1); Pid = [int[]]@(100, 200); Name = [string[]]@('EXCEL.EXE', 'chrome.exe'); DelayMs = [double[]]@(300, 200); K = [int[]]@(0, 1) }
+        $i = New-TestIncident 'network' 'ica.rtt' 300; $i.Type = 'umfeld'; $i.Lead = $null
+        $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1
+        $ep = @{ SignalId = 'probe.connect'; Resource = 'endpoint'; Instance = 'DB'; Label = 'DB'; Scope = 'global'; SessionIndex = -1; StartMs = $i.StartMs; EndMs = $i.EndMs
+                 Severity = 2; PeakValue = 350.0; PeakTimeMs = $i.StartMs; BadPoints = 3 }
+        $i.Findings = @($i.Findings[0], $ep); Add-Detail $m $i
+        @($i.DelayProcesses).Count | Should -Be 1; $i.DelayProcesses[0].Name | Should -Be 'chrome.exe'
+        @($i.Endpoints).Count | Should -Be 1; $i.Endpoints[0].Name | Should -Be 'DB'
+    }
+    It 'laesst die Belege eines Engpasses unveraendert' {
+        $m = New-TestModel; $m.Events = @(@{ TimeMs = $T0 + 20000; Kind = 'applocker-block' }); $m.Scans = @(@{ StartMs = $T0; EndMs = $T0 + 20000 })
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        @($i.DelayProcesses).Count | Should -Be 1; @($i.Endpoints).Count | Should -Be 1; @($i.Events).Count | Should -Be 1; $i.ScanActive | Should -BeTrue
     }
 }
