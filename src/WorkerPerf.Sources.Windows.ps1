@@ -536,6 +536,14 @@ function New-WorkerPerfProfileMap {
     return @{ Entries = $entries; Known = $knownSet }
 }
 
+function Get-WorkerPerfUpmMountUser([string]$Instance) {
+    # User of a LogicalDisk instance under the Citrix UPM mount path "...\Users\<user>_UPM_local\UpmTempMount[\...]",
+    # or $null for any other volume.
+    $m = [regex]::Match($Instance, '\\Users\\([^\\]+)_UPM_local\\UpmTempMount(\\|$)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($m.Success) { return $m.Groups[1].Value }
+    return $null
+}
+
 function Get-WorkerPerfUnknownVolumes {
     # LogicalDisk instances (without totals) that the profile map did not know when it was built.
     param([string[]]$Instances, $Map)
@@ -599,7 +607,10 @@ function ConvertTo-WorkerPerfWinFastSample {
     # instance (the whole VM, as the probe found it) divided by the number of logical processors.
     # Only a volume the profile map identifies as a container is 'profile'; one mounted since the last build is an
     # ordinary 'disk' until the next rebuild, so that it cannot raise a profile container finding by mistake.
-    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1)
+    # A volume the map does not identify (mounted since its last build) is 'profile' only when its LogicalDisk instance
+    # is a Citrix UPM mount path; its session comes from the "<user>_UPM_local" folder when that user has exactly one
+    # session in Sessions. Every other volume is 'disk'.
+    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1, [object[]]$Sessions = @())
 
     $mb = 1048576.0
     $avail = Get-WorkerPerfWinHostValue $Values 'memory' 'Available Bytes' 'first'
@@ -607,6 +618,7 @@ function ConvertTo-WorkerPerfWinFastSample {
     $limit = Get-WorkerPerfWinHostValue $Values 'memory' 'Commit Limit' 'first'
 
     $volumes = New-Object System.Collections.Generic.List[object]
+    $userIndex = $null
     $rOps = Get-WorkerPerfWinGroup $Values 'volumes' 'Disk Reads/sec'
     if ($null -ne $rOps) {
         $rLat = Get-WorkerPerfWinGroup $Values 'volumes' 'Avg. Disk sec/Read'
@@ -621,6 +633,14 @@ function ConvertTo-WorkerPerfWinFastSample {
             if ($null -ne $ProfileMap -and $ProfileMap.Entries.ContainsKey($name)) {
                 $e = $ProfileMap.Entries[$name]
                 $kind = $e.Kind; $sid = $e.SessionId; $backing = $e.Backing
+            }
+            else {
+                $upmUser = Get-WorkerPerfUpmMountUser $name
+                if ($null -ne $upmUser) {
+                    $kind = 'profile'
+                    if ($null -eq $userIndex) { $userIndex = New-WorkerPerfUserIndex $Sessions }
+                    if ($userIndex.ContainsKey($upmUser) -and $userIndex[$upmUser].Count -eq 1) { $sid = $userIndex[$upmUser][0] }
+                }
             }
             $volumes.Add([pscustomobject]@{
                     Volume = $name; Kind = $kind; SessionId = $sid; Backing = $backing
@@ -1240,13 +1260,18 @@ function Get-WorkerPerfFastSample {
         $st.Prev[$key] = $current
         if ($key -eq 'volumes') { $volumeNames = [string[]]@(Get-WorkerPerfWinInstanceNames $current 'Disk Reads/sec') }
     }
+    $sessions = @()
     if ($null -ne $volumeNames) {
         # a new instance (for example a container mounted at a logon) is mapped by the next regular snapshot
         $st.VolumeNames = $volumeNames
         if ($null -ne $st.Map -and @(Get-WorkerPerfUnknownVolumes -Instances $volumeNames -Map $st.Map).Count -gt 0) { $st.MapPending = $true }
+        # until then a UPM mount path not in the map gets its session from the sessions of now (WTS, a few ms)
+        foreach ($n in $volumeNames) {
+            if ($null -ne $st.Map -and -not $st.Map.Entries.ContainsKey($n) -and $null -ne (Get-WorkerPerfUpmMountUser $n)) { $sessions = @(Get-WinSessionRaw); break }
+        }
     }
 
-    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map -LogicalProcessors $st.LogicalProcessors
+    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map -LogicalProcessors $st.LogicalProcessors -Sessions $sessions
 }
 
 function Get-WorkerPerfSnapshot {

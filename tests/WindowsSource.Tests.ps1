@@ -177,6 +177,29 @@ Describe 'Windows-Datenquelle: Umrechnung der Leistungsindikatoren' {
         @($S.InputProcesses).Count | Should -Be 2
         ($S.InputProcesses | Where-Object Pid -eq 7964).Name | Should -Be 'EXCEL.EXE'
     }
+    It 'erkennt einen seit der Zuordnung eingehaengten UPM-Container am Einhaengepfad' {
+        $root = 'C:\Users\neu_UPM_local\UpmTempMount'
+        $ost = $root + '\Profiles\neu\AppData\Local\Microsoft\Outlook'
+        $v = $Values.Clone()
+        $lat = @{ 'C:' = 0.002; $root = 0.03; $ost = 0.02; 'E:' = 0.001; 'C:\Daten\Einhaengepunkt' = 0.001 }
+        $v.volumes = @{}
+        foreach ($c in 'Avg. Disk sec/Read', 'Avg. Disk sec/Write', 'Disk Reads/sec', 'Disk Writes/sec', 'Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Current Disk Queue Length') { $v.volumes[$c] = $lat.Clone() }
+        $sessions = @([pscustomobject]@{ SessionId = 8; User = 'neu' }, [pscustomobject]@{ SessionId = 9; User = 'andere' })
+        $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $Map -Sessions $sessions
+        foreach ($n in $root, $ost) {
+            $vol = $x.Volumes | Where-Object Volume -eq $n
+            $vol.Kind | Should -Be 'profile'; $vol.SessionId | Should -Be 8; $vol.Backing | Should -Be ''
+        }
+        ($x.Volumes | Where-Object Volume -eq 'E:').Kind | Should -Be 'disk'
+        ($x.Volumes | Where-Object Volume -eq 'C:\Daten\Einhaengepunkt').Kind | Should -Be 'disk'
+        $two = @($sessions + [pscustomobject]@{ SessionId = 11; User = 'NEU' })
+        $y = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $Map -Sessions $two
+        $vol = $y.Volumes | Where-Object Volume -eq $root
+        $vol.Kind | Should -Be 'profile'; $vol.SessionId | Should -BeNullOrEmpty         # zwei Sitzungen: keine Zuordnung
+        $z = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $Map
+        ($z.Volumes | Where-Object Volume -eq $root).SessionId | Should -BeNullOrEmpty
+        ($z.Volumes | Where-Object Volume -eq $root).Kind | Should -Be 'profile'
+    }
     It 'meldet eine fehlende Kategorie als leere Werte, ohne abzubrechen' {
         $v = $Values.Clone(); $v.cpu = $null; $v.volumes = $null; $v.inputProcess = $null; $v.steal = $null
         $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null -LogicalProcessors 6
@@ -344,7 +367,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
         $script:WinFake.DiskQueries | Should -Be $builds                                # nie im schnellen Takt
         $n = $s.Volumes | Where-Object Volume -eq 'C:\Users\neu_UPM_local\UpmTempMount'
-        $n.Kind | Should -Be 'disk'; $n.SessionId | Should -BeNullOrEmpty               # erst die Zuordnung macht es zum Container
+        $n.Kind | Should -Be 'profile'; $n.SessionId | Should -Be 3                      # am UPM-Einhaengepfad erkannt, noch ohne Neuaufbau
         [void](Get-WorkerPerfSnapshot -Kind B)
         $script:WinFake.DiskQueries | Should -Be $builds                                # nicht im verdichteten Schnappschuss
         [void](Get-WorkerPerfSnapshot -Kind R)
