@@ -57,6 +57,7 @@ Regeln:
 
 - **Kopf:** nennt die weggelassenen Kategorien.
 - **Vorfälle:** werden aus der Basis weiter erkannt. Fehlt die Kategorie, aus der ein Teil der Erklärung käme, steht dort der Grund, zum Beispiel beim Verursacher: „Prozesse wurden bei dieser Messung nicht erfasst."
+- **Vorfälle aus weggelassenen Signalen:** Ein Vorfall, dessen auslösendes Signal zu einer weggelassenen Kategorie gehört (Antwortzeit eines Laufwerks oder einer Freigabe, ICA-Werte), erscheint nur, soweit ihn ein Signal der Basis zeigt, etwa als Eingabeverzögerung ohne erkannten Engpass. Der Grund steht dabei; der Vorfall wird nicht als „ohne Engpass" gedeutet.
 - **Abschnitte:** Ein Abschnitt, dessen Kategorie fehlt, zeigt „nicht gemessen" statt einer leeren Tabelle oder „keine Auffälligkeiten".
 - **Soll-Ist und Kennzahlen:** Signale einer weggelassenen Kategorie zählen weder als erfüllt noch als verletzt.
 - **Muster der Ereignisvorfälle:** Ein Muster, das eine fehlende Kategorie bräuchte, wird nicht gebildet und nicht als „trifft nicht zu" gezählt.
@@ -76,7 +77,7 @@ Der Collector lehnt keine Kombination ab; der Bericht benennt, was fehlt.
 - Jede Kategorie einzeln und alle zusammen weggelassen: Die Aufzeichnung ist gültig, der Bericht entsteht ohne Fehler, und die Seite zeigt keine Skriptfehler.
 - Die Quelle einer weggelassenen Kategorie wird nicht aufgerufen (geprüft an der Simulation und an den Windows-Platzhaltern).
 - Der Bericht zeigt je Kategorie „nicht gemessen" an den abhängigen Stellen; kein Signal der Kategorie zählt im Soll-Ist.
-- Die Basis läuft bei jeder Kombination; die Vorfälle der Basis sind dieselben wie im vollständigen Lauf.
+- Die Basis läuft bei jeder Kombination; die Zeitfenster der Vorfälle, die ein Signal der Basis zeigt, sind dieselben wie im vollständigen Lauf. Vorfälle, deren auslösendes Signal weggelassen wurde, ändern ihre Art wie in Abschnitt 5 beschrieben.
 - `-NoCitrix` und `-Skip Citrix` ergeben dieselbe Aufzeichnung; ebenso `-EventLookbackDays 0` und `-Skip Rueckblick`.
 - Ein unbekannter Wert wird mit den gültigen Werten in der Meldung abgelehnt.
 - Ohne `-Skip` ist die Aufzeichnung der simulierten Stunde dieselbe wie bisher, bis auf die neue Angabe in `meta.json`.
