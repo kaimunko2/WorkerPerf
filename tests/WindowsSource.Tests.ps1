@@ -736,7 +736,30 @@ $tb = @($xb.QueryList.Query.Select)[0].InnerText; $te = @($xe.QueryList.Query.Se
         $info.Sources['ica.rtt'].Available | Should -BeFalse; $info.Sources['ica.latency'].Available | Should -BeFalse
         $info.Sources['probe.connect'].Available | Should -BeFalse
         $info.Sources['events.applocker'].Available | Should -BeFalse; $info.Sources['events.defender'].Available | Should -BeTrue
-        (Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -NoCitrix 3>$null).Sources['ica.rtt'].Detail | Should -Match 'NoCitrix'
+        # Aussage geaendert (Messkategorien, Task 2): den Vermerk eines weggelassenen Citrix setzt der Collector fuer beide Quellen gleich
+        (Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -Skip Citrix 3>$null).Sources.Contains('ica.rtt') | Should -BeFalse
+    }
+    It 'macht fuer <Skip> keinen Windows-Aufruf der Kategorie' -TestCases @(
+        @{ Skip = 'Prozesse'; Action = { Get-WorkerPerfFastSample; Get-WorkerPerfSnapshot -Kind K; Get-WorkerPerfServices }; Absent = 'Win32_Process|Win32_Service|Input Delay per Process' }
+        @{ Skip = 'Laufwerke'; Action = { Get-WorkerPerfFastSample; Get-WorkerPerfSnapshot -Kind K }; Absent = 'LogicalDisk|SMB Client Shares|MSFT_Disk|MSFT_Partition' }
+        @{ Skip = 'Citrix'; Action = { Get-WorkerPerfSnapshot -Kind K }; Absent = 'ICA Session|Citrix_Euem' }
+        @{ Skip = 'Ereignisse'; Action = { Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) }; Absent = '^winevent:read' }
+        @{ Skip = 'Rueckblick'; Action = { Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) }; Absent = '^winevent:read' }
+        @{ Skip = 'Drucken'; Action = { Get-WorkerPerfPrintDrivers; Get-WorkerPerfPrintQueues }; Absent = 'MSFT_PrinterDriver|Print Queue|^registry:print' }
+    ) {
+        $calls = { param([string[]]$s) Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $s 3>$null); [void](& $Action 3>$null); @($script:WinFake.Calls.Keys) }
+        @(& $calls @() | Where-Object { $_ -match $Absent }).Count | Should -BeGreaterThan 0   # gemessen: die Aufrufe sind zu sehen
+        @(& $calls @($Skip) | Where-Object { $_ -match $Absent }) | Should -BeNullOrEmpty
+    }
+    It 'laesst ohne alle Kategorien nur die Aufrufe der Basis uebrig und baut keine Verbindung auf' {   # Review Focus 1
+        $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep -Skip Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen 3>$null
+        [void](Get-WorkerPerfFastSample); $snap = Get-WorkerPerfSnapshot -Kind K; $s = Get-WorkerPerfFastSample
+        Start-WorkerPerfProbes -Endpoints $ep; $script:WinProbe | Should -BeNullOrEmpty; @($info.Endpoints).Count | Should -Be 0
+        @($script:WinFake.Calls.Keys | Where-Object { $_ -match 'Win32_Process|Win32_Service|per Process|LogicalDisk|SMB Client|MSFT_|ICA Session|Citrix_Euem|Print Queue|^winevent|^registry:print' }) | Should -BeNullOrEmpty
+        $s.CpuPct | Should -Be 27.5; @($s.InputSessions).Count | Should -Be 2; @($snap.Sessions).Count | Should -Be 2; @($snap.Processes).Count | Should -Be 0
+        foreach ($id in 'process', 'disk.latency', 'ica.rtt', 'print.drivers', 'probe.connect', 'events.application') { $info.Sources.Contains($id) | Should -BeFalse -Because $id }
+        $info.Sources['input.session'].Available | Should -BeTrue
     }
     It 'liefert den schnellen Messwert ab der zweiten Lesung' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)

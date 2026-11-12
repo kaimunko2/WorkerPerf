@@ -316,7 +316,7 @@ Describe 'Zeitplan ueber das Ende der Sommerzeit' -Skip:(-not [TimeZoneInfo]::Lo
         $startUtc = $switch.AddMinutes(-45).Ticks
         $capture = New-PatchedSource (Join-Path $TestDrive 'srcdst') @"
 `$script:TestInit = `${function:Initialize-WorkerPerfSource}
-function Initialize-WorkerPerfSource { param([datetime]`$StartTime, [object[]]`$Endpoints = @(), [string]`$CitrixMetricFilter = '', [switch]`$IncludeCommandLine, [switch]`$NoCitrix)
+function Initialize-WorkerPerfSource { param([datetime]`$StartTime, [object[]]`$Endpoints = @(), [string]`$CitrixMetricFilter = '', [switch]`$IncludeCommandLine, [string[]]`$Skip = @())
     & `$script:TestInit -StartTime (New-Object DateTime ($startUtc, [DateTimeKind]::Utc)).ToLocalTime() -Endpoints `$Endpoints -CitrixMetricFilter `$CitrixMetricFilter }
 "@
         $run = (& $capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'dst') 6>$null 3>$null) | Select-Object -Last 1

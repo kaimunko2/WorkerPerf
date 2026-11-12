@@ -164,7 +164,7 @@ if ($leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoi
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$IncludeCommandLine -NoCitrix:($leftOut -contains 'Citrix') -EventConfig $eventConfig
+    -IncludeCommandLine:$IncludeCommandLine -Skip $leftOut -EventConfig $eventConfig
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 

@@ -376,6 +376,9 @@ $script:WorkerPerfWinCounters = [ordered]@{
     inputProcess = @{ Category = 'User Input Delay per Process'; Counters = @('Max Input Delay'); Mode = 'ZeroUnchanged' }
 }
 
+# Counter groups that belong to a category of the capture (-Skip); the others are the base and always read.
+$script:WorkerPerfWinCounterCategories = @{ volumes = 'Laufwerke'; shares = 'Laufwerke'; inputProcess = 'Prozesse' }
+
 # Signal id -> counter group. Order of the signal ids as in meta.json of the simulation.
 $script:WorkerPerfWinSignalGroups = [ordered]@{
     'cpu.host' = 'cpu'; 'cpu.queue' = 'queue'; 'cpu.steal' = 'steal'; 'mem.used' = 'memory'; 'mem.commit' = 'memory'; 'mem.pagesin' = 'memory'
@@ -1365,19 +1368,30 @@ function Update-WorkerPerfProfileMap($State, [object[]]$Sessions) {
 
 #region ---------- data source interface ------------------------------------------------------------------------------
 
+function Test-WorkerPerfWinMeasured([string]$Category) {
+    # $false when -Skip left the category out of this capture (before the start every category counts as measured).
+    $st = $script:WinState
+    return ($null -eq $st -or @($st.Skip) -notcontains $Category)
+}
+
 function Initialize-WorkerPerfSource {
-    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix,
+    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
           [object]$EventConfig = $null)
     # StartTime exists for the common interface: the clock of this source is the system clock. EventConfig: the event
     # catalogue (Read-WorkerPerfEventConfig); without it the source reads events.json next to this file.
+    # Skip: the categories left out (Resolve-WorkerPerfSkip). For them the source checks and opens nothing, makes no
+    # Windows call later and writes no entry into Sources (the collector notes them). The logs events.<id> belong to
+    # Ereignisse and Rueckblick together: they are checked while either of the two is measured.
 
+    $leftOut = [string[]]@($Skip | Where-Object { $_ })
+    $withEventLogs = ($leftOut -notcontains 'Ereignisse' -or $leftOut -notcontains 'Rueckblick')
     $script:WarnedOnce = @{}
     if (-not (Test-WorkerPerfElevated)) {
         Write-Warning 'WorkerPerf laeuft ohne erhoehte Rechte: Prozesse anderer Benutzer, Profilcontainer und Ereignisprotokolle koennen fehlen.'
     }
     $wtsError = Register-WorkerPerfNativeTypes
-    Register-WorkerPerfProbeType
-    Register-WorkerPerfSidType
+    if ($leftOut -notcontains 'Gegenstellen') { Register-WorkerPerfProbeType }
+    if ($withEventLogs) { Register-WorkerPerfSidType }
 
     $cs = @(Get-CimInstance -ClassName Win32_ComputerSystem -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)[0]
     $os = @(Get-CimInstance -ClassName Win32_OperatingSystem -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)[0]
@@ -1385,7 +1399,7 @@ function Initialize-WorkerPerfSource {
     $state = @{
         Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapPending = $false; MapFailed = $false; VolumeNames = $null; ProfileMapOk = $false
         LogicalProcessors = 1
-        IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; NoCitrix = [bool]$NoCitrix
+        IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; Skip = $leftOut
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
         EventConfig = $null; SidCache = @{}; SidPauseUntil = [datetime]::MinValue; PrintDrivers = $false; PrintQueue = $null
         LogErrors = (New-Object System.Collections.Generic.List[object]); LogErrorsSeen = @{}; EventCounts = [ordered]@{}
@@ -1394,6 +1408,7 @@ function Initialize-WorkerPerfSource {
     # ---- performance counters: one status per counter group ----
     $groupStatus = @{}
     foreach ($key in $script:WorkerPerfWinCounters.Keys) {
+        if ($leftOut -contains $script:WorkerPerfWinCounterCategories[$key]) { continue }
         $def = $script:WorkerPerfWinCounters[$key]
         $reason = ''
         try {
@@ -1417,14 +1432,12 @@ function Initialize-WorkerPerfSource {
     $sources = [ordered]@{}
     foreach ($id in $script:WorkerPerfWinSignalGroups.Keys) {
         $g = $groupStatus[$script:WorkerPerfWinSignalGroups[$id]]
+        if ($null -eq $g) { continue }
         $sources[$id] = @{ Available = $g.Available; Detail = $g.Detail }
     }
 
     # ---- Citrix ----
-    if ($NoCitrix) {
-        foreach ($id in 'ica.rtt', 'ica.latency') { $sources[$id] = @{ Available = $false; Detail = 'abgeschaltet (-NoCitrix)' } }
-    }
-    else {
+    if ($leftOut -notcontains 'Citrix') {
         try {
             [void](Get-CimClass -Namespace $script:WorkerPerfWinEuemNamespace -ClassName $script:WorkerPerfWinEuemClass -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
             $state.Euem = $true
@@ -1445,23 +1458,28 @@ function Initialize-WorkerPerfSource {
         }
     }
 
-    $script:WinEndpoints = @($Endpoints | Where-Object { $null -ne $_ })
-    if ($script:WinEndpoints.Count -gt 0) { $sources['probe.connect'] = @{ Available = $true; Detail = ('{0} Gegenstellen' -f $script:WinEndpoints.Count) } }
-    else { $sources['probe.connect'] = @{ Available = $false; Detail = 'keine Gegenstellen (endpoints.json fehlt oder ist leer)' } }
+    $script:WinEndpoints = @()
+    if ($leftOut -notcontains 'Gegenstellen') {
+        $script:WinEndpoints = @($Endpoints | Where-Object { $null -ne $_ })
+        if ($script:WinEndpoints.Count -gt 0) { $sources['probe.connect'] = @{ Available = $true; Detail = ('{0} Gegenstellen' -f $script:WinEndpoints.Count) } }
+        else { $sources['probe.connect'] = @{ Available = $false; Detail = 'keine Gegenstellen (endpoints.json fehlt oder ist leer)' } }
+    }
 
-    $sources['process'] = @{ Available = $true; Detail = 'Win32_Process' }
+    if ($leftOut -notcontains 'Prozesse') { $sources['process'] = @{ Available = $true; Detail = 'Win32_Process' } }
     if ($script:WtsAvailable) { $sources['sessions'] = @{ Available = $true; Detail = 'WTS-Schnittstelle' } }
     else { $sources['sessions'] = @{ Available = $false; Detail = ('WTS-Schnittstelle nicht verfuegbar: {0}' -f $wtsError) } }
     $g = $groupStatus['inputProcess']
-    $sources['input.process'] = @{ Available = $g.Available; Detail = $g.Detail }
+    if ($null -ne $g) { $sources['input.process'] = @{ Available = $g.Available; Detail = $g.Detail } }
 
     # ---- profile containers ----
-    try {
-        $disks = @(Get-WorkerPerfProfileDisks)
-        $state.ProfileMapOk = $true
-        $sources['profile.map'] = @{ Available = $true; Detail = ('MSFT_Disk BusType 15, beim Start {0} Container' -f $disks.Count) }
+    if ($leftOut -notcontains 'Laufwerke') {
+        try {
+            $disks = @(Get-WorkerPerfProfileDisks)
+            $state.ProfileMapOk = $true
+            $sources['profile.map'] = @{ Available = $true; Detail = ('MSFT_Disk BusType 15, beim Start {0} Container' -f $disks.Count) }
+        }
+        catch { $sources['profile.map'] = @{ Available = $false; Detail = ('MSFT_Disk nicht lesbar: {0}' -f $_.Exception.Message) } }
     }
-    catch { $sources['profile.map'] = @{ Available = $false; Detail = ('MSFT_Disk nicht lesbar: {0}' -f $_.Exception.Message) } }
 
     # ---- event logs: every log of the catalogue that an entry reads, available or not ----
     # The capture reads the enabled log names; the lookback also reads a log name that exists but is switched off, for
@@ -1469,7 +1487,9 @@ function Initialize-WorkerPerfSource {
     # lookback reads it, its source entry says so (LookbackRead).
     if ($null -eq $EventConfig) { $EventConfig = Read-WorkerPerfEventConfig $script:WorkerPerfWinEventFile }
     $state.EventConfig = $EventConfig
-    foreach ($l in @(Get-WorkerPerfEventReadLogs $EventConfig)) {
+    $readLogs = @()
+    if ($withEventLogs) { $readLogs = @(Get-WorkerPerfEventReadLogs $EventConfig) }
+    foreach ($l in $readLogs) {
         $readable = New-Object System.Collections.Generic.List[string]
         $present = New-Object System.Collections.Generic.List[string]
         foreach ($name in @($l.Names)) {
@@ -1498,28 +1518,30 @@ function Initialize-WorkerPerfSource {
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
 
-    # ---- printing: driver list and queue counters ----
-    try {
-        [void](Get-CimClass -Namespace $script:WorkerPerfWinDriverNamespace -ClassName $script:WorkerPerfWinDriverClass -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
-        $state.PrintDrivers = $true
-        $sources['print.drivers'] = @{ Available = $true; Detail = ('{0}: {1}' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) }
-    }
-    catch { $sources['print.drivers'] = @{ Available = $false; Detail = ('{0}: Klasse {1} nicht vorhanden' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) } }
-    $reason = ''
-    try {
-        foreach ($c in $script:WorkerPerfWinPrintQueueCounters) {
-            $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinPrintQueueCategory $c)
-            if ($reason) { break }
+    # ---- printing: driver list and queue counters (without Drucken PrintDrivers stays off and PrintQueue empty) ----
+    if ($leftOut -notcontains 'Drucken') {
+        try {
+            [void](Get-CimClass -Namespace $script:WorkerPerfWinDriverNamespace -ClassName $script:WorkerPerfWinDriverClass -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
+            $state.PrintDrivers = $true
+            $sources['print.drivers'] = @{ Available = $true; Detail = ('{0}: {1}' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) }
         }
-        if (-not $reason) {
-            $state.PrintQueue = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory
-            if ($null -eq $state.PrintQueue) { $reason = 'Kategorie nicht vorhanden' }
+        catch { $sources['print.drivers'] = @{ Available = $false; Detail = ('{0}: Klasse {1} nicht vorhanden' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) } }
+        $reason = ''
+        try {
+            foreach ($c in $script:WorkerPerfWinPrintQueueCounters) {
+                $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinPrintQueueCategory $c)
+                if ($reason) { break }
+            }
+            if (-not $reason) {
+                $state.PrintQueue = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory
+                if ($null -eq $state.PrintQueue) { $reason = 'Kategorie nicht vorhanden' }
+            }
         }
-    }
-    catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.PrintQueue = $null }
-    if ($reason) { $sources['print.queues'] = @{ Available = $false; Detail = ('{0}: {1}' -f $script:WorkerPerfWinPrintQueueCategory, $reason) } }
-    else {
-        $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
+        catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.PrintQueue = $null }
+        if ($reason) { $sources['print.queues'] = @{ Available = $false; Detail = ('{0}: {1}' -f $script:WorkerPerfWinPrintQueueCategory, $reason) } }
+        else {
+            $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
+        }
     }
 
     $state.LogicalProcessors = [Math]::Max(1, [int]$cs.NumberOfLogicalProcessors)
@@ -1600,20 +1622,25 @@ function Get-WorkerPerfFastSample {
 function Get-WorkerPerfSnapshot {
     param([string]$Kind = 'R')
     # Kind: 'K' keyframe, 'R' regular, 'B' burst snapshot. The profile container map is rebuilt here: at every keyframe,
-    # and at a regular snapshot when the fast cadence has seen a LogicalDisk instance unknown to the map.
+    # and at a regular snapshot when the fast cadence has seen a LogicalDisk instance unknown to the map. Processes
+    # need Prozesse, the map Laufwerke, the Citrix values Citrix; the sessions are the base.
     $st = $script:WinState
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
     $time = [datetime]::Now
-    $processes = @(Get-WinProcessRaw)
+    $processes = @()
+    if (Test-WorkerPerfWinMeasured 'Prozesse') { $processes = @(Get-WinProcessRaw) }
     $sessions = @(Get-WinSessionRaw)
-    if ($Kind -eq 'K' -or $null -eq $st.Map -or ($Kind -eq 'R' -and $st.MapPending -and -not $st.MapFailed)) { Update-WorkerPerfProfileMap $st $sessions }
+    if ((Test-WorkerPerfWinMeasured 'Laufwerke') -and ($Kind -eq 'K' -or $null -eq $st.Map -or ($Kind -eq 'R' -and $st.MapPending -and -not $st.MapFailed))) {
+        Update-WorkerPerfProfileMap $st $sessions
+    }
     $citrix = @()
-    if (-not $st.NoCitrix) { $citrix = @(Get-WinCitrixRaw -Sessions $sessions) }
+    if (Test-WorkerPerfWinMeasured 'Citrix') { $citrix = @(Get-WinCitrixRaw -Sessions $sessions) }
     return @{ Time = $time; Processes = $processes; Sessions = $sessions; Citrix = $citrix }
 }
 
 function Get-WorkerPerfServices {
-    # PID -> 'Service1;Service2'
+    # PID -> 'Service1;Service2'; empty without Prozesse.
+    if (-not (Test-WorkerPerfWinMeasured 'Prozesse')) { return @{} }
     return ConvertTo-WorkerPerfServiceMap @(Get-CimInstance -ClassName Win32_Service -Property Name, ProcessId -Filter 'ProcessId > 0' `
             -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
 }
@@ -1621,11 +1648,13 @@ function Get-WorkerPerfServices {
 function Start-WorkerPerfProbes {
     param([object[]]$Endpoints)
     # Starts a TCP connect to every endpoint (without -Endpoints: those given to Initialize-WorkerPerfSource) and returns
-    # at once; Receive-WorkerPerfProbes collects the results.
+    # at once; Receive-WorkerPerfProbes collects the results. Without Gegenstellen no connection is made, whatever
+    # -Endpoints names.
+    $script:WinProbe = $null
+    if (-not (Test-WorkerPerfWinMeasured 'Gegenstellen')) { return }
     Register-WorkerPerfProbeType
     if (-not $PSBoundParameters.ContainsKey('Endpoints')) { $Endpoints = $script:WinEndpoints }
     $list = @($Endpoints | Where-Object { $null -ne $_ })
-    $script:WinProbe = $null
     if ($list.Count -eq 0) { return }
     $probe = New-Object WorkerPerf.Probe -ArgumentList $script:WorkerPerfWinProbeTimeoutMs
     foreach ($e in $list) {
@@ -1853,6 +1882,7 @@ function Get-WorkerPerfEvents {
     # lost (one warning per log), so a flood never hides how it began.
     $st = $script:WinState
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    if (-not (Test-WorkerPerfWinMeasured 'Ereignisse')) { return }
     $nowUtc = [datetime]::UtcNow
     $sinceUtc = ConvertTo-WorkerPerfUtcTime $Since
     $rows = New-Object System.Collections.Generic.List[object]
@@ -1883,7 +1913,7 @@ function Get-WorkerPerfEventsBefore {
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
     $events = New-Object System.Collections.Generic.List[object]
     $capped = New-Object System.Collections.Generic.List[string]
-    if ($Days -le 0) { return @{ Events = @(); Capped = @() } }
+    if ($Days -le 0 -or -not (Test-WorkerPerfWinMeasured 'Rueckblick')) { return @{ Events = @(); Capped = @() } }
     $untilUtc = ConvertTo-WorkerPerfUtcTime $Until
     $fromUtc = $untilUtc.AddDays(-$Days)
     $clock = [System.Diagnostics.Stopwatch]::StartNew()

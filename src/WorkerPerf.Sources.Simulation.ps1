@@ -166,10 +166,26 @@ function New-WorkerPerfSimSessionEvent($Config, [double]$Sec, [int]$EventId, [st
     return (New-WorkerPerfSimEvent $Config $Sec 'session' 'Microsoft-Windows-TerminalServices-LocalSessionManager' $EventId 4 $text -SessionId $SessionId -User $user)
 }
 
+# Categories of the capture that -Skip left out (set by Initialize-WorkerPerfSource), and per kind of data the number
+# of calls in which the source assembled it (process, input.process, services, volumes, shares, citrix, events,
+# eventsbefore, printdrivers, printqueues, probes): a left-out category is never read.
+$script:WorkerPerfSimSkip = @()
+$script:WorkerPerfSimReads = @{}
+
+function Test-WorkerPerfSimMeasured([string]$Category) {
+    return ($script:WorkerPerfSimSkip -notcontains $Category)
+}
+
+function Add-WorkerPerfSimRead([string]$Kind) {
+    if ($script:WorkerPerfSimReads.ContainsKey($Kind)) { $script:WorkerPerfSimReads[$Kind]++ } else { $script:WorkerPerfSimReads[$Kind] = 1 }
+}
+
 function Initialize-WorkerPerfSource {
-    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix,
+    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
           [object]$EventConfig = $null)
     # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
+    # Skip: the categories left out (Resolve-WorkerPerfSkip). The source reads nothing of them and writes no entry of
+    # theirs into Sources (the collector notes them); the base values stay the same.
 
     if ($null -eq $StartTime -or $StartTime -eq [datetime]::MinValue) {
         $n = [datetime]::Now
@@ -178,10 +194,12 @@ function Initialize-WorkerPerfSource {
     $script:WorkerPerfSimStart = $StartTime
     $script:WorkerPerfSimNow = $StartTime
     $script:WorkerPerfSimProbe = $null
+    $script:WorkerPerfSimSkip = @($Skip | Where-Object { $_ })
+    $script:WorkerPerfSimReads = @{}
     Initialize-WorkerPerfSimNoise
     $script:WorkerPerfSimIncludeCommandLine = [bool]$IncludeCommandLine
     $script:WorkerPerfSimCitrixMetrics = @(@('RoundtripTime', 'NetworkLatency') | Where-Object {
-            -not $NoCitrix -and ([string]::IsNullOrEmpty($CitrixMetricFilter) -or $_ -match $CitrixMetricFilter) })
+            (Test-WorkerPerfSimMeasured 'Citrix') -and ([string]::IsNullOrEmpty($CitrixMetricFilter) -or $_ -match $CitrixMetricFilter) })
 
     $script:WorkerPerfSimEndpoints = [object[]]@(
         [pscustomobject]@{ Name = 'Oracle-Listener'; Host = 'ora01.sim.local'; Port = 1521; Role = 'Datenbank' }
@@ -364,19 +382,22 @@ function Initialize-WorkerPerfSource {
         @{ Queue = 'PRN-EG-01'; JobErrors = 2; Jobs = 3; JobsA = 2590.0; JobsB = 2700.0; ErrorAt = 2600.0 }
         @{ Queue = 'PRN-OG-02'; JobErrors = 0; Jobs = 0; JobsA = 0.0; JobsB = 0.0; ErrorAt = [double]::PositiveInfinity })
 
-    $sources = [ordered]@{}
-    foreach ($id in $script:WorkerPerfSimSignalIds) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
-    $ids = @('process', 'sessions', 'input.process', 'profile.map') + @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) + @('print.drivers', 'print.queues')
-    foreach ($id in $ids) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
-    $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen'
-    if ($NoCitrix) {
-        foreach ($id in 'ica.rtt', 'ica.latency') { $sources[$id] = @{ Available = $false; Detail = 'abgeschaltet (-NoCitrix)' } }
+    # Sources: none of a left-out category; the logs events.<id> belong to Ereignisse and Rueckblick together
+    $leftOutIds = @{}
+    foreach ($c in $script:WorkerPerfSimSkip) {
+        if ($script:WorkerPerfCategories.Contains($c)) { foreach ($id in @($script:WorkerPerfCategories[$c].Sources)) { $leftOutIds[$id] = $true } }
     }
+    $logIds = @()
+    if ((Test-WorkerPerfSimMeasured 'Ereignisse') -or (Test-WorkerPerfSimMeasured 'Rueckblick')) { $logIds = @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) }
+    $sources = [ordered]@{}
+    $ids = @($script:WorkerPerfSimSignalIds) + @('process', 'sessions', 'input.process', 'profile.map') + $logIds + @('print.drivers', 'print.queues')
+    foreach ($id in $ids) { if (-not $leftOutIds.ContainsKey($id)) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } } }
+    if ($sources.Contains('probe.connect')) { $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen' }
 
     return @{
         Computer = 'SIM-VDA01'; OS = 'Simulated Windows Server 2022'; LogicalProcessors = $script:WorkerPerfSimCores
         PhysicalMemoryMB = $script:WorkerPerfSimRamMB; CollectorPid = $script:WorkerPerfSimCollectorPid
-        Endpoints = $script:WorkerPerfSimEndpoints; Sources = $sources
+        Endpoints = $(if (Test-WorkerPerfSimMeasured 'Gegenstellen') { $script:WorkerPerfSimEndpoints } else { [object[]]@() }); Sources = $sources
     }
 }
 
@@ -469,6 +490,8 @@ function Get-WorkerPerfFastSample {
             ReadBps = [Math]::Round($pR * 16KB); WriteBps = [Math]::Round($pW * 16KB) })
 
     # ---- input delay per session and, in the scripted windows, per process ----
+    $withProcesses = Test-WorkerPerfSimMeasured 'Prozesse'
+    if ($withProcesses) { Add-WorkerPerfSimRead 'input.process' }
     $inSessions = New-Object System.Collections.Generic.List[object]
     $inProcs = New-Object System.Collections.Generic.List[object]
     foreach ($s in $script:WorkerPerfSimSessions) {
@@ -477,7 +500,7 @@ function Get-WorkerPerfFastSample {
         foreach ($x in $script:WorkerPerfSimInputBySid[$sid]) {
             if ($e -gt $x.A -and $e -le $x.B) {
                 $delay = [Math]::Round($x.Low + ($x.High - $x.Low) * $nz[180 + $sid])
-                $inProcs.Add([pscustomobject]@{ SessionId = $sid; Pid = $x.Pid; Name = $x.App; DelayMs = $delay })
+                if ($withProcesses) { $inProcs.Add([pscustomobject]@{ SessionId = $sid; Pid = $x.Pid; Name = $x.App; DelayMs = $delay }) }
             }
         }
         $inSessions.Add([pscustomobject]@{ SessionId = $sid; DelayMs = $delay })
@@ -487,6 +510,13 @@ function Get-WorkerPerfFastSample {
     foreach ($v in $volumes) { $diskR += $v.ReadBps; $diskW += $v.WriteBps; $opsR += $v.ReadOps; $opsW += $v.WriteOps; $diskQ += $v.Queue }
     $netR = (1.5MB + 1.5MB * $nz[6]) + $shares[0].ReadBps + $shares[1].ReadBps
     $netS = (0.8MB + 0.8MB * $nz[7]) + $shares[0].WriteBps + $shares[1].WriteBps
+    # the totals of disk and network come from the scripted volumes and shares in any case; their rows are read only
+    # with Laufwerke
+    $volumeRows = [object[]]@(); $shareRows = [object[]]@()
+    if (Test-WorkerPerfSimMeasured 'Laufwerke') {
+        $volumeRows = $volumes.ToArray(); $shareRows = $shares
+        Add-WorkerPerfSimRead 'volumes'; Add-WorkerPerfSimRead 'shares'
+    }
 
     return [pscustomobject]@{
         Time = $script:WorkerPerfSimNow
@@ -496,7 +526,7 @@ function Get-WorkerPerfFastSample {
         DiskReadBps = [Math]::Round($diskR); DiskWriteBps = [Math]::Round($diskW)
         DiskReadIops = [Math]::Round($opsR / 2, 1); DiskWriteIops = [Math]::Round($opsW / 2, 1); DiskQueue = $diskQ
         NetRecvBps = [Math]::Round($netR); NetSentBps = [Math]::Round($netS)
-        Volumes = $volumes.ToArray(); Shares = $shares; InputSessions = $inSessions.ToArray(); InputProcesses = $inProcs.ToArray()
+        Volumes = $volumeRows; Shares = $shareRows; InputSessions = $inSessions.ToArray(); InputProcesses = $inProcs.ToArray()
     }
 }
 
@@ -509,7 +539,9 @@ function Get-WorkerPerfSnapshot {
     $withCmd = $script:WorkerPerfSimIncludeCommandLine
 
     $procs = New-Object System.Collections.Generic.List[object]
-    foreach ($p in $script:WorkerPerfSimProcs) {
+    $running = @()
+    if (Test-WorkerPerfSimMeasured 'Prozesse') { $running = $script:WorkerPerfSimProcs; Add-WorkerPerfSimRead 'process' }
+    foreach ($p in $running) {
         if (-not ($e -gt $p.CreatedSec -and $e -le $p.EndSec)) { continue }
         $life = $e - $p.CreatedSec
         $cpu = $p.Cores * $life; $rd = $p.Rd * $life; $wr = $p.Wr * $life
@@ -537,6 +569,7 @@ function Get-WorkerPerfSnapshot {
     $sessions.Add([pscustomobject]@{ SessionId = 0; State = 'Disconnected'; WinStation = 'Services'; User = ''; Domain = ''; ClientName = ''
             LogonTime = [datetime]::MinValue; IdleSec = -1 })
     $citrix = New-Object System.Collections.Generic.List[object]
+    if (Test-WorkerPerfSimMeasured 'Citrix') { Add-WorkerPerfSimRead 'citrix' }
     foreach ($s in $script:WorkerPerfSimSessions) {
         $sid = [int]$s.Sid
         $sessions.Add([pscustomobject]@{ SessionId = $sid; State = 'Active'; WinStation = $s.WinStation; User = $s.User
@@ -555,13 +588,19 @@ function Get-WorkerPerfSnapshot {
 }
 
 function Get-WorkerPerfServices {
-    # PID -> 'Service1;Service2' (a copy, so callers cannot change the scenario).
+    # PID -> 'Service1;Service2' (a copy, so callers cannot change the scenario); empty without Prozesse.
+    if (-not (Test-WorkerPerfSimMeasured 'Prozesse')) { return @{} }
+    Add-WorkerPerfSimRead 'services'
     return $script:WorkerPerfSimServices.Clone()
 }
 
 function Start-WorkerPerfProbes {
     param([object[]]$Endpoints)
-    # The built-in endpoints are always probed; -Endpoints exists for interface compatibility only.
+    # The built-in endpoints are always probed; -Endpoints exists for interface compatibility only. Without
+    # Gegenstellen nothing is probed.
+    $script:WorkerPerfSimProbe = $null
+    if (-not (Test-WorkerPerfSimMeasured 'Gegenstellen')) { return }
+    Add-WorkerPerfSimRead 'probes'
     $e = Get-WorkerPerfSimElapsed
     $nz = Get-WorkerPerfSimNoise $e
     $results = New-Object System.Collections.Generic.List[object]
@@ -585,6 +624,8 @@ function Receive-WorkerPerfProbes {
 
 function Get-WorkerPerfEvents {
     param([datetime]$Since)
+    if (-not (Test-WorkerPerfSimMeasured 'Ereignisse')) { return }
+    Add-WorkerPerfSimRead 'events'
     foreach ($ev in $script:WorkerPerfSimEvents) {
         $t = $script:WorkerPerfSimStart.AddSeconds($ev.Sec)
         if ($t -gt $Since -and $t -le $script:WorkerPerfSimNow) { ConvertTo-WorkerPerfSimEventRecord $ev }
@@ -594,6 +635,8 @@ function Get-WorkerPerfEvents {
 function Get-WorkerPerfEventsBefore {
     # The scripted lookback: the events up to Until that are at most Days days older; the simulation caps no log.
     param([int]$Days, [datetime]$Until)
+    if (-not (Test-WorkerPerfSimMeasured 'Rueckblick')) { return @{ Events = @(); Capped = @() } }
+    Add-WorkerPerfSimRead 'eventsbefore'
     $from = $Until.AddDays(-$Days)
     $events = @(foreach ($ev in $script:WorkerPerfSimEventsBefore) {
             $t = $script:WorkerPerfSimStart.AddSeconds($ev.Sec)
@@ -612,6 +655,8 @@ function Get-WorkerPerfEventCounts {
 }
 
 function Get-WorkerPerfPrintDrivers {
+    if (-not (Test-WorkerPerfSimMeasured 'Drucken')) { return }
+    Add-WorkerPerfSimRead 'printdrivers'
     foreach ($d in $script:WorkerPerfSimPrintDrivers) {
         [pscustomobject]@{ Name = $d.Name; Manufacturer = $d.Manufacturer; Version = $d.Version; Type = $d.Type; Isolation = $d.Isolation; Files = @($d.Files) }
     }
@@ -619,6 +664,8 @@ function Get-WorkerPerfPrintDrivers {
 
 function Get-WorkerPerfPrintQueues {
     # Waiting jobs in the window JobsA < t <= JobsB, the job error counter one higher from ErrorAt on; never "not ready".
+    if (-not (Test-WorkerPerfSimMeasured 'Drucken')) { return }
+    Add-WorkerPerfSimRead 'printqueues'
     $e = Get-WorkerPerfSimElapsed
     foreach ($q in $script:WorkerPerfSimQueues) {
         [pscustomobject]@{ Queue = $q.Queue; Jobs = $(if ($e -gt $q.JobsA -and $e -le $q.JobsB) { $q.Jobs } else { 0 })

@@ -170,3 +170,28 @@ Describe 'Simulation' {
         }
     }
 }
+Describe 'Simulation mit weggelassenen Kategorien' {
+    BeforeAll {
+        function Invoke-SimReads([string[]]$Skip) {   # jeder Aufruf der Schnittstelle einmal, wie der Collector sie nutzt
+            [void](Initialize-WorkerPerfSource -StartTime $Start -Skip $Skip); Set-SimTime 47.5
+            $r = @{ Fast = (Get-WorkerPerfFastSample); Snap = (Get-WorkerPerfSnapshot -Kind K); Services = (Get-WorkerPerfServices); Events = @(Get-WorkerPerfEvents -Since $Start)
+                Before = (Get-WorkerPerfEventsBefore -Days 7 -Until $Start); Drivers = @(Get-WorkerPerfPrintDrivers); Queues = @(Get-WorkerPerfPrintQueues) }
+            Start-WorkerPerfProbes; Set-SimTime 47.6; $r.Probes = @(Receive-WorkerPerfProbes); $r.Reads = $script:WorkerPerfSimReads.Clone(); $r
+        }
+        $script:ReadKeys = @{ Prozesse = @('process', 'input.process', 'services'); Laufwerke = @('volumes', 'shares'); Citrix = @('citrix'); Ereignisse = @('events'); Rueckblick = @('eventsbefore')
+            Drucken = @('printdrivers', 'printqueues'); Gegenstellen = @('probes') }
+    }
+    AfterAll { [void](Initialize-WorkerPerfSource -StartTime $Start) }
+    It 'liest die Quellen von <_> nicht und alle anderen weiter' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen' {
+        $cat = $_; $r = Invoke-SimReads @($cat)
+        foreach ($c in $ReadKeys.Keys) { foreach ($k in $ReadKeys[$c]) { if ($c -eq $cat) { [int]$r.Reads[$k] | Should -Be 0 -Because $k } else { [int]$r.Reads[$k] | Should -BeGreaterThan 0 -Because $k } } }
+    }
+    It 'liefert ohne alle Kategorien nur die Basis, mit denselben Werten' {   # Review Focus 1
+        $full = Invoke-SimReads @(); $r = Invoke-SimReads @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+        @($r.Reads.Values | Where-Object { $_ -gt 0 }).Count | Should -Be 0
+        @($r.Snap.Processes).Count + @($r.Snap.Citrix).Count + $r.Services.Count | Should -Be 0; @($r.Snap.Sessions).Count | Should -Be 26
+        @($r.Fast.Volumes).Count + @($r.Fast.Shares).Count + @($r.Fast.InputProcesses).Count | Should -Be 0; @($r.Fast.InputSessions).Count | Should -Be 25
+        foreach ($c in 'CpuPct', 'MemAvailMB', 'DiskReadBps', 'DiskWriteBps', 'DiskReadIops', 'DiskQueue', 'NetRecvBps', 'NetSentBps') { $r.Fast.$c | Should -Be $full.Fast.$c -Because $c }
+        @($r.Events).Count + @($r.Before.Events).Count + @($r.Drivers).Count + @($r.Queues).Count + @($r.Probes).Count | Should -Be 0
+    }
+}

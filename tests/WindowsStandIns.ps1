@@ -18,6 +18,9 @@ function Reset-WinStandIns {
         # record ids whose message cannot be formatted; OpenReaders/OpenRecords: not yet disposed
         FailLogs = @{}; ReadFailOnce = [System.Collections.Generic.List[long]]::new(); ReadFailAlways = @(); Unformattable = @()
         OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
+        # Calls: every stand-in counts its call by key (check:/open:/perf:<category>, cim:/cimclass:<class>, winevent:list,
+        # winevent:read, wts, registry:print), so a test can see which Windows calls a source made
+        Calls = @{}
         Events = [System.Collections.Generic.List[object]]::new()
         # SID -> account as Windows translates it; SidTimeout: SIDs whose lookup runs into the time limit
         Sids = @{ 'S-1-5-21-1000-2000-3000-1108' = 'KLINIK\mueller'; 'S-1-5-80-1-2-3-4-5' = 'NT SERVICE\SimDienst' }; SidTimeout = @(); SidLookups = 0
@@ -144,9 +147,15 @@ function Add-WinStandInUser([int]$SessionId, [string]$User, [string]$Volume) {
     foreach ($c in @($script:WinFake.Perf['LogicalDisk'].Keys)) { $script:WinFake.Perf['LogicalDisk'][$c][$Volume] = 1.0 }
 }
 
+function Add-WinStandInCall([string]$Key) {
+    $c = $script:WinFake.Calls
+    if ($c.ContainsKey($Key)) { $c[$Key]++ } else { $c[$Key] = 1 }
+}
+
 function Test-WorkerPerfElevated { return $true }
 
 function Test-WorkerPerfWinCounter([string]$Category, [string]$Counter) {
+    Add-WinStandInCall ('check:' + $Category)
     if ($script:WinFake.ThrowCheck -eq $Category) { throw (New-Object InvalidOperationException 'Leistungsindikatoren beschaedigt') }
     if (-not $script:WinFake.Perf.ContainsKey($Category)) { return 'Kategorie nicht vorhanden' }
     if ($Counter -and -not $script:WinFake.Perf[$Category].ContainsKey($Counter)) { return "Zaehler '$Counter' fehlt" }
@@ -154,6 +163,7 @@ function Test-WorkerPerfWinCounter([string]$Category, [string]$Counter) {
 }
 
 function Open-WorkerPerfWinCategory([string]$Name) {
+    Add-WinStandInCall ('open:' + $Name)
     if (-not $script:WinFake.Perf.ContainsKey($Name)) { return $null }
     return [pscustomobject]@{ CategoryName = $Name }
 }
@@ -161,6 +171,7 @@ function Open-WorkerPerfWinCategory([string]$Name) {
 function Read-WorkerPerfWinCategory($Category) {
     # like ReadCategory: counter names in lower case, one entry per instance; the raw value changes with every reading
     $name = $Category.CategoryName
+    Add-WinStandInCall ('perf:' + $name)
     if ($script:WinFake.FailRead -eq $name) { throw "Kategorie $name nicht lesbar" }
     $script:WinFake.Reads++
     $result = @{}
@@ -179,10 +190,11 @@ function Get-WorkerPerfWinSampleValue($Previous, $Current) { return $Current.Val
 function Get-WorkerPerfWinInstantValue($Sample) { return $Sample.Value }
 function Get-WorkerPerfWinCounterNames($Category) { return [string[]]@($script:WinFake.Perf[$Category.CategoryName].Keys) }
 function Get-WorkerPerfDosDevice([string]$Name) { return $script:WinFake.Devices[$Name] }
-function Get-WinSessionRaw { return $script:WinFake.Sessions.ToArray() }
+function Get-WinSessionRaw { Add-WinStandInCall 'wts'; return $script:WinFake.Sessions.ToArray() }
 
 function Get-CimClass {
     [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [int]$OperationTimeoutSec)
+    Add-WinStandInCall ('cimclass:' + $ClassName)
     if ($Namespace -eq 'root\citrix\euem' -and $script:WinFake.EuemClass) { return [pscustomobject]@{ CimClassName = $ClassName } }
     if ($ClassName -eq 'MSFT_PrinterDriver' -and $script:WinFake.PrintDriverClass) { return [pscustomobject]@{ CimClassName = $ClassName } }
     throw "Klasse $ClassName nicht gefunden"
@@ -190,6 +202,7 @@ function Get-CimClass {
 
 function Get-CimInstance {
     [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [string]$Filter, [string[]]$Property, [int]$OperationTimeoutSec)
+    Add-WinStandInCall ('cim:' + $ClassName)
     switch ($ClassName) {
         'Win32_ComputerSystem' { [pscustomobject]@{ Name = 'VDA-TEST'; NumberOfLogicalProcessors = 6; TotalPhysicalMemory = [uint64]62277025792 } }
         'Win32_OperatingSystem' { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
@@ -243,6 +256,7 @@ function ConvertFrom-WinStandInQuery([xml]$Xml) {
 function Get-WinEvent {
     # like Get-WinEvent -ListLog (IsEnabled); the source reads events through Open-WorkerPerfEventReader, anything else fails
     [CmdletBinding()] param([string]$ListLog, [hashtable]$FilterHashtable, [xml]$FilterXml, [long]$MaxEvents = -1, [switch]$Oldest)
+    Add-WinStandInCall $(if ($ListLog) { 'winevent:list' } else { 'winevent:read' })
     if (-not $ListLog) { throw 'Stand-in: Ereignisse liest die Quelle ueber Open-WorkerPerfEventReader, nicht ueber Get-WinEvent' }
     if ($script:WinFake.Logs -contains $ListLog) { return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog) } }
     throw "Protokoll $ListLog nicht vorhanden"
@@ -253,6 +267,7 @@ function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
     # literals, the way the event log compares them) pick the fake events, newest first unless Oldest. An event that
     # two selects name comes once per select (the worst case for the source's de-duplication). ReadEvent() returns
     # the next record or $null at the end; FailLogs, ReadFailOnce and ReadFailAlways inject failures.
+    Add-WinStandInCall 'winevent:read'
     $xml = [xml]$QueryXml
     $script:WinFake.EventQueries++
     $script:WinFake.Queries.Add($xml.OuterXml)
@@ -308,6 +323,6 @@ function Get-WorkerPerfSidAccount([string]$Sid) {
     return @{ Name = [string]$script:WinFake.Sids[$Sid]; TimedOut = $false }
 }
 
-function Get-WorkerPerfPrintIsolationGroups { return $script:WinFake.IsolationGroups }
-function Get-WorkerPerfPrintIsolationPolicy { return $script:WinFake.IsolationPolicy }
-function Get-WorkerPerfPrintDriverAttribute($Driver) { return $script:WinFake.DriverAttributes[[string]$Driver.Name] }
+function Get-WorkerPerfPrintIsolationGroups { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationGroups }
+function Get-WorkerPerfPrintIsolationPolicy { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationPolicy }
+function Get-WorkerPerfPrintDriverAttribute($Driver) { Add-WinStandInCall 'registry:print'; return $script:WinFake.DriverAttributes[[string]$Driver.Name] }
