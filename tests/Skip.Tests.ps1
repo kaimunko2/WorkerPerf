@@ -9,6 +9,8 @@ BeforeAll {
         Drucken = @('print.drivers', 'print.queues'); Gegenstellen = @('probe.connect') }
     function Get-Meta([string]$Run) { Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json }
     function Get-CsvNames([string]$Run) { Get-ChildItem $Run -Filter *.csv | ForEach-Object Name | Sort-Object }   # schlichte Pipeline-Ausgabe: Should -Be vergleicht die Elemente
+    function Get-LineCounts([string]$Run) { $c = [ordered]@{}; foreach ($f in Get-ChildItem $Run -Filter *.csv | Sort-Object Name) { $c[$f.Name] = @(Get-Content $f.FullName).Count }; $c }
+    $script:VollCounts = Get-LineCounts $Runs.Voll
     function Get-Shape([string]$Run) {   # Dateien mit Zeilenzahl und meta.json ohne die Zeiten des Laufs
         $m = Get-Meta $Run; foreach ($k in 'StartTime', 'EndTime') { $m.PSObject.Properties.Remove($k) }
         (@(Get-ChildItem $Run -Filter *.csv | Sort-Object Name | ForEach-Object { '{0}:{1}' -f $_.Name, @(Get-Content $_.FullName).Count }) -join ' ') + "`n" + ($m | ConvertTo-Json -Depth 8 -Compress)
@@ -21,6 +23,10 @@ Describe 'Aufzeichnung mit -Skip' {
         @($m.Skip) | Should -Be @($cat); $m.Ticks | Should -Be 1800; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
         foreach ($id in $Ids[$cat]) { $m.Sources.$id.Available | Should -BeFalse -Because $id; $m.Sources.$id.Detail | Should -Be "abgeschaltet (-Skip $cat)" }
         @($m.Sources.PSObject.Properties | Where-Object { -not $_.Value.Available }).Count | Should -Be $Ids[$cat].Count
+        # die anderen Kategorien und die Basis behalten ihre Zeilen: jede verbliebene Datei hat so viele Zeilen wie im vollen Lauf
+        $counts = Get-LineCounts $Runs[$cat]
+        foreach ($f in $counts.Keys) { $counts[$f] | Should -Be $VollCounts[$f] -Because "$f ohne $cat" }
+        @($counts.Values | Where-Object { $_ -le 1 }).Count | Should -Be 0   # keine Datei nur mit der Kopfzeile
     }
     It 'misst ohne alle Kategorien die Basis wie im vollstaendigen Lauf' {   # Review Focus 1
         $m = Get-Meta $Runs.Alle
@@ -63,8 +69,10 @@ Describe 'Aufzeichnung mit -Skip' {
         $a = @(& $Capture -Simulate -DurationMinutes 60 -NoCitrix -OutputPath (Join-Path $TestDrive 'a') 6>&1)
         ($a | Out-String) | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Ereignisse, Rueckblick, Drucken, Gegenstellen\s+Nicht gemessen \(-Skip\): Citrix'
         Get-Shape ([string]$a[-1]) | Should -BeExactly (Get-Shape $Runs.Citrix)
-        $b = (& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK', 'Zustand' -OutputPath (Join-Path $TestDrive 'b') 6>$null) | Select-Object -Last 1
-        Get-Shape $b | Should -BeExactly (Get-Shape $Runs.Rueckblick)   # Zustand: angenommen, ohne Wirkung
+        $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK', 'Zustand' -OutputPath (Join-Path $TestDrive 'b') 6>&1)
+        Get-Shape ([string]$b[-1]) | Should -BeExactly (Get-Shape $Runs.Rueckblick)   # Zustand: angenommen, ohne Wirkung, auch auf der Konsole
+        $console = $b | Out-String
+        $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'; $console | Should -Not -Match 'Zustand' 
     }
     It 'lehnt einen unbekannten Wert ab, bevor etwas angelegt wird' {
         $dir = Join-Path $TestDrive 'x'
@@ -81,7 +89,7 @@ Describe 'Aufzeichnung mit -Skip' {
         @($m.Sources.PSObject.Properties | Where-Object { -not $_.Value.Available -or $_.Value.Detail -notlike 'Simulation*' }).Count | Should -Be 0
     }
     It 'nennt beim Start die gemessenen und die weggelassenen Kategorien' {
-        $out = (& $Capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'c') 6>&1 | Out-String)
+        $out = Get-Content (Join-Path $TestDrive 'runs/Voll.console.txt') -Raw   # die Konsolenausgabe des vollen Laufs aus New-SkipRuns
         $out | Should -Match 'laeuft: [^\r\n]+\r?\nGemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen\r?\nNicht gemessen \(-Skip\): keine\r?\n'
     }
 }

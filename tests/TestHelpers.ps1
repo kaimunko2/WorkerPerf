@@ -1,15 +1,22 @@
 # tests/TestHelpers.ps1
-function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}) {
-    # 60 Minuten Simulation unter deutscher Kultur; $Extra geht an den Collector (etwa @{ Skip = @('Prozesse') });
-    # liefert den Aufzeichnungsordner
+function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}, [string]$ConsoleFile = '') {
+    # 60 Minuten Simulation unter deutscher Kultur; $Extra geht an den Collector (etwa @{ Skip = @('Prozesse') }); mit
+    # $ConsoleFile landet die Konsolenausgabe (Write-Host) in dieser Datei; liefert den Aufzeichnungsordner
     [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
     $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
-    (& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir @Extra 6>$null) | Select-Object -Last 1
+    if (-not $ConsoleFile) { (& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir @Extra 6>$null) | Select-Object -Last 1 }
+    else {
+        $out = @(& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir @Extra 6>&1)
+        [IO.File]::WriteAllText($ConsoleFile, ($out | Out-String))
+        [string]$out[-1]
+    }
 }
 function New-SkipRuns([string]$OutDir) {
-    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Alle (alle sieben); Name -> Aufzeichnungsordner
+    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Alle (alle sieben); Name -> Aufzeichnungsordner.
+    # Die Konsolenausgabe des vollen Laufs steht in <OutDir>/Voll.console.txt (neben den Aufzeichnungen).
     $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
-    $runs = [ordered]@{ Voll = (Invoke-SimCapture (Join-Path $OutDir 'Voll')) }
+    [void](New-Item -ItemType Directory -Path $OutDir -Force)
+    $runs = [ordered]@{ Voll = (Invoke-SimCapture (Join-Path $OutDir 'Voll') @{} (Join-Path $OutDir 'Voll.console.txt')) }
     foreach ($n in $names) { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs

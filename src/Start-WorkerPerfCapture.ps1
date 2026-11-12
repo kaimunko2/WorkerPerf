@@ -136,8 +136,9 @@ $ErrorActionPreference = 'Stop'
 #region ---------- setup ------------------------------------------------------------------
 
 . (Join-Path $PSScriptRoot 'WorkerPerf.Common.ps1')
-# the categories left out, before anything is read or created (an unknown value stops the start here)
-$skip = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
+# the categories left out (resolved from -Skip, -NoCitrix and -EventLookbackDays), before anything is read or
+# created (an unknown value stops the start here)
+$leftOut = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
 if ($Simulate) {
@@ -158,12 +159,12 @@ if (-not $OutputPath) {
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $endpoints = @()
-if ($skip -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile) }
+if ($leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile) }
 # the event catalogue: which logs, providers and ids the source reads and how it reads their fields
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$IncludeCommandLine -NoCitrix:($skip -contains 'Citrix') -EventConfig $eventConfig
+    -IncludeCommandLine:$IncludeCommandLine -NoCitrix:($leftOut -contains 'Citrix') -EventConfig $eventConfig
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -179,7 +180,7 @@ $guard = Test-WorkerPerfGuard -FreeMB (Get-WorkerPerfFreeSpaceMB -Path $runDir) 
 if ($guard) { throw "Aufzeichnung nicht gestartet: zu wenig freier Speicherplatz unter $runDir (unter 200 MB)." }
 
 # A writer that does not exist (its category left out) means: the calls behind it are not made, no row is written.
-$writers = New-WorkerPerfWriters -RunDir $runDir -Skip $skip
+$writers = New-WorkerPerfWriters -RunDir $runDir -Skip $leftOut
 $wTicks = $writers['ticks.csv']; $wVolumes = $writers['volumes.csv']; $wShares = $writers['shares.csv']
 $wInput = $writers['inputdelay.csv']; $wInputProc = $writers['inputdelay_proc.csv']; $wCitrix = $writers['citrix.csv']
 $wProbes = $writers['probes.csv']; $wEvents = $writers['events.csv']; $wSnaps = $writers['snapshots.csv']
@@ -187,7 +188,7 @@ $wSessions = $writers['sessions.csv']; $wInfo = $writers['procinfo.csv']; $wProc
 $wEnded = $writers['procend.csv']
 $wEventsBefore = $writers['events_before.csv']; $wDrivers = $writers['printdrivers.csv']; $wQueues = $writers['printqueues.csv']
 $fastWriters = @(@($wTicks, $wVolumes, $wShares, $wInput, $wInputProc) | Where-Object { $null -ne $_ })
-$withProcesses = ($skip -notcontains 'Prozesse')
+$withProcesses = ($leftOut -notcontains 'Prozesse')
 $allWriters = @($writers.Values)
 
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -211,17 +212,17 @@ $meta = [ordered]@{
     SkippedTicks         = 0
     Simulated            = [bool]$Simulate
     IncludeCommandLine   = [bool]$IncludeCommandLine
-    EventLookbackDays    = $(if ($skip -contains 'Rueckblick') { 0 } else { $EventLookbackDays })
+    EventLookbackDays    = $(if ($leftOut -contains 'Rueckblick') { 0 } else { $EventLookbackDays })
     LookbackCapped       = @()
     EventReadCounts      = [ordered]@{}
     LookbackReadCounts   = [ordered]@{}
-    Skip                 = $skip
+    Skip                 = $leftOut
     CollectorPid         = $source.CollectorPid
-    Endpoints            = @(if ($skip -notcontains 'Gegenstellen') { @($source.Endpoints) })
+    Endpoints            = @(if ($leftOut -notcontains 'Gegenstellen') { @($source.Endpoints) })
     Sources              = $source.Sources
     SourceErrors         = [ordered]@{}
 }
-Set-WorkerPerfSkippedSources -Sources $meta.Sources -Skip $skip -EventLogIds @(@(Get-WorkerPerfEventReadLogs $eventConfig) | ForEach-Object { [string]$_.Id })
+Set-WorkerPerfSkippedSources -Sources $meta.Sources -Skip $leftOut -EventLogIds @(@(Get-WorkerPerfEventReadLogs $eventConfig) | ForEach-Object { [string]$_.Id })
 function Save-Meta {
     Save-WorkerPerfMeta -Path (Join-Path $runDir 'meta.json') -Meta $meta
 }
@@ -274,8 +275,8 @@ function Write-WorkerPerfProbeRows([object[]]$Results, [int]$T) {
 }
 
 Write-Host "WorkerPerf-Aufzeichnung laeuft: $runDir"
-Write-Host ('Gemessen: ' + ((@('Basis') + @(@($script:WorkerPerfCategories.Keys) | Where-Object { $script:WorkerPerfCategories[$_].Active -and $skip -notcontains $_ })) -join ', '))
-Write-Host ('Nicht gemessen (-Skip): ' + $(if ($skip.Count -gt 0) { $skip -join ', ' } else { 'keine' }))
+Write-Host ('Gemessen: ' + ((@('Basis') + @(@($script:WorkerPerfCategories.Keys) | Where-Object { $script:WorkerPerfCategories[$_].Active -and $leftOut -notcontains $_ })) -join ', '))
+Write-Host ('Nicht gemessen (-Skip): ' + $(if ($leftOut.Count -gt 0) { $leftOut -join ', ' } else { 'keine' }))
 Write-Host ("Schneller Takt {0} s, Schnappschuss alle {1} s{2}. Beenden mit Strg+C oder Datei 'stop.flag' im Ausgabeordner." -f `
         $FastIntervalSeconds, $IntervalSeconds, $(if ($DurationMinutes -gt 0) { ", Dauer $DurationMinutes min" } else { '' }))
 
@@ -383,20 +384,21 @@ try {
     # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
     $readSlot = {
         if ($null -ne $wEvents) { . $readEvents ((Get-WorkerPerfNow).AddSeconds(-$eventLagSeconds)) }
-        if ($null -eq $wQueues) { return }
-        try {
-            $queueTime = Get-WorkerPerfNow
-            foreach ($q in @(Get-WorkerPerfPrintQueues)) {
-                if ($null -eq $q) { continue }
-                $row = ConvertTo-WorkerPerfPrintQueueRow $q $queueTime
-                $name = [string](Get-WorkerPerfField $q 'Queue')
-                $values = $row.Substring($row.IndexOf([char]',') + 1)
-                if ($queueLast.ContainsKey($name) -and $queueLast[$name] -eq $values) { continue }
-                $queueLast[$name] = $values
-                $wQueues.WriteLine($row)
+        if ($null -ne $wQueues) {
+            try {
+                $queueTime = Get-WorkerPerfNow
+                foreach ($q in @(Get-WorkerPerfPrintQueues)) {
+                    if ($null -eq $q) { continue }
+                    $row = ConvertTo-WorkerPerfPrintQueueRow $q $queueTime
+                    $name = [string](Get-WorkerPerfField $q 'Queue')
+                    $values = $row.Substring($row.IndexOf([char]',') + 1)
+                    if ($queueLast.ContainsKey($name) -and $queueLast[$name] -eq $values) { continue }
+                    $queueLast[$name] = $values
+                    $wQueues.WriteLine($row)
+                }
             }
+            catch { Register-SourceError 'printqueues' $_ }
         }
-        catch { Register-SourceError 'printqueues' $_ }
     }
     $eventsReady = $true
 
@@ -528,7 +530,8 @@ try {
         $scheduled = $next.Next
     }
 
-    # Give the probes started last one more fast tick so that their results are not lost.
+    # Give the probes started last one more fast tick so that their results are not lost. The wait exists only for the
+    # probes: without Gegenstellen the capture ends one fast interval earlier, on purpose.
     if ($null -ne $wProbes) {
         [void](Wait-WorkerPerfTick -Until (ConvertTo-WorkerPerfUtc (Get-WorkerPerfNow)).AddSeconds($FastIntervalSeconds).ToLocalTime() -StopFlagPath '')
         $probeResults = @()
