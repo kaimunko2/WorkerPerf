@@ -19,11 +19,11 @@ $script:WorkerPerfMaskProfileFolders = @('Public', 'Default', 'Default User', 'A
 # The server of a UNC path: letters, digits, '-', '_' and '.', neither starting nor ending with a full stop (so not the
 # device prefixes \\?\ and \\.\, and not the full stop or bracket that follows it in a sentence).
 $script:WorkerPerfMaskServerText = '(?<server>[\p{L}\p{N}_-](?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_-])?)'
-# Fixed patterns in path and instance texts, scanned left to right: an account SID; a UNC path with its server and, when
-# present, its share (\\server\share); a user folder <drive>:\Users\<name> (any drive, any case), and the user of a
+# Fixed patterns in path and instance texts, scanned left to right: an account SID; a UNC path with its server (a WebDAV
+# suffix @SSL and @<port> is not part of it) and, when present, its share (\\server\share); a user folder <drive>:\Users\<name> (any drive, any case), and the user of a
 # Citrix UPM mount path \Users\<user>_UPM_local (also without drive).
 $script:WorkerPerfMaskPathPatternText = '(?<sid>(?<![\w-])S-1-5-21-\d+-\d+-\d+-\d+(?![\w-]))' +
-    '|(?<unc>\\\\' + $script:WorkerPerfMaskServerText + '\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
+    '|(?<unc>\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
     '|(?<drive>(?<![A-Za-z])[A-Za-z]:)?\\Users\\(?<folder>[^\\]+?)(?<upm>_UPM_local)?(?=\\|$)'
 $script:WorkerPerfMaskPathPatterns = New-Object System.Text.RegularExpressions.Regex $script:WorkerPerfMaskPathPatternText, 'IgnoreCase'
 # Free texts (meta.json) also hold addresses: an IPv4 address that is not part of a longer dotted number, not part of a
@@ -187,35 +187,71 @@ namespace WorkerPerf
             return trimmed.Length > 0 && trimmed.Length < word.Length && this.protectedNames.ContainsKey(trimmed);
         }
 
-        // A new structure: dictionaries and custom objects become ordered dictionaries with masked keys (a key that
-        // becomes equal to an earlier one gets " (2)", " (3)" ...), lists become arrays (string[] stays string[], an
-        // array of a value type is copied), strings are masked; a StringBuilder (pre-rendered series) and everything
-        // else stays as it is.
+        // A new structure: dictionaries and custom objects become ordered dictionaries, lists become arrays (string[]
+        // stays string[], an array of a value type is copied), strings are masked; a StringBuilder (pre-rendered
+        // series) and numbers, booleans, times, enums and guids stay as they are, any other object becomes its masked
+        // text. Keys and property names stay, except in the dictionaries named in keyedMaps, whose keys come from the
+        // recorded data: there they are masked, and a key that becomes equal to an earlier one gets " (2)", " (3)" ...
+        // The string values of the fields named in keywordFields stay. Both lists name a field by its key ("kind") or
+        // by the key of the record that holds it and its key ("procs.role"); list levels do not count.
+        public object Protect(object value, string[] keyedMaps, string[] keywordFields)
+        {
+            Dictionary<string, bool> maps = ToSet(keyedMaps);
+            Dictionary<string, bool> keywords = ToSet(keywordFields);
+            return this.Node(value, string.Empty, string.Empty, maps, keywords);
+        }
+
         public object Protect(object value)
+        {
+            return this.Protect(value, new string[0], new string[0]);
+        }
+
+        private static Dictionary<string, bool> ToSet(string[] names)
+        {
+            Dictionary<string, bool> set = new Dictionary<string, bool>(StringComparer.Ordinal);
+            if (names != null) { foreach (string n in names) { if (!string.IsNullOrEmpty(n)) { set[n] = true; } } }
+            return set;
+        }
+
+        private static bool Named(Dictionary<string, bool> set, string holder, string field)
+        {
+            if (set.Count == 0) { return false; }
+            return set.ContainsKey(field) || set.ContainsKey(holder + "." + field);
+        }
+
+        // holder: the key of the record that holds this value; field: the key of this value (both '' at the top)
+        private object Node(object value, string holder, string field, Dictionary<string, bool> maps, Dictionary<string, bool> keywords)
         {
             if (value == null) { return null; }
             string s = value as string;
-            if (s != null) { return this.Hide(s); }
+            if (s != null) { return Named(keywords, holder, field) ? s : this.Hide(s); }
             PSObject ps = value as PSObject;
             if (ps != null)
             {
                 object inner = ps.BaseObject;
                 if (inner is PSCustomObject)
                 {
-                    OrderedDictionary od = new OrderedDictionary(StringComparer.OrdinalIgnoreCase);
-                    foreach (PSPropertyInfo p in ps.Properties) { this.AddKey(od, p.Name, this.Protect(p.Value)); }
-                    return od;
+                    bool maskObjectKeys = Named(maps, holder, field);
+                    OrderedDictionary po = new OrderedDictionary(StringComparer.OrdinalIgnoreCase);
+                    foreach (PSPropertyInfo p in ps.Properties) { this.AddKey(po, p.Name, this.Node(p.Value, field, p.Name, maps, keywords), maskObjectKeys); }
+                    return po;
                 }
                 if (IsKept(inner)) { return value; }
-                return this.Protect(inner);
+                return this.Node(inner, holder, field, maps, keywords);
             }
             if (value is StringBuilder || IsKept(value)) { return value; }
             if (value is ValueType) { return this.Hide(Convert.ToString(value, CultureInfo.InvariantCulture)); }
             IDictionary dict = value as IDictionary;
             if (dict != null)
             {
+                bool maskKeys = Named(maps, holder, field);
                 OrderedDictionary od = new OrderedDictionary(StringComparer.OrdinalIgnoreCase);
-                foreach (DictionaryEntry e in dict) { this.AddKey(od, e.Key, this.Protect(e.Value)); }
+                foreach (DictionaryEntry e in dict)
+                {
+                    string k = e.Key as string;
+                    if (k == null) { k = Convert.ToString(e.Key, CultureInfo.InvariantCulture); }
+                    this.AddKey(od, e.Key, this.Node(e.Value, field, k, maps, keywords), maskKeys);
+                }
                 return od;
             }
             Array arr = value as Array;
@@ -227,7 +263,8 @@ namespace WorkerPerf
                 {
                     string[] src = (string[])arr;
                     string[] dst = new string[src.Length];
-                    for (int i = 0; i < src.Length; i++) { dst[i] = this.Hide(src[i]); }
+                    bool keep = Named(keywords, holder, field);
+                    for (int i = 0; i < src.Length; i++) { dst[i] = keep ? src[i] : this.Hide(src[i]); }
                     return dst;
                 }
             }
@@ -235,7 +272,7 @@ namespace WorkerPerf
             if (list != null)
             {
                 List<object> items = new List<object>();
-                foreach (object x in list) { items.Add(this.Protect(x)); }
+                foreach (object x in list) { items.Add(this.Node(x, holder, field, maps, keywords)); }
                 return items.ToArray();
             }
             // any other object (an uri, a file, a version ...): its text form, masked, so that nothing passes unmasked
@@ -250,11 +287,11 @@ namespace WorkerPerf
             return t.IsPrimitive || t.IsEnum || value is decimal || value is DateTime || value is DateTimeOffset || value is TimeSpan || value is Guid;
         }
 
-        private void AddKey(OrderedDictionary od, object key, object value)
+        private void AddKey(OrderedDictionary od, object key, object value, bool mask)
         {
             string k = key as string;
             if (k == null) { od[key] = value; return; }
-            k = this.Hide(k);
+            if (mask) { k = this.Hide(k); }
             if (od.Contains(k))
             {
                 int n = 2;
@@ -550,10 +587,12 @@ function Hide-WorkerPerfReportText($Text, $Mask) {
 }
 
 function Protect-WorkerPerfReportData($Data, $Mask) {
-    # The report data with every string, dictionary key and property name masked, as a new structure (the input is not
-    # changed): dictionaries and custom objects become ordered dictionaries, lists become arrays, a StringBuilder
-    # (pre-rendered series of New-JsonSeries and New-JsonIntegers) and every other value stay as they are.
-    return , $Mask.Masker.Protect($Data)
+    # The report data with its names masked, as a new structure (the input is not changed): dictionaries and custom
+    # objects become ordered dictionaries, lists become arrays, strings are masked, a StringBuilder (pre-rendered series
+    # of New-JsonSeries and New-JsonIntegers), numbers, booleans and times stay as they are. The report's own field
+    # names and keyword values are not names (P2-R10): keys stay, except in $WorkerPerfMaskKeyedMaps, and the values of
+    # $WorkerPerfMaskKeywordFields stay.
+    return , $Mask.Masker.Protect($Data, [string[]]$script:WorkerPerfMaskKeyedMaps, [string[]]$script:WorkerPerfMaskKeywordFields)
 }
 
 function Get-WorkerPerfMaskItem($Record, [string]$Key) {
@@ -580,6 +619,18 @@ function Clear-WorkerPerfMaskIncident($Incident) {
         Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList (Get-WorkerPerfMaskItem $p 'detail') 'events') 'text'
     }
 }
+
+# What Protect-WorkerPerfReportData leaves as it is (P2-R10: the report's own field names and keyword values are not
+# names). A field is named by its key ("kind": everywhere) or by the key of the record that holds it and its own key
+# ("procs.role": the role of a record under procs, also incidents[].contributors.cpu.procs[]); list levels do not count.
+# Dictionaries whose keys come from the recorded data (a map keyed by user, client, server ...): only their keys are
+# masked. The report data has none today: every key is a field name of the code (contributors is keyed by resource).
+$script:WorkerPerfMaskKeyedMaps = @()
+# Fields whose value is always an identifier the code or the configuration files give, never a name or a server text.
+$script:WorkerPerfMaskKeywordFields = @(
+    'type', 'kind', 'group', 'log', 'lead', 'resource', 'resources', 'measure', 'scope', 'status', 'direction', 'isolation',
+    'endReason', 'metric', 'signalId', 'id', 'day', 'capped', 'worker', 'snapKind',
+    'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role')
 
 function Clear-WorkerPerfReportFreeText($Data) {
     # Empties, in place, the texts of the report data that come from the server as they are and may hold names the

@@ -173,9 +173,30 @@ Describe 'Ersetzen' {
         # 'Benutzer 01' wird nach dem Ersetzen von user1 zum selben Schluessel
         $d = [ordered]@{ meta = [ordered]@{ user = 'user1' }; byUser = [ordered]@{ user1 = 1; 'Benutzer 01' = 2 }; obj = [pscustomobject]@{ user1 = 'a user1' }
             series = (New-Object System.Text.StringBuilder '[1,2,null]'); n = 3.5; list = @('user1', 7) }
-        $r = Protect-WorkerPerfReportData $d $m
+        # Aussage geaendert (P2-R10): Schluessel werden nur in den Woerterbuechern der Liste WorkerPerfMaskKeyedMaps maskiert;
+        # der Test nennt byUser und obj dort
+        $old = $script:WorkerPerfMaskKeyedMaps
+        try {
+            $script:WorkerPerfMaskKeyedMaps = @('byUser', 'obj')
+            $r = Protect-WorkerPerfReportData $d $m
+        }
+        finally { $script:WorkerPerfMaskKeyedMaps = $old }
         $r.meta.user | Should -Be 'Benutzer 01'; @($r.byUser.Keys) | Should -Be @('Benutzer 01', 'Benutzer 01 (2)'); $r.byUser['Benutzer 01 (2)'] | Should -Be 2
         $r.obj['Benutzer 01'] | Should -Be 'a Benutzer 01'; $r.series.ToString() | Should -Be '[1,2,null]'; $r.n | Should -Be 3.5; $r.list | Should -Be @('Benutzer 01', 7)
+        @($r.Keys) | Should -Be @('meta', 'byUser', 'obj', 'series', 'n', 'list'); @($r.meta.Keys) | Should -Be @('user')
+        @((Protect-WorkerPerfReportData $d $m).byUser.Keys) | Should -Be @('user1', 'Benutzer 01')                  # ohne Listeneintrag bleiben die Schluessel
+    }
+    It 'laesst Feldnamen und Schluesselwoerter stehen, auch wenn ein Benutzer so heisst' {                         # P2-R10
+        $m = New-TestMask @('print', 'user', 'kind', 'crash', 'Sicherheit', 'cpu', 'anna')
+        $d = [ordered]@{ print = [ordered]@{ drivers = @() }; quality = [ordered]@{ sources = @([ordered]@{ id = 'print.drivers'; label = 'print' }) }
+            events = @([ordered]@{ kind = 'crash'; user = 'anna'; text = '' }); procs = @([ordered]@{ role = 'Sicherheit'; name = 'x.exe' })
+            incidents = @([ordered]@{ lead = 'cpu'; resources = [string[]]@('cpu'); contributors = [ordered]@{ cpu = [ordered]@{ procs = @([ordered]@{ role = 'Sicherheit' }) } }; text = 'cpu von anna' }) }
+        $r = Protect-WorkerPerfReportData $d $m
+        @($r.Keys) | Should -Be @('print', 'quality', 'events', 'procs', 'incidents'); $r.quality.sources[0].id | Should -Be 'print.drivers'
+        $r.quality.sources[0].label | Should -Be 'Benutzer 01'; @($r.events[0].Keys) | Should -Be @('kind', 'user', 'text'); $r.events[0].kind | Should -Be 'crash'
+        $r.events[0].user | Should -Be 'Benutzer 07'; $r.procs[0].role | Should -Be 'Sicherheit'; $r.incidents[0].lead | Should -Be 'cpu'; $r.incidents[0].resources | Should -Be @('cpu')
+        $r.incidents[0].contributors.Contains('cpu') | Should -BeTrue; $r.incidents[0].contributors.cpu.procs[0].role | Should -Be 'Sicherheit'
+        $r.incidents[0].text | Should -Be 'Benutzer 06 von Benutzer 07'
     }
     It 'leert Meldungstexte und Befehlszeilen' {
         # Aussage geschaerft (Fix-Runde 1): jedes Feld mit eigenem Text und eigener Pruefung, auch meta.endMessage
@@ -333,6 +354,17 @@ Describe 'Fix-Runde 1: Vorrang der Namen, unbekannte Objekte, UNC-Server im Satz
         Hide-WorkerPerfReportText $Text $otherServer | Should -Be $Unknown
     }
 }
+Describe 'WebDAV-Pfade' {
+    It 'nimmt den Server ohne @SSL und Port auf und ersetzt ihn im Text mit seinem Ersatznamen' {
+        $p = Write-TestRun 'mask-dav' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'sessions.csv' = $null; 'shares.csv' = $null; 'volumes.csv' = $null; 'probes.csv' = $null
+            'procinfo.csv' = @('0,100,1,x.exe,2,,\\dav01@SSL@8443\apps\x.exe,,', '1,101,1,y.exe,2,,\\dav02@443\tools\y.exe,,') }
+        Get-RunEntries $p 'Alles' | Should -Be @('server:T1=Server 01', 'server:h=Server 02', 'share:\\dav01@SSL@8443\apps=Freigabe 01', 'server:dav01=Server 03',
+            'share:\\dav02@443\tools=Freigabe 02', 'server:dav02=Server 04')
+        $m = New-WorkerPerfMask -Path $p -Level 'Alles' -Texts $Texts
+        Hide-WorkerPerfReportText 'C:\x und \\dav01@SSL@8443\andere\z.txt und \\DAV02@443\apps' $m | Should -Be 'C:\x und \\Server 03@SSL@8443\andere\z.txt und \\Server 04@443\apps'
+        Hide-WorkerPerfReportText '\\dav01@SSL@8443\apps\x.exe und \\dav09@SSL\q' $m | Should -Be 'Freigabe 01\x.exe und \\(Name entfernt)@SSL\q'
+    }
+}
 Describe 'Meldungstexte ueber den Plan hinaus' {
     It 'leert die Texte der Ereignisse von Mustern, des Rueckblicks und die Begruendung nicht verfuegbarer Quellen' {
         $ev = { param($t) [ordered]@{ t = 1; kind = 'crash'; text = $t } }
@@ -371,8 +403,44 @@ Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
             Clear-WorkerPerfReportFreeText $data
             $maskSimCleared = Get-MaskSimJson $data
             $maskSimMasked = Protect-WorkerPerfReportData $data $maskSimMask
+            $maskSimPersonen = New-WorkerPerfMask -Path $SimRun -Level 'Personen' -Texts $Texts -RoleLabels @(@(Read-WorkerPerfRoles $maskSimRoles) | ForEach-Object { [string]$_.label })
+            $maskSimMaskedP = Protect-WorkerPerfReportData $data $maskSimPersonen
             @{ Data = $data; Masked = $maskSimMasked; Mask = $maskSimMask; Plain = $maskSimPlain; Cleared = $maskSimCleared; ClearedAfter = (Get-MaskSimJson $data)
-                MaskedJson = (Get-MaskSimJson $maskSimMasked) }
+                MaskedJson = (Get-MaskSimJson $maskSimMasked); MaskP = $maskSimPersonen; MaskedP = $maskSimMaskedP; MaskedJsonP = (Get-MaskSimJson $maskSimMaskedP) }
+        }
+        function Get-LeftNames($Masked, $Mask) {
+            # hits of the level's names in every string and key of the masked data whose word is not a protected name
+            $protected = @{}; foreach ($p in $Mask.Protected) { $protected[$p.ToLowerInvariant()] = $true }
+            $strings = New-Object System.Collections.Generic.List[string]; Get-Strings $Masked $strings
+            $left = New-Object System.Collections.Generic.List[string]
+            foreach ($s in $strings) {
+                foreach ($hit in $Mask.Regex.Matches($s)) {
+                    $a = $hit.Index; $b = $hit.Index + $hit.Length
+                    while ($a -gt 0 -and $s[$a - 1] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $a-- }
+                    while ($b -lt $s.Length -and $s[$b] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $b++ }
+                    $word = $s.Substring($a, $b - $a).ToLowerInvariant()
+                    if (-not $protected.ContainsKey($word) -and -not $protected.ContainsKey($word.TrimEnd('.'))) { $left.Add("$($hit.Value) in '$s'") }
+                }
+            }
+            , $left.ToArray()
+        }
+        function Get-Shape($Value, [string]$Path, [string]$Holder, [string]$Field, $Paths, $Keywords) {
+            # every key path of the data, and path=value of every string of a keyword field (rule of WorkerPerfMaskKeywordFields)
+            if ($null -eq $Value -or $Value -is [System.Text.StringBuilder] -or $Value -is [ValueType]) { return }
+            if ($Value -is [string]) {
+                if ($WorkerPerfMaskKeywordFields -contains $Field -or $WorkerPerfMaskKeywordFields -contains "$Holder.$Field") { $Keywords.Add("$Path=$Value") }
+                return
+            }
+            if ($Value -is [System.Collections.IDictionary]) {
+                foreach ($k in @($Value.Keys)) { [void]$Paths.Add("$Path.$k"); Get-Shape $Value[$k] "$Path.$k" $Field ([string]$k) $Paths $Keywords }
+                return
+            }
+            foreach ($x in $Value) { Get-Shape $x "$Path[]" $Holder $Field $Paths $Keywords }
+        }
+        function Get-ShapeOf($Value) {
+            $paths = New-Object 'System.Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal); $kw = New-Object System.Collections.Generic.List[string]
+            Get-Shape $Value '' '' '' $paths $kw
+            @{ Paths = [string[]]@($paths); Keywords = $kw.ToArray() }
         }
         function Get-Strings($Value, $List) {
             if ($null -eq $Value -or $Value -is [System.Text.StringBuilder] -or $Value -is [ValueType]) { return }
@@ -402,18 +470,38 @@ Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
         foreach ($x in 'share:\\fs01\daten=Freigabe 01', 'server:fs01=Server 05', 'share:\\fs01\profile$=Freigabe 02', 'printer:PRN-EG-01=Drucker 01', 'printer:PRN-OG-02=Drucker 02') { $exp.Add($x) }
         @($Sim.Mask.Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement }) | Should -Be $exp.ToArray()
         $Sim.MaskedJson | Should -Not -Match 'user0\d\d'; $Sim.MaskedJson | Should -Not -Match 'CONTOSO'; $Sim.MaskedJson | Should -Match 'Benutzer 01'
-        $protected = @{}; foreach ($p in $Sim.Mask.Protected) { $protected[$p.ToLowerInvariant()] = $true }
-        $strings = New-Object System.Collections.Generic.List[string]; Get-Strings $Sim.Masked $strings
-        $left = New-Object System.Collections.Generic.List[string]
-        foreach ($s in $strings) {
-            foreach ($hit in $Sim.Mask.Regex.Matches($s)) {
-                $a = $hit.Index; $b = $hit.Index + $hit.Length
-                while ($a -gt 0 -and $s[$a - 1] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $a-- }
-                while ($b -lt $s.Length -and $s[$b] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $b++ }
-                $word = $s.Substring($a, $b - $a).ToLowerInvariant()
-                if (-not $protected.ContainsKey($word) -and -not $protected.ContainsKey($word.TrimEnd('.'))) { $left.Add("$($hit.Value) in '$s'") }
-            }
-        }
-        $left | Should -BeNullOrEmpty
+        Get-LeftNames $Sim.Masked $Sim.Mask | Should -BeNullOrEmpty
+    }
+    It 'enthaelt bei Personen keinen Benutzer, Client und kein Konto mehr' {
+        $Sim.MaskP.Entries.Count | Should -Be 50; $Sim.MaskedJsonP | Should -Not -Match 'user0\d\d'; $Sim.MaskedJsonP | Should -Not -Match 'WS-1\d\d\d'
+        $Sim.MaskedJsonP | Should -Match 'CONTOSO'                                           # Domaenen ersetzt erst Alles
+        Get-LeftNames $Sim.MaskedP $Sim.MaskP | Should -BeNullOrEmpty
+    }
+    It 'laesst bei <Level> Aufbau und Schluesselwoerter stehen, auch wenn Benutzer wie Felder und Schluesselwoerter heissen' -TestCases @(
+        @{ Level = 'Alles' }, @{ Level = 'Personen' }) {                                    # P2-R10
+        $base = $(if ($Level -eq 'Alles') { $Sim.Mask } else { $Sim.MaskP })
+        $plain = Get-ShapeOf $Sim.Data
+        $names = New-Object System.Collections.Generic.List[string]
+        foreach ($k in $Sim.Data.Keys) { $names.Add([string]$k) }
+        foreach ($list in 'sessions', 'procs', 'incidents', 'events') { foreach ($r in @($Sim.Data[$list])) { foreach ($k in $r.Keys) { $names.Add([string]$k) } } }
+        foreach ($e in $plain.Keywords) { $names.Add($e.Substring($e.IndexOf('=') + 1)) }
+        $seen = @{}; foreach ($e in $base.Entries) { $seen[$e.Name.ToLowerInvariant()] = $true }
+        $extra = New-Object System.Collections.Generic.List[object]
+        foreach ($n in $names) { if ($n.Length -gt 0 -and -not $seen.ContainsKey($n.ToLowerInvariant())) { $seen[$n.ToLowerInvariant()] = $true; $extra.Add(@{ Kind = 'user'; Name = $n; Replacement = ('Benutzer X{0:000}' -f $extra.Count) }) } }
+        $extra.Count | Should -BeGreaterThan 100; @($extra | ForEach-Object Name) | Should -Contain 'print'; @($extra | ForEach-Object Name) | Should -Contain 'crash'
+        $mx = @{ Level = $Level; Other = $base.Other }
+        Set-WorkerPerfMaskNames -Mask $mx -Entries (@($base.Entries) + $extra.ToArray()) -Protected $base.Protected
+        $masked = Protect-WorkerPerfReportData $Sim.Data $mx
+        $shape = Get-ShapeOf $masked
+        $shape.Paths | Should -Be $plain.Paths
+        $shape.Keywords | Should -Be $plain.Keywords
+        foreach ($s in @($masked.sessions | Where-Object { $_.user -ne '' })) { $s.user | Should -Match '^Benutzer \d\d$'; $s.client | Should -Match '^Client \d\d$' }
+        foreach ($e in @($masked.events | Where-Object { $_.Contains('user') })) { $e.user | Should -Match '^Benutzer \d\d$' }
+        foreach ($i in @($masked.incidents | Where-Object { $null -ne $_.main })) { $i.main.user | Should -Match '^Benutzer \d\d$' }
+    }
+    It 'hat in den Schluesselwortfeldern nur Werte in Bezeichnerform' {
+        $kw = (Get-ShapeOf $Sim.Data).Keywords
+        $kw.Count | Should -BeGreaterThan 100
+        @($kw | Where-Object { $v = $_.Substring($_.IndexOf('=') + 1); $v -ne '' -and $v -notmatch '^[A-Za-z0-9_.:-]+$' }) | Should -BeNullOrEmpty
     }
 }
