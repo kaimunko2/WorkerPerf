@@ -604,6 +604,11 @@ function Receive-WorkerPerfSourceErrors {
     # The simulated source fails nowhere: no failures to report.
 }
 
+function Get-WorkerPerfEventCounts {
+    # The simulated source skips no record and drops no event: no counters.
+    return [ordered]@{}
+}
+
 function Get-WorkerPerfPrintDrivers {
     foreach ($d in $script:WorkerPerfSimPrintDrivers) {
         [pscustomobject]@{ Name = $d.Name; Manufacturer = $d.Manufacturer; Version = $d.Version; Type = $d.Type; Isolation = $d.Isolation; Files = @($d.Files) }

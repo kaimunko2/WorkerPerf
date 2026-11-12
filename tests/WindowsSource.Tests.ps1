@@ -402,13 +402,20 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $script:WinFake.EventQueries | Should -Be 8                                   # ohne Sitzungsprotokoll
     }
     It 'schreibt Quellennamen mit Hochkomma und Sonderzeichen richtig in die Abfrage' {
-        $q = @{ LogName = 'Sim & Log'; Selects = @(@{ Provider = "Sim O'Brien <Dienst>"; Ids = [int[]]@(1, 2); Levels = $null }, @{ Provider = 'Sim Ebene'; Ids = $null; Levels = [int[]]@(2, 3) }) }
+        $q = @{ LogName = 'Sim & Log'; Selects = @(@{ Provider = 'Sim "Dienst" <&>'; Ids = [int[]]@(1, 2); Levels = $null }, @{ Provider = 'Sim Ebene'; Ids = $null; Levels = [int[]]@(2, 3) }) }
         $x = [xml](New-WorkerPerfEventQueryXml $q ([datetime]::new(2026, 3, 29, 1, 2, 3, 456, [DateTimeKind]::Utc)) ([datetime]::new(2026, 3, 29, 1, 2, 4, 0, [DateTimeKind]::Utc).AddTicks(1)))
         $x.QueryList.Query.Path | Should -Be 'Sim & Log'
         $sel = @($x.QueryList.Query.Select); $sel[0].Path | Should -Be 'Sim & Log'
-        $sel[0].InnerText | Should -BeExactly ("*[System[Provider[@Name=`"Sim O'Brien <Dienst>`"] and (EventID=1 or EventID=2) and TimeCreated[@SystemTime>='2026-03-29T01:02:03.456Z' and @SystemTime<='2026-03-29T01:02:04.001Z']]]")
+        $sel[0].InnerText | Should -BeExactly ("*[System[Provider[@Name='Sim `"Dienst`" <&>'] and (EventID=1 or EventID=2) and TimeCreated[@SystemTime>='2026-03-29T01:02:03.456Z' and @SystemTime<='2026-03-29T01:02:04.001Z']]]")
         $sel[1].InnerText | Should -BeExactly ("*[System[Provider[@Name='Sim Ebene'] and (Level=2 or Level=3) and TimeCreated[@SystemTime>='2026-03-29T01:02:03.456Z' and @SystemTime<='2026-03-29T01:02:04.001Z']]]")
-        { ConvertTo-WorkerPerfXPathLiteral "a'b`"c" } | Should -Throw
+        { ConvertTo-WorkerPerfXPathLiteral "Sim O'Brien" } | Should -Throw                   # nur Literale in ' (Fix-Runde 2, N5)
+        # die Nachbildung nimmt, was Windows nimmt: kein Literal in ", keine Query ohne Id, hoechstens 32 Vergleiche je Auswahl
+        { ConvertFrom-WinStandInQuery ([xml]'<QueryList><Query Id="0" Path="A"><Select Path="A">*[System[Provider[@Name="X"] and TimeCreated[@SystemTime&gt;=''2026-01-01T00:00:00.000Z'']]]</Select></Query></QueryList>') } | Should -Throw
+        { ConvertFrom-WinStandInQuery ([xml]'<QueryList><Query Path="A"><Select Path="A">*[System[Provider[@Name=''X''] and TimeCreated[@SystemTime&gt;=''2026-01-01T00:00:00.000Z'']]]</Select></Query></QueryList>') } | Should -Throw
+        $many = @{ LogName = 'A'; Selects = @(@{ Provider = 'X'; Ids = [int[]]@(1..23); Levels = [int[]]@(0, 1, 2, 3, 4, 5, 6) }) }
+        { ConvertFrom-WinStandInQuery ([xml](New-WorkerPerfEventQueryXml $many ([datetime]::UtcNow) ([datetime]::UtcNow))) } | Should -Throw '*33 Ausdruecke*'
+        $ok = @{ LogName = 'A'; Selects = @(@{ Provider = 'X'; Ids = [int[]]@(1..23); Levels = [int[]]@(0, 1, 2, 3, 4) }) }
+        @(ConvertFrom-WinStandInQuery ([xml](New-WorkerPerfEventQueryXml $ok ([datetime]::UtcNow) ([datetime]::UtcNow)))).Count | Should -Be 1
     }
     It 'liest ein Ereignis, das zwei Auswahlen derselben Abfrage nennen, nur einmal (M4)' {
         $f = Join-Path $TestDrive 'doppelt.json'
@@ -425,7 +432,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         @($b.Events).Count | Should -Be 2
     }
     It 'meldet ein nicht lesbares Protokoll einmal mit Fehlerklasse und haelt den Rueckblick fuer unvollstaendig (I1, M5)' {
-        $script:WinFake.FailLogs = @{ 'System' = 'LogInfoUnavailable' }
+        $script:WinFake.FailLogs = @{ 'System' = 'System.UnauthorizedAccessException' }
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
         $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null
         @($b.Capped) | Should -Be @('system')
@@ -435,7 +442,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] -and $_.Log -eq 'defender' }).Count | Should -Be 6
         $f = @(Receive-WorkerPerfSourceErrors)
         @($f | ForEach-Object { $_.Source }) | Should -Be @('eventsbefore', 'events')
-        $f[0].Message | Should -BeExactly "Ereignisprotokoll 'System' nicht lesbar (LogInfoUnavailable): Protokoll System nicht lesbar"
+        $f[0].Message | Should -BeExactly "Ereignisprotokoll 'System' nicht lesbar (UnauthorizedAccessException): Protokoll System nicht lesbar"
         @(Receive-WorkerPerfSourceErrors).Count | Should -Be 0
         [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5))); @(Receive-WorkerPerfSourceErrors).Count | Should -Be 0   # einmal
     }
@@ -446,6 +453,74 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         }
         $info.Sources['events.applocker'].Detail | Should -Be 'Microsoft-Windows-AppLocker/EXE and DLL, Microsoft-Windows-AppLocker/MSI and Script'
         $info.Sources['events.application'].Detail | Should -Be 'Application'
+    }
+    It 'ueberspringt einen einmal nicht lesbaren Datensatz, zaehlt ihn und liest weiter (Fix-Runde 2, N1/N2)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $crash = @($script:WinFake.Events | Where-Object { $_.ProviderName -eq 'Application Error' })[0]
+        $script:WinFake.ReadFailOnce.Add([long]$crash.RecordId)
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        @($ev | Where-Object Kind -eq 'crash').Count | Should -Be 0                           # der beschaedigte Datensatz fehlt
+        @($ev | Where-Object Source -eq 'Citrix Profile Management').Count | Should -Be 1      # der Rest des Protokolls ist gelesen
+        @(Receive-WorkerPerfSourceErrors).Count | Should -Be 0
+        $c = Get-WorkerPerfEventCounts
+        $c['application'].SkippedRecords | Should -Be 1; $c['application'].UnformattedMessages | Should -Be 0; $c['system'].SkippedRecords | Should -Be 0
+        $script:WinFake.OpenReaders | Should -Be 0; $script:WinFake.OpenRecords | Should -Be 0
+    }
+    It 'beendet nach drei Lesefehlern in Folge das Lesen eines Protokolls, meldet es einmal und liest die anderen (N1)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.ReadFailAlways = @('Application')
+        $script:WinFake.ReadCalls = 0
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        @($ev | Where-Object Log -eq 'application').Count | Should -Be 0
+        @($ev | Where-Object Group -eq 'security').Count | Should -Be 2                         # die anderen Protokolle sind gelesen
+        $script:WinFake.ReadCalls | Should -BeLessOrEqual 30                                   # 3 im Anwendungsprotokoll, die uebrigen bis zum Ende
+        $f = @(Receive-WorkerPerfSourceErrors)
+        $f.Count | Should -Be 1; $f[0].Source | Should -Be 'events'
+        $f[0].Message | Should -BeExactly "Ereignisprotokoll 'Application' nicht lesbar (InvalidOperationException): Ereignis nicht lesbar"
+        (Get-WorkerPerfEventCounts)['application'].SkippedRecords | Should -Be 3
+        $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now)
+        @($b.Capped) | Should -Be @('application')
+        $script:WinFake.OpenReaders | Should -Be 0; $script:WinFake.OpenRecords | Should -Be 0
+    }
+    It 'behaelt ein Ereignis mit nicht formatierbarer Meldung mit leerem Text und zaehlt es (N1/N2)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $crash = @($script:WinFake.Events | Where-Object { $_.ProviderName -eq 'Application Error' })[0]
+        $script:WinFake.Unformattable = @([long]$crash.RecordId)
+        $c = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) | Where-Object Kind -eq 'crash')
+        $c.Count | Should -Be 1; $c[0].Text | Should -Be ''; $c[0].App | Should -Be 'EXCEL.EXE'
+        (Get-WorkerPerfEventCounts)['application'].UnformattedMessages | Should -Be 1
+        (Get-WorkerPerfEventCounts)['application'].SkippedRecords | Should -Be 0
+    }
+    It 'zaehlt die Ereignisse, die die Obergrenze eines Abrufs nicht behaelt (N3)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.ManyEvents = 250
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>$null | Where-Object Log -eq 'defender')
+        $ev.Count | Should -Be 200
+        (Get-WorkerPerfEventCounts)['defender'].DroppedEvents | Should -Be 50
+        [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>$null)
+        (Get-WorkerPerfEventCounts)['defender'].DroppedEvents | Should -Be 100                 # je Abruf weitergezaehlt
+        $script:WinFake.OpenReaders | Should -Be 0; $script:WinFake.OpenRecords | Should -Be 0
+    }
+    It 'prueft das Zeitbudget des Rueckblicks zwischen den Datensaetzen (N1)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.ManyEvents = 2500
+        $l = @($script:WinState.Logs | Where-Object Id -eq 'defender')[0]
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $r = Read-WorkerPerfWinLogEvents $l ([datetime]::UtcNow.AddDays(-1)) ([datetime]::UtcNow) 2000 -Clock $clock -BudgetMs ($clock.ElapsedMilliseconds + 150)
+        $r.BudgetHit | Should -BeTrue; @($r.Events).Count | Should -BeLessThan 2000
+        $script:WinFake.OpenReaders | Should -Be 0; $script:WinFake.OpenRecords | Should -Be 0
+    }
+    It 'begrenzt jede Leseschleife auch bei einem Leser, der nie endet (N1)' {
+        $endless = [pscustomobject]@{ N = 0 }
+        $endless | Add-Member -MemberType ScriptMethod -Name ReadEvent -Value {
+            $this.N++
+            if ($this.N % 3 -eq 0) { $r = [pscustomobject]@{ TimeCreated = [datetime]::Now; RecordId = [long]$this.N }; $r | Add-Member ScriptMethod ToXml { '<x/>' }
+                $r | Add-Member ScriptMethod FormatDescription { 'm' }; $r | Add-Member ScriptMethod Dispose { }; return $r }
+            throw (New-Object System.InvalidOperationException 'kaputt')
+        }
+        $r = Read-WorkerPerfEventRecords $endless 10 $null 0 5
+        @($r.Records).Count | Should -Be 10; $r.Beyond | Should -Be 5; $r.Skipped | Should -Be 30; $r.Failed | Should -BeFalse
+        $endless.N | Should -Be 45                                                                # 3 * (10 + 5) Aufrufe, dann Schluss
     }
     It 'liest den Rueckblick ohne Sitzungsprotokoll und vermerkt die Obergrenze' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
@@ -735,7 +810,7 @@ Describe 'Collector mit einem nicht lesbaren Ereignisprotokoll (Fix-Runde 1, M5)
         Copy-Item (Join-Path $PSScriptRoot '../src/*') $dir
         [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Common.ps1'), "`nfunction Test-WorkerPerfWindows { return `$true }`n")
         [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Sources.Windows.ps1'),
-            "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n`$script:WinFake.FailLogs = @{ 'System' = 'LogInfoUnavailable' }`n")
+            "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n`$script:WinFake.FailLogs = @{ 'System' = 'System.UnauthorizedAccessException' }`n")
         [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
         $out = Join-Path $TestDrive 'out'
         $script:Warnings = @()
@@ -745,10 +820,39 @@ Describe 'Collector mit einem nicht lesbaren Ereignisprotokoll (Fix-Runde 1, M5)
     }
     It 'vermerkt das Protokoll einmal je Abruf in SourceErrors, warnt einmal und haelt den Rueckblick fuer unvollstaendig' {
         $Meta.SourceErrors.eventsbefore.Count | Should -Be 1
-        $Meta.SourceErrors.eventsbefore.FirstMessage | Should -Match "^Ereignisprotokoll 'System' nicht lesbar \(LogInfoUnavailable\)"
+        $Meta.SourceErrors.eventsbefore.FirstMessage | Should -Match "^Ereignisprotokoll 'System' nicht lesbar \(UnauthorizedAccessException\)"
         $Meta.SourceErrors.events.Count | Should -Be 1
         @($Warnings | Where-Object { $_ -like "*Ereignisprotokoll 'System' nicht lesbar*" }).Count | Should -Be 2   # je Quelle einmal
         @($Meta.LookbackCapped) | Should -Be @('system')
         @(Import-Csv (Join-Path $Run 'events_before.csv') | Where-Object Kind -eq 'crash').App | Should -Be @('EXCEL.EXE')
+    }
+}
+
+Describe 'Collector mit einem Protokoll, dessen Datensaetze sich nie lesen lassen (Fix-Runde 2, N1)' {
+    BeforeAll {
+        $dir = Join-Path $TestDrive 'src'; [void](New-Item -ItemType Directory -Path $dir -Force)
+        Copy-Item (Join-Path $PSScriptRoot '../src/*') $dir
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Common.ps1'), "`nfunction Test-WorkerPerfWindows { return `$true }`n")
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Sources.Windows.ps1'),
+            "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n`$script:WinFake.ReadFailAlways = @('Application')`n" +
+            "`$script:WinFake.Unformattable = @([long]@(`$script:WinFake.Events | Where-Object { `$_.ProviderName -eq 'Service Control Manager' })[0].RecordId)`n")
+        [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+        $out = Join-Path $TestDrive 'out'
+        $script:Run = (& (Join-Path $dir 'Start-WorkerPerfCapture.ps1') -OutputPath $out -DurationMinutes 0.12 -FastIntervalSeconds 1 -IntervalSeconds 5 3>$null 6>$null) |
+            Select-Object -Last 1
+        $script:Meta = Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json
+    }
+    It 'laeuft bis zum Ende, meldet das Protokoll und schreibt die Zaehler in meta.json' {
+        $Meta.EndReason | Should -Be 'duration'; $Meta.Ticks | Should -BeGreaterOrEqual 5
+        $Meta.SourceErrors.eventsbefore.FirstMessage | Should -Match "^Ereignisprotokoll 'Application' nicht lesbar \(InvalidOperationException\)"
+        $Meta.SourceErrors.events.Count | Should -Be 1
+        @($Meta.LookbackCapped) | Should -Be @('application')
+        $Meta.EventReadCounts.application.SkippedRecords | Should -BeGreaterOrEqual 6                # 3 im Rueckblick, 3 je Abruf
+        $Meta.EventReadCounts.system.UnformattedMessages | Should -BeGreaterOrEqual 1
+        foreach ($p in $Meta.EventReadCounts.PSObject.Properties) {
+            foreach ($q in $p.Value.PSObject.Properties) { $q.Value | Should -BeOfType [long] -Because "$($p.Name).$($q.Name)" }
+        }
+        @(Import-Csv (Join-Path $Run 'events_before.csv') | Where-Object Kind -eq 'service').Text | Should -Be @('')
+        @(Import-Csv (Join-Path $Run 'events_before.csv') | Where-Object Group -eq 'security').Count | Should -BeGreaterThan 0
     }
 }

@@ -13,8 +13,11 @@ function Reset-WinStandIns {
         Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true; ThrowCheck = ''; ManyEvents = 0; FailStorage = $false
         # every log of events.json exists; DisabledLogs exist but are switched off
         Logs = @(Get-WinStandInCatalogueLogs); DisabledLogs = @(); EventQueries = 0; RecordId = 0; Queries = [System.Collections.Generic.List[string]]::new()
-        # FailLogs: log name -> error id of a terminating failure of its query (for example 'LogInfoUnavailable')
-        FailLogs = @{}
+        # FailLogs: log name -> type name of the exception that opening its reader throws; ReadFailOnce: record ids whose
+        # read throws once (the reader moves on); ReadFailAlways: log names where every read throws; Unformattable:
+        # record ids whose message cannot be formatted; OpenReaders/OpenRecords: not yet disposed
+        FailLogs = @{}; ReadFailOnce = [System.Collections.Generic.List[long]]::new(); ReadFailAlways = @(); Unformattable = @()
+        OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
         Events = [System.Collections.Generic.List[object]]::new()
         # SID -> account as Windows translates it; SidTimeout: SIDs whose lookup runs into the time limit
         Sids = @{ 'S-1-5-21-1000-2000-3000-1108' = 'KLINIK\mueller'; 'S-1-5-80-1-2-3-4-5' = 'NT SERVICE\SimDienst' }; SidTimeout = @(); SidLookups = 0
@@ -112,10 +115,16 @@ function New-WinStandInXml([string]$Provider, [int]$Id, [int]$Level, [string[]]$
 }
 
 function New-WinStandInRecord($E) {
-    $o = [pscustomobject]@{ ProviderName = $E.ProviderName; Id = $E.Id; LevelValue = $E.Level; TimeCreated = $E.TimeCreated; Message = $E.Message; LogName = $E.LogName
-        RecordId = [long]$E.RecordId }
-    $xml = $E.Xml
-    $o | Add-Member -MemberType ScriptMethod -Name ToXml -Value ([scriptblock]::Create("'" + $xml.Replace("'", "''") + "'"))
+    # like an EventLogRecord: TimeCreated (local), RecordId, ToXml(), FormatDescription() (throws for Unformattable), Dispose()
+    $script:WinFake.OpenRecords++
+    $o = [pscustomobject]@{ ProviderName = $E.ProviderName; Id = $E.Id; LevelValue = $E.Level; TimeCreated = $E.TimeCreated; LogName = $E.LogName
+        RecordId = [long]$E.RecordId; Text = $E.Message; Xml = $E.Xml; Disposed = $false }
+    $o | Add-Member -MemberType ScriptMethod -Name ToXml -Value { $this.Xml }
+    $o | Add-Member -MemberType ScriptMethod -Name FormatDescription -Value {
+        if ($script:WinFake.Unformattable -contains $this.RecordId) { throw (New-Object System.InvalidOperationException 'Meldungsdatei fehlt') }
+        $this.Text
+    }
+    $o | Add-Member -MemberType ScriptMethod -Name Dispose -Value { if (-not $this.Disposed) { $this.Disposed = $true; $script:WinFake.OpenRecords-- } }
     $o
 }
 
@@ -210,46 +219,48 @@ function ConvertFrom-WinStandInQuery([xml]$Xml) {
     # The selects of a structured query as the source writes them: @{ Path; Provider; Ids; Levels; After (>=), Before (<=) }.
     # Only the forms the source writes are understood; anything else fails the test.
     foreach ($q in @($Xml.QueryList.Query)) {
+        if ($null -eq $q.Attributes['Id']) { throw 'Die angegebene Abfrage ist ungueltig (Query ohne Id)' }
         foreach ($sel in @($q.Select)) {
             $x = [string]$sel.InnerText
-            $m = [regex]::Match($x, "^\*\[System\[Provider\[@Name=(?:'([^']*)'|""([^""]*)"")\](.*) and TimeCreated\[@SystemTime>='([0-9TZ:.\-]+)'(?: and @SystemTime<='([0-9TZ:.\-]+)')?\]\]\]$")
+            # Windows takes the provider literal in ' (as Event Viewer writes it); a literal in " is refused here
+            $m = [regex]::Match($x, "^\*\[System\[Provider\[@Name='([^']*)'\](.*) and TimeCreated\[@SystemTime>='([0-9TZ:.\-]+)'(?: and @SystemTime<='([0-9TZ:.\-]+)')?\]\]\]$")
             if (-not $m.Success) { throw "Stand-in versteht die Abfrage nicht: $x" }
-            $mid = $m.Groups[3].Value
+            $mid = $m.Groups[2].Value
             $ids = @([regex]::Matches($mid, 'EventID=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
             $levels = @([regex]::Matches($mid, 'Level=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
             if (($mid -replace '\(EventID=\d+( or EventID=\d+)*\)', '' -replace '\(Level=\d+( or Level=\d+)*\)', '' -replace ' and ', '').Trim().Length -gt 0) { throw "Stand-in versteht die Abfrage nicht: $x" }
-            if ($ids.Count -gt 23) { throw 'Die angegebene Abfrage ist ungueltig' }
+            # every comparison counts against the 32 expressions of a select: provider, ids, levels, time bounds
+            $expr = 1 + $ids.Count + $levels.Count + 1 + [int]$m.Groups[4].Success
+            if ($expr -gt 32) { throw "Die angegebene Abfrage ist ungueltig ($expr Ausdruecke)" }
             $parse = { param($t) [datetime]::ParseExact($t, "yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture,
                     [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal) }
-            $provider = $(if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value })
-            @{ Path = [string]$sel.Path; QueryPath = [string]$q.Path; Provider = $provider; Ids = $ids; Levels = $levels; After = (& $parse $m.Groups[4].Value)
-                Before = $(if ($m.Groups[5].Success) { & $parse $m.Groups[5].Value } else { $null }) }
+            @{ Path = [string]$sel.Path; QueryPath = [string]$q.Path; Provider = $m.Groups[1].Value; Ids = $ids; Levels = $levels; After = (& $parse $m.Groups[3].Value)
+                Before = $(if ($m.Groups[4].Success) { & $parse $m.Groups[4].Value } else { $null }) }
         }
     }
 }
 
 function Get-WinEvent {
-    # like Get-WinEvent: -ListLog gives IsEnabled; -FilterXml filters by the selects of the structured query (provider,
-    # ids, levels, SystemTime bounds as UTC literals, the way the event log compares them), newest first or with -Oldest
-    # oldest first, at most MaxEvents; no match is a non-terminating error with the language neutral id. An event that
-    # two selects name comes once per select (the worst case for the source's de-duplication). -FilterHashtable fails:
-    # the real cmdlet turns its time bounds into local text, which shifts a UTC bound by the server's offset.
+    # like Get-WinEvent -ListLog (IsEnabled); the source reads events through Open-WorkerPerfEventReader, anything else fails
     [CmdletBinding()] param([string]$ListLog, [hashtable]$FilterHashtable, [xml]$FilterXml, [long]$MaxEvents = -1, [switch]$Oldest)
-    if ($ListLog) {
-        if ($script:WinFake.Logs -contains $ListLog) { return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog) } }
-        throw "Protokoll $ListLog nicht vorhanden"
-    }
-    if ($null -ne $FilterHashtable) { throw 'Stand-in: -FilterHashtable verschiebt die Zeitgrenzen um den Versatz des Servers; die Quelle muss -FilterXml verwenden' }
-    if ($null -eq $FilterXml) { throw 'Stand-in: Abfrage ohne -FilterXml' }
+    if (-not $ListLog) { throw 'Stand-in: Ereignisse liest die Quelle ueber Open-WorkerPerfEventReader, nicht ueber Get-WinEvent' }
+    if ($script:WinFake.Logs -contains $ListLog) { return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog) } }
+    throw "Protokoll $ListLog nicht vorhanden"
+}
+
+function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
+    # like an EventLogReader over the structured query: the selects (provider, ids, levels, SystemTime bounds as UTC
+    # literals, the way the event log compares them) pick the fake events, newest first unless Oldest. An event that
+    # two selects name comes once per select (the worst case for the source's de-duplication). ReadEvent() returns
+    # the next record or $null at the end; FailLogs, ReadFailOnce and ReadFailAlways inject failures.
+    $xml = [xml]$QueryXml
     $script:WinFake.EventQueries++
-    $script:WinFake.Queries.Add($FilterXml.OuterXml)
-    $selects = @(ConvertFrom-WinStandInQuery $FilterXml)
+    $script:WinFake.Queries.Add($xml.OuterXml)
+    $selects = @(ConvertFrom-WinStandInQuery $xml)
     $log = $selects[0].QueryPath
     foreach ($sel in $selects) { if ($sel.Path -ne $log) { throw 'Stand-in: Select und Query nennen verschiedene Protokolle' } }
-    if ($script:WinFake.FailLogs.ContainsKey($log)) {
-        throw (New-Object System.Management.Automation.ErrorRecord ((New-Object Exception "Protokoll $log nicht lesbar")), ($script:WinFake.FailLogs[$log] + ',Microsoft.PowerShell.Commands.GetWinEventCommand'), 'NotSpecified', $null)
-    }
-    if ($script:WinFake.Logs -notcontains $log -or $script:WinFake.DisabledLogs -contains $log) { throw "Protokoll $log nicht vorhanden" }
+    if ($script:WinFake.FailLogs.ContainsKey($log)) { throw (New-Object ($script:WinFake.FailLogs[$log]) "Protokoll $log nicht lesbar") }
+    if ($script:WinFake.Logs -notcontains $log -or $script:WinFake.DisabledLogs -contains $log) { throw (New-Object System.IO.FileNotFoundException "Protokoll $log nicht vorhanden") }
     $all = @($script:WinFake.Events | Where-Object { $_.LogName -eq $log })
     if ($log -like '*Defender*' -and $script:WinFake.ManyEvents -gt 0) {
         # one event per second, each with its own fixed record id
@@ -272,14 +283,22 @@ function Get-WinEvent {
             $hits.Add($e)
         }
     }
-    $events = @($hits.ToArray() | Sort-Object -Property @{ Expression = { $_.TimeCreated.ToUniversalTime() }; Descending = (-not $Oldest) })
-    if ($events.Count -eq 0) {
-        $PSCmdlet.WriteError((New-Object System.Management.Automation.ErrorRecord ((New-Object Exception 'Keine Ereignisse')),
-                'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand', 'ObjectNotFound', $null))
-        return
+    $items = @($hits.ToArray() | Sort-Object -Property @{ Expression = { $_.TimeCreated.ToUniversalTime() }; Descending = (-not $Oldest) })
+    $script:WinFake.OpenReaders++
+    $reader = [pscustomobject]@{ Items = $items; Pos = 0; Log = $log; Disposed = $false }
+    $reader | Add-Member -MemberType ScriptMethod -Name ReadEvent -Value {
+        $script:WinFake.ReadCalls++
+        if ($script:WinFake.ReadFailAlways -contains $this.Log) { throw (New-Object System.InvalidOperationException 'Ereignis nicht lesbar') }
+        if ($this.Pos -ge @($this.Items).Count) { return $null }
+        $e = $this.Items[$this.Pos]; $this.Pos++
+        if ($script:WinFake.ReadFailOnce.Contains([long]$e.RecordId)) {
+            [void]$script:WinFake.ReadFailOnce.Remove([long]$e.RecordId)
+            throw (New-Object System.InvalidOperationException 'Ereignis beschaedigt')
+        }
+        New-WinStandInRecord $e
     }
-    if ($MaxEvents -ge 0) { $events = @($events | Select-Object -First $MaxEvents) }
-    foreach ($e in $events) { New-WinStandInRecord $e }
+    $reader | Add-Member -MemberType ScriptMethod -Name Dispose -Value { if (-not $this.Disposed) { $this.Disposed = $true; $script:WinFake.OpenReaders-- } }
+    $reader
 }
 
 function Get-WorkerPerfSidAccount([string]$Sid) {

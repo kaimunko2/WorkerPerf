@@ -112,8 +112,8 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         $log = [string](Get-WorkerPerfField $e 'log')
         if (-not $logs.Contains($log)) { throw "$where`: Feld 'log' verweist auf kein bekanntes Protokoll ('$log')." }
         if ([string]::IsNullOrWhiteSpace($provider)) { throw "$where`: Feld 'provider' fehlt." }
-        # the event log query writes the name as an XPath literal, which can be quoted with ' or with ", not with both
-        if ($provider.IndexOf("'") -ge 0 -and $provider.IndexOf('"') -ge 0) { throw "$where`: Feld 'provider' darf nicht zugleich ' und `" enthalten." }
+        # the event log query writes the name as an XPath literal in ' (XPath 1.0 has no escape inside a literal)
+        if ($provider.IndexOf("'") -ge 0) { throw "$where`: Feld 'provider' darf kein ' enthalten." }
         $ids = New-Object System.Collections.Generic.List[int]
         foreach ($raw in $rawIds) {
             $i = ConvertTo-WorkerPerfEventInt $raw

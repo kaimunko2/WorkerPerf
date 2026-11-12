@@ -189,6 +189,7 @@ $meta = [ordered]@{
     IncludeCommandLine   = [bool]$IncludeCommandLine
     EventLookbackDays    = $EventLookbackDays
     LookbackCapped       = @()
+    EventReadCounts      = [ordered]@{}
     CollectorPid         = $source.CollectorPid
     Endpoints            = @($source.Endpoints)
     Sources              = $source.Sources
@@ -220,9 +221,11 @@ function Register-SourceMessage([string]$Source, [string]$message) {
 #region ---------- capture loop -----------------------------------------------------------
 
 # Failures the source reports without stopping its call (a log that could not be read), once each.
+# With them the counters of the event reads (records skipped, messages not formatted, events over the cap; numbers).
 function Register-SourceFailures {
     try { foreach ($f in @(Receive-WorkerPerfSourceErrors)) { if ($null -ne $f) { Register-SourceMessage ([string]$f.Source) ([string]$f.Message) } } }
     catch { Write-Verbose $_.Exception.Message }
+    try { $meta.EventReadCounts = Get-WorkerPerfEventCounts } catch { Write-Verbose $_.Exception.Message }
 }
 
 function Write-WorkerPerfProbeRows([object[]]$Results, [int]$T) {

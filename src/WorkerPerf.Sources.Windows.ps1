@@ -4,8 +4,8 @@
 # performance counters are read through System.Diagnostics.PerformanceCounterCategory with their English names, which
 # works in every display language. What can be checked without Windows (instance names, profile container mapping,
 # conversion of counter values, Citrix rows, events) sits in pure functions; the Windows calls are thin wrappers that
-# the tests replace (Open-/Read-WorkerPerfWinCategory, Get-WorkerPerfWinSampleValue, Get-CimInstance, Get-WinEvent,
-# Get-WinSessionRaw, Get-WorkerPerfSidAccount and the registry readers of printing). The events come from the logs,
+# the tests replace (Open-/Read-WorkerPerfWinCategory, Get-WorkerPerfWinSampleValue, Get-CimInstance, Get-WinEvent -ListLog,
+# Open-WorkerPerfEventReader, Get-WinSessionRaw, Get-WorkerPerfSidAccount and the registry readers of printing). The events come from the logs,
 # providers and ids of the event catalogue (events.json, WorkerPerf.EventConfig.ps1 must be dot-sourced before).
 
 # C# source of the WTS session wrapper (load with Add-Type -TypeDefinition $script:WorkerPerfWtsSource).
@@ -395,14 +395,17 @@ $script:WorkerPerfCitrixKeepZero = 'Latency|Round|RTT'
 # Events: the catalogue next to this file when Initialize-WorkerPerfSource gets none. At most 200 events per log and read
 # of the measurement, at most 2000 per log in the lookback; at most 23 ids per select of an event query (a select may
 # hold at most 32 expressions). The lookback stops after a time budget, checked before each log and between its
-# events; a Get-WinEvent call that runs cannot be cut, and it formats the Message of every event it returns (up to
-# 2001 per log name), which is the slow part of an event.
+# records; formatting the Message of a record (FormatDescription) is the slow part of an event.
 $script:WorkerPerfWinEventFile = Join-Path $PSScriptRoot 'events.json'
 $script:WorkerPerfWinMaxEvents = 200
 $script:WorkerPerfWinLookbackMax = 2000
+# records of a regular read beyond its cap that are only counted (DroppedEvents in meta.json; the count stops there)
+$script:WorkerPerfWinCountBeyond = 10000
+# 23 ids per select: the select then holds at most 31 of the 32 expressions an event query allows (provider, 23 ids,
+# 5 levels, 2 time bounds); that this limit holds as documented is not yet verified on a server
 $script:WorkerPerfWinMaxIdsPerQuery = 23
 $script:WorkerPerfWinLookbackBudgetSec = 60
-# Calls: one Get-WinEvent -FilterXml per log name and read (a log of the catalogue with two names takes two).
+# Reads: one EventLogReader per log name and read (a log of the catalogue with two names takes two).
 # Account of an event's SID: time limit of one lookup, and how long lookups pause after one ran into it.
 $script:WorkerPerfWinSidTimeoutMs = 1000
 $script:WorkerPerfWinSidPauseMinutes = 10
@@ -922,7 +925,7 @@ function ConvertTo-WorkerPerfServiceMap([object[]]$Services) {
 }
 
 function New-WorkerPerfEventQueries($Config, [string]$LogId, [string[]]$Names) {
-    # The queries of one log of the catalogue: one per log name, read with one Get-WinEvent -FilterXml call. Each holds
+    # The queries of one log of the catalogue: one per log name, read with one EventLogReader. Each holds
     # its selects: per provider its ids, at most 23 per select (with the levels of the entries that name levels), and for
     # the entries with "ids": "*" one select by level. Emits @{ LogName; Selects = @(@{ Provider; Ids; Levels }) }
     # (Ids and Levels int[] or $null). A select stays below the 32 expressions an event query allows: provider, at most
@@ -961,10 +964,10 @@ function New-WorkerPerfEventQueries($Config, [string]$LogId, [string[]]$Names) {
 }
 
 function ConvertTo-WorkerPerfXPathLiteral([string]$Text) {
-    # A text as an XPath 1.0 literal: in ' or, when it holds a ', in " (XPath 1.0 has no escape inside a literal).
+    # A text as an XPath literal in ' (the form Event Viewer writes; XPath 1.0 has no escape inside a literal, and
+    # whether the event log takes a literal in " is not verified, so a name with ' is refused; events.json refuses it).
     if ($Text.IndexOf("'") -lt 0) { return "'" + $Text + "'" }
-    if ($Text.IndexOf('"') -lt 0) { return '"' + $Text + '"' }
-    throw "Name mit ' und `" ist in einer Ereignisabfrage nicht darstellbar: $Text"
+    throw "Name mit ' ist in einer Ereignisabfrage nicht darstellbar: $Text"
 }
 
 function Format-WorkerPerfEventQueryTime([datetime]$Utc, [switch]$Up) {
@@ -1191,6 +1194,14 @@ function Get-WorkerPerfSidAccount([string]$Sid) {
     return @{ Name = [string]$name; TimedOut = [bool]$timedOut }
 }
 
+function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
+    # An EventLogReader over the structured XML query (newest first unless Oldest), as the probe script reads events.
+    # The query names its log; a missing log throws here (EventLogNotFoundException). The caller disposes the reader.
+    $q = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery -ArgumentList $null, ([System.Diagnostics.Eventing.Reader.PathType]::LogName), $QueryXml
+    $q.ReverseDirection = (-not $Oldest)
+    return (New-Object System.Diagnostics.Eventing.Reader.EventLogReader -ArgumentList $q)
+}
+
 function Open-WorkerPerfRegistryKey([string]$SubKey) {
     # A key below HKLM, read only; $null when it does not exist. Unlike the registry provider, a '/' stays part of a name.
     return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($SubKey, $false)
@@ -1375,7 +1386,7 @@ function Initialize-WorkerPerfSource {
         IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; NoCitrix = [bool]$NoCitrix
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
         EventConfig = $null; SidCache = @{}; SidPauseUntil = [datetime]::MinValue; PrintDrivers = $false; PrintQueue = $null
-        LogErrors = (New-Object System.Collections.Generic.List[object]); LogErrorsSeen = @{}
+        LogErrors = (New-Object System.Collections.Generic.List[object]); LogErrorsSeen = @{}; EventCounts = [ordered]@{}
     }
 
     # ---- performance counters: one status per counter group ----
@@ -1647,77 +1658,162 @@ function ConvertTo-WorkerPerfWinEventRecord($Config, [string]$LogId, $Event) {
     # A record of an event of the log from its XML and the catalogue, or $null (not in the catalogue, unreadable). The
     # User comes from the data fields, else from the account of the System part.
     if ($null -eq $Event -or $null -eq $Event.TimeCreated) { return $null }
-    $xml = ''
-    try { $xml = [string]$Event.ToXml() } catch { return $null }
-    $parsed = ConvertFrom-WorkerPerfEventXml $xml
+    $parsed = ConvertFrom-WorkerPerfEventXml ([string]$Event.Xml)
     if ($null -eq $parsed) { return $null }
     $entry = Resolve-WorkerPerfEventEntry $Config $LogId $parsed.Provider $parsed.EventId $parsed.Level
     if ($null -eq $entry) { return $null }
-    $text = ''
-    try { $text = [string]$Event.Message } catch { $text = '' }
-    $rec = ConvertTo-WorkerPerfEventRecord $entry $parsed ([datetime]$Event.TimeCreated) $text
+    $rec = ConvertTo-WorkerPerfEventRecord $entry $parsed ([datetime]$Event.TimeCreated) ([string]$Event.Message)
     if ($null -eq $rec) { return $null }
     if ($rec.User.Length -eq 0 -and $parsed.UserSid.Length -gt 0) { $rec.User = ConvertTo-WorkerPerfEventAccountName (Resolve-WorkerPerfEventSid $parsed.UserSid) $Config }
     return $rec
 }
 
-function Add-WorkerPerfLogError([string]$Source, [string]$LogName, $ErrorRecord) {
-    # A log name whose query failed: queued once per data source call kind ('events', 'eventsbefore') and log name for
-    # Receive-WorkerPerfSourceErrors, which the collector books into SourceErrors of meta.json and warns about once.
+function Get-WorkerPerfErrorClass($Exception) {
+    # The class of a failure: the type name of the exception, without the wrappers PowerShell puts around a method
+    # that threw (MethodInvocationException, and a plain RuntimeException around a script method's exception).
+    $ex = $Exception
+    $guard = 0
+    while ($null -ne $ex -and $null -ne $ex.InnerException -and $guard -lt 5 -and
+        ($ex -is [System.Management.Automation.MethodException] -or $ex.GetType() -eq [System.Management.Automation.RuntimeException])) { $ex = $ex.InnerException; $guard++ }
+    if ($null -eq $ex) { return 'Exception' }
+    return $ex.GetType().Name
+}
+
+function Get-WorkerPerfErrorText($Exception) {
+    $ex = $Exception
+    $guard = 0
+    while ($null -ne $ex -and $null -ne $ex.InnerException -and $guard -lt 5 -and
+        ($ex -is [System.Management.Automation.MethodException] -or $ex.GetType() -eq [System.Management.Automation.RuntimeException])) { $ex = $ex.InnerException; $guard++ }
+    if ($null -eq $ex) { return '' }
+    return [string]$ex.Message
+}
+
+function Add-WorkerPerfLogError([string]$Source, [string]$LogName, [string]$Class, [string]$Text) {
+    # A log name that could not be read: queued once per data source call kind ('events', 'eventsbefore') and log name
+    # for Receive-WorkerPerfSourceErrors, which the collector books into SourceErrors of meta.json and warns about once.
     $st = $script:WinState
     $key = $Source + '|' + $LogName
     if ($st.LogErrorsSeen.ContainsKey($key)) { return }
     $st.LogErrorsSeen[$key] = $true
-    $class = ([string]$ErrorRecord.FullyQualifiedErrorId).Split(',')[0]
-    if ([string]::IsNullOrEmpty($class) -or $class -eq [string]$ErrorRecord.Exception.Message) { $class = $ErrorRecord.Exception.GetType().Name }
-    $st.LogErrors.Add(@{ Source = $Source; Message = ("Ereignisprotokoll '{0}' nicht lesbar ({1}): {2}" -f $LogName, $class, $ErrorRecord.Exception.Message) })
+    $st.LogErrors.Add(@{ Source = $Source; Message = ("Ereignisprotokoll '{0}' nicht lesbar ({1}): {2}" -f $LogName, $Class, $Text) })
 }
 
-function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$Max, [switch]$Oldest, [string]$Source = 'events') {
-    # The raw events of one log of the catalogue with StartUtc <= time (<= EndUtc): one Get-WinEvent -FilterXml call per
-    # log name with at most Max + 1 events (oldest first with -Oldest, else newest first), merged in that order and cut
-    # to Max: @{ Events; More (more were there); Failed (a log name could not be read) }. "No matching events" is no
-    # error, and neither is an error about a single record (its message could not be formatted); a log name that
-    # cannot be read is queued once (Add-WorkerPerfLogError) and marks the result Failed.
+function Get-WorkerPerfEventCounter([string]$LogId) {
+    # The counters of one log of the catalogue for meta.json (EventReadCounts): numbers only.
+    $st = $script:WinState
+    if (-not $st.EventCounts.Contains($LogId)) { $st.EventCounts[$LogId] = [ordered]@{ SkippedRecords = 0; UnformattedMessages = 0; DroppedEvents = 0 } }
+    return $st.EventCounts[$LogId]
+}
+
+function Read-WorkerPerfEventRecords($Reader, [int]$Max, [System.Diagnostics.Stopwatch]$Clock = $null, [double]$BudgetMs = 0, [int]$CountBeyond = 1) {
+    # Reads at most Max records from an event reader (ReadEvent until $null) and releases each at once. Per record: its
+    # time, record id, XML and message (FormatDescription; a message that cannot be formatted is '' and counted). Then
+    # up to CountBeyond further records are only counted (Beyond; neither converted nor formatted). A record that
+    # cannot be read, or whose XML cannot be taken, is skipped and counted; after 3 such records in a row the read ends
+    # as Failed. With Clock, the read also ends (BudgetHit) when Clock reaches BudgetMs.
+    # Bounds: each pass of the loop either keeps or counts a record (at most Max + CountBeyond) or adds a failure; at
+    # most 2 failures lie between two such records, so the loop makes at most 3 * (Max + CountBeyond + 1) passes; a
+    # counter enforces that bound too. ReadEvent itself returns $null at the end of the result.
+    $records = New-Object System.Collections.Generic.List[object]
+    $skipped = 0; $unformatted = 0; $inRow = 0; $passes = 0; $beyond = 0
+    $failed = $false; $class = ''; $text = ''; $budgetHit = $false
+    $maxPasses = 3 * ($Max + $CountBeyond + 1)
+    while ($records.Count + $beyond -lt $Max + $CountBeyond -and $passes -lt $maxPasses) {
+        $passes++
+        if ($null -ne $Clock -and $Clock.ElapsedMilliseconds -ge $BudgetMs) { $budgetHit = $true; break }
+        $rec = $null
+        try { $rec = $Reader.ReadEvent() }
+        catch {
+            $skipped++; $inRow++
+            if ($inRow -ge 3) { $failed = $true; $class = Get-WorkerPerfErrorClass $_.Exception; $text = Get-WorkerPerfErrorText $_.Exception; break }
+            continue
+        }
+        if ($null -eq $rec) { break }
+        if ($records.Count -ge $Max) {
+            $beyond++; $inRow = 0
+            try { $rec.Dispose() } catch { $null = $_ }
+            continue
+        }
+        try {
+            $xml = $null
+            try { $xml = [string]$rec.ToXml() }
+            catch { $xml = $null; $class = Get-WorkerPerfErrorClass $_.Exception; $text = Get-WorkerPerfErrorText $_.Exception }
+            if ([string]::IsNullOrEmpty($xml)) {
+                $skipped++; $inRow++
+                if ($inRow -ge 3) {
+                    $failed = $true
+                    if ($class -eq '') { $class = 'EmptyRecord'; $text = 'Ereignis ohne XML' }
+                    break
+                }
+                continue
+            }
+            $inRow = 0
+            $message = $null
+            try { $message = $rec.FormatDescription() } catch { $message = $null }
+            if ($null -eq $message) { $message = ''; $unformatted++ }
+            $records.Add([pscustomobject]@{ TimeCreated = $rec.TimeCreated; RecordId = $rec.RecordId; Xml = $xml; Message = [string]$message })
+        }
+        finally { try { $rec.Dispose() } catch { $null = $_ } }
+    }
+    return @{ Records = $records.ToArray(); Beyond = $beyond; Skipped = $skipped; Unformatted = $unformatted; Failed = $failed; Class = $class; Text = $text; BudgetHit = $budgetHit }
+}
+
+function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$Max, [switch]$Oldest, [string]$Source = 'events',
+                                     [System.Diagnostics.Stopwatch]$Clock = $null, [double]$BudgetMs = 0, [int]$CountBeyond = 1) {
+    # The raw events of one log of the catalogue with StartUtc <= time (<= EndUtc): one reader per log name with at
+    # most Max records (oldest first with -Oldest, else newest first) and up to CountBeyond more only counted, merged
+    # in that order and cut to Max: @{ Events; More (more were there); Dropped (how many were not kept, counted up to
+    # CountBeyond per log name); Failed (a log name could not be read); BudgetHit }. No matching event is an
+    # empty result. A log name whose reader cannot be opened, or whose read ended after 3 failures in a row, is queued
+    # once (Add-WorkerPerfLogError); skipped records and unformattable messages are counted per log.
+    $counter = Get-WorkerPerfEventCounter $Log.Id
     $all = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $failed = $false
+    $budgetHit = $false
+    $beyondTotal = 0
     foreach ($q in @($Log.Queries)) {
-        $xml = [xml](New-WorkerPerfEventQueryXml $q $StartUtc $EndUtc)
-        $errs = $null
-        $events = @()
-        try {
-            # one more than kept, to notice that events were dropped
-            $events = @(Get-WinEvent -FilterXml $xml -MaxEvents ($Max + 1) -Oldest:$Oldest -ErrorAction SilentlyContinue -ErrorVariable errs)
-        }
+        $xml = New-WorkerPerfEventQueryXml $q $StartUtc $EndUtc
+        $reader = $null
+        try { $reader = Open-WorkerPerfEventReader $xml ([bool]$Oldest) }
         catch {
-            if ([string]$_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { Add-WorkerPerfLogError $Source $q.LogName $_; $failed = $true }
+            Add-WorkerPerfLogError $Source $q.LogName (Get-WorkerPerfErrorClass $_.Exception) (Get-WorkerPerfErrorText $_.Exception)
+            $failed = $true
             continue
         }
-        foreach ($er in @($errs)) {
-            if ($null -eq $er) { continue }
-            $id = [string]$er.FullyQualifiedErrorId
-            if ($id -like 'NoMatchingEventsFound*') { continue }
-            if ($id -like 'NoMatchingLogsFound*' -or $id -like 'LogInfoUnavailable*') { Add-WorkerPerfLogError $Source $q.LogName $er; $failed = $true }
-            else { Write-Verbose ("Ereignis in '{0}' nur teilweise gelesen: {1}" -f $q.LogName, $er.Exception.Message) }
-        }
-        foreach ($ev in $events) {
-            if ($null -eq $ev -or $null -eq $ev.TimeCreated) { continue }
+        try { $part = Read-WorkerPerfEventRecords $reader $Max $Clock $BudgetMs $CountBeyond }
+        finally { try { $reader.Dispose() } catch { $null = $_ } }
+        $counter.SkippedRecords += $part.Skipped
+        $counter.UnformattedMessages += $part.Unformatted
+        if ($part.Failed) { Add-WorkerPerfLogError $Source $q.LogName $part.Class $part.Text; $failed = $true }
+        if ($part.BudgetHit) { $budgetHit = $true }
+        $beyondTotal += $part.Beyond
+        foreach ($ev in $part.Records) {
+            if ($null -eq $ev.TimeCreated) { continue }
             # a guard: an event that two selects of the query name is taken once
-            $rid = $null
-            try { $rid = $ev.RecordId } catch { $rid = $null }
-            if ($null -ne $rid) {
-                $k = [string]$q.LogName + '|' + [string]$rid
+            if ($null -ne $ev.RecordId) {
+                $k = [string]$q.LogName + '|' + [string]$ev.RecordId
                 if ($seen.ContainsKey($k)) { continue }
                 $seen[$k] = $true
             }
             $all.Add($ev)
         }
+        if ($budgetHit) { break }
     }
     $sorted = @($all.ToArray() | Sort-Object -Property @{ Expression = { ConvertTo-WorkerPerfUtcTime ([datetime]$_.TimeCreated) }; Descending = (-not $Oldest) })
-    $more = $sorted.Count -gt $Max
-    if ($more) { $sorted = @($sorted[0..($Max - 1)]) }
-    return @{ Events = $sorted; More = $more; Failed = $failed }
+    $dropped = $beyondTotal
+    if ($sorted.Count -gt $Max) { $dropped += $sorted.Count - $Max; $sorted = @($sorted[0..($Max - 1)]) }
+    return @{ Events = $sorted; More = ($dropped -gt 0); Dropped = $dropped; Failed = $failed; BudgetHit = $budgetHit }
+}
+
+function Get-WorkerPerfEventCounts {
+    # Per log of the catalogue: records skipped because they could not be read, messages that could not be formatted,
+    # and events of a regular read that the cap of 200 did not keep (numbers only, for EventReadCounts in meta.json).
+    $st = $script:WinState
+    $out = [ordered]@{}
+    if ($null -eq $st) { return $out }
+    foreach ($k in @($st.EventCounts.Keys)) { $out[$k] = [ordered]@{} + $st.EventCounts[$k] }
+    return $out
 }
 
 function Receive-WorkerPerfSourceErrors {
@@ -1741,8 +1837,10 @@ function Get-WorkerPerfEvents {
     $sinceUtc = ConvertTo-WorkerPerfUtcTime $Since
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($l in $st.Logs) {
-        $r = Read-WorkerPerfWinLogEvents $l $sinceUtc $nowUtc $script:WorkerPerfWinMaxEvents -Oldest -Source 'events'
+        $r = Read-WorkerPerfWinLogEvents $l $sinceUtc $nowUtc $script:WorkerPerfWinMaxEvents -Oldest -Source 'events' -CountBeyond $script:WorkerPerfWinCountBeyond
         if ($r.More) {
+            $counter = Get-WorkerPerfEventCounter $l.Id
+            $counter.DroppedEvents += $r.Dropped
             Write-WarningOnce ('events.dropped:' + $l.Id) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die neueren fehlen in events.csv." -f ($l.Names -join ', '), $script:WorkerPerfWinMaxEvents)
         }
         foreach ($ev in $r.Events) {
@@ -1773,8 +1871,8 @@ function Get-WorkerPerfEventsBefore {
     foreach ($l in $st.Logs) {
         if (-not $l.Lookback) { continue }
         if ($clock.ElapsedMilliseconds -ge $budgetMs) { $capped.Add($l.Id); continue }
-        $r = Read-WorkerPerfWinLogEvents $l $fromUtc $untilUtc $script:WorkerPerfWinLookbackMax -Source 'eventsbefore'
-        if ($r.More -or $r.Failed) { $capped.Add($l.Id) }
+        $r = Read-WorkerPerfWinLogEvents $l $fromUtc $untilUtc $script:WorkerPerfWinLookbackMax -Source 'eventsbefore' -Clock $clock -BudgetMs $budgetMs
+        if ($r.More -or $r.Failed -or $r.BudgetHit) { $capped.Add($l.Id) }
         foreach ($ev in $r.Events) {
             if ($clock.ElapsedMilliseconds -ge $budgetMs) {
                 if (-not $capped.Contains($l.Id)) { $capped.Add($l.Id) }

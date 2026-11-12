@@ -316,7 +316,7 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
         @{ Events = '{"log":"a","provider":"X","ids":"7","group":"app","kind":"crash"},{"log":"a","provider":"X","ids":[7],"group":"app","kind":"crash"}'; Msg = "*Eintrag 2 (X 7)*doppelte Kennung 7*" }
         @{ Events = '{"log":"a","provider":"X","ids":"alle","group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (X alle)*Feld 'ids'*keine ganze Zahl*" }
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error",3],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*kein Text*" }   # M3
-        @{ Events = '{"log":"a","provider":"Sim O''Brien \"X\"","ids":[1],"group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (Sim O'Brien `"X`" 1)*Feld 'provider'*" }
+        @{ Events = '{"log":"a","provider":"Sim O''Brien","ids":[1],"group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (Sim O'Brien 1)*Feld 'provider'*kein '*" }
     ) {
         { Read-WorkerPerfEventConfig (New-Cfg $Events) } | Should -Throw $Msg
     }
