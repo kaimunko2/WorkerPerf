@@ -530,6 +530,13 @@ Describe 'Konten, die keine Person sind' {
     It 'zaehlt ein Systemkonto ohne Sitzung nicht als Benutzersitzung' {
         foreach ($u in 'DWM-3', 'LOKALER DIENST', 'HOST01$') { (Get-Inc @(New-Ev 0 -Sid -1 -User $u -More @{ SessionIndex = -1 })).Count | Should -Be 0 -Because $u }
     }
+    It 'nimmt ein Konto einer virtuellen Domaene auch im unmaskierten Bericht nicht als Benutzer' {           # P2-R16
+        # Aussage geaendert gegenueber dem Stand vor der Maskierung: "NT SERVICE\MSSQLSERVER" war ein Benutzer mit Vorfall
+        foreach ($u in 'NT SERVICE\MSSQLSERVER', 'IIS APPPOOL\DefaultAppPool') { (Get-Inc @(New-Ev 0 -Sid -1 -User $u -More @{ SessionIndex = -1 })).Count | Should -Be 0 -Because $u }
+        $bg = Get-Inc @((New-Ev 0 -Sid -1 -User 'NT SERVICE\MSSQLSERVER' -More @{ SessionIndex = -1 }), (New-Ev 10 -Sid -1 -User 'NT SERVICE\MSSQLSERVER' -More @{ SessionIndex = -1 }))
+        $bg.Count | Should -Be 1; $bg[0].InSession | Should -BeFalse; @($bg[0].Users).Count | Should -Be 0
+        (Get-Inc @(New-Ev 0 -Sid -1 -User 'KLINIK\user005' -More @{ SessionIndex = -1 }))[0].Users | Should -Be @('KLINIK\user005')
+    }
 }
 Describe 'Ausfall der Druckwarteschlange' {
     BeforeAll {

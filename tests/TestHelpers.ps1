@@ -50,7 +50,7 @@ function New-TestReports([string]$OutDir) {
     $startMs = $cpu.StartMs - 300000
     $r = @{ Run = $run; StartMs = $startMs; Report = (Join-Path $OutDir 'report.html'); Focus = (Join-Path $OutDir 'report-focus.html'); None = (Join-Path $OutDir 'report-none.html')
             Spike = (Join-Path $OutDir 'report-spike.html'); NoData = (Join-Path $OutDir 'report-nodata.html'); CutRep = (Join-Path $OutDir 'report-cutrep.html')
-            Masked = (Join-Path $OutDir 'report-masked.html') }
+            Masked = (Join-Path $OutDir 'report-masked.html'); MaskedP = (Join-Path $OutDir 'report-masked-personen.html') }
     # a cut that starts 10 min after the first event of the capture, with a reported time 1 min after that event: the reported
     # time lies inside the capture but before the cut, and events lie around it
     $firstEv = [DateTimeOffset]::Parse((Get-Content (Join-Path $run 'events.csv') -TotalCount 2)[1].Split(',')[0], [cultureinfo]::InvariantCulture).ToUnixTimeMilliseconds()
@@ -69,6 +69,8 @@ function New-TestReports([string]$OutDir) {
     [void](& $report -Path $bare -OutFile $r.NoData -RoleFile $roles -From (Get-ServerTime $run ($cpu.StartMs - 60000)) -To (Get-ServerTime $run ($cpu.EndMs + 60000)) 6>$null)
     # der ganze Bericht mit allen Namen ersetzt
     [void](& $report -Path $run -OutFile $r.Masked -RoleFile $roles -Mask Alles 6>$null)
+    # die Stufe Personen, mit einem gemeldeten Benutzer, den die Aufzeichnung nicht kennt
+    [void](& $report -Path $run -OutFile $r.MaskedP -RoleFile $roles -Mask Personen -FocusUser 'KLINIK\schmidt.unbekannt' -ReportedTime $reported 6>$null)
     $r
 }
 function New-PatchedSource([string]$OutDir, [string]$Overrides) {

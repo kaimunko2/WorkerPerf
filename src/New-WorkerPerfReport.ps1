@@ -45,11 +45,13 @@
     Alles: also servers (the worker included), shares, domains, addresses and printers. In both levels the message
     texts of events and the command lines are left out. The replacement names are taken from the whole capture, so
     every report of one capture, with or without -From/-To, uses the same ones. With Alles the file name of -OutFile
-    must not name the worker.
+    must not name the worker. A -FocusUser that the capture does not name is shown as "(Name entfernt)". The console
+    names the replacement names of names that equal a word of the report (their sentences are garbled).
 
 .PARAMETER MaskMapFile
     Only with -Mask: writes the real names and their replacement names to this JSON file (UTF-8), after the report was
-    written. The file holds the real names: keep it with you and do not pass it on with the report.
+    written. The file holds the real names: keep it with you and do not pass it on with the report. Its folder must
+    exist, and it must not name an existing file in the capture folder (both checked before the run).
 
 .EXAMPLE
     .\New-WorkerPerfReport.ps1 -Path D:\WorkerPerf\VDA01_20260101-080000
@@ -287,6 +289,15 @@ if ($MaskMapFile) {
     $MaskMapFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($MaskMapFile)
     if ([string]::Equals([IO.Path]::GetFullPath($MaskMapFile), [IO.Path]::GetFullPath($OutFile), [StringComparison]::OrdinalIgnoreCase)) {
         throw '-MaskMapFile darf nicht die Berichtsdatei sein.'
+    }
+    # checked before the run, which writes the map only at its end; the capture is never changed, so the map must not
+    # overwrite one of its files
+    $maskMapDir = Split-Path -Parent $MaskMapFile
+    if ($maskMapDir -and -not (Test-Path -LiteralPath $maskMapDir -PathType Container)) { throw "Ordner der Zuordnungsdatei '$maskMapDir' nicht gefunden." }
+    $maskMapFull = [IO.Path]::GetFullPath($MaskMapFile)
+    $maskCapture = [IO.Path]::GetFullPath($Path).TrimEnd([char[]]@('\', '/')) + [IO.Path]::DirectorySeparatorChar
+    if ([IO.File]::Exists($maskMapFull) -and $maskMapFull.StartsWith($maskCapture, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "-MaskMapFile nennt die Datei '$maskMapFull' der Aufzeichnung; die Aufzeichnung wird nie veraendert: bitte eine Datei ausserhalb des Aufzeichnungsordners waehlen."
     }
 }
 if ($Mask -eq 'Alles') {
@@ -1060,8 +1071,16 @@ if ($Mask) {
     Write-Host 'Maskiere Namen ...'
     Clear-WorkerPerfReportFreeText $data
     $maskObj = New-WorkerPerfMask -Path $Path -Level $Mask -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig
+    # a reported user typed by the caller that is no name of the capture is removed (P2-R11); one the capture names (a
+    # session in the cut or anywhere in the capture) is replaced like every name
+    if ($null -ne $focusOut.user -and -not $focusOut.found -and -not (Test-WorkerPerfMaskKnownAccount $maskObj ([string]$focusOut.user))) {
+        $focusOut.user = [string]$texts['mask.other']
+    }
     $data = Protect-WorkerPerfReportData $data $maskObj
     $data['meta']['mask'] = $Mask
+    # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
+    # replacement, never by the real name
+    $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $texts -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
 }
 
 Write-Host 'Schreibe Bericht ...'
@@ -1103,6 +1122,12 @@ Write-Host ("Bericht erstellt in {0} s (davon Einlesen {1} s): {2}" -f $timer.El
 Write-Host ("  {0} Takte, {1} Schnappschuesse, {2} Vorfaelle, {3} Sitzungen, {4} Prozesse im Bericht" -f $nT, $nP, $incOut.Count, $sessOut.Count, $procOut.Count)
 if ($Mask) {
     Write-Host ("  maskiert (Stufe {0}): {1} Namen ersetzt" -f $Mask, @($maskObj.Entries).Count)
+    if ($maskWords.Count -eq 1) {
+        Write-Host ("  Hinweis: 1 Name gleicht einem Wort des Berichts ({0}); Saetze mit diesem Wort sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords[0])
+    }
+    elseif ($maskWords.Count -gt 1) {
+        Write-Host ("  Hinweis: {0} Namen gleichen Woertern des Berichts ({1}); Saetze mit diesen Woertern sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords.Count, [string]::Join(', ', [string[]]$maskWords))
+    }
     if ($MaskMapFile) { Write-Host ("  Zuordnung der Ersatznamen: {0}" -f $MaskMapFile) }
 }
 Get-Item -LiteralPath $OutFile
