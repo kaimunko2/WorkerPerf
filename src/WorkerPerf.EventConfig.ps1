@@ -287,3 +287,34 @@ function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [stri
         Text          = (Get-WorkerPerfEventText $Message)
     }
 }
+
+# Block "events" of thresholds.json: JSON field -> setting and its default. Count settings must be whole numbers.
+$script:WorkerPerfEventSettingFields = @(
+    @{ Field = 'eventGroupMinutes'; Name = 'GroupMinutes'; Default = 30; Whole = $false }
+    @{ Field = 'resourceMinutes'; Name = 'ResourceMinutes'; Default = 5; Whole = $false }
+    @{ Field = 'afterhangMinutes'; Name = 'AfterhangMinutes'; Default = 2; Whole = $false }
+    @{ Field = 'companionMinutes'; Name = 'CompanionMinutes'; Default = 2; Whole = $false }
+    @{ Field = 'manyUsers'; Name = 'ManyUsers'; Default = 3; Whole = $true }
+    @{ Field = 'oneUserEvents'; Name = 'OneUserEvents'; Default = 3; Whole = $true })
+
+function Read-WorkerPerfEventSettings([string]$Path) {
+    # Settings of the event evaluation from the block "events" of a threshold file. A missing block or field (or null)
+    # takes the default, so a custom thresholds.json written before this block still works; a value that is no
+    # positive number stops with the field name.
+    $json = ConvertFrom-WorkerPerfJsonFile $Path
+    $block = Get-WorkerPerfField $json 'events'
+    if ($null -ne $block -and $block -isnot [pscustomobject]) { throw "Schwellwert 'events': der Block muss ein Objekt sein (Datei '$Path')." }
+    $out = @{}
+    foreach ($f in $script:WorkerPerfEventSettingFields) {
+        $raw = Get-WorkerPerfField $block $f.Field
+        if ($null -eq $raw) { $out[$f.Name] = $f.Default; continue }
+        $v = ConvertTo-WorkerPerfThresholdNumber $raw 'events' $f.Field
+        if ($v -le 0) { throw "Schwellwert 'events': Feld '$($f.Field)' muss groesser als 0 sein ('$raw')." }
+        if ($f.Whole) {
+            if ($v -ne [Math]::Floor($v)) { throw "Schwellwert 'events': Feld '$($f.Field)' muss eine ganze Zahl sein ('$raw')." }
+            $v = [int]$v
+        }
+        $out[$f.Name] = $v
+    }
+    return $out
+}

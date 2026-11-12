@@ -177,5 +177,13 @@
       "url": "",
       "note": "Verbindungsfehler zählen als kritisch"
     }
-  ]
+  ],
+  "events": {
+    "eventGroupMinutes": 30,
+    "resourceMinutes": 5,
+    "afterhangMinutes": 2,
+    "companionMinutes": 2,
+    "manyUsers": 3,
+    "oneUserEvents": 3
+  }
 }
