@@ -192,6 +192,7 @@ function Import-WorkerPerfRun {
     $offsetMinutes = 0.0; $haveOffset = $false; $lastOffsetMinutes = 0.0
     $badTicks = [int]$csv.Skipped                 # unreadable rows of ticks.csv: too few fields, or no readable number, time or duration
     $firstWall = [long]::MinValue; $lastWall = [long]::MinValue      # clock time of the first and last readable tick of the file
+    $captureStartMs = $null                                          # the first readable tick of the file, whatever -From says
     $numRef = [ref]0.0
     foreach ($f in $csv.Rows) {
         $t = 0
@@ -201,7 +202,7 @@ function Import-WorkerPerfRun {
         # a tick without a readable, finite duration does not exist for the model (like a row with too few fields)
         if (-not [double]::TryParse($f[$cEl], $numStyle, $inv, $numRef) -or [double]::IsNaN($numRef.Value) -or [double]::IsInfinity($numRef.Value)) { $badTicks++; continue }
         $wall = $dto.Ticks
-        if ($firstWall -eq [long]::MinValue) { $firstWall = $wall }
+        if ($firstWall -eq [long]::MinValue) { $firstWall = $wall; $captureStartMs = $dto.ToUnixTimeMilliseconds() }
         $lastWall = $wall
         if ($wall -lt $fromTicks -or $wall -gt $toTicks) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
@@ -1148,6 +1149,8 @@ function Import-WorkerPerfRun {
         Shares = $shares.ToArray()
         Probes = $probes.ToArray()
         Events = $events.ToArray()
+        EventsOutsideCut = $sortedEvents.Count - $events.Count
+        CaptureStartMs = $captureStartMs
         EventsBefore = $eventsBefore
         PrintDrivers = $printDrivers
         PrintQueues = $printQueues

@@ -116,8 +116,14 @@ function ConvertTo-JsonText($Value, [System.IO.TextWriter]$Out) {
         foreach ($k in $Value.Keys) {
             if (-not $first) { $Out.Write(',') }
             $first = $false
-            $Out.Write((Format-JsonString ([string]$k))); $Out.Write(':')
-            ConvertTo-JsonText $Value[$k] $Out
+            # plain keys, strings without special characters and whole numbers are written here, without a call per
+            # value (one record per event: the writer runs this loop hundreds of thousands of times)
+            $ks = [string]$k
+            if ($script:JsonSpecial.IsMatch($ks)) { $Out.Write((Format-JsonString $ks)); $Out.Write(':') } else { $Out.Write('"' + $ks + '":') }
+            $v = $Value[$k]
+            if ($v -is [string] -and -not $script:JsonSpecial.IsMatch($v)) { $Out.Write('"' + $v + '"') }
+            elseif ($v -is [int] -or $v -is [long]) { $Out.Write($v.ToString($inv)) }
+            else { ConvertTo-JsonText $v $Out }
         }
         $Out.Write('}')
         return
@@ -316,13 +322,17 @@ if ($PSBoundParameters.ContainsKey('ReportedTime')) {
 }
 $focusRadiusMs = 15L * 60000L
 
+# the user names of the focus sessions (found as User or Domain\User like above), for event records without a session
+$focusNames = @{}
+foreach ($s in $sessions) { if ($focusSessions.Contains([int]$s.Index)) { $focusNames[([string]$s.User).ToLowerInvariant()] = $true } }
+
 function Test-FocusUser([string]$User) {
-    # The account of an event is the reported user: equal names, or equal names without domain when one side has none.
-    if (-not $FocusUser -or [string]::IsNullOrEmpty($User)) { return $false }
-    if ($User -ieq $FocusUser) { return $true }
-    $u = $User.LastIndexOf([char]'\'); $f = $FocusUser.LastIndexOf([char]'\')
-    if ($u -ge 0 -and $f -ge 0) { return $false }
-    return ($User.Substring($u + 1) -ieq $FocusUser.Substring($f + 1))
+    # An event's account is the reported user when the reported user was found in a session and the account names the
+    # same user: as User (events name no domain), or as Domain\User equal to -FocusUser.
+    if ($focusNames.Count -eq 0 -or [string]::IsNullOrEmpty($User)) { return $false }
+    $i = $User.LastIndexOf([char]'\')
+    if ($i -ge 0) { return ($User -ieq $FocusUser) }
+    return $focusNames.ContainsKey($User.ToLowerInvariant())
 }
 
 #endregion
@@ -330,8 +340,9 @@ function Test-FocusUser([string]$User) {
 #region ---------- events: incidents, lookback, print state -------------------------------
 
 # Event incidents of the capture are numbered after the performance incidents, those of the lookback after them.
-# Every record is matched against the reported time in UTC with the offset of its own day (Get-WorkerPerfReportedEventMs);
-# without a daylight-saving change in between this is the reported time of the focus.
+# Every record is matched against the reported time in UTC with the offset of its own day, that is against its own
+# local time (Test-WorkerPerfEventNearWall); an ambiguous clock time at the end of daylight saving time meets the
+# records of both readings, and without a daylight-saving change this is the reported time of the focus.
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 $eventSettings = Read-WorkerPerfEventSettings $ThresholdFile
 $eventOffset = [int][Math]::Round($offsetMin)
@@ -341,19 +352,20 @@ Set-WorkerPerfEventSessions -Events $events -Model $model -Config $eventConfig
 $eventIncidents = @(New-WorkerPerfEventIncidents -Events $events -Config $eventConfig -Settings $eventSettings -Drivers $printDrivers -FirstId ($incidents.Count + 1))
 Add-WorkerPerfEventPatterns -Incidents $eventIncidents -AllEvents $events -Model $model -Thresholds $thresholds -Settings $eventSettings -Config $eventConfig `
     -Roles $roles -Drivers $printDrivers -PerfIncidents $incidents
-$eventReportedMs = $null
-if ($null -ne $reportedWallMs) { $eventReportedMs = Get-WorkerPerfReportedEventMs $reportedWallMs (@($model.EventsBefore) + $events) $eventOffset }
-$lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId ($incidents.Count + $eventIncidents.Count + 1) -ReportedMs $eventReportedMs
+$lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId ($incidents.Count + $eventIncidents.Count + 1) -ReportedWallMs $reportedWallMs
 $beforeIncidents = @($lookback.Incidents)
 $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents (@($eventIncidents) + @($beforeIncidents))
 
 function ConvertTo-EventIncidentEntry($Incident) {
-    # focus: a session or person of the incident is the reported user's; near: the reported time within 15 minutes
+    # focus: with sessions, a session of the incident is a focus session (as for performance incidents); without
+    # sessions (no session matched, the lookback), a person of the incident is the reported user. Near: the reported
+    # clock time within 15 minutes of the incident's span in local time.
     $focus = $false
-    foreach ($si in @($Incident.Sessions)) { if ($focusSessions.Contains([int]$si)) { $focus = $true } }
-    foreach ($u in @($Incident.Users)) { if (Test-FocusUser ([string]$u)) { $focus = $true } }
+    $own = @($Incident.Sessions)
+    if ($own.Count -gt 0) { foreach ($si in $own) { if ($focusSessions.Contains([int]$si)) { $focus = $true } } }
+    else { foreach ($u in @($Incident.Users)) { if (Test-FocusUser ([string]$u)) { $focus = $true } } }
     $near = $false
-    if ($null -ne $eventReportedMs) { $near = ($eventReportedMs -ge ([long]$Incident.StartMs - $focusRadiusMs) -and $eventReportedMs -le ([long]$Incident.EndMs + $focusRadiusMs)) }
+    if ($null -ne $reportedWallMs) { $near = Test-WorkerPerfIncidentNearWall $Incident $reportedWallMs $eventOffset }
     $text = [string](Get-WorkerPerfEventIncidentText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
     return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset)
 }
@@ -907,9 +919,11 @@ foreach ($inc in $beforeIncidents) { $beforeIncOut.Add((ConvertTo-EventIncidentE
 $nearOut = New-Object System.Collections.Generic.List[object]
 foreach ($e in @($lookback.Near)) { $nearOut.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset)) }
 $nearCapture = New-Object System.Collections.Generic.List[int]
-if ($null -ne $eventReportedMs -and $eventReportedMs -lt [long]$tick.TimeMs[0]) {
+$captureStartMs = [long]$tick.TimeMs[0]
+if ($null -ne $model.CaptureStartMs) { $captureStartMs = [long]$model.CaptureStartMs }
+if ($null -ne $reportedWallMs -and $reportedWallMs -lt $captureStartMs + [long]$eventOffset * 60000L) {
     for ($i = 0; $i -lt $events.Count; $i++) {
-        if ([Math]::Abs([long]$events[$i].TimeMs - $eventReportedMs) -le $focusRadiusMs) { $nearOut.Add($eventsOut[$i]); $nearCapture.Add($i) }
+        if (Test-WorkerPerfEventNearWall $events[$i] $reportedWallMs $eventOffset) { $nearOut.Add($eventsOut[$i]); $nearCapture.Add($i) }
     }
 }
 $perDayOut = New-Object System.Collections.Generic.List[object]
@@ -955,7 +969,7 @@ $data = [ordered]@{
     citrix = $citrixOut.ToArray(); sollIst = $sollOut.ToArray(); incidents = $incOut.ToArray()
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
     noFinding = ($incOut.Count -eq 0)
-    before = $beforeOut; print = $printOut
+    before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
 }
 
 Write-Host 'Schreibe Bericht ...'

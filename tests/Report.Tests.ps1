@@ -269,9 +269,13 @@ Describe 'Ereignisvorfaelle im Bericht' {
     }
 }
 Describe 'Ereignisdaten im Einzelnen' {
-    It 'gibt jedes Ereignis mit seinem eigenen Zeitversatz und allen Feldern aus' {
-        $keys = 't', 'offsetMin', 'log', 'source', 'id', 'level', 'group', 'kind', 'app', 'module', 'code', 's', 'user', 'printer', 'driver', 'service', 'object', 'text'
-        @($D.events[0].PSObject.Properties.Name) | Should -Be $keys
+    It 'gibt jedes Ereignis mit seinem eigenen Zeitversatz aus und laesst leere Textfelder weg' {
+        # Aussage geaendert (Task 8, Runde 1): ein leeres Feld fehlt im Datensatz (die Anmeldung hat keine Anwendung)
+        @($D.events[0].PSObject.Properties.Name) | Should -Be @('t', 'offsetMin', 'log', 'source', 'id', 'level', 'group', 'kind', 's', 'user', 'text')
+        $sp = $D.events | Where-Object { $_.PSObject.Properties['app'] -and $_.app -eq 'spoolsv.exe' }
+        @($sp.PSObject.Properties.Name) | Should -Be @('t', 'offsetMin', 'log', 'source', 'id', 'level', 'group', 'kind', 'app', 'module', 'code', 's', 'text')
+        $v2 = $D.events | Where-Object kind -eq 'scan-start'
+        @($v2.PSObject.Properties.Name) | Should -Be @('t', 'offsetMin', 'log', 'source', 'id', 'level', 'group', 'kind', 's', 'text')
         @($D.events).Count | Should -Be 13; @($D.events | Where-Object { $_.offsetMin -ne $D.meta.offsetMin }).Count | Should -Be 0
         $c = $D.events | Where-Object app -eq 'chrome.exe'
         $c.module | Should -Be 'chrome.dll'; $c.code | Should -Be '0xc0000017'; $c.s | Should -BeGreaterOrEqual 0; $D.sessions[$c.s].user | Should -Be 'user008'
@@ -345,5 +349,37 @@ Describe 'Ereignisdaten im Einzelnen' {
         @($fu.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.focus } | ForEach-Object { $_.event.app }) | Should -Be @('OUTLOOK.EXE')
         $out = Join-Path $TestDrive 'fu4.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -FocusUser 'user004' 6>$null)
         @((Get-ReportData $out).before.incidents | Where-Object focus | ForEach-Object { $_.event.app }) | Should -Be @('nexus.exe')
+    }
+    It 'hebt nichts hervor, wenn der gemeldete Benutzer nicht gefunden wird, und vergleicht wie die Sitzungssuche' {
+        foreach ($u in 'OTHER\user008', 'OTHER\user004', 'niemand') {
+            $out = Join-Path $TestDrive 'fx.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -FocusUser $u 6>$null)
+            $fx = Get-ReportData $out
+            $fx.meta.focus.found | Should -BeFalse -Because $u
+            @($fx.incidents | Where-Object focus).Count | Should -Be 0 -Because $u; @($fx.before.incidents | Where-Object focus).Count | Should -Be 0 -Because $u
+        }
+        $dom = @($D.sessions | Where-Object user -eq 'user004')[0].domain
+        $out = Join-Path $TestDrive 'fd.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -FocusUser "$dom\USER004" 6>$null)
+        @((Get-ReportData $out).before.incidents | Where-Object focus | ForEach-Object { $_.event.app }) | Should -Be @('nexus.exe')
+    }
+    It 'nennt im Rueckblick bei einer mehrdeutigen Uhrzeit am Ende der Sommerzeit die Ereignisse beider Lesarten' {
+        # EXCEL.EXE um 02:20 Sommerzeit (+01:00) und WINWORD.EXE um 02:35 Winterzeit (+00:00) desselben Tages: 02:30 liegt bei beiden
+        $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'amb'); $f = Join-Path $dir 'events_before.csv'; $lines = [IO.File]::ReadAllLines($f)
+        $day = (Split-WorkerPerfCsvLine $lines[1])[0].Substring(0, 10)
+        $lines[1] = $day + 'T02:20:00.0000000+01:00' + $lines[1].Substring($lines[1].IndexOf(','))
+        $lines[2] = $day + 'T02:35:00.0000000+00:00' + $lines[2].Substring($lines[2].IndexOf(','))
+        [IO.File]::WriteAllLines($f, $lines)
+        $out = Join-Path $TestDrive 'amb.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -ReportedTime ([datetime]::ParseExact("$day 02:30:00", 'yyyy-MM-dd HH:mm:ss', [cultureinfo]::InvariantCulture)) 6>$null)
+        $b = (Get-ReportData $out).before
+        @($b.near | ForEach-Object { $_.app }) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE')
+        @($b.incidents | Where-Object nearReported | ForEach-Object { $_.event.app }) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE')
+    }
+    It 'beginnt den Rueckblick unter einem Zeitausschnitt mit dem Beginn der Aufzeichnung und zaehlt die herausgeschnittenen Ereignisse' {
+        $from = Get-ServerTime $R.Run ($D.meta.start + 20 * 60000)
+        $out = Join-Path $TestDrive 'lbcut.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -From $from 6>$null)
+        $c = Get-ReportData $out
+        $c.before.from | Should -Be $D.before.from; $c.before.eventCount | Should -Be 5
+        $cut = @($D.events | Where-Object { $_.t -lt $c.meta.start }).Count; $cut | Should -BeGreaterThan 0
+        $c.eventsOutsideCut | Should -Be $cut; @($c.events).Count | Should -Be (13 - $cut); $D.eventsOutsideCut | Should -Be 0
     }
 }

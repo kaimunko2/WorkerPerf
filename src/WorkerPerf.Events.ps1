@@ -949,13 +949,20 @@ function Get-WorkerPerfLookback {
     # cap, EventCount = all events before the first tick, PerDay = @{ Day = 'yyyy-MM-dd'; Count } of the events with an
     # incident kind per day in the server's local time (ascending, days without such events left out), Near = all
     # events within 15 minutes of ReportedMs when ReportedMs lies before the first tick, in time order.
-    # The records get SessionIndex -1 and SessionUser '' (no session of the capture existed then) and IncidentId.
-    param($Model, $Config, $Settings, [object[]]$Roles, [int]$FirstId, [object]$ReportedMs)
+    # ReportedWallMs instead gives the reported time as the server's wall clock (its fields read as UTC): Near then holds
+    # the events whose own local time lies within 15 minutes of it, when it lies before the local time of the first
+    # tick. An ambiguous clock time (the repeated hour at the end of daylight saving time) thus meets the events of both
+    # readings. "The first tick" is Model.CaptureStartMs when the model has it (the capture's start, whatever -From
+    # says), else Tick.TimeMs[0]. The records get SessionIndex -1 and SessionUser '' (no session of the capture existed
+    # then) and IncidentId.
+    param($Model, $Config, $Settings, [object[]]$Roles, [int]$FirstId, [object]$ReportedMs, [object]$ReportedWallMs)
     $tickMs = [long[]]@()
     $tick = Get-WorkerPerfField $Model 'Tick'
     if ($null -ne $tick -and $null -ne (Get-WorkerPerfField $tick 'TimeMs')) { $tickMs = [long[]]$tick.TimeMs }
     $firstMs = [long]::MaxValue
     if ($tickMs.Length -gt 0) { $firstMs = $tickMs[0] }
+    $captureStart = Get-WorkerPerfField $Model 'CaptureStartMs'
+    if ($null -ne $captureStart) { $firstMs = [long]$captureStart }
     $meta = Get-WorkerPerfField $Model 'Meta'
     $days = 0
     $d = Get-WorkerPerfField $meta 'EventLookbackDays'
@@ -965,7 +972,7 @@ function Get-WorkerPerfLookback {
     $o = Get-WorkerPerfField $meta 'OffsetMinutes'
     if ($null -ne $o) { $offset = [int][Math]::Round([double]$o) }
     $fromMs = [long]0
-    if ($tickMs.Length -gt 0) { $fromMs = $firstMs - [long]$days * 86400000L }
+    if ($tickMs.Length -gt 0 -or $null -ne $captureStart) { $fromMs = $firstMs - [long]$days * 86400000L }
 
     $events = New-Object System.Collections.Generic.List[object]
     $before = Get-WorkerPerfEventsByTime @(Get-WorkerPerfField $Model 'EventsBefore')
@@ -999,7 +1006,10 @@ function Get-WorkerPerfLookback {
     $perDay = @($dayArr | ForEach-Object { @{ Day = $_; Count = [int]$counts[$_] } })
 
     $near = New-Object System.Collections.Generic.List[object]
-    if ($null -ne $ReportedMs -and [long]$ReportedMs -lt $firstMs) {
+    if ($null -ne $ReportedWallMs -and [long]$ReportedWallMs -lt $firstMs + [long]$offset * 60000L) {
+        foreach ($e in $records) { if (Test-WorkerPerfEventNearWall $e ([long]$ReportedWallMs) $offset) { $near.Add($e) } }
+    }
+    elseif ($null -ne $ReportedMs -and [long]$ReportedMs -lt $firstMs) {
         $radius = [long]$script:WorkerPerfReportedRadiusMinutes * 60000L
         foreach ($e in $records) {
             $t = [long]$e.TimeMs
@@ -1097,34 +1107,53 @@ function Get-WorkerPerfPrintState {
 # ---- report output ----
 # The report data of events and event incidents (the contract of the report page): ordered records with lower-case keys.
 
-function Get-WorkerPerfReportedEventMs([long]$WallMs, [object[]]$Events, [int]$DefaultOffset) {
-    # A reported time given as the server's wall clock (WallMs: the wall-clock fields read as UTC) in UTC, with the
-    # offset of the record whose own local time lies nearest to it (the first of equals), else DefaultOffset; a reported
-    # time on the other side of a daylight-saving change thus meets the records of that day at their local time.
-    $best = $null; $bestDist = [long]0
-    foreach ($e in @($Events)) {
-        if ($null -eq $e) { continue }
-        $o = Get-WorkerPerfEventOffset $e $DefaultOffset
-        $dist = [Math]::Abs([long]$e.TimeMs + [long]$o * 60000L - $WallMs)
-        if ($null -eq $best -or $dist -lt $bestDist) { $best = $o; $bestDist = $dist }
-    }
-    if ($null -eq $best) { $best = $DefaultOffset }
-    return $WallMs - [long]$best * 60000L
+function Test-WorkerPerfEventNearWall($Event, [long]$WallMs, [int]$DefaultOffset) {
+    # $true when a record's own local time (its offset, else DefaultOffset) lies within 15 minutes of a reported time
+    # given as the server's wall clock (WallMs: the wall-clock fields read as UTC). This is the reported time in UTC
+    # with the offset of the record's own day; an ambiguous clock time meets the records of both readings.
+    $o = Get-WorkerPerfEventOffset $Event $DefaultOffset
+    return ([Math]::Abs([long]$Event['TimeMs'] + [long]$o * 60000L - $WallMs) -le [long]$script:WorkerPerfReportedRadiusMinutes * 60000L)
+}
+
+function Test-WorkerPerfIncidentNearWall($Incident, [long]$WallMs, [int]$DefaultOffset) {
+    # $true when a reported wall-clock time lies within 15 minutes of an event incident's span, each end in the local
+    # time of its own record (Events keeps the first and the last).
+    $kept = @($Incident.Events | Where-Object { $null -ne $_ })
+    $a = $DefaultOffset; $b = $DefaultOffset
+    if ($kept.Count -gt 0) { $a = Get-WorkerPerfEventOffset $kept[0] $DefaultOffset; $b = Get-WorkerPerfEventOffset $kept[$kept.Count - 1] $DefaultOffset }
+    $r = [long]$script:WorkerPerfReportedRadiusMinutes * 60000L
+    return ($WallMs -ge [long]$Incident.StartMs + [long]$a * 60000L - $r -and $WallMs -le [long]$Incident.EndMs + [long]$b * 60000L + $r)
 }
 
 function ConvertTo-WorkerPerfEventOut($Event, [int]$OffsetMinutes = 0) {
-    # One event record for the report: t = UTC milliseconds, offsetMin = the UTC offset of its own time stamp (else
-    # OffsetMinutes, the capture's), s = session index or -1, code normalised as in the incidents.
-    $s = -1
-    $si = Get-WorkerPerfField $Event 'SessionIndex'
-    if ($null -ne $si) { $s = [int]$si }
-    $field = { param([string]$Name) [string](Get-WorkerPerfField $Event $Name) }
-    return [ordered]@{
-        t = [long]$Event.TimeMs; offsetMin = (Get-WorkerPerfEventOffset $Event $OffsetMinutes); log = (& $field 'Log'); source = (& $field 'Source')
-        id = [int]$Event.EventId; level = [int](Get-WorkerPerfField $Event 'Level'); group = (& $field 'Group'); kind = (& $field 'Kind')
-        app = (& $field 'App'); module = (& $field 'Module'); code = (Format-WorkerPerfErrorCode (& $field 'Code')); s = $s; user = (& $field 'User')
-        printer = (& $field 'Printer'); driver = (& $field 'Driver'); service = (& $field 'Service'); object = (& $field 'Object'); text = (& $field 'Text')
-    }
+    # One event record (a hashtable) for the report: t = UTC milliseconds, offsetMin = the UTC offset of its own time
+    # stamp (else OffsetMinutes, the capture's), s = session index or -1, code normalised as in the incidents. The text
+    # fields log, group, app, module, code, user, printer, driver, service and object are left out when empty; t,
+    # offsetMin, source, id, level, kind, s and text are always there. Reads the fields directly: it runs once per event.
+    $o = $Event['OffsetMinutes']
+    if ($null -eq $o) { $o = $OffsetMinutes }
+    $s = $Event['SessionIndex']
+    if ($null -eq $s) { $s = -1 }
+    $level = $Event['Level']
+    if ($null -eq $level) { $level = -1 }
+    $out = [ordered]@{ t = [long]$Event['TimeMs']; offsetMin = [int]$o }
+    $v = [string]$Event['Log']; if ($v.Length -gt 0) { $out['log'] = $v }
+    $out['source'] = [string]$Event['Source']
+    $out['id'] = [int]$Event['EventId']
+    $out['level'] = [int]$level
+    $v = [string]$Event['Group']; if ($v.Length -gt 0) { $out['group'] = $v }
+    $out['kind'] = [string]$Event['Kind']
+    $v = [string]$Event['App']; if ($v.Length -gt 0) { $out['app'] = $v }
+    $v = [string]$Event['Module']; if ($v.Length -gt 0) { $out['module'] = $v }
+    $v = [string]$Event['Code']; if ($v.Length -gt 0) { $v = Format-WorkerPerfErrorCode $v; if ($v.Length -gt 0) { $out['code'] = $v } }
+    $out['s'] = [int]$s
+    $v = [string]$Event['User']; if ($v.Length -gt 0) { $out['user'] = $v }
+    $v = [string]$Event['Printer']; if ($v.Length -gt 0) { $out['printer'] = $v }
+    $v = [string]$Event['Driver']; if ($v.Length -gt 0) { $out['driver'] = $v }
+    $v = [string]$Event['Service']; if ($v.Length -gt 0) { $out['service'] = $v }
+    $v = [string]$Event['Object']; if ($v.Length -gt 0) { $out['object'] = $v }
+    $out['text'] = [string]$Event['Text']
+    return $out
 }
 
 function ConvertTo-WorkerPerfDetailOut($Detail, [int]$OffsetMinutes) {
