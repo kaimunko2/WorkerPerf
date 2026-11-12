@@ -932,28 +932,47 @@ foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$
 # What the page may say about the lookback (status):
 #   notRecorded  the capture has no lookback setting (format 2)
 #   off          -EventLookbackDays 0
-#   unavailable  nothing was read: events_before.csv is missing, the lookback read failed (SourceErrors 'eventsbefore'),
-#                or the capture's Sources do not list every log of events.json that has a lookback, or list none of them
-#                as available (the Windows source of today lists only Defender and AppLocker)
-#   read         the lookback was read; it may hold no events
-# A lookback that holds events counts as read whatever else is true.
+#   missingFile  events_before.csv is missing
+#   unavailable  nothing was read: the lookback read failed (SourceErrors 'eventsbefore'), the capture's Sources do not
+#                list every log of events.json that has a lookback (the source does not read the lookback; the Windows
+#                source of today lists only Defender and AppLocker), or list none of them as available
+#   partial      every lookback log is listed, some as not available: only the available ones were read
+#   read         every lookback log is listed and available; the lookback may hold no events
+# A lookback that holds events is partial or read, by the same per-log rule (read when the Sources say nothing more).
+# logs: every log of events.json with a lookback, in its order, with the label of its source and whether it was read.
+$lookbackLogs = @($eventConfig.Logs.Values | Where-Object { $_.Lookback })
+$logsOut = New-Object System.Collections.Generic.List[object]
+$listedCount = 0
+foreach ($l in $lookbackLogs) {
+    $sid = 'events.' + $l.Id
+    $avail = $false
+    if ($model.Sources.ContainsKey($sid)) { $listedCount++; $avail = [bool]$model.Sources[$sid].Available }
+    $label = [string]$l.Id
+    if ($texts.ContainsKey('source.' + $sid)) { $label = [string]$texts['source.' + $sid] }
+    $logsOut.Add([ordered]@{ id = [string]$l.Id; label = $label; available = $avail })
+}
+$usableCount = @($logsOut | Where-Object { $_.available }).Count
+$allListed = ($listedCount -eq $lookbackLogs.Count)
 $lookbackStatus = 'read'
 $metaDays = Get-WorkerPerfField $model.Meta 'EventLookbackDays'
 if ($null -eq $metaDays) { $lookbackStatus = 'notRecorded' }
 elseif ([int]$metaDays -le 0) { $lookbackStatus = 'off' }
-elseif ([int]$lookback.EventCount -eq 0) {
-    $lookbackLogs = @($eventConfig.Logs.Values | Where-Object { $_.Lookback } | ForEach-Object { 'events.' + $_.Id })
-    $listed = @($lookbackLogs | Where-Object { $model.Sources.ContainsKey($_) })
-    $usable = @($listed | Where-Object { $model.Sources[$_].Available })
-    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' })
-    if (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv')) -or $failed.Count -gt 0 -or
-        $listed.Count -lt $lookbackLogs.Count -or $usable.Count -eq 0) { $lookbackStatus = 'unavailable' }
+elseif ([int]$lookback.EventCount -gt 0) {
+    if ($allListed -and $usableCount -gt 0 -and $usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
 }
+elseif (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv'))) { $lookbackStatus = 'missingFile' }
+else {
+    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' })
+    if ($failed.Count -gt 0 -or -not $allListed -or $usableCount -eq 0) { $lookbackStatus = 'unavailable' }
+    elseif ($usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
+}
+$captureEndMs = [long]$tick.TimeMs[$tick.TimeMs.Count - 1]
+if ($null -ne $model.CaptureEndMs) { $captureEndMs = [long]$model.CaptureEndMs }
 $beforeOut = [ordered]@{
     days = [int]$lookback.Days; from = [long]$lookback.FromMs; capped = [string[]]@($lookback.Capped)
     eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
     incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
-    captureStart = $captureStartMs; status = $lookbackStatus
+    captureStart = $captureStartMs; status = $lookbackStatus; logs = $logsOut.ToArray(); captureEnd = $captureEndMs
 }
 
 $driversOut = New-Object System.Collections.Generic.List[object]

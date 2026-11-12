@@ -387,7 +387,11 @@ Describe 'Ereignisdaten im Einzelnen' {
     }
     It 'sagt, ob der Rueckblick gelesen, abgeschaltet, nicht verfuegbar oder nicht aufgezeichnet ist' {     # Task 9, I1
         $D.before.status | Should -Be 'read'
-        (Get-ReportData $R.None).before.status | Should -Be 'unavailable'          # ohne events_before.csv
+        # changed in fix round 2 (N2): a missing file has its own status, the sources of this capture were available
+        (Get-ReportData $R.None).before.status | Should -Be 'missingFile'          # ohne events_before.csv
+        @($D.before.logs | ForEach-Object { $_.id }) | Should -Be @('application', 'system', 'printservice', 'smbclient', 'profileservice', 'defender', 'applocker')
+        @($D.before.logs | Where-Object { -not $_.available }).Count | Should -Be 0
+        @($D.before.logs | Where-Object id -eq 'application')[0].label | Should -Be 'Ereignisprotokoll Anwendung' 
         function New-MetaVariant([string]$Name, [scriptblock]$Change, [switch]$HeaderOnly) {
             $dir = Copy-SimRun $R.Run (Join-Path $TestDrive $Name); $f = Join-Path $dir 'meta.json'
             if ($HeaderOnly) { $lb = Join-Path $dir 'events_before.csv'; [IO.File]::WriteAllLines($lb, @([IO.File]::ReadAllLines($lb)[0])) }
@@ -403,5 +407,18 @@ Describe 'Ereignisdaten im Einzelnen' {
         # read and empty: every lookback log listed and available, the file holds only its header line
         (New-MetaVariant 'lbempty' { param($m) } -HeaderOnly).status | Should -Be 'read'
         (New-MetaVariant 'lbfmt2' { param($m) $m.PSObject.Properties.Remove('EventLookbackDays') }).status | Should -Be 'notRecorded'
+        # fix round 2 (N1): five lookback logs listed as not available, Defender and AppLocker available, header only
+        $part = New-MetaVariant 'lbpart' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient', 'profileservice') { $m.Sources."events.$id".Available = $false } } -HeaderOnly
+        $part.status | Should -Be 'partial'
+        @($part.logs | Where-Object available | ForEach-Object { $_.id }) | Should -Be @('defender', 'applocker')
+        # the same with the lookback rows of the simulation: still partial, never read
+        (New-MetaVariant 'lbpart2' { param($m) $m.Sources.'events.system'.Available = $false }).status | Should -Be 'partial'
+    }
+    It 'nennt das Ende der Aufzeichnung auch unter einem Ausschnitt mit -To' {          # Task 9, fix round 2 (N3)
+        $D.before.captureEnd | Should -Be $D.tickT[-1]
+        $to = Get-ServerTime $R.Run ($D.tickT[-1] - 10 * 60000)
+        $out = Join-Path $TestDrive 'tocut.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -To $to 6>$null)
+        $c = Get-ReportData $out
+        $c.before.captureEnd | Should -Be $D.before.captureEnd; $c.before.captureEnd | Should -BeGreaterThan $c.tickT[-1]
     }
 }

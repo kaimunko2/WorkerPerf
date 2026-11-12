@@ -293,8 +293,9 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   // without event files: the report without a finding stays as it was
   const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
   ok(await n.page.locator('#timeline .event').count() === 0 && await n.page.locator('#timeline .tl-row[data-group]').count() === 0, 'ohne Ereignisse keine Ereigniszeilen');
-  // changed in fix round 1 (I1): without events_before.csv the card says that nothing was read, instead of being hidden
-  ok((await n.page.locator('#before').innerText()).includes('Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar.') && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisse: Rueckblick nicht gelesen, keine Ereignisvorfaelle');
+  // changed in fix round 1 (I1), and again in fix round 2 (N2): without events_before.csv the card says that the file is
+  // missing; the sources of this capture were available
+  ok((await n.page.locator('#before').innerText()).includes('Für die Tage vor der Messung liegt keine Ereignisdatei vor (events_before.csv fehlt).') && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisdatei: Datei fehlt, keine Ereignisvorfaelle');
   ok((await n.page.locator('#findHead').innerText()) === 'Keine Vorfälle im Messzeitraum.' && await n.page.locator('#eventList').isHidden(), 'Kopfsatz und Ereignisliste wie bisher');
   ok(n.page.errors.length === 0, 'Skriptfehler ohne Ereignisse: ' + n.page.errors.join(' | '));
   await n.page.close();
@@ -431,6 +432,37 @@ async function checkFix1(browser, dir, scheme) {                   // Task 9, Ko
   await many.page.close();
 }
 
+async function checkFix2(browser, dir, scheme) {                   // Task 9, Korrekturrunde 2
+  const bt = async (page) => page.locator('#before').innerText();
+  // N1: five lookback logs not available, Defender and AppLocker available (the reviewer's input)
+  const partLogs = (J) => J.before.logs.map((l) => Object.assign({}, l, { available: l.id === 'defender' || l.id === 'applocker' }));
+  const pe = await open(browser, patched(dir, 'report.html', 'report-lb-partial.html', (J) => {
+    Object.assign(J.before, { eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [], status: 'partial', logs: partLogs(J) });
+  }), scheme);
+  let t = await bt(pe.page);
+  ok(t.includes('Gelesen: Ereignisprotokoll Microsoft Defender, Ereignisprotokolle AppLocker.') && t.includes('Nicht gelesen: Ereignisprotokoll Anwendung, Ereignisprotokoll System, Ereignisprotokoll Druckdienst, Ereignisprotokoll SMB-Client, Ereignisprotokoll Benutzerprofildienst.'), 'teilweiser Rueckblick nennt gelesene und nicht gelesene Protokolle: ' + t);
+  ok(t.includes('In den gelesenen Protokollen stehen für die 7 Tage vor der Messung keine Ereignisse der erfassten Arten.') && !t.includes('Arten in den Protokollen'), 'teilweiser Rueckblick ohne Ereignisse: keine Aussage ueber alle Protokolle');
+  ok(pe.page.errors.length === 0, 'Skriptfehler teilweiser Rueckblick: ' + pe.page.errors.join(' | '));
+  await pe.page.close();
+  const pv = await open(browser, patched(dir, 'report.html', 'report-lb-partial-events.html', (J) => { J.before.status = 'partial'; J.before.logs = partLogs(J); }), scheme);
+  t = await bt(pv.page);
+  ok(t.includes('Nicht gelesen: Ereignisprotokoll Anwendung') && t.includes('Ereignisse aus diesen Tagen') && await pv.page.locator('#before .day').count() === pv.D.before.perDay.length && await pv.page.locator('#before .incident').count() === pv.D.before.incidents.length, 'teilweiser Rueckblick mit Ereignissen: Zahlen, Balken, Vorfaelle und nicht gelesene Protokolle');
+  ok(!t.includes('keine Ereignisse der erfassten Arten'), 'teilweiser Rueckblick mit Ereignissen ohne Leer-Aussage');
+  await pv.page.close();
+  const full = await open(browser, path.join(dir, 'report.html'), scheme);
+  ok(!(await bt(full.page)).includes('Nicht gelesen'), 'vollstaendig gelesener Rueckblick ohne Liste nicht gelesener Protokolle');
+  await full.page.close();
+  // N3: a reported time after a -To cut but inside the capture
+  const tc = await open(browser, patched(dir, 'report-nodata.html', 'report-tocut.html', (J) => {
+    J.meta.focus = Object.assign({}, J.meta.focus, { reportedMs: J.tickT[J.tickT.length - 1] + 120000 }); J.eventsOutsideCut = 0;
+  }), scheme);
+  ok(tc.D.meta.focus.reportedMs < tc.D.before.captureEnd, 'Eingabe: gemeldete Zeit nach dem Ausschnitt in der Aufzeichnung');
+  const fi = await tc.page.locator('#focusInfo').innerText();
+  ok(fi.includes('(außerhalb des gewählten Zeitraums)') && !fi.includes('außerhalb der Messung'), 'nach einem Ausschnitt mit -To: ausserhalb des gewaehlten Zeitraums: ' + fi);
+  ok(tc.page.errors.length === 0, 'Skriptfehler Ausschnitt -To: ' + tc.page.errors.join(' | '));
+  await tc.page.close();
+}
+
 async function checkLongNames(browser, dir, scheme) {               // I2: lange Namen ohne seitliches Rollen
   const long = 'Microsoft.VisualStudio.Diagnostics.ServiceModelSink.Extended.Instrumentation.Runtime.4.0.dll';
   const file = patched(dir, 'report.html', 'report-long.html', (J) => {
@@ -457,7 +489,7 @@ async function checkLongNames(browser, dir, scheme) {               // I2: lange
   for (const scheme of ['light', 'dark']) {
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
-    await checkFix1(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
+    await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
   }
   console.log('browser checks passed: ' + checks);
   await browser.close();

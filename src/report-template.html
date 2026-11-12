@@ -1128,8 +1128,9 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
   if (FOCUS.reportedMs != null) {
     // before the start of the capture (its first tick, also under a cut), outside a cut, or after the end of the capture
     const capStart = (D.before && D.before.captureStart != null) ? D.before.captureStart : FULL.t0;
-    const cut = capStart < FULL.t0 || D.eventsOutsideCut > 0, out = FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1;
-    const where = FOCUS.reportedMs < capStart ? " (vor Beginn der Messung)" : !out ? "" : cut ? " (außerhalb des gewählten Zeitraums)" : " (außerhalb der Messung)";
+    const capEnd = Math.max(FULL.t1, (D.before && D.before.captureEnd != null) ? D.before.captureEnd : FULL.t1);
+    const out = FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1;
+    const where = FOCUS.reportedMs < capStart ? " (vor Beginn der Messung)" : FOCUS.reportedMs > capEnd ? " (außerhalb der Messung)" : out ? " (außerhalb des gewählten Zeitraums)" : "";
     parts.push(`gemeldete Uhrzeit <b>${fmtTime(FOCUS.reportedMs, false)}</b>${where}`);
   }
   if (parts.length) {
@@ -1141,8 +1142,9 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
     if (FOCUS.user && FOCUS.found && bf) bcounts.push(bf === 1 ? "1 Vorfall betrifft den Benutzer" : `${bf} Vorfälle betreffen den Benutzer`);
     if (FOCUS.reportedMs != null && bn) bcounts.push(bn === 1 ? "1 Vorfall liegt nahe der gemeldeten Uhrzeit" : `${bn} Vorfälle liegen nahe der gemeldeten Uhrzeit`);
     // a reported time that the cut leaves out: its events are not in this report, never "there were none"
-    const n = D.eventsOutsideCut || 0, cutOut = FOCUS.reportedMs != null && FOCUS.reportedMs >= ((D.before && D.before.captureStart != null) ? D.before.captureStart : FULL.t0) &&
-      (FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1) && n > 0;
+    const n = D.eventsOutsideCut || 0, capS = (D.before && D.before.captureStart != null) ? D.before.captureStart : FULL.t0;
+    const capE = Math.max(FULL.t1, (D.before && D.before.captureEnd != null) ? D.before.captureEnd : FULL.t1);
+    const cutOut = FOCUS.reportedMs != null && FOCUS.reportedMs >= capS && FOCUS.reportedMs <= capE && (FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1) && n > 0;
     const cutText = !cutOut ? "" : " Ereignisse um die gemeldete Uhrzeit zeigt der Bericht nicht: " +
       (n === 1 ? "1 Ereignis der Aufzeichnung liegt außerhalb des gewählten Zeitraums." : `${fmt(n, 0)} Ereignisse der Aufzeichnung liegen außerhalb des gewählten Zeitraums.`);
     el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "") + cutText;
@@ -1547,8 +1549,9 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
 });
 
 // ---------- findings: the days before the capture ----------
-// The card states what was read (before.status): the lookback was switched off, its sources were not available, it was
-// read and holds no events, or the summary of what it holds. A capture without a lookback setting (format 2) shows the
+// The card states what was read (before.status): the lookback was switched off, its file is missing, its sources were not
+// available, only some logs were read (partial: named, and the summary speaks only for them), it was read and holds no
+// events, or the summary of what it holds. A capture without a lookback setting (format 2) shows the
 // card only for events around a reported time before the capture. Two counts with different meanings: all events read
 // from these days, and those of an incident kind (the bars per day count the latter).
 const BEFORE = D.before || { days: 0, from: null, capped: [], eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [] };
@@ -1567,14 +1570,22 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
     `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
   const head = `<div class="cardhead"><h3>Vor der Messung</h3></div>
     <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>`;
-  const summary = BEFORE_STATUS === "read" && (BEFORE.eventCount > 0 || BEFORE.capped.length);
+  // partial: only the available logs were read; the page names both and never speaks for the logs that were not read
+  const partial = BEFORE_STATUS === "partial", logs = BEFORE.logs || [];
+  const logLine = !partial ? "" : `<p class="bstate">Gelesen: ${esc(logs.filter((l) => l.available).map((l) => l.label).join(", ") || "–")}. ` +
+    `Nicht gelesen: ${esc(logs.filter((l) => !l.available).map((l) => l.label).join(", ") || "–")}.</p>`;
+  const summary = (BEFORE_STATUS === "read" || partial) && (BEFORE.eventCount > 0 || BEFORE.capped.length);
   if (!summary) {
     const state = BEFORE_STATUS === "off" ? "Der Rückblick war abgeschaltet (-EventLookbackDays 0)."
+      : BEFORE_STATUS === "missingFile" ? "Für die Tage vor der Messung liegt keine Ereignisdatei vor (events_before.csv fehlt)."
       : BEFORE_STATUS === "unavailable" ? "Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar."
+      : partial ? (BEFORE.days === 1 ? "In den gelesenen Protokollen stehen für den Tag vor der Messung keine Ereignisse der erfassten Arten."
+        : `In den gelesenen Protokollen stehen für die ${BEFORE.days} Tage vor der Messung keine Ereignisse der erfassten Arten.`)
       : BEFORE_STATUS === "read" ? (BEFORE.days === 1 ? "Am Tag vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen."
         : `In den ${BEFORE.days} Tagen vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen.`) : "";
-    el.innerHTML = head + (state ? `<p class="bstate">${state}</p>` : "") + near;
+    el.innerHTML = head + logLine + (state ? `<p class="bstate">${state}</p>` : "") + near;
   } else el.innerHTML = `${head}
+    ${logLine}
     ${BEFORE.capped.length ? `<p class="capped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: für ${BEFORE.capped.length === 1 ? "das Protokoll" : "die Protokolle"} ${esc(logWords(BEFORE.capped))} wurde die Obergrenze der gelesenen Ereignisse erreicht; ältere Ereignisse fehlen.</p>` : ""}
     <div class="kv"><span>Rückblick <b>${plural(BEFORE.days, "Tag", "Tage")} vor Beginn der Messung${BEFORE.from != null ? " (ab " + fmtDate(BEFORE.from) + ")" : ""}</b></span>
       <span>Ereignisse aus diesen Tagen <b>${fmt(BEFORE.eventCount, 0)}</b> (alle Arten)</span>

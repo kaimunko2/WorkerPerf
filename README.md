@@ -343,16 +343,18 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 - **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
   Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet. Liegt
   die gemeldete Uhrzeit in der Aufzeichnung, aber außerhalb des mit `-From`/`-To` gewählten Zeitraums, sagt der Kopf
-  das und wie viele Ereignisse der Aufzeichnung der Zeitraum auslässt.
+  das und, wenn der Zeitraum Ereignisse der Aufzeichnung auslässt, wie viele.
 - **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
   Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
   (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
   Vorfälle dieser Tage mit Datum und Mustern, ein Hinweis, wenn der Rückblick eines Protokolls an die Obergrenze
   stieß, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es
   solche gibt. Der Block sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-EventLookbackDays 0`), steht nur
-  das da; konnte er nicht gelesen werden, weil die Ereignisquellen nicht verfügbar waren (so heute unter Windows),
-  ebenso, ohne Zahlen; wurde er gelesen und enthält keine Ereignisse, sagt der Block, dass in diesen Tagen keine
-  Ereignisse der erfassten Arten in den Protokollen stehen. Aufzeichnungen im Format 2 haben keinen Rückblick; dort
+  das da; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht gelesen werden, weil die
+  Ereignisquellen nicht verfügbar waren (so heute unter Windows), ebenso, jeweils ohne Zahlen. Waren nur einige
+  Protokolle verfügbar, nennt er die gelesenen und die nicht gelesenen, und Zahlen, Balken und Vorfälle gelten nur
+  für die gelesenen. Wurden alle Protokolle gelesen und enthalten sie keine Ereignisse, sagt der Block, dass in
+  diesen Tagen keine Ereignisse der erfassten Arten in den Protokollen stehen. Aufzeichnungen im Format 2 haben keinen Rückblick; dort
   erscheint der Block nur mit Ereignissen um eine gemeldete Uhrzeit vor der Messung.
 - **Drucken:** die Druckertreiber mit Hersteller, Version, Bauart (Typ 3 oder Typ 4), Isolierung und ob sie an
   einem Vorfall beteiligt waren („beteiligt" oder, wenn das fehlerhafte Modul zu mehreren Treibern gehört,
