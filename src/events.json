@@ -28,7 +28,7 @@
       "fields": { "object": "#0" } },
     { "log": "system", "provider": "Microsoft-Windows-Resource-Exhaustion-Detector", "ids": [2004], "group": "memory", "kind": "system" },
     { "log": "printservice", "provider": "Microsoft-Windows-PrintService", "ids": [372, 808, 6161], "group": "print", "kind": "print" },
-    { "log": "printservice", "provider": "Microsoft-Windows-PrintService", "ids": [600, 601], "group": "print", "kind": "print",
+    { "log": "printservice", "provider": "Microsoft-Windows-PrintService", "ids": [600, 601], "group": "print", "kind": "driver-import",
       "fields": { "driver": "Driver" } },
     { "log": "printservice", "provider": "Microsoft-Windows-PrintService", "ids": [215], "group": "print", "kind": "print",
       "fields": { "driver": "DriverName" } },

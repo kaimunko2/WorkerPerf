@@ -370,7 +370,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $p = @($ev | Where-Object Source -eq 'Citrix Profile Management'); $p.Count | Should -Be 1; $p[0].EventId | Should -Be 1003; $p[0].Kind | Should -Be 'profileerror'
         @($ev | Where-Object Source -eq 'Citrix Desktop Service').Count | Should -Be 0
         $svc = $ev | Where-Object Kind -eq 'service'; $svc.Service | Should -Be 'Spooler'; $svc.User | Should -Be 'SYSTEM'
-        $pr = $ev | Where-Object Group -eq 'print'; $pr.Driver | Should -Be 'Sim PCL 6'; $pr.User | Should -Be 'NT SERVICE\SimDienst'
+        $pr = $ev | Where-Object Group -eq 'print'; $pr.Driver | Should -Be 'Sim PCL 6'; $pr.Kind | Should -Be 'driver-import'; $pr.User | Should -Be 'NT SERVICE\SimDienst'
         @($ev | ForEach-Object { $_.Time }) | Should -Be @($ev | ForEach-Object { $_.Time } | Sort-Object)
         @($ev | Where-Object Group -eq 'session').Count | Should -Be 0                         # die Anmeldung liegt vor dem Fenster
         @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-15)) | Where-Object Group -eq 'session').User | Should -Be @('mueller')

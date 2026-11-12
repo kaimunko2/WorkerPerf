@@ -687,7 +687,8 @@ Kennungen geht vor. Der Dienstname von `Service Control Manager` kommt aus dem B
 
 Die Profilverwaltung von Citrix (`Citrix Profile Management`) liest der Collector nach Ebene, Fehler und
 Warnungen (siehe Offene Punkte). Für die Citrix-Druckverwaltung steht keine Quelle in `events.json`. Vom
-Druckdienst liest er die Treiberfehler 600, 601 und 215 mit dem Treibernamen; Wechsel des Standarddruckers und
+Druckdienst liest er die fehlgeschlagene Treiberinstallation (215) als Druckfehler und die fehlgeschlagenen
+Treiberimporte (600, 601) als eigene Art ohne Vorfall, beide mit dem Treibernamen; Wechsel des Standarddruckers und
 Meldungen ohne bekannte Felder bleiben draußen.
 
 Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
@@ -739,11 +740,13 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   Bedeutung der einzelnen Kennungen noch nicht bekannt ist. Die erste echte Aufzeichnung zeigt, welche davon
   Routinemeldungen sind und in `events.json` ausgenommen werden sollten (ein Eintrag mit diesen Kennungen und der
   Art `info` geht dem Eintrag nach Ebene vor).
-- **Treiberfehler 600 und 601 des Druckdienstes:** Sie können bei jeder Anmeldung entstehen, wenn der Treiber eines
-  Clientdruckers nicht importiert werden kann. Die Auswertung fasst sie je Treiber zu Vorfällen zusammen, solange
-  zwischen zwei Ereignissen höchstens 30 Minuten liegen; sind sie häufig, ergibt das im Rückblick viele
-  Druckvorfälle. Mit der ersten echten Aufzeichnung entscheiden, ob sie als `info` geführt oder anders
-  zusammengefasst werden.
+- **Fehlgeschlagene Treiberimporte (Druckdienst 600 und 601):** Sie können bei jeder Anmeldung entstehen, wenn der
+  Treiber eines Clientdruckers nicht importiert werden kann, und sind dann ein Dauerzustand, kein Vorfall. Der
+  Collector zeichnet sie auf (Art `driver-import`, mit dem Treibernamen); der Bericht nennt sie in der
+  Ereignisliste als „Treiberimport fehlgeschlagen", bildet aus ihnen aber keinen Druckvorfall und nennt ihretwegen
+  keinen Treiber „beteiligt". Wie häufig sie sind, soll eine spätere Auswertung des Zustands des Workers bewerten.
+- **Benannte Startzeit bei `Application Error` 1000:** Der Name `ProcessCreationTime`, den `events.json` vor der
+  Position `#9` nennt, ist nicht geprüft; ein Server mit unbenannten Feldern liest die Position.
 - **Benutzer aus dem Konto des Ereignisses:** Ereignisse ohne Benutzer in den Datenfeldern (Absturz, Profilfehler)
   bekommen das Konto aus dem Systemteil des Ereignisses. Die Konten SYSTEM, LOCAL SERVICE und NETWORK SERVICE
   erkennt der Collector an ihrer SID; andere SIDs übersetzt Windows, je SID einmal und höchstens 1 s lang, nach

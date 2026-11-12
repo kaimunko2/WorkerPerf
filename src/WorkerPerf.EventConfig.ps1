@@ -4,7 +4,7 @@
 
 $script:WorkerPerfEventGroups = @('app', 'service', 'storage', 'memory', 'fileserver', 'profile', 'print', 'session', 'security')
 $script:WorkerPerfEventKinds = @('crash', 'hang', 'app-detail', 'service', 'print', 'profileerror', 'system', 'logon', 'logoff',
-    'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'info')
+    'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'driver-import', 'info')
 $script:WorkerPerfEventNumberKeys = @('pid', 'session')
 # The list nonPersonAccounts that src/events.json ships; used when a custom events.json has none.
 $script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'LOKALER DIENST', 'NETZWERKDIENST', 'DWM-*', 'UMFD-*',

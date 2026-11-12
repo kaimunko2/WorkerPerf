@@ -163,8 +163,9 @@ Describe 'Inhalt von events.json' {
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 372; Group = 'print'; Kind = 'print'; Fields = '' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 808; Group = 'print'; Kind = 'print'; Fields = '' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 6161; Group = 'print'; Kind = 'print'; Fields = '' }
-        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 600; Group = 'print'; Kind = 'print'; Fields = 'driver=Driver' }
-        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 601; Group = 'print'; Kind = 'print'; Fields = 'driver=Driver' }
+        # P1-R30: 600/601 sind ein Dauerzustand (Treiberimport), kein Vorfall
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 600; Group = 'print'; Kind = 'driver-import'; Fields = 'driver=Driver' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 601; Group = 'print'; Kind = 'driver-import'; Fields = 'driver=Driver' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 215; Group = 'print'; Kind = 'print'; Fields = 'driver=DriverName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30800; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30803; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
@@ -666,6 +667,21 @@ Describe 'Ausfall der Druckwarteschlange' {
         $b = Get-Inc @((New-SpoolCrash 0), (New-Stop 40)); @($b | ForEach-Object { $_.Key + ':' + $_.Count }) | Should -Be @('Sim PCL 6:1', 'Service Control Manager:1')
         $c = Get-Inc @((New-Ev 0 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; Printer = 'PRN-1' }), (New-Stop 1))
         @($c | ForEach-Object { $_.Key }) | Should -Be @('PRN-1', 'Service Control Manager')
+    }
+    It 'bildet aus fehlgeschlagenen Treiberimporten keinen Vorfall und macht keinen Treiber beteiligt (P1-R30)' {
+        $imp = @(foreach ($k in 0..299) { New-Ev ($k * 3) 'driver-import' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; EventId = 600 + ($k % 2); Driver = 'Sim PCL 6'; Code = '' } })
+        (Get-Inc $imp).Count | Should -Be 0
+        $ps = Get-WorkerPerfPrintState -Model @{ PrintDrivers = @(@{ Name = 'Sim PCL 6'; Manufacturer = 'HP'; Version = '61.1'; Type = 3; Isolation = 'none'; Files = @('hpsimgr.dll') }); PrintQueues = @(); Processes = @() } -EventIncidents (Get-Inc $imp)
+        @($ps.Drivers | Where-Object { $_.Involved -or $_.PossiblyInvolved }).Count | Should -Be 0
+        # 215 und ein Absturz der Druckwarteschlange bleiben Vorfaelle, die Importe treten ihnen nicht bei
+        $inst = New-Ev 10.5 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; EventId = 215; Driver = 'Sim Neu'; Code = '' }
+        $i = Get-Inc (@($imp) + @($inst, (New-SpoolCrash 100.5)))
+        @($i | ForEach-Object { $_.Key + ':' + $_.Count }) | Should -Be @('Sim Neu:1', 'Sim PCL 6:1')
+        @($i | ForEach-Object { @($_.Events | ForEach-Object { $_.Kind }) }) | Should -Not -Contain 'driver-import'
+        Get-WorkerPerfEventIncidentKind (New-Ev 0 'driver-import') $Cfg | Should -BeNullOrEmpty
+    }
+    It 'nennt den fehlgeschlagenen Treiberimport im Bericht mit eigenem Wort (P1-R30)' {
+        [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/report-template.html')) | Should -Match '"driver-import": "Treiberimport fehlgeschlagen"'
     }
     It 'nimmt die Schreibweise der Treiberliste' {
         $i = Get-Inc @((New-Ev 0 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; Driver = 'sim pcl 6' }), (New-SpoolCrash 1))
