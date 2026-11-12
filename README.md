@@ -25,6 +25,10 @@
 >   die Ereignisse von Defender und AppLocker.** Die übrigen Ereignisprotokolle, den Rückblick auf die Tage vor der
 >   Messung, die Treiberliste und die Zähler der Druckwarteschlangen liefert heute nur die Simulation; die
 >   Windows-Datenquelle dafür folgt, sobald das Prüfskript gezeigt hat, welche Kennungen auf dem Worker entstehen.
+> - **Maskierte Berichte:** Die Auswertung kann Namen im Bericht durch Ersatznamen wie „Benutzer 01" ersetzen
+>   (`-Mask Personen` oder `-Mask Alles`, siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)).
+>   Das ist fertig und mit der Simulation getestet; **unter Windows PowerShell 5.1 auf einem Server ist es noch
+>   nicht gelaufen.**
 > - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Leistungsvorfällen und vier Vorfällen aus
 >   Ereignissen](https://kaimunko2.github.io/WorkerPerf/) (GitHub Pages; Einrichtung siehe [Demo-Bericht](#demo-bericht)).
 
@@ -124,6 +128,12 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -From '2026-01-01 09:00' -To '2026-01-01 11:30'
 # Meldung eines Benutzers: seine Vorfälle und die um die gemeldete Uhrzeit hervorheben
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -FocusUser 'CONTOSO\mmuster' -ReportedTime '2026-01-01 10:15'
+# Benutzer und Clients im Bericht ersetzen:
+.\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Personen
+# alle Namen ersetzen, Bericht außerhalb des Aufzeichnungsordners ablegen:
+.\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Alles -OutFile D:\Weitergabe\bericht.html
+# dazu die Zuordnung der Ersatznamen zu den echten Namen behalten (nicht weitergeben):
+.\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Alles -OutFile D:\Weitergabe\bericht.html -MaskMapFile D:\WorkerPerf\bericht.maskmap.json
 ```
 
 Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`). Die Auswertung bewertet jede Messreihe
@@ -150,10 +160,80 @@ unter Windows PowerShell 5.1 kann sie dafür eine Minute oder länger brauchen.
 | `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
 | `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben. Liegt sie vor Beginn der Messung, nennt der Block „Vor der Messung" die Ereignisse bis 15 Minuten um diese Uhrzeit |
 | `-TopProcesses` | Zahl der Einzelprozesse je Rangliste (CPU-Zeit, Spitzenspeicher), Standard 150 |
+| `-Mask` | Namen im Bericht ersetzen: `Personen` (Benutzer und Clients) oder `Alles` (auch Server, Freigaben, Domänen, Adressen, Drucker); siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben) |
+| `-MaskMapFile` | nur mit `-Mask`: schreibt die Zuordnung der Ersatznamen zu den echten Namen in diese Datei; ohne den Parameter entsteht keine solche Datei |
 
 Schwellwerte, Rollen und die Liste der Ereignisse (`events.json`) werden erst bei der Auswertung gelesen. Eine
 Messung lässt sich deshalb jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der
 Hauptanwendung in `roles.json` eingetragen sind.
+
+### Bericht maskiert weitergeben
+
+Soll ein Bericht an jemanden gehen, der die Namen nicht sehen soll (zum Beispiel an einen Dienstleister), ersetzt
+die Auswertung sie mit `-Mask` durch Ersatznamen. Es gibt zwei Stufen:
+
+- `-Mask Personen` ersetzt alles, was eine Person erkennen lässt: Benutzer und Clients.
+- `-Mask Alles` ersetzt zusätzlich die Namen der Umgebung: Server, Freigaben, Domänen, Adressen und Drucker.
+
+| | `-Mask Personen` | `-Mask Alles` |
+|---|---|---|
+| Benutzernamen | Benutzer 01, 02 … | ebenso |
+| Clientnamen | Client 01, 02 … | ebenso |
+| Benutzer in Pfaden und Instanznamen (Profilordner, Containerpfade, Sitzungsnamen) | ersetzt | ebenso |
+| Konten-SIDs | ersetzt | ebenso |
+| Server- und Computernamen, auch der Worker selbst | bleiben | Server 01, 02 … |
+| Freigaben | bleiben | Freigabe 01, 02 … |
+| Domänen | bleiben | Domäne 01 … |
+| IP-Adressen | bleiben | Adresse 01 … |
+| Namen von Druckern und Warteschlangen | bleiben | Drucker 01 … |
+| Anwendungs-, Prozess-, Dienst-, Treiber- und Druckermodellnamen | bleiben | bleiben |
+| Meldungstext von Ereignissen | entfällt; Art und Quelle bleiben | ebenso |
+| Befehlszeilen, falls aufgezeichnet | entfallen | entfallen |
+
+Ein maskierter Bericht nennt die Stufe oben auf der Seite, unter der Überschrift, zum Beispiel „Maskiert: alle Namen
+(Benutzer, Clients, Server, Freigaben, Domänen, Adressen, Drucker ersetzt)". Der Hinweis erscheint auch im Ausdruck.
+Fehlt er, ist der Bericht nicht maskiert.
+
+**So wird ersetzt:**
+
+- Derselbe Name hat überall im Bericht denselben Ersatznamen. Ersetzt werden nur ganze Namen, ohne Rücksicht auf
+  Groß- und Kleinschreibung.
+- Alle Berichte einer Aufzeichnung verwenden dieselben Ersatznamen: der ganze Bericht ebenso wie Ausschnitte mit
+  `-From` und `-To`. Für eine andere Aufzeichnung gelten andere Ersatznamen.
+- Ein Ordnername unter `C:\Users\` gilt als Benutzername, auch für Konten ohne Sitzung in der Messung.
+- Ein Personenname geht einem Produktnamen vor. Heißt ein Benutzer wie ein Programm, ein Dienst oder ein Hersteller
+  (zum Beispiel `hp`), wird dieses Wort dort ersetzt, wo es allein steht. Mehrteilige Produktnamen, etwa der Name
+  eines Druckertreibers, bleiben stehen.
+- Meldungstexte von Ereignissen, Befehlszeilen und die Fehlermeldungen fehlgeschlagener Abfragen entfallen im
+  maskierten Bericht. Sie können Namen enthalten, die die Auswertung nicht kennt. Art und Quelle der Ereignisse
+  bleiben.
+- Die Aufzeichnung selbst wird nie verändert und enthält immer die echten Namen. Die Maskierung betrifft nur den
+  Bericht. Aus derselben Aufzeichnung lässt sich jederzeit auch ein Bericht ohne Maskierung erstellen.
+
+**Wohin mit den Dateien:**
+
+- Bei `-Mask Alles` mit `-OutFile` eine Datei außerhalb des Aufzeichnungsordners wählen. Ohne `-OutFile` landet der
+  Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Workers, und die Konsole zeigt diesen Pfad an.
+  Auch der Dateiname selbst darf den Worker nicht nennen; sonst bricht die Auswertung mit einer Meldung ab.
+- `-MaskMapFile` schreibt eine Zuordnungsdatei: welcher Ersatzname zu welchem echten Namen gehört. Damit lassen sich
+  Rückfragen zum Bericht beantworten („Wer ist Benutzer 07?"). Die Datei enthält die echten Namen. Sie gehört nicht
+  zum weitergegebenen Bericht: getrennt aufbewahren und nicht weitergeben. Sie entsteht nur, wenn der Parameter
+  angegeben ist. Git schließt Dateien `*.maskmap.json` aus.
+
+**Grenzen:**
+
+- Ein Name in einem Feld, das die Auswertung nicht als Namen kennt, bleibt stehen. Deshalb entfallen Meldungstexte
+  und Befehlszeilen ganz.
+- Namen, die sich nur durch das türkische große I mit Punkt (`İ`) unterscheiden, werden nicht als derselbe Name
+  erkannt.
+- Aus dem Zusammenhang kann eine Person erkennbar bleiben, etwa als einziger Benutzer einer Anwendung oder durch die
+  Uhrzeit ihrer Anmeldung.
+- Deshalb den maskierten Bericht vor der Weitergabe einmal durchsehen.
+
+Das Quellen-Prüfskript maskiert sein Ergebnis weiterhin immer, unabhängig von `-Mask`, und auf eigene Weise: mit
+Platzhaltern wie `<user>` und `<server>` statt nummerierter Ersatznamen (siehe
+[docs/vda-probe/README.md](docs/vda-probe/README.md#ergebnis-zurückgeben)). Der [Demo-Bericht](#demo-bericht) ist
+nicht maskiert; er enthält nur die erfundenen Namen der Simulation.
 
 ### Ohne VDA ausprobieren
 
@@ -574,6 +654,10 @@ Die Aufzeichnung enthält personenbezogene Daten (Benutzernamen, Clientnamen, ge
 und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf. die Beteiligung
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
+Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` sie durch Ersatznamen
+(siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)); die Aufzeichnung selbst behält die echten
+Namen. Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
+`.gitignore` schließt `*.maskmap.json` aus.
 Im Ergebnis des Prüfskripts sind Benutzer-, Domänen-, Client- und Servernamen sowie Konten-SIDs maskiert.
 Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird deshalb nach einer Durchsicht
 ([docs/vda-probe/README.md](docs/vda-probe/README.md#vor-der-weitergabe-durchsehen)) außerhalb des Repositorys
@@ -590,6 +674,9 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   AppLocker. Die übrigen Protokolle aus `events.json`, der Rückblick, die Treiberliste und die Zähler der
   Druckwarteschlangen folgen, sobald das Prüfskript auf einem Worker gezeigt hat, welche Protokolle lesbar sind
   und welche Kennungen dort entstehen. Bis dahin liefert sie nur die Simulation.
+- **Maskierung unter Windows PowerShell 5.1:** `-Mask` und `-MaskMapFile` sind nur unter PowerShell 7 mit der
+  Simulation getestet. Bei der ersten echten Auswertung einmal mit `-Mask Alles` auswerten, den Bericht durchsehen
+  und prüfen, dass kein echter Benutzer-, Client- oder Servername mehr darin steht.
 - **Kosten des schnellen Takts unter Windows PowerShell 5.1:** nicht gemessen. Gemessen ist nur die Prozessabfrage
   des Prüfskripts (0,4 s für 800 Prozesse). Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
   „Messqualität" (siehe [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker)).

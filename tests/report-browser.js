@@ -483,6 +483,68 @@ async function checkLongNames(browser, dir, scheme) {               // I2: lange
   await page.close();
 }
 
+async function checkMask(browser, dir, scheme) {                   // Maskierung: Stufe im Kopf
+  const { page } = await open(browser, path.join(dir, 'report.html'), scheme);
+  ok(await page.locator('#maskInfo').count() === 0, 'unmaskiert ohne Hinweis');
+  await page.close();
+  const m = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  ok((await m.page.locator('#maskInfo').innerText()).includes('Maskiert: alle Namen'), 'Stufe im Kopf');
+  ok(!(await m.page.locator('body').innerText()).match(/user0\d\d|SIM-VDA01|CONTOSO/), 'keine Namen auf der Seite');
+  ok(m.page.errors.length === 0, 'Skriptfehler maskiert: ' + m.page.errors.join(' | '));
+  await m.page.close();
+  // the note is text in the header next to the subtitle; the symbol is hidden from screen readers
+  const p = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  ok(await p.page.locator('header #maskInfo').count() === 1 && await p.page.locator('#maskInfo [aria-hidden="true"]').count() === 1, 'Hinweis im Kopf, Symbol fuer Vorleser verborgen');
+  ok((await p.page.locator('#maskInfo').innerText()).includes('Maskiert: alle Namen (Benutzer, Clients, Server, Freigaben, Domänen, Adressen, Drucker ersetzt)'), 'Text der Stufe Alles');
+  const col = await p.page.evaluate(() => [getComputedStyle(document.getElementById('maskInfo')).color, getComputedStyle(document.body).color]);
+  ok(col[0] === col[1], 'Hinweis in der Textfarbe des Schemas: ' + col.join(' / '));
+  await p.page.emulateMedia({ media: 'print' });
+  ok(await p.page.locator('#maskInfo').isVisible(), 'Hinweis bleibt im Druck');
+  await p.page.close();
+  // the other level, an unknown value: the page never looks unmasked; markup in the value stays text
+  const pers = await open(browser, patched(dir, 'report-masked.html', 'report-mask-personen.html', (J) => { J.meta.mask = 'Personen'; }), scheme);
+  ok((await pers.page.locator('#maskInfo').innerText()).includes('Maskiert: Personen (Benutzer und Clients ersetzt)'), 'Text der Stufe Personen');
+  await pers.page.close();
+  const bad = '<img src=x onerror="window.__xss=1">';
+  const unk = await open(browser, patched(dir, 'report-masked.html', 'report-mask-unknown.html', (J) => { J.meta.mask = 'Neu ' + bad; }), scheme);
+  ok((await unk.page.locator('#maskInfo').innerText()).includes('Maskiert: Neu ' + bad), 'unbekannte Stufe zeigt den Wert');
+  ok(await unk.page.evaluate(() => window.__xss === undefined) && await unk.page.locator('header img').count() === 0, 'Stufe als Text, nicht als Markup');
+  ok(unk.page.errors.length === 0, 'Skriptfehler unbekannte Stufe: ' + unk.page.errors.join(' | '));
+  await unk.page.close();
+}
+
+async function checkMaskedPage(browser, dir, scheme) {             // Maskierung: der ganze Bericht bleibt bedienbar
+  const { page, D } = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  ok(D.incidents.length > 0 && await page.locator('#incidents .incident').count() === D.incidents.length, 'maskiert: ein Eintrag je Vorfall');
+  for (const inc of D.incidents) await openIncident(page, inc.id);
+  ok(await page.locator('#incidents .incident.open').count() === D.incidents.length, 'maskiert: alle Vorfaelle geoeffnet');
+  for (const inc of D.before.incidents) await page.locator(`#before .incident[data-id="${inc.id}"] .text`).click();
+  await page.click('#eventList summary');
+  ok(await page.locator('#tEvents tbody tr').count() === Math.min(200, D.events.length), 'maskiert: Ereignisliste');
+  ok(await page.locator('#tPrintQueues tbody tr').count() > 0 && (await page.locator('#tPrintQueues').innerText()).includes('Drucker 01'), 'maskiert: Drucken mit Ersatznamen');
+  await page.click('nav button[data-tab=overview]');
+  ok(await page.locator('#chCpu svg path').count() > 0, 'maskiert: Uebersicht gezeichnet');
+  await page.click('nav button[data-tab=sessions]');
+  const s = D.sessions.find((x) => x.user === 'Benutzer 01');
+  await page.click(`#tSessions tbody tr[data-id="${s.i}"]`);
+  ok((await page.locator('#tSessions').innerText()).includes('Benutzer 01') && await page.locator('#dSessions .chart-input svg path').count() > 0, 'maskiert: Sitzungstabelle und Sitzung');
+  await page.click('nav button[data-tab=apps]');
+  await page.click('nav button[data-tab=procs]');
+  ok(await page.locator('#tProcs tbody tr').count() > 0, 'maskiert: Prozesse');
+  ok(page.errors.length === 0, 'Skriptfehler maskierter Bericht: ' + page.errors.join(' | '));
+  await page.close();
+  // the masked header at phone width
+  const n = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+  n.errors = []; n.on('pageerror', (e) => n.errors.push(e.message));
+  await n.goto('file://' + path.join(dir, 'report-masked.html'));
+  const w = await n.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(w[0] <= w[1], 'maskierter Kopf schmal ohne seitliches Rollen: ' + w.join(' > '));
+  const box = await n.locator('#maskInfo').boundingBox();
+  ok(box && box.x >= 0 && box.x + box.width <= 390, 'Hinweis passt in die schmale Ansicht');
+  ok(n.errors.length === 0, 'Skriptfehler maskiert schmal: ' + n.errors.join(' | '));
+  await n.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
@@ -490,6 +552,7 @@ async function checkLongNames(browser, dir, scheme) {               // I2: lange
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
     await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
+    await checkMask(browser, dir, scheme); await checkMaskedPage(browser, dir, scheme);
   }
   console.log('browser checks passed: ' + checks);
   await browser.close();

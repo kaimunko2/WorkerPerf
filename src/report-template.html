@@ -30,6 +30,9 @@ h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
 h3 { font-size: 13px; margin: 0; font-weight: 600; }
 .sub { color: var(--text2); }
 .sub .endreason { color: var(--text); font-weight: 600; }
+/* masking level of the report, next to the subtitle; real text, so it is read aloud and printed */
+#maskInfo { margin-top: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+#maskInfo .sym { font-style: normal; margin-right: 4px; }
 .note { color: var(--muted); font-size: 12px; }
 .topbar { position: sticky; top: 0; z-index: 20; background: var(--page); }
 nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -817,6 +820,15 @@ document.getElementById("title").textContent = "WorkerPerf – " + M.computer + 
   else if (M.endReason === "error") html += ` · <span class="endreason">Aufzeichnung mit Fehler beendet: ${esc(M.endMessage || "ohne Meldung")}</span>`;
   else if (M.endReason !== "duration") html += ` · <span class="endreason">Aufzeichnung ${esc(END_REASON[M.endReason] || M.endReason)}</span>`;
   document.getElementById("subtitle").innerHTML = html;
+}
+// masking level: only in a masked report; an unknown level shows its value, so a masked report never looks unmasked
+const MASK_INFO = { Personen: "Personen (Benutzer und Clients ersetzt)", Alles: "alle Namen (Benutzer, Clients, Server, Freigaben, Domänen, Adressen, Drucker ersetzt)" };
+if (M.mask != null && M.mask !== "") {
+  const info = document.createElement("div"), sym = document.createElement("i");
+  info.id = "maskInfo"; info.className = "sub";
+  sym.className = "sym"; sym.setAttribute("aria-hidden", "true"); sym.textContent = "◐";
+  info.append(sym, document.createTextNode("Maskiert: " + (Object.prototype.hasOwnProperty.call(MASK_INFO, M.mask) ? MASK_INFO[M.mask] : String(M.mask))));
+  document.getElementById("subtitle").after(info);
 }
 document.getElementById("footer").textContent = `${fmt(M.ticks, 0)} Takte, ${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. ` +
   `Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts), ${fmt(Q.skippedTicks, 0)} verspätete Takte. ` +
