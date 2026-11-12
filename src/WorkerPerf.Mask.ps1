@@ -16,11 +16,14 @@ $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^
 $script:WorkerPerfMaskSid = New-Object System.Text.RegularExpressions.Regex '^S-1-5-21-\d+-\d+-\d+-\d+$', 'IgnoreCase'
 # folders under C:\Users that belong to no person
 $script:WorkerPerfMaskProfileFolders = @('Public', 'Default', 'Default User', 'All Users')
-# Fixed patterns in path and instance texts, scanned left to right: an account SID; a UNC path (not the device prefixes
-# \\?\ and \\.\) with its server and, when present, its share (\\server\share); a user folder <drive>:\Users\<name>
-# (any drive, any case), and the user of a Citrix UPM mount path \Users\<user>_UPM_local (also without drive).
+# The server of a UNC path: letters, digits, '-', '_' and '.', neither starting nor ending with a full stop (so not the
+# device prefixes \\?\ and \\.\, and not the full stop or bracket that follows it in a sentence).
+$script:WorkerPerfMaskServerText = '(?<server>[\p{L}\p{N}_-](?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_-])?)'
+# Fixed patterns in path and instance texts, scanned left to right: an account SID; a UNC path with its server and, when
+# present, its share (\\server\share); a user folder <drive>:\Users\<name> (any drive, any case), and the user of a
+# Citrix UPM mount path \Users\<user>_UPM_local (also without drive).
 $script:WorkerPerfMaskPathPatternText = '(?<sid>(?<![\w-])S-1-5-21-\d+-\d+-\d+-\d+(?![\w-]))' +
-    '|(?<unc>\\\\(?<server>[^\\/\s,;"?.*:|<>][^\\/\s,;"*:|<>]*)\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
+    '|(?<unc>\\\\' + $script:WorkerPerfMaskServerText + '\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
     '|(?<drive>(?<![A-Za-z])[A-Za-z]:)?\\Users\\(?<folder>[^\\]+?)(?<upm>_UPM_local)?(?=\\|$)'
 $script:WorkerPerfMaskPathPatterns = New-Object System.Text.RegularExpressions.Regex $script:WorkerPerfMaskPathPatternText, 'IgnoreCase'
 # Free texts (meta.json) also hold addresses: an IPv4 address that is not part of a longer dotted number, not part of a
@@ -32,7 +35,7 @@ $script:WorkerPerfMaskTextPatterns = New-Object System.Text.RegularExpressions.R
 # Running texts (report data): an account SID as a whole word, and the server of a UNC path (not the device prefixes \\?\
 # and \\.\). An IPv4 shape is not looked for: in a text it cannot be told from a version number.
 $script:WorkerPerfMaskSidWord = '(?<![\p{L}\p{N}-])S-1-5-21(?:-\d+){4}(?![\p{L}\p{N}]|-\d)'
-$script:WorkerPerfMaskUncServer = '\\\\(?<server>[^\\/\s,;"?.*:|<>][^\\/\s,;"*:|<>]*)'
+$script:WorkerPerfMaskUncServer = '\\\\' + $script:WorkerPerfMaskServerText
 
 # The replacing itself, in C# 5 (Windows PowerShell 5.1; only mscorlib, System and System.Management.Automation, which
 # Add-Type references by default): one call per string and per match would cost a PowerShell function or script block
@@ -42,6 +45,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Management.Automation;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -90,9 +94,10 @@ namespace WorkerPerf
             if (string.IsNullOrEmpty(text)) { return text; }
             string rep;
             if (this.done.TryGetValue(text, out rep)) { return rep; }
-            // the whole text is one name (a user, a client): no pattern needed
+            // the whole text is one name (a user, a client): no pattern needed. No protected name equals a name (the
+            // caller drops those), so neither the word rule nor a phrase can keep a whole text that is a name.
             List<int> spans = null;
-            if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep) || this.IsProtected(text, 0, text.Length) || this.InPhrase(text, 0, text.Length, ref spans))
+            if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep))
             {
                 rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m, ref spans); });
             }
@@ -201,10 +206,11 @@ namespace WorkerPerf
                     foreach (PSPropertyInfo p in ps.Properties) { this.AddKey(od, p.Name, this.Protect(p.Value)); }
                     return od;
                 }
-                if (inner is string || inner is IEnumerable) { return this.Protect(inner); }
-                return value;
+                if (IsKept(inner)) { return value; }
+                return this.Protect(inner);
             }
-            if (value is StringBuilder || value is ValueType) { return value; }
+            if (value is StringBuilder || IsKept(value)) { return value; }
+            if (value is ValueType) { return this.Hide(Convert.ToString(value, CultureInfo.InvariantCulture)); }
             IDictionary dict = value as IDictionary;
             if (dict != null)
             {
@@ -232,7 +238,16 @@ namespace WorkerPerf
                 foreach (object x in list) { items.Add(this.Protect(x)); }
                 return items.ToArray();
             }
-            return value;
+            // any other object (an uri, a file, a version ...): its text form, masked, so that nothing passes unmasked
+            return this.Hide(Convert.ToString(value, CultureInfo.InvariantCulture));
+        }
+
+        // Values that stay as they are: numbers, booleans, characters, date and time values, time spans, enums and guids.
+        private static bool IsKept(object value)
+        {
+            if (!(value is ValueType)) { return false; }
+            Type t = value.GetType();
+            return t.IsPrimitive || t.IsEnum || value is decimal || value is DateTime || value is DateTimeOffset || value is TimeSpan || value is Guid;
         }
 
         private void AddKey(OrderedDictionary od, object key, object value)
@@ -507,7 +522,9 @@ function Set-WorkerPerfMaskNames {
     $other = ''
     if ($Mask.ContainsKey('Other')) { $other = [string]$Mask['Other'] }
     $Mask['Entries'] = $entries
-    $Mask['Protected'] = [string[]]@($Protected | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    # a name of the name list wins over an identical protected name (P2-R9): a person called like a manufacturer or a
+    # service is replaced; a protected phrase that only contains the name keeps protecting it
+    $Mask['Protected'] = [string[]]@($Protected | Where-Object { -not [string]::IsNullOrEmpty($_) -and -not $lookup.ContainsKey($_.ToLowerInvariant()) })
     $Mask['Lookup'] = $lookup
     $Mask['Regex'] = $regex
     # protected names with white space or a word delimiter, searched as whole phrases at every position (longer first),

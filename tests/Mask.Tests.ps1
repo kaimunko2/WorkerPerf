@@ -178,11 +178,14 @@ Describe 'Ersetzen' {
         $r.obj['Benutzer 01'] | Should -Be 'a Benutzer 01'; $r.series.ToString() | Should -Be '[1,2,null]'; $r.n | Should -Be 3.5; $r.list | Should -Be @('Benutzer 01', 7)
     }
     It 'leert Meldungstexte und Befehlszeilen' {
-        $d = [ordered]@{ meta = [ordered]@{ endMessage = 'x' }; events = @([ordered]@{ text = 'geheim' }); procs = @([ordered]@{ cmd = 'tool.exe /u geheim' })
-            incidents = @([ordered]@{ text = 'bleibt'; events = @([ordered]@{ text = 'geheim' }) }); before = [ordered]@{ near = @([ordered]@{ text = 'geheim' }); incidents = @() }
-            quality = [ordered]@{ sourceErrors = @([ordered]@{ firstMessage = 'geheim' }) } }
+        # Aussage geschaerft (Fix-Runde 1): jedes Feld mit eigenem Text und eigener Pruefung, auch meta.endMessage
+        $d = [ordered]@{ meta = [ordered]@{ endMessage = 'geheim-ende' }; events = @([ordered]@{ text = 'geheim-ereignis' }); procs = @([ordered]@{ cmd = 'tool.exe /u geheim-cmd' })
+            incidents = @([ordered]@{ text = 'bleibt'; events = @([ordered]@{ text = 'geheim-vorfall' }) }); before = [ordered]@{ near = @([ordered]@{ text = 'geheim-near' }); incidents = @() }
+            quality = [ordered]@{ sourceErrors = @([ordered]@{ firstMessage = 'geheim-fehler' }) } }
         Clear-WorkerPerfReportFreeText $d
         ($d | ConvertTo-Json -Depth 6) | Should -Not -Match 'geheim'; $d.incidents[0].text | Should -Be 'bleibt'
+        $d.meta.endMessage | Should -Be ''; $d.events[0].text | Should -Be ''; $d.procs[0].cmd | Should -Be ''; $d.incidents[0].events[0].text | Should -Be ''
+        $d.before.near[0].text | Should -Be ''; $d.quality.sourceErrors[0].firstMessage | Should -Be ''
     }
 }
 Describe 'Ersetzen: Grenzfaelle' {
@@ -288,6 +291,46 @@ Describe 'Geschuetzte Namen mit Leerraum und Adressen in Zahlenreihen' {
         Hide-WorkerPerfReportText 'an 10.0.2.1.' $m | Should -Be 'an Adresse 01.'
         Hide-WorkerPerfReportText '10.0.2.1:1521 und a.10.0.2.1 und 10.0.2.1.x' $m | Should -Be 'Adresse 01:1521 und a.Adresse 01 und Adresse 01.x'
         Hide-WorkerPerfReportText 'u1.7 bleibt kein Name' $m | Should -Be 'Benutzer 01.7 bleibt kein Name'
+    }
+}
+Describe 'Fix-Runde 1: Vorrang der Namen, unbekannte Objekte, UNC-Server im Satz' {
+    BeforeAll {
+        function New-FixMask([object[]]$Entries, [string[]]$Protected = @(), [string]$Level = 'Alles') {
+            $m = New-WorkerPerfMask -Path (Write-TestRun 'leer4' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level $Level -Texts $Texts
+            Set-WorkerPerfMaskNames -Mask $m -Entries $Entries -Protected $Protected
+            $m
+        }
+    }
+    It 'ersetzt einen Benutzer, der wie ein geschuetzter Name heisst; eine Wendung mit dem Namen schuetzt ihn weiter' {   # P2-R9
+        $driver = 'HP Universal Printing PCL 6 (v7.0.1)'
+        $m = New-FixMask @(@{ Kind = 'user'; Name = 'hp'; Replacement = 'Benutzer 01' }, @{ Kind = 'user'; Name = 'spooler'; Replacement = 'Benutzer 02' }) @('HP', $driver, 'Spooler', 'spoolsv.exe')
+        $m.Protected | Should -Not -Contain 'HP'; $m.Protected | Should -Not -Contain 'Spooler'; $m.Protected | Should -Contain $driver
+        $r = Protect-WorkerPerfReportData ([ordered]@{ sessions = @([ordered]@{ user = 'hp' }); text = "Benutzer: hp. Treiber $driver"; d = $driver }) $m
+        $r.sessions[0].user | Should -Be 'Benutzer 01'; $r.text | Should -Be "Benutzer: Benutzer 01. Treiber $driver"; $r.d | Should -Be $driver
+        Hide-WorkerPerfReportText 'HP' $m | Should -Be 'Benutzer 01'
+        Hide-WorkerPerfReportText 'Dienst Spooler beendet (spoolsv.exe), Sitzung von SPOOLER' $m | Should -Be 'Dienst Benutzer 02 beendet (spoolsv.exe), Sitzung von Benutzer 02'
+    }
+    It 'gibt unbekannte Objekte nur maskiert als Text weiter und laesst Zahlen, Zeiten, Aufzaehlungen und Guids unveraendert' {
+        $m = New-FixMask @(@{ Kind = 'user'; Name = 'anna'; Replacement = 'Benutzer 01' }) @() 'Personen'
+        $g = [guid]'0f8fad5b-d9cb-469f-a165-70867728950e'; $ts = [timespan]::FromMinutes(5); $dto = [DateTimeOffset]'2026-01-15T08:00:00+01:00'
+        $r = Protect-WorkerPerfReportData ([ordered]@{ u = [uri]'file://server/anna'; f = [IO.FileInfo]'/x/anna.txt'; v = [version]'1.2'
+                g = $g; ts = $ts; dto = $dto; e = [DayOfWeek]::Monday; m = [decimal]1.5; c = [char]'a' }) $m
+        $r.u | Should -Be 'file://server/Benutzer 01'; $r.u | Should -BeOfType [string]; $r.f | Should -Be '/x/Benutzer 01.txt'; $r.v | Should -Be '1.2'
+        $r.g | Should -BeOfType [guid]; $r.g | Should -Be $g; $r.ts | Should -BeOfType [timespan]; $r.ts | Should -Be $ts
+        $r.dto | Should -BeOfType [DateTimeOffset]; $r.dto | Should -Be $dto; $r.e | Should -BeOfType [DayOfWeek]; $r.e | Should -Be ([DayOfWeek]::Monday)
+        $r.m | Should -BeOfType [decimal]; $r.c | Should -BeOfType [char]
+    }
+    It 'nimmt Klammern, Anfuehrungszeichen und den Satzpunkt nicht in den UNC-Server' -TestCases @(
+        @{ Text = '(\\fs01)'; Known = '(\\Server 01)'; Unknown = '(\\(Name entfernt))' }
+        @{ Text = "'\\fs01\upm$'"; Known = "'\\Server 01\upm$'"; Unknown = "'\\(Name entfernt)\upm$'" }
+        @{ Text = '[\\fs01]'; Known = '[\\Server 01]'; Unknown = '[\\(Name entfernt)]' }
+        @{ Text = 'auf \\fs01.'; Known = 'auf \\Server 01.'; Unknown = 'auf \\(Name entfernt).' }
+        @{ Text = 'auf \\fs01.sim.local.'; Known = 'auf \\(Name entfernt).'; Unknown = 'auf \\(Name entfernt).' }
+    ) {
+        $withServer = New-FixMask @(@{ Kind = 'server'; Name = 'fs01'; Replacement = 'Server 01' })
+        Hide-WorkerPerfReportText $Text $withServer | Should -Be $Known
+        $otherServer = New-FixMask @(@{ Kind = 'server'; Name = 'nas99'; Replacement = 'Server 01' })
+        Hide-WorkerPerfReportText $Text $otherServer | Should -Be $Unknown
     }
 }
 Describe 'Meldungstexte ueber den Plan hinaus' {
