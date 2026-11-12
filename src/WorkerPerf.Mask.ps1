@@ -595,6 +595,18 @@ function Protect-WorkerPerfReportData($Data, $Mask) {
     return , $Mask.Masker.Protect($Data, [string[]]$script:WorkerPerfMaskKeyedMaps, [string[]]$script:WorkerPerfMaskKeywordFields)
 }
 
+function Save-WorkerPerfMaskMap {
+    # Writes the names of a mask and their replacements (the real names: the file must stay with the person who made the
+    # report) as UTF-8 without BOM: { "level": ..., "entries": [ { "kind", "name", "replacement" } ] } in the order of
+    # assignment. Overwrites an existing file.
+    param($Mask, [string]$Path)
+    $entries = @(@($Mask.Entries) | Where-Object { $null -ne $_ } | ForEach-Object {
+            [ordered]@{ kind = [string]$_.Kind; name = [string]$_.Name; replacement = [string]$_.Replacement } })
+    $map = [ordered]@{ level = [string]$Mask.Level; entries = $entries }
+    $json = ConvertTo-Json -InputObject $map -Depth 4
+    [IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding $false))
+}
+
 function Get-WorkerPerfMaskItem($Record, [string]$Key) {
     # The value under a key of a report record; $null when the record is no dictionary or lacks the key.
     if ($Record -is [System.Collections.IDictionary] -and $Record.Contains($Key)) { return , $Record[$Key] }

@@ -40,8 +40,22 @@
 .PARAMETER TopProcesses
     Number of individual processes (by CPU time and by peak memory each) kept in the report.
 
+.PARAMETER Mask
+    Replaces names in the report (the capture itself is never changed). Personen: users, clients and account SIDs.
+    Alles: also servers (the worker included), shares, domains, addresses and printers. In both levels the message
+    texts of events and the command lines are left out. The replacement names are taken from the whole capture, so
+    every report of one capture, with or without -From/-To, uses the same ones. With Alles the file name of -OutFile
+    must not name the worker.
+
+.PARAMETER MaskMapFile
+    Only with -Mask: writes the real names and their replacement names to this JSON file (UTF-8), after the report was
+    written. The file holds the real names: keep it with you and do not pass it on with the report.
+
 .EXAMPLE
     .\New-WorkerPerfReport.ps1 -Path D:\WorkerPerf\VDA01_20260101-080000
+
+.EXAMPLE
+    .\New-WorkerPerfReport.ps1 -Path .\run -OutFile .\bericht.html -Mask Alles -MaskMapFile .\bericht.maskmap.json
 
 .EXAMPLE
     .\New-WorkerPerfReport.ps1 -Path .\run -FocusUser 'CONTOSO\mmuster' -ReportedTime '2026-01-01 10:15'
@@ -56,7 +70,9 @@ param(
     [string]$RoleFile,
     [string]$FocusUser,
     [datetime]$ReportedTime,
-    [ValidateRange(10, 2000)][int]$TopProcesses = 150
+    [ValidateRange(10, 2000)][int]$TopProcesses = 150,
+    [ValidateSet('Personen', 'Alles')][string]$Mask,
+    [string]$MaskMapFile
 )
 
 # Where AppLocker or WDAC puts the console into ConstrainedLanguage, .NET types fail with errors that do not name
@@ -76,6 +92,12 @@ $nan = [double]::NaN
 . (Join-Path $PSScriptRoot 'WorkerPerf.Events.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
+# the masking only in a masked run: without -Mask the report does not depend on it. The level in the spelling of the
+# set (ValidateSet takes any case), as the report data carries it.
+if ($Mask) {
+    if ($Mask -eq 'Alles') { $Mask = 'Alles' } else { $Mask = 'Personen' }
+    . (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
+}
 
 #region ---------- helpers ----------------------------------------------------------------
 
@@ -260,6 +282,24 @@ if (-not (Test-Path -LiteralPath $templateFile)) { throw "Vorlage nicht gefunden
 $OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
 $outDir = Split-Path -Parent $OutFile
 if ($outDir -and -not (Test-Path -LiteralPath $outDir -PathType Container)) { throw "Ausgabeordner '$outDir' nicht gefunden." }
+if ($MaskMapFile) {
+    if (-not $Mask) { throw '-MaskMapFile setzt -Mask voraus.' }
+    $MaskMapFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($MaskMapFile)
+    if ([string]::Equals([IO.Path]::GetFullPath($MaskMapFile), [IO.Path]::GetFullPath($OutFile), [StringComparison]::OrdinalIgnoreCase)) {
+        throw '-MaskMapFile darf nicht die Berichtsdatei sein.'
+    }
+}
+if ($Mask -eq 'Alles') {
+    # the worker's name as meta.json gives it (as the reader takes it: meta.json, else the temporary file of the collector)
+    $maskMetaPath = Join-Path $Path 'meta.json'
+    if (-not (Test-Path -LiteralPath $maskMetaPath) -and (Test-Path -LiteralPath ($maskMetaPath + '.tmp'))) { $maskMetaPath = $maskMetaPath + '.tmp' }
+    if (Test-Path -LiteralPath $maskMetaPath) {
+        $maskWorker = [string](Get-WorkerPerfField (ConvertFrom-WorkerPerfJsonFile $maskMetaPath) 'Computer')
+        if ($maskWorker -and (Split-Path -Leaf $OutFile).IndexOf($maskWorker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "Der Dateiname des Berichts nennt den Worker; bei -Mask Alles bitte einen anderen Namen waehlen."
+        }
+    }
+}
 
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $roles = @(Read-WorkerPerfRoles $RoleFile)
@@ -1012,6 +1052,18 @@ $data = [ordered]@{
     before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
 }
 
+$maskObj = $null
+if ($Mask) {
+    # The free texts go first, in place: nothing of the uncleared data is written anywhere after this. The names come
+    # from the whole capture (not the cut), built once. The level is set on the masked result, so that no replacement
+    # can touch it.
+    Write-Host 'Maskiere Namen ...'
+    Clear-WorkerPerfReportFreeText $data
+    $maskObj = New-WorkerPerfMask -Path $Path -Level $Mask -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig
+    $data = Protect-WorkerPerfReportData $data $maskObj
+    $data['meta']['mask'] = $Mask
+}
+
 Write-Host 'Schreibe Bericht ...'
 $template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
 $marker = '<script id="wp-data" type="application/json">null</script>'
@@ -1040,10 +1092,19 @@ catch {
     if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
     throw
 }
+# the map only once the report is complete; a failure here leaves the report as written
+if ($MaskMapFile) {
+    try { Save-WorkerPerfMaskMap -Mask $maskObj -Path $MaskMapFile }
+    catch { throw ("Bericht geschrieben ({0}), die Zuordnungsdatei '{1}' aber nicht: {2}" -f $OutFile, $MaskMapFile, $_.Exception.Message) }
+}
 
 $timer.Stop()
 Write-Host ("Bericht erstellt in {0} s (davon Einlesen {1} s): {2}" -f $timer.Elapsed.TotalSeconds.ToString('0.0', $inv), $loadSec.ToString('0.0', $inv), $OutFile)
 Write-Host ("  {0} Takte, {1} Schnappschuesse, {2} Vorfaelle, {3} Sitzungen, {4} Prozesse im Bericht" -f $nT, $nP, $incOut.Count, $sessOut.Count, $procOut.Count)
+if ($Mask) {
+    Write-Host ("  maskiert (Stufe {0}): {1} Namen ersetzt" -f $Mask, @($maskObj.Entries).Count)
+    if ($MaskMapFile) { Write-Host ("  Zuordnung der Ersatznamen: {0}" -f $MaskMapFile) }
+}
 Get-Item -LiteralPath $OutFile
 
 #endregion

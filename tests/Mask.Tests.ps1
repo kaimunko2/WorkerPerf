@@ -505,3 +505,133 @@ Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
         @($kw | Where-Object { $v = $_.Substring($_.IndexOf('=') + 1); $v -ne '' -and $v -notmatch '^[A-Za-z0-9_.:-]+$' }) | Should -BeNullOrEmpty
     }
 }
+Describe 'Maskierter Bericht der simulierten Stunde' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        $script:R = New-TestReports (Join-Path $TestDrive 'r'); $script:Report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
+        $script:Plain = Get-ReportData $R.Report
+        # the role file of the plain report (New-TestReports), so that both reports rate the same processes
+        $script:Roles = Join-Path $TestDrive 'r/roles.sim.json'
+        function New-Masked([string]$Name, [hashtable]$Extra = @{}) { $out = Join-Path $TestDrive "$Name.html"; [void](& $Report -Path $R.Run -OutFile $out -RoleFile $Roles @Extra 6>$null); $out }
+        function Get-Words([string]$Html) { [IO.File]::ReadAllText($Html) }
+        $script:Persons = @(2..26 | ForEach-Object { 'user{0:d3}' -f ($_ - 1) }) + @('WS-\d{4}')
+        $script:Others = @('SIM-VDA01', 'CONTOSO', 'fs01', 'ora01\.sim\.local', 'proxy\.sim\.local', 'PRN-EG-01', 'PRN-OG-02')
+        function Get-Leaves($o) {                        # Zahlen und Wahrheitswerte in Reihenfolge; Texte zaehlen nur als Platzhalter
+            if ($null -eq $o) { 'null' } elseif ($o -is [string]) { 's' } elseif ($o -is [ValueType]) { [string]$o }
+            elseif ($o -is [System.Collections.IEnumerable]) { 'a'; foreach ($x in $o) { Get-Leaves $x } }
+            else { 'o'; foreach ($p in $o.PSObject.Properties) { Get-Leaves $p.Value } }
+        }
+        function Get-Filled($Records, [string]$Field) {
+            # records whose field holds a text: a missing field, $null and '' count as empty
+            @($Records | Where-Object { $p = $_.PSObject.Properties[$Field]; $null -ne $p -and -not [string]::IsNullOrEmpty([string]$p.Value) })
+        }
+    }
+    It 'enthaelt in keiner Stufe einen der zu ersetzenden Namen, weder in den Daten noch in der Datei' {
+        $p = Get-Words (New-Masked 'p' @{ Mask = 'Personen' }); $a = Get-Words (New-Masked 'a' @{ Mask = 'Alles' })
+        foreach ($n in $Persons) { $p | Should -Not -Match $n; $a | Should -Not -Match $n }
+        foreach ($n in $Others) { $a | Should -Not -Match $n }
+        $a | Should -Not -Match 'USER008'                                                            # Meldungstext des AppLocker-Ereignisses entfaellt
+    }
+    It 'laesst stehen, was laut Tabelle bleibt' {
+        $p = Get-ReportData (New-Masked 'p2' @{ Mask = 'Personen' }); $a = Get-ReportData (New-Masked 'a2' @{ Mask = 'Alles' })
+        $p.meta.computer | Should -Be 'SIM-VDA01'; ($p.sessions | Where-Object id -eq 2).domain | Should -Be 'CONTOSO'; @($p.shares.name) | Should -Contain '\\fs01\daten'
+        $a.meta.computer | Should -Be 'Server 01'; $a.meta.mask | Should -Be 'Alles'; $p.meta.mask | Should -Be 'Personen'
+        @($a.apps.name) | Should -Contain 'EXCEL.EXE'; @($a.probes.name) | Should -Contain 'Oracle-Listener'; ($a.print.drivers | Where-Object involved).name | Should -Be 'HP Universal Printing PCL 6 (Sim)'
+        ($a.incidents | Where-Object lead -eq 'cpu').text | Should -Match 'Hauptverursacher: EXCEL\.EXE in der Sitzung von Benutzer \d\d '
+        @(Get-Filled $Plain.events 'text').Count | Should -BeGreaterThan 0                          # die Aussage darunter ist nicht leer
+        @(Get-Filled $a.events 'text').Count | Should -Be 0; @(Get-Filled $a.procs 'cmd').Count | Should -Be 0
+    }
+    It 'zeigt dieselben Zahlen, Vorfaelle, Muster und Rangfolge' {
+        $a = Get-ReportData (New-Masked 'a3' @{ Mask = 'Alles' })
+        $l1 = @(Get-Leaves $Plain); $l2 = @(Get-Leaves $a)
+        $l2.Count | Should -Be ($l1.Count + 1)                                                         # das Feld meta.mask kommt dazu
+        $pat = { param($d) @($d.incidents | Where-Object type -eq 'ereignis' | ForEach-Object { @($_.event.patterns | ForEach-Object { $_.id }) -join ',' }) }
+        @($a.incidents.id) | Should -Be @($Plain.incidents.id); & $pat $a | Should -Be (& $pat $Plain)
+        ($a.incidents | Where-Object lead -eq 'cpu').contributors.cpu.procs.k | Should -Be ($Plain.incidents | Where-Object lead -eq 'cpu').contributors.cpu.procs.k
+    }
+    It 'vergibt in zwei Laeufen und in einem Zeitausschnitt dieselben Ersatznamen' {
+        $cpu = $Plain.incidents | Where-Object lead -eq 'cpu'
+        $m1 = Join-Path $TestDrive 'm1.maskmap.json'; $m2 = Join-Path $TestDrive 'm2.maskmap.json'; $m3 = Join-Path $TestDrive 'm3.maskmap.json'
+        [void](New-Masked 'r1' @{ Mask = 'Alles'; MaskMapFile = $m1 }); [void](New-Masked 'r2' @{ Mask = 'Alles'; MaskMapFile = $m2 })
+        $cut = Get-ReportData (New-Masked 'r3' @{ Mask = 'Alles'; MaskMapFile = $m3; From = (Get-ServerTime $R.Run ($cpu.start - 60000)); To = (Get-ServerTime $R.Run ($cpu.end + 60000)) })
+        [IO.File]::ReadAllText($m1) | Should -Be ([IO.File]::ReadAllText($m2)); [IO.File]::ReadAllText($m1) | Should -Be ([IO.File]::ReadAllText($m3))
+        $full = Get-ReportData (Join-Path $TestDrive 'r1.html')
+        ($cut.sessions | Where-Object id -eq 4).user | Should -Be ($full.sessions | Where-Object id -eq 4).user
+    }
+    It 'schreibt die Zuordnung nur mit -MaskMapFile und mit allen Ersatznamen' {
+        $before = @(Get-ChildItem $TestDrive -Filter '*.maskmap.json' -Recurse).Count
+        [void](New-Masked 'nomap' @{ Mask = 'Alles' }); @(Get-ChildItem $TestDrive -Filter '*.maskmap.json' -Recurse).Count | Should -Be $before
+        $map = Get-Content (Join-Path $TestDrive 'm1.maskmap.json') -Raw | ConvertFrom-Json
+        $map.level | Should -Be 'Alles'; @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 25; @($map.entries | Where-Object kind -eq 'printer').replacement | Should -Be @('Drucker 01', 'Drucker 02')
+        { New-Masked 'x' @{ MaskMapFile = (Join-Path $TestDrive 'y.maskmap.json') } } | Should -Throw '*setzt -Mask voraus*'
+        { New-Masked 'SIM-VDA01-bericht' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
+        { New-Masked 'sim-vda01' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
+        Test-Path (Join-Path $TestDrive 'SIM-VDA01-bericht.html') | Should -BeFalse
+    }
+    It 'schreibt bei Personen nur die Arten in die Zuordnung, die diese Stufe ersetzt' {
+        $m = Join-Path $TestDrive 'personen.maskmap.json'
+        [void](New-Masked 'personen' @{ Mask = 'Personen'; MaskMapFile = $m })
+        $map = [IO.File]::ReadAllText($m) | ConvertFrom-Json
+        $map.level | Should -Be 'Personen'
+        @($map.entries | ForEach-Object kind | Sort-Object -Unique) | Should -Be @('client', 'user')
+        @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 25
+        $bytes = [IO.File]::ReadAllBytes($m); $bytes[0] | Should -Be ([byte][char]'{')                 # ohne BOM
+    }
+    It 'ersetzt im Zeitausschnitt auch einen Benutzer ohne Sitzung darin wie im ganzen Bericht' {
+        # user025 has a session only in the first 30 snapshots of this copy; the cut starts at snapshot 100
+        $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'nosession')
+        $file = Join-Path $copy 'sessions.csv'
+        [IO.File]::WriteAllLines($file, @([IO.File]::ReadAllLines($file) | Where-Object { $f = $_.Split(','); -not ($f[1] -eq '26' -and $f[0] -match '^\d+$' -and [int]$f[0] -ge 30) }))
+        $at = [DateTimeOffset]::Parse(([IO.File]::ReadAllLines((Join-Path $copy 'snapshots.csv'))[101]).Split(',')[2], [cultureinfo]::InvariantCulture).ToUnixTimeMilliseconds()
+        $fullOut = Join-Path $TestDrive 'nosession-full.html'; $cutOut = Join-Path $TestDrive 'nosession-cut.html'
+        $fullMap = Join-Path $TestDrive 'nosession-full.maskmap.json'; $cutMap = Join-Path $TestDrive 'nosession-cut.maskmap.json'
+        [void](& $Report -Path $copy -OutFile $fullOut -Mask Alles -MaskMapFile $fullMap -FocusUser 'user025' 6>$null)
+        [void](& $Report -Path $copy -OutFile $cutOut -Mask Alles -MaskMapFile $cutMap -FocusUser 'user025' -From (Get-ServerTime $copy $at) 6>$null)
+        [IO.File]::ReadAllText($cutMap) | Should -Be ([IO.File]::ReadAllText($fullMap))
+        $rep = @(([IO.File]::ReadAllText($fullMap) | ConvertFrom-Json).entries | Where-Object name -eq 'user025').replacement
+        $rep | Should -Be @('Benutzer 25')
+        $cut = Get-ReportData $cutOut; $full = Get-ReportData $fullOut
+        @($cut.sessions | ForEach-Object user) | Should -Not -Contain 'Benutzer 25'; @($full.sessions | ForEach-Object user) | Should -Contain 'Benutzer 25'
+        $cut.meta.focus.user | Should -Be 'Benutzer 25'; $full.meta.focus.user | Should -Be 'Benutzer 25'
+        [IO.File]::ReadAllText($cutOut) | Should -Not -Match 'user025'
+    }
+    It 'gibt bei Alles auf keinem Ausgabestrom einen der Namen aus' {
+        $m = Join-Path $TestDrive 'streams.maskmap.json'
+        $text = & { & $Report -Path $R.Run -OutFile (Join-Path $TestDrive 'streams.html') -Mask Alles -MaskMapFile $m -FocusUser 'user003' -Verbose } *>&1 | Out-String
+        $text | Should -Match 'streams\.html'
+        foreach ($n in @($Persons) + @($Others)) { $text | Should -Not -Match $n }
+    }
+    It 'lehnt eine Zuordnungsdatei ab, die die Berichtsdatei ist, auch als relativer Pfad' {
+        Push-Location $TestDrive
+        try {
+            $abs = Join-Path $TestDrive 'same.html'
+            { & $Report -Path $R.Run -OutFile 'same.html' -Mask Alles -MaskMapFile $abs 6>$null } | Should -Throw '*nicht die Berichtsdatei*'
+            { & $Report -Path $R.Run -OutFile $abs -Mask Alles -MaskMapFile 'same.html' 6>$null } | Should -Throw '*nicht die Berichtsdatei*'
+            { & $Report -Path $R.Run -OutFile $abs -Mask Alles -MaskMapFile $abs 6>$null } | Should -Throw '*nicht die Berichtsdatei*'
+            Test-Path $abs | Should -BeFalse
+        }
+        finally { Pop-Location }
+    }
+    It 'behaelt den Bericht und meldet den Fehler, wenn die Zuordnungsdatei nicht geschrieben werden kann' {
+        $out = Join-Path $TestDrive 'mapfail.html'; $map = Join-Path $TestDrive 'fehlt/mapfail.maskmap.json'
+        { & $Report -Path $R.Run -OutFile $out -RoleFile $Roles -Mask Alles -MaskMapFile $map 6>$null } | Should -Throw '*Zuordnungsdatei*'
+        (Get-ReportData $out).meta.mask | Should -Be 'Alles'; Test-Path $map | Should -BeFalse
+    }
+    It 'bleibt ohne -Mask bytegleich zum Bericht ohne Maskierungscode' {
+        $src = Join-Path $TestDrive 'nomask-src'; [void](New-Item -ItemType Directory $src); Copy-Item (Join-Path $PSScriptRoot '../src/*') $src
+        [IO.File]::WriteAllText((Join-Path $src 'WorkerPerf.Mask.ps1'), "#Requires -Version 5.1`nfunction New-WorkerPerfMask { throw 'aufgerufen' }`nfunction Protect-WorkerPerfReportData { throw 'aufgerufen' }`nfunction Clear-WorkerPerfReportFreeText { throw 'aufgerufen' }`n")
+        $a = Join-Path $TestDrive 'plain-a.html'; $b = Join-Path $TestDrive 'plain-b.html'
+        [void](& $Report -Path $R.Run -OutFile $a 6>$null); [void](& (Join-Path $src 'New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $b 6>$null)
+        $norm = { param($f) [IO.File]::ReadAllText($f) -replace '"generated":\d+', '"generated":0' }
+        & $norm $a | Should -BeExactly (& $norm $b); (Get-ReportData $a).meta.PSObject.Properties.Name | Should -Not -Contain 'mask'
+    }
+    It 'maskiert die simulierte Stunde, ohne die Laufzeit zu verdoppeln' {                        # Review Focus 5
+        $t0 = [Diagnostics.Stopwatch]::StartNew(); [void](New-Masked 'tp'); $plain = $t0.Elapsed.TotalSeconds
+        $t1 = [Diagnostics.Stopwatch]::StartNew(); [void](New-Masked 'tm' @{ Mask = 'Alles' }); $masked = $t1.Elapsed.TotalSeconds
+        $masked | Should -BeLessThan (2 * $plain)
+    }
+    It 'legt den maskierten Bericht der Testberichte an' {
+        $R.Masked | Should -Not -BeNullOrEmpty; Test-Path $R.Masked | Should -BeTrue
+        (Get-ReportData $R.Masked).meta.mask | Should -Be 'Alles'
+    }
+}

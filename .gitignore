@@ -16,3 +16,5 @@ expected.json
 src/endpoints.json
 # Ergebnisse des Quellen-Pruefskripts werden nicht eingecheckt: sie werden ausserhalb des Repositorys uebergeben
 vda-probe_*.json
+# Zuordnungsdateien der Maskierung enthalten die echten Namen
+*.maskmap.json
