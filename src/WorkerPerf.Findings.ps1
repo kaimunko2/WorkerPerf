@@ -947,7 +947,9 @@ function Get-WorkerPerfIncidentText {
         }
     }
     elseif ($Incident.Type -eq 'ohne-engpass' -and $null -ne $lead) {
-        $text = & $fmt 'ohne' @($t0, $t1, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
+        # without Laufwerke a bottleneck of the drives cannot be ruled out: no "without bottleneck" then (spec 5)
+        $head = $(if ($skipped -contains 'Laufwerke') { 'ohne.skipped' } else { 'ohne' })
+        $text = & $fmt $head @($t0, $t1, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
         $text += $affectedText
         $dp = @($Incident.DelayProcesses)
         if ($skipped -contains 'Prozesse') { $text += & $fmt 'ohne.process.notmeasured' @($Texts['skip.text.Prozesse']) }

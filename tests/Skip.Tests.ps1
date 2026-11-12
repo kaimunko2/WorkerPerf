@@ -251,6 +251,43 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
             'before.incidents[].event.unchecked[].text=composed', 'incidents[].event.unchecked[].category=keyword', 'incidents[].event.unchecked[].id=keyword', 'incidents[].event.unchecked[].text=composed')
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1'); $WorkerPerfMaskKeywordFields | Should -Contain 'unchecked.category'
     }
+    It 'nennt ohne <_> das Zusammentreffen mit Vorfaellen dieser Kategorie, wo kein Vorfall zeitgleich ist' -ForEach 'Gegenstellen', 'Citrix', 'Laufwerke' {   # Fix-Runde 1
+        $cat = $_; $ev = @(Get-Ev $D[$cat] { $true }); $ev.Count | Should -Be 4
+        $want = 'overlap|{0}|Zusammentreffen mit einem Vorfall der Kategorie {0} ({0} nicht gemessen)' -f $cat
+        foreach ($i in $ev) {
+            $u = @($i.event.unchecked | ForEach-Object { '{0}|{1}|{2}' -f $_.id, $_.category, $_.text })
+            if (@($i.event.patterns.id) -contains 'overlap') { $u.Count | Should -Be 0 -Because $i.text }
+            else { $u | Should -Be @($want) -Because $i.text; $i.text | Should -BeLike "* Nicht geprüft: Zusammentreffen mit einem Vorfall der Kategorie $cat ($cat nicht gemessen)." }
+            $i.text | Should -Not -Match 'Kein Muster erkannt'
+        }
+        @($ev | Where-Object { @($_.event.patterns.id) -contains 'overlap' }).Count | Should -Be 1   # chrome.exe, zeitgleich mit dem Arbeitsspeicher-Engpass
+        @($D[$cat].before.incidents | Where-Object { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0
+    }
+    It 'laesst die Muster der Laeufe ohne Laufwerke, Citrix und Gegenstellen unberuehrt' {
+        foreach ($k in 'Voll', 'Prozesse', 'Drucken', 'Rueckblick') {
+            @(@($D[$k].incidents) + @($D[$k].before.incidents) | Where-Object { $null -ne $_.event } | ForEach-Object { @($_.event.unchecked) } | Where-Object { $_.id -eq 'overlap' }).Count | Should -Be 0 -Because $k
+        }
+        @(Get-Ev $D.Prozesse { $true } | ForEach-Object { @($_.event.unchecked.id) -join ',' }) | Should -Be @('', 'users', 'users', 'users')
+        @(Get-Ev $D.Drucken { $true } | ForEach-Object { @($_.event.unchecked.id) -join ',' }) | Should -Be @('', 'printdriver', 'printdriver', 'printdriver')
+    }
+    It 'behaelt das Zusammentreffen im maskierten Bericht' {
+        $out = Join-Path $TestDrive 'gm.html'; [void](& $Report -Path $Runs.Gegenstellen -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') -Mask Alles 6>$null)
+        $u = (Get-Ev (Get-ReportData $out) { $_.event.kind -eq 'print' })[0].event.unchecked
+        '{0}|{1}|{2}' -f $u[0].id, $u[0].category, $u[0].text | Should -Be 'overlap|Gegenstellen|Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen (Gegenstellen nicht gemessen)'
+    }
+    It 'nennt eine Eingabeverzoegerung ohne Laufwerke "ohne erkannten Engpass" und kennzeichnet sie' {   # Fix-Runde 1
+        foreach ($k in @('Voll') + $Names + 'Alle') {
+            $oe = @($D[$k].incidents | Where-Object type -eq 'ohne-engpass'); $oe.Count | Should -BeGreaterThan 0 -Because $k
+            $skipped = ($k -eq 'Laufwerke' -or $k -eq 'Alle')
+            foreach ($i in $oe) {
+                $i.unverified | Should -Be $skipped -Because "$k $($i.text)"
+                if ($skipped) { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne erkannten Engpass auf dem Worker \(Spitze ' }
+                else { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne Engpass auf dem Worker \(Spitze ' }
+            }
+            @($D[$k].incidents | Where-Object { $_.type -ne 'ohne-engpass' -and $null -ne $_.PSObject.Properties['unverified'] }).Count | Should -Be 0 -Because $k
+        }
+        @($D.Laufwerke.incidents | Where-Object type -eq 'ohne-engpass').Count | Should -Be 5; @($D.Alle.incidents | Where-Object type -eq 'ohne-engpass').Count | Should -Be 5
+    }
     It 'laesst ohne -Skip nichts ungeprueft und haelt Ereignisse und Rueckblick getrennt' {
         @(Get-Ev $D.Voll { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0; @(Get-Ev $D.Voll { $true }).Count | Should -Be 4
         @($D.Voll.before.incidents | Where-Object { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0

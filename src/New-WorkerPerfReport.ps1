@@ -872,7 +872,7 @@ foreach ($inc in $incidents) {
     $eventRefs = [int[]]@()
     $refs = Get-WorkerPerfField $inc 'EventIncidents'
     if ($null -ne $refs) { $eventRefs = [int[]]@($refs) }
-    $incOut.Add([ordered]@{
+    $entry = [ordered]@{
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
             text = [string](Get-WorkerPerfIncidentText -Incident $inc -Model $model -Thresholds $thresholds -Texts $texts -Unmeasured $unmeasured)
@@ -882,7 +882,11 @@ foreach ($inc in $incidents) {
             security = [ordered]@{ products = $products.ToArray(); totalPct = (Get-Round $inc.Security.TotalPct 1) }
             companion = $companion; chronicContext = $context.ToArray()
             eventIncidents = $eventRefs; event = $null
-        })
+        }
+    # an input delay without bottleneck: unverified when -Skip Laufwerke left out the drives' latencies (the text then says
+    # "ohne erkannten Engpass"), after its cause
+    if ([string]$inc.Type -eq 'ohne-engpass') { $entry.Insert(@($entry.Keys).IndexOf('cause') + 1, 'unverified', (@($model.Skip) -contains 'Laufwerke')) }
+    $incOut.Add($entry)
 }
 foreach ($inc in $eventIncidents) { $incOut.Add((ConvertTo-EventIncidentEntry $inc)) }
 

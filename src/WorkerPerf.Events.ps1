@@ -547,6 +547,8 @@ $script:WorkerPerfCompanionGroups = @('storage', 'fileserver', 'profile', 'secur
 $script:WorkerPerfNoCompanionKinds = @('name-resolution', 'profile-warning')
 $script:WorkerPerfResourceSignals = @('mem.used', 'mem.commit')
 $script:WorkerPerfCompanionLimit = 10
+# the categories whose performance incidents an event incident could coincide with (overlap), in the order of the categories
+$script:WorkerPerfOverlapCategories = @('Laufwerke', 'Citrix', 'Gegenstellen')
 
 function Get-WorkerPerfFirstAtLeast([long[]]$Times, [long]$Ms) {
     # Index of the first element >= Ms in an ascending array; Length when there is none.
@@ -582,10 +584,12 @@ function Add-WorkerPerfEventPatterns {
     # lasting condition (Chronic) spans the whole capture and is no overlap.
     # -Skip (the categories the capture left out) sets Unchecked (@{ Id; Category }, in this order) on every incident: the
     # patterns that would need a category left out are neither formed nor counted as not applying. printdriver/Drucken:
-    # without Drucken, when the incident names a real module. users/Prozesse: without Prozesse, in the capture, when a
-    # crash or hang of the incident has an unknown session (Get-WorkerPerfEventSessionState, the same decision as the
-    # incident's SessionUnknown): without process data the collector matched no process to a session; manyusers and
-    # oneuser are not formed then.
+    # without Drucken, when a module of the incident is one the driver match would check (Test-WorkerPerfDriverModule).
+    # users/Prozesse: without Prozesse, in the capture, when a crash or hang of the incident has an unknown session
+    # (Get-WorkerPerfEventSessionState, the same decision as the incident's SessionUnknown): without process data the
+    # collector matched no process to a session; manyusers and oneuser are not formed then. overlap/<category>: in the
+    # capture, for an incident without overlap, one entry per category left out among Laufwerke, Citrix and Gegenstellen
+    # (in the order of the categories): the performance incidents of those categories are missing.
     param([object[]]$Incidents, [object[]]$AllEvents, $Model, $Thresholds, $Settings, $Config, [object[]]$Roles, [object[]]$Drivers,
         [object[]]$PerfIncidents, [switch]$Before, [string[]]$Skip = @())
     if ($null -eq $Drivers) { $Drivers = @() }
@@ -719,7 +723,7 @@ function Add-WorkerPerfEventPatterns {
         $moduleNames = @($inc.Modules | ForEach-Object { [string]$_.Name } | Where-Object { Test-WorkerPerfRealModule $_ $Config })
         $found = @{}
         $unchecked = New-Object System.Collections.Generic.List[object]
-        if ($Skip -contains 'Drucken' -and $moduleNames.Count -gt 0) { $unchecked.Add(@{ Id = 'printdriver'; Category = 'Drucken' }) }
+        if ($Skip -contains 'Drucken' -and @($moduleNames | Where-Object { Test-WorkerPerfDriverModule $_ $Config }).Count -gt 0) { $unchecked.Add(@{ Id = 'printdriver'; Category = 'Drucken' }) }
         if ($Skip -contains 'Prozesse' -and -not $Before) {
             foreach ($m in $members) {
                 $mk = [string]$m.Kind
@@ -820,14 +824,15 @@ function Add-WorkerPerfEventPatterns {
         }
 
         # printdriver: a module that is a file of a listed driver; a file of several drivers names none of them (Driver '')
-        foreach ($name in $moduleNames) {
-            if ($notChecked.ContainsKey('printdriver')) { break }
-            if (Test-WorkerPerfNamePattern (Get-WorkerPerfLeafName $name) ([string[]]@($Config.SystemModules))) { continue }
-            $names = Get-WorkerPerfModuleDrivers $name $Drivers
-            if ($names.Length -eq 0) { continue }
-            $one = $(if ($names.Length -eq 1) { $names[0] } else { '' })
-            $found['printdriver'] = @{ Module = $name; Driver = $one; Drivers = $names }
-            break
+        if (-not $notChecked.ContainsKey('printdriver')) {
+            foreach ($name in $moduleNames) {
+                if (Test-WorkerPerfNamePattern (Get-WorkerPerfLeafName $name) ([string[]]@($Config.SystemModules))) { continue }
+                $names = Get-WorkerPerfModuleDrivers $name $Drivers
+                if ($names.Length -eq 0) { continue }
+                $one = $(if ($names.Length -eq 1) { $names[0] } else { '' })
+                $found['printdriver'] = @{ Module = $name; Driver = $one; Drivers = $names }
+                break
+            }
         }
 
         # securitymodule: a module that matches the modules of a role 'Sicherheit'
@@ -883,6 +888,9 @@ function Add-WorkerPerfEventPatterns {
         }
         $overlap.Sort()
         if ($overlap.Count -gt 0) { $found['overlap'] = @{ Incidents = [int[]]$overlap.ToArray() } }
+        elseif (-not $Before) {
+            foreach ($cat in $script:WorkerPerfOverlapCategories) { if ($Skip -contains $cat) { $unchecked.Add(@{ Id = 'overlap'; Category = $cat }) } }
+        }
 
         $allowed = $(if ($Before) { $script:WorkerPerfBeforePatterns } else { $script:WorkerPerfPatternOrder })
         $patterns = New-Object System.Collections.Generic.List[object]
@@ -890,7 +898,7 @@ function Add-WorkerPerfEventPatterns {
             if ($allowed -contains $id -and $found.ContainsKey($id)) { $patterns.Add(@{ Id = $id; Detail = $found[$id] }) }
         }
         $inc.Patterns = $patterns.ToArray()
-        $inc['Unchecked'] = $unchecked.ToArray()
+        $inc.Unchecked = $unchecked.ToArray()
         $inc.Overlap = [int[]]$overlap.ToArray()
         $inc.Companions = $companions.ToArray()
     }
@@ -994,6 +1002,13 @@ function Get-WorkerPerfPatternStatement($Pattern, $Texts, [int]$OffsetMinutes, [
     return $text
 }
 
+function Get-WorkerPerfUncheckedText($Entry, $Texts) {
+    # The words for a pattern left unchecked (@{ Id; Category }): overlap names the category by its label.
+    $text = [string]$Texts['pattern.unchecked.' + [string]$Entry.Id]
+    if ([string]$Entry.Id -eq 'overlap') { $text = $text -f [string]$Texts['skip.label.' + [string]$Entry.Category] }
+    return $text
+}
+
 function Get-WorkerPerfEventIncidentText {
     # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
     # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
@@ -1064,7 +1079,7 @@ function Get-WorkerPerfEventIncidentText {
     $patterns = @($inc.Patterns)
     $withResource = (@($patterns | Where-Object { $null -ne $_ -and [string]$_.Id -eq 'resource' }).Count -gt 0)
     foreach ($p in $patterns) { [void]$sb.Append((Get-WorkerPerfPatternStatement $p $Texts $OffsetMinutes $withDate $startDay $withResource)) }
-    if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@($unchecked | ForEach-Object { $Texts['pattern.unchecked.' + [string]$_.Id] })) -join ', '))) }
+    if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@($unchecked | ForEach-Object { Get-WorkerPerfUncheckedText $_ $Texts })) -join ', '))) }
     if ($patterns.Count -eq 0 -and $unchecked.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
     return $sb.ToString()
 }
@@ -1337,7 +1352,7 @@ function ConvertTo-WorkerPerfEventIncidentOut {
             [ordered]@{ id = [string]$_.Id; text = (Get-WorkerPerfPatternStatement $_ $Texts $OffsetMinutes $before $startDay $withResource).TrimStart(); detail = (ConvertTo-WorkerPerfDetailOut $_.Detail $OffsetMinutes) }
         })
     $unchecked = @(@(Get-WorkerPerfField $inc 'Unchecked') | Where-Object { $null -ne $_ } | ForEach-Object {
-            [ordered]@{ id = [string]$_.Id; category = [string]$_.Category; text = [string]$Texts['pattern.unchecked.' + [string]$_.Id] }
+            [ordered]@{ id = [string]$_.Id; category = [string]$_.Category; text = (Get-WorkerPerfUncheckedText $_ $Texts) }
         })
     $companions = @(@($inc.Companions) | Where-Object { $null -ne $_ } | ForEach-Object {
             [ordered]@{ t = [long]$_.TimeMs; offsetMin = (Get-WorkerPerfEventOffset $_ $OffsetMinutes); group = [string]$_.Group; source = [string]$_.Source

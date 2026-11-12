@@ -1502,6 +1502,30 @@ Describe 'Muster mit weggelassenen Kategorien (Messkategorien Task 4)' {
         $mem = (Get-SkipInc @(New-Bare2 10) @('Prozesse')); Add-WorkerPerfEventPatterns -Incidents $mem -AllEvents @($mem[0].Events) -Model (New-PatternModel (@(95) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents @() -Skip @('Prozesse')
         Get-Text $mem[0] | Should -Match 'Speichermangel[^.]*\. Nicht geprüft: Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\)\.$'
     }
+    It 'nennt den Bezug zum Druckertreiber nur bei einem Modul, das der Treiberabgleich pruefen wuerde (Fix-Runde 1)' {
+        foreach ($sys in 'ntdll.dll', 'vcruntime140.dll') {
+            $i = (Get-SkipInc @(New-Ev 0 -App 'X.EXE' -Module $sys) @('Drucken'))[0]
+            @($i.Unchecked).Count | Should -Be 0 -Because $sys; Get-Text $i | Should -Match 'Kein Muster erkannt\.$'
+        }
+        # ein Systemmodul und ein eigenes Modul im selben Vorfall: das eigene genuegt
+        Get-Unchecked (Get-SkipInc @((New-Ev 0 -Module 'ntdll.dll'), (New-Ev 1 -Module 'vbe7.dll')) @('Drucken'))[0] | Should -Be @('printdriver/Drucken')
+        Get-Unchecked (Get-SkipInc @(New-Ev 0 -Module 'vbe7.dll') @('Drucken'))[0] | Should -Be @('printdriver/Drucken')
+    }
+    It 'nennt das Zusammentreffen mit Vorfaellen weggelassener Kategorien, wenn kein Vorfall zeitgleich ist (Fix-Runde 1)' {
+        $i = (Get-SkipInc @(New-Bare2 0) @('Gegenstellen', 'Prozesse', 'Citrix', 'Drucken', 'Laufwerke'))[0]
+        Get-Unchecked $i | Should -Be @('printdriver/Drucken', 'users/Prozesse', 'overlap/Laufwerke', 'overlap/Citrix', 'overlap/Gegenstellen')
+        Get-Text $i | Should -Match 'Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Laufwerke \(Laufwerke nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Citrix \(Citrix nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen \(Gegenstellen nicht gemessen\)\.$'
+        $o = ConvertTo-WorkerPerfEventIncidentOut -Incident $i -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        @($o.event.unchecked | Where-Object id -eq 'overlap' | ForEach-Object { $_.category + '|' + $_.text }) | Should -Be @('Laufwerke|Zusammentreffen mit einem Vorfall der Kategorie Laufwerke (Laufwerke nicht gemessen)',
+            'Citrix|Zusammentreffen mit einem Vorfall der Kategorie Citrix (Citrix nicht gemessen)', 'Gegenstellen|Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen (Gegenstellen nicht gemessen)')
+        # zeitgleich mit einem Leistungsvorfall der Basis: overlap ist gebildet, nichts ungeprueft
+        $ev = @(New-Ev 10); $inc = Get-Inc $ev; $perf = @(@{ Id = 1; StartMs = $T0 + 9 * 60000; EndMs = $T0 + 11 * 60000 })
+        Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $ev -Model (New-PatternModel (@(50) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents $perf -Skip @('Gegenstellen')
+        @($inc[0].Patterns | ForEach-Object Id) | Should -Contain 'overlap'; @($inc[0].Unchecked).Count | Should -Be 0
+        # im Rueckblick gibt es keine Leistungsvorfaelle; Prozesse, Ereignisse, Rueckblick und Zustand brauchen keinen Hinweis
+        @((Get-SkipInc @(New-Ev 0 -Module '') @('Gegenstellen', 'Citrix', 'Laufwerke') -Before)[0].Unchecked).Count | Should -Be 0
+        @((Get-SkipInc @(New-Ev 0 -Module '') @('Ereignisse', 'Rueckblick', 'Zustand', 'Prozesse'))[0].Unchecked).Count | Should -Be 0
+    }
     It 'gibt die nicht geprueften Muster nach den Mustern in die Berichtsdaten' {
         $i = (Get-SkipInc @(New-Bare2 0) @('Prozesse', 'Drucken'))[0]
         $o = ConvertTo-WorkerPerfEventIncidentOut -Incident $i -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
