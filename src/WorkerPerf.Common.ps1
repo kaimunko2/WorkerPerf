@@ -163,9 +163,12 @@ function Read-WorkerPerfRoles([string]$Path) {
         }
         Set-WorkerPerfDefault $r 'processes' @()
         Set-WorkerPerfDefault $r 'services' @()
+        Set-WorkerPerfDefault $r 'modules' @()
         Set-WorkerPerfDefault $r 'note' ''
         $r.processes = @($r.processes)
         $r.services = @($r.services)
+        # file name patterns of the product's modules (as processes: '*' allowed), matched against faulting modules
+        $r.modules = @($r.modules)
         $out.Add($r)
     }
     return $out.ToArray()

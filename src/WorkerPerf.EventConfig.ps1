@@ -6,6 +6,9 @@ $script:WorkerPerfEventGroups = @('app', 'service', 'storage', 'memory', 'filese
 $script:WorkerPerfEventKinds = @('crash', 'hang', 'app-detail', 'service', 'print', 'profileerror', 'system', 'logon', 'logoff',
     'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'info')
 $script:WorkerPerfEventNumberKeys = @('pid', 'session')
+# The list nonPersonAccounts that src/events.json ships; used when a custom events.json has none.
+$script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'LOKALER DIENST', 'NETZWERKDIENST', 'DWM-*', 'UMFD-*',
+    'ANONYMOUS LOGON', 'ANONYMOUS-ANMELDUNG', '*$')
 $script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object')
 
 function ConvertTo-WorkerPerfEventInt($Value) {
@@ -35,7 +38,11 @@ function Get-WorkerPerfEventStringList($Json, [string]$Name, [string]$Path) {
 
 function Get-WorkerPerfEventAccountPatterns($Json, [string]$Path) {
     # Account names that are never a person (service and virtual accounts, computer accounts). '*' is the only wildcard;
-    # a pattern names the account without its domain, because the domain is cut off before matching.
+    # a pattern names the account without its domain, because the domain is cut off before matching. A file without
+    # the list (or with null) takes the built-in list, so SYSTEM never counts as a person; an empty list stays empty.
+    $prop = $null
+    if ($null -ne $Json) { $prop = $Json.PSObject.Properties['nonPersonAccounts'] }
+    if ($null -eq $prop -or $null -eq $prop.Value) { return , [string[]]$script:WorkerPerfDefaultNonPersonAccounts }
     $list = Get-WorkerPerfEventStringList $Json 'nonPersonAccounts' $Path
     foreach ($s in $list) {
         if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '`')) -ge 0 -or $s.Trim('*').Length -eq 0) {

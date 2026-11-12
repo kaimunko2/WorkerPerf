@@ -133,10 +133,16 @@ function Set-WorkerPerfEventSessions {
     # (the services) gets no session, whatever its account, and an account that is no person is never matched by name.
     # Events from before the capture thus never get a session of the capture. A session counts as alive from the
     # snapshot before its first one to the snapshot after its last one, exclusive (one snapshot interval at the ends of
-    # the capture): a session that ended with the crash is gone from the next snapshot. SessionUser is the session's
-    # user; a record without user takes it as User as well.
+    # the capture, but never before the first tick of the capture): a session that ended with the crash is gone from the
+    # next snapshot. SessionUser is the session's user; a record without user takes it as User as well.
     param([object[]]$Events, $Model, $Config)
     $times = [long[]]@($Model.Snap.TimeMs)
+    $firstTickMs = [long]::MinValue
+    $tick = Get-WorkerPerfField $Model 'Tick'
+    if ($null -ne $tick -and $null -ne (Get-WorkerPerfField $tick 'TimeMs')) {
+        $tickMs = [long[]]$tick.TimeMs
+        if ($tickMs.Length -gt 0) { $firstTickMs = $tickMs[0] }
+    }
     $n = $times.Length
     $intervalMs = [long]0
     $sec = Get-WorkerPerfField $Model.Meta 'IntervalSeconds'
@@ -177,6 +183,7 @@ function Set-WorkerPerfEventSessions {
         $sid = [int]$e.SessionId
         if ($sid -eq 0) { continue }
         $t = [long]$e.TimeMs
+        if ($t -lt $firstTickMs) { continue }
         $found = $null
         if ($sid -gt 0 -and $bySid.ContainsKey($sid)) { $found = & $pick $bySid[$sid] $t }
         $user = [string]$e.User
@@ -261,7 +268,8 @@ function New-WorkerPerfEventIncidents {
     # form one incident while the gap to the previous record is at most GroupMinutes. A crash or hang becomes an incident
     # when one record lies in a user session or the group has two records or more; a service failure when the service
     # is an important one or it failed twice or more; print, profile and system problems always. Numbered from FirstId
-    # by start, kind and key. Events keeps the first 50 records; Count counts all.
+    # by start, kind and key. Events keeps at most 50 records; Count counts all. Every record gets IncidentId: the Id of
+    # its incident, or 0 (so Add-WorkerPerfEventPatterns can look at all records of an incident).
     param([object[]]$Events, $Config, $Settings, [object[]]$Drivers, [int]$FirstId, [switch]$Before)
     if ($null -eq $Drivers) { $Drivers = @() }
     $gapMs = [double]$Settings.GroupMinutes * 60000
@@ -271,6 +279,7 @@ function New-WorkerPerfEventIncidents {
     foreach ($e in @($Events)) {
         $pos++
         if ($null -eq $e) { continue }
+        $e['IncidentId'] = 0
         $kind = Get-WorkerPerfEventIncidentKind $e $Config
         if ($null -eq $kind) { continue }
         $k = Get-WorkerPerfEventIncidentKey $e $kind $Drivers
@@ -283,22 +292,52 @@ function New-WorkerPerfEventIncidents {
     }
     if ($tagged.Count -eq 0) { return }
     $sorted = @($tagged.ToArray() | Sort-Object -Property @{ Expression = { [long]$_.Event.TimeMs } }, @{ Expression = { $_.Pos } })
-    # One outage of the print spooler is one incident: the stop of a print service at most GroupMinutes from a crash of
-    # a print process takes that crash's key (the nearest crash, the earlier one on equal distance), so it joins the
-    # crash's incident; the record keeps its own kind.
-    $crashes = @($sorted | Where-Object { $_.Origin -eq 'process' })
-    if ($crashes.Count -gt 0) {
-        $j = -1
+    # One outage of the print spooler is one incident: the stop of a print service at most GroupMinutes from a print
+    # incident that holds a crash or hang of a print process joins that incident (it takes its key and driver; the record
+    # keeps its own kind). The distance is measured to the incident (0 inside it, else to its first or its last record),
+    # and a joined stop extends the incident for the stops after it. On equal distance the smaller key wins, then the
+    # earlier incident, so the result does not depend on the input order.
+    $stops = @($sorted | Where-Object { $_.Origin -eq 'service' })
+    if ($stops.Count -gt 0 -and @($sorted | Where-Object { $_.Origin -eq 'process' }).Count -gt 0) {
+        $printGroups = [ordered]@{}
         foreach ($t in $sorted) {
-            if ($t.Origin -ne 'service') { continue }
-            $ms = [long]$t.Event.TimeMs
-            while ($j + 1 -lt $crashes.Count -and [long]$crashes[$j + 1].Event.TimeMs -le $ms) { $j++ }
-            $best = $null; $bestDist = [double]::PositiveInfinity
-            if ($j -ge 0) { $best = $crashes[$j]; $bestDist = $ms - [long]$best.Event.TimeMs }
-            if ($j + 1 -lt $crashes.Count -and ([long]$crashes[$j + 1].Event.TimeMs - $ms) -lt $bestDist) {
-                $best = $crashes[$j + 1]; $bestDist = [long]$best.Event.TimeMs - $ms
+            if ($t.Kind -ne 'print' -or $t.Origin -eq 'service') { continue }
+            if (-not $printGroups.Contains($t.Group)) { $printGroups[$t.Group] = New-Object System.Collections.Generic.List[object] }
+            $printGroups[$t.Group].Add($t)
+        }
+        $spooler = New-Object System.Collections.Generic.List[object]
+        foreach ($g in $printGroups.Keys) {
+            $run = $null
+            foreach ($t in $printGroups[$g]) {
+                $ms = [long]$t.Event.TimeMs
+                if ($null -eq $run -or ($ms - $run.End) -gt $gapMs) {
+                    $run = @{ Group = [string]$g; Key = $t.Key; Driver = ''; Start = $ms; End = $ms; FromProcess = $false }
+                    $spooler.Add($run)
+                }
+                $run.End = $ms
+                if ($t.Origin -eq 'process') { $run.FromProcess = $true }
+                if ($run.Driver.Length -eq 0) { $run.Driver = $t.Driver }
             }
-            if ($null -ne $best -and $bestDist -le $gapMs) { $t.Key = $best.Key; $t.Driver = $best.Driver; $t.Group = $best.Group }
+        }
+        $spooler = @($spooler | Where-Object { $_.FromProcess })
+        foreach ($t in $stops) {
+            $ms = [long]$t.Event.TimeMs
+            $best = $null; $bestDist = [long]0
+            foreach ($r in $spooler) {
+                $dist = [long]0
+                if ($ms -lt $r.Start) { $dist = $r.Start - $ms } elseif ($ms -gt $r.End) { $dist = $ms - $r.End }
+                if ($dist -gt $gapMs) { continue }
+                $better = ($null -eq $best -or $dist -lt $bestDist)
+                if (-not $better -and $dist -eq $bestDist) {
+                    $c = [string]::CompareOrdinal($r.Group, $best.Group)
+                    $better = ($c -lt 0 -or ($c -eq 0 -and $r.Start -lt $best.Start))
+                }
+                if ($better) { $best = $r; $bestDist = $dist }
+            }
+            if ($null -eq $best) { continue }
+            $t.Key = $best.Key; $t.Driver = $best.Driver; $t.Group = $best.Group
+            if ($ms -lt $best.Start) { $best.Start = $ms }
+            if ($ms -gt $best.End) { $best.End = $ms }
         }
     }
     # groups in order of their first record; each group is split at gaps over GroupMinutes
@@ -369,7 +408,7 @@ function New-WorkerPerfEventIncidents {
                 Codes = $codes; App = (Get-WorkerPerfFirstValue $records 'App'); Service = $service; Driver = $driver
                 Printer = (Get-WorkerPerfFirstValue $records 'Printer'); Source = (Get-WorkerPerfFirstValue $records 'Source'); Before = [bool]$Before
                 Patterns = @(); Overlap = @(); Companions = @()
-                SortKey = $first.Key.ToLowerInvariant()
+                SortKey = $first.Key.ToLowerInvariant(); Records = $records
             })
     }
     # Ordinal order, so the numbering does not depend on the culture of the machine that writes the report. Start, kind
@@ -385,6 +424,311 @@ function New-WorkerPerfEventIncidents {
     foreach ($inc in $incidents) {
         $inc.Remove('SortKey')
         $inc.Id = $id; $id++
+        foreach ($r in $inc.Records) { $r['IncidentId'] = $inc.Id }
+        $inc.Remove('Records')
         $inc
     }
+}
+
+# ---- patterns and plain text ----
+# Add-WorkerPerfEventPatterns compares event incidents with the measurement and with each other (spec 5.3, 5.5);
+# Get-WorkerPerfEventIncidentText needs WorkerPerf.Findings.ps1 (Format-WorkerPerfClock).
+
+$script:WorkerPerfPatternOrder = @('resource', 'afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser', 'companion', 'overlap')
+# the patterns that need no measurement, for the events before the capture
+$script:WorkerPerfBeforePatterns = @('afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser', 'companion')
+$script:WorkerPerfCompanionGroups = @('storage', 'fileserver', 'profile', 'security')
+$script:WorkerPerfResourceSignals = @('mem.used', 'mem.commit')
+$script:WorkerPerfCompanionLimit = 10
+
+function Get-WorkerPerfFirstAtLeast([long[]]$Times, [long]$Ms) {
+    # Index of the first element >= Ms in an ascending array; Length when there is none.
+    $lo = 0; $hi = $Times.Length
+    while ($lo -lt $hi) {
+        $mid = ($lo + $hi) -shr 1
+        if ($Times[$mid] -lt $Ms) { $lo = $mid + 1 } else { $hi = $mid }
+    }
+    return $lo
+}
+
+function Get-WorkerPerfEventsByTime([object[]]$Events) {
+    # The records in time order (stable on equal times); a list already in order is returned as it is.
+    $list = @($Events | Where-Object { $null -ne $_ })
+    $ordered = $true
+    for ($i = 1; $i -lt $list.Count; $i++) { if ([long]$list[$i].TimeMs -lt [long]$list[$i - 1].TimeMs) { $ordered = $false; break } }
+    if ($ordered -or $list.Count -lt 2) { return , $list }
+    return , @(0..($list.Count - 1) | Sort-Object -Property @{ Expression = { [long]$list[$_].TimeMs } }, @{ Expression = { $_ } } | ForEach-Object { $list[$_] })
+}
+
+function Test-WorkerPerfEventMember($Event, $Incident) {
+    # $true when a record belongs to the incident (IncidentId from New-WorkerPerfEventIncidents).
+    if ($Event.ContainsKey('IncidentId')) { return ([int]$Event.IncidentId -eq [int]$Incident.Id) }
+    foreach ($e in @($Incident.Events)) { if ([object]::ReferenceEquals($e, $Event)) { return $true } }
+    return $false
+}
+
+function Test-WorkerPerfSameSessionOrUser($A, $B, $Config) {
+    # Same user session when both records have one; otherwise the same affected person.
+    $sa = -1; $sb = -1
+    if ($A.ContainsKey('SessionIndex')) { $sa = [int]$A.SessionIndex }
+    if ($B.ContainsKey('SessionIndex')) { $sb = [int]$B.SessionIndex }
+    if ($sa -ge 0 -and $sb -ge 0) { return ($sa -eq $sb) }
+    $ua = Get-WorkerPerfEventAffectedUser $A $Config
+    $ub = Get-WorkerPerfEventAffectedUser $B $Config
+    return ($ua.Length -gt 0 -and [string]::Equals($ua, $ub, [StringComparison]::OrdinalIgnoreCase))
+}
+
+function Add-WorkerPerfEventPatterns {
+    # Sets Patterns (@{ Id; Detail } in the order of $script:WorkerPerfPatternOrder), Overlap (int[]) and Companions on
+    # every incident, looking at all records of an incident (also those Events leaves out) and at AllEvents (the records
+    # the incidents were made from). Every performance incident gets EventIncidents (int[]). With -Before only the
+    # patterns without measurement are checked and Model and PerfIncidents may be $null. A performance incident that is a
+    # lasting condition (Chronic) spans the whole capture and is no overlap.
+    param([object[]]$Incidents, [object[]]$AllEvents, $Model, $Thresholds, $Settings, $Config, [object[]]$Roles, [object[]]$Drivers,
+        [object[]]$PerfIncidents, [switch]$Before)
+    if ($null -eq $Drivers) { $Drivers = @() }
+    if ($null -eq $Roles) { $Roles = @() }
+    $all = Get-WorkerPerfEventsByTime @($AllEvents)
+    $toMs = { param($Minutes) [long]([double]$Minutes * 60000) }
+    $resourceMs = & $toMs $Settings.ResourceMinutes
+    $afterhangMs = & $toMs $Settings.AfterhangMinutes
+    $companionMs = & $toMs $Settings.CompanionMinutes
+
+    # the records of each incident, the hangs, memory warnings, companion candidates and crashed modules, in time order
+    $byIncident = @{}
+    $hangs = New-Object System.Collections.Generic.List[object]
+    $warnings = New-Object System.Collections.Generic.List[object]
+    $candidates = New-Object System.Collections.Generic.List[object]
+    $crashModules = @{}
+    foreach ($e in $all) {
+        if ($e.ContainsKey('IncidentId') -and [int]$e.IncidentId -gt 0) {
+            $id = [int]$e.IncidentId
+            if (-not $byIncident.ContainsKey($id)) { $byIncident[$id] = New-Object System.Collections.Generic.List[object] }
+            $byIncident[$id].Add($e)
+        }
+        $kind = [string]$e.Kind
+        $group = [string]$e.Group
+        if ($kind -eq 'hang') { $hangs.Add($e) }
+        if ($group -eq 'memory') { $warnings.Add($e) }
+        if ($script:WorkerPerfCompanionGroups -contains $group) { $candidates.Add($e) }
+        if ($kind -eq 'crash' -and ([string]$e.Module).Length -gt 0) {
+            $m = (Get-WorkerPerfLeafName ([string]$e.Module)).ToLowerInvariant()
+            $app = Get-WorkerPerfLeafName ([string]$e.App)
+            if ($app.Length -eq 0) { continue }
+            if (-not $crashModules.ContainsKey($m)) { $crashModules[$m] = [ordered]@{} }
+            if (-not $crashModules[$m].Contains($app.ToLowerInvariant())) { $crashModules[$m][$app.ToLowerInvariant()] = $app }
+        }
+    }
+    $hangMs = [long[]]@($hangs | ForEach-Object { [long]$_.TimeMs })
+    $warningMs = [long[]]@($warnings | ForEach-Object { [long]$_.TimeMs })
+    $candidateMs = [long[]]@($candidates | ForEach-Object { [long]$_.TimeMs })
+
+    # measurement: tick times and the memory signals with their critical value
+    $tickMs = [long[]]@()
+    $signals = New-Object System.Collections.Generic.List[object]
+    if (-not $Before -and $null -ne $Model) {
+        $tickMs = [long[]]$Model.Tick.TimeMs
+        foreach ($sid in $script:WorkerPerfResourceSignals) {
+            if (-not $Model.Tick.Signal.Contains($sid) -or $null -eq $Thresholds -or -not $Thresholds.Contains($sid)) { continue }
+            $signals.Add(@{ Id = $sid; Values = [double[]]$Model.Tick.Signal[$sid]; Crit = [double]$Thresholds[$sid].crit })
+        }
+    }
+    $perf = @()
+    if (-not $Before -and $null -ne $PerfIncidents) { $perf = @($PerfIncidents | Where-Object { $null -ne $_ }) }
+    $perfHits = @{}
+    foreach ($p in $perf) { $perfHits[[int]$p.Id] = New-Object System.Collections.Generic.List[int] }
+    $security = @($Roles | Where-Object { [string](Get-WorkerPerfField $_ 'role') -eq 'Sicherheit' })
+
+    foreach ($inc in @($Incidents)) {
+        if ($null -eq $inc) { continue }
+        $members = @($inc.Events)
+        if ($byIncident.ContainsKey([int]$inc.Id)) { $members = $byIncident[[int]$inc.Id].ToArray() }
+        $memberMs = [long[]]@($members | ForEach-Object { [long]$_.TimeMs })
+        $moduleNames = @($inc.Modules | ForEach-Object { [string]$_.Name })
+        $found = @{}
+
+        if (-not $Before) {
+            # resource: memory over the critical value in a tick of (t - ResourceMinutes, t], or a memory warning in
+            # [t - ResourceMinutes, t] that is not the incident itself
+            foreach ($m in $members) {
+                $t = [long]$m.TimeMs
+                $a = Get-WorkerPerfFirstAtLeast $tickMs ($t - $resourceMs + 1)
+                $b = Get-WorkerPerfFirstAtLeast $tickMs ($t + 1)
+                foreach ($s in $signals) {
+                    $peak = [double]::NaN
+                    for ($i = $a; $i -lt $b -and $i -lt $s.Values.Length; $i++) {
+                        $v = $s.Values[$i]
+                        if (-not [double]::IsNaN($v) -and ([double]::IsNaN($peak) -or $v -gt $peak)) { $peak = $v }
+                    }
+                    if (-not [double]::IsNaN($peak) -and $peak -ge $s.Crit) { $found['resource'] = @{ SignalId = $s.Id; Peak = $peak }; break }
+                }
+                if ($found.ContainsKey('resource')) { break }
+                $b = Get-WorkerPerfFirstAtLeast $warningMs ($t + 1)
+                for ($i = $b - 1; $i -ge 0 -and $warningMs[$i] -ge $t - $resourceMs; $i--) {
+                    if (-not (Test-WorkerPerfEventMember $warnings[$i] $inc)) { $found['resource'] = @{ WarningMs = $warningMs[$i] }; break }
+                }
+                if ($found.ContainsKey('resource')) { break }
+            }
+        }
+
+        # afterhang: a hang of the same application in the same session (else of the same person) at most
+        # AfterhangMinutes before a crash of the incident
+        foreach ($m in $members) {
+            if ([string]$m.Kind -ne 'crash') { continue }
+            $t = [long]$m.TimeMs
+            $app = Get-WorkerPerfLeafName ([string]$m.App)
+            $b = Get-WorkerPerfFirstAtLeast $hangMs ($t + 1)
+            for ($i = $b - 1; $i -ge 0 -and $hangMs[$i] -ge $t - $afterhangMs; $i--) {
+                $h = $hangs[$i]
+                if (-not [string]::Equals((Get-WorkerPerfLeafName ([string]$h.App)), $app, [StringComparison]::OrdinalIgnoreCase)) { continue }
+                if (Test-WorkerPerfSameSessionOrUser $h $m $Config) { $found['afterhang'] = @{ HangMs = $hangMs[$i] }; break }
+            }
+            if ($found.ContainsKey('afterhang')) { break }
+        }
+
+        # sharedmodule: a module of the incident, no general system module, in which two applications or more crashed
+        foreach ($name in $moduleNames) {
+            $leaf = Get-WorkerPerfLeafName $name
+            if (@($Config.SystemModules) -contains $leaf) { continue }
+            $key = $leaf.ToLowerInvariant()
+            if (-not $crashModules.ContainsKey($key) -or $crashModules[$key].Count -lt 2) { continue }
+            $apps = [string[]]@($crashModules[$key].Values)
+            [Array]::Sort($apps, [StringComparer]::OrdinalIgnoreCase)
+            $found['sharedmodule'] = @{ Module = $name; Apps = $apps }
+            break
+        }
+
+        # printdriver: a module that is a file of a listed driver
+        foreach ($name in $moduleNames) {
+            $driver = Get-WorkerPerfModuleDriver $name $Drivers
+            if ($driver.Length -gt 0) { $found['printdriver'] = @{ Module = $name; Driver = $driver }; break }
+        }
+
+        # securitymodule: a module that matches the modules of a role 'Sicherheit'
+        foreach ($name in $moduleNames) {
+            $leaf = Get-WorkerPerfLeafName $name
+            foreach ($r in $security) {
+                foreach ($pattern in @(Get-WorkerPerfField $r 'modules')) {
+                    if ($null -ne $pattern -and $leaf -like [string]$pattern) { $found['securitymodule'] = @{ Module = $name; Product = [string]$r.label }; break }
+                }
+                if ($found.ContainsKey('securitymodule')) { break }
+            }
+            if ($found.ContainsKey('securitymodule')) { break }
+        }
+
+        # manyusers and oneuser over the users of all records
+        $users = @($inc.Users)
+        if (($inc.Kind -eq 'crash' -or $inc.Kind -eq 'hang') -and $users.Count -ge [int]$Settings.ManyUsers) { $found['manyusers'] = @{ Users = $users.Count } }
+        if ($users.Count -eq 1) {
+            $n = 0
+            foreach ($m in $members) { if ([string]::Equals((Get-WorkerPerfEventAffectedUser $m $Config), [string]$users[0], [StringComparison]::OrdinalIgnoreCase)) { $n++ } }
+            if ($n -ge [int]$Settings.OneUserEvents) { $found['oneuser'] = @{ User = [string]$users[0]; Count = $n } }
+        }
+
+        # companion: storage, file server, profile and security records of other origin near a record of the incident
+        $companions = New-Object System.Collections.Generic.List[object]
+        if ($memberMs.Length -gt 0) {
+            for ($i = Get-WorkerPerfFirstAtLeast $candidateMs ([long]$inc.StartMs - $companionMs); $i -lt $candidateMs.Length; $i++) {
+                $t = $candidateMs[$i]
+                if ($t -gt [long]$inc.EndMs + $companionMs) { break }
+                $c = $candidates[$i]
+                if (Test-WorkerPerfEventMember $c $inc) { continue }
+                $j = Get-WorkerPerfFirstAtLeast $memberMs ($t - $companionMs)
+                if ($j -lt $memberMs.Length -and $memberMs[$j] -le $t + $companionMs) {
+                    $companions.Add($c)
+                    if ($companions.Count -ge $script:WorkerPerfCompanionLimit) { break }
+                }
+            }
+        }
+        if ($companions.Count -gt 0) { $found['companion'] = @{ Events = $companions.ToArray() } }
+
+        # overlap: performance incidents whose window meets the incident's span
+        $overlap = New-Object System.Collections.Generic.List[int]
+        foreach ($p in $perf) {
+            if ([bool](Get-WorkerPerfField $p 'Chronic')) { continue }
+            if ([long]$p.StartMs -le [long]$inc.EndMs -and [long]$p.EndMs -ge [long]$inc.StartMs) {
+                $overlap.Add([int]$p.Id)
+                $perfHits[[int]$p.Id].Add([int]$inc.Id)
+            }
+        }
+        if ($overlap.Count -gt 0) { $found['overlap'] = @{ Incidents = [int[]]$overlap.ToArray() } }
+
+        $allowed = $(if ($Before) { $script:WorkerPerfBeforePatterns } else { $script:WorkerPerfPatternOrder })
+        $patterns = New-Object System.Collections.Generic.List[object]
+        foreach ($id in $script:WorkerPerfPatternOrder) {
+            if ($allowed -contains $id -and $found.ContainsKey($id)) { $patterns.Add(@{ Id = $id; Detail = $found[$id] }) }
+        }
+        $inc.Patterns = $patterns.ToArray()
+        $inc.Overlap = [int[]]$overlap.ToArray()
+        $inc.Companions = $companions.ToArray()
+    }
+    foreach ($p in $perf) { $p['EventIncidents'] = [int[]]$perfHits[[int]$p.Id].ToArray() }
+}
+
+function Get-WorkerPerfEventIncidentText {
+    # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
+    # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
+    # Times are the server's local time (OffsetMinutes, as Format-WorkerPerfClock). Model is not needed for the text.
+    param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
+    $inc = $Incident
+    $clock = Format-WorkerPerfClock ([long]$inc.StartMs) $OffsetMinutes
+    if ([long]$inc.EndMs -ne [long]$inc.StartMs) { $clock += [string][char]0x2013 + (Format-WorkerPerfClock ([long]$inc.EndMs) $OffsetMinutes) }
+    $count = $(if ([int]$inc.Count -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$inc.Count })
+    $kind = [string]$inc.Kind
+    $subject = ''
+    switch ($kind) {
+        'crash' { $subject = [string]$inc.App }
+        'hang' { $subject = [string]$inc.App }
+        'service' { $subject = [string]$inc.Service }
+        'print' {
+            foreach ($v in @($inc.Driver, $inc.Printer, $inc.App, $inc.Service, $inc.Source)) { if (([string]$v).Length -gt 0) { $subject = [string]$v; break } }
+        }
+        'profileerror' { $subject = [string]$inc.Source }
+        default {
+            $subject = [string]$inc.Source
+            $object = [string](Get-WorkerPerfField $inc.Events[0] 'Object')
+            if ($object.Length -gt 0) { $subject = ($subject + ' ' + $object).Trim() }
+        }
+    }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append(($Texts["event.$kind"] -f $clock, $subject, $count))
+
+    $users = @($inc.Users)
+    if ($users.Count -gt 0) { [void]$sb.Append(($Texts['event.users'] -f ($users -join ', '))) }
+    elseif (-not [bool]$inc.InSession) { [void]$sb.Append($Texts['event.nouser']) }
+    $modules = @($inc.Modules)
+    if ($modules.Count -eq 1 -and [bool]$inc.SameModule) { [void]$sb.Append(($Texts['event.module.same'] -f [string]$modules[0].Name)) }
+    elseif ($modules.Count -gt 0) {
+        $list = @($modules | ForEach-Object { '{0} ({1})' -f [string]$_.Name, $(if ([int]$_.Count -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$_.Count }) })
+        [void]$sb.Append(($Texts['event.module.mixed'] -f ($list -join ', ')))
+    }
+    $codes = @($inc.Codes | ForEach-Object { if (([string]$_.Text).Length -gt 0) { '{0} ({1})' -f $_.Code, $_.Text } else { [string]$_.Code } })
+    if ($codes.Count -gt 0) { [void]$sb.Append(($Texts['event.code'] -f ($codes -join ', '))) }
+    $versions = @($inc.Versions)
+    if ($versions.Count -gt 1) { [void]$sb.Append(($Texts['event.versions'] -f ($versions -join ', '))) }
+
+    $patterns = @($inc.Patterns)
+    foreach ($p in $patterns) {
+        $d = $p.Detail
+        $text = $Texts['pattern.' + $p.Id]
+        switch ([string]$p.Id) {
+            'sharedmodule' { $text = $text -f $d.Module, (@($d.Apps) -join ', ') }
+            'printdriver' { $text = $text -f $d.Module, $d.Driver }
+            'securitymodule' { $text = $text -f $d.Module, $d.Product }
+            'manyusers' { $text = $text -f $d.Users }
+            'oneuser' { $text = $text -f $d.User, $d.Count }
+            'companion' {
+                $list = @($d.Events | ForEach-Object {
+                        $s = (Format-WorkerPerfClock ([long]$_.TimeMs) $OffsetMinutes) + ' ' + [string]$_.Source
+                        if (([string](Get-WorkerPerfField $_ 'Object')).Length -gt 0) { $s += ' ' + [string]$_.Object }
+                        $s.Trim()
+                    })
+                $text = $text -f ($list -join ', ')
+            }
+            'overlap' { $text = $text -f (@($d.Incidents) -join ', ') }
+        }
+        [void]$sb.Append($text)
+    }
+    if ($patterns.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
+    return $sb.ToString()
 }

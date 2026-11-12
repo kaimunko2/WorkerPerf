@@ -69,7 +69,7 @@ Describe 'Simulation' {
         Set-SimTime 60; $ev = @(Get-WorkerPerfEvents -Since $Start)
         $ev.Count | Should -Be 13
         $sec = @($ev | ForEach-Object { ($_.Time - $Start).TotalSeconds })
-        $sec | Should -Be @(1100, 1300, 1340, 1345, 1490, 1620, 1800, 2100, 2160, 2200, 2220, 2230, 2600)
+        $sec | Should -Be @(555, 595, 600, 1100, 1490, 1620, 1800, 2100, 2160, 2200, 2220, 2230, 2600)
         $c = $ev | Where-Object App -eq 'chrome.exe'
         $c.Module | Should -Be 'chrome.dll'; $c.Code | Should -Be '0xc0000017'; $c.Level | Should -Be 2
         # ein Absturz nennt keine Sitzung: der Collector findet sie ueber die PID eines Prozesses, der zu der Zeit lief
@@ -143,13 +143,13 @@ Describe 'Simulation' {
     }
     It 'beschreibt die Ereignisvorfaelle und den Rueckblick' {
         $e = @(Get-WorkerPerfExpected); $ms = ([DateTimeOffset]$Start).ToUnixTimeMilliseconds()
-        $e.Key | Should -Be @('homeoffice', 'cpu', 'memory', 'crash.memory', 'profile.logon', 'disk', 'share', 'crash.manyusers', 'profile', 'print.spooler',
+        $e.Key | Should -Be @('homeoffice', 'cpu', 'profile.logon', 'memory', 'crash.memory', 'disk', 'share', 'crash.manyusers', 'profile', 'print.spooler',
             'backend', 'hang', 'before.shared.excel', 'before.shared.word', 'before.oneuser')
         $show = { param($r) '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}' -f $r.Kind, (@($r.Patterns) -join '+'), $r.Before, $r.App, $r.Driver, $r.Count, (@($r.Users) -join '+'),
             (($r.StartMs - $ms) / 1000), (($r.EndMs - $ms) / 1000), $r.Affected }
         $rows = @{}; foreach ($r in $e) { $rows[$r.Key] = & $show $r }
         $rows['crash.memory'] | Should -Be 'crash|resource+overlap|False|chrome.exe||1|user008|1100|1100|0'
-        $rows['profile.logon'] | Should -Be 'profileerror||False|||1|user014|1345|1345|0'
+        $rows['profile.logon'] | Should -Be 'profileerror||False|||1|user014|600|600|0'
         $rows['crash.manyusers'] | Should -Be 'crash|manyusers|False|OUTLOOK.EXE||3|user010+user011+user012|2100|2220|0'
         $rows['print.spooler'] | Should -Be 'print|printdriver|False|spoolsv.exe|HP Universal Printing PCL 6 (Sim)|1||2600|2600|0'
         $rows['before.shared.excel'] | Should -Be 'crash|sharedmodule|True|EXCEL.EXE||1|user001|-432000|-432000|0'

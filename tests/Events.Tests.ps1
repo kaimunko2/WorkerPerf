@@ -15,6 +15,23 @@ BeforeAll {
     function New-Xml([string]$Provider, [int]$Id, [string]$Data, [string]$User = '') {
         "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='$Provider'/><EventID>$Id</EventID><Level>2</Level></System>$Data$User</Event>"
     }
+    # Muster: Schwellen, Rollen, Treiber, ein Modell mit einem Takt je Minute ab T0 und die Muster je Vorfall
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+    $script:Th = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); $script:Roles = Read-WorkerPerfRoles (Join-Path $PSScriptRoot '../src/roles.json')
+    $script:Drv = @(@{ Name = 'Sim PCL 6'; Manufacturer = 'HP'; Files = @('hpsimgr.dll') })
+    $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+    function New-PatternModel([double[]]$MemUsed) { @{ Tick = @{ TimeMs = [long[]]@(0..($MemUsed.Count - 1) | ForEach-Object { $T0 + $_ * 60000 }); Signal = @{ 'mem.used' = $MemUsed; 'mem.commit' = [double[]]@($MemUsed | ForEach-Object { 50.0 }) } } } }
+    function Get-Pat([object[]]$Events, $Model = (New-PatternModel (@(50) * 60)), [object[]]$Perf = @(), [switch]$Before) {
+        $inc = Get-Inc $Events -Before:$Before
+        Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $Events -Model $Model -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents $Perf -Before:$Before
+        , @($inc | ForEach-Object { , @($_.Patterns | ForEach-Object { $_.Id }) })
+    }
+    function Get-PatInc([object[]]$Events, $Model = (New-PatternModel (@(50) * 60)), [object[]]$Perf = @()) {
+        $inc = Get-Inc $Events
+        Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $Events -Model $Model -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents $Perf
+        , $inc
+    }
+    function Get-Text($Incident, [int]$Offset = 0) { Get-WorkerPerfEventIncidentText -Incident $Incident -Model $null -Texts $Texts -Config $Cfg -OffsetMinutes $Offset }
 }
 Describe 'events.json' {
     It 'fuehrt jede Kennung zu Gruppe und Art' {
@@ -413,6 +430,28 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         }
         $script:SimInc = @(& $build); $script:SimInc2 = @(& $build)
         $script:SimExp = @(Get-Content (Join-Path $run 'expected.json') -Raw | ConvertFrom-Json | Where-Object Type -eq 'ereignis')
+        # Muster der Messzeit gegen die Leistungsvorfaelle der Stunde
+        $th = Read-WorkerPerfThresholds (Join-Path $run 'thresholds.json')
+        $script:SimPerf = @(Join-WorkerPerfIncidents -Findings @(Get-WorkerPerfFindings -Series @(Get-WorkerPerfSeries $M $th) -Thresholds $th))
+        $script:SimNow = @($SimInc | Where-Object { -not $_.Before })
+        Add-WorkerPerfEventPatterns -Incidents $SimNow -AllEvents @($M.Events) -Model $M -Thresholds $th -Settings $set -Config $Cfg -Roles $Roles -Drivers @($M.PrintDrivers) -PerfIncidents $SimPerf
+        $script:SimText = @($SimNow | ForEach-Object { Get-WorkerPerfEventIncidentText -Incident $_ -Model $M -Texts $Texts -Config $Cfg -OffsetMinutes ([int]$M.Meta.OffsetMinutes) })
+    }
+    It 'erkennt die Muster der Ereignisvorfaelle der Messzeit aus expected.json' {
+        @($SimNow | ForEach-Object { $_.Kind + ':' + (@($_.Patterns | ForEach-Object { $_.Id }) -join ',') }) |
+            Should -Be @($SimExp | Where-Object { -not $_.Before } | ForEach-Object { $_.Kind + ':' + (@($_.Patterns) -join ',') })
+    }
+    It 'verweist zwischen Absturz und Speicherengpass gegenseitig' {
+        $crash = $SimNow[1]; $mem = @($SimPerf | Where-Object { $_.Lead -eq 'memory' })
+        $mem.Count | Should -Be 1; $crash.Overlap | Should -Be @($mem[0].Id); $mem[0].EventIncidents | Should -Be @($crash.Id)
+        foreach ($p in @($SimPerf | Where-Object { $_.Lead -ne 'memory' })) { @($p.EventIncidents).Count | Should -Be 0 -Because $p.Id }
+    }
+    It 'beschreibt jeden Vorfall der Messzeit in einem Satz' {
+        $SimText.Count | Should -Be 4
+        $SimText[1] | Should -Match 'Absturz von chrome\.exe \(1-mal\)\. Benutzer: user008\..* Wahrscheinlich Folge des Speichermangels\. Zeitgleich mit Vorfall \d+\.$'
+        $SimText[0] | Should -Match 'Profilproblem .* Benutzer: user014\. Kein Muster erkannt\.$'
+        $SimText[2] | Should -Match 'Absturz von OUTLOOK\.EXE \(3-mal\)\. Benutzer: user010, user011, user012\..* 3 Benutzer betroffen: spricht für Installation oder Update\.$'
+        $SimText[3] | Should -Match 'Druckproblem – HP Universal Printing PCL 6 \(Sim\) .*gehört zum Druckertreiber HP Universal Printing PCL 6 \(Sim\)\.$'
     }
     It 'findet die Ereignisvorfaelle aus expected.json' {
         $show = { param($k, $app, $drv, $n, $u, $a, $b, $bf) '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $k, [string]$app, [string]$drv, $n, (@($u) -join '+'), $a, $b, $bf }
@@ -504,5 +543,196 @@ Describe 'Gekuerzte Ereignisliste und Einstellungen' {
     ) {
         $f = Join-Path $TestDrive 'big.json'; [IO.File]::WriteAllText($f, '{"thresholds":[],"events":' + $Block + '}')
         { Read-WorkerPerfEventSettings $f } | Should -Throw "Schwellwert 'events': Feld '$Name'*"
+    }
+}
+Describe 'Muster' {
+    It 'resource: Speicher ueber kritisch in den 5 Minuten davor, nicht 6 Minuten davor' {
+        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 6 + @(95) + @(50) * 53)))[0] | Should -Contain 'resource'     # Takt 6 = 4 min vor dem Absturz
+        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 4 + @(95) + @(50) * 55)))[0] | Should -Not -Contain 'resource'  # Takt 4 = 6 min davor
+        (Get-Pat @((New-Ev 8 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 10)))[1] | Should -Contain 'resource'
+    }
+    It 'afterhang: Haenger derselben Anwendung in derselben Sitzung hoechstens 2 Minuten vorher' {
+        ((Get-Pat @((New-Ev 8 'hang'), (New-Ev 10))) | Select-Object -Last 1) | Should -Contain 'afterhang'
+        ((Get-Pat @((New-Ev 7 'hang'), (New-Ev 10))) | Select-Object -Last 1) | Should -Not -Contain 'afterhang'
+        ((Get-Pat @((New-Ev 9 'hang' -Sid 4 -User 'user003'), (New-Ev 10))) | Select-Object -Last 1) | Should -Not -Contain 'afterhang'
+    }
+    It 'sharedmodule: zwei Anwendungen im selben Modul, kein Systemmodul' {
+        $p = Get-Pat @((New-Ev 0 -Module 'simaddin.dll'), (New-Ev 1 -App 'WINWORD.EXE' -Module 'simaddin.dll')); $p[0] | Should -Contain 'sharedmodule'; $p[1] | Should -Contain 'sharedmodule'
+        (Get-Pat @((New-Ev 0 -Module 'ntdll.dll'), (New-Ev 1 -App 'WINWORD.EXE' -Module 'NTDLL.dll')))[0] | Should -Not -Contain 'sharedmodule'
+    }
+    It 'printdriver und securitymodule nach Treiberliste und Rollen' {
+        (Get-Pat @(New-Ev 0 -Module 'HPSIMGR.DLL'))[0] | Should -Contain 'printdriver'
+        (Get-Pat @(New-Ev 0 -Module 'MpOav.dll'))[0] | Should -Be @('securitymodule')
+    }
+    It 'manyusers ab drei Benutzern, oneuser ab drei Ereignissen eines Benutzers' {
+        (Get-Pat @((New-Ev 0), (New-Ev 1 -Sid 4 -User 'u3'), (New-Ev 2 -Sid 5 -User 'u4')))[0] | Should -Be @('manyusers')
+        (Get-Pat @((New-Ev 0), (New-Ev 1 -Sid 4 -User 'u3')))[0].Count | Should -Be 0
+        (Get-Pat @((New-Ev 0), (New-Ev 1), (New-Ev 2)))[0] | Should -Be @('oneuser')
+    }
+    It 'companion mit Uhrzeit, overlap mit gegenseitigem Verweis' {
+        $perf = @(@{ Id = 1; StartMs = $T0 + 9 * 60000; EndMs = $T0 + 11 * 60000 })
+        $p = Get-Pat @((New-Ev 8.5 'system' '' 0 '' '' @{ Group = 'storage'; Object = 'D:' }), (New-Ev 10)) -Perf $perf
+        $p[1] | Should -Be @('companion', 'overlap'); $perf[0].EventIncidents | Should -Be @(10)
+    }
+    It 'nennt mehrere Muster zugleich und sagt es, wenn keines zutrifft' {
+        $evs = @((New-Ev 0 -Module 'simaddin.dll'), (New-Ev 1 -Module 'simaddin.dll'), (New-Ev 2 -Module 'simaddin.dll'), (New-Ev 3 -App 'WINWORD.EXE' -Module 'simaddin.dll'))
+        $inc = Get-Inc $evs
+        Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $evs -Model (New-PatternModel (@(50) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents @()
+        $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+        $t = Get-WorkerPerfEventIncidentText -Incident $inc[0] -Model $null -Texts $texts -Config $Cfg -OffsetMinutes 0
+        $t | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Absturz von EXCEL\.EXE \(3-mal\)\. Benutzer: user002\. Fehlerhaftes Modul: simaddin\.dll, immer dasselbe\. Fehlercode: 0xc0000005 \(Zugriffsverletzung\)\.'
+        $t | Should -Match 'Ursache liegt wahrscheinlich im Modul simaddin\.dll \(betrifft EXCEL\.EXE, WINWORD\.EXE\)\. Nur user002 betroffen, 3-mal: spricht für Profil oder Daten dieses Benutzers\.$'
+        $pe = @(New-Ev 0 'profileerror' '' 3 'user002' '' @{ Group = 'profile'; Source = 'Microsoft-Windows-User Profiles Service' }); $one = Get-Inc $pe
+        Add-WorkerPerfEventPatterns -Incidents $one -AllEvents $pe -Model (New-PatternModel (@(50) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents @()
+        (Get-WorkerPerfEventIncidentText -Incident $one[0] -Model $null -Texts $texts -Config $Cfg -OffsetMinutes 0) | Should -Match 'Kein Muster erkannt\.$'
+    }
+    It 'prueft im Rueckblick nur Muster ohne Messwerte' {
+        $perf = @(@{ Id = 1; StartMs = $T0; EndMs = $T0 + 60000 })
+        (Get-Pat @((New-Ev 0), (New-Ev 1), (New-Ev 2)) (New-PatternModel (@(95) * 60)) $perf -Before)[0] | Should -Be @('oneuser')
+    }
+}
+Describe 'Muster im Einzelnen' {
+    It 'nennt Signal und Hoechstwert oder die Zeit der Speichermangel-Warnung' {
+        $i = (Get-PatInc @(New-Ev 10) (New-PatternModel (@(50) * 6 + @(91, 97, 92) + @(50) * 51)))[0]
+        $d = $i.Patterns[0].Detail; $d.SignalId | Should -Be 'mem.used'; $d.Peak | Should -Be 97
+        $m = Get-PatInc @((New-Ev 8 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 10))
+        $m[1].Patterns[0].Detail.WarningMs | Should -Be ([long]($T0 + 8 * 60000))
+        @($m[0].Patterns | ForEach-Object { $_.Id }) | Should -Not -Contain 'resource'                 # die Warnung selbst ist nicht ihre eigene Ursache
+        (Get-Pat @((New-Ev 4.9 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 10)))[1] | Should -Not -Contain 'resource'
+    }
+    It 'prueft resource fuer jedes Ereignis, auch ausserhalb der behaltenen 50' {
+        # 120 Abstuerze von Minute 0 bis 59.5, Speicher nur um Minute 30 kritisch: Ereignisse 51..70 liegen nicht in der gekuerzten Liste
+        $evs = @(0..119 | ForEach-Object { New-Ev ($_ / 2) -Sid 0 -User '' -App 'dienst.exe' })
+        $i = (Get-PatInc $evs (New-PatternModel (@(50) * 30 + @(96) + @(50) * 29)))[0]
+        $i.EventsTruncated | Should -BeTrue; @($i.Patterns | ForEach-Object { $_.Id }) | Should -Contain 'resource'
+    }
+    It 'afterhang ohne Sitzung ueber denselben Benutzer und mit der Zeit des Haengers' {
+        $h = New-Ev 9 'hang' -Sid -1 -User 'user005' -More @{ SessionIndex = -1 }; $c = New-Ev 10 -Sid -1 -User 'user005' -More @{ SessionIndex = -1 }
+        $i = (Get-PatInc @($h, $c))[1]; $i.Patterns[0].Id | Should -Be 'afterhang'; $i.Patterns[0].Detail.HangMs | Should -Be $h.TimeMs
+        (Get-Pat @((New-Ev 9 'hang' -Sid -1 -User 'user006' -More @{ SessionIndex = -1 }), $c))[1] | Should -Not -Contain 'afterhang'
+        (Get-Pat @((New-Ev 9 'hang' -App 'WINWORD.EXE'), (New-Ev 10)))[1] | Should -Not -Contain 'afterhang'
+    }
+    It 'nennt Modul, Anwendungen, Treiber und Produkt' {
+        $s = (Get-PatInc @((New-Ev 0 -Module 'simaddin.dll'), (New-Ev 1 -App 'winword.exe' -Module 'SimAddin.dll'), (New-Ev 2 -App 'EXCEL.exe' -Module 'simaddin.dll')))[0]
+        $s.Patterns[0].Detail.Module | Should -Be 'simaddin.dll'; $s.Patterns[0].Detail.Apps | Should -Be @('EXCEL.EXE', 'winword.exe')
+        $p = (Get-PatInc @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'C:\x\hpsimgr.dll'))[0]
+        $p.Patterns[0].Id | Should -Be 'printdriver'; $p.Patterns[0].Detail.Driver | Should -Be 'Sim PCL 6'; $p.Patterns[0].Detail.Module | Should -Be 'C:\x\hpsimgr.dll'
+        $a = (Get-PatInc @(New-Ev 0 -Module 'CyMemDef64.dll'))[0]
+        $a.Patterns[0].Detail.Product | Should -Be 'Arctic Wolf Aurora Endpoint Protection'; (Get-PatInc @(New-Ev 0 -Module 'mpclient.dll'))[0].Patterns[0].Detail.Product | Should -Be 'Microsoft Defender'
+    }
+    It 'zaehlt Benutzer und Ereignisse ueber den ganzen Vorfall, nicht ueber die behaltenen 50' {
+        $many = @(0..59 | ForEach-Object { New-Ev ($_ / 10) }) + @((New-Ev 6.5 -Sid 4 -User 'u3'), (New-Ev 6.6 -Sid 5 -User 'u4'))
+        $i = (Get-PatInc $many)[0]; $i.EventsTruncated | Should -BeTrue; $i.Patterns[0].Id | Should -Be 'manyusers'; $i.Patterns[0].Detail.Users | Should -Be 3
+        $one = (Get-PatInc @(0..59 | ForEach-Object { New-Ev ($_ / 10) }))[0]
+        $one.Patterns[0].Id | Should -Be 'oneuser'; $one.Patterns[0].Detail.User | Should -Be 'user002'; $one.Patterns[0].Detail.Count | Should -Be 60
+        # ein Benutzer, aber nur zwei seiner Ereignisse: kein oneuser
+        (Get-Pat @((New-Ev 0), (New-Ev 1), (New-Ev 2 -Sid 0 -User '')))[0] | Should -Not -Contain 'oneuser'
+        (Get-Pat @((New-Ev 0 'hang' -Sid 0 -User ''), (New-Ev 1 'hang' -Sid 4 -User 'u3'), (New-Ev 2 'hang' -Sid 5 -User 'u4'), (New-Ev 3 'hang' -Sid 6 -User 'u5')))[0] | Should -Be @('manyusers')
+        (Get-Pat @((New-Ev 0 'profileerror' '' 3 'a' '' @{ Group = 'profile' }), (New-Ev 1 'profileerror' '' 4 'b' '' @{ Group = 'profile' }), (New-Ev 2 'profileerror' '' 5 'c' '' @{ Group = 'profile' })))[0] | Should -Not -Contain 'manyusers'
+    }
+    It 'companion: hoechstens zwei Minuten, nicht das eigene Ereignis, hoechstens zehn' {
+        (Get-Pat @((New-Ev 7.9 'system' '' 0 '' '' @{ Group = 'storage'; Object = 'D:' }), (New-Ev 10)))[1] | Should -Not -Contain 'companion'
+        (Get-Pat @((New-Ev 11.5 'scan-start' '' 0 '' '' @{ Group = 'security' }), (New-Ev 10)))[0] | Should -Be @('companion')
+        (Get-Pat @((New-Ev 10.5 'logon' '' 3 'user002' '' @{ Group = 'session' }), (New-Ev 10)))[0].Count | Should -Be 0
+        $own = Get-PatInc @((New-Ev 0 'system' '' 0 '' '' @{ Group = 'storage'; Object = 'D:' }), (New-Ev 1 'system' '' 0 '' '' @{ Group = 'storage'; Object = 'D:' }), (New-Ev 1.5 'system' '' 0 '' '' @{ Group = 'storage'; Object = 'E:' }))
+        $own[0].Patterns[0].Id | Should -Be 'companion'; @($own[0].Companions).Count | Should -Be 1; $own[0].Companions[0].Object | Should -Be 'E:'
+        $twelve = @(1..12 | ForEach-Object { New-Ev (9 + $_ / 10) 'scan-end' '' 0 '' '' @{ Group = 'security' } }) + @(New-Ev 10)
+        $i = (Get-PatInc $twelve)[0]; @($i.Patterns[0].Detail.Events).Count | Should -Be 10; @($i.Companions).Count | Should -Be 10
+        $i.Companions[0].TimeMs | Should -Be ([long]($T0 + 9.1 * 60000))
+    }
+    It 'overlap: Rand zaehlt, ein Dauerzustand nicht, jeder Leistungsvorfall bekommt EventIncidents' {
+        $perf = @(@{ Id = 1; StartMs = $T0 + 10 * 60000; EndMs = $T0 + 11 * 60000; Chronic = $false }, @{ Id = 2; StartMs = $T0; EndMs = $T0 + 60 * 60000; Chronic = $true },
+            @{ Id = 3; StartMs = $T0 + 20 * 60000; EndMs = $T0 + 21 * 60000 })
+        $i = (Get-PatInc @(New-Ev 10) -Perf $perf)[0]
+        $i.Patterns[0].Id | Should -Be 'overlap'; $i.Patterns[0].Detail.Incidents | Should -Be @(1); $i.Overlap | Should -Be @(1)
+        $perf[0].EventIncidents | Should -Be @(9); @($perf[1].EventIncidents).Count | Should -Be 0; @($perf[2].EventIncidents).Count | Should -Be 0
+        $perf[2].EventIncidents -is [int[]] | Should -BeTrue
+    }
+    It 'ordnet mehrere Muster in der festen Reihenfolge und setzt sie bei jedem Aufruf neu' {
+        $evs = @((New-Ev 8 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 9.5 'hang'), (New-Ev 10 -Module 'hpsimgr.dll'), (New-Ev 10.2 -Module 'hpsimgr.dll'), (New-Ev 10.4 -Module 'MpOav.dll'),
+            (New-Ev 10.6 -App 'WINWORD.EXE' -Module 'hpsimgr.dll'), (New-Ev 11 'system' '' 0 '' '' @{ Group = 'fileserver'; Object = 'fs01' }))
+        $perf = @(@{ Id = 4; StartMs = $T0 + 10.1 * 60000; EndMs = $T0 + 10.3 * 60000 })
+        $inc = Get-Inc $evs; $crash = @($inc | Where-Object { $_.Kind -eq 'crash' -and $_.App -eq 'EXCEL.EXE' })[0]
+        foreach ($n in 1, 2) {
+            Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $evs -Model (New-PatternModel (@(50) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents $perf
+            @($crash.Patterns | ForEach-Object { $_.Id }) | Should -Be @('resource', 'afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'oneuser', 'companion', 'overlap')
+            $perf[0].EventIncidents | Should -Be @($crash.Id)
+        }
+    }
+    It 'laesst im Rueckblick Modell und Leistungsvorfaelle weg' {
+        $evs = @((New-Ev 8 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 10))
+        $inc = Get-Inc $evs -Before
+        Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $evs -Model $null -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers @() -PerfIncidents $null -Before
+        @($inc[1].Patterns).Count | Should -Be 0; @($inc[1].Overlap).Count | Should -Be 0
+    }
+}
+Describe 'Klartext eines Ereignisvorfalls' {
+    It 'nennt Kopf je Art, Zeit in Ortszeit und die Zusaetze' {
+        $c = (Get-PatInc @(New-Ev 0 -Sid 0 -User '' -App 'spoolsv.exe' -Module 'hpsimgr.dll'))[0]
+        $clock = [DateTimeOffset]::FromUnixTimeMilliseconds($T0).UtcDateTime.AddMinutes(60).ToString('HH:mm:ss')
+        Get-Text $c 60 | Should -BeExactly "$($clock): Druckproblem – Sim PCL 6 (1-mal). Ohne Benutzersitzung. Fehlerhaftes Modul: hpsimgr.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Das Modul hpsimgr.dll gehört zum Druckertreiber Sim PCL 6."
+        $h = (Get-PatInc @((New-Ev 0 'hang' -Module '' -More @{ Code = 'AppHangB1'; AppVersion = '1.0' }), (New-Ev 1 'hang' -Sid 4 -User 'user003' -Module '' -More @{ Code = 'AppHangB1'; AppVersion = '1.1' })))[0]
+        Get-Text $h | Should -Match ': EXCEL\.EXE reagierte nicht und wurde beendet \(2-mal\)\. Benutzer: user002, user003\. Fehlercode: AppHangB1 \(wegen Nichtreagierens beendet\)\. Versionen: 1\.0, 1\.1\. Kein Muster erkannt\.$'
+        $s = (Get-PatInc @(New-Ev 0 'service' '' 0 '' '' @{ Service = 'BrokerAgent'; Group = 'service'; Code = ''; Module = '' }))[0]
+        Get-Text $s | Should -Match '^\d\d:\d\d:\d\d: Dienst BrokerAgent unerwartet beendet \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
+        $p = (Get-PatInc @(New-Ev 0 'profileerror' '' -1 'user014' '' @{ Group = 'profile'; Source = 'Microsoft-Windows-User Profiles Service'; Code = ''; SessionIndex = -1 }))[0]
+        Get-Text $p | Should -Match ': Profilproblem – Microsoft-Windows-User Profiles Service \(1-mal\)\. Benutzer: user014\. Kein Muster erkannt\.$'
+        $y = (Get-PatInc @(New-Ev 0 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = '' }))[0]
+        Get-Text $y | Should -Match ': Systemfehler – disk D: \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
+    }
+    It 'nennt gemischte Module mit Anzahl, Begleitereignisse mit Uhrzeit und ueberlappende Vorfaelle' {
+        $perf = @(@{ Id = 2; StartMs = $T0; EndMs = $T0 + 60000 }, @{ Id = 5; StartMs = $T0 + 30000; EndMs = $T0 + 90000 })
+        $i = (Get-PatInc @((New-Ev 0 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:' }), (New-Ev 0.5), (New-Ev 1 -Sid 4 -User 'user003' -Module 'mso.dll'), (New-Ev 1.2 -Module 'mso.dll')) -Perf $perf)[1]
+        $clock = Format-WorkerPerfClock $T0 0
+        $t = Get-Text $i
+        $t | Should -Match 'Fehlerhafte Module: mso\.dll \(2-mal\), vbe7\.dll \(1-mal\)\.'
+        $t | Should -Match ([regex]::Escape(" Zeitnah: $clock disk D:. Zeitgleich mit Vorfall 2, 5.") + '$')
+    }
+}
+Describe 'Rollen mit Modulen' {
+    It 'liest modules als Liste, Standard leer' {
+        @(($Roles | Where-Object label -eq 'Microsoft Defender').modules) | Should -Be @('MpOav.dll', 'MpClient.dll')
+        @(($Roles | Where-Object label -eq 'Arctic Wolf Aurora Endpoint Protection').modules) | Should -Be @('CyMemDef*.dll')
+        ($Roles | Where-Object label -eq 'Arctic Wolf Aurora Endpoint Protection').note | Should -Match 'Module ungeprüft'
+        ($Roles | Where-Object label -eq 'AppLocker').modules.Count | Should -Be 0
+        $f = Join-Path $TestDrive 'r.json'; [IO.File]::WriteAllText($f, '{"roles":[{"role":"Sicherheit","label":"X","modules":"x.dll"}]}')
+        $r = @(Read-WorkerPerfRoles $f); $r[0].modules -is [array] | Should -BeTrue; $r[0].modules | Should -Be @('x.dll')
+    }
+}
+Describe 'Kleine Korrekturen aus der Pruefung von Task 5' {
+    BeforeAll {
+        function New-Stop2([double]$Min) { New-Ev $Min 'service' '' 0 '' '' @{ Service = 'Spooler'; Group = 'service'; Source = 'Service Control Manager'; EventId = 7034; Code = '' } }
+        function New-SpoolCrash2([double]$Min, [hashtable]$More = @{}) { New-Ev $Min -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll' -More $More }
+    }
+    It 'a) ein Dienstende zwischen zwei gleichzeitigen Abstuerzen geht unabhaengig von der Eingabe zum kleineren Schluessel' {
+        $x = New-SpoolCrash2 0; $y = New-SpoolCrash2 0 @{ Module = 'other.dll'; Driver = 'Kyo KX' }; $s = New-Stop2 1
+        foreach ($order in @(@($x, $y, $s), @($y, $x, $s), @($s, $y, $x))) {
+            $r = Get-Inc $order; @($r | ForEach-Object { $_.Key + ':' + $_.Count }) | Should -Be @('Kyo KX:2', 'Sim PCL 6:1')
+        }
+    }
+    It 'b) misst den Abstand eines Dienstendes zum letzten Ereignis des Vorfalls' {
+        $drv = New-Ev 20 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; Driver = 'Sim PCL 6'; Module = ''; Code = '' }
+        $i = Get-Inc @((New-SpoolCrash2 0), $drv, (New-Stop2 45)); $i.Count | Should -Be 1; $i[0].Count | Should -Be 3
+        $c = Get-Inc @((New-SpoolCrash2 0), (New-Stop2 25), (New-Stop2 50)); $c.Count | Should -Be 1; $c[0].Count | Should -Be 3
+        # ein Druckvorfall ohne Absturz der Warteschlange nimmt kein Dienstende auf
+        $d = Get-Inc @($drv, (New-Stop2 21)); @($d | ForEach-Object { $_.Key }) | Should -Be @('Sim PCL 6', 'Service Control Manager')
+    }
+    It 'c) nimmt ohne nonPersonAccounts die eingebaute Liste, eine leere Liste bleibt leer' {
+        $f = Join-Path $TestDrive 'np0.json'; $base = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}]'
+        [IO.File]::WriteAllText($f, $base + '}'); $c = Read-WorkerPerfEventConfig $f
+        @($c.NonPersonAccounts) | Should -Be @($Cfg.NonPersonAccounts); Test-WorkerPerfEventPersonUser 'SYSTEM' $c | Should -BeFalse
+        [IO.File]::WriteAllText($f, $base + ',"nonPersonAccounts":null}'); @((Read-WorkerPerfEventConfig $f).NonPersonAccounts) | Should -Be @($Cfg.NonPersonAccounts)
+        [IO.File]::WriteAllText($f, $base + ',"nonPersonAccounts":[]}'); $e = Read-WorkerPerfEventConfig $f
+        @($e.NonPersonAccounts).Count | Should -Be 0; Test-WorkerPerfEventPersonUser 'SYSTEM' $e | Should -BeTrue
+        $shipped = (Get-Content (Join-Path $PSScriptRoot '../src/events.json') -Raw | ConvertFrom-Json).nonPersonAccounts
+        @($script:WorkerPerfDefaultNonPersonAccounts) | Should -Be @($shipped)
+    }
+    It 'd) gibt einem Ereignis vor dem ersten Takt keine Sitzung, kurz davor schon' {
+        $model = @{ Meta = @{ IntervalSeconds = 60 }; Snap = @{ N = 3; TimeMs = [long[]]@(0..2 | ForEach-Object { $T0 + $_ * 60000 }) }
+            Tick = @{ TimeMs = [long[]]@(0..10 | ForEach-Object { $T0 - 30000 + $_ * 15000 }) }
+            Sessions = @(@{ Index = 0; Sid = 5; User = 'user001'; FirstP = 0; LastP = 2 }) }
+        $show = { param([double]$Min) $e = New-Ev $Min -Sid 5 -User ''; Set-WorkerPerfEventSessions -Events @($e) -Model $model -Config $Cfg; '{0}|{1}' -f $e.SessionIndex, $e.SessionUser }
+        & $show -0.25 | Should -Be '0|user001'; & $show -0.5 | Should -Be '0|user001'; & $show -0.75 | Should -Be '-1|'
+        $byUser = New-Ev -0.75 -Sid -1 -User 'user001'; Set-WorkerPerfEventSessions -Events @($byUser) -Model $model -Config $Cfg; $byUser.SessionIndex | Should -Be -1
     }
 }

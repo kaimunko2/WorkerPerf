@@ -321,16 +321,17 @@ function Initialize-WorkerPerfSource {
     # A crash names no session: the collector finds it through the pid of a process that ran at the time (the crashed
     # process keeps running in the simulation, so the measured hour stays as it is). Session events name their session
     # and user. The profile error names its user but no session: Windows writes the account into the System part of
-    # the event, and the Windows source resolves it to the user name.
+    # the event, and the Windows source resolves it to the user name. The logon with the profile error lies before the
+    # memory scene and far from other scenes, so it matches no pattern (the resource pattern looks 5 minutes back).
     $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile
     $spoolerPid = @($script:WorkerPerfSimProcs | Where-Object { $_.Name -eq 'spoolsv.exe' -and $_.SessionId -eq 0 })[0].Pid
     $defender = 'Microsoft-Windows-Windows Defender'
     $script:WorkerPerfSimEvents = @(
-        (New-WorkerPerfSimCrash $cfg 1100 'chrome.exe' '131.0.6778.86' 'chrome.dll' '131.0.6778.86' '0xc0000017' -ProcessId $pidOf['9|chrome.exe'])
-        (New-WorkerPerfSimSessionEvent $cfg 1300 23 'logoff' 15)
-        (New-WorkerPerfSimSessionEvent $cfg 1340 21 'logon' 15)
-        (New-WorkerPerfSimEvent $cfg 1345 'application' 'Microsoft-Windows-User Profiles Service' 1511 3 `
+        (New-WorkerPerfSimSessionEvent $cfg 555 23 'logoff' 15)
+        (New-WorkerPerfSimSessionEvent $cfg 595 21 'logon' 15)
+        (New-WorkerPerfSimEvent $cfg 600 'application' 'Microsoft-Windows-User Profiles Service' 1511 3 `
                 'Windows cannot find the local profile and is logging you on with a temporary profile (user014).' -User 'user014')
+        (New-WorkerPerfSimCrash $cfg 1100 'chrome.exe' '131.0.6778.86' 'chrome.dll' '131.0.6778.86' '0xc0000017' -ProcessId $pidOf['9|chrome.exe'])
         (New-WorkerPerfSimEvent $cfg 1490 'defender' $defender 1000 4 'Microsoft Defender Antivirus scan has started.')
         (New-WorkerPerfSimEvent $cfg 1620 'defender' $defender 1001 4 'Microsoft Defender Antivirus scan has finished.')
         (New-WorkerPerfSimEvent $cfg 1800 'applocker' 'Microsoft-Windows-AppLocker' 8004 2 '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.')
@@ -632,7 +633,7 @@ function Get-WorkerPerfExpected {
     # event incidents: key, kind, patterns, first and last event second, app, driver, event count, users in order of appearance
     $eventRows = @(
         @{ Key = 'crash.memory'; Kind = 'crash'; Patterns = @('resource', 'overlap'); Before = $false; A = 1100; B = 1100; App = 'chrome.exe'; Driver = $null; Count = 1; Users = @('user008') }
-        @{ Key = 'profile.logon'; Kind = 'profileerror'; Patterns = @(); Before = $false; A = 1345; B = 1345; App = $null; Driver = $null; Count = 1; Users = @('user014') }
+        @{ Key = 'profile.logon'; Kind = 'profileerror'; Patterns = @(); Before = $false; A = 600; B = 600; App = $null; Driver = $null; Count = 1; Users = @('user014') }
         @{ Key = 'crash.manyusers'; Kind = 'crash'; Patterns = @('manyusers'); Before = $false; A = 2100; B = 2220; App = 'OUTLOOK.EXE'; Driver = $null; Count = 3
             Users = @('user010', 'user011', 'user012') }
         @{ Key = 'print.spooler'; Kind = 'print'; Patterns = @('printdriver'); Before = $false; A = 2600; B = 2600; App = 'spoolsv.exe'; Driver = 'HP Universal Printing PCL 6 (Sim)'

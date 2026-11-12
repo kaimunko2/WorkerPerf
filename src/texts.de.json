@@ -49,5 +49,16 @@
   "sourcecall.services": "Dienste und ihre Prozesse", "sourcecall.probes": "Antwortzeit-Proben der Gegenstellen",
   "sourcecall.events": "Ereignisprotokoll", "sourcecall.diskspace": "Freier Speicherplatz",
   "sourcecall.eventsbefore": "Ereignisse vor der Messung", "sourcecall.printdrivers": "Druckertreiber",
-  "sourcecall.printqueues": "Druckwarteschlangen"
+  "sourcecall.printqueues": "Druckwarteschlangen",
+  "event.crash": "{0}: Absturz von {1} ({2}).", "event.hang": "{0}: {1} reagierte nicht und wurde beendet ({2}).",
+  "event.service": "{0}: Dienst {1} unerwartet beendet ({2}).", "event.print": "{0}: Druckproblem – {1} ({2}).",
+  "event.profileerror": "{0}: Profilproblem – {1} ({2}).", "event.system": "{0}: Systemfehler – {1} ({2}).",
+  "event.count.one": "1-mal", "event.count.many": "{0}-mal", "event.users": " Benutzer: {0}.", "event.nouser": " Ohne Benutzersitzung.",
+  "event.module.same": " Fehlerhaftes Modul: {0}, immer dasselbe.", "event.module.mixed": " Fehlerhafte Module: {0}.",
+  "event.code": " Fehlercode: {0}.", "event.versions": " Versionen: {0}.",
+  "pattern.resource": " Wahrscheinlich Folge des Speichermangels.", "pattern.afterhang": " Wurde nach Nichtreagieren beendet.",
+  "pattern.sharedmodule": " Ursache liegt wahrscheinlich im Modul {0} (betrifft {1}).", "pattern.printdriver": " Das Modul {0} gehört zum Druckertreiber {1}.",
+  "pattern.securitymodule": " Das Modul {0} gehört zur Schutzsoftware {1}.", "pattern.manyusers": " {0} Benutzer betroffen: spricht für Installation oder Update.",
+  "pattern.oneuser": " Nur {0} betroffen, {1}-mal: spricht für Profil oder Daten dieses Benutzers.", "pattern.companion": " Zeitnah: {0}.",
+  "pattern.overlap": " Zeitgleich mit Vorfall {0}.", "pattern.none": " Kein Muster erkannt."
 }

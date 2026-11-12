@@ -13,6 +13,10 @@
         "WinDefend",
         "WdNisSvc"
       ],
+      "modules": [
+        "MpOav.dll",
+        "MpClient.dll"
+      ],
       "note": ""
     },
     {
@@ -24,7 +28,10 @@
       "services": [
         "CylanceSvc"
       ],
-      "note": "Aurora ist das frühere CylancePROTECT; Dienst und Prozess heißen weiter CylanceSvc"
+      "modules": [
+        "CyMemDef*.dll"
+      ],
+      "note": "Aurora ist das frühere CylancePROTECT; Dienst und Prozess heißen weiter CylanceSvc; Module ungeprüft"
     },
     {
       "role": "Sicherheit",
