@@ -345,6 +345,9 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 document.getElementById("oldBrowser").remove();
 const D = JSON.parse(document.getElementById('wp-data').textContent);
 const M = D.meta, Q = D.quality;
+// a masked report has its message texts removed: an empty one there says so (an unmasked report shows the text as it is)
+const MASKED = M.mask != null && M.mask !== "", REMOVED = "Meldung entfernt (maskiert)";
+const msgText = (t) => MASKED && !t ? REMOVED : t;
 
 // ---------- formatting ----------
 const nf = (d) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -817,7 +820,7 @@ document.getElementById("title").textContent = "WorkerPerf – " + M.computer + 
   if (M.os) parts.push(esc(M.os));
   let html = parts.join(" · ");
   if (!M.endReason) html += ` · <span class="endreason">Aufzeichnung nicht regulär beendet (kein Abschluss in meta.json).</span>`;
-  else if (M.endReason === "error") html += ` · <span class="endreason">Aufzeichnung mit Fehler beendet: ${esc(M.endMessage || "ohne Meldung")}</span>`;
+  else if (M.endReason === "error") html += ` · <span class="endreason">Aufzeichnung mit Fehler beendet: ${esc(M.endMessage || (MASKED ? REMOVED : "ohne Meldung"))}</span>`;
   else if (M.endReason !== "duration") html += ` · <span class="endreason">Aufzeichnung ${esc(END_REASON[M.endReason] || M.endReason)}</span>`;
   document.getElementById("subtitle").innerHTML = html;
 }
@@ -1249,7 +1252,7 @@ function drawTimeline(force) {
   for (const g of EVENT_ROWS) {
     h += `<div class="tl-row" data-group="${esc(g)}"><div class="tl-label">${esc(GROUP_WORD[g] || "Weitere Ereignisse")}</div><div class="tl-track" style="height:22px">` +
       EVENTS_BY_ROW.get(g).map((e) => `<span class="event" data-group="${esc(e.group || "")}" data-kind="${esc(e.kind)}" style="left:${X(Math.max(FULL.t0, Math.min(FULL.t1, e.t))).toFixed(1)}px" ` +
-        `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + e.text)}"></span>`).join("") + "</div></div>";
+        `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + msgText(e.text))}"></span>`).join("") + "</div></div>";
   }
   // time axis: first and last label on the edges, round server-local times in between
   const ticks = timeTicks(FULL.t0, FULL.t1, pw, 34);
@@ -1482,7 +1485,7 @@ function renderDetail(inc, host) {
     }
     evid.push(h + "</div>");
   }
-  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
+  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
   if ((inc.eventIncidents || []).length) evid.push(`<div><h4>Zeitgleiche Vorfälle aus Ereignissen</h4><ul class="plain">${inc.eventIncidents.map(incLink).join("")}</ul></div>`);
   if (inc.chronicContext.length) evid.push(`<div><h4>Dauerzustände im Hintergrund</h4><ul class="plain">${inc.chronicContext.map((c) => {
     const th = TH.get(c.signalId), st = STATUS[sevKey(c.severity)];
@@ -1579,7 +1582,7 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
   const days = BEFORE.perDay.map((d) => `<div class="day"><span class="dlabel">${esc(dayText(d.day))}</span><span class="dbar"><span class="dtrack" aria-hidden="true"><i style="width:${(d.count / max * 100).toFixed(1)}%"></i></span>${fmt(d.count, 0)}</span></div>`).join("");
   const nNear = BEFORE.nearCapture.length, nearStart = BEFORE.near.length - nNear;
   const near = !nearShown ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtDT(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` +
-    `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
+    `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
   const head = `<div class="cardhead"><h3>Vor der Messung</h3></div>
     <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>`;
   // partial: only the available logs were read; the page names both and never speaks for the logs that were not read
@@ -1702,7 +1705,7 @@ if (PRINT.drivers.length || PRINT.queues.length) {
       (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
     (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: Obergrenze erreicht für ${esc(logWords(BEFORE.capped))}.</p>` : "") +
     (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
-      `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || "ohne Meldung")}</li>`).join("")}</ul>` : "") +
+      `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
     `<div class="tablewrap small"><table id="tSources"></table></div>`;
   table("tSources", [
     { key: "label", head: "Quelle" },

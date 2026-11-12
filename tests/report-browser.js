@@ -516,6 +516,43 @@ async function checkMask(browser, dir, scheme) {                   // Maskierung
   await unk.page.close();
 }
 
+async function checkMaskedPersonen(browser, dir, scheme) {         // Maskierung: ein echter Bericht der Stufe Personen
+  const { page, D } = await open(browser, path.join(dir, 'report-masked-personen.html'), scheme);
+  ok(D.meta.mask === 'Personen' && (await page.locator('#maskInfo').innerText()).includes('Maskiert: Personen (Benutzer und Clients ersetzt)'), 'Personen: Stufe im Kopf');
+  const focus = await page.locator('#focusInfo').innerText();
+  ok(focus.includes('(Name entfernt)') && focus.includes('nicht gefunden') && !/schmidt|unbekannt|KLINIK/i.test(focus), 'Personen: unbekannter gemeldeter Benutzer ohne Namen: ' + focus);
+  const all = await page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent; });
+  ok(all.length > 10000 && !/user0\d\d|WS-\d{4}|schmidt|KLINIK/.test(all), 'Personen: keine Benutzer und Clients auf der Seite');
+  ok(all.includes('SIM-VDA01') && all.includes('Benutzer 01'), 'Personen: Server bleibt, Ersatznamen stehen');
+  // removed message texts say so, without a dangling colon
+  const titles = await page.locator('#timeline .event').evaluateAll((els) => els.map((e) => e.getAttribute('title')));
+  ok(titles.length > 0 && titles.every((t) => t.endsWith(': Meldung entfernt (maskiert)')), 'Personen: Ereignisse ohne Meldungstext sagen es');
+  ok(page.errors.length === 0, 'Skriptfehler Personen: ' + page.errors.join(' | '));
+  await page.close();
+  // the events in the window of a performance incident (the simulated hour has none there: one masked event is put in)
+  const win = await open(browser, patched(dir, 'report-masked-personen.html', 'report-mask-window.html', (J) => {
+    J.incidents.find((i) => i.lead === 'cpu').events = [J.events.find((e) => e.text === '')];
+  }), scheme);
+  const cpu = win.D.incidents.find((i) => i.lead === 'cpu');
+  await openIncident(win.page, cpu.id);
+  const li = await win.page.locator(`#incidents .incident[data-id="${cpu.id}"] .detail ul.plain li`).allInnerTexts();
+  ok(li.some((t) => t.endsWith(': Meldung entfernt (maskiert)')) && !li.some((t) => /:\s*$/.test(t)), 'Personen: Ereignisse im Fenster ohne leeren Doppelpunkt');
+  ok(win.page.errors.length === 0, 'Skriptfehler Ereignisse im Fenster: ' + win.page.errors.join(' | '));
+  await win.page.close();
+  // a capture that ended on an error and a failed source call, both with their message removed by the masking
+  const err = await open(browser, patched(dir, 'report-masked-personen.html', 'report-mask-errors.html', (J) => {
+    J.meta.endReason = 'error'; J.meta.endMessage = ''; J.quality.sourceErrors = [{ source: 'proc.info', label: 'Prozessdaten', count: 2, firstMs: null, firstMessage: '' }];
+  }), scheme);
+  ok((await err.page.locator('#subtitle').innerText()).includes('Aufzeichnung mit Fehler beendet: Meldung entfernt (maskiert)'), 'Personen: Endemeldung entfernt');
+  ok((await err.page.locator('#sourceErrors').evaluate((e) => e.textContent)).includes(': Meldung entfernt (maskiert)'), 'Personen: Fehlermeldung der Abfrage entfernt');
+  ok(err.page.errors.length === 0, 'Skriptfehler entfernte Meldungen: ' + err.page.errors.join(' | '));
+  await err.page.close();
+  const plain = await open(browser, path.join(dir, 'report.html'), scheme);
+  const plainText = await plain.page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent + [...b.querySelectorAll('[title]')].map((e) => e.title).join(' '); });
+  ok(!plainText.includes('Meldung entfernt'), 'unmaskiert: kein Hinweis auf entfernte Meldungen');
+  await plain.page.close();
+}
+
 async function checkMaskedPage(browser, dir, scheme) {             // Maskierung: der ganze Bericht bleibt bedienbar (ein Schema genuegt)
   const { page, D } = await open(browser, path.join(dir, 'report-masked.html'), scheme);
   ok(D.incidents.length > 0 && await page.locator('#incidents .incident').count() === D.incidents.length, 'maskiert: ein Eintrag je Vorfall');
@@ -555,7 +592,7 @@ async function checkMaskedPage(browser, dir, scheme) {             // Maskierung
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
     await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
-    await checkMask(browser, dir, scheme);
+    await checkMask(browser, dir, scheme); await checkMaskedPersonen(browser, dir, scheme);
   }
   await checkMaskedPage(browser, dir, 'light');
   console.log('browser checks passed: ' + checks);
