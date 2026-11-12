@@ -368,19 +368,36 @@ Describe 'Sitzung eines Ereignisses' {
                 @{ Index = 3; Sid = 7; User = 'user003'; FirstP = 2; LastP = 9 }
                 @{ Index = 4; Sid = 8; User = 'user004'; FirstP = -1; LastP = -1 }) }
         function Get-Ix([double]$Min, [int]$Sid, [string]$User = '') {
-            $e = New-Ev $Min -Sid $Sid -User $User -More @{ SessionIndex = 99 }; Set-WorkerPerfEventSessions -Events @($e) -Model $Model; '{0}|{1}' -f $e.SessionIndex, $e.User
+            $e = New-Ev $Min -Sid $Sid -User $User -More @{ SessionIndex = 99 }; Set-WorkerPerfEventSessions -Events @($e) -Model $Model -Config $Cfg; '{0}|{1}' -f $e.SessionIndex, $e.User
+        }
+        function Get-SessionUser([double]$Min, [int]$Sid, [string]$User = '') {
+            $e = New-Ev $Min -Sid $Sid -User $User; Set-WorkerPerfEventSessions -Events @($e) -Model $Model -Config $Cfg; $e.SessionUser
         }
     }
     It 'nimmt die Sitzung mit gleicher Nummer, die zur Zeit des Ereignisses lebte' {
         Get-Ix 2 5 | Should -Be '1|user001'; Get-Ix 7 5 | Should -Be '2|user002'; Get-Ix 3.5 5 | Should -Be '1|user001'; Get-Ix 4.5 5 | Should -Be '2|user002'
         Get-Ix 9.5 7 'user003' | Should -Be '3|user003'; Get-Ix -0.5 5 | Should -Be '1|user001'
+        Get-Ix 4 5 | Should -Be '-1|'                                     # genau beim Schnappschuss zwischen den beiden Sitzungen 5
     }
     It 'nimmt sonst die Sitzung desselben Benutzers, sonst keine' {
-        Get-Ix 1 -1 'USER003' | Should -Be '3|USER003'; Get-Ix 1 9 'user002' | Should -Be '2|user002'; Get-Ix -1000 5 'user002' | Should -Be '2|user002'
+        Get-Ix 2 -1 'USER003' | Should -Be '3|USER003'; Get-Ix 7 9 'user002' | Should -Be '2|user002'
         Get-Ix 30 5 | Should -Be '-1|'; Get-Ix -1000 5 | Should -Be '-1|'; Get-Ix 1 -1 'SYSTEM' | Should -Be '-1|SYSTEM'; Get-Ix 1 0 | Should -Be '-1|'
         Get-Ix 1 8 | Should -Be '-1|'; Get-Ix 1 -1 'user004' | Should -Be '-1|user004'
     }
-    It 'laesst den Benutzer eines Ereignisses stehen' { Get-Ix 2 5 'other' | Should -Be '1|other' }
+    It 'nimmt eine Sitzung desselben Benutzers nur, wenn sie zur Zeit des Ereignisses lebte' {
+        Get-Ix 1 -1 'user002' | Should -Be '-1|user002'; Get-Ix 1 9 'user002' | Should -Be '-1|user002'
+        Get-Ix -1000 5 'user002' | Should -Be '-1|user002'; Get-Ix -1000 -1 'user001' | Should -Be '-1|user001'
+    }
+    It 'gibt einem Ereignis der Sitzung 0 keine Sitzung, auch mit einem Benutzer' {
+        Get-Ix 7 0 'user002' | Should -Be '-1|user002'; Get-Ix 7 0 'user003' | Should -Be '-1|user003'
+    }
+    It 'nimmt ueber ein Systemkonto keine Sitzung desselben Namens' {
+        $Model.Sessions[3].User = 'SYSTEM'; try { Get-Ix 3 -1 'SYSTEM' | Should -Be '-1|SYSTEM' } finally { $Model.Sessions[3].User = 'user003' }
+    }
+    It 'laesst den Benutzer eines Ereignisses stehen und nennt den Besitzer der Sitzung' {
+        Get-Ix 2 5 'other' | Should -Be '1|other'; Get-Ix 2 5 'DWM-5' | Should -Be '1|DWM-5'
+        Get-SessionUser 2 5 'DWM-5' | Should -Be 'user001'; Get-SessionUser 30 5 'DWM-5' | Should -Be ''
+    }
 }
 Describe 'Ereignisvorfaelle der simulierten Stunde' {
     BeforeAll {
@@ -390,7 +407,7 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         $set = Read-WorkerPerfEventSettings (Join-Path $run 'thresholds.json')
         $build = {
             $ev = @($M.Events); $before = @($M.EventsBefore)
-            Set-WorkerPerfEventSessions -Events $ev -Model $M; Set-WorkerPerfEventSessions -Events $before -Model $M
+            Set-WorkerPerfEventSessions -Events $ev -Model $M -Config $Cfg; Set-WorkerPerfEventSessions -Events $before -Model $M -Config $Cfg
             $now = @(New-WorkerPerfEventIncidents -Events $ev -Config $Cfg -Settings $set -Drivers @($M.PrintDrivers) -FirstId 1)
             $now + @(New-WorkerPerfEventIncidents -Events $before -Config $Cfg -Settings $set -Drivers @($M.PrintDrivers) -FirstId ($now.Count + 1) -Before)
         }
@@ -406,10 +423,86 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
     It 'liefert bei zwei Laeufen dieselben Vorfaelle' {
         @($SimInc2 | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.Id, $_.Kind, $_.Key, $_.Count }) | Should -Be @($SimInc | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.Id, $_.Kind, $_.Key, $_.Count })
     }
+    It 'gibt den Vorfaellen vor der Messung keine Sitzung der Messung' {
+        $b = @($SimInc | Where-Object { $_.Before }); $b.Count | Should -Be 3
+        foreach ($i in $b) { @($i.Sessions).Count | Should -Be 0; @($i.Users).Count | Should -Be 1 }
+        foreach ($e in @($M.EventsBefore)) { $e.SessionIndex | Should -Be -1 }
+    }
     It 'ordnet die Abstuerze der Messzeit ihren Sitzungen zu' {
         foreach ($i in @($SimInc | Where-Object { $_.Kind -eq 'crash' -and -not $_.Before })) {
             @($i.Sessions).Count | Should -Be @($i.Users).Count
             foreach ($s in $i.Sessions) { @($i.Users) | Should -Contain $M.Sessions[$s].User }
         }
+    }
+}
+Describe 'Konten, die keine Person sind' {
+    It 'liest die Muster aus events.json' {
+        @($Cfg.NonPersonAccounts) | Should -Contain 'SYSTEM'; @($Cfg.NonPersonAccounts) | Should -Contain 'DWM-*'; @($Cfg.NonPersonAccounts) | Should -Contain '*$'
+        @($Cfg.NonPersonAccounts) | Should -Contain 'LOKALER DIENST'; @($Cfg.NonPersonAccounts) | Should -Contain 'ANONYMOUS-ANMELDUNG'
+    }
+    It 'erkennt Systemkonten mit und ohne Domaene' {
+        $ae = [string][char]0x00C4
+        foreach ($u in 'SYSTEM', 'system', 'NT AUTHORITY\SYSTEM', 'LOCAL SERVICE', 'Network Service', 'LOKALER DIENST', "NT-AUTORIT$($ae)T\NETZWERKDIENST", 'DWM-3', 'umfd-0',
+            'Window Manager\DWM-12', 'ANONYMOUS LOGON', 'ANONYMOUS-ANMELDUNG', 'HOST01$', 'CONTOSO\HOST01$', '') {
+            Test-WorkerPerfEventPersonUser $u $Cfg | Should -BeFalse -Because $u
+        }
+        foreach ($u in 'user002', 'CONTOSO\user002', 'svc_backup', 'DWM', 'systemadmin', 'a$b') { Test-WorkerPerfEventPersonUser $u $Cfg | Should -BeTrue -Because $u }
+    }
+    It 'weist ungueltige Muster mit dem Feldnamen ab' -TestCases @(
+        @{ List = '[""]' }; @{ List = '[5]' }; @{ List = '["A?"]' }; @{ List = '["NT AUTHORITY\\SYSTEM"]' }; @{ List = '["*"]' }; @{ List = '["[a]"]' }; @{ List = '["a``b"]' }
+    ) {
+        $f = Join-Path $TestDrive 'np.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}],"nonPersonAccounts":' + $List + '}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*Feld 'nonPersonAccounts'*"
+    }
+    It 'nennt den Besitzer der Sitzung statt eines Systemkontos' {
+        $dwm = (Get-Inc @(New-Ev 0 -App 'dwm.exe' -Sid 3 -User 'DWM-3' -More @{ SessionUser = 'user002' }))[0]
+        $dwm.Users | Should -Be @('user002'); $dwm.InSession | Should -BeTrue
+        $cs = (Get-Inc @(New-Ev 0 -App 'csrss.exe' -Sid 3 -User 'SYSTEM' -More @{ SessionUser = 'user002' }))[0]
+        $cs.Users | Should -Be @('user002'); $cs.InSession | Should -BeTrue; $cs.Severity | Should -Be 2
+        $own = (Get-Inc @(New-Ev 0 -Sid 3 -User 'other' -More @{ SessionUser = 'user002' }))[0]; $own.Users | Should -Be @('user002')
+        $none = (Get-Inc @(New-Ev 0 -App 'dwm.exe' -Sid 3 -User 'DWM-3'))[0]; @($none.Users).Count | Should -Be 0; $none.InSession | Should -BeTrue
+    }
+    It 'zaehlt ein Systemkonto ohne Sitzung nicht als Benutzersitzung' {
+        foreach ($u in 'DWM-3', 'LOKALER DIENST', 'HOST01$') { (Get-Inc @(New-Ev 0 -Sid -1 -User $u -More @{ SessionIndex = -1 })).Count | Should -Be 0 -Because $u }
+    }
+}
+Describe 'Ausfall der Druckwarteschlange' {
+    BeforeAll {
+        function New-Stop([double]$Min) { New-Ev $Min 'service' '' 0 '' '' @{ Service = 'Spooler'; Group = 'service'; Source = 'Service Control Manager'; EventId = 7034; Code = '' } }
+        function New-SpoolCrash([double]$Min) { New-Ev $Min -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll' }
+    }
+    It 'fuehrt Absturz und Dienstende zu einem Druckproblem zusammen' {
+        $i = Get-Inc @((New-SpoolCrash 0), (New-Stop 0.1))
+        $i.Count | Should -Be 1; $i[0].Kind | Should -Be 'print'; $i[0].Key | Should -Be 'Sim PCL 6'; $i[0].Count | Should -Be 2; $i[0].Group | Should -Be 'print'
+        @($i[0].Events | ForEach-Object { $_.Kind }) | Should -Be @('crash', 'service'); $i[0].Service | Should -Be 'Spooler'; $i[0].App | Should -Be 'spoolsv.exe'
+        $j = Get-Inc @((New-Stop 0), (New-SpoolCrash 20)); $j.Count | Should -Be 1; $j[0].Key | Should -Be 'Sim PCL 6'; $j[0].StartMs | Should -Be $T0
+    }
+    It 'laesst ein Dienstende allein oder fern vom Absturz ein eigenes Druckproblem' {
+        $a = Get-Inc @(New-Stop 0); $a.Count | Should -Be 1; $a[0].Kind | Should -Be 'print'; $a[0].Key | Should -Be 'Service Control Manager'; $a[0].Group | Should -Be 'print'
+        $b = Get-Inc @((New-SpoolCrash 0), (New-Stop 40)); @($b | ForEach-Object { $_.Key + ':' + $_.Count }) | Should -Be @('Sim PCL 6:1', 'Service Control Manager:1')
+        $c = Get-Inc @((New-Ev 0 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; Printer = 'PRN-1' }), (New-Stop 1))
+        @($c | ForEach-Object { $_.Key }) | Should -Be @('PRN-1', 'Service Control Manager')
+    }
+    It 'nimmt die Schreibweise der Treiberliste' {
+        $i = Get-Inc @((New-Ev 0 'print' '' 0 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; Driver = 'sim pcl 6' }), (New-SpoolCrash 1))
+        $i.Count | Should -Be 1; $i[0].Key | Should -BeExactly 'Sim PCL 6'; $i[0].Driver | Should -BeExactly 'Sim PCL 6'
+        (Get-Inc @(New-Ev 0 'print' '' 0 '' '' @{ Group = 'print'; Driver = 'Fremd X' }))[0].Driver | Should -BeExactly 'Fremd X'
+    }
+}
+Describe 'Gekuerzte Ereignisliste und Einstellungen' {
+    It 'behaelt die ersten 49 und das letzte Ereignis und vermerkt die Kuerzung' {
+        $i = (Get-Inc @(1..500 | ForEach-Object { New-Ev ($_ / 100) -Sid 0 -User '' -App 'dienst.exe' }))[0]
+        @($i.Events).Count | Should -Be 50; $i.EventsTruncated | Should -BeTrue
+        $i.Events[48].TimeMs | Should -Be ([long]($T0 + 0.49 * 60000)); $i.Events[49].TimeMs | Should -Be $i.EndMs
+        $s = (Get-Inc @(1..50 | ForEach-Object { New-Ev ($_ / 100) }))[0]; @($s.Events).Count | Should -Be 50; $s.EventsTruncated | Should -BeFalse
+    }
+    It 'nennt das Feld bei zu grossen Zahlen und Listen' -TestCases @(
+        @{ Block = '{"manyUsers":1e12}'; Name = 'manyUsers' }; @{ Block = '{"oneUserEvents":3000000000}'; Name = 'oneUserEvents' }
+        @{ Block = '{"eventGroupMinutes":[30]}'; Name = 'eventGroupMinutes' }; @{ Block = '{"resourceMinutes":[]}'; Name = 'resourceMinutes' }
+        @{ Block = '{"companionMinutes":[1,2]}'; Name = 'companionMinutes' }
+    ) {
+        $f = Join-Path $TestDrive 'big.json'; [IO.File]::WriteAllText($f, '{"thresholds":[],"events":' + $Block + '}')
+        { Read-WorkerPerfEventSettings $f } | Should -Throw "Schwellwert 'events': Feld '$Name'*"
     }
 }

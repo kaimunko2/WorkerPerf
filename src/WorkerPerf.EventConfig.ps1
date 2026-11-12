@@ -33,6 +33,18 @@ function Get-WorkerPerfEventStringList($Json, [string]$Name, [string]$Path) {
     return , $out.ToArray()
 }
 
+function Get-WorkerPerfEventAccountPatterns($Json, [string]$Path) {
+    # Account names that are never a person (service and virtual accounts, computer accounts). '*' is the only wildcard;
+    # a pattern names the account without its domain, because the domain is cut off before matching.
+    $list = Get-WorkerPerfEventStringList $Json 'nonPersonAccounts' $Path
+    foreach ($s in $list) {
+        if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '`')) -ge 0 -or $s.Trim('*').Length -eq 0) {
+            throw "events.json: Feld 'nonPersonAccounts' enthaelt ein ungueltiges Muster ('$s'): erlaubt sind Kontonamen ohne Domaene, '*' als einziger Platzhalter."
+        }
+    }
+    return , $list
+}
+
 function Read-WorkerPerfEventConfig([string]$Path) {
     $json = ConvertFrom-WorkerPerfJsonFile $Path
     $logs = [ordered]@{}
@@ -137,6 +149,7 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         SystemModules     = (Get-WorkerPerfEventStringList $json 'systemModules' $Path)
         PrintProcesses    = (Get-WorkerPerfEventStringList $json 'printProcesses' $Path)
         PrintServices     = (Get-WorkerPerfEventStringList $json 'printServices' $Path)
+        NonPersonAccounts = (Get-WorkerPerfEventAccountPatterns $json $Path)
         ErrorCodes        = $codes
         Index             = $index
     }
@@ -306,12 +319,17 @@ function Read-WorkerPerfEventSettings([string]$Path) {
     if ($null -ne $block -and $block -isnot [pscustomobject]) { throw "Schwellwert 'events': der Block muss ein Objekt sein (Datei '$Path')." }
     $out = @{}
     foreach ($f in $script:WorkerPerfEventSettingFields) {
-        $raw = Get-WorkerPerfField $block $f.Field
-        if ($null -eq $raw) { $out[$f.Name] = $f.Default; continue }
+        # read the property itself: a function result would unroll a one-element list into its element
+        $prop = $null
+        if ($null -ne $block) { $prop = $block.PSObject.Properties[$f.Field] }
+        if ($null -eq $prop -or $null -eq $prop.Value) { $out[$f.Name] = $f.Default; continue }
+        $raw = $prop.Value
+        if ($raw -is [System.Collections.IEnumerable] -and $raw -isnot [string]) { throw "Schwellwert 'events': Feld '$($f.Field)' ist keine Zahl ('Liste')." }
         $v = ConvertTo-WorkerPerfThresholdNumber $raw 'events' $f.Field
         if ($v -le 0) { throw "Schwellwert 'events': Feld '$($f.Field)' muss groesser als 0 sein ('$raw')." }
         if ($f.Whole) {
             if ($v -ne [Math]::Floor($v)) { throw "Schwellwert 'events': Feld '$($f.Field)' muss eine ganze Zahl sein ('$raw')." }
+            if ($v -gt [int]::MaxValue) { throw "Schwellwert 'events': Feld '$($f.Field)' ist zu gross ('$raw')." }
             $v = [int]$v
         }
         $out[$f.Name] = $v

@@ -44,6 +44,7 @@
   "importantServices": ["Spooler", "ctxProfile", "BrokerAgent", "CitrixPrintManagerService"],
   "printProcesses": ["spoolsv.exe", "PrintIsolationHost.exe"],
   "printServices": ["Spooler"],
+  "nonPersonAccounts": ["SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "LOKALER DIENST", "NETZWERKDIENST", "DWM-*", "UMFD-*", "ANONYMOUS LOGON", "ANONYMOUS-ANMELDUNG", "*$"],
   "systemModules": ["ntdll.dll", "KERNELBASE.dll", "kernel32.dll", "ucrtbase.dll", "msvcrt.dll", "combase.dll", "user32.dll", "clr.dll", "coreclr.dll"],
   "errorCodes": [
     { "code": "0xc0000005", "text": "Zugriffsverletzung" },
