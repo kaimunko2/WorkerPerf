@@ -161,7 +161,9 @@ Describe 'Simulation' {
     }
     It 'fuehrt die Ereignisprotokolle und Druckquellen als verfuegbar' {
         $cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json')
-        foreach ($id in @($cfg.Logs.Keys | ForEach-Object { 'events.' + $_ }) + @('print.drivers', 'print.queues')) {
+        # Aussage geaendert (M10): die Protokolle mit Eintraegen im Katalog
+        $Info.Sources.Contains('events.profileservice') | Should -BeFalse
+        foreach ($id in @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) + @('print.drivers', 'print.queues')) {
             $Info.Sources.Contains($id) | Should -BeTrue -Because $id; $Info.Sources[$id].Available | Should -BeTrue
         }
     }

@@ -389,7 +389,9 @@ Describe 'Ereignisdaten im Einzelnen' {
         $D.before.status | Should -Be 'read'
         # changed in fix round 2 (N2): a missing file has its own status, the sources of this capture were available
         (Get-ReportData $R.None).before.status | Should -Be 'missingFile'          # ohne events_before.csv
-        @($D.before.logs | ForEach-Object { $_.id }) | Should -Be @('application', 'system', 'printservice', 'smbclient', 'profileservice', 'defender', 'applocker')
+        # Aussage geaendert (M10): ein Protokoll ohne Eintraege im Katalog wird nicht gelesen und nicht genannt
+        @($D.before.logs | ForEach-Object { $_.id }) | Should -Be @('application', 'system', 'printservice', 'smbclient', 'defender', 'applocker')
+        @($D.quality.sources | Where-Object { $_.id -eq 'events.profileservice' }).Count | Should -Be 0
         @($D.before.logs | Where-Object { -not $_.available }).Count | Should -Be 0
         @($D.before.logs | Where-Object id -eq 'application')[0].label | Should -Be 'Ereignisprotokoll Anwendung' 
         function New-MetaVariant([string]$Name, [scriptblock]$Change, [switch]$HeaderOnly) {
@@ -402,13 +404,13 @@ Describe 'Ereignisdaten im Einzelnen' {
         }
         (New-MetaVariant 'lboff' { param($m) $m.EventLookbackDays = 0 }).status | Should -Be 'off'
         # the Windows source of today lists no lookback log apart from Defender and AppLocker and writes only the header line
-        $win = New-MetaVariant 'lbwin' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient', 'profileservice') { $m.Sources.PSObject.Properties.Remove("events.$id") } } -HeaderOnly
+        $win = New-MetaVariant 'lbwin' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient') { $m.Sources.PSObject.Properties.Remove("events.$id") } } -HeaderOnly
         $win.status | Should -Be 'unavailable'
         # read and empty: every lookback log listed and available, the file holds only its header line
         (New-MetaVariant 'lbempty' { param($m) } -HeaderOnly).status | Should -Be 'read'
         (New-MetaVariant 'lbfmt2' { param($m) $m.PSObject.Properties.Remove('EventLookbackDays') }).status | Should -Be 'notRecorded'
         # fix round 2 (N1): five lookback logs listed as not available, Defender and AppLocker available, header only
-        $part = New-MetaVariant 'lbpart' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient', 'profileservice') { $m.Sources."events.$id".Available = $false } } -HeaderOnly
+        $part = New-MetaVariant 'lbpart' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient') { $m.Sources."events.$id".Available = $false } } -HeaderOnly
         $part.status | Should -Be 'partial'
         @($part.logs | Where-Object available | ForEach-Object { $_.id }) | Should -Be @('defender', 'applocker')
         # the same with the lookback rows of the simulation: still partial, never read

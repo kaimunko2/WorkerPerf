@@ -75,7 +75,7 @@ function Reset-WinStandIns {
     Add-WinStandInEvent 'Application' 'Application Error' 1000 2 (-3) 'Name der fehlerhaften Anwendung: EXCEL.EXE, Version: 16.0.18129.20158' -Data $crash -Sid 'S-1-5-21-1000-2000-3000-1108'
     Add-WinStandInEvent 'Application' 'Citrix Profile Management' 1003 3 (-4) 'Sim-Warnung der Profilverwaltung' -Data @('a', 'b')
     Add-WinStandInEvent 'Application' 'Citrix Profile Management' 1000 4 (-4) 'Sim-Information der Profilverwaltung' -Data @('a')
-    Add-WinStandInEvent 'Application' 'Citrix Desktop Service' 1002 2 (-4) 'nicht im Katalog' -Data @('a')
+    Add-WinStandInEvent 'Application' 'Sim Sitzungsdienst' 1002 2 (-4) 'nicht im Katalog' -Data @('a')
     Add-WinStandInEvent 'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational' 'Microsoft-Windows-TerminalServices-LocalSessionManager' 21 4 (-10) `
         'Anmeldung erfolgreich' -UserData @{ User = 'KLINIK\mueller'; SessionID = '2'; Address = '10.0.0.1' }
     Add-WinStandInEvent 'System' 'Service Control Manager' 7034 2 (-3.5) 'Der Dienst wurde unerwartet beendet.' -Data @('Sim-Dienst', '1') -Binary 'Spooler' -Sid 'S-1-5-18'

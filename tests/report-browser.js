@@ -440,7 +440,7 @@ async function checkFix2(browser, dir, scheme) {                   // Task 9, Ko
     Object.assign(J.before, { eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [], status: 'partial', logs: partLogs(J) });
   }), scheme);
   let t = await bt(pe.page);
-  ok(t.includes('Gelesen: Ereignisprotokoll Microsoft Defender, Ereignisprotokolle AppLocker.') && t.includes('Nicht gelesen: Ereignisprotokoll Anwendung, Ereignisprotokoll System, Ereignisprotokoll Druckdienst, Ereignisprotokoll SMB-Client, Ereignisprotokoll Benutzerprofildienst.'), 'teilweiser Rueckblick nennt gelesene und nicht gelesene Protokolle: ' + t);
+  ok(t.includes('Gelesen: Ereignisprotokoll Microsoft Defender, Ereignisprotokolle AppLocker.') && t.includes('Nicht gelesen: Ereignisprotokoll Anwendung, Ereignisprotokoll System, Ereignisprotokoll Druckdienst, Ereignisprotokoll SMB-Client.'), 'teilweiser Rueckblick nennt gelesene und nicht gelesene Protokolle: ' + t);
   ok(t.includes('In den gelesenen Protokollen stehen für die 7 Tage vor der Messung keine Ereignisse der erfassten Arten.') && !t.includes('Arten in den Protokollen'), 'teilweiser Rueckblick ohne Ereignisse: keine Aussage ueber alle Protokolle');
   ok(pe.page.errors.length === 0, 'Skriptfehler teilweiser Rueckblick: ' + pe.page.errors.join(' | '));
   await pe.page.close();

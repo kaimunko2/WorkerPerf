@@ -369,8 +369,9 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $c.ProcessStart.Kind | Should -Be 'Utc'; [Math]::Abs(($c.ProcessStart - [datetime]::UtcNow.AddHours(-2)).TotalMinutes) | Should -BeLessThan 1
         $c.Text | Should -Be 'Name der fehlerhaften Anwendung: EXCEL.EXE, Version: 16.0.18129.20158'
         # die Profilverwaltung von Citrix nach Ebene: die Warnung, nicht die Information; Quellen ausserhalb des Katalogs nicht
-        $p = @($ev | Where-Object Source -eq 'Citrix Profile Management'); $p.Count | Should -Be 1; $p[0].EventId | Should -Be 1003; $p[0].Kind | Should -Be 'profileerror'
-        @($ev | Where-Object Source -eq 'Citrix Desktop Service').Count | Should -Be 0
+        # Aussage geaendert (P1-R36): die Warnung wird unter einer Art ohne Vorfall aufgezeichnet
+        $p = @($ev | Where-Object Source -eq 'Citrix Profile Management'); $p.Count | Should -Be 1; $p[0].EventId | Should -Be 1003; $p[0].Kind | Should -Be 'profile-warning'
+        @($ev | Where-Object Source -eq 'Sim Sitzungsdienst').Count | Should -Be 0                # M7: erfundene Quelle ausserhalb des Katalogs
         $svc = $ev | Where-Object Kind -eq 'service'; $svc.Service | Should -Be 'Spooler'; $svc.User | Should -Be 'SYSTEM'
         $pr = $ev | Where-Object Group -eq 'print'; $pr.Driver | Should -Be 'Sim PCL 6'; $pr.Kind | Should -Be 'driver-import'; $pr.User | Should -Be 'NT SERVICE\SimDienst'
         @($ev | ForEach-Object { $_.Time }) | Should -Be @($ev | ForEach-Object { $_.Time } | Sort-Object)
@@ -396,10 +397,10 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
         $script:WinFake.EventQueries = 0
         [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
-        $script:WinFake.EventQueries | Should -Be 9                                   # 8 Protokolle, AppLocker mit zwei Namen
+        $script:WinFake.EventQueries | Should -Be 8                                   # 7 Protokolle mit Eintraegen (M10: Aussage geaendert), AppLocker mit zwei Namen
         $script:WinFake.EventQueries = 0
         [void](Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now))
-        $script:WinFake.EventQueries | Should -Be 8                                   # ohne Sitzungsprotokoll
+        $script:WinFake.EventQueries | Should -Be 7                                   # ohne Sitzungsprotokoll (M10: Aussage geaendert, ohne das Protokoll ohne Eintraege)
     }
     It 'schreibt Quellennamen mit Hochkomma und Sonderzeichen richtig in die Abfrage' {
         $q = @{ LogName = 'Sim & Log'; Selects = @(@{ Provider = 'Sim "Dienst" <&>'; Ids = [int[]]@(1, 2); Levels = $null }, @{ Provider = 'Sim Ebene'; Ids = $null; Levels = [int[]]@(2, 3) }) }
@@ -448,7 +449,9 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
     }
     It 'nennt jedes Protokoll aus events.json in den Quellen' {
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
-        foreach ($id in @($Cfg.Logs.Keys)) {
+        # Aussage geaendert (M10): ein Protokoll ohne Eintraege wird nicht geoeffnet und nicht genannt
+        $info.Sources.Contains('events.profileservice') | Should -BeFalse
+        foreach ($id in @(@(Get-WorkerPerfEventReadLogs $Cfg) | ForEach-Object { $_.Id })) {
             $info.Sources.Contains("events.$id") | Should -BeTrue -Because $id; $info.Sources["events.$id"].Available | Should -BeTrue -Because $id
         }
         $info.Sources['events.applocker'].Detail | Should -Be 'Microsoft-Windows-AppLocker/EXE and DLL, Microsoft-Windows-AppLocker/MSI and Script'
@@ -548,7 +551,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
             $script:WorkerPerfWinLookbackBudgetSec = 0
             $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null
             @($b.Events).Count | Should -Be 0
-            @($b.Capped) | Should -Be @(@($Cfg.Logs.Values | Where-Object { $_.Lookback } | ForEach-Object { $_.Id }))
+            @($b.Capped) | Should -Be @(@(Get-WorkerPerfEventReadLogs $Cfg) | Where-Object { $_.Lookback } | ForEach-Object { $_.Id })
         }
         finally { $script:WorkerPerfWinLookbackBudgetSec = $keep }
     }
@@ -798,8 +801,10 @@ Describe 'Collector mit der Windows-Datenquelle und nachgestellten Windows-Aufru
         @($b | Where-Object Kind -eq 'crash').App | Should -Be @('EXCEL.EXE'); @($b | Where-Object Kind -eq 'crash').User | Should -Be @('mueller')
         @($b | Where-Object Group -eq 'session').Count | Should -Be 0
         @(Import-Csv (Join-Path $Run 'printqueues.csv')).Queue | Select-Object -Unique | Should -Be @('PRN-TEST-01')
-        foreach ($id in 'events.application', 'events.system', 'events.printservice', 'events.smbclient', 'events.profileservice', 'events.session', 'events.defender',
+        foreach ($id in 'events.application', 'events.system', 'events.printservice', 'events.smbclient', 'events.session', 'events.defender',
             'events.applocker', 'print.drivers', 'print.queues') { $Meta.Sources.$id.Available | Should -BeTrue -Because $id }
+        # Aussage geaendert (M10): ein Protokoll ohne Eintraege im Katalog wird nicht geoeffnet und nicht genannt
+        $Meta.Sources.PSObject.Properties.Name | Should -Not -Contain 'events.profileservice'
         @($Meta.LookbackCapped).Count | Should -Be 0
     }
 }

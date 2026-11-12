@@ -36,7 +36,9 @@ BeforeAll {
 Describe 'events.json' {
     It 'fuehrt jede Kennung zu Gruppe und Art' {
         foreach ($e in $Cfg.Entries) { foreach ($id in $e.ids) {
-            $r = Resolve-WorkerPerfEventEntry $Cfg $e.log $e.provider $id
+            # an entry with levels takes only an event of one of them (P1-R36)
+            $lv = $(if (@($e.levels).Count -gt 0) { @($e.levels)[0] } else { $null })
+            $r = Resolve-WorkerPerfEventEntry $Cfg $e.log $e.provider $id $lv
             $r.group | Should -Be $e.group; $r.kind | Should -Be $e.kind } }
         (Resolve-WorkerPerfEventEntry $Cfg 'application' 'application error' 1000).kind | Should -Be 'crash'
         Resolve-WorkerPerfEventEntry $Cfg 'application' 'Application Error' 1001 | Should -BeNullOrEmpty
@@ -46,7 +48,7 @@ Describe 'events.json' {
     It 'liest die Listen und die Namen der Protokolle' {
         @($Cfg.Logs['applocker'].Names).Count | Should -Be 2
         @($Cfg.ImportantServices) | Should -Contain 'Spooler'
-        @($Cfg.PrintServices) | Should -Be @('Spooler')
+        @($Cfg.PrintServices) | Should -Be @('Spooler', 'cpsvc')                       # Aussage geaendert (M1)
         @($Cfg.PrintProcesses) | Should -Contain 'spoolsv.exe'
         @($Cfg.SystemModules) | Should -Contain 'ntdll.dll'
         $Cfg.ErrorCodes['AppHangB1'] | Should -Not -BeNullOrEmpty
@@ -167,10 +169,10 @@ Describe 'Inhalt von events.json' {
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 600; Group = 'print'; Kind = 'driver-import'; Fields = 'driver=Driver' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 601; Group = 'print'; Kind = 'driver-import'; Fields = 'driver=Driver' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 215; Group = 'print'; Kind = 'print'; Fields = 'driver=DriverName' }
-        @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30800; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
+        # P1-R33: 30800 (Name nicht aufloesbar) ist kein Vorfall
+        @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30800; Group = 'fileserver'; Kind = 'name-resolution'; Fields = 'object=ServerName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30803; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30807; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
-        @{ Log = 'profileservice'; Provider = 'Microsoft-Windows-User Profiles Service'; Id = 1511; Group = 'profile'; Kind = 'profileerror'; Fields = '' }
         @{ Log = 'application'; Provider = 'Microsoft-Windows-User Profiles Service'; Id = 1533; Group = 'profile'; Kind = 'profileerror'; Fields = '' }
         @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 1000; Group = 'security'; Kind = 'scan-start'; Fields = '' }
         @{ Log = 'defender'; Provider = 'Microsoft-Windows-Windows Defender'; Id = 1001; Group = 'security'; Kind = 'scan-end'; Fields = '' }
@@ -179,7 +181,8 @@ Describe 'Inhalt von events.json' {
         @{ Log = 'applocker'; Provider = 'Microsoft-Windows-AppLocker'; Id = 8004; Group = 'security'; Kind = 'applocker-block'; Fields = '' }
         @{ Log = 'applocker'; Provider = 'Microsoft-Windows-AppLocker'; Id = 8007; Group = 'security'; Kind = 'applocker-block'; Fields = '' }
     ) {
-        $e = Resolve-WorkerPerfEventEntry $Cfg $Log $Provider $Id
+        # level 2 (error): every entry takes it (P1-R36 limits some entries to critical, error and warning)
+        $e = Resolve-WorkerPerfEventEntry $Cfg $Log $Provider $Id 2
         $e | Should -Not -BeNullOrEmpty
         $e.group | Should -Be $Group; $e.kind | Should -Be $Kind
         $actual = @($e.fields.Keys | Sort-Object | ForEach-Object {
@@ -189,13 +192,14 @@ Describe 'Inhalt von events.json' {
     }
     It 'hat genau die erwarteten Kennungen je Quelle' {
         $count = 0; foreach ($e in $Cfg.Entries) { $count += @($e.ids).Count }
-        $count | Should -Be 50                                                   # Aussage geaendert (Task 10, P1-R27): 600, 601, 215, 30800, 7023
+        $count | Should -Be 44                                                   # Aussage geaendert (Task 10, P1-R27): 600, 601, 215, 30800, 7023; M10: ohne die 6 Kennungen des Betriebsprotokolls
         (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 823) | Should -BeNullOrEmpty
         (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 318) | Should -BeNullOrEmpty
         (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 365) | Should -BeNullOrEmpty
-        @($Cfg.Entries | Where-Object { $_.allIds }).provider | Should -Be @('Citrix Profile Management')
-        @((Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 7), (Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 153)) | ForEach-Object { $_.ids -join ',' } | Select-Object -Unique | Should -Be '7,11,51,153'
-        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30805).ids -join ',' | Should -Be '30800,30803,30804,30805,30806,30807'
+        @($Cfg.Entries | Where-Object { $_.allIds }).provider | Should -Be @('Citrix Profile Management', 'Citrix Profile Management')   # P1-R36: Fehler und Warnungen
+        @((Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 7 2), (Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 153 2)) | ForEach-Object { $_.ids -join ',' } | Select-Object -Unique | Should -Be '7,11,51,153'
+        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30805 2).ids -join ',' | Should -Be '30803,30804,30805,30806,30807'   # P1-R33
+        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30800 2).ids -join ',' | Should -Be '30800'
         (Resolve-WorkerPerfEventEntry $Cfg 'applocker' 'Microsoft-Windows-AppLocker' 8004).ids -join ',' | Should -Be '8004,8007'
     }
     It 'findet nichts bei unbekannter Quelle oder falschem Protokoll' {
@@ -312,7 +316,8 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":[],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'ids'*levels*" }
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["Error"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*Error*" }
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["fatal"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*fatal*" }
-        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error"],"group":"profile","kind":"profileerror"},{"log":"a","provider":"x","ids":"*","levels":["warning"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 2 (x `*)*Feld 'ids'*doppelt*" }
+        # Aussage geaendert (P1-R36): zwei Eintraege "*" derselben Quelle sind erlaubt, solange sich ihre Ebenen nicht ueberschneiden
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error"],"group":"profile","kind":"profileerror"},{"log":"a","provider":"x","ids":"*","levels":["warning","error"],"group":"profile","kind":"profile-warning"}'; Msg = "*Eintrag 2 (x `*)*Feld 'ids'*doppelt*" }
         @{ Events = '{"log":"a","provider":"X","ids":"7","group":"app","kind":"crash"},{"log":"a","provider":"X","ids":[7],"group":"app","kind":"crash"}'; Msg = "*Eintrag 2 (X 7)*doppelte Kennung 7*" }
         @{ Events = '{"log":"a","provider":"X","ids":"alle","group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (X alle)*Feld 'ids'*keine ganze Zahl*" }
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error",3],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*kein Text*" }   # M3
@@ -322,10 +327,63 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
     }
     It 'liest die Profilverwaltung von Citrix nach Ebene' {
         (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 1003 2).group | Should -Be 'profile'
-        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 3).kind | Should -Be 'profileerror'
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 1003 2).kind | Should -Be 'profileerror'
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 1).kind | Should -Be 'profileerror'
+        # Aussage geaendert (P1-R36): eine Warnung wird nur aufgezeichnet, unter einer Art ohne Vorfall
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 3).kind | Should -Be 'profile-warning'
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 3).group | Should -Be 'profile'
         Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 4 | Should -BeNullOrEmpty
-        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Desktop Service' 1002 2 | Should -BeNullOrEmpty
-        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Telemetry Service' 1 2 | Should -BeNullOrEmpty
+        # M7: erfundene Quellen, die der Katalog nicht kennt
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Sim Sitzungsdienst' 1002 2 | Should -BeNullOrEmpty
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Sim Messdienst' 1 2 | Should -BeNullOrEmpty
+    }
+    It 'nimmt Speicher-, Speichermangel- und Dateiserver-Ereignisse nur ab der Ebene Warnung (P1-R36)' {
+        foreach ($k in @(@('system', 'Ntfs', 98), @('system', 'disk', 153), @('system', 'Microsoft-Windows-Resource-Exhaustion-Detector', 2004),
+                @('smbclient', 'Microsoft-Windows-SMBClient', 30806), @('smbclient', 'Microsoft-Windows-SMBClient', 30800))) {
+            foreach ($lv in 1, 2, 3) { Resolve-WorkerPerfEventEntry $Cfg $k[0] $k[1] $k[2] $lv | Should -Not -BeNullOrEmpty -Because "$($k[1]) $($k[2]) Ebene $lv" }
+            foreach ($lv in 0, 4, 5) { Resolve-WorkerPerfEventEntry $Cfg $k[0] $k[1] $k[2] $lv | Should -BeNullOrEmpty -Because "$($k[1]) $($k[2]) Ebene $lv" }
+        }
+    }
+    It 'zeichnet fehlgeschlagene Namensaufloesung und Warnungen der Profilverwaltung ohne Vorfall auf und nennt sie mit eigenem Wort (P1-R33, P1-R36)' {
+        Get-WorkerPerfEventIncidentKind @{ Kind = 'name-resolution'; Group = 'fileserver'; App = ''; Service = '' } $Cfg | Should -BeNullOrEmpty
+        Get-WorkerPerfEventIncidentKind @{ Kind = 'profile-warning'; Group = 'profile'; App = ''; Service = '' } $Cfg | Should -BeNullOrEmpty
+        $html = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/report-template.html'))
+        $html | Should -Match '"name-resolution": "Namensauflösung fehlgeschlagen"'
+        $html | Should -Match '"profile-warning": "Warnung der Profilverwaltung"'
+    }
+    It 'macht fehlgeschlagene Namensaufloesung und Warnungen der Profilverwaltung nicht zu Begleitern (P1-R33, P1-R36)' {
+        $nr = New-Ev 11 'name-resolution' '' -1 '' '' @{ Group = 'fileserver'; Source = 'Microsoft-Windows-SMBClient'; EventId = 30800; Object = '\altfs'; Code = ''; Module = '' }
+        $pw = New-Ev 11.5 'profile-warning' '' -1 'user003' '' @{ Group = 'profile'; Source = 'Citrix Profile Management'; EventId = 2001; Code = ''; Module = '' }
+        $i = Get-PatInc @((New-Ev 10), $nr, $pw)
+        $i.Count | Should -Be 1; @($i[0].Patterns | ForEach-Object { $_.Id }) | Should -Not -Contain 'companion'
+        $ab = New-Ev 11 'system' '' -1 '' '' @{ Group = 'fileserver'; Source = 'Microsoft-Windows-SMBClient'; EventId = 30803; Object = 'fs01'; Code = ''; Module = '' }
+        $j = @((Get-PatInc @((New-Ev 10), $nr, $ab)) | Where-Object { $_.Kind -eq 'crash' })
+        @($j[0].Companions | ForEach-Object { [int]$_.EventId }) | Should -Be @(30803)
+    }
+    It 'kennt den Druckverwaltungsdienst von Citrix unter seinem Kurznamen (M1)' {
+        @($Cfg.ImportantServices) | Should -Contain 'cpsvc'; @($Cfg.ImportantServices) | Should -Contain 'CitrixPrintManagerService'
+        @($Cfg.PrintServices) | Should -Contain 'cpsvc'
+        Get-WorkerPerfEventIncidentKind @{ Kind = 'service'; Service = 'cpsvc'; App = '' } $Cfg | Should -Be 'print'
+    }
+    It 'nennt im Katalog die Fehlercodes, die selbst Speichermangel sagen' {
+        @($Cfg.MemoryCodes) | Should -Be @('0xc0000017')
+        { Read-WorkerPerfEventConfig (New-Cfg '{"log":"a","provider":"X","ids":[1],"group":"app","kind":"crash"}],"errorCodes":[{"code":"0x1","text":"t","memory":"ja"}') } | Should -Throw "*Feld 'memory'*"
+    }
+    It 'fuehrt fuer das Betriebsprotokoll des Profildienstes keinen Eintrag (M10)' {
+        @($Cfg.Entries | Where-Object { $_.log -eq 'profileservice' }).Count | Should -Be 0
+        $Cfg.Logs.Contains('profileservice') | Should -BeTrue
+    }
+    It 'trennt Konten unter jeder Kultur am Backslash' {
+        $old = [cultureinfo]::CurrentCulture
+        try {
+            [cultureinfo]::CurrentCulture = [cultureinfo]'th-TH'
+            ConvertTo-WorkerPerfEventAccountName 'KLINIK\user005' $Cfg | Should -Be 'user005'
+            $x = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-TerminalServices-LocalSessionManager'/><EventID>21</EventID><Level>4</Level></System>" +
+                "<UserData><EventXML xmlns='Event_NS'><User>KLINIK\user005</User><SessionID>4</SessionID></EventXML></UserData></Event>"
+            $entry = Resolve-WorkerPerfEventEntry $Cfg 'session' 'Microsoft-Windows-TerminalServices-LocalSessionManager' 21 4
+            (ConvertTo-WorkerPerfEventRecord $entry (ConvertFrom-WorkerPerfEventXml $x) ([datetime]::Now) '').User | Should -Be 'user005'
+        }
+        finally { [cultureinfo]::CurrentCulture = $old }
     }
     It 'liest das Konto aus dem Systemteil' {
         $sys = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-User Profiles Service'/><EventID>1511</EventID><Level>3</Level>" +

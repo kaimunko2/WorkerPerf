@@ -501,6 +501,8 @@ $script:WorkerPerfPatternOrder = @('resource', 'afterhang', 'sharedmodule', 'pri
 # the patterns that need no measurement, for the events before the capture
 $script:WorkerPerfBeforePatterns = @('afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser', 'companion')
 $script:WorkerPerfCompanionGroups = @('storage', 'fileserver', 'profile', 'security')
+# kinds of those groups that are only recorded: no companion of an incident (P1-R33, P1-R36)
+$script:WorkerPerfNoCompanionKinds = @('name-resolution', 'profile-warning')
 $script:WorkerPerfResourceSignals = @('mem.used', 'mem.commit')
 $script:WorkerPerfCompanionLimit = 10
 
@@ -563,7 +565,7 @@ function Add-WorkerPerfEventPatterns {
         $group = [string]$e.Group
         if ($kind -eq 'hang') { $hangs.Add($e) }
         if ($group -eq 'memory') { $warnings.Add($e) }
-        if ($script:WorkerPerfCompanionGroups -contains $group) { $candidates.Add($e) }
+        if ($script:WorkerPerfCompanionGroups -contains $group -and $script:WorkerPerfNoCompanionKinds -notcontains $kind) { $candidates.Add($e) }
         if ($kind -eq 'crash' -and ([string]$e.Module).Length -gt 0) {
             $mk = ([string]$e.Module).ToLowerInvariant()
             if (-not $realModule.ContainsKey($mk)) { $realModule[$mk] = Test-WorkerPerfRealModule ([string]$e.Module) $Config }

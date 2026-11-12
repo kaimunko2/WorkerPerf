@@ -364,7 +364,7 @@ function Initialize-WorkerPerfSource {
 
     $sources = [ordered]@{}
     foreach ($id in $script:WorkerPerfSimSignalIds) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
-    $ids = @('process', 'sessions', 'input.process', 'profile.map') + @($cfg.Logs.Keys | ForEach-Object { 'events.' + $_ }) + @('print.drivers', 'print.queues')
+    $ids = @('process', 'sessions', 'input.process', 'profile.map') + @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) + @('print.drivers', 'print.queues')
     foreach ($id in $ids) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
     $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen'
     if ($NoCitrix) {

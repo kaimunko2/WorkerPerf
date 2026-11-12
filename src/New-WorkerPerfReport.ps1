@@ -991,7 +991,7 @@ foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$
 #   read         every lookback log is listed and available; the lookback may hold no events
 # A lookback that holds events is partial or read, by the same per-log rule (read when the Sources say nothing more).
 # logs: every log of events.json with a lookback, in its order, with the label of its source and whether it was read.
-$lookbackLogs = @($eventConfig.Logs.Values | Where-Object { $_.Lookback })
+$lookbackLogs = @(@(Get-WorkerPerfEventReadLogs $eventConfig) | Where-Object { $_.Lookback })
 $logsOut = New-Object System.Collections.Generic.List[object]
 $listedCount = 0
 foreach ($l in $lookbackLogs) {

@@ -4,7 +4,7 @@
 
 $script:WorkerPerfEventGroups = @('app', 'service', 'storage', 'memory', 'fileserver', 'profile', 'print', 'session', 'security')
 $script:WorkerPerfEventKinds = @('crash', 'hang', 'app-detail', 'service', 'print', 'profileerror', 'system', 'logon', 'logoff',
-    'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'driver-import', 'info')
+    'disconnect', 'reconnect', 'scan-start', 'scan-end', 'signature-update', 'applocker-block', 'driver-import', 'name-resolution', 'profile-warning', 'info')
 $script:WorkerPerfEventNumberKeys = @('pid', 'session')
 # The list nonPersonAccounts that src/events.json ships; used when a custom events.json has none.
 $script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'LOKALER DIENST', 'NETZWERKDIENST', 'DWM-*', 'UMFD-*',
@@ -100,6 +100,8 @@ function Read-WorkerPerfEventConfig([string]$Path) {
 
     $entries = New-Object System.Collections.Generic.List[object]
     $index = @{}
+    # the entries with "ids": "*" per log and provider ('<log>|<provider in lower case>'), in their order
+    $wild = @{}
     $n = 0
     foreach ($e in (Get-WorkerPerfJsonList $json 'events' $Path)) {
         $n++
@@ -167,21 +169,30 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             }
         }
         $keys = @($ids | ForEach-Object { "$log|$($provider.ToLowerInvariant())|$_" })
-        if ($allIds) { $keys = @("$log|$($provider.ToLowerInvariant())|*") }
+        $entry = [pscustomobject]@{ log = $log; provider = $provider; ids = $ids.ToArray(); allIds = $allIds; levels = $levels.ToArray(); group = $group; kind = $kind; fields = $fields }
+        if ($allIds) {
+            # several "*" entries of one log and provider are allowed when their levels do not overlap (errors of a
+            # provider form incidents, its warnings are only recorded)
+            $wkey = "$log|$($provider.ToLowerInvariant())"
+            if (-not $wild.ContainsKey($wkey)) { $wild[$wkey] = New-Object System.Collections.Generic.List[object] }
+            foreach ($other in $wild[$wkey]) {
+                foreach ($lv in $levels) { if (@($other.levels) -contains $lv) { throw "$where`: Feld 'ids' ist '*' fuer Protokoll und Quelle doppelt vorhanden (Ebenen ueberschneiden sich)." } }
+            }
+            $wild[$wkey].Add($entry)
+        }
         $seen = @{}
         foreach ($key in $keys) {
             if ($index.ContainsKey($key) -or $seen.ContainsKey($key)) {
-                if ($allIds) { throw "$where`: Feld 'ids' ist '*' fuer Protokoll und Quelle doppelt vorhanden." }
-                throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $($key.Substring($key.LastIndexOf('|') + 1)) fuer Protokoll und Quelle."
+                throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $($key.Substring($key.LastIndexOf([char]'|') + 1)) fuer Protokoll und Quelle."
             }
             $seen[$key] = $true
         }
-        $entry = [pscustomobject]@{ log = $log; provider = $provider; ids = $ids.ToArray(); allIds = $allIds; levels = $levels.ToArray(); group = $group; kind = $kind; fields = $fields }
         foreach ($key in $keys) { $index[$key] = $entry }
         $entries.Add($entry)
     }
 
     $codes = @{}
+    $memoryCodes = New-Object System.Collections.Generic.List[string]
     $n = 0
     $rawCodes = Get-WorkerPerfField $json 'errorCodes'
     if ($null -ne $rawCodes) {
@@ -194,6 +205,10 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             $codeKey = Format-WorkerPerfErrorCode $code
             if ($codes.ContainsKey($codeKey)) { throw "events.json: Fehlercode $n ($code): Feld 'code' ist doppelt vorhanden (gleich nach der Vereinheitlichung wie '$codeKey')." }
             $codes[$codeKey] = $text
+            # "memory": true marks a code that itself says the process ran out of memory
+            $mem = Get-WorkerPerfField $c 'memory'
+            if ($null -ne $mem -and $mem -isnot [bool]) { throw "events.json: Fehlercode $n ($code): Feld 'memory' muss true oder false sein." }
+            if ($true -eq $mem) { $memoryCodes.Add($codeKey) }
         }
     }
 
@@ -208,8 +223,18 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         NonPersonAccounts = (Get-WorkerPerfEventAccountPatterns $json $Path)
         NonPersonDomains  = (Get-WorkerPerfEventNamePatterns $json 'nonPersonDomains' $Path $script:WorkerPerfDefaultNonPersonDomains 'Domaenennamen')
         ErrorCodes        = $codes
+        MemoryCodes       = [string[]]$memoryCodes.ToArray()
         Index             = $index
+        Wildcards         = $wild
     }
+}
+
+function Get-WorkerPerfEventReadLogs($Config) {
+    # The logs of the catalogue that at least one entry reads, in their order: a log without entries is not opened and
+    # not listed among the sources (M10).
+    $used = @{}
+    foreach ($e in @($Config.Entries)) { $used[[string]$e.log] = $true }
+    foreach ($l in @($Config.Logs.Values)) { if ($used.ContainsKey([string]$l.Id)) { $l } }
 }
 
 function Get-WorkerPerfEventFieldReferences($Value, [string]$Where, [string]$Label) {
@@ -235,14 +260,18 @@ function Test-WorkerPerfEventEntryLevel($Entry, $Level) {
 }
 
 function Resolve-WorkerPerfEventEntry($Config, [string]$LogId, [string]$Provider, [int]$EventId, $Level = $null) {
-    # The catalogue entry of an event: by log, provider and id, else the entry with "ids": "*" of log and provider. An
-    # entry with levels takes the event only when its Level is one of them ($null: level unknown, no match); an id entry
-    # whose levels do not match leaves the event to the "*" entry.
+    # The catalogue entry of an event: by log, provider and id, else the entry with "ids": "*" of log and provider whose
+    # levels hold the event's Level. An entry with levels takes the event only when its Level is one of them ($null:
+    # level unknown, no match); an id entry whose levels do not match leaves the event to the "*" entries.
     $p = $Provider.ToLowerInvariant()
-    foreach ($key in "$LogId|$p|$EventId", "$LogId|$p|*") {
-        if (-not $Config.Index.ContainsKey($key)) { continue }
+    $key = "$LogId|$p|$EventId"
+    if ($Config.Index.ContainsKey($key)) {
         $entry = $Config.Index[$key]
         if (Test-WorkerPerfEventEntryLevel $entry $Level) { return $entry }
+    }
+    $wild = Get-WorkerPerfField $Config 'Wildcards'
+    if ($null -ne $wild -and $wild.ContainsKey("$LogId|$p")) {
+        foreach ($entry in $wild["$LogId|$p"]) { if (Test-WorkerPerfEventEntryLevel $entry $Level) { return $entry } }
     }
     return $null
 }
@@ -348,7 +377,7 @@ function ConvertTo-WorkerPerfEventAccountName([string]$Account, $Config) {
     # never taken for a person.
     if ([string]::IsNullOrEmpty($Account)) { return '' }
     $a = $Account.Trim()
-    $cut = $a.LastIndexOf('\')
+    $cut = $a.LastIndexOf([char]'\')
     if ($cut -lt 0) { return $a }
     $domain = $a.Substring(0, $cut)
     $domains = Get-WorkerPerfField $Config 'NonPersonDomains'
@@ -409,7 +438,7 @@ function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [stri
         return 'decimal'
     }
     $user = & $get 'user'
-    $slash = $user.LastIndexOf('\')
+    $slash = $user.LastIndexOf([char]'\')
     if ($slash -ge 0) { $user = $user.Substring($slash + 1) }
     return [pscustomobject]@{
         Time          = $Time

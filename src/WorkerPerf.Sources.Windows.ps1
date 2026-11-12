@@ -1461,10 +1461,10 @@ function Initialize-WorkerPerfSource {
     }
     catch { $sources['profile.map'] = @{ Available = $false; Detail = ('MSFT_Disk nicht lesbar: {0}' -f $_.Exception.Message) } }
 
-    # ---- event logs: every log of the catalogue, available or not ----
+    # ---- event logs: every log of the catalogue that an entry reads, available or not ----
     if ($null -eq $EventConfig) { $EventConfig = Read-WorkerPerfEventConfig $script:WorkerPerfWinEventFile }
     $state.EventConfig = $EventConfig
-    foreach ($l in @($EventConfig.Logs.Values)) {
+    foreach ($l in @(Get-WorkerPerfEventReadLogs $EventConfig)) {
         $readable = New-Object System.Collections.Generic.List[string]
         foreach ($name in @($l.Names)) {
             try {
