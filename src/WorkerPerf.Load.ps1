@@ -8,12 +8,18 @@ function Open-WorkerPerfCsvReader {
     # Returns @{ Col = column name -> index; Need = number of columns of the format; Reader = StreamReader, or $null for a
     # missing file }. The caller disposes Reader: it calls this as the first statement inside its try and disposes in finally. Callers split each non-empty line with Split(',') when it holds no quote,
     # else with Split-WorkerPerfCsvLine, and skip rows with fewer than Need fields (as Read-WorkerPerfCsvFile does).
-    param([string]$Path, [string]$FileName)
+    # -OwnHeader: Col holds only the columns of the file's own header and Need is its width, for a file whose columns
+    # differ between formats (events.csv of format 2 has 5, of format 3 has 20); a missing file then has no columns.
+    param([string]$Path, [string]$FileName, [switch]$OwnHeader)
     $col = @{}
-    $canon = $script:WorkerPerfHeaders[$FileName].Split(',')
-    for ($i = 0; $i -lt $canon.Length; $i++) { $col[$canon[$i]] = $i }
+    $need = 0
+    if (-not $OwnHeader) {
+        $canon = $script:WorkerPerfHeaders[$FileName].Split(',')
+        for ($i = 0; $i -lt $canon.Length; $i++) { $col[$canon[$i]] = $i }
+        $need = $canon.Length
+    }
     $full = Join-Path $Path $FileName
-    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Need = $canon.Length; Reader = $null } }
+    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Need = $need; Reader = $null } }
     $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = $null
     try {
@@ -22,6 +28,7 @@ function Open-WorkerPerfCsvReader {
         if ($null -ne $header -and $header.Length -gt 0) {
             $names = $header.Split(',')
             for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
+            if ($OwnHeader) { $need = $names.Length }
         }
     }
     catch {
@@ -29,18 +36,19 @@ function Open-WorkerPerfCsvReader {
         if ($null -ne $reader) { $reader.Dispose() } else { $stream.Dispose() }
         throw
     }
-    return @{ Col = $col; Need = $canon.Length; Reader = $reader }
+    return @{ Col = $col; Need = $need; Reader = $reader }
 }
 
 function Read-WorkerPerfCsvFile {
     # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]]; Skipped = number of rows left out }.
     # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped (and counted).
-    param([string]$Path, [string]$FileName)
+    # -OwnHeader: by the file's own header (see Open-WorkerPerfCsvReader).
+    param([string]$Path, [string]$FileName, [switch]$OwnHeader)
     $rows = New-Object System.Collections.Generic.List[string[]]
     $skipped = 0
     $reader = $null
     try {
-        $csv = Open-WorkerPerfCsvReader $Path $FileName
+        $csv = Open-WorkerPerfCsvReader $Path $FileName -OwnHeader:$OwnHeader
         $reader = $csv.Reader; $need = $csv.Need
         while ($null -ne $reader -and $null -ne ($line = $reader.ReadLine())) {
             if ($line.Length -eq 0) { continue }
@@ -767,10 +775,11 @@ function Import-WorkerPerfRun {
     }
 
     # format 2 or 3, by time and then by position in the file (see Read-WorkerPerfEventCsv)
-    $sortedEvents = @(Read-WorkerPerfEventCsv $Path 'events.csv')
-    $eventsBefore = @(Read-WorkerPerfEventCsv $Path 'events_before.csv')
-    $printDrivers = @(Read-WorkerPerfPrintDrivers $Path)
-    $printQueues = @(Read-WorkerPerfPrintQueues $Path $fromMs $toMs)
+    $skipEvents = 0; $skipBefore = 0; $skipDrivers = 0; $skipQueues = 0
+    $sortedEvents = @(Read-WorkerPerfEventCsv $Path 'events.csv' ([ref]$skipEvents))
+    $eventsBefore = @(Read-WorkerPerfEventCsv $Path 'events_before.csv' ([ref]$skipBefore))
+    $printDrivers = @(Read-WorkerPerfPrintDrivers $Path ([ref]$skipDrivers))
+    $printQueues = @(Read-WorkerPerfPrintQueues $Path $fromMs $toMs ([ref]$skipQueues))
     $events = New-Object System.Collections.Generic.List[object]
     foreach ($e in $sortedEvents) { if ($e.TimeMs -ge $fromMs -and $e.TimeMs -le $toMs) { $events.Add($e) } }
     # scans: paired scan-start / scan-end over the whole file; an open scan lasts until the end of the measurement
@@ -1149,7 +1158,7 @@ function Import-WorkerPerfRun {
         Pairs = $pairs
         Rows = @{ Start = $rowStart; K = $rowK.ToArray(); CpuMs = $rowCpu.ToArray(); Io = $rowIo.ToArray(); WsKB = $rowWs.ToArray() }
         Carried = @{ K = $carriedK.ToArray(); WsKB = $carriedWs.ToArray() }
-        Unreadable = @{ Ticks = $badTicks; Snapshots = $badSnaps }
+        Unreadable = @{ Ticks = $badTicks; Snapshots = $badSnaps; Events = $skipEvents; EventsBefore = $skipBefore; PrintDrivers = $skipDrivers; PrintQueues = $skipQueues }
         SourceErrors = $sourceErrors.ToArray()
         TotalCpuMs = $totalCpuMs
         MainApp = $mainApp

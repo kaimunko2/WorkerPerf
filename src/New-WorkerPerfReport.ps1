@@ -410,7 +410,9 @@ $quality = [ordered]@{
     burstSec = $burstSec; burstSnapshots = $burstSnapshots; burstSnapSec = $burstSnapSec
     burstTicks = $burstTicks; burstMin = [Math]::Round($burstTickSec / 60.0, 2)
     collectorCpuPct = $collectorPct; collectorCpuMaxPct = (Get-Round $collectorMax 2)
-    unreadable = [ordered]@{ ticks = [int]$model.Unreadable.Ticks; snapshots = [int]$model.Unreadable.Snapshots }
+    unreadable = [ordered]@{ ticks = [int]$model.Unreadable.Ticks; snapshots = [int]$model.Unreadable.Snapshots
+        events = [int]$model.Unreadable.Events; eventsBefore = [int]$model.Unreadable.EventsBefore
+        printDrivers = [int]$model.Unreadable.PrintDrivers; printQueues = [int]$model.Unreadable.PrintQueues }
     sourceErrors = $sourceErrorsOut.ToArray()
     sources = $sourcesOut.ToArray()
 }

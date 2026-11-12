@@ -51,7 +51,12 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         $ev.Source | Should -Be @('Microsoft-Windows-Windows Defender', 'Microsoft-Windows-Windows Defender', 'Microsoft-Windows-AppLocker')
     }
     It 'liest ohne Rueckblick nichts vor dem Start' {                                                 # Review Focus 3
-        $run = (& (Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1') -Simulate -DurationMinutes 60 -EventLookbackDays 0 -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
+        # eine Quelle, deren Rueckblick ein Ereignis liefern wuerde (Fix-Runde 1, Minor 11)
+        $capture = New-PatchedSource (Join-Path $TestDrive 'srcnolb') @'
+function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
+    @{ Events = @([pscustomobject]@{ Time = $Until.AddMinutes(-5); Log = 'system'; Source = 'Sim'; EventId = 7031; Kind = 'service'; Text = 'vorher' }); Capped = @() } }
+'@
+        $run = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
         @(Get-Content (Join-Path $run 'events_before.csv')).Count | Should -Be 1
         (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EventLookbackDays | Should -Be 0
     }
@@ -120,14 +125,22 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
 }
 Describe 'Rueckblick, Ereignisse der Messzeit und Drucken' {                       # Review Focus 3 und 4
     BeforeAll {
-        # Eine nachlaessige Quelle: der Rueckblick liefert auch Ereignisse nach dem Start, die Messzeit liest sie ab dem Start.
-        # Ereignisse bei -3600 s, -1 s, 0 s (genau der Start), +1 s und +30 s; bei +30 s zusaetzlich ein Absturz eines
-        # Prozesses aus dem Schnappschuss und einer, dessen PID in keinem Schnappschuss vorkommt.
+        # Eine nachlaessige Quelle: der Rueckblick liefert auch Ereignisse nach dem Start, die Messzeit liest einschliesslich
+        # Since und ohne obere Grenze. Ereignisse bei -3600 s, -1 s, 0 s (genau der Start), +1 s, +30 s und +77 s (genau
+        # die Grenze zwischen dem ersten und zweiten regulaeren Abruf: Takt 16 s nach dem verschobenen Beginn); bei +30 s zusaetzlich ein Absturz eines laufenden
+        # Prozesses und einer, dessen PID in keinem Schnappschuss vorkommt; Abstuerze eines Prozesses 0, 1 und 14 s nach
+        # seinem Ende. Der Rueckblick dauert 61 s Serverzeit (Fix-Runde 1, Important 2); die Warteschlangen brauchen bei
+        # 361 s und die Ereignisse bei 391 s 300 ms (Spec 4.4: zaehlt zur Messdauer des Schnappschusses).
         $capture = New-PatchedSource (Join-Path $TestDrive 'srclb') @'
 function Get-TestEvents {
     $p = @($script:WorkerPerfSimProcs | Where-Object { $_.SessionId -gt 1 -and $_.CreatedSec -lt 0 -and $_.EndSec -gt 3600 })[0]
     $script:TestPid = $p.Pid; $script:TestSid = $p.SessionId
-    foreach ($sec in -3600, -1, 0, 1, 30) {
+    $gone = @($script:WorkerPerfSimProcs | Where-Object { $_.SessionId -gt 1 -and $_.EndSec -gt 300 -and $_.EndSec -lt 3000 })[0]
+    foreach ($d in 0, 1, 14) {
+        [pscustomobject]@{ Time = $script:WorkerPerfSimStart.AddSeconds($gone.EndSec + $d); Log = 'application'; Source = 'Application Error'; EventId = 1000; Level = 2; Group = 'app'; Kind = 'crash'
+            App = $gone.Name; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $gone.Pid; SessionId = $null; User = ''; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = "end$d|$($gone.SessionId)" }
+    }
+    foreach ($sec in -3600, -1, 0, 1, 30, 77) {
         [pscustomobject]@{ Time = $script:WorkerPerfSimStart.AddSeconds($sec); Log = 'system'; Source = 'Sim'; EventId = 7031; Level = 2; Group = 'service'; Kind = 'service'
             App = ''; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $null; SessionId = $null; User = ''; Printer = ''; Driver = ''; Service = 'Spooler'; Object = ''; Text = "t$sec" }
     }
@@ -136,12 +149,20 @@ function Get-TestEvents {
             App = 'x.exe'; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $x[0]; SessionId = $null; User = ''; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = $x[1] }
     }
 }
+# wie unter Windows: das Warten stellt die Uhr nicht zurueck
+$script:TestWait = ${function:Wait-WorkerPerfTick}
+function Wait-WorkerPerfTick { param([datetime]$Until, [string]$StopFlagPath)
+    if ($Until -gt $script:WorkerPerfSimNow) { & $script:TestWait -Until $Until -StopFlagPath $StopFlagPath } else { & $script:TestWait -Until $script:WorkerPerfSimNow -StopFlagPath $StopFlagPath } }
 function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
-    $script:TestBeforeArgs = @($Days, $Until); @{ Events = @(Get-TestEvents); Capped = @('system') } }
+    $script:WorkerPerfSimNow = $script:WorkerPerfSimNow.AddSeconds(61)
+    @{ Events = @(Get-TestEvents); Capped = @('system') } }
 function Get-WorkerPerfEvents { param([datetime]$Since)
-    foreach ($e in @(Get-TestEvents)) { if ($e.Time -gt $Since -and $e.Time -le $script:WorkerPerfSimNow) { $e } } }
+    if ((Get-WorkerPerfSimElapsed) -eq 391) { Start-Sleep -Milliseconds 300 }
+    foreach ($e in @(Get-TestEvents)) { if ($e.Time -ge $Since) { $e } } }
 function Get-WorkerPerfPrintDrivers { [pscustomobject]@{ Name = 'Sim PCL 6'; Manufacturer = 'Sim'; Version = '1.0'; Type = 3; Isolation = 'shared'; Files = @('a.dll', 'b.dll') } }
-function Get-WorkerPerfPrintQueues { [pscustomobject]@{ Queue = 'Drucker 1'; Jobs = 1; JobErrors = 2; NotReadyErrors = 3 } }
+function Get-WorkerPerfPrintQueues {
+    if ((Get-WorkerPerfSimElapsed) -eq 361) { Start-Sleep -Milliseconds 300 }
+    [pscustomobject]@{ Queue = 'Drucker 1'; Jobs = 1; JobErrors = 2; NotReadyErrors = 3 } }
 '@
         $script:LbRun = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 3 -OutputPath (Join-Path $TestDrive 'lb') 6>$null) | Select-Object -Last 1
         $script:LbMeta = Get-Content (Join-Path $LbRun 'meta.json') -Raw | ConvertFrom-Json
@@ -150,13 +171,34 @@ function Get-WorkerPerfPrintQueues { [pscustomobject]@{ Queue = 'Drucker 1'; Job
     }
     It 'zaehlt jedes Ereignis genau einmal; der Rueckblick haelt nur Ereignisse bis zum Start' {
         $LbBefore.Text | Should -Be @('t-3600', 't-1', 't0')
-        @($LbEvents | Where-Object Kind -eq 'service').Text | Should -Be @('t1', 't30')
+        @($LbEvents | Where-Object Kind -eq 'service').Text | Should -Be @('t1', 't30', 't77')
         # ConvertFrom-Json liefert Zeiten je nach PowerShell-Version als DateTime oder als Text
         $start = $(if ($LbMeta.StartTime -is [datetime]) { [DateTimeOffset]$LbMeta.StartTime } else { [DateTimeOffset]::Parse($LbMeta.StartTime, [cultureinfo]::InvariantCulture) })
         $firstTick = [DateTimeOffset]::Parse((Get-Content (Join-Path $LbRun 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture)
         foreach ($b in $LbBefore) {
             $t = [DateTimeOffset]::Parse($b.Timestamp, [cultureinfo]::InvariantCulture)
             $t | Should -BeLessOrEqual $start; $t | Should -BeLessThan $firstTick
+        }
+    }
+    It 'beginnt den Takt nach einem langsamen Rueckblick ohne ausgelassene Takte' {             # Fix-Runde 1, Important 2
+        $LbMeta.SkippedTicks | Should -Be 0; $LbMeta.Ticks | Should -Be 1800; $LbMeta.EndReason | Should -Be 'duration'
+        $lbSnaps = @(Import-Csv (Join-Path $LbRun 'snapshots.csv'))
+        $lbSnaps[0].Kind | Should -Be 'K'; $lbSnaps[0].ElapsedSec | Should -Be $Snaps[0].ElapsedSec       # der erste regulaere Takt wie ohne Verzoegerung
+        $lbSnaps[0].ElapsedSec | Should -Be '16'; @($lbSnaps | Where-Object Kind -in 'R', 'K').Count | Should -Be 240
+    }
+    It 'findet die Sitzung eines Prozesses, der vor seinem Absturzereignis endete (0, 1, 14 s)' {    # Fix-Runde 1, Important 1
+        $ended = @($LbEvents | Where-Object { $_.Text -like 'end*' }); $ended.Count | Should -Be 3
+        foreach ($e in $ended) {
+            $sid = [int]$e.Text.Split('|')[1]
+            [int]$e.SessionId | Should -Be $sid -Because $e.Text; $e.User | Should -Be ('user{0:d3}' -f ($sid - 1))
+        }
+    }
+    It 'zaehlt das Lesen der Ereignisse und Warteschlangen zur Messdauer des Schnappschusses' {   # Fix-Runde 1, Spec 4.4
+        $start = $(if ($LbMeta.StartTime -is [datetime]) { [DateTimeOffset]$LbMeta.StartTime } else { [DateTimeOffset]::Parse($LbMeta.StartTime, [cultureinfo]::InvariantCulture) })
+        $snaps = @(Import-Csv (Join-Path $LbRun 'snapshots.csv'))
+        foreach ($sec in 361, 391) {
+            $row = @($snaps | Where-Object { $_.Kind -ne 'B' -and [Math]::Round(([DateTimeOffset]::Parse($_.Timestamp, [cultureinfo]::InvariantCulture) - $start).TotalSeconds) -eq $sec })
+            $row.Count | Should -Be 1 -Because $sec; [double]$row[0].CollectMs | Should -BeGreaterOrEqual 300 -Because $sec
         }
     }
     It 'vermerkt Tage und unvollstaendige Protokolle in meta.json' {

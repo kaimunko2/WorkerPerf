@@ -236,14 +236,12 @@ try {
     [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json'))
     Save-Meta
 
-    # Lookback up to the start: events after the start belong to the measurement (Get-WorkerPerfEvents reads from
-    # Since = start on), so a source that returns later ones does not count them twice.
+    # Lookback up to the start: events after the start belong to the measurement (its reads begin after the start),
+    # so a source that returns later ones does not count them twice. Compared in UTC.
     if ($EventLookbackDays -gt 0) {
         try {
             $before = Get-WorkerPerfEventsBefore -Days $EventLookbackDays -Until $startTime
-            foreach ($ev in @($before.Events)) {
-                $evTime = Get-WorkerPerfField $ev 'Time'
-                if (-not ($evTime -is [datetime]) -or $evTime -gt $startTime) { continue }
+            foreach ($ev in @(Select-WorkerPerfEventsInWindow -Events @($before.Events) -Until $startTime)) {
                 $wEventsBefore.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
             }
             $meta.LookbackCapped = @(@($before.Capped) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
@@ -255,6 +253,9 @@ try {
     try { foreach ($d in @(Get-WorkerPerfPrintDrivers)) { if ($null -ne $d) { $wDrivers.WriteLine((ConvertTo-WorkerPerfPrintDriverRow $d)) } } }
     catch { Register-SourceError 'printdrivers' $_ }
     $wDrivers.Flush()
+    # The schedule starts after the start reads, so a slow lookback skips no tick and shortens no measurement; the
+    # event cursor stays at the start time, so no event between the two is lost.
+    $scheduleStart = Get-WorkerPerfNow
 
     # Baseline: one fast sample to establish the cumulative counters, one snapshot to book every process.
     $prevSample = Get-WorkerPerfFastSample
@@ -264,8 +265,13 @@ try {
     [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
             -IncludeCommandLine:$IncludeCommandLine)
     $prevSnapTime = [datetime]$base.Time
-    # the last snapshot that succeeded: the session of an event is found through its process id there
+    # The session of an event is found through its process id: in the processes of the recent snapshots (a crashed
+    # process is gone from the snapshot after its crash), and the user in the last snapshot that succeeded.
     $lastSnap = $base
+    $procMemory = New-WorkerPerfProcessMemory -KeepSeconds ([Math]::Max(600, 3 * $IntervalSeconds))
+    Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($base.Processes) -Time ([datetime]$base.Time)
+    # an event is logged at most one regular interval after the last snapshot that saw its process (plus slack)
+    $eventGapSeconds = 2 * $IntervalSeconds + 5
 
     # Scheduling and durations are computed in UTC, so a step of the local clock (end of daylight saving time) neither
     # stalls the capture nor distorts ElapsedSec. The source keeps its own local times: they go to the files, to
@@ -273,7 +279,7 @@ try {
     $prevSampleUtc = ConvertTo-WorkerPerfUtc ([datetime]$prevSample.Time)
     $prevSnapUtc = ConvertTo-WorkerPerfUtc $prevSnapTime
     $lastSnapTryUtc = $prevSnapUtc
-    $startUtc = ConvertTo-WorkerPerfUtc $startTime
+    $startUtc = ConvertTo-WorkerPerfUtc $scheduleStart
     $burstState = New-WorkerPerfBurstState
     $endAt = $(if ($DurationMinutes -gt 0) { $startUtc.AddMinutes($DurationMinutes) } else { [datetime]::MaxValue })
     $scheduled = $startUtc.AddSeconds($FastIntervalSeconds)
@@ -281,6 +287,28 @@ try {
     $lastEvents = $startTime
     $probeT = 0
     $sw = New-Object System.Diagnostics.Stopwatch
+
+    # The reads of the regular slot besides the snapshot: events since the cursor and the print queue counters. Run
+    # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
+    $readSlot = {
+        $eventsUntil = Get-WorkerPerfNow
+        try {
+            $newEvents = @(Select-WorkerPerfEventsInWindow -Events @(Get-WorkerPerfEvents -Since $lastEvents) -After $lastEvents -Until $eventsUntil)
+            if ($newEvents.Count -gt 0) {
+                foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes @(Get-WorkerPerfProcessMemoryEntries $procMemory) `
+                            -Sessions @($lastSnap.Sessions) -MaxGapSeconds $eventGapSeconds)) {
+                    $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
+                }
+            }
+            $lastEvents = $eventsUntil
+        }
+        catch { Register-SourceError 'events' $_ }
+        try {
+            $queueTime = Get-WorkerPerfNow
+            foreach ($q in @(Get-WorkerPerfPrintQueues)) { if ($null -ne $q) { $wQueues.WriteLine((ConvertTo-WorkerPerfPrintQueueRow $q $queueTime)) } }
+        }
+        catch { Register-SourceError 'printqueues' $_ }
+    }
 
     while ($true) {
         if ($scheduled -gt $endAt) { $endReason = 'duration'; break }
@@ -360,6 +388,9 @@ try {
 
                     $snapTime = [datetime]$snap.Time
                     $snapUtc = $snapTime.ToUniversalTime()
+                    $lastSnap = $snap
+                    Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($snap.Processes) -Time $snapTime
+                    if ($regular) { . $readSlot }
                     $sw.Stop()
                     $wSnaps.WriteLine([string]::Concat($P, ',', $T, ',', $snapTime.ToString('o', $inv), ',', (Format-WorkerPerfNumber ($snapUtc - $prevSnapUtc).TotalSeconds 3), ',',
                             $kind, ',', $userSessions, ',', $activeSessions, ',', $res.Total, ',', $res.Rows.Count, ',', (Format-WorkerPerfNumber $sw.Elapsed.TotalMilliseconds 0)))
@@ -367,28 +398,13 @@ try {
                     $prevSnapUtc = $snapUtc
                     $snapCount++
                     if ($regular) { $regularCount++ }
-                    $lastSnap = $snap
                 }
 
                 if ($regular) {
-                    # probes and events belong to the regular slot, with or without its snapshot
+                    # probes, events and print queues belong to the regular slot, with or without its snapshot (with it,
+                    # the events and queues were read above, inside its measured duration)
+                    if ($null -eq $snap) { . $readSlot }
                     try { Start-WorkerPerfProbes; $probeT = $T } catch { Register-SourceError 'probes' $_ }
-                    $eventsUntil = Get-WorkerPerfNow
-                    try {
-                        $newEvents = @(Get-WorkerPerfEvents -Since $lastEvents | Where-Object { $null -ne $_ })
-                        if ($newEvents.Count -gt 0) {
-                            foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes @($lastSnap.Processes) -Sessions @($lastSnap.Sessions))) {
-                                $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
-                            }
-                        }
-                        $lastEvents = $eventsUntil
-                    }
-                    catch { Register-SourceError 'events' $_ }
-                    try {
-                        $queueTime = Get-WorkerPerfNow
-                        foreach ($q in @(Get-WorkerPerfPrintQueues)) { if ($null -ne $q) { $wQueues.WriteLine((ConvertTo-WorkerPerfPrintQueueRow $q $queueTime)) } }
-                    }
-                    catch { Register-SourceError 'printqueues' $_ }
                     $nextRegular = (Get-WorkerPerfNextTick -Scheduled $nextRegular -Now $now -IntervalSeconds $IntervalSeconds).Next
                 }
                 foreach ($w in $allWriters) { $w.Flush() }

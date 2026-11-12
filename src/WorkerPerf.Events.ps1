@@ -1,44 +1,20 @@
 #Requires -Version 5.1
 # WorkerPerf analysis library: reads the event and print files of a capture (definitions only).
-# Requires WorkerPerf.Common.ps1 (headers, Split-WorkerPerfCsvLine) and WorkerPerf.Load.ps1 (ConvertTo-WorkerPerfTimestamp).
+# Requires WorkerPerf.Common.ps1 (headers) and WorkerPerf.Load.ps1 (Read-WorkerPerfCsvFile, ConvertTo-WorkerPerfTimestamp).
+# Each file is read by its own header line (Read-WorkerPerfCsvFile -OwnHeader): a file of an older format has fewer
+# columns. -Skipped receives the number of rows left out because they have fewer fields than that header.
 # Read-WorkerPerfEventCsv, Read-WorkerPerfPrintDrivers and Read-WorkerPerfPrintQueues emit plain pipeline output: wrap calls in @(...).
 
 $script:WorkerPerfEventNumberColumns = @('EventId', 'Level', 'Pid', 'SessionId')
 # Format 2 wrote no group: these kinds were all of the security group.
 $script:WorkerPerfSecurityKinds = @('scan-start', 'scan-end', 'signature-update', 'applocker-block')
 
-function Read-WorkerPerfOwnHeaderCsv([string]$Path, [string]$FileName) {
-    # Reads a capture file by its own header line, not by the header of the current format: a file of an older format
-    # has fewer columns. Returns @{ Col = column name -> index of the file; Rows = List[string[]] }. Rows with fewer
-    # fields than the file's header has columns are skipped; a missing file counts as an empty one.
-    $col = @{}
-    $rows = New-Object System.Collections.Generic.List[string[]]
-    $full = Join-Path $Path $FileName
-    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Rows = $rows } }
-    $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-    $reader = $null
-    try {
-        $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
-        $header = $reader.ReadLine()
-        if ($null -eq $header -or $header.Length -eq 0) { return @{ Col = $col; Rows = $rows } }
-        $names = $header.Split(',')
-        for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
-        $need = $names.Length
-        while ($null -ne ($line = $reader.ReadLine())) {
-            if ($line.Length -eq 0) { continue }
-            if ($line.IndexOf('"') -lt 0) { $f = $line.Split(',') } else { $f = [string[]]@(Split-WorkerPerfCsvLine $line) }
-            if ($f.Length -ge $need) { $rows.Add($f) }
-        }
-    }
-    finally { if ($null -ne $reader) { $reader.Dispose() } else { $stream.Dispose() } }      # the reader owns the stream once it exists
-    return @{ Col = $col; Rows = $rows }
-}
-
-function Read-WorkerPerfEventCsv([string]$Path, [string]$FileName) {
+function Read-WorkerPerfEventCsv([string]$Path, [string]$FileName, [ref]$Skipped) {
     # Events of events.csv or events_before.csv in format 2 or 3 as hashtables with TimeMs and every column of format 3:
     # a column the file lacks is '', the number columns are [int] (empty or unreadable = -1). Sorted by time, on equal
     # times by position in the file (a scan-start and scan-end in the same millisecond must keep their order to pair).
-    $csv = Read-WorkerPerfOwnHeaderCsv $Path $FileName
+    $csv = Read-WorkerPerfCsvFile $Path $FileName -OwnHeader
+    if ($null -ne $Skipped) { $Skipped.Value = [int]$csv.Skipped }
     $col = $csv.Col
     $names = $script:WorkerPerfHeaders['events.csv'].Split(',')
     $list = New-Object System.Collections.Generic.List[object]
@@ -67,9 +43,11 @@ function Read-WorkerPerfEventCsv([string]$Path, [string]$FileName) {
     foreach ($ix in $order) { $arr[$ix] }
 }
 
-function Read-WorkerPerfPrintDrivers([string]$Path) {
+function Read-WorkerPerfPrintDrivers([string]$Path, [ref]$Skipped) {
     # printdrivers.csv: @{ Name; Manufacturer; Version; Type = [int] (0 = unknown); Isolation; Files = string[] }.
-    $csv = Read-WorkerPerfOwnHeaderCsv $Path 'printdrivers.csv'
+    # Files is split at ';' (the writer joins the file names with it; Windows driver file names carry none).
+    $csv = Read-WorkerPerfCsvFile $Path 'printdrivers.csv' -OwnHeader
+    if ($null -ne $Skipped) { $Skipped.Value = [int]$csv.Skipped }
     $col = $csv.Col
     foreach ($k in 'Name', 'Manufacturer', 'Version', 'Type', 'Isolation', 'Files') { if (-not $col.ContainsKey($k)) { return } }
     foreach ($f in $csv.Rows) {
@@ -81,10 +59,11 @@ function Read-WorkerPerfPrintDrivers([string]$Path) {
     }
 }
 
-function Read-WorkerPerfPrintQueues([string]$Path, [long]$FromMs, [long]$ToMs) {
+function Read-WorkerPerfPrintQueues([string]$Path, [long]$FromMs, [long]$ToMs, [ref]$Skipped) {
     # printqueues.csv rows with FromMs <= TimeMs <= ToMs: @{ TimeMs; Queue; Jobs; JobErrors; NotReadyErrors } (counters as
     # [double], NaN when unreadable; the error counters are running raw values).
-    $csv = Read-WorkerPerfOwnHeaderCsv $Path 'printqueues.csv'
+    $csv = Read-WorkerPerfCsvFile $Path 'printqueues.csv' -OwnHeader
+    if ($null -ne $Skipped) { $Skipped.Value = [int]$csv.Skipped }
     $col = $csv.Col
     foreach ($k in 'Timestamp', 'Queue', 'Jobs', 'JobErrors', 'NotReadyErrors') { if (-not $col.ContainsKey($k)) { return } }
     $inv = [Globalization.CultureInfo]::InvariantCulture

@@ -119,3 +119,76 @@ Describe 'Zeilen von Format 3' {
         @(Complete-WorkerPerfEventSession -Events @() -Processes @() -Sessions @()).Count | Should -Be 0
     }
 }
+Describe 'Gedaechtnis der Prozesse und Fenster der Ereignisse (Fix-Runde 1)' {
+    BeforeAll {
+        function New-MemProc([int]$Id, [int]$Sid, [datetime]$Created) { [pscustomobject]@{ ProcessId = $Id; SessionId = $Sid; CreationDate = $Created } }
+        $script:Old = $t.AddHours(-1)
+        $script:Sess = @([pscustomobject]@{ SessionId = 3; User = 'user002' }, [pscustomobject]@{ SessionId = 4; User = 'user003' }, [pscustomobject]@{ SessionId = 7; User = 'user006' })
+        function New-CrashEvent([double]$Sec, $ProcId = 812) { [pscustomobject]@{ Time = $t.AddSeconds($Sec); Pid = $ProcId; SessionId = $null; User = '' } }
+    }
+    It 'findet einen beendeten Prozess: Ende, dann Absturz nach 0, 1 und 14 s' {          # Important 1, Versuch des Reviews
+        $mem = New-WorkerPerfProcessMemory
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @((New-MemProc 812 3 $Old), (New-MemProc 900 4 $Old)) -Time $t
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @((New-MemProc 812 3 $Old), (New-MemProc 900 4 $Old)) -Time $t.AddSeconds(15)
+        # 812 endet bei 20 s; der Schnappschuss bei 30 s fuehrt ihn nicht mehr
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 900 4 $Old) -Time $t.AddSeconds(30)
+        $ev = @((New-CrashEvent 20), (New-CrashEvent 21), (New-CrashEvent 34))
+        $r = @(Complete-WorkerPerfEventSession -Events $ev -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
+        $r.SessionId | Should -Be @(3, 3, 3); $r.User | Should -Be @('user002', 'user002', 'user002')
+    }
+    It 'gibt einer wiederverwendeten PID den Prozess, der zur Zeit des Ereignisses lief' {
+        $mem = New-WorkerPerfProcessMemory
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 3 $Old) -Time $t.AddSeconds(15)
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 7 $t.AddSeconds(40)) -Time $t.AddSeconds(45)
+        $r = @(Complete-WorkerPerfEventSession -Events @((New-CrashEvent 38), (New-CrashEvent 46)) -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
+        $r[0].SessionId | Should -Be 3; $r[1].SessionId | Should -Be 7; $r[1].User | Should -Be 'user006'
+    }
+    It 'laesst ein Ereignis lange nach dem letzten Sehen und vor dem Start des Prozesses leer' {
+        $mem = New-WorkerPerfProcessMemory
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 3 $Old) -Time $t
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 900 4 $t.AddSeconds(50)) -Time $t.AddSeconds(60)
+        $r = @(Complete-WorkerPerfEventSession -Events @((New-CrashEvent 40), (New-CrashEvent 45 900)) -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
+        $r[0].SessionId | Should -BeNullOrEmpty; $r[1].SessionId | Should -BeNullOrEmpty
+    }
+    It 'vergisst Prozesse 10 Minuten nach dem letzten Sehen und haelt die Zahl der Eintraege begrenzt' {
+        $mem = New-WorkerPerfProcessMemory -MaxEntries 5
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 1 3 $Old) -Time $t
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 2 3 $Old) -Time $t.AddSeconds(599)
+        @(Get-WorkerPerfProcessMemoryEntries $mem).Count | Should -Be 2
+        # aufgeraeumt wird hoechstens einmal je Minute Serverzeit: bei 601 s noch nicht, bei 660 s
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 3 3 $Old) -Time $t.AddSeconds(601)
+        @(Get-WorkerPerfProcessMemoryEntries $mem).Count | Should -Be 3
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 3 3 $Old) -Time $t.AddSeconds(660)
+        @(Get-WorkerPerfProcessMemoryEntries $mem | ForEach-Object { $_.ProcessId } | Sort-Object) | Should -Be @(2, 3)
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(10..17 | ForEach-Object { New-MemProc $_ 3 $Old }) -Time $t.AddSeconds(661)
+        $left = @(Get-WorkerPerfProcessMemoryEntries $mem); $left.Count | Should -Be 5
+        @($left | Where-Object { $_.ProcessId -lt 10 }).Count | Should -Be 0                 # die zuletzt gesehenen bleiben
+    }
+    It 'behandelt eine PID oder Sitzung, die keine Zahl ist, als leer und wirft nicht' {      # Minor 6
+        $mem = New-WorkerPerfProcessMemory
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @((New-MemProc 812 3 $Old), [pscustomobject]@{ ProcessId = 'x'; SessionId = 'y'; CreationDate = $Old }) -Time $t
+        $ev = @((New-CrashEvent 5 'bad'), [pscustomobject]@{ Time = $t; Pid = 812; SessionId = 'abc'; User = '' }, (New-CrashEvent 6))
+        $r = @(Complete-WorkerPerfEventSession -Events $ev -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
+        $r.Count | Should -Be 3; $r[0].SessionId | Should -BeNullOrEmpty; $r[1].SessionId | Should -Be 3; $r[2].User | Should -Be 'user002'
+    }
+    It 'waehlt Ereignisse im Fenster nach dem Zeiger bis zum Ende, je Grenze genau einmal' {    # Minor 3
+        $ev = @(-1, 0, 1, 15, 16 | ForEach-Object { [pscustomobject]@{ Time = $t.AddSeconds($_); Text = "t$_" } })
+        @(Select-WorkerPerfEventsInWindow -Events $ev -After $t -Until $t.AddSeconds(15)).Text | Should -Be @('t1', 't15')
+        @(Select-WorkerPerfEventsInWindow -Events $ev -Until $t).Text | Should -Be @('t-1', 't0')
+        @(Select-WorkerPerfEventsInWindow -Events @($null, [pscustomobject]@{ Time = 'x' }, [pscustomobject]@{ Text = 'ohne' }) -Until $t).Count | Should -Be 0
+    }
+    It 'vergleicht die Zeiten in UTC (Rechner in Europe/Berlin)' {                                # Minor 4
+        $capture = (Resolve-Path (Join-Path $PSScriptRoot '../src/WorkerPerf.Capture.ps1')).Path; $common = (Resolve-Path (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1')).Path
+        $code = ". '$common'; . '$capture'; `$s = [datetime]::SpecifyKind([datetime]'2026-01-15T08:00:00', 'Local'); " +
+            "`$ev = @([pscustomobject]@{ Time = [datetime]::SpecifyKind([datetime]'2026-01-15T07:30:00', 'Utc'); Text = 'nach' }, [pscustomobject]@{ Time = [datetime]::SpecifyKind([datetime]'2026-01-15T06:59:00', 'Utc'); Text = 'vor' }); " +
+            "(@(Select-WorkerPerfEventsInWindow -Events `$ev -Until `$s) | ForEach-Object { `$_.Text }) -join ','"
+        $old = $env:TZ
+        try { $env:TZ = 'Europe/Berlin'; $out = & (Get-Process -Id $PID).Path -NoProfile -Command $code }
+        finally { $env:TZ = $old }
+        $out | Should -Be 'vor'
+    }
+    It 'schreibt einen Zaehler, der keine Zahl ist, leer und behaelt die Zeile' {                 # Minor 5
+        $q = [pscustomobject]@{ Queue = 'Drucker 1'; Jobs = 'abc'; JobErrors = '7'; NotReadyErrors = $null }
+        ConvertTo-WorkerPerfPrintQueueRow $q $t | Should -Be ($t.ToString('o') + ',Drucker 1,,7,')
+    }
+}

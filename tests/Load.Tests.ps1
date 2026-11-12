@@ -208,3 +208,17 @@ Describe 'Import-WorkerPerfRun: Ereignisse und Drucken (Format 3)' {
         $m.Meta['EventLookbackDays'] | Should -Be 7; $m.Meta['LookbackCapped'] | Should -Be @('system', 'application')
     }
 }
+Describe 'Import-WorkerPerfRun: unlesbare Zeilen der Ereignis- und Druckdateien (Fix-Runde 1)' {
+    It 'zaehlt Zeilen, die kuerzer als ihre eigene Kopfzeile sind' {                       # Minor 9
+        $dir = Write-TestRun 'skip' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'printqueues.csv' = @("$(Get-Ts 3),Drucker 1,0,4,1", 'kaputt') }
+        $row = "$(Get-Ts 5),application,Application Error,1000,2,app,crash,EXCEL.EXE,,,,,,,user002,,,,,x"
+        [IO.File]::WriteAllLines((Join-Path $dir 'events.csv'), @(($WorkerPerfHeaders['events.csv'] + ',Extra'), $row, $row))
+        [IO.File]::WriteAllLines((Join-Path $dir 'events_before.csv'), @($WorkerPerfHeaders['events.csv'], $row, 'zu,kurz'))
+        [IO.File]::WriteAllLines((Join-Path $dir 'printdrivers.csv'), @($WorkerPerfHeaders['printdrivers.csv'], 'a,b'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        @($m.Events).Count | Should -Be 0; @($m.EventsBefore).Count | Should -Be 1
+        $m.Unreadable.Events | Should -Be 2; $m.Unreadable.EventsBefore | Should -Be 1; $m.Unreadable.PrintDrivers | Should -Be 1; $m.Unreadable.PrintQueues | Should -Be 1
+        $ok = Import-TestRun 'skip0' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = @("$(Get-Ts 5),Defender,1000,scan-start,Scan") }
+        $ok.Unreadable.Events | Should -Be 0; $ok.Unreadable.EventsBefore | Should -Be 0; $ok.Unreadable.PrintQueues | Should -Be 0
+    }
+}

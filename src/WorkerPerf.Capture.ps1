@@ -370,6 +370,8 @@ function ConvertTo-WorkerPerfEventRow {
 
 function ConvertTo-WorkerPerfPrintDriverRow {
     # One line of printdrivers.csv: Files (file names only) joined with ';', Isolation none|shared|isolated or empty.
+    # ';' separates the file names: the files of a Windows print driver carry no ';' in their names, so the column is
+    # not quoted further (a name with ';' would be read back as two names).
     param($Driver)
     $files = @(Get-WorkerPerfField $Driver 'Files' | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
     $type = Get-WorkerPerfField $Driver 'Type'
@@ -381,14 +383,95 @@ function ConvertTo-WorkerPerfPrintDriverRow {
         (Format-WorkerPerfCsvText ([string]::Join(';', [string[]]$files))))
 }
 
+function ConvertTo-WorkerPerfOptionalNumber($Value) {
+    # A number as [double], or $null for $null, '' and anything that is not a number (invariant culture, or a value
+    # that converts like '0x32c').
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) {
+        if ($Value.Trim().Length -eq 0) { return $null }
+        $d = 0.0
+        if ([double]::TryParse($Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { return $d }
+    }
+    try { $d = [double]$Value } catch { return $null }
+    if ([double]::IsNaN($d) -or [double]::IsInfinity($d)) { return $null }
+    return $d
+}
+
 function ConvertTo-WorkerPerfPrintQueueRow {
-    # One line of printqueues.csv: the error counters are the running raw values of the queue.
+    # One line of printqueues.csv: the error counters are the running raw values of the queue. A counter that is not
+    # a number is written empty; the row is kept.
     param($Queue, [datetime]$Time)
     return [string]::Concat($Time.ToString('o', [Globalization.CultureInfo]::InvariantCulture), ',',
         (Format-WorkerPerfCsvText ([string](Get-WorkerPerfField $Queue 'Queue'))), ',',
-        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'Jobs') 0), ',',
-        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'JobErrors') 0), ',',
-        (Format-WorkerPerfNumber (Get-WorkerPerfField $Queue 'NotReadyErrors') 0))
+        (Format-WorkerPerfNumber (ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $Queue 'Jobs')) 0), ',',
+        (Format-WorkerPerfNumber (ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $Queue 'JobErrors')) 0), ',',
+        (Format-WorkerPerfNumber (ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $Queue 'NotReadyErrors')) 0))
+}
+
+function Select-WorkerPerfEventsInWindow {
+    # The events with After < Time <= Until (without -After: Time <= Until), compared in UTC; an event without a
+    # readable time is left out. The collector uses it on both sides of the start and at every read of the
+    # measurement, so an event on a boundary is written exactly once, whatever the source returns.
+    param([AllowEmptyCollection()][object[]]$Events, $After = $null, [datetime]$Until)
+    $untilUtc = ConvertTo-WorkerPerfUtc $Until
+    $afterUtc = $null
+    if ($After -is [datetime]) { $afterUtc = ConvertTo-WorkerPerfUtc $After }
+    foreach ($e in @($Events)) {
+        if ($null -eq $e) { continue }
+        $time = Get-WorkerPerfField $e 'Time'
+        if (-not ($time -is [datetime])) { continue }
+        $u = ConvertTo-WorkerPerfUtc $time
+        if ($u -gt $untilUtc) { continue }
+        if ($null -ne $afterUtc -and $u -le $afterUtc) { continue }
+        $e
+    }
+}
+
+# ---- Memory of the processes seen in snapshots ----
+# An application crash or hang is logged when the process dies, so the snapshot taken after it no longer lists the
+# process. The collector remembers each process of every successful snapshot (pid, session id, start time, last seen)
+# and forgets it 10 minutes after it was last seen; MaxEntries caps the size (the entries seen longest ago go first).
+
+function New-WorkerPerfProcessMemory {
+    param([int]$MaxEntries = 20000, [double]$KeepSeconds = 600)
+    # Entries: 'pid|start ticks' -> entry; PrunedAt: when entries seen too long ago were last removed.
+    return @{ Entries = @{}; MaxEntries = $MaxEntries; KeepSeconds = $KeepSeconds; PrunedAt = [datetime]::MinValue }
+}
+
+function Update-WorkerPerfProcessMemory {
+    # Runs at every snapshot: a process already remembered only gets its LastSeen; old entries are removed at most
+    # once a minute of server time, and whenever MaxEntries is exceeded.
+    param($Memory, [AllowEmptyCollection()][object[]]$Processes, [datetime]$Time)
+    $entries = $Memory.Entries
+    $nowUtc = ConvertTo-WorkerPerfUtc $Time
+    foreach ($p in $Processes) {
+        if ($null -eq $p) { continue }
+        # snapshot objects of both sources carry these properties; anything else takes the strict-mode safe path
+        try { $created = $p.CreationDate; $rawId = $p.ProcessId }
+        catch { $created = Get-WorkerPerfField $p 'CreationDate'; $rawId = Get-WorkerPerfField $p 'ProcessId' }
+        $key = [string]$rawId + '|' + $(if ($created -is [datetime]) { $created.Ticks } else { 0 })
+        $known = $entries[$key]
+        if ($null -ne $known) { $known.LastSeen = $nowUtc; continue }
+        $id = ConvertTo-WorkerPerfOptionalNumber $rawId
+        if ($null -eq $id) { continue }
+        $sid = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $p 'SessionId')
+        $entries[$key] = [pscustomobject]@{ ProcessId = [long]$id; SessionId = $(if ($null -ne $sid) { [int]$sid } else { $null })
+            CreationDate = $(if ($created -is [datetime]) { ConvertTo-WorkerPerfUtc $created } else { $null }); LastSeen = $nowUtc }
+    }
+    if (($nowUtc - $Memory.PrunedAt).TotalSeconds -ge 60 -or $entries.Count -gt [int]$Memory.MaxEntries) {
+        $limit = $nowUtc.AddSeconds(-[double]$Memory.KeepSeconds)
+        foreach ($k in @($entries.Keys)) { if ($entries[$k].LastSeen -lt $limit) { $entries.Remove($k) } }
+        $Memory.PrunedAt = $nowUtc
+    }
+    if ($entries.Count -gt [int]$Memory.MaxEntries) {
+        $drop = $entries.Count - [int]$Memory.MaxEntries
+        foreach ($k in @($entries.Keys | Sort-Object -Property @{ Expression = { $entries[$_].LastSeen } } | Select-Object -First $drop)) { $entries.Remove($k) }
+    }
+}
+
+function Get-WorkerPerfProcessMemoryEntries($Memory) {
+    # The remembered processes: ProcessId, SessionId, CreationDate (UTC or $null), LastSeen (UTC).
+    $Memory.Entries.Values
 }
 
 function Set-WorkerPerfRecordField($Record, [string]$Name, $Value) {
@@ -398,43 +481,64 @@ function Set-WorkerPerfRecordField($Record, [string]$Name, $Value) {
 }
 
 function Complete-WorkerPerfEventSession {
-    # Fills an empty SessionId from the process with the same Pid in the last snapshot, and an empty User from the
-    # session with that SessionId. A process that started after the event is not the one the event names (its PID
-    # was reused): such an event keeps its empty session. Emits the events (the same objects).
-    param([AllowEmptyCollection()][object[]]$Events, [AllowEmptyCollection()][object[]]$Processes, [AllowEmptyCollection()][object[]]$Sessions)
+    # Fills an empty SessionId from the process with the same Pid that existed at the event's time, and an empty User
+    # from the session with that SessionId. A process existed at the event's time when it started at or before it and
+    # was last seen at most MaxGapSeconds before it (fields it lacks are not checked). Of several, the one started last
+    # wins. A process that started after the event is not the one the event names (its PID was reused): such an event
+    # keeps its empty session. A Pid or SessionId that is not a number counts as empty. Emits the events (the same
+    # objects); an event that cannot be completed is emitted as it is.
+    param([AllowEmptyCollection()][object[]]$Events, [AllowEmptyCollection()][object[]]$Processes, [AllowEmptyCollection()][object[]]$Sessions,
+          [double]$MaxGapSeconds = 60)
     $byPid = @{}
     foreach ($p in @($Processes)) {
         if ($null -eq $p) { continue }
-        $id = Get-WorkerPerfField $p 'ProcessId'
-        if ($null -ne $id) { $byPid[[long]$id] = $p }
+        $id = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $p 'ProcessId')
+        if ($null -eq $id) { continue }
+        $key = [long]$id
+        if (-not $byPid.ContainsKey($key)) { $byPid[$key] = New-Object System.Collections.Generic.List[object] }
+        $byPid[$key].Add($p)
     }
     $userOf = @{}
     foreach ($s in @($Sessions)) {
         if ($null -eq $s) { continue }
-        $sid = Get-WorkerPerfField $s 'SessionId'
+        $sid = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $s 'SessionId')
         if ($null -ne $sid) { $userOf[[long]$sid] = [string](Get-WorkerPerfField $s 'User') }
     }
     foreach ($e in @($Events)) {
         if ($null -eq $e) { continue }
-        $sid = Get-WorkerPerfField $e 'SessionId'
-        if ($null -eq $sid -or [string]$sid -eq '') {
-            $sid = $null
-            $evPid = Get-WorkerPerfField $e 'Pid'
-            if ($null -ne $evPid -and [string]$evPid -ne '' -and $byPid.ContainsKey([long]$evPid)) {
-                $proc = $byPid[[long]$evPid]
-                $created = Get-WorkerPerfField $proc 'CreationDate'
-                $time = Get-WorkerPerfField $e 'Time'
-                $reused = ($created -is [datetime] -and $time -is [datetime] -and $created -gt $time)
-                $procSid = Get-WorkerPerfField $proc 'SessionId'
-                if (-not $reused -and $null -ne $procSid) {
-                    $sid = [int]$procSid
-                    Set-WorkerPerfRecordField $e 'SessionId' $sid
+        try {
+            $sid = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $e 'SessionId')
+            if ($null -eq $sid) {
+                $evPid = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $e 'Pid')
+                if ($null -ne $evPid -and $byPid.ContainsKey([long]$evPid)) {
+                    $time = Get-WorkerPerfField $e 'Time'
+                    $timeUtc = $(if ($time -is [datetime]) { ConvertTo-WorkerPerfUtc $time } else { $null })
+                    $best = $null; $bestCreated = $null
+                    foreach ($proc in $byPid[[long]$evPid]) {
+                        $created = Get-WorkerPerfField $proc 'CreationDate'
+                        $createdUtc = $(if ($created -is [datetime]) { ConvertTo-WorkerPerfUtc $created } else { $null })
+                        $seen = Get-WorkerPerfField $proc 'LastSeen'
+                        if ($null -ne $timeUtc) {
+                            if ($null -ne $createdUtc -and $createdUtc -gt $timeUtc) { continue }
+                            if ($seen -is [datetime] -and ((ConvertTo-WorkerPerfUtc $seen).AddSeconds($MaxGapSeconds) -lt $timeUtc)) { continue }
+                        }
+                        $procSid = ConvertTo-WorkerPerfOptionalNumber (Get-WorkerPerfField $proc 'SessionId')
+                        if ($null -eq $procSid) { continue }
+                        if ($null -eq $best -or ($null -ne $createdUtc -and ($null -eq $bestCreated -or $createdUtc -gt $bestCreated))) {
+                            $best = [int]$procSid; $bestCreated = $createdUtc
+                        }
+                    }
+                    if ($null -ne $best) {
+                        $sid = $best
+                        Set-WorkerPerfRecordField $e 'SessionId' $best
+                    }
                 }
             }
+            if ($null -ne $sid -and [string]::IsNullOrEmpty([string](Get-WorkerPerfField $e 'User')) -and $userOf.ContainsKey([long]$sid)) {
+                Set-WorkerPerfRecordField $e 'User' $userOf[[long]$sid]
+            }
         }
-        if ($null -ne $sid -and [string]::IsNullOrEmpty([string](Get-WorkerPerfField $e 'User')) -and $userOf.ContainsKey([long]$sid)) {
-            Set-WorkerPerfRecordField $e 'User' $userOf[[long]$sid]
-        }
+        catch { Write-Verbose ('Sitzung eines Ereignisses nicht ergaenzt: ' + $_.Exception.Message) }
         $e
     }
 }
