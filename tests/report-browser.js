@@ -488,8 +488,11 @@ async function checkMask(browser, dir, scheme) {                   // Maskierung
   ok(await page.locator('#maskInfo').count() === 0, 'unmaskiert ohne Hinweis');
   await page.close();
   const m = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  ok(await m.page.locator('#maskInfo').count() === 1, 'Hinweis vorhanden');
   ok((await m.page.locator('#maskInfo').innerText()).includes('Maskiert: alle Namen'), 'Stufe im Kopf');
-  ok(!(await m.page.locator('body').innerText()).match(/user0\d\d|SIM-VDA01|CONTOSO/), 'keine Namen auf der Seite');
+  // the whole text of the page, hidden tabs and sections included; the embedded data are checked by the Pester test
+  const all = await m.page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent; });
+  ok(all.length > 10000 && !all.match(/user0\d\d|SIM-VDA01|CONTOSO/), 'keine Namen auf der Seite');
   ok(m.page.errors.length === 0, 'Skriptfehler maskiert: ' + m.page.errors.join(' | '));
   await m.page.close();
   // the note is text in the header next to the subtitle; the symbol is hidden from screen readers
@@ -513,7 +516,7 @@ async function checkMask(browser, dir, scheme) {                   // Maskierung
   await unk.page.close();
 }
 
-async function checkMaskedPage(browser, dir, scheme) {             // Maskierung: der ganze Bericht bleibt bedienbar
+async function checkMaskedPage(browser, dir, scheme) {             // Maskierung: der ganze Bericht bleibt bedienbar (ein Schema genuegt)
   const { page, D } = await open(browser, path.join(dir, 'report-masked.html'), scheme);
   ok(D.incidents.length > 0 && await page.locator('#incidents .incident').count() === D.incidents.length, 'maskiert: ein Eintrag je Vorfall');
   for (const inc of D.incidents) await openIncident(page, inc.id);
@@ -552,8 +555,9 @@ async function checkMaskedPage(browser, dir, scheme) {             // Maskierung
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
     await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
-    await checkMask(browser, dir, scheme); await checkMaskedPage(browser, dir, scheme);
+    await checkMask(browser, dir, scheme);
   }
+  await checkMaskedPage(browser, dir, 'light');
   console.log('browser checks passed: ' + checks);
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });

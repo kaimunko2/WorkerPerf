@@ -130,7 +130,7 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -FocusUser 'CONTOSO\mmuster' -ReportedTime '2026-01-01 10:15'
 # Benutzer und Clients im Bericht ersetzen:
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Personen
-# alle Namen ersetzen, Bericht außerhalb des Aufzeichnungsordners ablegen:
+# auch Server, Freigaben, Domänen, Adressen und Drucker ersetzen, Bericht außerhalb des Aufzeichnungsordners ablegen:
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Alles -OutFile D:\Weitergabe\bericht.html
 # dazu die Zuordnung der Ersatznamen zu den echten Namen behalten (nicht weitergeben):
 .\src\New-WorkerPerfReport.ps1 -Path .\VDA01_20260101-070000 -Mask Alles -OutFile D:\Weitergabe\bericht.html -MaskMapFile D:\WorkerPerf\bericht.maskmap.json
@@ -170,10 +170,13 @@ Hauptanwendung in `roles.json` eingetragen sind.
 ### Bericht maskiert weitergeben
 
 Soll ein Bericht an jemanden gehen, der die Namen nicht sehen soll (zum Beispiel an einen Dienstleister), ersetzt
-die Auswertung sie mit `-Mask` durch Ersatznamen. Es gibt zwei Stufen:
+die Auswertung mit `-Mask` bestimmte Arten von Namen durch Ersatznamen. Es gibt zwei Stufen:
 
-- `-Mask Personen` ersetzt alles, was eine Person erkennen lässt: Benutzer und Clients.
-- `-Mask Alles` ersetzt zusätzlich die Namen der Umgebung: Server, Freigaben, Domänen, Adressen und Drucker.
+- `-Mask Personen` ersetzt die Namen von Benutzern und Clients, auch in Pfaden und Sitzungsnamen, und die
+  Konten-SIDs.
+- `-Mask Alles` ersetzt zusätzlich die Namen von Servern, Freigaben, Domänen, Adressen und Druckern.
+
+Andere Namen und Angaben bleiben stehen (siehe Tabelle und „Grenzen" weiter unten).
 
 | | `-Mask Personen` | `-Mask Alles` |
 |---|---|---|
@@ -200,7 +203,8 @@ Fehlt er, ist der Bericht nicht maskiert.
   Groß- und Kleinschreibung.
 - Alle Berichte einer Aufzeichnung verwenden dieselben Ersatznamen: der ganze Bericht ebenso wie Ausschnitte mit
   `-From` und `-To`. Für eine andere Aufzeichnung gelten andere Ersatznamen.
-- Ein Ordnername unter `C:\Users\` gilt als Benutzername, auch für Konten ohne Sitzung in der Messung.
+- Ein Ordnername unter `C:\Users\` gilt als Benutzername, auch für Konten ohne Sitzung in der Messung. Ausgenommen
+  sind die Ordner von Windows selbst: `Public`, `Default`, `Default User` und `All Users` sind keine Benutzer.
 - Ein Personenname geht einem Produktnamen vor. Heißt ein Benutzer wie ein Programm, ein Dienst oder ein Hersteller
   (zum Beispiel `hp`), wird dieses Wort dort ersetzt, wo es allein steht. Mehrteilige Produktnamen, etwa der Name
   eines Druckertreibers, bleiben stehen.
@@ -212,9 +216,12 @@ Fehlt er, ist der Bericht nicht maskiert.
 
 **Wohin mit den Dateien:**
 
-- Bei `-Mask Alles` mit `-OutFile` eine Datei außerhalb des Aufzeichnungsordners wählen. Ohne `-OutFile` landet der
-  Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Workers, und die Konsole zeigt diesen Pfad an.
-  Auch der Dateiname selbst darf den Worker nicht nennen; sonst bricht die Auswertung mit einer Meldung ab.
+- Bei `-Mask Alles` immer `-OutFile` angeben und eine Datei außerhalb des Aufzeichnungsordners wählen. Der Grund:
+  Ohne `-OutFile` landet der Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Workers, und die
+  Konsole zeigt diesen Pfad an. Auch der Dateiname selbst darf den Worker nicht nennen; sonst bricht die Auswertung
+  mit einer Meldung ab.
+- Die Ordner für `-OutFile` und `-MaskMapFile` müssen schon vorhanden sein; die Auswertung legt sie nicht an. Fehlt
+  der Ordner der Zuordnungsdatei, ist der Bericht schon geschrieben, die Zuordnungsdatei aber nicht; die Meldung sagt das.
 - `-MaskMapFile` schreibt eine Zuordnungsdatei: welcher Ersatzname zu welchem echten Namen gehört. Damit lassen sich
   Rückfragen zum Bericht beantworten („Wer ist Benutzer 07?"). Die Datei enthält die echten Namen. Sie gehört nicht
   zum weitergegebenen Bericht: getrennt aufbewahren und nicht weitergeben. Sie entsteht nur, wenn der Parameter
@@ -224,8 +231,9 @@ Fehlt er, ist der Bericht nicht maskiert.
 
 - Ein Name in einem Feld, das die Auswertung nicht als Namen kennt, bleibt stehen. Deshalb entfallen Meldungstexte
   und Befehlszeilen ganz.
-- Namen, die sich nur durch das türkische große I mit Punkt (`İ`) unterscheiden, werden nicht als derselbe Name
-  erkannt.
+- Ein Name, der mit dem türkischen großen I mit Punkt (`İ`) geschrieben ist, gilt nicht als derselbe Name wie seine
+  Schreibweise mit kleinem `i`; die zweite Schreibweise bleibt dann stehen. Das betrifft nur Umgebungen, in denen
+  solche Namen vorkommen.
 - Aus dem Zusammenhang kann eine Person erkennbar bleiben, etwa als einziger Benutzer einer Anwendung oder durch die
   Uhrzeit ihrer Anmeldung.
 - Deshalb den maskierten Bericht vor der Weitergabe einmal durchsehen.
@@ -654,9 +662,9 @@ Die Aufzeichnung enthält personenbezogene Daten (Benutzernamen, Clientnamen, ge
 und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf. die Beteiligung
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
-Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` sie durch Ersatznamen
-(siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)); die Aufzeichnung selbst behält die echten
-Namen. Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
+Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
+gewählten Stufe durch Ersatznamen; was stehen bleibt und wo die Grenzen liegen, steht unter
+[Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Die Aufzeichnung selbst behält die echten Namen. Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
 `.gitignore` schließt `*.maskmap.json` aus.
 Im Ergebnis des Prüfskripts sind Benutzer-, Domänen-, Client- und Servernamen sowie Konten-SIDs maskiert.
 Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird deshalb nach einer Durchsicht
