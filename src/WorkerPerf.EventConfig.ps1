@@ -112,6 +112,8 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         $log = [string](Get-WorkerPerfField $e 'log')
         if (-not $logs.Contains($log)) { throw "$where`: Feld 'log' verweist auf kein bekanntes Protokoll ('$log')." }
         if ([string]::IsNullOrWhiteSpace($provider)) { throw "$where`: Feld 'provider' fehlt." }
+        # the event log query writes the name as an XPath literal, which can be quoted with ' or with ", not with both
+        if ($provider.IndexOf("'") -ge 0 -and $provider.IndexOf('"') -ge 0) { throw "$where`: Feld 'provider' darf nicht zugleich ' und `" enthalten." }
         $ids = New-Object System.Collections.Generic.List[int]
         foreach ($raw in $rawIds) {
             $i = ConvertTo-WorkerPerfEventInt $raw
@@ -121,8 +123,12 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         if ($ids.Count -eq 0 -and -not $allIds) { throw "$where`: Feld 'ids' fehlt oder ist leer." }
         # levels: optional; required with "ids": "*", which takes every event of the provider at these levels
         $levels = New-Object System.Collections.Generic.List[int]
-        $levelNames = Get-WorkerPerfEventStringList $e 'levels' $Path
+        $levelProp = $null
+        if ($null -ne $e) { $levelProp = $e.PSObject.Properties['levels'] }
+        $levelNames = @()
+        if ($null -ne $levelProp -and $null -ne $levelProp.Value) { $levelNames = @($levelProp.Value) }
         foreach ($ln in $levelNames) {
+            if ($ln -isnot [string]) { throw "$where`: Feld 'levels' enthaelt einen Eintrag, der kein Text ist ('$ln')." }
             if (@($script:WorkerPerfEventLevels.Keys) -cnotcontains $ln) {
                 throw "$where`: Feld 'levels' enthaelt eine unbekannte Ebene ('$ln'); erlaubt sind critical, error, warning und information."
             }
@@ -220,21 +226,25 @@ function Get-WorkerPerfEventFieldReferences($Value, [string]$Where, [string]$Lab
     return , [string[]]$list
 }
 
+function Test-WorkerPerfEventEntryLevel($Entry, $Level) {
+    # $true when the entry takes an event of this Level: an entry without levels takes every level, one with levels only
+    # a known Level that is one of them.
+    $levels = @(Get-WorkerPerfField $Entry 'levels')
+    if ($levels.Count -eq 0) { return $true }
+    return ($null -ne $Level -and $levels -contains [int]$Level)
+}
+
 function Resolve-WorkerPerfEventEntry($Config, [string]$LogId, [string]$Provider, [int]$EventId, $Level = $null) {
     # The catalogue entry of an event: by log, provider and id, else the entry with "ids": "*" of log and provider. An
-    # entry with levels takes the event only when its Level is one of them ($null: level unknown, no match).
+    # entry with levels takes the event only when its Level is one of them ($null: level unknown, no match); an id entry
+    # whose levels do not match leaves the event to the "*" entry.
     $p = $Provider.ToLowerInvariant()
-    $entry = $null
-    $key = "$LogId|$p|$EventId"
-    if ($Config.Index.ContainsKey($key)) { $entry = $Config.Index[$key] }
-    else {
-        $key = "$LogId|$p|*"
-        if ($Config.Index.ContainsKey($key)) { $entry = $Config.Index[$key] }
+    foreach ($key in "$LogId|$p|$EventId", "$LogId|$p|*") {
+        if (-not $Config.Index.ContainsKey($key)) { continue }
+        $entry = $Config.Index[$key]
+        if (Test-WorkerPerfEventEntryLevel $entry $Level) { return $entry }
     }
-    if ($null -eq $entry) { return $null }
-    $levels = @(Get-WorkerPerfField $entry 'levels')
-    if ($levels.Count -gt 0 -and ($null -eq $Level -or $levels -notcontains [int]$Level)) { return $null }
-    return $entry
+    return $null
 }
 
 function ConvertFrom-WorkerPerfEventXml([string]$Xml) {

@@ -245,7 +245,7 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
             $f = Join-Path $TestDrive ('cfg' + [guid]::NewGuid().ToString('n') + '.json')
             [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[' + $Events + ']}'); $f
         }
-        # Application Error 1000 wie auf dem Zielserver: 15 unbenannte Datenfelder in der klassischen Reihenfolge (Werte erfunden)
+        # Application Error 1000 in der klassischen Form mit unbenannten Datenfeldern (Werte erfunden)
         $script:Unnamed = '<EventData><Data>EXCEL.EXE</Data><Data>16.0.1</Data><Data>65a1b2c3</Data><Data>vbe7.dll</Data><Data>7.1.10</Data><Data>5f00aa11</Data>' +
             '<Data>c0000005</Data><Data>000e1f2c</Data><Data>1f1c</Data><Data>01dad0e2a1b2c3d4</Data><Data>C:\Programme\x.exe</Data><Data>C:\Programme\vbe7.dll</Data>' +
             '<Data>00000000-0000-0000-0000-000000000001</Data><Data></Data><Data></Data></EventData>'
@@ -294,6 +294,13 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
         Resolve-WorkerPerfEventEntry $c 'a' 'Andere Quelle' 5 2 | Should -BeNullOrEmpty
         $e = @($c.Entries)[0]; $e.allIds | Should -BeTrue; @($e.ids).Count | Should -Be 0; $e.levels | Should -Be @(2, 3)
     }
+    It 'laesst ein Ereignis, dessen Ebene der Eintrag mit Kennung nicht nimmt, dem Eintrag mit "*" (M2)' {
+        $c = Read-WorkerPerfEventConfig (New-Cfg ('{"log":"a","provider":"Sim Profil","ids":[7],"levels":["information"],"group":"app","kind":"info"},' +
+                '{"log":"a","provider":"Sim Profil","ids":"*","levels":["error","warning"],"group":"profile","kind":"profileerror"}'))
+        (Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 7 4).kind | Should -Be 'info'
+        (Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 7 3).kind | Should -Be 'profileerror'
+        Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 7 1 | Should -BeNullOrEmpty
+    }
     It 'prueft die Ebene auch bei einem Eintrag mit Kennungen' {
         $c = Read-WorkerPerfEventConfig (New-Cfg '{"log":"a","provider":"X","ids":[1],"levels":["critical","information"],"group":"app","kind":"info"}')
         (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1 1).kind | Should -Be 'info'
@@ -308,6 +315,8 @@ Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
         @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error"],"group":"profile","kind":"profileerror"},{"log":"a","provider":"x","ids":"*","levels":["warning"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 2 (x `*)*Feld 'ids'*doppelt*" }
         @{ Events = '{"log":"a","provider":"X","ids":"7","group":"app","kind":"crash"},{"log":"a","provider":"X","ids":[7],"group":"app","kind":"crash"}'; Msg = "*Eintrag 2 (X 7)*doppelte Kennung 7*" }
         @{ Events = '{"log":"a","provider":"X","ids":"alle","group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (X alle)*Feld 'ids'*keine ganze Zahl*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error",3],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*kein Text*" }   # M3
+        @{ Events = '{"log":"a","provider":"Sim O''Brien \"X\"","ids":[1],"group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (Sim O'Brien `"X`" 1)*Feld 'provider'*" }
     ) {
         { Read-WorkerPerfEventConfig (New-Cfg $Events) } | Should -Throw $Msg
     }

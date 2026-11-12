@@ -205,7 +205,9 @@ $sourceNames = @{ fast = 'schneller Takt'; snapshot = 'Prozess-Schnappschuss'; s
 function Register-SourceError([string]$Source, $ErrorRecord) {
     # Ctrl+C is not a failure of the source
     if ($ErrorRecord.Exception -is [System.Management.Automation.PipelineStoppedException]) { throw $ErrorRecord.Exception }
-    $message = [string]$ErrorRecord.Exception.Message
+    Register-SourceMessage $Source ([string]$ErrorRecord.Exception.Message)
+}
+function Register-SourceMessage([string]$Source, [string]$message) {
     if (Add-WorkerPerfSourceError -Errors $meta.SourceErrors -Source $Source -Time (Get-WorkerPerfNow) -Message $message) {
         Write-Warning ("Datenquelle '{0}' meldet einen Fehler; die Aufzeichnung laeuft weiter, weitere Fehler dieser Quelle werden nur gezaehlt: {1}" -f $sourceNames[$Source], $message)
         # saved at once, so the failure is on record even if the capture is killed later
@@ -216,6 +218,12 @@ function Register-SourceError([string]$Source, $ErrorRecord) {
 #endregion
 
 #region ---------- capture loop -----------------------------------------------------------
+
+# Failures the source reports without stopping its call (a log that could not be read), once each.
+function Register-SourceFailures {
+    try { foreach ($f in @(Receive-WorkerPerfSourceErrors)) { if ($null -ne $f) { Register-SourceMessage ([string]$f.Source) ([string]$f.Message) } } }
+    catch { Write-Verbose $_.Exception.Message }
+}
 
 function Write-WorkerPerfProbeRows([object[]]$Results, [int]$T) {
     foreach ($r in $Results) {
@@ -250,6 +258,7 @@ try {
             if ($meta.LookbackCapped.Count -gt 0) { Save-Meta }
         }
         catch { Register-SourceError 'eventsbefore' $_ }
+        Register-SourceFailures
         $wEventsBefore.Flush()
     }
     try { foreach ($d in @(Get-WorkerPerfPrintDrivers)) { if ($null -ne $d) { $wDrivers.WriteLine((ConvertTo-WorkerPerfPrintDriverRow $d)) } } }
@@ -305,6 +314,7 @@ try {
             $lastEvents = $eventsUntil
         }
         catch { Register-SourceError 'events' $_ }
+        Register-SourceFailures
         try {
             $queueTime = Get-WorkerPerfNow
             foreach ($q in @(Get-WorkerPerfPrintQueues)) { if ($null -ne $q) { $wQueues.WriteLine((ConvertTo-WorkerPerfPrintQueueRow $q $queueTime)) } }

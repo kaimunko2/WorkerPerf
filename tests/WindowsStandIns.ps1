@@ -12,12 +12,14 @@ function Reset-WinStandIns {
     $script:WinFake = @{
         Reads = 0; DiskQueries = 0; FailRead = ''; FailCitrix = $false; EuemClass = $true; ThrowCheck = ''; ManyEvents = 0; FailStorage = $false
         # every log of events.json exists; DisabledLogs exist but are switched off
-        Logs = @(Get-WinStandInCatalogueLogs); DisabledLogs = @(); EventQueries = 0; RecordId = 0
+        Logs = @(Get-WinStandInCatalogueLogs); DisabledLogs = @(); EventQueries = 0; RecordId = 0; Queries = [System.Collections.Generic.List[string]]::new()
+        # FailLogs: log name -> error id of a terminating failure of its query (for example 'LogInfoUnavailable')
+        FailLogs = @{}
         Events = [System.Collections.Generic.List[object]]::new()
         # SID -> account as Windows translates it; SidTimeout: SIDs whose lookup runs into the time limit
         Sids = @{ 'S-1-5-21-1000-2000-3000-1108' = 'KLINIK\mueller'; 'S-1-5-80-1-2-3-4-5' = 'NT SERVICE\SimDienst' }; SidTimeout = @(); SidLookups = 0
-        # printer drivers as MSFT_PrinterDriver lists them; isolation as the registry gives it (no groups value, as on
-        # the target server); PrinterDriverAttributes per driver key
+        # printer drivers as MSFT_PrinterDriver lists them; isolation as the registry gives it (here without a groups
+        # value, so policy and driver attribute decide); PrinterDriverAttributes per driver key
         Drivers = @(
             [pscustomobject]@{ Name = 'Sim PCL 6'; Manufacturer = 'HP'; MajorVersion = [uint16]3; DriverVersion = ([uint64]61 -shl 48) + ([uint64]310 -shl 32) + ([uint64]1 -shl 16) + 25919
                 PrinterEnvironment = 'Windows x64'; Path = 'C:\Windows\System32\spool\DRIVERS\x64\3\hpsimgr.dll'; ConfigFile = 'C:\Windows\System32\spool\DRIVERS\x64\3\hpsimui.dll'
@@ -60,7 +62,7 @@ function Reset-WinStandIns {
     Add-WinStandInDisk 'mueller' 'C:\Users\mueller_UPM_local\UpmTempMount' 137
     Add-WinStandInDisk 'gast' 'C:\Users\gast_UPM_local\UpmTempMount' 139
 
-    # events as ToXml() gives them (invented values); Application Error 1000 with unnamed fields as on the target server
+    # events as ToXml() gives them (invented values); Application Error 1000 in the classic layout with unnamed data fields
     $defender = 'Microsoft-Windows-Windows Defender'; $dlog = 'Microsoft-Windows-Windows Defender/Operational'
     Add-WinStandInEvent $dlog $defender 1001 4 (-1) "Die Ueberpruefung wurde beendet.`r`nScan-ID: {1}"
     Add-WinStandInEvent $dlog $defender 1000 4 (-2) 'Die Ueberpruefung wurde gestartet.'
@@ -84,8 +86,11 @@ function Get-WinStandInCatalogueLogs {
 }
 
 function Add-WinStandInEvent([string]$Log, [string]$Provider, [int]$Id, [int]$Level, [double]$Minutes, [string]$Message, [string[]]$Data = @(),
-                             [hashtable]$Named = $null, [hashtable]$UserData = $null, [string]$Binary = '', [string]$Sid = '') {
-    $script:WinFake.Events.Add(@{ LogName = $Log; ProviderName = $Provider; Id = $Id; Level = $Level; TimeCreated = [datetime]::Now.AddMinutes($Minutes)
+                             [hashtable]$Named = $null, [hashtable]$UserData = $null, [string]$Binary = '', [string]$Sid = '', $At = $null) {
+    # At: the exact time (else now plus Minutes); every event gets its record id once, as the event log does
+    $script:WinFake.RecordId++
+    $time = $(if ($At -is [datetime]) { $At } else { [datetime]::Now.AddMinutes($Minutes) })
+    $script:WinFake.Events.Add(@{ LogName = $Log; ProviderName = $Provider; Id = $Id; Level = $Level; TimeCreated = $time; RecordId = [long]$script:WinFake.RecordId
             Message = $Message; Xml = (New-WinStandInXml $Provider $Id $Level $Data $Named $UserData $Binary $Sid) })
 }
 
@@ -107,9 +112,8 @@ function New-WinStandInXml([string]$Provider, [int]$Id, [int]$Level, [string[]]$
 }
 
 function New-WinStandInRecord($E) {
-    $script:WinFake.RecordId++
     $o = [pscustomobject]@{ ProviderName = $E.ProviderName; Id = $E.Id; LevelValue = $E.Level; TimeCreated = $E.TimeCreated; Message = $E.Message; LogName = $E.LogName
-        RecordId = [long]$script:WinFake.RecordId }
+        RecordId = [long]$E.RecordId }
     $xml = $E.Xml
     $o | Add-Member -MemberType ScriptMethod -Name ToXml -Value ([scriptblock]::Create("'" + $xml.Replace("'", "''") + "'"))
     $o
@@ -202,39 +206,80 @@ function Get-CimInstance {
     }
 }
 
+function ConvertFrom-WinStandInQuery([xml]$Xml) {
+    # The selects of a structured query as the source writes them: @{ Path; Provider; Ids; Levels; After (>=), Before (<=) }.
+    # Only the forms the source writes are understood; anything else fails the test.
+    foreach ($q in @($Xml.QueryList.Query)) {
+        foreach ($sel in @($q.Select)) {
+            $x = [string]$sel.InnerText
+            $m = [regex]::Match($x, "^\*\[System\[Provider\[@Name=(?:'([^']*)'|""([^""]*)"")\](.*) and TimeCreated\[@SystemTime>='([0-9TZ:.\-]+)'(?: and @SystemTime<='([0-9TZ:.\-]+)')?\]\]\]$")
+            if (-not $m.Success) { throw "Stand-in versteht die Abfrage nicht: $x" }
+            $mid = $m.Groups[3].Value
+            $ids = @([regex]::Matches($mid, 'EventID=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
+            $levels = @([regex]::Matches($mid, 'Level=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
+            if (($mid -replace '\(EventID=\d+( or EventID=\d+)*\)', '' -replace '\(Level=\d+( or Level=\d+)*\)', '' -replace ' and ', '').Trim().Length -gt 0) { throw "Stand-in versteht die Abfrage nicht: $x" }
+            if ($ids.Count -gt 23) { throw 'Die angegebene Abfrage ist ungueltig' }
+            $parse = { param($t) [datetime]::ParseExact($t, "yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal) }
+            $provider = $(if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value })
+            @{ Path = [string]$sel.Path; QueryPath = [string]$q.Path; Provider = $provider; Ids = $ids; Levels = $levels; After = (& $parse $m.Groups[4].Value)
+                Before = $(if ($m.Groups[5].Success) { & $parse $m.Groups[5].Value } else { $null }) }
+        }
+    }
+}
+
 function Get-WinEvent {
-    # like Get-WinEvent: -ListLog gives IsEnabled; -FilterHashtable filters by log, provider, id, level and time (compared
-    # in UTC, as the event log does), newest first; no match is an error with the language neutral id
-    [CmdletBinding()] param([string]$ListLog, [hashtable]$FilterHashtable, [int]$MaxEvents)
+    # like Get-WinEvent: -ListLog gives IsEnabled; -FilterXml filters by the selects of the structured query (provider,
+    # ids, levels, SystemTime bounds as UTC literals, the way the event log compares them), newest first or with -Oldest
+    # oldest first, at most MaxEvents; no match is a non-terminating error with the language neutral id. An event that
+    # two selects name comes once per select (the worst case for the source's de-duplication). -FilterHashtable fails:
+    # the real cmdlet turns its time bounds into local text, which shifts a UTC bound by the server's offset.
+    [CmdletBinding()] param([string]$ListLog, [hashtable]$FilterHashtable, [xml]$FilterXml, [long]$MaxEvents = -1, [switch]$Oldest)
     if ($ListLog) {
         if ($script:WinFake.Logs -contains $ListLog) { return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog) } }
         throw "Protokoll $ListLog nicht vorhanden"
     }
+    if ($null -ne $FilterHashtable) { throw 'Stand-in: -FilterHashtable verschiebt die Zeitgrenzen um den Versatz des Servers; die Quelle muss -FilterXml verwenden' }
+    if ($null -eq $FilterXml) { throw 'Stand-in: Abfrage ohne -FilterXml' }
     $script:WinFake.EventQueries++
-    $f = $FilterHashtable
-    $log = $f.LogName
+    $script:WinFake.Queries.Add($FilterXml.OuterXml)
+    $selects = @(ConvertFrom-WinStandInQuery $FilterXml)
+    $log = $selects[0].QueryPath
+    foreach ($sel in $selects) { if ($sel.Path -ne $log) { throw 'Stand-in: Select und Query nennen verschiedene Protokolle' } }
+    if ($script:WinFake.FailLogs.ContainsKey($log)) {
+        throw (New-Object System.Management.Automation.ErrorRecord ((New-Object Exception "Protokoll $log nicht lesbar")), ($script:WinFake.FailLogs[$log] + ',Microsoft.PowerShell.Commands.GetWinEventCommand'), 'NotSpecified', $null)
+    }
     if ($script:WinFake.Logs -notcontains $log -or $script:WinFake.DisabledLogs -contains $log) { throw "Protokoll $log nicht vorhanden" }
     $all = @($script:WinFake.Events | Where-Object { $_.LogName -eq $log })
     if ($log -like '*Defender*' -and $script:WinFake.ManyEvents -gt 0) {
-        # one event per second
+        # one event per second, each with its own fixed record id
+        $xmlMany = New-WinStandInXml 'Microsoft-Windows-Windows Defender' 1000 4 @() $null $null '' ''
+        $now = [datetime]::Now
         $all = @(foreach ($k in 1..$script:WinFake.ManyEvents) {
-                @{ LogName = $log; ProviderName = 'Microsoft-Windows-Windows Defender'; Id = 1000; Level = 4; TimeCreated = [datetime]::Now.AddSeconds(-$k); Message = "Ereignis $k"
-                    Xml = (New-WinStandInXml 'Microsoft-Windows-Windows Defender' 1000 4 @() $null $null '' '') }
+                @{ LogName = $log; ProviderName = 'Microsoft-Windows-Windows Defender'; Id = 1000; Level = 4; TimeCreated = $now.AddSeconds(-$k); Message = "Ereignis $k"
+                    RecordId = [long](1000000 + $k); Xml = $xmlMany }
             })
     }
-    $utc = { param($t) if ($t.Kind -eq 'Utc') { $t } else { $t.ToUniversalTime() } }
-    $events = @($all | Where-Object {
-            ($null -eq $f['ProviderName'] -or @($f['ProviderName']) -contains $_.ProviderName) -and
-            ($null -eq $f['Id'] -or @($f['Id']) -contains $_.Id) -and ($null -eq $f['Level'] -or @($f['Level']) -contains $_.Level) -and
-            ($null -eq $f['StartTime'] -or (& $utc $_.TimeCreated) -ge (& $utc $f['StartTime'])) -and
-            ($null -eq $f['EndTime'] -or (& $utc $_.TimeCreated) -le (& $utc $f['EndTime'])) } |
-            Sort-Object -Property @{ Expression = { $_.TimeCreated }; Descending = $true })
-    if (@($f['Id']).Count -gt 23) { throw 'Die angegebene Abfrage ist ungueltig' }
-    if ($events.Count -eq 0) {
-        throw (New-Object System.Management.Automation.ErrorRecord ((New-Object Exception 'Keine Ereignisse')),
-            'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand', 'ObjectNotFound', $null)
+    $hits = New-Object System.Collections.Generic.List[object]
+    foreach ($sel in $selects) {
+        foreach ($e in $all) {
+            if ($e.ProviderName -ne $sel.Provider) { continue }
+            if ($sel.Ids.Count -gt 0 -and $sel.Ids -notcontains $e.Id) { continue }
+            if ($sel.Levels.Count -gt 0 -and $sel.Levels -notcontains $e.Level) { continue }
+            $u = $e.TimeCreated.ToUniversalTime()
+            if ($u -lt $sel.After) { continue }
+            if ($null -ne $sel.Before -and $u -gt $sel.Before) { continue }
+            $hits.Add($e)
+        }
     }
-    foreach ($e in @($events | Select-Object -First $MaxEvents)) { New-WinStandInRecord $e }
+    $events = @($hits.ToArray() | Sort-Object -Property @{ Expression = { $_.TimeCreated.ToUniversalTime() }; Descending = (-not $Oldest) })
+    if ($events.Count -eq 0) {
+        $PSCmdlet.WriteError((New-Object System.Management.Automation.ErrorRecord ((New-Object Exception 'Keine Ereignisse')),
+                'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand', 'ObjectNotFound', $null))
+        return
+    }
+    if ($MaxEvents -ge 0) { $events = @($events | Select-Object -First $MaxEvents) }
+    foreach ($e in $events) { New-WinStandInRecord $e }
 }
 
 function Get-WorkerPerfSidAccount([string]$Sid) {

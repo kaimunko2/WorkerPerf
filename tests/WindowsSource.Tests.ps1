@@ -308,7 +308,8 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
         (Get-WorkerPerfEventText ('x' * 400)).Length | Should -Be 300
         Get-WorkerPerfEventText $null | Should -Be ''
     }
-    It 'behaelt bei mehr als 200 Ereignissen die neuesten und warnt einmal je Protokoll' {
+    # Aussage geaendert (Fix-Runde 1 von Task 10): der regelmaessige Abruf liest die aeltesten zuerst, damit eine Flut nicht verbirgt, wie sie begann
+    It 'behaelt bei mehr als 200 Ereignissen die aeltesten und warnt einmal je Protokoll' {
         . (Join-Path $PSScriptRoot 'WindowsStandIns.ps1'); Reset-WinStandIns
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null)
         $script:WinFake.ManyEvents = 250
@@ -316,8 +317,9 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
         $warn = @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
         $ev = @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] -and $_.Log -eq 'defender' })
         $ev.Count | Should -Be 200
-        ($ev | Measure-Object -Property Time -Minimum).Minimum | Should -BeGreaterThan ([datetime]::Now.AddSeconds(-202))
-        $warn.Count | Should -Be 1; $warn[0].Message | Should -Match 'Defender'
+        ($ev | Measure-Object -Property Time -Maximum).Maximum | Should -BeLessThan ([datetime]::Now.AddSeconds(-49))   # die aeltesten 200 von 250
+        ($ev | Measure-Object -Property Time -Minimum).Minimum | Should -BeLessThan ([datetime]::Now.AddSeconds(-248))
+        $warn.Count | Should -Be 1; $warn[0].Message | Should -Match 'Defender'; $warn[0].Message | Should -Match 'neueren'
         @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
     }
     It 'wartet bis zur Zielzeit und meldet die Stopp-Datei' {
@@ -375,7 +377,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         @($ev | Where-Object Group -eq 'session').Count | Should -Be 0                         # die Anmeldung liegt vor dem Fenster
         @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-15)) | Where-Object Group -eq 'session').User | Should -Be @('mueller')
     }
-    It 'fragt je Protokoll und Quelle hoechstens 23 Kennungen ab' {
+    It 'fragt je Protokollname einmal ab, mit hoechstens 23 Kennungen je Auswahl' {
         $f = Join-Path $TestDrive 'viele.json'
         $ids = (1..30 | ForEach-Object { 5000 + $_ }) -join ','
         [IO.File]::WriteAllText($f, '{"logs":[{"id":"application","names":["Application"],"lookback":true}],"events":[{"log":"application","provider":"Sim Quelle","ids":[' + $ids + '],"group":"app","kind":"app-detail"}]}')
@@ -385,7 +387,57 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $script:WinFake.EventQueries = 0
         $out = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>&1)
         @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
-        @($out.EventId | Sort-Object) | Should -Be @(5001, 5030); $script:WinFake.EventQueries | Should -Be 2
+        @($out.EventId | Sort-Object) | Should -Be @(5001, 5030); $script:WinFake.EventQueries | Should -Be 1
+        $sel = @(([xml]$script:WinFake.Queries[$script:WinFake.Queries.Count - 1]).QueryList.Query.Select)
+        $sel.Count | Should -Be 2
+        @($sel | ForEach-Object { [regex]::Matches($_.InnerText, 'EventID=').Count }) | Should -Be @(23, 7)
+    }
+    It 'macht je Abruf einen Aufruf je Protokollname (Fix-Runde 1, I1)' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.EventQueries = 0
+        [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        $script:WinFake.EventQueries | Should -Be 9                                   # 8 Protokolle, AppLocker mit zwei Namen
+        $script:WinFake.EventQueries = 0
+        [void](Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now))
+        $script:WinFake.EventQueries | Should -Be 8                                   # ohne Sitzungsprotokoll
+    }
+    It 'schreibt Quellennamen mit Hochkomma und Sonderzeichen richtig in die Abfrage' {
+        $q = @{ LogName = 'Sim & Log'; Selects = @(@{ Provider = "Sim O'Brien <Dienst>"; Ids = [int[]]@(1, 2); Levels = $null }, @{ Provider = 'Sim Ebene'; Ids = $null; Levels = [int[]]@(2, 3) }) }
+        $x = [xml](New-WorkerPerfEventQueryXml $q ([datetime]::new(2026, 3, 29, 1, 2, 3, 456, [DateTimeKind]::Utc)) ([datetime]::new(2026, 3, 29, 1, 2, 4, 0, [DateTimeKind]::Utc).AddTicks(1)))
+        $x.QueryList.Query.Path | Should -Be 'Sim & Log'
+        $sel = @($x.QueryList.Query.Select); $sel[0].Path | Should -Be 'Sim & Log'
+        $sel[0].InnerText | Should -BeExactly ("*[System[Provider[@Name=`"Sim O'Brien <Dienst>`"] and (EventID=1 or EventID=2) and TimeCreated[@SystemTime>='2026-03-29T01:02:03.456Z' and @SystemTime<='2026-03-29T01:02:04.001Z']]]")
+        $sel[1].InnerText | Should -BeExactly ("*[System[Provider[@Name='Sim Ebene'] and (Level=2 or Level=3) and TimeCreated[@SystemTime>='2026-03-29T01:02:03.456Z' and @SystemTime<='2026-03-29T01:02:04.001Z']]]")
+        { ConvertTo-WorkerPerfXPathLiteral "a'b`"c" } | Should -Throw
+    }
+    It 'liest ein Ereignis, das zwei Auswahlen derselben Abfrage nennen, nur einmal (M4)' {
+        $f = Join-Path $TestDrive 'doppelt.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"application","names":["Application"],"lookback":true}],"events":[' +
+            '{"log":"application","provider":"Sim Profil","ids":[7],"group":"app","kind":"app-detail"},' +
+            '{"log":"application","provider":"Sim Profil","ids":"*","levels":["error"],"group":"profile","kind":"profileerror"}]}')
+        Add-WinStandInEvent 'Application' 'Sim Profil' 7 2 (-1) 'von beiden Auswahlen genannt'
+        Add-WinStandInEvent 'Application' 'Sim Profil' 9 2 (-1) 'nur nach Ebene'
+        Add-WinStandInEvent 'Application' 'Sim Profil' 9 4 (-1) 'Information'
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig (Read-WorkerPerfEventConfig $f) 3>$null)
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        @($ev | ForEach-Object { '{0}:{1}' -f $_.EventId, $_.Kind } | Sort-Object) | Should -Be @('7:app-detail', '9:profileerror')
+        $b = Get-WorkerPerfEventsBefore -Days 1 -Until ([datetime]::Now)
+        @($b.Events).Count | Should -Be 2
+    }
+    It 'meldet ein nicht lesbares Protokoll einmal mit Fehlerklasse und haelt den Rueckblick fuer unvollstaendig (I1, M5)' {
+        $script:WinFake.FailLogs = @{ 'System' = 'LogInfoUnavailable' }
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null
+        @($b.Capped) | Should -Be @('system')
+        @($b.Events | Where-Object Log -eq 'application').Count | Should -BeGreaterThan 0
+        $out = @(foreach ($k in 1..3) { Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>&1 })
+        @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0     # die Konsole bedient der Collector
+        @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] -and $_.Log -eq 'defender' }).Count | Should -Be 6
+        $f = @(Receive-WorkerPerfSourceErrors)
+        @($f | ForEach-Object { $_.Source }) | Should -Be @('eventsbefore', 'events')
+        $f[0].Message | Should -BeExactly "Ereignisprotokoll 'System' nicht lesbar (LogInfoUnavailable): Protokoll System nicht lesbar"
+        @(Receive-WorkerPerfSourceErrors).Count | Should -Be 0
+        [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5))); @(Receive-WorkerPerfSourceErrors).Count | Should -Be 0   # einmal
     }
     It 'nennt jedes Protokoll aus events.json in den Quellen' {
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
@@ -398,10 +450,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
     It 'liest den Rueckblick ohne Sitzungsprotokoll und vermerkt die Obergrenze' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
         $script:WinFake.ManyEvents = 2500
-        $sw = [Diagnostics.Stopwatch]::StartNew()
         $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now)
-        $script:LookbackMs = $sw.ElapsedMilliseconds
-        Write-Host ("    Rueckblick mit 2500 Defender-Ereignissen (2000 gelesen) in {0} ms" -f $LookbackMs)
         $b.Capped | Should -Contain 'defender'; @($b.Events | Where-Object Log -eq 'defender').Count | Should -Be 2000
         @($b.Events | Where-Object Group -eq 'session').Count | Should -Be 0
         @($b.Capped) | Should -Be @('defender')
@@ -492,6 +541,44 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $info.Sources['print.drivers'].Available | Should -BeFalse; $info.Sources['print.drivers'].Detail | Should -Match 'MSFT_PrinterDriver'
         $info.Sources['print.queues'].Available | Should -BeFalse; $info.Sources['print.queues'].Detail | Should -Be 'Print Queue: Kategorie nicht vorhanden'
         @(Get-WorkerPerfPrintQueues).Count | Should -Be 0
+    }
+    It 'trennt Rueckblick und Messung genau an der Startzeit, auch mit Versatz <Tz> (C1)' -TestCases @(
+        @{ Tz = 'UTC' }; @{ Tz = 'Etc/GMT-1' }; @{ Tz = 'Etc/GMT-2' }; @{ Tz = 'Etc/GMT+5' }; @{ Tz = 'Europe/Berlin' }
+    ) {
+        # Etc/GMT-1 ist UTC+1 h, Etc/GMT-2 UTC+2 h, Etc/GMT+5 UTC-5 h (Vorzeichen nach POSIX umgekehrt)
+        $files = @('WorkerPerf.Common.ps1', 'WorkerPerf.EventConfig.ps1', 'WorkerPerf.Sources.Windows.ps1', 'WorkerPerf.Capture.ps1') | ForEach-Object { (Resolve-Path (Join-Path $PSScriptRoot "../src/$_")).Path }
+        $standIns = (Resolve-Path (Join-Path $PSScriptRoot 'WindowsStandIns.ps1')).Path
+        $body = @'
+Reset-WinStandIns
+$n = [datetime]::Now; $start = $n.AddTicks(-($n.Ticks % [TimeSpan]::TicksPerSecond)).AddSeconds(-30)
+$sys = 'Service Control Manager'
+Add-WinStandInEvent 'System' $sys 7031 2 0 'vor' -Data @('a') -Binary 'SimVor' -At $start.AddSeconds(-1)
+Add-WinStandInEvent 'System' $sys 7031 2 0 'genau' -Data @('a') -Binary 'SimGenau' -At $start
+Add-WinStandInEvent 'System' $sys 7031 2 0 'nach' -Data @('a') -Binary 'SimNach' -At $start.AddSeconds(1)
+[void](Initialize-WorkerPerfSource -StartTime $start 3>$null)
+$b = @((Get-WorkerPerfEventsBefore -Days 1 -Until $start).Events | Where-Object { $_.Service -like 'Sim*' } | ForEach-Object { $_.Service })
+$xb = [xml]@($script:WinFake.Queries | Where-Object { $_ -like '*Path="System"*' })[0]
+$script:WinFake.Queries.Clear()
+$e = @(Get-WorkerPerfEvents -Since $start | Where-Object { $_.Service -like 'Sim*' } | ForEach-Object { $_.Service })
+$xe = [xml]@($script:WinFake.Queries | Where-Object { $_ -like '*Path="System"*' })[0]
+$u = $start.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
+$d = $start.ToUniversalTime().AddDays(-1).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
+$tb = @($xb.QueryList.Query.Select)[0].InnerText; $te = @($xe.QueryList.Query.Select)[0].InnerText
+'before=' + ($b -join ',')
+'events=' + ($e -join ',')
+'lookbackBounds=' + [string]($tb.Contains("@SystemTime>='$d'") -and $tb.Contains("@SystemTime<='$u'"))
+'eventsLower=' + [string]$te.Contains("@SystemTime>='$u'")
+'offset=' + [string][TimeZoneInfo]::Local.GetUtcOffset($start).TotalHours
+'@
+        $code = ((($files + $standIns) | ForEach-Object { ". '$_'; " }) -join '') + $body
+        $old = $env:TZ
+        try { $env:TZ = $Tz; $out = @(& (Get-Process -Id $PID).Path -NoProfile -Command $code) }
+        finally { $env:TZ = $old }
+        $out | Should -Contain 'before=SimVor,SimGenau'                                       # Rueckblick bis einschliesslich Start
+        $out | Should -Contain 'events=SimNach'                                               # Messung nach dem Start, die Startsekunde nur einmal
+        $out | Should -Contain 'lookbackBounds=True'; $out | Should -Contain 'eventsLower=True'  # die Grenzen stehen in UTC in der Abfrage
+        $want = @{ 'UTC' = '0'; 'Etc/GMT-1' = '1'; 'Etc/GMT-2' = '2'; 'Etc/GMT+5' = '-5' }
+        if ($want.ContainsKey($Tz)) { $out | Should -Contain ('offset=' + $want[$Tz]) }
     }
     It 'vergleicht den Zeiger der Ereignisse in UTC (Rechner in Asia/Tokyo)' {
         $files = @('WorkerPerf.Common.ps1', 'WorkerPerf.EventConfig.ps1', 'WorkerPerf.Sources.Windows.ps1', 'WorkerPerf.Capture.ps1') | ForEach-Object { (Resolve-Path (Join-Path $PSScriptRoot "../src/$_")).Path }
@@ -639,5 +726,29 @@ Describe 'Collector mit der Windows-Datenquelle und nachgestellten Windows-Aufru
         foreach ($id in 'events.application', 'events.system', 'events.printservice', 'events.smbclient', 'events.profileservice', 'events.session', 'events.defender',
             'events.applocker', 'print.drivers', 'print.queues') { $Meta.Sources.$id.Available | Should -BeTrue -Because $id }
         @($Meta.LookbackCapped).Count | Should -Be 0
+    }
+}
+
+Describe 'Collector mit einem nicht lesbaren Ereignisprotokoll (Fix-Runde 1, M5)' {
+    BeforeAll {
+        $dir = Join-Path $TestDrive 'src'; [void](New-Item -ItemType Directory -Path $dir -Force)
+        Copy-Item (Join-Path $PSScriptRoot '../src/*') $dir
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Common.ps1'), "`nfunction Test-WorkerPerfWindows { return `$true }`n")
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Sources.Windows.ps1'),
+            "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n`$script:WinFake.FailLogs = @{ 'System' = 'LogInfoUnavailable' }`n")
+        [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+        $out = Join-Path $TestDrive 'out'
+        $script:Warnings = @()
+        $script:Run = (& (Join-Path $dir 'Start-WorkerPerfCapture.ps1') -OutputPath $out -DurationMinutes 0.12 -FastIntervalSeconds 1 -IntervalSeconds 5 3>&1 6>$null) |
+            ForEach-Object { if ($_ -is [System.Management.Automation.WarningRecord]) { $script:Warnings += $_.Message } else { $_ } } | Select-Object -Last 1
+        $script:Meta = Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json
+    }
+    It 'vermerkt das Protokoll einmal je Abruf in SourceErrors, warnt einmal und haelt den Rueckblick fuer unvollstaendig' {
+        $Meta.SourceErrors.eventsbefore.Count | Should -Be 1
+        $Meta.SourceErrors.eventsbefore.FirstMessage | Should -Match "^Ereignisprotokoll 'System' nicht lesbar \(LogInfoUnavailable\)"
+        $Meta.SourceErrors.events.Count | Should -Be 1
+        @($Warnings | Where-Object { $_ -like "*Ereignisprotokoll 'System' nicht lesbar*" }).Count | Should -Be 2   # je Quelle einmal
+        @($Meta.LookbackCapped) | Should -Be @('system')
+        @(Import-Csv (Join-Path $Run 'events_before.csv') | Where-Object Kind -eq 'crash').App | Should -Be @('EXCEL.EXE')
     }
 }

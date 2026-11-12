@@ -66,7 +66,7 @@
       "label": "Oracle-Client",
       "processes": [],
       "services": [],
-      "note": "auf dem Zielserver kein eigener Prozess; der Client läuft in der Anwendung, die ihn nutzt"
+      "note": "kein eigener Prozess; der Client läuft in der Anwendung, die ihn nutzt"
     },
     {
       "role": "Drucken",

@@ -600,6 +600,10 @@ function Get-WorkerPerfEventsBefore {
     return @{ Events = $events; Capped = @() }
 }
 
+function Receive-WorkerPerfSourceErrors {
+    # The simulated source fails nowhere: no failures to report.
+}
+
 function Get-WorkerPerfPrintDrivers {
     foreach ($d in $script:WorkerPerfSimPrintDrivers) {
         [pscustomobject]@{ Name = $d.Name; Manufacturer = $d.Manufacturer; Version = $d.Version; Type = $d.Type; Isolation = $d.Isolation; Files = @($d.Files) }
