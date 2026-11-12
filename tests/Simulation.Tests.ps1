@@ -94,7 +94,7 @@ Describe 'Simulation' {
         $cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json')
         Set-SimTime 60
         $all = @(Get-WorkerPerfEvents -Since $Start) + @((Get-WorkerPerfEventsBefore -Days 7 -Until $Start).Events)
-        $all.Count | Should -Be 18
+        $all.Count | Should -Be 19                                                   # C1: ein Absturz ohne Sitzung im Rueckblick dazu
         foreach ($e in $all) {
             $entry = Resolve-WorkerPerfEventEntry $cfg $e.Log $e.Source $e.EventId
             $entry | Should -Not -BeNullOrEmpty -Because "$($e.Source) $($e.EventId)"
@@ -106,16 +106,17 @@ Describe 'Simulation' {
     }
     It 'liefert Rueckblick, Treiber und Warteschlangen' {
         $b = Get-WorkerPerfEventsBefore -Days 7 -Until $Start
-        @($b.Events).Count | Should -Be 5; @($b.Capped).Count | Should -Be 0
-        @((Get-WorkerPerfEventsBefore -Days 4 -Until $Start).Events).Count | Should -Be 3
+        @($b.Events).Count | Should -Be 6; @($b.Capped).Count | Should -Be 0          # C1: Aussage geaendert
+        @((Get-WorkerPerfEventsBefore -Days 4 -Until $Start).Events).Count | Should -Be 4
         @(Get-WorkerPerfPrintDrivers).Manufacturer | Should -Be @('HP', 'Microsoft', 'Kyocera')
         Set-SimTime 43.5; (Get-WorkerPerfPrintQueues | Where-Object Queue -eq 'PRN-EG-01').Jobs | Should -Be 3
     }
     It 'spielt Rueckblick, Treiberliste und Zaehler der Warteschlangen wie im Drehbuch' {
         $b = @((Get-WorkerPerfEventsBefore -Days 7 -Until $Start).Events)
-        @($b | ForEach-Object { ($_.Time - $Start).TotalSeconds }) | Should -Be @(-432000, -431000, -259200, -258600, -258000)
+        # C1: Aussage geaendert, der letzte Absturz nennt weder Sitzung noch Konto
+        @($b | ForEach-Object { ($_.Time - $Start).TotalSeconds }) | Should -Be @(-432000, -431000, -259200, -258600, -258000, -172800)
         @($b | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.App, $_.Module, $_.User, $_.SessionId }) | Should -Be @('EXCEL.EXE|simaddin.dll|user001|2',
-            'WINWORD.EXE|simaddin.dll|user002|3', 'nexus.exe|nxreport.dll|user004|5', 'nexus.exe|nxreport.dll|user004|5', 'nexus.exe|nxreport.dll|user004|5')
+            'WINWORD.EXE|simaddin.dll|user002|3', 'nexus.exe|nxreport.dll|user004|5', 'nexus.exe|nxreport.dll|user004|5', 'nexus.exe|nxreport.dll|user004|5', 'simscan.exe|simscan.dll||')
         # bis zu einem frueheren Zeitpunkt: nur aeltere Ereignisse, gezaehlt ab diesem Zeitpunkt
         @((Get-WorkerPerfEventsBefore -Days 1 -Until $Start.AddSeconds(-258300)).Events).Count | Should -Be 2
         @((Get-WorkerPerfEventsBefore -Days 0 -Until $Start).Events).Count | Should -Be 0
@@ -134,7 +135,7 @@ Describe 'Simulation' {
     It 'beschreibt das Soll-Ergebnis' {
         $e = @(Get-WorkerPerfExpected)
         @($e | Where-Object Type -ne 'ereignis').Key | Should -Be @('homeoffice', 'cpu', 'memory', 'disk', 'share', 'profile', 'backend', 'hang')
-        @($e | Where-Object Type -eq 'ereignis').Count | Should -Be 7
+        @($e | Where-Object Type -eq 'ereignis').Count | Should -Be 8                 # C1: der Absturz ohne Sitzung im Rueckblick
         ($e | Where-Object Key -eq 'crash.memory').Patterns | Should -Be @('resource', 'overlap')
         ($e | Where-Object Key -eq 'profile.logon').Patterns.Count | Should -Be 0
         $cpu = $e | Where-Object Key -eq 'cpu'
@@ -144,7 +145,7 @@ Describe 'Simulation' {
     It 'beschreibt die Ereignisvorfaelle und den Rueckblick' {
         $e = @(Get-WorkerPerfExpected); $ms = ([DateTimeOffset]$Start).ToUnixTimeMilliseconds()
         $e.Key | Should -Be @('homeoffice', 'cpu', 'profile.logon', 'memory', 'crash.memory', 'disk', 'share', 'crash.manyusers', 'profile', 'print.spooler',
-            'backend', 'hang', 'before.shared.excel', 'before.shared.word', 'before.oneuser')
+            'backend', 'hang', 'before.shared.excel', 'before.shared.word', 'before.oneuser', 'before.nosession')      # C1: Absturz ohne Sitzung und Konto
         $show = { param($r) '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}' -f $r.Kind, (@($r.Patterns) -join '+'), $r.Before, $r.App, $r.Driver, $r.Count, (@($r.Users) -join '+'),
             (($r.StartMs - $ms) / 1000), (($r.EndMs - $ms) / 1000), $r.Affected }
         $rows = @{}; foreach ($r in $e) { $rows[$r.Key] = & $show $r }
@@ -155,6 +156,7 @@ Describe 'Simulation' {
         $rows['before.shared.excel'] | Should -Be 'crash|sharedmodule|True|EXCEL.EXE||1|user001|-432000|-432000|0'
         $rows['before.shared.word'] | Should -Be 'crash|sharedmodule|True|WINWORD.EXE||1|user002|-431000|-431000|0'
         $rows['before.oneuser'] | Should -Be 'crash|oneuser|True|nexus.exe||3|user004|-259200|-258000|0'
+        $rows['before.nosession'] | Should -Be 'crash||True|simscan.exe||1||-172800|-172800|0'
         $rows['cpu'] | Should -Be '||False|||0||300|420|6'
         foreach ($r in @($e | Where-Object Type -eq 'ereignis')) { $r.Lead | Should -BeNullOrEmpty; $r.Chronic | Should -BeFalse; $r.Patterns -is [array] | Should -BeTrue }
         foreach ($r in @($e | Where-Object Type -ne 'ereignis')) { $r.Kind | Should -BeNullOrEmpty; $r.Patterns.Count | Should -Be 0; $r.Before | Should -BeFalse }

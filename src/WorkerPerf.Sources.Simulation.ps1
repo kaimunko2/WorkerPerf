@@ -345,13 +345,15 @@ function Initialize-WorkerPerfSource {
         (New-WorkerPerfSimSessionEvent $cfg 2230 25 'reconnection' 23)
         (New-WorkerPerfSimCrash $cfg 2600 'spoolsv.exe' '10.0.20348.2849' 'hpsimgr.dll' '61.310.1.25919' '0xc0000005' -ProcessId $spoolerPid))
     # The lookback has no processes to find a session in, so its crashes name session and user (session id = user number + 1;
-    # the user comes from the account in the System part of the event, as for the profile error).
+    # the user comes from the account in the System part of the event, as for the profile error). One crash names neither,
+    # as the classic Application Error 1000 is written without an account: its session is unknown (P1-R32).
     $script:WorkerPerfSimEventsBefore = @(
         (New-WorkerPerfSimCrash $cfg -432000 'EXCEL.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 2 -User 'user001')
         (New-WorkerPerfSimCrash $cfg -431000 'WINWORD.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 3 -User 'user002')
         (New-WorkerPerfSimCrash $cfg -259200 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004')
         (New-WorkerPerfSimCrash $cfg -258600 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004')
-        (New-WorkerPerfSimCrash $cfg -258000 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004'))
+        (New-WorkerPerfSimCrash $cfg -258000 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004')
+        (New-WorkerPerfSimCrash $cfg -172800 'simscan.exe' '3.1.0.7' 'simscan.dll' '3.1.0.7' '0xc0000005'))
     $script:WorkerPerfSimPrintDrivers = @(
         @{ Name = 'HP Universal Printing PCL 6 (Sim)'; Manufacturer = 'HP'; Version = '61.310.1.25919'; Type = 3; Isolation = 'none'; Files = @('hpsimgr.dll', 'hpsimui.dll') }
         @{ Name = 'Microsoft IPP Class Driver'; Manufacturer = 'Microsoft'; Version = '10.0.20348.1'; Type = 4; Isolation = 'shared'; Files = @('mxdwdrv.dll') }
@@ -652,7 +654,8 @@ function Get-WorkerPerfExpected {
             Count = 1; Users = @() }
         @{ Key = 'before.shared.excel'; Kind = 'crash'; Patterns = @('sharedmodule'); Before = $true; A = -432000; B = -432000; App = 'EXCEL.EXE'; Driver = $null; Count = 1; Users = @('user001') }
         @{ Key = 'before.shared.word'; Kind = 'crash'; Patterns = @('sharedmodule'); Before = $true; A = -431000; B = -431000; App = 'WINWORD.EXE'; Driver = $null; Count = 1; Users = @('user002') }
-        @{ Key = 'before.oneuser'; Kind = 'crash'; Patterns = @('oneuser'); Before = $true; A = -259200; B = -258000; App = 'nexus.exe'; Driver = $null; Count = 3; Users = @('user004') })
+        @{ Key = 'before.oneuser'; Kind = 'crash'; Patterns = @('oneuser'); Before = $true; A = -259200; B = -258000; App = 'nexus.exe'; Driver = $null; Count = 3; Users = @('user004') }
+        @{ Key = 'before.nosession'; Kind = 'crash'; Patterns = @(); Before = $true; A = -172800; B = -172800; App = 'simscan.exe'; Driver = $null; Count = 1; Users = @() })
     $out = New-Object System.Collections.Generic.List[object]
     foreach ($r in $rows) {
         $w = $script:WorkerPerfSimWindows[$r.Key]

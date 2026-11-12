@@ -1430,7 +1430,8 @@ function renderEventDetail(inc, host) {
   const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(evIncRange(inc))}</b></span>`];
   if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
   if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${capList(ev.sessions.map(lnkS))}</span>`);
-  else if (!ev.inSession) kv.push("<span><b>ohne Benutzersitzung</b></span>");
+  else if (ev.sessionUnknown) kv.push("<span><b>Sitzung nicht ermittelt</b></span>");
+  else if (ev.noUserSession) kv.push("<span><b>ohne Benutzersitzung</b></span>");
   if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + (ev.versions.length === 1 ? "Version " : "Versionen ") + capList(ev.versions.map(esc)) : ""}</span>`);
   if (ev.service) kv.push(`<span>Dienst <b>${esc(ev.service)}</b></span>`);
   if (ev.driver) kv.push(`<span>Treiber <b>${esc(ev.driver)}</b></span>`);

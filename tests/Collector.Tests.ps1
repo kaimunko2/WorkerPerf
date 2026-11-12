@@ -43,7 +43,7 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         @(Import-Csv (Join-Path $Run 'probes.csv')).Count | Should -Be (240 * 3)
         @(Import-Csv (Join-Path $Run 'events.csv') | Where-Object Group -eq 'security').Kind | Should -Be @('scan-start', 'scan-end', 'applocker-block')
         @(Import-Csv (Join-Path $Run 'events.csv')).Count | Should -Be 13
-        @(Import-Csv (Join-Path $Run 'events_before.csv')).Count | Should -Be 5; @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 3
+        @(Import-Csv (Join-Path $Run 'events_before.csv')).Count | Should -Be 6; @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 3
         @(Import-Csv (Join-Path $Run 'printqueues.csv')).Count | Should -Be (240 * 2)
         ((Import-Csv (Join-Path $Run 'events.csv')) | Where-Object App -eq 'chrome.exe').User | Should -Be 'user008'
         @(Get-Content (Join-Path $Run 'citrix.csv')).Count | Should -BeGreaterThan 1000
@@ -59,7 +59,7 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         @($ev | Where-Object Group -eq 'session' | ForEach-Object { '{0}|{1}|{2}' -f $_.Kind, $_.SessionId, $_.User }) | Should -Be @('logoff|15|user014',
             'logon|15|user014', 'disconnect|23|user022', 'reconnect|23|user022')
         $pr = $ev | Where-Object Group -eq 'profile'; $pr.User | Should -Be 'user014'; $pr.SessionId | Should -Be ''
-        $b = @(Import-Csv (Join-Path $Run 'events_before.csv')); @($b.App) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE', 'nexus.exe', 'nexus.exe', 'nexus.exe')
+        $b = @(Import-Csv (Join-Path $Run 'events_before.csv')); @($b.App) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE', 'nexus.exe', 'nexus.exe', 'nexus.exe', 'simscan.exe')   # C1
         (Import-Csv (Join-Path $Run 'printdrivers.csv'))[0].Files | Should -Be 'hpsimgr.dll;hpsimui.dll'
         $q = @(Import-Csv (Join-Path $Run 'printqueues.csv') | Where-Object Queue -eq 'PRN-EG-01')
         ($q | Measure-Object { [int]$_.Jobs } -Maximum).Maximum | Should -Be 3

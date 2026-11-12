@@ -241,7 +241,11 @@ Describe 'Ereignisvorfaelle im Bericht' {
         ($D.incidents | Where-Object { $_.event -and $_.event.kind -eq 'profileerror' }).text | Should -Match 'Kein Muster erkannt\.$'
     }
     It 'liefert Rueckblick, Druckzustand und Sitzungsereignisse' {
-        $D.before.days | Should -Be 7; $D.before.eventCount | Should -Be 5; ($D.before.perDay | Measure-Object count -Sum).Sum | Should -Be 5
+        # C1: the crash of the lookback without session and account is an incident of its own, worded as unknown session
+        $ns = @($D.before.incidents | Where-Object { $_.event.app -eq 'simscan.exe' })
+        $ns.Count | Should -Be 1; $ns[0].severity | Should -Be 1; $ns[0].event.sessionUnknown | Should -BeTrue
+        $ns[0].text | Should -Match 'Absturz von simscan\.exe \(1-mal\)\. Sitzung nicht ermittelt\. .*Kein Muster erkannt\.$'
+        $D.before.days | Should -Be 7; $D.before.eventCount | Should -Be 6; ($D.before.perDay | Measure-Object count -Sum).Sum | Should -Be 6   # C1: ein Absturz ohne Sitzung dazu
         ($D.print.drivers | Where-Object involved).name | Should -Be 'HP Universal Printing PCL 6 (Sim)'
         ($D.print.queues | Where-Object name -eq 'PRN-EG-01').maxJobs | Should -Be 3; ($D.print.queues | Where-Object name -eq 'PRN-EG-01').jobErrors | Should -Be 1
         @($D.print.processes).name | Should -Contain 'spoolsv.exe'
@@ -292,7 +296,7 @@ Describe 'Ereignisdaten im Einzelnen' {
         foreach ($k in $perf.PSObject.Properties.Name) { $ev.PSObject.Properties.Name | Should -Contain $k }
         $perf.event | Should -BeNullOrEmpty; @($perf.eventIncidents).Count | Should -BeGreaterOrEqual 0
         $ev.chronic | Should -BeFalse; $ev.lead | Should -BeNullOrEmpty; @($ev.resources).Count | Should -Be 0; $ev.security.totalPct | Should -BeNullOrEmpty
-        @($D.incidents.id) | Should -Be @(1..12); @($D.before.incidents.id) | Should -Be @(13..15)
+        @($D.incidents.id) | Should -Be @(1..12); @($D.before.incidents.id) | Should -Be @(13..16)   # C1: der Absturz ohne Sitzung im Rueckblick
         @($D.incidents | Where-Object type -ne 'ereignis').Count | Should -Be 8; @($D.incidents)[8].type | Should -Be 'ereignis'
     }
     It 'gibt die Aussagen der Muster einzeln und die Einzelheiten mit kleinen Schluesseln aus' {
@@ -312,7 +316,7 @@ Describe 'Ereignisdaten im Einzelnen' {
         $proc = $D.procs | Where-Object k -eq $sp.k; $proc | Should -Not -BeNullOrEmpty
         $ws = @($proc.ws | Where-Object { $null -ne $_ })
         $sp.wsStartMB | Should -Be ([Math]::Round($ws[0])); $sp.wsEndMB | Should -Be ([Math]::Round($ws[-1])); $sp.wsMaxMB | Should -BeGreaterOrEqual $sp.wsEndMB
-        $D.before.incidentEventCount | Should -Be 5; $D.before.from | Should -Be ($D.meta.start - 7 * 86400000)
+        $D.before.incidentEventCount | Should -Be 6; $D.before.from | Should -Be ($D.meta.start - 7 * 86400000)
     }
     It 'nennt im Rueckblick die Ereignisse um eine gemeldete Uhrzeit mit dem Zeitversatz des Ereignisses' {
         # die Absturzreihe von nexus.exe vor der Messung mit einem Versatz eine Stunde ueber dem der Messung (Sommerzeit)
@@ -378,7 +382,7 @@ Describe 'Ereignisdaten im Einzelnen' {
         $from = Get-ServerTime $R.Run ($D.meta.start + 20 * 60000)
         $out = Join-Path $TestDrive 'lbcut.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -From $from 6>$null)
         $c = Get-ReportData $out
-        $c.before.from | Should -Be $D.before.from; $c.before.eventCount | Should -Be 5
+        $c.before.from | Should -Be $D.before.from; $c.before.eventCount | Should -Be 6
         $cut = @($D.events | Where-Object { $_.t -lt $c.meta.start }).Count; $cut | Should -BeGreaterThan 0
         $c.eventsOutsideCut | Should -Be $cut; @($c.events).Count | Should -Be (13 - $cut); $D.eventsOutsideCut | Should -Be 0
         # the start of the capture stays the first tick under the cut, so the page need not take the cut for the start (Task 9, C1)

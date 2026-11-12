@@ -282,6 +282,12 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   ok((await be.locator('.detail .patterns').innerText()).includes('spricht für Profil oder Daten dieses Benutzers'), 'Muster im Rueckblick');
   ok((await be.locator('.detail .evlist').innerText()).includes('09.11.2026'), 'Rueckblick-Ereignisse mit Datum');
   ok(await be.locator('.detail .zoomto').count() === 0, 'kein Zoom fuer die Zeit vor der Messung');
+  // C1: a lookback crash without session and account says so, never "ohne Benutzersitzung"
+  const nosess = D.before.incidents.find((i) => i.event.app === 'simscan.exe');
+  const ne = page.locator(`#before .incident[data-id="${nosess.id}"]`);
+  await ne.locator('.text').click();
+  const nkv = await ne.locator('.detail .kv').innerText();
+  ok(nkv.includes('Sitzung nicht ermittelt') && !nkv.includes('ohne Benutzersitzung') && (await ne.locator('.text').innerText()).includes('Sitzung nicht ermittelt.'), 'Rueckblick: unbekannte Sitzung als solche benannt: ' + nkv);
   // events table and timeline rows
   ok((await page.locator('#tlLegend').innerText()).includes('Anwendungen') && (await page.locator('#tlLegend').innerText()).includes('Sitzungen'), 'Legende nennt die Gruppen');
   ok((await page.locator('#timeline .tl-row[data-group="app"] .tl-label').innerText()) === 'Anwendungen', 'Zeile mit dem Wort der Gruppe');

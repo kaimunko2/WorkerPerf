@@ -41,6 +41,30 @@ Describe 'Windows-Datenquelle: plattformunabhaengige Teile' {
         if ($null -ne $Override) { $policy['PrintDriverIsolationOverrideCompat'] = $Override }
         Get-WorkerPerfEffectiveIsolation $Name (ConvertFrom-WorkerPerfIsolationGroups $Groups) $Attr $policy | Should -Be $Want
     }
+    It 'leitet die Isolierung gleich ab wie die Funktion des Pruefskripts (M12)' {
+        # the probe travels as one file and keeps its own copy of the rule: the same cases go to both functions
+        $probeAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../src/Test-WorkerPerfSources.ps1'), [ref]$null, [ref]$null)
+        foreach ($fn in 'Get-Prop', 'ConvertTo-ProbeDword', 'Get-ProbeIsolationGroupMap', 'Get-ProbeIsolationPolicy', 'Get-ProbeEffectiveIsolation') {
+            $f = $probeAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $fn }, $true)
+            $f | Should -Not -BeNullOrEmpty -Because $fn
+            . ([scriptblock]::Create($f.Extent.Text))
+        }
+        $cases = @(
+            @('Sim C', 'Sim A\\Sim C', 0, 1, $null), @('Sim C', 'Sim A\\Sim B\\Sim C', 4, $null, $null), @('Sim C', 'Sim A\\Sim C', 4, 0, $null),
+            @('Sim C', 'Sim C', 4, $null, $null), @('Sim X', $null, 4, 1, $null), @('Sim X', $null, 2, 1, $null), @('Sim X', $null, 2, $null, 1),
+            @('Sim X', $null, 4, $null, 0), @('Sim X', $null, $null, 1, $null), @('Sim X', $null, $null, $null, 1), @('Sim X', $null, $null, 0, $null),
+            @('Sim X', $null, -2147483644, 1, $null), @('Sim X', 'Sim Y', 0, $null, $null), @('Sim X', $null, 6, 2, 0))
+        foreach ($c in $cases) {
+            $policy = @{}
+            if ($null -ne $c[3]) { $policy['PrintDriverIsolationExecutionPolicy'] = $c[3] }
+            if ($null -ne $c[4]) { $policy['PrintDriverIsolationOverrideCompat'] = $c[4] }
+            $source = Get-WorkerPerfEffectiveIsolation $c[0] (ConvertFrom-WorkerPerfIsolationGroups $c[1]) $c[2] $policy
+            $counts = Get-ProbeEffectiveIsolation @([pscustomobject]@{ Name = $c[0] }) $c[1] @($c[2]) (Get-ProbeIsolationPolicy $policy)
+            $probe = @($counts.Keys | Where-Object { $counts[$_] -eq 1 })
+            $probe.Count | Should -Be 1
+            $(if ($probe[0] -eq 'unbekannt') { '' } else { $probe[0] }) | Should -Be $source -Because ($c -join ' | ')
+        }
+    }
     It 'liest die Warteschlangen ohne Summe' {
         $v = @{ 'Jobs' = @{ '_Total' = 3.0; 'PRN-A' = 1.0; 'PRN-B' = 2.0 }; 'Job Errors' = @{ '_Total' = 5.0; 'PRN-A' = 5.0; 'PRN-B' = 0.0 }; 'Not Ready Errors' = @{ 'PRN-A' = 1.0 } }
         $q = @(ConvertTo-WorkerPerfPrintQueueRows $v)

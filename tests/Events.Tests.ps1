@@ -637,14 +637,16 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         $show = { param($k, $app, $drv, $n, $u, $a, $b, $bf) '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $k, [string]$app, [string]$drv, $n, (@($u) -join '+'), $a, $b, $bf }
         @($SimInc | ForEach-Object { & $show $_.Kind $_.App $_.Driver $_.Count $_.Users $_.StartMs $_.EndMs $_.Before }) |
             Should -Be @($SimExp | ForEach-Object { & $show $_.Kind $_.App $_.Driver $_.Count $_.Users $_.StartMs $_.EndMs $_.Before })
-        @($SimInc.Id) | Should -Be @(1..7)
+        @($SimInc.Id) | Should -Be @(1..8)                                # C1: der Absturz ohne Sitzung im Rueckblick
     }
     It 'liefert bei zwei Laeufen dieselben Vorfaelle' {
         @($SimInc2 | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.Id, $_.Kind, $_.Key, $_.Count }) | Should -Be @($SimInc | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.Id, $_.Kind, $_.Key, $_.Count })
     }
     It 'gibt den Vorfaellen vor der Messung keine Sitzung der Messung' {
-        $b = @($SimInc | Where-Object { $_.Before }); $b.Count | Should -Be 3
-        foreach ($i in $b) { @($i.Sessions).Count | Should -Be 0; @($i.Users).Count | Should -Be 1 }
+        # C1: Aussage geaendert, der vierte Vorfall ist der Absturz ohne Sitzung und Konto
+        $b = @($SimInc | Where-Object { $_.Before }); $b.Count | Should -Be 4
+        foreach ($i in $b) { @($i.Sessions).Count | Should -Be 0; @($i.Users).Count | Should -Be $(if ($i.App -eq 'simscan.exe') { 0 } else { 1 }) }
+        @($b | Where-Object { $_.SessionUnknown }).App | Should -Be @('simscan.exe')
         foreach ($e in @($M.EventsBefore)) { $e.SessionIndex | Should -Be -1 }
     }
     It 'fasst den Rueckblick der simulierten Stunde mit Mustern, Datum und Haeufigkeit je Tag zusammen' {
@@ -652,8 +654,9 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         $exp = @($SimExp | Where-Object { $_.Before })
         @($lb.Incidents | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Kind, $_.App, (@($_.Patterns | ForEach-Object { $_.Id }) -join ','), $_.Count, $_.StartMs, $_.EndMs }) |
             Should -Be @($exp | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Kind, $_.App, (@($_.Patterns) -join ','), $_.Count, $_.StartMs, $_.EndMs })
-        @($lb.Incidents.Id) | Should -Be @(5, 6, 7); $lb.Days | Should -Be 7; $lb.EventCount | Should -Be 5
-        ($lb.PerDay | Measure-Object Count -Sum).Sum | Should -Be 5; @($lb.PerDay).Count | Should -Be 2; @($lb.Near).Count | Should -Be 0
+        # C1: Aussage geaendert, ein Vorfall, ein Ereignis und ein Tag mehr
+        @($lb.Incidents.Id) | Should -Be @(5, 6, 7, 8); $lb.Days | Should -Be 7; $lb.EventCount | Should -Be 6
+        ($lb.PerDay | Measure-Object Count -Sum).Sum | Should -Be 6; @($lb.PerDay).Count | Should -Be 3; @($lb.Near).Count | Should -Be 0
         $off = [int]$M.Meta.OffsetMinutes
         $at = { param($ms, $f) [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.AddMinutes($off).ToString($f, [cultureinfo]::InvariantCulture) }
         $text = @($lb.Incidents | ForEach-Object { Get-WorkerPerfEventIncidentText -Incident $_ -Model $M -Texts $Texts -Config $Cfg -OffsetMinutes $off })
@@ -661,6 +664,7 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         $text[1] | Should -Match ('^' + [regex]::Escape((& $at $exp[1].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von WINWORD.EXE (1-mal). Benutzer: user002.'))
         $span = (& $at $exp[2].StartMs 'dd.MM.yyyy HH:mm:ss') + [char]0x2013 + $(if ((& $at $exp[2].StartMs 'yyyyMMdd') -eq (& $at $exp[2].EndMs 'yyyyMMdd')) { & $at $exp[2].EndMs 'HH:mm:ss' } else { & $at $exp[2].EndMs 'dd.MM.yyyy HH:mm:ss' })
         $text[2] | Should -BeExactly ($span + ': Absturz von nexus.exe (3-mal). Benutzer: user004. Fehlerhaftes Modul: nxreport.dll, immer dasselbe. Fehlercode: 0xc0000409 (Pufferüberlauf erkannt, Programm vom System beendet). Nur user004 betroffen, 3-mal: spricht für Profil oder Daten dieses Benutzers.')
+        $text[3] | Should -BeExactly ((& $at $exp[3].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von simscan.exe (1-mal). Sitzung nicht ermittelt. Fehlerhaftes Modul: simscan.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Kein Muster erkannt.')
         $script:SimLbText = $text
     }
     It 'liefert den Druckzustand der simulierten Stunde' {
@@ -774,8 +778,10 @@ Describe 'Gekuerzte Ereignisliste und Einstellungen' {
 }
 Describe 'Muster' {
     It 'resource: Speicher ueber kritisch in den 5 Minuten davor, nicht 6 Minuten davor' {
-        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 6 + @(95) + @(50) * 53)))[0] | Should -Contain 'resource'     # Takt 6 = 4 min vor dem Absturz
-        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 4 + @(95) + @(50) * 55)))[0] | Should -Not -Contain 'resource'  # Takt 4 = 6 min davor
+        # Aussage geaendert (P1-R35): drei Takte in Folge (minTicks des Signals), der letzte in den 5 Minuten davor
+        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 4 + @(95) * 3 + @(50) * 53)))[0] | Should -Contain 'resource'     # Takte 4-6, Takt 6 = 4 min vor dem Absturz
+        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 2 + @(95) * 3 + @(50) * 55)))[0] | Should -Not -Contain 'resource'  # Takte 2-4, Takt 4 = 6 min davor
+        (Get-Pat @(New-Ev 10) (New-PatternModel (@(50) * 6 + @(95) + @(50) * 53)))[0] | Should -Not -Contain 'resource'     # ein einzelner Takt genuegt nicht
         (Get-Pat @((New-Ev 8 'system' '' 0 '' '' @{ Group = 'memory' }), (New-Ev 10)))[1] | Should -Contain 'resource'
     }
     It 'afterhang: Haenger derselben Anwendung in derselben Sitzung hoechstens 2 Minuten vorher' {
@@ -830,7 +836,7 @@ Describe 'Muster im Einzelnen' {
     It 'prueft resource fuer jedes Ereignis, auch ausserhalb der behaltenen 50' {
         # 120 Abstuerze von Minute 0 bis 59.5, Speicher nur um Minute 30 kritisch: Ereignisse 51..70 liegen nicht in der gekuerzten Liste
         $evs = @(0..119 | ForEach-Object { New-Ev ($_ / 2) -Sid 0 -User '' -App 'dienst.exe' })
-        $i = (Get-PatInc $evs (New-PatternModel (@(50) * 30 + @(96) + @(50) * 29)))[0]
+        $i = (Get-PatInc $evs (New-PatternModel (@(50) * 29 + @(96) * 3 + @(50) * 28)))[0]                         # Aussage geaendert (P1-R35): drei Takte
         $i.EventsTruncated | Should -BeTrue; @($i.Patterns | ForEach-Object { $_.Id }) | Should -Contain 'resource'
     }
     It 'afterhang ohne Sitzung ueber denselben Benutzer und mit der Zeit des Haengers' {
@@ -1293,5 +1299,113 @@ Describe 'Pruefung von Task 7, Runde 1' {
         (Get-Inc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown' -More @{ Driver = 'Sim PCL 6' }), $stop))[0].SameModule | Should -BeFalse
         (Get-Inc @((New-Ev 0 -Module 'StackHash_1a2b'), (New-Ev 1 -Module 'StackHash_1a2b')))[0].SameModule | Should -BeFalse
         (Get-Inc @((New-Ev 0), (New-Ev 1)))[0].SameModule | Should -BeTrue
+    }
+}
+Describe 'Abschlussrunde: Sitzung, Ursachen und Treiber nur, soweit die Daten sie tragen' {
+    BeforeAll {
+        function Get-BeforeText([object[]]$Events) {
+            $inc = Get-Inc $Events -Before
+            Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $Events -Model $null -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents $null -Before
+            , @($inc | ForEach-Object { Get-Text $_ })
+        }
+        # a crash as the classic Application Error 1000 of the lookback writes it: no session number, no account
+        function New-Bare([double]$Min, [string]$App = 'simtool.exe', [string]$Kind = 'crash') { New-Ev $Min $Kind $App -1 '' 'simtool.dll' @{ SessionIndex = -1 } }
+    }
+    It 'C1: bildet im Rueckblick aus einem Absturz mit unbekannter Sitzung einen Vorfall und sagt "Sitzung nicht ermittelt"' {
+        $i = Get-Inc @(New-Bare 0) -Before
+        $i.Count | Should -Be 1; $i[0].Severity | Should -Be 1; $i[0].SessionUnknown | Should -BeTrue; $i[0].NoUserSession | Should -BeFalse
+        $t = (Get-BeforeText @(New-Bare 0))[0]
+        $t | Should -Match ': Absturz von simtool\.exe \(1-mal\)\. Sitzung nicht ermittelt\. Fehlerhaftes Modul: simtool\.dll'
+        $t | Should -Not -Match 'Ohne Benutzersitzung'
+        (Get-Inc @(New-Bare 0 -Kind 'hang') -Before).Count | Should -Be 1
+    }
+    It 'C1: fasst Abstuerze mit unbekannter Sitzung je Anwendung zusammen wie die anderen' {
+        $i = Get-Inc @((New-Bare 0), (New-Bare 20), (New-Bare 25 'anders.exe'), (New-Bare 300)) -Before
+        @($i | ForEach-Object { $_.App + ':' + $_.Count }) | Should -Be @('simtool.exe:2', 'anders.exe:1', 'simtool.exe:1')
+    }
+    It 'C1: laesst in der Messzeit den einzelnen Absturz ohne Sitzung weg und nennt bei zweien die unbekannte Sitzung' {
+        (Get-Inc @(New-Bare 0)).Count | Should -Be 0
+        $i = Get-PatInc @((New-Bare 0), (New-Bare 1))
+        $i.Count | Should -Be 1; Get-Text $i[0] | Should -Match ': Absturz von simtool\.exe \(2-mal\)\. Sitzung nicht ermittelt\. '
+    }
+    It 'C1: sagt "Ohne Benutzersitzung" nur fuer Sitzung 0 und ueber ein Dienstkonto ohne Sitzungsnummer nichts' {
+        Get-Text (Get-PatInc @((New-Ev 0 -App 'dienst.exe' -Sid 0 -User 'SYSTEM'), (New-Ev 1 -App 'dienst.exe' -Sid 0 -User 'SYSTEM')))[0] | Should -Match ' \(2-mal\)\. Ohne Benutzersitzung\. '
+        $sys = Get-PatInc @((New-Ev 0 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 }), (New-Ev 1 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 }))
+        $t = Get-Text $sys[0]; $t | Should -Not -Match 'Ohne Benutzersitzung'; $t | Should -Not -Match 'Sitzung nicht ermittelt'
+        (Get-Inc @(New-Ev 0 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 }) -Before).Count | Should -Be 0
+        # a system event without session number and account: no statement about a session
+        Get-Text (Get-PatInc @(New-Ev 0 'system' '' -1 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = ''; SessionIndex = -1 }))[0] | Should -Match ': Systemfehler – Datenträgerfehler D: \(1-mal\)\. Kein Muster erkannt\.$'
+        # a crash with a session and a crash with an unknown one: the users are named, nothing about the unknown session
+        $mix = Get-PatInc @((New-Ev 0 -App 'simtool.exe'), (New-Bare 1))
+        Get-Text $mix[0] | Should -Match ' Benutzer: user002\. '
+    }
+    It 'C1: gibt die Sitzungslage in die Berichtsdaten' {
+        $o = ConvertTo-WorkerPerfEventIncidentOut -Incident (Get-Inc @(New-Bare 0) -Before)[0] -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        $o.event.sessionUnknown | Should -BeTrue; $o.event.noUserSession | Should -BeFalse
+        $z = ConvertTo-WorkerPerfEventIncidentOut -Incident (Get-PatInc @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'))[0] -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        $z.event.sessionUnknown | Should -BeFalse; $z.event.noUserSession | Should -BeTrue
+    }
+    It 'I2: overlap nur, wenn ein Ereignis des Vorfalls im Fenster des Leistungsvorfalls liegt' {
+        $perf = @(@{ Id = 1; StartMs = $T0 + 20 * 60000; EndMs = $T0 + 25 * 60000 }, @{ Id = 2; StartMs = $T0 + 49 * 60000; EndMs = $T0 + 51 * 60000 })
+        $i = (Get-PatInc @((New-Ev 0), (New-Ev 25.5), (New-Ev 50)) -Perf $perf)[0]
+        $i.Count | Should -Be 3; $i.Overlap | Should -Be @(2); $perf[0].EventIncidents.Count | Should -Be 0; $perf[1].EventIncidents | Should -Be @($i.Id)
+    }
+    It 'I2: resource nur bei Absturz, Haenger, Dienst und Druckproblem eines Prozesses' {
+        $mem = New-PatternModel (@(95) * 60)
+        (Get-Pat @(New-Ev 10 'profileerror' '' 3 'user002' '' @{ Group = 'profile'; Source = 'Citrix Profile Management'; Code = ''; Module = '' }) $mem)[0] | Should -Not -Contain 'resource'
+        (Get-Pat @(New-Ev 10 'system' '' -1 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = '' }) $mem)[0] | Should -Not -Contain 'resource'
+        (Get-Pat @(New-Ev 10 'print' '' -1 '' '' @{ Group = 'print'; Source = 'Microsoft-Windows-PrintService'; EventId = 215; Driver = 'Sim Neu'; Code = ''; Module = '' }) $mem)[0] | Should -Not -Contain 'resource'
+        (Get-Pat @(New-Ev 10) $mem)[0] | Should -Contain 'resource'
+        (Get-Pat @(New-Ev 10 'hang' -Module '') $mem)[0] | Should -Contain 'resource'
+        (Get-Pat @(New-Ev 10 'service' '' 0 '' '' @{ Service = 'BrokerAgent'; Group = 'service'; Code = ''; Module = '' }) $mem)[0] | Should -Contain 'resource'
+        (Get-Pat @(New-Ev 10 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll') $mem)[0] | Should -Contain 'resource'
+    }
+    It 'I2: sagt "wahrscheinlich" nur, wenn der Fehlercode selbst Speichermangel sagt, und nennt sonst den Anteil' {
+        $mem = New-PatternModel (@(50) * 4 + @(95) * 3 + @(50) * 53)
+        Get-Text (Get-PatInc @(New-Ev 10 -More @{ Code = '0xc0000017' }) $mem)[0] | Should -Match ' Wahrscheinlich Folge des Speichermangels\.'
+        $t = Get-Text (Get-PatInc @(New-Ev 10) $mem)[0]
+        $t | Should -Match ' Kann Folge des Speichermangels sein\.'; $t | Should -Not -Match 'Wahrscheinlich'
+        $some = (Get-PatInc @((New-Ev 10), (New-Ev 30)) $mem)[0]
+        $some.Patterns[0].Detail.Count | Should -Be 1; $some.Patterns[0].Detail.Total | Should -Be 2
+        Get-Text $some | Should -Match ' 1 von 2 bei Speichermangel: kann Folge davon sein\.'
+        Get-Text (Get-PatInc @((New-Ev 10 -More @{ Code = '0xc0000017' }), (New-Ev 30)) $mem)[0] | Should -Match ' 1 von 2 bei Speichermangel: wahrscheinlich Folge davon\.'
+        $o = ConvertTo-WorkerPerfEventIncidentOut -Incident $some -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        $o.event.patterns[0].text | Should -Be '1 von 2 bei Speichermangel: kann Folge davon sein.'
+        $o.event.patterns[0].detail.total | Should -Be 2; $o.event.patterns[0].detail.memoryCode | Should -BeFalse
+    }
+    It 'M11: nennt neben resource das gemeinsame Modul mit "spricht fuer"' {
+        $mem = New-PatternModel (@(95) * 60)
+        $evs = @((New-Ev 10 -Module 'simaddin.dll'), (New-Ev 11 -App 'WINWORD.EXE' -Sid 4 -User 'user003' -Module 'simaddin.dll'))
+        $t = Get-Text (Get-PatInc $evs $mem)[0]
+        $t | Should -Match ' Kann Folge des Speichermangels sein\. Das Modul simaddin\.dll spricht für eine gemeinsame Ursache \(betrifft EXCEL\.EXE, WINWORD\.EXE\)\.'
+        $t | Should -Not -Match 'Ursache liegt wahrscheinlich'
+        Get-Text (Get-PatInc $evs)[0] | Should -Match ' Ursache liegt wahrscheinlich im Modul simaddin\.dll'
+    }
+    It 'I4: ein Systemmodul in der Dateiliste eines Treibers macht weder Treiber noch Schutzsoftware beteiligt' {
+        $drv = @(@{ Name = 'Sim KX'; Manufacturer = 'Sim'; Version = '1.0'; Type = 3; Isolation = 'isolated'; Files = @('kxsim.dll', 'vcruntime140.dll') })
+        $roles = @([pscustomobject]@{ role = 'Sicherheit'; label = 'Sim Schutz'; modules = @('ntdll.dll', 'simguard.dll') })
+        $one = { param($evs)
+            $inc = @(New-WorkerPerfEventIncidents -Events $evs -Config $Cfg -Settings $Set -Drivers $drv -FirstId 1)
+            Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $evs -Model (New-PatternModel (@(50) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $roles -Drivers $drv -PerfIncidents @()
+            , $inc }
+        $i = & $one @(New-Ev 0 -App 'tabelle.exe' -Module 'VCRUNTIME140.dll')
+        @($i[0].Patterns | ForEach-Object { $_.Id }) | Should -Not -Contain 'printdriver'
+        $ps = Get-WorkerPerfPrintState -Model @{ PrintDrivers = $drv; PrintQueues = @(); Processes = @() } -EventIncidents $i
+        @($ps.Drivers | Where-Object { $_.Involved -or $_.PossiblyInvolved }).Count | Should -Be 0
+        # a crash of the spooler in a runtime module names no driver: the print problem is keyed by its source
+        $s = & $one @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'vcruntime140.dll')
+        $s[0].Kind | Should -Be 'print'; $s[0].Driver | Should -Be ''; @($s[0].Patterns | ForEach-Object { $_.Id }) | Should -Not -Contain 'printdriver'
+        (& $one @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'kxsim.dll'))[0].Driver | Should -Be 'Sim KX'
+        @((& $one @(New-Ev 0 -Module 'ntdll.dll'))[0].Patterns | ForEach-Object { $_.Id }) | Should -Not -Contain 'securitymodule'
+        @((& $one @(New-Ev 0 -Module 'simguard.dll'))[0].Patterns | ForEach-Object { $_.Id }) | Should -Contain 'securitymodule'
+    }
+    It 'trennt Benutzer und Domaene unter jeder Kultur' {
+        $old = [cultureinfo]::CurrentCulture
+        try {
+            [cultureinfo]::CurrentCulture = [cultureinfo]'th-TH'
+            Test-WorkerPerfEventPersonUser 'KLINIK\SYSTEM' $Cfg | Should -BeFalse
+            Test-WorkerPerfEventPersonUser 'KLINIK\user005' $Cfg | Should -BeTrue
+        }
+        finally { [cultureinfo]::CurrentCulture = $old }
     }
 }
