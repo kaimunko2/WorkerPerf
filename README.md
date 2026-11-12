@@ -203,14 +203,29 @@ Fehlt er, ist der Bericht nicht maskiert.
   Groß- und Kleinschreibung.
 - Alle Berichte einer Aufzeichnung verwenden dieselben Ersatznamen: der ganze Bericht ebenso wie Ausschnitte mit
   `-From` und `-To`. Für eine andere Aufzeichnung gelten andere Ersatznamen.
-- Ein Ordnername unter `C:\Users\` gilt als Benutzername, auch für Konten ohne Sitzung in der Messung. Ausgenommen
-  sind die Ordner von Windows selbst: `Public`, `Default`, `Default User` und `All Users` sind keine Benutzer.
+- Ein Ordnername unter `<Laufwerk>:\Users\` gilt als Benutzername, auf jedem Laufwerk und auch für Konten ohne
+  Sitzung in der Messung. Legt Windows einen zweiten Ordner für denselben Benutzer an (`name.DOMÄNE`,
+  `name.DOMÄNE.001` oder `name.001`), gehört er zum Benutzer `name` und erhält dessen Ersatznamen; der Zusatz bleibt
+  bei `-Mask Personen` stehen, bei `-Mask Alles` wird die Domäne darin ersetzt. Keine Benutzer sind die Ordner von
+  Windows selbst (`Public`, `Default`, `Default User`, `All Users`), das vorübergehende Profil (`TEMP`,
+  `TEMP.<Domäne>`), die Konten der Einrichtung (`defaultuser0` …), die Ordner von IIS-Anwendungspools
+  (`DefaultAppPool`, `.NET v4.5` …) und Konten, die keine Person sind (`SYSTEM` und die anderen Konten aus
+  `events.json`).
+- Ein vollständiger Hostname wie `fs01.sim.local` und sein erster Teil `fs01` sind derselbe Server und erhalten bei
+  `-Mask Alles` denselben Ersatznamen; der Rest (`sim.local`) gilt als Domäne. Ausgenommen ist ein erster Teil, der
+  ein Wort des Berichts ist (etwa `proxy`) oder schon als Name anderer Art vorkommt (etwa als Domäne).
+- Die Bezeichnungen, die Sie selbst vergeben (die Namen und Rollen der Gegenstellen in `endpoints.json`, die
+  Bezeichnungen der Rollen in `roles.json`), schützen keinen Namen, der darin als eigenes Wort steht: aus
+  „Dateiserver fs01" wird bei `-Mask Alles` „Dateiserver Server 02".
 - Ein Personenname geht einem Produktnamen vor. Heißt ein Benutzer wie ein Programm, ein Dienst oder ein Hersteller
   (zum Beispiel `hp`), wird dieses Wort dort ersetzt, wo es allein steht. Mehrteilige Produktnamen, etwa der Name
   eines Druckertreibers, bleiben stehen.
 - Meldungstexte von Ereignissen, Befehlszeilen und die Fehlermeldungen fehlgeschlagener Abfragen entfallen im
   maskierten Bericht. Sie können Namen enthalten, die die Auswertung nicht kennt. Art und Quelle der Ereignisse
-  bleiben.
+  bleiben; wo sonst die Meldung stünde, steht „Meldung entfernt (maskiert)".
+- Ein mit `-FocusUser` gemeldeter Benutzer, den die Aufzeichnung nicht kennt (Tippfehler, andere Schreibweise, ein
+  anderer Worker), erscheint im maskierten Bericht als „(Name entfernt)". Ein gefundener Benutzer erhält seinen
+  Ersatznamen.
 - Die Aufzeichnung selbst wird nie verändert und enthält immer die echten Namen. Die Maskierung betrifft nur den
   Bericht. Aus derselben Aufzeichnung lässt sich jederzeit auch ein Bericht ohne Maskierung erstellen.
 
@@ -220,8 +235,9 @@ Fehlt er, ist der Bericht nicht maskiert.
   Ohne `-OutFile` landet der Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Workers, und die
   Konsole zeigt diesen Pfad an. Auch der Dateiname selbst darf den Worker nicht nennen; sonst bricht die Auswertung
   mit einer Meldung ab.
-- Die Ordner für `-OutFile` und `-MaskMapFile` müssen schon vorhanden sein; die Auswertung legt sie nicht an. Fehlt
-  der Ordner der Zuordnungsdatei, ist der Bericht schon geschrieben, die Zuordnungsdatei aber nicht; die Meldung sagt das.
+- Die Ordner für `-OutFile` und `-MaskMapFile` müssen schon vorhanden sein; die Auswertung legt sie nicht an und
+  bricht vor der Auswertung mit einer Meldung ab, wenn einer fehlt. `-MaskMapFile` darf keine vorhandene Datei im
+  Aufzeichnungsordner nennen: die Aufzeichnung wird nie verändert.
 - `-MaskMapFile` schreibt eine Zuordnungsdatei: welcher Ersatzname zu welchem echten Namen gehört. Damit lassen sich
   Rückfragen zum Bericht beantworten („Wer ist Benutzer 07?"). Die Datei enthält die echten Namen. Sie gehört nicht
   zum weitergegebenen Bericht: getrennt aufbewahren und nicht weitergeben. Sie entsteht nur, wenn der Parameter
@@ -231,6 +247,26 @@ Fehlt er, ist der Bericht nicht maskiert.
 
 - Ein Name in einem Feld, das die Auswertung nicht als Namen kennt, bleibt stehen. Deshalb entfallen Meldungstexte
   und Befehlszeilen ganz.
+- Heißt ein Benutzer (bei `-Mask Alles` auch ein Server, eine Freigabe oder ein Drucker) wie ein Wort, das der Bericht
+  selbst verwendet, etwa `soll`, `zeit`, `ms` oder `hp`, wird dieses Wort überall ersetzt, auch in den Sätzen des
+  Berichts: aus „Soll unter 75 %" wird „Benutzer 15 unter 75 %". Solche Sätze sind entstellt, und wer den Wortlaut
+  des Berichts kennt, kann den Namen erraten. Einheiten (`ms`, `%`) und Verweise auf Dokumentation bleiben stehen.
+  Die Auswertung nennt dann auf der Konsole die betroffenen Ersatznamen, nie die echten Namen, zum Beispiel
+  „Hinweis: 2 Namen gleichen Woertern des Berichts (Benutzer 01, Benutzer 15) …"; diese Stellen besonders sorgfältig
+  durchsehen. Ebenso wird bei `-Mask Alles` eine Warteschlange, die genau wie ihr Druckertreiber heißt (so legt
+  Windows sie an), auch in der Liste der Treiber ersetzt.
+- Ein Name, der in einer eigenen Bezeichnung nur Teil eines längeren Wortes ist, bleibt stehen: in
+  „Dateiserver-fs01" bleibt `fs01`, in „Oracle-Listener" ein Benutzer `oracle`.
+- Benutzer ohne Sitzung in der Messung erkennt die Auswertung nur in Ordnern unter `<Laufwerk>:\Users\`, in Pfaden
+  der Citrix-Profilverwaltung (`…_UPM_local`), in FSLogix-Ordnern (`<SID>_<Name>`, `<Name>_<SID>`), in
+  ICA-Sitzungsnamen und in den Konten der Ereignisse. In anderen Pfaden bleibt ihr Name stehen, etwa im
+  Basisordner auf einer Freigabe (`\\fs01\home$\petra.klein\…`) oder in einem Gerätepfad.
+- Eine IP-Adresse wird nur ersetzt, wenn sie als Host vorkommt (Gegenstelle, Verbindungsprobe, Dateiserver,
+  UNC-Pfad) oder in einem Text der Aufzeichnung selbst. Steht sie nur in einem Pfad oder in einem Text des
+  Berichts, bleibt sie stehen: dort lässt sie sich nicht sicher von einer Versionsnummer wie `8.2.0.114`
+  unterscheiden. Eine IPv6-Adresse als Host wird als Server ersetzt („Server 03"), nicht als „Adresse".
+- Andere Texte Ihrer eigenen Konfiguration, etwa die Hinweise in `thresholds.json`, sind keine Namen und bleiben,
+  wie sie geschrieben sind; ein Name darin wird nur ersetzt, wenn er auch in der Aufzeichnung vorkommt.
 - Ein Name, der mit dem türkischen großen I mit Punkt (`İ`) geschrieben ist, gilt nicht als derselbe Name wie seine
   Schreibweise mit kleinem `i`; die zweite Schreibweise bleibt dann stehen. Das betrifft nur Umgebungen, in denen
   solche Namen vorkommen.
@@ -485,12 +521,15 @@ Die Auswertung bildet aus den Ereignissen eigene Vorfälle:
 | Systemfehler | Datenträger- oder Dateisystemfehler, Speichermangel-Warnung, Verbindungsabbruch zum Dateiserver |
 
 Abstürze und Hänger von Prozessen ohne Benutzersitzung sind Ereignisse in der Zeitleiste; ab dem zweiten Mal
-derselben Anwendung bilden sie einen Vorfall. Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst,
-Treiber oder Drucker, Quelle, betroffenes Laufwerk oder Server) gehören zu einem Vorfall, solange zwischen zwei
-aufeinanderfolgenden höchstens 30 Minuten liegen (`eventGroupMinutes` in `thresholds.json`). Ein Vorfall nennt
-Anzahl, Zeitraum, Benutzer, Versionen der Anwendung, fehlerhafte Module mit Anzahl und ob es immer dasselbe war,
-und die Fehlercodes mit einer Erklärung in Alltagssprache. In einer Benutzersitzung gilt er als `◆ kritisch`, sonst
-als `▲ auffällig`. Sitzungsereignisse bilden keine Vorfälle; sie stehen in der Zeitleiste und bei der Sitzung.
+derselben Anwendung bilden sie einen Vorfall. Konten, die keine Person sind, gelten dabei nie als Benutzer: System-
+und Dienstkonten wie `SYSTEM`, `DWM-1` oder Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die
+Konten virtueller Domänen wie `NT SERVICE\MSSQLSERVER` oder `IIS APPPOOL\DefaultAppPool` (`nonPersonDomains`).
+Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst, Treiber oder Drucker, Quelle, betroffenes
+Laufwerk oder Server) gehören zu einem Vorfall, solange zwischen zwei aufeinanderfolgenden höchstens 30 Minuten liegen
+(`eventGroupMinutes` in `thresholds.json`). Ein Vorfall nennt Anzahl, Zeitraum, Benutzer, Versionen der Anwendung,
+fehlerhafte Module mit Anzahl und ob es immer dasselbe war, und die Fehlercodes mit einer Erklärung in
+Alltagssprache. In einer Benutzersitzung gilt er als `◆ kritisch`, sonst als `▲ auffällig`. Sitzungsereignisse
+bilden keine Vorfälle; sie stehen in der Zeitleiste und bei der Sitzung.
 
 Für jeden Vorfall prüft die Auswertung diese Muster und nennt alle, die zutreffen:
 
@@ -664,7 +703,8 @@ von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
 Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
 gewählten Stufe durch Ersatznamen; was stehen bleibt und wo die Grenzen liegen, steht unter
-[Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Die Aufzeichnung selbst behält die echten Namen. Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
+[Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Die Aufzeichnung selbst behält die echten Namen.
+Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
 `.gitignore` schließt `*.maskmap.json` aus.
 Im Ergebnis des Prüfskripts sind Benutzer-, Domänen-, Client- und Servernamen sowie Konten-SIDs maskiert.
 Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird deshalb nach einer Durchsicht
