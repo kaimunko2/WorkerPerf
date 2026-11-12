@@ -9,6 +9,8 @@ $script:WorkerPerfEventNumberKeys = @('pid', 'session')
 # The list nonPersonAccounts that src/events.json ships; used when a custom events.json has none.
 $script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'LOKALER DIENST', 'NETZWERKDIENST', 'DWM-*', 'UMFD-*',
     'ANONYMOUS LOGON', 'ANONYMOUS-ANMELDUNG', '*$')
+# The list noModules that src/events.json ships: what Windows writes when it found no module ('unknown', 'StackHash_*').
+$script:WorkerPerfDefaultNoModules = @('unknown', 'StackHash_*')
 $script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object')
 
 function ConvertTo-WorkerPerfEventInt($Value) {
@@ -36,20 +38,31 @@ function Get-WorkerPerfEventStringList($Json, [string]$Name, [string]$Path) {
     return , $out.ToArray()
 }
 
-function Get-WorkerPerfEventAccountPatterns($Json, [string]$Path) {
-    # Account names that are never a person (service and virtual accounts, computer accounts). '*' is the only wildcard;
-    # a pattern names the account without its domain, because the domain is cut off before matching. A file without
-    # the list (or with null) takes the built-in list, so SYSTEM never counts as a person; an empty list stays empty.
+function Get-WorkerPerfEventNamePatterns($Json, [string]$Name, [string]$Path, [string[]]$Default, [string]$What) {
+    # Optional list of name patterns: '*' is the only wildcard; a pattern names an account without its domain or a file
+    # without its path. A missing list (or null) takes Default; an empty list stays empty.
     $prop = $null
-    if ($null -ne $Json) { $prop = $Json.PSObject.Properties['nonPersonAccounts'] }
-    if ($null -eq $prop -or $null -eq $prop.Value) { return , [string[]]$script:WorkerPerfDefaultNonPersonAccounts }
-    $list = Get-WorkerPerfEventStringList $Json 'nonPersonAccounts' $Path
+    if ($null -ne $Json) { $prop = $Json.PSObject.Properties[$Name] }
+    if ($null -eq $prop -or $null -eq $prop.Value) { return , [string[]]$Default }
+    $list = Get-WorkerPerfEventStringList $Json $Name $Path
     foreach ($s in $list) {
-        if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '`')) -ge 0 -or $s.Trim('*').Length -eq 0) {
-            throw "events.json: Feld 'nonPersonAccounts' enthaelt ein ungueltiges Muster ('$s'): erlaubt sind Kontonamen ohne Domaene, '*' als einziger Platzhalter."
+        if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '/', '`')) -ge 0 -or $s.Trim('*').Length -eq 0) {
+            throw "events.json: Feld '$Name' enthaelt ein ungueltiges Muster ('$s'): erlaubt sind $What, '*' als einziger Platzhalter."
         }
     }
     return , $list
+}
+
+function Get-WorkerPerfEventAccountPatterns($Json, [string]$Path) {
+    # Account names that are never a person (service and virtual accounts, computer accounts). The domain is cut off
+    # before matching. Without the list the built-in one applies, so SYSTEM never counts as a person.
+    return , (Get-WorkerPerfEventNamePatterns $Json 'nonPersonAccounts' $Path $script:WorkerPerfDefaultNonPersonAccounts 'Kontonamen ohne Domaene')
+}
+
+function Test-WorkerPerfNamePattern([string]$Name, [string[]]$Patterns) {
+    # $true when the name (compared without regard to case) matches one of the patterns of a name list.
+    foreach ($p in $Patterns) { if ($Name -like $p) { return $true } }
+    return $false
 }
 
 function Read-WorkerPerfEventConfig([string]$Path) {
@@ -153,7 +166,8 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         Logs              = $logs
         Entries           = $entries.ToArray()
         ImportantServices = (Get-WorkerPerfEventStringList $json 'importantServices' $Path)
-        SystemModules     = (Get-WorkerPerfEventStringList $json 'systemModules' $Path)
+        SystemModules     = (Get-WorkerPerfEventNamePatterns $json 'systemModules' $Path @() 'Dateinamen ohne Pfad')
+        NoModules         = (Get-WorkerPerfEventNamePatterns $json 'noModules' $Path $script:WorkerPerfDefaultNoModules 'Dateinamen ohne Pfad')
         PrintProcesses    = (Get-WorkerPerfEventStringList $json 'printProcesses' $Path)
         PrintServices     = (Get-WorkerPerfEventStringList $json 'printServices' $Path)
         NonPersonAccounts = (Get-WorkerPerfEventAccountPatterns $json $Path)

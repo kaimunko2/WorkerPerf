@@ -45,7 +45,10 @@
   "printProcesses": ["spoolsv.exe", "PrintIsolationHost.exe"],
   "printServices": ["Spooler"],
   "nonPersonAccounts": ["SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "LOKALER DIENST", "NETZWERKDIENST", "DWM-*", "UMFD-*", "ANONYMOUS LOGON", "ANONYMOUS-ANMELDUNG", "*$"],
-  "systemModules": ["ntdll.dll", "KERNELBASE.dll", "kernel32.dll", "ucrtbase.dll", "msvcrt.dll", "combase.dll", "user32.dll", "clr.dll", "coreclr.dll"],
+  "systemModules": ["ntdll.dll", "KERNELBASE.dll", "kernel32.dll", "user32.dll", "win32u.dll", "gdi32.dll", "gdi32full.dll", "combase.dll", "ole32.dll",
+    "oleaut32.dll", "rpcrt4.dll", "shell32.dll", "shlwapi.dll", "msvcrt.dll", "ucrtbase.dll", "VCRUNTIME*.dll", "MSVCP*.dll", "msvcr*.dll", "mfc*.dll",
+    "clr.dll", "clrjit.dll", "coreclr.dll", "mscorlib.ni.dll", "mscorwks.dll"],
+  "noModules": ["unknown", "StackHash_*"],
   "errorCodes": [
     { "code": "0xc0000005", "text": "Zugriffsverletzung" },
     { "code": "0xc00000fd", "text": "Stapelüberlauf" },

@@ -214,15 +214,38 @@ function Get-WorkerPerfListedDriverName([string]$Name, [object[]]$Drivers) {
     return $Name
 }
 
-function Get-WorkerPerfModuleDriver([string]$Module, [object[]]$Drivers) {
-    # Name of the first driver of the list whose files hold the module, or ''.
-    if ($Module.Length -eq 0) { return '' }
+function Test-WorkerPerfRealModule([string]$Module, $Config) {
+    # $false for an empty module and for what Windows writes when it found none (noModules of events.json: 'unknown',
+    # 'StackHash_*'); such a module names no cause.
     $leaf = Get-WorkerPerfLeafName $Module
-    foreach ($d in $Drivers) { if (@($d.Files) -contains $leaf) { return [string]$d.Name } }
+    if ($leaf.Trim().Length -eq 0) { return $false }
+    $none = Get-WorkerPerfField $Config 'NoModules'
+    if ($null -eq $none) { $none = $script:WorkerPerfDefaultNoModules }
+    return (-not (Test-WorkerPerfNamePattern $leaf ([string[]]@($none))))
+}
+
+function Get-WorkerPerfModuleDrivers([string]$Module, [object[]]$Drivers) {
+    # Names of all drivers of the list whose files hold the module (file name without regard to case), sorted by name.
+    if ($Module.Length -eq 0) { return , [string[]]@() }
+    $leaf = Get-WorkerPerfLeafName $Module
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($d in $Drivers) {
+        if ($null -ne $d -and @($d.Files) -contains $leaf -and -not $names.Contains([string]$d.Name)) { $names.Add([string]$d.Name) }
+    }
+    $arr = $names.ToArray()
+    [Array]::Sort($arr, [StringComparer]::OrdinalIgnoreCase)
+    return , [string[]]$arr
+}
+
+function Get-WorkerPerfModuleDriver([string]$Module, [object[]]$Drivers) {
+    # Name of the one driver whose files hold the module, or '' when none or several hold it (a shared file such as
+    # unidrv.dll names no single driver).
+    $all = Get-WorkerPerfModuleDrivers $Module $Drivers
+    if ($all.Length -eq 1) { return $all[0] }
     return ''
 }
 
-function Get-WorkerPerfEventIncidentKey($Event, [string]$Kind, [object[]]$Drivers) {
+function Get-WorkerPerfEventIncidentKey($Event, [string]$Kind, [object[]]$Drivers, $Config) {
     # @{ Key; Driver }: the grouping key of a record (compared without regard to case) and, for a print problem, its driver.
     $driver = ''
     if ($Kind -eq 'crash' -or $Kind -eq 'hang') { $key = [string]$Event.App }
@@ -230,9 +253,10 @@ function Get-WorkerPerfEventIncidentKey($Event, [string]$Kind, [object[]]$Driver
     elseif ($Kind -eq 'profileerror') { $key = [string]$Event.Source }
     elseif ($Kind -eq 'system') { $key = [string]$Event.Group + '|' + [string]$Event.Object }
     else {
-        # print: the driver, else the driver whose files hold the faulting module, else the printer, else the source
+        # print: the driver, else the one driver whose files hold the faulting module (not when several hold it), else the
+        # printer, else the source
         $driver = Get-WorkerPerfListedDriverName ([string]$Event.Driver) $Drivers
-        if ($driver.Length -eq 0) { $driver = Get-WorkerPerfModuleDriver ([string]$Event.Module) $Drivers }
+        if ($driver.Length -eq 0 -and (Test-WorkerPerfRealModule ([string]$Event.Module) $Config)) { $driver = Get-WorkerPerfModuleDriver ([string]$Event.Module) $Drivers }
         $key = $driver
         if ($key.Length -eq 0) { $key = [string]$Event.Printer }
         if ($key.Length -eq 0) { $key = [string]$Event.Source }
@@ -282,7 +306,7 @@ function New-WorkerPerfEventIncidents {
         $e['IncidentId'] = 0
         $kind = Get-WorkerPerfEventIncidentKind $e $Config
         if ($null -eq $kind) { continue }
-        $k = Get-WorkerPerfEventIncidentKey $e $kind $Drivers
+        $k = Get-WorkerPerfEventIncidentKey $e $kind $Drivers $Config
         # a print problem from a crash or hang of a print process, or from the stop of a print service
         $origin = ''
         if ($kind -eq 'print') {
@@ -467,17 +491,6 @@ function Test-WorkerPerfEventMember($Event, $Incident) {
     return $false
 }
 
-function Test-WorkerPerfSameSessionOrUser($A, $B, $Config) {
-    # Same user session when both records have one; otherwise the same affected person.
-    $sa = -1; $sb = -1
-    if ($A.ContainsKey('SessionIndex')) { $sa = [int]$A.SessionIndex }
-    if ($B.ContainsKey('SessionIndex')) { $sb = [int]$B.SessionIndex }
-    if ($sa -ge 0 -and $sb -ge 0) { return ($sa -eq $sb) }
-    $ua = Get-WorkerPerfEventAffectedUser $A $Config
-    $ub = Get-WorkerPerfEventAffectedUser $B $Config
-    return ($ua.Length -gt 0 -and [string]::Equals($ua, $ub, [StringComparison]::OrdinalIgnoreCase))
-}
-
 function Add-WorkerPerfEventPatterns {
     # Sets Patterns (@{ Id; Detail } in the order of $script:WorkerPerfPatternOrder), Overlap (int[]) and Companions on
     # every incident, looking at all records of an incident (also those Events leaves out) and at AllEvents (the records
@@ -500,6 +513,7 @@ function Add-WorkerPerfEventPatterns {
     $warnings = New-Object System.Collections.Generic.List[object]
     $candidates = New-Object System.Collections.Generic.List[object]
     $crashModules = @{}
+    $realModule = @{}
     foreach ($e in $all) {
         if ($e.ContainsKey('IncidentId') -and [int]$e.IncidentId -gt 0) {
             $id = [int]$e.IncidentId
@@ -512,6 +526,9 @@ function Add-WorkerPerfEventPatterns {
         if ($group -eq 'memory') { $warnings.Add($e) }
         if ($script:WorkerPerfCompanionGroups -contains $group) { $candidates.Add($e) }
         if ($kind -eq 'crash' -and ([string]$e.Module).Length -gt 0) {
+            $mk = ([string]$e.Module).ToLowerInvariant()
+            if (-not $realModule.ContainsKey($mk)) { $realModule[$mk] = Test-WorkerPerfRealModule ([string]$e.Module) $Config }
+            if (-not $realModule[$mk]) { continue }
             $m = (Get-WorkerPerfLeafName ([string]$e.Module)).ToLowerInvariant()
             $app = Get-WorkerPerfLeafName ([string]$e.App)
             if ($app.Length -eq 0) { continue }
@@ -519,8 +536,67 @@ function Add-WorkerPerfEventPatterns {
             if (-not $crashModules[$m].Contains($app.ToLowerInvariant())) { $crashModules[$m][$app.ToLowerInvariant()] = $app }
         }
     }
-    $hangMs = [long[]]@($hangs | ForEach-Object { [long]$_.TimeMs })
+    # Hangs by application and session ('s:<index>'), by application and person ('u:<user>') and, for hangs without a
+    # session, by application and person once more ('n:<user>'), each list in time order. A crash in a session looks at
+    # 's:' and 'n:', a crash without a session at 'u:': every hang in the window of such a list is a match.
+    $hangIndex = @{}
+    $appsWithoutSession = @{}
+    $appKey = @{}
+    $userOf = @{}
+    # the affected person of a record, looked up once per pair of session owner and account
+    $affected = {
+        param($E)
+        $su = ''
+        if ($E.ContainsKey('SessionUser')) { $su = [string]$E.SessionUser }
+        $pair = $su + '|' + [string]$E.User
+        if (-not $userOf.ContainsKey($pair)) { $userOf[$pair] = (Get-WorkerPerfEventAffectedUser $E $Config).ToLowerInvariant() }
+        return $userOf[$pair]
+    }
+    $appOf = {
+        param([string]$App)
+        if (-not $appKey.ContainsKey($App)) { $appKey[$App] = (Get-WorkerPerfLeafName $App).ToLowerInvariant() }
+        return $appKey[$App]
+    }
+    foreach ($h in $hangs) {
+        $app = & $appOf ([string]$h.App)
+        $si = -1
+        if ($h.ContainsKey('SessionIndex')) { $si = [int]$h.SessionIndex }
+        $u = & $affected $h
+        $keys = New-Object System.Collections.Generic.List[string]
+        if ($si -ge 0) { $keys.Add($app + '|s:' + $si) }
+        if ($u.Length -gt 0) { $keys.Add($app + '|u:' + $u) }
+        if ($si -lt 0 -and $u.Length -gt 0) { $keys.Add($app + '|n:' + $u); $appsWithoutSession[$app] = $true }
+        foreach ($k in $keys) {
+            if (-not $hangIndex.ContainsKey($k)) { $hangIndex[$k] = New-Object System.Collections.Generic.List[long] }
+            $hangIndex[$k].Add([long]$h.TimeMs)
+        }
+    }
+    $hangLists = @{}
+    foreach ($k in $hangIndex.Keys) { $hangLists[$k] = $hangIndex[$k].ToArray() }
     $warningMs = [long[]]@($warnings | ForEach-Object { [long]$_.TimeMs })
+    # companions with equal time in a fixed order: group, kind, provider (ordinal), then input order
+    # (the list is in time order already; only runs of equal time are sorted)
+    $cand = $candidates.ToArray()
+    $i = 0
+    while ($i -lt $cand.Length) {
+        $j = $i + 1
+        while ($j -lt $cand.Length -and [long]$cand[$j].TimeMs -eq [long]$cand[$i].TimeMs) { $j++ }
+        if ($j - $i -gt 1) {
+            $run = New-Object System.Collections.Generic.List[object]
+            for ($k = $i; $k -lt $j; $k++) { $run.Add(@{ E = $cand[$k]; Pos = $k }) }
+            $run.Sort([Comparison[object]] {
+                    param($x, $y)
+                    $c = 0
+                    foreach ($f in 'Group', 'Kind', 'Source') { if ($c -eq 0) { $c = [string]::CompareOrdinal([string]$x.E[$f], [string]$y.E[$f]) } }
+                    if ($c -eq 0) { $c = $x.Pos.CompareTo($y.Pos) }
+                    return $c
+                })
+            for ($k = $i; $k -lt $j; $k++) { $cand[$k] = $run[$k - $i].E }
+        }
+        $i = $j
+    }
+    $candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($c in $cand) { $candidates.Add($c) }
     $candidateMs = [long[]]@($candidates | ForEach-Object { [long]$_.TimeMs })
 
     # measurement: tick times and the memory signals with their critical value
@@ -544,10 +620,11 @@ function Add-WorkerPerfEventPatterns {
         $members = @($inc.Events)
         if ($byIncident.ContainsKey([int]$inc.Id)) { $members = $byIncident[[int]$inc.Id].ToArray() }
         $memberMs = [long[]]@($members | ForEach-Object { [long]$_.TimeMs })
-        $moduleNames = @($inc.Modules | ForEach-Object { [string]$_.Name })
+        $moduleNames = @($inc.Modules | ForEach-Object { [string]$_.Name } | Where-Object { Test-WorkerPerfRealModule $_ $Config })
         $found = @{}
 
-        if (-not $Before) {
+        # a memory warning is never its own cause
+        if (-not $Before -and -not ($inc.Kind -eq 'system' -and [string]$inc.Group -eq 'memory')) {
             # resource: memory over the critical value in a tick of (t - ResourceMinutes, t], or a memory warning in
             # [t - ResourceMinutes, t] that is not the incident itself
             foreach ($m in $members) {
@@ -572,24 +649,43 @@ function Add-WorkerPerfEventPatterns {
         }
 
         # afterhang: a hang of the same application in the same session (else of the same person) at most
-        # AfterhangMinutes before a crash of the incident
+        # AfterhangMinutes before a crash of the incident; Count says how many of the incident's crashes followed one
+        $crashCount = 0; $afterCount = 0; $firstHangMs = [long]0
         foreach ($m in $members) {
             if ([string]$m.Kind -ne 'crash') { continue }
+            $crashCount++
             $t = [long]$m.TimeMs
-            $app = Get-WorkerPerfLeafName ([string]$m.App)
-            $b = Get-WorkerPerfFirstAtLeast $hangMs ($t + 1)
-            for ($i = $b - 1; $i -ge 0 -and $hangMs[$i] -ge $t - $afterhangMs; $i--) {
-                $h = $hangs[$i]
-                if (-not [string]::Equals((Get-WorkerPerfLeafName ([string]$h.App)), $app, [StringComparison]::OrdinalIgnoreCase)) { continue }
-                if (Test-WorkerPerfSameSessionOrUser $h $m $Config) { $found['afterhang'] = @{ HangMs = $hangMs[$i] }; break }
+            $app = & $appOf ([string]$m.App)
+            $si = -1
+            if ($m.ContainsKey('SessionIndex')) { $si = [int]$m.SessionIndex }
+            $k1 = ''; $k2 = ''
+            if ($si -ge 0) {
+                $k1 = $app + '|s:' + $si
+                if ($appsWithoutSession.ContainsKey($app)) { $k2 = $app + '|n:' + (& $affected $m) }
             }
-            if ($found.ContainsKey('afterhang')) { break }
+            else {
+                $u = & $affected $m
+                if ($u.Length -gt 0) { $k1 = $app + '|u:' + $u }
+            }
+            $hit = $null
+            foreach ($k in $k1, $k2) {
+                if ($k.Length -eq 0 -or -not $hangLists.ContainsKey($k)) { continue }
+                $ms = $hangLists[$k]
+                # the last hang at or before the crash
+                $lo = 0; $hi = $ms.Length
+                while ($lo -lt $hi) { $mid = ($lo + $hi) -shr 1; if ($ms[$mid] -le $t) { $lo = $mid + 1 } else { $hi = $mid } }
+                if ($lo -gt 0 -and $ms[$lo - 1] -ge $t - $afterhangMs -and ($null -eq $hit -or $ms[$lo - 1] -gt $hit)) { $hit = $ms[$lo - 1] }
+            }
+            if ($null -eq $hit) { continue }
+            if ($afterCount -eq 0) { $firstHangMs = [long]$hit }
+            $afterCount++
         }
+        if ($afterCount -gt 0) { $found['afterhang'] = @{ HangMs = $firstHangMs; Count = $afterCount; Crashes = $crashCount } }
 
         # sharedmodule: a module of the incident, no general system module, in which two applications or more crashed
         foreach ($name in $moduleNames) {
             $leaf = Get-WorkerPerfLeafName $name
-            if (@($Config.SystemModules) -contains $leaf) { continue }
+            if (Test-WorkerPerfNamePattern $leaf ([string[]]@($Config.SystemModules))) { continue }
             $key = $leaf.ToLowerInvariant()
             if (-not $crashModules.ContainsKey($key) -or $crashModules[$key].Count -lt 2) { continue }
             $apps = [string[]]@($crashModules[$key].Values)
@@ -598,10 +694,13 @@ function Add-WorkerPerfEventPatterns {
             break
         }
 
-        # printdriver: a module that is a file of a listed driver
+        # printdriver: a module that is a file of a listed driver; a file of several drivers names none of them (Driver '')
         foreach ($name in $moduleNames) {
-            $driver = Get-WorkerPerfModuleDriver $name $Drivers
-            if ($driver.Length -gt 0) { $found['printdriver'] = @{ Module = $name; Driver = $driver }; break }
+            $names = Get-WorkerPerfModuleDrivers $name $Drivers
+            if ($names.Length -eq 0) { continue }
+            $one = $(if ($names.Length -eq 1) { $names[0] } else { '' })
+            $found['printdriver'] = @{ Module = $name; Driver = $one; Drivers = $names }
+            break
         }
 
         # securitymodule: a module that matches the modules of a role 'Sicherheit'
@@ -651,6 +750,7 @@ function Add-WorkerPerfEventPatterns {
                 $perfHits[[int]$p.Id].Add([int]$inc.Id)
             }
         }
+        $overlap.Sort()
         if ($overlap.Count -gt 0) { $found['overlap'] = @{ Incidents = [int[]]$overlap.ToArray() } }
 
         $allowed = $(if ($Before) { $script:WorkerPerfBeforePatterns } else { $script:WorkerPerfPatternOrder })
@@ -662,18 +762,42 @@ function Add-WorkerPerfEventPatterns {
         $inc.Overlap = [int[]]$overlap.ToArray()
         $inc.Companions = $companions.ToArray()
     }
-    foreach ($p in $perf) { $p['EventIncidents'] = [int[]]$perfHits[[int]$p.Id].ToArray() }
+    foreach ($p in $perf) { $perfHits[[int]$p.Id].Sort(); $p['EventIncidents'] = [int[]]$perfHits[[int]$p.Id].ToArray() }
+}
+
+$script:WorkerPerfTextListLimit = 10
+
+function Join-WorkerPerfTextList([object[]]$Items, $Texts) {
+    # At most 10 entries, joined with ', ', then " und n weitere" for the rest.
+    $list = @($Items)
+    if ($list.Count -le $script:WorkerPerfTextListLimit) { return ($list -join ', ') }
+    $shown = ($list[0..($script:WorkerPerfTextListLimit - 1)] -join ', ')
+    return $shown + ($Texts['list.more'] -f ($list.Count - $script:WorkerPerfTextListLimit))
+}
+
+function Get-WorkerPerfEventWhat($Event, $Texts) {
+    # What a record says in words (companion.<kind>, for kind system companion.system.<group>), with its object;
+    # an unknown kind falls back to the provider.
+    $kind = [string]$Event.Kind
+    $key = 'companion.' + $kind
+    if ($kind -eq 'system') { $key = 'companion.system.' + [string]$Event.Group }
+    $what = [string]$Event.Source
+    if ($Texts.ContainsKey($key)) { $what = [string]$Texts[$key] }
+    $object = [string](Get-WorkerPerfField $Event 'Object')
+    if ($object.Length -gt 0) { $what = $what + ' ' + $object }
+    return $what.Trim()
 }
 
 function Get-WorkerPerfEventIncidentText {
     # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
     # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
     # Times are the server's local time (OffsetMinutes, as Format-WorkerPerfClock). Model is not needed for the text.
+    # Lists name at most 10 entries; counts are always the full numbers.
     param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
     $inc = $Incident
+    $times = { param($n) $(if ([int]$n -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$n }) }
     $clock = Format-WorkerPerfClock ([long]$inc.StartMs) $OffsetMinutes
     if ([long]$inc.EndMs -ne [long]$inc.StartMs) { $clock += [string][char]0x2013 + (Format-WorkerPerfClock ([long]$inc.EndMs) $OffsetMinutes) }
-    $count = $(if ([int]$inc.Count -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$inc.Count })
     $kind = [string]$inc.Kind
     $subject = ''
     switch ($kind) {
@@ -685,47 +809,59 @@ function Get-WorkerPerfEventIncidentText {
         }
         'profileerror' { $subject = [string]$inc.Source }
         default {
-            $subject = [string]$inc.Source
-            $object = [string](Get-WorkerPerfField $inc.Events[0] 'Object')
-            if ($object.Length -gt 0) { $subject = ($subject + ' ' + $object).Trim() }
+            # system: the group in words and the object
+            $first = @($inc.Events)[0]
+            $subject = Get-WorkerPerfEventWhat @{ Kind = 'system'; Group = [string]$inc.Group; Source = [string]$inc.Source; Object = [string](Get-WorkerPerfField $first 'Object') } $Texts
         }
     }
+    if (($kind -eq 'crash' -or $kind -eq 'hang') -and $subject.Length -eq 0) { $subject = $Texts['event.app.unknown'] }
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.Append(($Texts["event.$kind"] -f $clock, $subject, $count))
+    [void]$sb.Append(($Texts["event.$kind"] -f $clock, $subject, (& $times $inc.Count)))
 
     $users = @($inc.Users)
-    if ($users.Count -gt 0) { [void]$sb.Append(($Texts['event.users'] -f ($users -join ', '))) }
+    if ($users.Count -gt 0) { [void]$sb.Append(($Texts['event.users'] -f (Join-WorkerPerfTextList $users $Texts))) }
     elseif (-not [bool]$inc.InSession) { [void]$sb.Append($Texts['event.nouser']) }
-    $modules = @($inc.Modules)
-    if ($modules.Count -eq 1 -and [bool]$inc.SameModule) { [void]$sb.Append(($Texts['event.module.same'] -f [string]$modules[0].Name)) }
-    elseif ($modules.Count -gt 0) {
-        $list = @($modules | ForEach-Object { '{0} ({1})' -f [string]$_.Name, $(if ([int]$_.Count -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$_.Count }) })
-        [void]$sb.Append(($Texts['event.module.mixed'] -f ($list -join ', ')))
+    # modules: only real ones ('unknown', StackHash_* and empty name none); events without a module are in the count
+    $modules = @($inc.Modules | Where-Object { Test-WorkerPerfRealModule ([string]$_.Name) $Config })
+    if ($modules.Count -eq 1) {
+        if ([int]$modules[0].Count -eq [int]$inc.Count) { [void]$sb.Append(($Texts['event.module.same'] -f [string]$modules[0].Name)) }
+        else { [void]$sb.Append(($Texts['event.module.some'] -f [string]$modules[0].Name, [int]$modules[0].Count, [int]$inc.Count)) }
     }
+    elseif ($modules.Count -gt 1) {
+        $list = @($modules | ForEach-Object { '{0} ({1})' -f [string]$_.Name, (& $times $_.Count) })
+        [void]$sb.Append(($Texts['event.module.mixed'] -f (Join-WorkerPerfTextList $list $Texts)))
+    }
+    elseif (@($inc.Events | Where-Object { [string]$_.Kind -eq 'crash' }).Count -gt 0) { [void]$sb.Append($Texts['event.module.unknown']) }
     $codes = @($inc.Codes | ForEach-Object { if (([string]$_.Text).Length -gt 0) { '{0} ({1})' -f $_.Code, $_.Text } else { [string]$_.Code } })
-    if ($codes.Count -gt 0) { [void]$sb.Append(($Texts['event.code'] -f ($codes -join ', '))) }
+    if ($codes.Count -eq 1) { [void]$sb.Append(($Texts['event.code'] -f $codes[0])) }
+    elseif ($codes.Count -gt 1) { [void]$sb.Append(($Texts['event.codes'] -f (Join-WorkerPerfTextList $codes $Texts))) }
     $versions = @($inc.Versions)
-    if ($versions.Count -gt 1) { [void]$sb.Append(($Texts['event.versions'] -f ($versions -join ', '))) }
+    if ($versions.Count -gt 1) { [void]$sb.Append(($Texts['event.versions'] -f (Join-WorkerPerfTextList $versions $Texts))) }
 
     $patterns = @($inc.Patterns)
     foreach ($p in $patterns) {
         $d = $p.Detail
         $text = $Texts['pattern.' + $p.Id]
         switch ([string]$p.Id) {
-            'sharedmodule' { $text = $text -f $d.Module, (@($d.Apps) -join ', ') }
-            'printdriver' { $text = $text -f $d.Module, $d.Driver }
+            'afterhang' {
+                if ($d.ContainsKey('Count') -and [int]$d.Count -lt [int]$d.Crashes) { $text = $Texts['pattern.afterhang.some'] -f [int]$d.Count, [int]$d.Crashes }
+            }
+            'sharedmodule' { $text = $text -f $d.Module, (Join-WorkerPerfTextList @($d.Apps) $Texts) }
+            'printdriver' {
+                if (([string]$d.Driver).Length -gt 0) { $text = $text -f $d.Module, $d.Driver }
+                else { $text = $Texts['pattern.printdriver.many'] -f $d.Module, (Join-WorkerPerfTextList @($d.Drivers) $Texts) }
+            }
             'securitymodule' { $text = $text -f $d.Module, $d.Product }
             'manyusers' { $text = $text -f $d.Users }
             'oneuser' { $text = $text -f $d.User, $d.Count }
             'companion' {
-                $list = @($d.Events | ForEach-Object {
-                        $s = (Format-WorkerPerfClock ([long]$_.TimeMs) $OffsetMinutes) + ' ' + [string]$_.Source
-                        if (([string](Get-WorkerPerfField $_ 'Object')).Length -gt 0) { $s += ' ' + [string]$_.Object }
-                        $s.Trim()
-                    })
+                $list = @($d.Events | ForEach-Object { (Format-WorkerPerfClock ([long]$_.TimeMs) $OffsetMinutes) + ' ' + (Get-WorkerPerfEventWhat $_ $Texts) })
                 $text = $text -f ($list -join ', ')
             }
-            'overlap' { $text = $text -f (@($d.Incidents) -join ', ') }
+            'overlap' {
+                $ids = @($d.Incidents)
+                if ($ids.Count -gt 1) { $text = $Texts['pattern.overlap.many'] -f (Join-WorkerPerfTextList $ids $Texts) } else { $text = $text -f $ids[0] }
+            }
         }
         [void]$sb.Append($text)
     }

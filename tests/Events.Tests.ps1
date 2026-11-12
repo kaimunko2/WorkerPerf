@@ -678,7 +678,7 @@ Describe 'Klartext eines Ereignisvorfalls' {
         $p = (Get-PatInc @(New-Ev 0 'profileerror' '' -1 'user014' '' @{ Group = 'profile'; Source = 'Microsoft-Windows-User Profiles Service'; Code = ''; SessionIndex = -1 }))[0]
         Get-Text $p | Should -Match ': Profilproblem – Microsoft-Windows-User Profiles Service \(1-mal\)\. Benutzer: user014\. Kein Muster erkannt\.$'
         $y = (Get-PatInc @(New-Ev 0 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = '' }))[0]
-        Get-Text $y | Should -Match ': Systemfehler – disk D: \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
+        Get-Text $y | Should -Match ': Systemfehler – Datenträgerfehler D: \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
     }
     It 'nennt gemischte Module mit Anzahl, Begleitereignisse mit Uhrzeit und ueberlappende Vorfaelle' {
         $perf = @(@{ Id = 2; StartMs = $T0; EndMs = $T0 + 60000 }, @{ Id = 5; StartMs = $T0 + 30000; EndMs = $T0 + 90000 })
@@ -686,7 +686,7 @@ Describe 'Klartext eines Ereignisvorfalls' {
         $clock = Format-WorkerPerfClock $T0 0
         $t = Get-Text $i
         $t | Should -Match 'Fehlerhafte Module: mso\.dll \(2-mal\), vbe7\.dll \(1-mal\)\.'
-        $t | Should -Match ([regex]::Escape(" Zeitnah: $clock disk D:. Zeitgleich mit Vorfall 2, 5.") + '$')
+        $t | Should -Match ([regex]::Escape(" Zeitnah: $clock Datenträgerfehler D:. Zeitgleich mit den Vorfällen 2, 5.") + '$')
     }
 }
 Describe 'Rollen mit Modulen' {
@@ -734,5 +734,108 @@ Describe 'Kleine Korrekturen aus der Pruefung von Task 5' {
         $show = { param([double]$Min) $e = New-Ev $Min -Sid 5 -User ''; Set-WorkerPerfEventSessions -Events @($e) -Model $model -Config $Cfg; '{0}|{1}' -f $e.SessionIndex, $e.SessionUser }
         & $show -0.25 | Should -Be '0|user001'; & $show -0.5 | Should -Be '0|user001'; & $show -0.75 | Should -Be '-1|'
         $byUser = New-Ev -0.75 -Sid -1 -User 'user001'; Set-WorkerPerfEventSessions -Events @($byUser) -Model $model -Config $Cfg; $byUser.SessionIndex | Should -Be -1
+    }
+}
+Describe 'Pruefung von Task 6, Runde 1' {
+    BeforeAll {
+        function Get-PatIncD([object[]]$Events, [object[]]$Drivers, $Model = (New-PatternModel (@(50) * 60)), [object[]]$Perf = @()) {
+            $inc = @(New-WorkerPerfEventIncidents -Events $Events -Config $Cfg -Settings $Set -Drivers $Drivers -FirstId 9)
+            Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $Events -Model $Model -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drivers -PerfIncidents $Perf
+            , $inc
+        }
+        function Get-Ids($Inc) { , @($Inc.Patterns | ForEach-Object { $_.Id }) }
+    }
+    It 'C1: unknown, StackHash_ und leere Module sind kein Modul' {
+        @($Cfg.NoModules) | Should -Be @('unknown', 'StackHash_*')
+        foreach ($m in 'unknown', 'UNKNOWN', 'StackHash_1a2b', 'stackhash_0000') {
+            $p = Get-PatInc @((New-Ev 0 -Module $m), (New-Ev 1 -App 'WINWORD.EXE' -Module $m))
+            Get-Ids $p[0] | Should -Not -Contain 'sharedmodule' -Because $m
+            Get-Text $p[0] | Should -Match 'Benutzer: user002\. Fehlerhaftes Modul nicht ermittelt\. Fehlercode' -Because $m
+        }
+        Get-Text (Get-PatInc @(New-Ev 0 -Module ''))[0] | Should -Match 'Fehlerhaftes Modul nicht ermittelt\.'
+        $drv = @(@{ Name = 'Odd'; Files = @('unknown') }); (Get-Ids (Get-PatIncD @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown') $drv)[0]) | Should -Not -Contain 'printdriver'
+        (Get-PatIncD @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown') $drv)[0].Driver | Should -Be ''
+        $mix = (Get-PatInc @((New-Ev 0), (New-Ev 1 -Module 'unknown'), (New-Ev 2)))[0]
+        Get-Text $mix | Should -Match 'Fehlerhaftes Modul: vbe7\.dll \(2 von 3\)\.'
+        Get-Text (Get-PatInc @(New-Ev 0 'hang' -Module ''))[0] | Should -Not -Match 'Modul'
+    }
+    It 'C1: noModules wird geprueft, fehlt es, gilt die eingebaute Liste' {
+        $f = Join-Path $TestDrive 'nm.json'; $base = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}]'
+        [IO.File]::WriteAllText($f, $base + '}'); @((Read-WorkerPerfEventConfig $f).NoModules) | Should -Be @('unknown', 'StackHash_*')
+        [IO.File]::WriteAllText($f, $base + ',"noModules":[]}'); @((Read-WorkerPerfEventConfig $f).NoModules).Count | Should -Be 0
+        foreach ($bad in '[""]', '[5]', '["a?"]', '["*"]', '["x\\\\y"]') {
+            [IO.File]::WriteAllText($f, $base + ',"noModules":' + $bad + '}'); { Read-WorkerPerfEventConfig $f } | Should -Throw "*Feld 'noModules'*" -Because $bad
+        }
+    }
+    It 'C2: eine Datei mehrerer Treiber nennt keinen einzelnen Treiber, in beiden Reihenfolgen' {
+        $a = @{ Name = 'Kyo B'; Files = @('unidrv.dll', 'kyob.dll') }; $b = @{ Name = 'HP A'; Files = @('UNIDRV.DLL') }
+        foreach ($drv in @(@($a, $b), @($b, $a))) {
+            $i = (Get-PatIncD @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unidrv.dll') $drv)[0]
+            $i.Key | Should -Be 'Application Error'; $i.Driver | Should -Be ''
+            $i.Patterns[0].Id | Should -Be 'printdriver'; $i.Patterns[0].Detail.Drivers | Should -Be @('HP A', 'Kyo B'); $i.Patterns[0].Detail.Driver | Should -Be ''
+            Get-Text $i | Should -Match '^\d\d:\d\d:\d\d: Druckproblem – spoolsv\.exe \(1-mal\)\..* Das Modul unidrv\.dll gehört zu mehreren Druckertreibern \(HP A, Kyo B\); welcher beteiligt war, ist nicht bestimmbar\.$'
+            $k = (Get-PatIncD @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'kyob.dll') $drv)[0]
+            $k.Key | Should -Be 'Kyo B'; $k.Patterns[0].Detail.Driver | Should -Be 'Kyo B'; $k.Patterns[0].Detail.Drivers | Should -Be @('Kyo B')
+        }
+    }
+    It 'Important: Laufzeit- und Systemmodule als Muster sind nie gemeinsame Ursache' {
+        foreach ($m in 'ntdll.dll', 'VCRUNTIME140.dll', 'vcruntime140_1.dll', 'MSVCP140.dll', 'msvcr120.dll', 'mfc140u.dll', 'clrjit.dll', 'mscorlib.ni.dll', 'OLE32.DLL', 'C:\Windows\System32\rpcrt4.dll') {
+            Get-Ids (Get-PatInc @((New-Ev 0 -Module $m), (New-Ev 1 -App 'nexus.exe' -Module $m)))[0] | Should -Not -Contain 'sharedmodule' -Because $m
+        }
+        @($Cfg.SystemModules) | Should -Contain 'VCRUNTIME*.dll'; @($Cfg.SystemModules).Count | Should -Be 24
+        $f = Join-Path $TestDrive 'sm.json'; [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}],"systemModules":["a?.dll"]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*Feld 'systemModules'*"
+    }
+    It 'Minor: afterhang sagt, wie viele Abstuerze einem Haenger folgten' {
+        $i = (Get-PatInc @((New-Ev 0), (New-Ev 5), (New-Ev 9.5 'hang' -Module ''), (New-Ev 10)))
+        $c = @($i | Where-Object { $_.Kind -eq 'crash' })[0]
+        $c.Patterns[0].Detail.Count | Should -Be 1; $c.Patterns[0].Detail.Crashes | Should -Be 3
+        Get-Text $c | Should -Match ' 1 von 3 wurden nach Nichtreagieren beendet\.'
+        Get-Text (Get-PatInc @((New-Ev 9.5 'hang' -Module ''), (New-Ev 10)))[1] | Should -Match ' Wurde nach Nichtreagieren beendet\.'
+    }
+    It 'Minor: overlap sortiert und im Plural' {
+        $perf = @(@{ Id = 3; StartMs = $T0; EndMs = $T0 + 60000 }, @{ Id = 2; StartMs = $T0; EndMs = $T0 + 60000 })
+        $i = (Get-PatInc @(New-Ev 0) -Perf $perf)[0]; $i.Overlap | Should -Be @(2, 3); $i.Patterns[0].Detail.Incidents | Should -Be @(2, 3)
+        Get-Text $i | Should -Match ' Zeitgleich mit den Vorfällen 2, 3\.$'
+    }
+    It 'Minor: mehrere Fehlercodes im Plural' {
+        Get-Text (Get-PatInc @((New-Ev 0 -More @{ Code = '0xdeadbeef' }), (New-Ev 1)))[0] | Should -Match ' Fehlercodes: 0xdeadbeef, 0xc0000005 \(Zugriffsverletzung\)\.'
+    }
+    It 'Minor: Begleitereignisse nennen, was geschah, gleichzeitige in fester Ordnung' {
+        $clock = Format-WorkerPerfClock ([long]($T0 + 11 * 60000)) 0
+        foreach ($k in @(@('scan-start', 'security', 'Virenscan gestartet'), @('scan-end', 'security', 'Virenscan beendet'), @('signature-update', 'security', 'Signaturen aktualisiert'),
+                @('applocker-block', 'security', 'AppLocker hat eine Ausführung blockiert'), @('profileerror', 'profile', 'Profilfehler'), @('info', 'security', 'Quelle X'))) {
+            $i = (Get-PatInc @((New-Ev 10), (New-Ev 11 $k[0] '' 0 '' '' @{ Group = $k[1]; Source = 'Quelle X' })))[0]
+            Get-Text $i | Should -Match ([regex]::Escape(" Zeitnah: $clock $($k[2]).")) -Because $k[0]
+        }
+        $s = New-Ev 11 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:' }; $f = New-Ev 11 'system' '' 0 '' '' @{ Group = 'fileserver'; Source = 'SMB'; Object = 'fs01' }
+        foreach ($order in @(@((New-Ev 10), $s, $f), @($f, $s, (New-Ev 10)))) {
+            $i = @((Get-PatInc $order) | Where-Object { $_.Kind -eq 'crash' })[0]
+            Get-Text $i | Should -Match ([regex]::Escape(" Zeitnah: $clock Verbindungsabbruch zum Dateiserver fs01, $clock Datenträgerfehler D:."))
+        }
+    }
+    It 'Minor: eine Speichermangel-Warnung ist nicht ihre eigene Ursache, der Kopf nennt die Gruppe' {
+        $w = (Get-PatInc @(New-Ev 10 'system' '' 0 '' '' @{ Group = 'memory'; Source = 'Microsoft-Windows-Resource-Exhaustion-Detector'; Module = ''; Code = '' }) (New-PatternModel (@(95) * 60)))[0]
+        @($w.Patterns).Count | Should -Be 0
+        Get-Text $w | Should -Match ': Systemfehler – Speichermangel-Warnung \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
+        Get-Text (Get-PatInc @(New-Ev 0 'system' '' 0 '' '' @{ Group = 'fileserver'; Source = 'SMB'; Object = 'fs01'; Module = ''; Code = '' }))[0] | Should -Match 'Systemfehler – Verbindungsabbruch zum Dateiserver fs01 \(1-mal\)'
+    }
+    It 'Minor: Listen zeigen hoechstens zehn Eintraege' {
+        $evs = @(1..40 | ForEach-Object { New-Ev ($_ / 10) -Sid (10 + $_) -User ('u{0:d2}' -f $_) })
+        $t = Get-Text (Get-PatInc $evs)[0]
+        $t | Should -Match ' Benutzer: u01, u02, u03, u04, u05, u06, u07, u08, u09, u10 und 30 weitere\. '; $t | Should -Match ' 40 Benutzer betroffen'
+        $apps = @(1..15 | ForEach-Object { New-Ev ($_ / 10) -App ('app{0:d2}.exe' -f $_) -Module 'simaddin.dll' })
+        Get-Text (Get-PatInc $apps)[0] | Should -Match '\(betrifft app01\.exe, .*app10\.exe und 5 weitere\)\.'
+        $mods = @(1..12 | ForEach-Object { New-Ev ($_ / 10) -Module ('m{0:d2}.dll' -f $_) })
+        Get-Text (Get-PatInc $mods)[0] | Should -Match 'Fehlerhafte Module: m01\.dll \(1-mal\), .*m10\.dll \(1-mal\) und 2 weitere\.'
+    }
+    It 'Minor: eine Anwendung ohne Namen heisst unbekannte Anwendung' {
+        Get-Text (Get-PatInc @(New-Ev 0 -App ''))[0] | Should -Match ': Absturz von unbekannte Anwendung \(1-mal\)\.'
+        Get-Text (Get-PatInc @(New-Ev 0 'hang' -App '' -Module ''))[0] | Should -Match ': unbekannte Anwendung reagierte nicht'
+    }
+    It 'Minor: afterhang findet den Haenger auch zwischen vielen anderen Haengern' {
+        $evs = @(1..300 | ForEach-Object { New-Ev (8 + $_ / 200) 'hang' -App ('other{0}.exe' -f ($_ % 7)) -Sid (3 + $_ % 5) -Module '' }) + @((New-Ev 9 'hang' -Sid 5 -User 'u5' -Module ''), (New-Ev 9.5 'hang' -Sid -1 -User 'user002' -Module '' -More @{ SessionIndex = -1 }), (New-Ev 10))
+        $c = @((Get-PatInc $evs) | Where-Object { $_.Kind -eq 'crash' })[0]
+        $c.Patterns[0].Id | Should -Be 'afterhang'; $c.Patterns[0].Detail.HangMs | Should -Be ([long]($T0 + 9.5 * 60000))
     }
 }
