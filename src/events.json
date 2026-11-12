@@ -45,6 +45,7 @@
   "printProcesses": ["spoolsv.exe", "PrintIsolationHost.exe"],
   "printServices": ["Spooler"],
   "nonPersonAccounts": ["SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "LOKALER DIENST", "NETZWERKDIENST", "DWM-*", "UMFD-*", "ANONYMOUS LOGON", "ANONYMOUS-ANMELDUNG", "*$"],
+  "nonPersonDomains": ["NT SERVICE", "IIS APPPOOL", "NT AUTHORITY", "NT-AUTORITÄT", "Window Manager", "Font Driver Host"],
   "systemModules": ["ntdll.dll", "KERNELBASE.dll", "kernel32.dll", "user32.dll", "win32u.dll", "gdi32.dll", "gdi32full.dll", "combase.dll", "ole32.dll",
     "oleaut32.dll", "rpcrt4.dll", "shell32.dll", "shlwapi.dll", "msvcrt.dll", "ucrtbase.dll", "VCRUNTIME*.dll", "MSVCP*.dll", "msvcr*.dll", "mfc*.dll",
     "clr.dll", "clrjit.dll", "coreclr.dll", "mscorlib.ni.dll", "mscorwks.dll"],

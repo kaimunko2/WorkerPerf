@@ -105,13 +105,33 @@ function Read-WorkerPerfPrintQueues([string]$Path, [long]$FromMs, [long]$ToMs, [
 $script:WorkerPerfIncidentEventKinds = @('crash', 'hang', 'service', 'print', 'profileerror', 'system')
 $script:WorkerPerfIncidentEventLimit = 50
 
+$script:WorkerPerfAccountPatternCache = @{}
+
+function Test-WorkerPerfAccountPattern([string]$Name, [string]$Pattern) {
+    # Wildcard match without regard to case, the same under every culture (-like follows the current culture: under
+    # tr-TR 'dienst' would not match 'DIENST').
+    $w = $script:WorkerPerfAccountPatternCache[$Pattern]
+    if ($null -eq $w) {
+        $opt = [System.Management.Automation.WildcardOptions]::IgnoreCase -bor [System.Management.Automation.WildcardOptions]::CultureInvariant
+        $w = New-Object System.Management.Automation.WildcardPattern $Pattern, $opt
+        $script:WorkerPerfAccountPatternCache[$Pattern] = $w
+    }
+    return $w.IsMatch($Name)
+}
+
 function Test-WorkerPerfEventPersonUser([string]$User, $Config) {
-    # $true for an account name that may be a person: not empty and, without its domain, matching none of the patterns
-    # in nonPersonAccounts of events.json (service, virtual and computer accounts).
+    # $true for an account name that may be a person: not empty, without its domain matching none of the patterns in
+    # nonPersonAccounts of events.json (service, virtual and computer accounts), and with a domain part matching none of
+    # nonPersonDomains (NT SERVICE, Window Manager ...; a config without that list checks no domain).
     if ([string]::IsNullOrEmpty($User)) { return $false }
-    $name = $User.Substring($User.LastIndexOf('\') + 1)
+    $cut = $User.LastIndexOf('\')
+    $name = $User.Substring($cut + 1)
     if ($name.Length -eq 0) { return $false }
-    foreach ($p in @($Config.NonPersonAccounts)) { if ($name -like $p) { return $false } }
+    foreach ($p in @($Config.NonPersonAccounts)) { if (Test-WorkerPerfAccountPattern $name $p) { return $false } }
+    if ($cut -gt 0) {
+        $domain = $User.Substring(0, $cut)
+        foreach ($p in @(Get-WorkerPerfField $Config 'NonPersonDomains')) { if ($null -ne $p -and (Test-WorkerPerfAccountPattern $domain $p)) { return $false } }
+    }
     return $true
 }
 

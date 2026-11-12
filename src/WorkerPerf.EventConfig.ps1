@@ -9,6 +9,9 @@ $script:WorkerPerfEventNumberKeys = @('pid', 'session')
 # The list nonPersonAccounts that src/events.json ships; used when a custom events.json has none.
 $script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'LOKALER DIENST', 'NETZWERKDIENST', 'DWM-*', 'UMFD-*',
     'ANONYMOUS LOGON', 'ANONYMOUS-ANMELDUNG', '*$')
+# The list nonPersonDomains that src/events.json ships: domain parts of virtual and built-in accounts (an account
+# "<domain>\<name>" with one of them is never a person). NT-AUTORIT<A-umlaut>T is built from its char code (ASCII source).
+$script:WorkerPerfDefaultNonPersonDomains = @('NT SERVICE', 'IIS APPPOOL', 'NT AUTHORITY', ('NT-AUTORIT' + [char]0xC4 + 'T'), 'Window Manager', 'Font Driver Host')
 # The list noModules that src/events.json ships: what Windows writes when it found no module ('unknown', 'StackHash_*').
 $script:WorkerPerfDefaultNoModules = @('unknown', 'StackHash_*')
 $script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object')
@@ -174,6 +177,7 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         PrintProcesses    = (Get-WorkerPerfEventStringList $json 'printProcesses' $Path)
         PrintServices     = (Get-WorkerPerfEventStringList $json 'printServices' $Path)
         NonPersonAccounts = (Get-WorkerPerfEventAccountPatterns $json $Path)
+        NonPersonDomains  = (Get-WorkerPerfEventNamePatterns $json 'nonPersonDomains' $Path $script:WorkerPerfDefaultNonPersonDomains 'Domaenennamen')
         ErrorCodes        = $codes
         Index             = $index
     }
