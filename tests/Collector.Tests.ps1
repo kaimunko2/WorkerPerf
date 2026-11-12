@@ -255,7 +255,10 @@ function Get-WorkerPerfPrintQueues { throw 'Testfehler bei den Warteschlangen' }
         $out = Join-Path $TestDrive 'lbfail.html'
         [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $LfRun -OutFile $out -RoleFile (New-SimRoleFile (Join-Path $TestDrive 'roles.lbfail.json')) 6>$null)
         $d = Get-ReportData $out
-        $d.incidents.Count | Should -Be 8
+        # Aussage geaendert (Task 8): neben den acht Leistungsvorfaellen stehen die vier Ereignisvorfaelle der Messzeit im Bericht;
+        # ohne Rueckblick und Treiberliste bleiben diese Teile leer
+        @($d.incidents | Where-Object type -ne 'ereignis').Count | Should -Be 8; @($d.incidents | Where-Object type -eq 'ereignis').Count | Should -Be 4
+        @($d.before.incidents).Count | Should -Be 0; @($d.print.drivers).Count | Should -Be 0
         $labels = @{}; foreach ($e in @($d.quality.sourceErrors)) { $labels[$e.source] = $e.label }
         $labels['eventsbefore'] | Should -Be 'Ereignisse vor der Messung'; $labels['printdrivers'] | Should -Be 'Druckertreiber'; $labels['printqueues'] | Should -Be 'Druckwarteschlangen'
     }

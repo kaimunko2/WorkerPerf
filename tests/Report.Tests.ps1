@@ -1,5 +1,6 @@
 BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1')
     $script:R = New-TestReports (Join-Path $TestDrive 'r')
     $script:D = Get-ReportData $R.Report
     $script:Exp = @(Get-Content (Join-Path $R.Run 'expected.json') -Raw | ConvertFrom-Json)
@@ -11,10 +12,10 @@ BeforeAll {
 }
 Describe 'Durchlauf Simulation -> Bericht' {
     It 'findet genau die Vorfaelle des Drehbuchs' {
-        # Aussage geaendert (Task 4): expected.json nennt auch die Ereignisvorfaelle, die der Bericht erst ab Task 8 bildet
-        $perf = @($Exp | Where-Object Type -ne 'ereignis')
-        $D.incidents.Count | Should -Be $perf.Count; $D.noFinding | Should -BeFalse
-        foreach ($e in $perf) {
+        # Aussage geaendert (Task 8): der Vergleich laeuft ueber die Zeilen der Messzeit, weil expected.json jetzt auch den
+        # Rueckblick nennt; die Ereignisvorfaelle der Messzeit stehen seit Task 8 im Bericht
+        $D.incidents.Count | Should -Be @($Exp | Where-Object { -not $_.Before }).Count; $D.noFinding | Should -BeFalse
+        foreach ($e in @($Exp | Where-Object { -not $_.Before })) {
             $hit = Find-Incident $D $e
             $hit.Count | Should -Be 1 -Because $e.Key
             if ($e.MainApp) { $hit[0].main.app | Should -Be $e.MainApp -Because $e.Key; $hit[0].main.user | Should -Be $e.MainUser -Because $e.Key }
@@ -219,5 +220,130 @@ Describe 'Kleine Aufzeichnung: Maskierung, Fokus, Uhrzeit, Fehlermeldungen' {
     }
     It 'nennt einen fehlenden Ausgabeordner' {
         { & $Report -Path $Small -OutFile (Join-Path $TestDrive 'fehlt/z.html') 6>$null } | Should -Throw '*Ausgabeordner*'
+    }
+}
+Describe 'Ereignisvorfaelle im Bericht' {
+    It 'bildet die Ereignisvorfaelle und Muster des Drehbuchs' {
+        foreach ($e in @($Exp | Where-Object { $_.Type -eq 'ereignis' })) {
+            $pool = if ($e.Before) { $D.before.incidents } else { $D.incidents }
+            $hit = @($pool | Where-Object { $_.type -eq 'ereignis' -and $_.event.kind -eq $e.Kind -and [Math]::Abs($_.start - $e.StartMs) -le 20000 })
+            $hit.Count | Should -Be 1 -Because $e.Key
+            @($hit[0].event.patterns | ForEach-Object { $_.id }) | Should -Be @($e.Patterns) -Because $e.Key
+        }
+    }
+    It 'nennt Anwendung, Modul, Benutzer und die Aussagen der Muster' {
+        $i = $D.incidents | Where-Object { $_.event -and $_.event.app -eq 'OUTLOOK.EXE' }
+        $i.event.count | Should -Be 3; $i.event.users | Should -Be @('user010', 'user011', 'user012'); $i.event.sameModule | Should -BeTrue
+        $i.text | Should -Match 'Absturz von OUTLOOK\.EXE \(3-mal\)\..*olmapi32\.dll, immer dasselbe.*3 Benutzer betroffen: spricht für Installation oder Update\.'
+        $m = $D.incidents | Where-Object { $_.event -and $_.event.app -eq 'chrome.exe' }
+        $mem = $D.incidents | Where-Object lead -eq 'memory'
+        $m.event.overlap | Should -Be @($mem.id); $mem.eventIncidents | Should -Be @($m.id); $m.text | Should -Match 'Wahrscheinlich Folge des Speichermangels\.'
+        ($D.incidents | Where-Object { $_.event -and $_.event.kind -eq 'profileerror' }).text | Should -Match 'Kein Muster erkannt\.$'
+    }
+    It 'liefert Rueckblick, Druckzustand und Sitzungsereignisse' {
+        $D.before.days | Should -Be 7; $D.before.eventCount | Should -Be 5; ($D.before.perDay | Measure-Object count -Sum).Sum | Should -Be 5
+        ($D.print.drivers | Where-Object involved).name | Should -Be 'HP Universal Printing PCL 6 (Sim)'
+        ($D.print.queues | Where-Object name -eq 'PRN-EG-01').maxJobs | Should -Be 3; ($D.print.queues | Where-Object name -eq 'PRN-EG-01').jobErrors | Should -Be 1
+        @($D.print.processes).name | Should -Contain 'spoolsv.exe'
+        $s = $D.sessions | Where-Object user -eq 'user014'; @($s.events | ForEach-Object { $D.events[$_].kind }) | Should -Be @('logoff', 'logon')
+        ($D.events | Where-Object app -eq 'chrome.exe').user | Should -Be 'user008'
+    }
+    It 'laesst die acht Leistungsvorfaelle mit und ohne die neuen Ereignisse gleich' {
+        $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'onlysec') @('events_before.csv')
+        $f = Join-Path $dir 'events.csv'; $lines = [IO.File]::ReadAllLines($f)
+        [IO.File]::WriteAllLines($f, @($lines[0]) + @($lines | Select-Object -Skip 1 | Where-Object { (Split-WorkerPerfCsvLine $_)[5] -eq 'security' }))
+        $out = Join-Path $TestDrive 'onlysec.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
+        $strip = { param($i) $c = $i.PSObject.Copy(); $c.PSObject.Properties.Remove('eventIncidents'); $c.PSObject.Properties.Remove('events'); $c | ConvertTo-Json -Depth 8 }
+        $a = @($D.incidents | Where-Object type -ne 'ereignis'); $b = @((Get-ReportData $out).incidents)
+        $b.Count | Should -Be 8; for ($k = 0; $k -lt 8; $k++) { & $strip $a[$k] | Should -Be (& $strip $b[$k]) }
+    }
+    It 'wertet eine Aufzeichnung im Format 2 weiter aus' {
+        $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'v2') @('events_before.csv', 'printdrivers.csv', 'printqueues.csv')
+        $meta = Join-Path $dir 'meta.json'; [IO.File]::WriteAllText($meta, ([IO.File]::ReadAllText($meta) -replace '"SchemaVersion":\s*3', '"SchemaVersion": 2'))
+        $f = Join-Path $dir 'events.csv'
+        $rows = @([IO.File]::ReadAllLines($f) | Select-Object -Skip 1 | ForEach-Object { $x = Split-WorkerPerfCsvLine $_; if ($x[5] -eq 'security') { '{0},{1},{2},{3},{4}' -f $x[0], $x[2], $x[3], $x[6], $x[19] } })
+        [IO.File]::WriteAllLines($f, @('Timestamp,Source,EventId,Kind,Text') + $rows)
+        $out = Join-Path $TestDrive 'v2.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out 6>$null)
+        $d2 = Get-ReportData $out; @($d2.incidents | Where-Object type -eq 'ereignis').Count | Should -Be 0; @($d2.incidents).Count | Should -Be 8
+        @($d2.before.incidents).Count | Should -Be 0; @($d2.print.drivers).Count | Should -Be 0
+    }
+}
+Describe 'Ereignisdaten im Einzelnen' {
+    It 'gibt jedes Ereignis mit seinem eigenen Zeitversatz und allen Feldern aus' {
+        $keys = 't', 'offsetMin', 'log', 'source', 'id', 'level', 'group', 'kind', 'app', 'module', 'code', 's', 'user', 'printer', 'driver', 'service', 'object', 'text'
+        @($D.events[0].PSObject.Properties.Name) | Should -Be $keys
+        @($D.events).Count | Should -Be 13; @($D.events | Where-Object { $_.offsetMin -ne $D.meta.offsetMin }).Count | Should -Be 0
+        $c = $D.events | Where-Object app -eq 'chrome.exe'
+        $c.module | Should -Be 'chrome.dll'; $c.code | Should -Be '0xc0000017'; $c.s | Should -BeGreaterOrEqual 0; $D.sessions[$c.s].user | Should -Be 'user008'
+        ($D.events | Where-Object app -eq 'spoolsv.exe').s | Should -Be -1
+    }
+    It 'nennt in Leistungsvorfaellen keine Anwendungs-, Dienst- und Sitzungsereignisse' {
+        $groups = @($D.incidents | Where-Object type -ne 'ereignis' | ForEach-Object { $_.events } | ForEach-Object { $_.group })
+        $groups | Should -Not -Contain 'app'; $groups | Should -Not -Contain 'session'; $groups | Should -Not -Contain 'service'
+        # der Absturz von chrome.exe im Fenster des Speicher-Engpasses ist ein eigener Vorfall mit gegenseitigem Verweis
+        @((Get-Hit 'memory').events).Count | Should -Be 0; @((Get-Hit 'memory').eventIncidents).Count | Should -Be 1
+    }
+    It 'gibt Ereignisvorfaellen alle Schluessel eines Leistungsvorfalls und den Leistungsvorfaellen den Schluessel event' {
+        $perf = @($D.incidents | Where-Object type -ne 'ereignis')[0]; $ev = @($D.incidents | Where-Object type -eq 'ereignis')[0]
+        foreach ($k in $perf.PSObject.Properties.Name) { $ev.PSObject.Properties.Name | Should -Contain $k }
+        $perf.event | Should -BeNullOrEmpty; @($perf.eventIncidents).Count | Should -BeGreaterOrEqual 0
+        $ev.chronic | Should -BeFalse; $ev.lead | Should -BeNullOrEmpty; @($ev.resources).Count | Should -Be 0; $ev.security.totalPct | Should -BeNullOrEmpty
+        @($D.incidents.id) | Should -Be @(1..12); @($D.before.incidents.id) | Should -Be @(13..15)
+        @($D.incidents | Where-Object type -ne 'ereignis').Count | Should -Be 8; @($D.incidents)[8].type | Should -Be 'ereignis'
+    }
+    It 'gibt die Aussagen der Muster einzeln und die Einzelheiten mit kleinen Schluesseln aus' {
+        $p = ($D.incidents | Where-Object { $_.event -and $_.event.kind -eq 'print' }).event.patterns[0]
+        $p.id | Should -Be 'printdriver'; $p.text | Should -BeExactly 'Das Modul hpsimgr.dll gehört zum Druckertreiber HP Universal Printing PCL 6 (Sim).'
+        $p.detail.module | Should -Be 'hpsimgr.dll'; $p.detail.driver | Should -Be 'HP Universal Printing PCL 6 (Sim)'
+        $r = ($D.incidents | Where-Object { $_.event -and $_.event.app -eq 'chrome.exe' }).event.patterns | Where-Object id -eq 'resource'
+        $r.detail.signalId | Should -BeIn @('mem.used', 'mem.commit'); $r.detail.peak | Should -BeGreaterThan 0
+        $sh = $D.before.incidents | Where-Object { $_.event.app -eq 'EXCEL.EXE' }
+        $sh.event.before | Should -BeTrue; $sh.text | Should -Match '^\d\d\.\d\d\.\d{4} '; @($sh.event.patterns[0].detail.apps) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE')
+    }
+    It 'liefert den Druckzustand mit beiden Beteiligungen und dem Verlauf der Druckprozesse' {
+        $drv = $D.print.drivers[0]
+        @($drv.PSObject.Properties.Name) | Should -Be @('name', 'manufacturer', 'version', 'type', 'isolation', 'isolated', 'files', 'involved', 'possiblyInvolved')
+        @($D.print.drivers | Where-Object possiblyInvolved).Count | Should -Be 0; $drv.files | Should -Be @('hpsimgr.dll', 'hpsimui.dll')
+        $sp = @($D.print.processes | Where-Object name -eq 'spoolsv.exe')[0]
+        $proc = $D.procs | Where-Object k -eq $sp.k; $proc | Should -Not -BeNullOrEmpty
+        $ws = @($proc.ws | Where-Object { $null -ne $_ })
+        $sp.wsStartMB | Should -Be ([Math]::Round($ws[0])); $sp.wsEndMB | Should -Be ([Math]::Round($ws[-1])); $sp.wsMaxMB | Should -BeGreaterOrEqual $sp.wsEndMB
+        $D.before.incidentEventCount | Should -Be 5; $D.before.from | Should -Be ($D.meta.start - 7 * 86400000)
+    }
+    It 'nennt im Rueckblick die Ereignisse um eine gemeldete Uhrzeit mit dem Zeitversatz des Ereignisses' {
+        # die Absturzreihe von nexus.exe vor der Messung mit einem Versatz eine Stunde ueber dem der Messung (Sommerzeit)
+        $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'dst'); $f = Join-Path $dir 'events_before.csv'; $lines = [IO.File]::ReadAllLines($f)
+        $off = [DateTimeOffset]::Parse((Split-WorkerPerfCsvLine $lines[1])[0], [cultureinfo]::InvariantCulture).Offset.Add([TimeSpan]::FromHours(1))
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            $x = Split-WorkerPerfCsvLine $lines[$i]
+            if ($x[7] -ne 'nexus.exe') { continue }
+            $ts = [DateTimeOffset]::Parse($x[0], [cultureinfo]::InvariantCulture).ToOffset($off).ToString('yyyy-MM-ddTHH:mm:ss.fffffffzzz', [cultureinfo]::InvariantCulture)
+            $lines[$i] = $ts + $lines[$i].Substring($lines[$i].IndexOf(','))
+        }
+        [IO.File]::WriteAllLines($f, $lines)
+        $nexus = $Exp | Where-Object Key -eq 'before.oneuser'
+        $wall = [DateTimeOffset]::FromUnixTimeMilliseconds($nexus.StartMs + 300000).ToOffset($off).DateTime
+        $out = Join-Path $TestDrive 'dst.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -ReportedTime $wall 6>$null)
+        $b = (Get-ReportData $out).before
+        @($b.near | ForEach-Object { $_.app }) | Should -Be @('nexus.exe', 'nexus.exe', 'nexus.exe'); @($b.nearCapture).Count | Should -Be 0
+        @($b.near)[0].offsetMin | Should -Be $off.TotalMinutes
+        ($b.incidents | Where-Object { $_.event.app -eq 'nexus.exe' }).nearReported | Should -BeTrue
+        @($b.incidents | Where-Object nearReported).Count | Should -Be 1
+    }
+    It 'nennt bei einer gemeldeten Uhrzeit kurz vor der Messung auch die Ereignisse der Messung' {
+        $wall = Get-ServerTime $R.Run ($D.meta.start - 300000)
+        $out = Join-Path $TestDrive 'pre.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -ReportedTime $wall 6>$null)
+        $pre = Get-ReportData $out
+        @($pre.before.near | ForEach-Object { $_.kind }) | Should -Be @('logoff', 'logon', 'profileerror')
+        @($pre.before.nearCapture | ForEach-Object { $pre.events[$_].kind }) | Should -Be @('logoff', 'logon', 'profileerror')
+        ($pre.incidents | Where-Object { $_.event -and $_.event.kind -eq 'profileerror' }).nearReported | Should -BeTrue
+        @($pre.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.nearReported }).Count | Should -Be 1
+    }
+    It 'hebt Ereignisvorfaelle des gemeldeten Benutzers hervor' {
+        $out = Join-Path $TestDrive 'fu.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -FocusUser 'CONTOSO\USER011' 6>$null)
+        $fu = Get-ReportData $out
+        @($fu.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.focus } | ForEach-Object { $_.event.app }) | Should -Be @('OUTLOOK.EXE')
+        $out = Join-Path $TestDrive 'fu4.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -FocusUser 'user004' 6>$null)
+        @((Get-ReportData $out).before.incidents | Where-Object focus | ForEach-Object { $_.event.app }) | Should -Be @('nexus.exe')
     }
 }

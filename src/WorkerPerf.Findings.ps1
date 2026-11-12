@@ -820,10 +820,11 @@ function Add-WorkerPerfIncidentDetail {
         }
         $inc['Ica'] = @($ica.ToArray() | Sort-Object -Property @{ Expression = { $_.MaxMs }; Descending = $true }, @{ Expression = { $_.SessionIndex } })
 
-        # events and scans in the window
+        # events in the window (not those of the groups app, service and session, which form event incidents or belong
+        # to their session) and scans
         if ($narrow) { $inc['Events'] = @(); $inc['ScanActive'] = $false }
         else {
-            $inc['Events'] = @(@($Model.Events) | Where-Object { [long]$_.TimeMs -ge $start -and [long]$_.TimeMs -le $end })
+            $inc['Events'] = @(@($Model.Events) | Where-Object { [long]$_.TimeMs -ge $start -and [long]$_.TimeMs -le $end -and @('app', 'service', 'session') -notcontains [string](Get-WorkerPerfField $_ 'Group') })
             $inc['ScanActive'] = $scan
         }
     }

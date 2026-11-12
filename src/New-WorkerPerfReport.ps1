@@ -34,7 +34,8 @@
     User who reported the problem (User or Domain\User, case-insensitive).
 
 .PARAMETER ReportedTime
-    Reported time of the problem, as local time of the measured server.
+    Reported time of the problem, as local time of the measured server. Before the capture it selects the events of
+    the days before within 15 minutes (each at the local time of its own day).
 
 .PARAMETER TopProcesses
     Number of individual processes (by CPU time and by peak memory each) kept in the report.
@@ -306,12 +307,56 @@ if ($FocusUser) {
     }
 }
 $reportedMs = $null
+$reportedWallMs = $null
 if ($PSBoundParameters.ContainsKey('ReportedTime')) {
     # wall-clock fields are the server's local time: read them as UTC and shift by the server's offset
     $wall = [DateTime]::SpecifyKind($ReportedTime, [DateTimeKind]::Utc)
-    $reportedMs = (New-Object DateTimeOffset ($wall)).ToUnixTimeMilliseconds() - [long][Math]::Round($offsetMin * 60000.0)
+    $reportedWallMs = (New-Object DateTimeOffset ($wall)).ToUnixTimeMilliseconds()
+    $reportedMs = $reportedWallMs - [long][Math]::Round($offsetMin * 60000.0)
 }
 $focusRadiusMs = 15L * 60000L
+
+function Test-FocusUser([string]$User) {
+    # The account of an event is the reported user: equal names, or equal names without domain when one side has none.
+    if (-not $FocusUser -or [string]::IsNullOrEmpty($User)) { return $false }
+    if ($User -ieq $FocusUser) { return $true }
+    $u = $User.LastIndexOf([char]'\'); $f = $FocusUser.LastIndexOf([char]'\')
+    if ($u -ge 0 -and $f -ge 0) { return $false }
+    return ($User.Substring($u + 1) -ieq $FocusUser.Substring($f + 1))
+}
+
+#endregion
+
+#region ---------- events: incidents, lookback, print state -------------------------------
+
+# Event incidents of the capture are numbered after the performance incidents, those of the lookback after them.
+# Every record is matched against the reported time in UTC with the offset of its own day (Get-WorkerPerfReportedEventMs);
+# without a daylight-saving change in between this is the reported time of the focus.
+$eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
+$eventSettings = Read-WorkerPerfEventSettings $ThresholdFile
+$eventOffset = [int][Math]::Round($offsetMin)
+$events = @($model.Events)
+$printDrivers = @(@($model.PrintDrivers) | Where-Object { $null -ne $_ })
+Set-WorkerPerfEventSessions -Events $events -Model $model -Config $eventConfig
+$eventIncidents = @(New-WorkerPerfEventIncidents -Events $events -Config $eventConfig -Settings $eventSettings -Drivers $printDrivers -FirstId ($incidents.Count + 1))
+Add-WorkerPerfEventPatterns -Incidents $eventIncidents -AllEvents $events -Model $model -Thresholds $thresholds -Settings $eventSettings -Config $eventConfig `
+    -Roles $roles -Drivers $printDrivers -PerfIncidents $incidents
+$eventReportedMs = $null
+if ($null -ne $reportedWallMs) { $eventReportedMs = Get-WorkerPerfReportedEventMs $reportedWallMs (@($model.EventsBefore) + $events) $eventOffset }
+$lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId ($incidents.Count + $eventIncidents.Count + 1) -ReportedMs $eventReportedMs
+$beforeIncidents = @($lookback.Incidents)
+$printState = Get-WorkerPerfPrintState -Model $model -EventIncidents (@($eventIncidents) + @($beforeIncidents))
+
+function ConvertTo-EventIncidentEntry($Incident) {
+    # focus: a session or person of the incident is the reported user's; near: the reported time within 15 minutes
+    $focus = $false
+    foreach ($si in @($Incident.Sessions)) { if ($focusSessions.Contains([int]$si)) { $focus = $true } }
+    foreach ($u in @($Incident.Users)) { if (Test-FocusUser ([string]$u)) { $focus = $true } }
+    $near = $false
+    if ($null -ne $eventReportedMs) { $near = ($eventReportedMs -ge ([long]$Incident.StartMs - $focusRadiusMs) -and $eventReportedMs -le ([long]$Incident.EndMs + $focusRadiusMs)) }
+    $text = [string](Get-WorkerPerfEventIncidentText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
+    return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset)
+}
 
 #endregion
 
@@ -500,11 +545,17 @@ if ($null -ne $model.MainApp) {
     }
     $mainAppOut = [ordered]@{ label = [string]$model.MainApp.Label; status = $mainStatus; t = (New-JsonIntegers $t); ms = (New-JsonSeries $ms.ToArray() 1) }
 }
-function ConvertTo-EventEntry($Event) {
-    return [ordered]@{ t = [long]$Event.TimeMs; source = [string]$Event.Source; id = [int]$Event.EventId; kind = [string]$Event.Kind; text = [string]$Event.Text }
-}
+# every event of the capture; the session events of each session as positions in this list
 $eventsOut = New-Object System.Collections.Generic.List[object]
-foreach ($e in @($model.Events)) { $eventsOut.Add((ConvertTo-EventEntry $e)) }
+$sessionEvents = @{}
+foreach ($e in $events) {
+    $si = [int](Get-WorkerPerfField $e 'SessionIndex')
+    if ([string]$e.Group -eq 'session' -and $si -ge 0) {
+        if (-not $sessionEvents.ContainsKey($si)) { $sessionEvents[$si] = New-Object System.Collections.Generic.List[int] }
+        $sessionEvents[$si].Add($eventsOut.Count)
+    }
+    $eventsOut.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset))
+}
 
 #endregion
 
@@ -555,6 +606,8 @@ foreach ($s in $sessions) {
     if ([int]$s.ProfileVolume -ge 0) { $profileVolume = [int]$s.ProfileVolume }
     $logon = $null
     if ($null -ne $s.Logon) { $logon = [long]$s.Logon }
+    $ownEvents = [int[]]@()
+    if ($sessionEvents.ContainsKey([int]$s.Index)) { $ownEvents = $sessionEvents[[int]$s.Index].ToArray() }
     $sessOut.Add([ordered]@{
             i = [int]$s.Index; id = [int]$s.Sid; user = [string]$s.User; domain = [string]$s.Domain; client = [string]$s.Client; logon = $logon
             first = $first; last = $last; durMin = $durMin; activePct = $activePct; idleMaxMin = $idleMaxMin
@@ -565,7 +618,7 @@ foreach ($s in $sessions) {
             rttAvg = (Get-Round $rttSt.Avg 1); rttP95 = (Get-Round $rttSt.P95 1); rttMax = (Get-Round $rttSt.Max 1)
             inP95 = (Get-Round $inSt.P95 1); inMax = (Get-Round $inSt.Max 1); inWarnPct = $inWarnPct; profileVolume = $profileVolume
             cpu = (New-JsonSeries $sum.Cpu 2); ws = (New-JsonSeries $sum.Ws 0); io = (New-JsonSeries $sum.Io 1); rtt = (New-JsonSeries ([double[]]$s.Rtt) 1)
-            inT = (New-JsonIntegers $inT); inMs = (New-JsonSeries $inMs.ToArray() 1)
+            inT = (New-JsonIntegers $inT); inMs = (New-JsonSeries $inMs.ToArray() 1); events = $ownEvents
         })
 }
 
@@ -706,9 +759,13 @@ foreach ($inc in $incidents) {
             })
     }
     $incEvents = New-Object System.Collections.Generic.List[object]
-    foreach ($e in @($inc.Events)) { $incEvents.Add((ConvertTo-EventEntry $e)) }
+    foreach ($e in @($inc.Events)) { $incEvents.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset)) }
     $lead = $null
     if ($null -ne $inc.Lead) { $lead = [string]$inc.Lead }
+    # the event incidents of the capture that overlap this one (set by Add-WorkerPerfEventPatterns)
+    $eventRefs = [int[]]@()
+    $refs = Get-WorkerPerfField $inc 'EventIncidents'
+    if ($null -ne $refs) { $eventRefs = [int[]]@($refs) }
     $incOut.Add([ordered]@{
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
@@ -718,8 +775,10 @@ foreach ($inc in $incidents) {
             delayProcs = $delayProcs.ToArray(); endpoints = $endpoints.ToArray(); ica = $ica.ToArray()
             security = [ordered]@{ products = $products.ToArray(); totalPct = (Get-Round $inc.Security.TotalPct 1) }
             companion = $companion; chronicContext = $context.ToArray()
+            eventIncidents = $eventRefs; event = $null
         })
 }
+foreach ($inc in $eventIncidents) { $incOut.Add((ConvertTo-EventIncidentEntry $inc)) }
 
 #endregion
 
@@ -753,6 +812,8 @@ if ($validK.Count -gt 0) {
     # every process named in an incident ranking, and the collector itself
     foreach ($k in $rankedK.Keys) { if ($k -ge 0 -and $k -lt $procAll.Count -and $null -ne $procAll[$k]) { $selected[[int]$k] = $true } }
     foreach ($k in $ks) { if ($procAll[$k].IsCollector) { $selected[$k] = $true } }
+    # the print processes, for the print state
+    foreach ($p in @($printState.Processes)) { $selected[[int]$p.K] = $true }
 }
 $selK = [int[]]@($selected.Keys | Sort-Object)
 
@@ -775,6 +836,8 @@ for ($p = 0; $p -lt $nP; $p++) {
         $pCpu[$k][$p] += $rCpu[$r]; $pWs[$k][$p] = $rWs[$r]
     }
 }
+$printWs = @{}
+foreach ($p in @($printState.Processes)) { $printWs[[int]$p.K] = $null }
 $procOut = New-Object System.Collections.Generic.List[object]
 foreach ($k in $selK) {
     $pr = $procAll[$k]
@@ -786,6 +849,12 @@ foreach ($k in $selK) {
         if ($wsA[$p] -eq $wsA[$p]) { $carry = $wsA[$p] / 1024.0 }
         $wsA[$p] = $carry
         $lifeSec += $snapSecArr[$p]
+    }
+    if ($printWs.ContainsKey($k)) {
+        # working set of a print process at its first and last snapshot with a value (MB, as in its series)
+        $wsFirst = $null; $wsLast = $null
+        for ($p = $f0; $p -le $f1; $p++) { if ($wsA[$p] -eq $wsA[$p]) { if ($null -eq $wsFirst) { $wsFirst = [Math]::Round($wsA[$p]) }; $wsLast = [Math]::Round($wsA[$p]) } }
+        $printWs[$k] = @{ Start = $wsFirst; End = $wsLast }
     }
     $cpuAvg = $null
     if ($lifeSec -gt 0 -and $cores -gt 0) { $cpuAvg = [Math]::Round([double]$pr.CpuMs / ($lifeSec * 1000.0 * $cores) * 100.0, 2) }
@@ -829,6 +898,51 @@ foreach ($row in $sollIst) {
 
 #endregion
 
+#region ---------- lookback, print state ---------------------------------------------------
+
+$beforeIncOut = New-Object System.Collections.Generic.List[object]
+foreach ($inc in $beforeIncidents) { $beforeIncOut.Add((ConvertTo-EventIncidentEntry $inc)) }
+# near: the lookback events within 15 minutes of a reported time before the capture, then the events of the capture
+# within the same radius (nearCapture: their positions in events)
+$nearOut = New-Object System.Collections.Generic.List[object]
+foreach ($e in @($lookback.Near)) { $nearOut.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset)) }
+$nearCapture = New-Object System.Collections.Generic.List[int]
+if ($null -ne $eventReportedMs -and $eventReportedMs -lt [long]$tick.TimeMs[0]) {
+    for ($i = 0; $i -lt $events.Count; $i++) {
+        if ([Math]::Abs([long]$events[$i].TimeMs - $eventReportedMs) -le $focusRadiusMs) { $nearOut.Add($eventsOut[$i]); $nearCapture.Add($i) }
+    }
+}
+$perDayOut = New-Object System.Collections.Generic.List[object]
+$incidentEventCount = 0
+foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count }); $incidentEventCount += [int]$d.Count }
+$beforeOut = [ordered]@{
+    days = [int]$lookback.Days; from = [long]$lookback.FromMs; capped = [string[]]@($lookback.Capped)
+    eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
+    incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
+}
+
+$driversOut = New-Object System.Collections.Generic.List[object]
+foreach ($d in @($printState.Drivers)) {
+    $driversOut.Add([ordered]@{
+            name = [string]$d.Name; manufacturer = [string]$d.Manufacturer; version = [string]$d.Version; type = [int]$d.Type; isolation = [string]$d.Isolation
+            isolated = [bool]$d.Isolated; files = [string[]]@($d.Files); involved = [bool]$d.Involved; possiblyInvolved = [bool]$d.PossiblyInvolved
+        })
+}
+$queuesOut = New-Object System.Collections.Generic.List[object]
+foreach ($q in @($printState.Queues)) {
+    $queuesOut.Add([ordered]@{ name = [string]$q.Name; maxJobs = (Get-Round $q.MaxJobs 0); jobErrors = (Get-Round $q.JobErrors 0); notReadyErrors = (Get-Round $q.NotReadyErrors 0) })
+}
+$printProcsOut = New-Object System.Collections.Generic.List[object]
+foreach ($p in @($printState.Processes)) {
+    $ws = $printWs[[int]$p.K]
+    $wsStart = $null; $wsEnd = $null
+    if ($null -ne $ws) { $wsStart = $ws.Start; $wsEnd = $ws.End }
+    $printProcsOut.Add([ordered]@{ k = [int]$p.K; name = [string]$p.Name; cpuMax = (Get-Round $p.CpuMaxPct 2); wsStartMB = $wsStart; wsEndMB = $wsEnd; wsMaxMB = (Get-Round $p.WsMaxMB 1) })
+}
+$printOut = [ordered]@{ drivers = $driversOut.ToArray(); queues = $queuesOut.ToArray(); processes = $printProcsOut.ToArray() }
+
+#endregion
+
 #region ---------- write report -----------------------------------------------------------
 
 $snapKindText = [string]::Join('', [string[]]@($snap.Kind))
@@ -841,6 +955,7 @@ $data = [ordered]@{
     citrix = $citrixOut.ToArray(); sollIst = $sollOut.ToArray(); incidents = $incOut.ToArray()
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
     noFinding = ($incOut.Count -eq 0)
+    before = $beforeOut; print = $printOut
 }
 
 Write-Host 'Schreibe Bericht ...'

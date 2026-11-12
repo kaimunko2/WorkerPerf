@@ -830,6 +830,44 @@ function Format-WorkerPerfEventSpan([long]$StartMs, [long]$EndMs, [int]$StartOff
     return $from + $dash + $to
 }
 
+function Get-WorkerPerfPatternStatement($Pattern, $Texts, [int]$OffsetMinutes, [bool]$WithDate, [string]$StartDay) {
+    # The statement of one pattern of an event incident as the sentence says it (with its leading space). Companion
+    # times use each record's own offset, else OffsetMinutes; with WithDate a companion on another day than StartDay
+    # names its date.
+    $d = $Pattern.Detail
+    $text = $Texts['pattern.' + $Pattern.Id]
+    switch ([string]$Pattern.Id) {
+        'afterhang' {
+            if ($d.ContainsKey('Count') -and [int]$d.Count -lt [int]$d.Crashes) { $text = $Texts['pattern.afterhang.some'] -f [int]$d.Count, [int]$d.Crashes }
+        }
+        'sharedmodule' { $text = $text -f $d.Module, (Join-WorkerPerfTextList @($d.Apps) $Texts) }
+        'printdriver' {
+            if (([string]$d.Driver).Length -gt 0) { $text = $text -f $d.Module, $d.Driver }
+            else { $text = $Texts['pattern.printdriver.many'] -f $d.Module, (Join-WorkerPerfTextList @($d.Drivers) $Texts) }
+        }
+        'securitymodule' { $text = $text -f $d.Module, $d.Product }
+        'manyusers' { $text = $text -f $d.Users }
+        'oneuser' { $text = $text -f $d.User, $d.Count }
+        'companion' {
+            $list = @($d.Events | ForEach-Object {
+                    $o = Get-WorkerPerfEventOffset $_ $OffsetMinutes
+                    $at = Format-WorkerPerfClock ([long]$_.TimeMs) $o
+                    if ($WithDate) {
+                        $day = Format-WorkerPerfEventDate ([long]$_.TimeMs) $o
+                        if ($day -ne $StartDay) { $at = $day + ' ' + $at }
+                    }
+                    $at + ' ' + (Get-WorkerPerfEventWhat $_ $Texts)
+                })
+            $text = $text -f ($list -join ', ')
+        }
+        'overlap' {
+            $ids = @($d.Incidents)
+            if ($ids.Count -gt 1) { $text = $Texts['pattern.overlap.many'] -f (Join-WorkerPerfTextList $ids $Texts) } else { $text = $text -f $ids[0] }
+        }
+    }
+    return $text
+}
+
 function Get-WorkerPerfEventIncidentText {
     # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
     # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
@@ -892,40 +930,7 @@ function Get-WorkerPerfEventIncidentText {
     if ($versions.Count -gt 1) { [void]$sb.Append(($Texts['event.versions'] -f (Join-WorkerPerfTextList $versions $Texts))) }
 
     $patterns = @($inc.Patterns)
-    foreach ($p in $patterns) {
-        $d = $p.Detail
-        $text = $Texts['pattern.' + $p.Id]
-        switch ([string]$p.Id) {
-            'afterhang' {
-                if ($d.ContainsKey('Count') -and [int]$d.Count -lt [int]$d.Crashes) { $text = $Texts['pattern.afterhang.some'] -f [int]$d.Count, [int]$d.Crashes }
-            }
-            'sharedmodule' { $text = $text -f $d.Module, (Join-WorkerPerfTextList @($d.Apps) $Texts) }
-            'printdriver' {
-                if (([string]$d.Driver).Length -gt 0) { $text = $text -f $d.Module, $d.Driver }
-                else { $text = $Texts['pattern.printdriver.many'] -f $d.Module, (Join-WorkerPerfTextList @($d.Drivers) $Texts) }
-            }
-            'securitymodule' { $text = $text -f $d.Module, $d.Product }
-            'manyusers' { $text = $text -f $d.Users }
-            'oneuser' { $text = $text -f $d.User, $d.Count }
-            'companion' {
-                $list = @($d.Events | ForEach-Object {
-                        $o = Get-WorkerPerfEventOffset $_ $OffsetMinutes
-                        $at = Format-WorkerPerfClock ([long]$_.TimeMs) $o
-                        if ($withDate) {
-                            $day = Format-WorkerPerfEventDate ([long]$_.TimeMs) $o
-                            if ($day -ne $startDay) { $at = $day + ' ' + $at }
-                        }
-                        $at + ' ' + (Get-WorkerPerfEventWhat $_ $Texts)
-                    })
-                $text = $text -f ($list -join ', ')
-            }
-            'overlap' {
-                $ids = @($d.Incidents)
-                if ($ids.Count -gt 1) { $text = $Texts['pattern.overlap.many'] -f (Join-WorkerPerfTextList $ids $Texts) } else { $text = $text -f $ids[0] }
-            }
-        }
-        [void]$sb.Append($text)
-    }
+    foreach ($p in $patterns) { [void]$sb.Append((Get-WorkerPerfPatternStatement $p $Texts $OffsetMinutes $withDate $startDay)) }
     if ($patterns.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
     return $sb.ToString()
 }
@@ -1087,4 +1092,94 @@ function Get-WorkerPerfPrintState {
     $procArr = $processes.ToArray()
     if ($procArr.Length -gt 1) { $procArr = @($procArr | Sort-Object -Property @{ Expression = { $_.K } }) }
     return @{ Drivers = $drivers.ToArray(); Queues = $queues.ToArray(); Processes = $procArr }
+}
+
+# ---- report output ----
+# The report data of events and event incidents (the contract of the report page): ordered records with lower-case keys.
+
+function Get-WorkerPerfReportedEventMs([long]$WallMs, [object[]]$Events, [int]$DefaultOffset) {
+    # A reported time given as the server's wall clock (WallMs: the wall-clock fields read as UTC) in UTC, with the
+    # offset of the record whose own local time lies nearest to it (the first of equals), else DefaultOffset; a reported
+    # time on the other side of a daylight-saving change thus meets the records of that day at their local time.
+    $best = $null; $bestDist = [long]0
+    foreach ($e in @($Events)) {
+        if ($null -eq $e) { continue }
+        $o = Get-WorkerPerfEventOffset $e $DefaultOffset
+        $dist = [Math]::Abs([long]$e.TimeMs + [long]$o * 60000L - $WallMs)
+        if ($null -eq $best -or $dist -lt $bestDist) { $best = $o; $bestDist = $dist }
+    }
+    if ($null -eq $best) { $best = $DefaultOffset }
+    return $WallMs - [long]$best * 60000L
+}
+
+function ConvertTo-WorkerPerfEventOut($Event, [int]$OffsetMinutes = 0) {
+    # One event record for the report: t = UTC milliseconds, offsetMin = the UTC offset of its own time stamp (else
+    # OffsetMinutes, the capture's), s = session index or -1, code normalised as in the incidents.
+    $s = -1
+    $si = Get-WorkerPerfField $Event 'SessionIndex'
+    if ($null -ne $si) { $s = [int]$si }
+    $field = { param([string]$Name) [string](Get-WorkerPerfField $Event $Name) }
+    return [ordered]@{
+        t = [long]$Event.TimeMs; offsetMin = (Get-WorkerPerfEventOffset $Event $OffsetMinutes); log = (& $field 'Log'); source = (& $field 'Source')
+        id = [int]$Event.EventId; level = [int](Get-WorkerPerfField $Event 'Level'); group = (& $field 'Group'); kind = (& $field 'Kind')
+        app = (& $field 'App'); module = (& $field 'Module'); code = (Format-WorkerPerfErrorCode (& $field 'Code')); s = $s; user = (& $field 'User')
+        printer = (& $field 'Printer'); driver = (& $field 'Driver'); service = (& $field 'Service'); object = (& $field 'Object'); text = (& $field 'Text')
+    }
+}
+
+function ConvertTo-WorkerPerfDetailOut($Detail, [int]$OffsetMinutes) {
+    # The Detail of a pattern with lower-case first letters, keys in ordinal order; Events as event records.
+    $out = [ordered]@{}
+    if ($null -eq $Detail) { return $out }
+    $keys = [string[]]@($Detail.Keys)
+    [Array]::Sort($keys, [StringComparer]::Ordinal)
+    foreach ($k in $keys) {
+        $name = $k.Substring(0, 1).ToLowerInvariant() + $k.Substring(1)
+        $v = $Detail[$k]
+        if ($k -eq 'Events') { $v = @(@($v) | Where-Object { $null -ne $_ } | ForEach-Object { ConvertTo-WorkerPerfEventOut $_ $OffsetMinutes }) }
+        elseif ($v -is [System.Array]) { $v = @($v) }
+        $out[$name] = $v
+    }
+    return $out
+}
+
+function ConvertTo-WorkerPerfEventIncidentOut {
+    # An event incident for the report: every key of a performance incident with neutral values (type 'ereignis'), the
+    # incident's kept records as events, and the event part (kind, key, counts, users, modules, codes, patterns with
+    # their statement and details, overlap, companions). Texts and OffsetMinutes (the capture's) give the statements.
+    param($Incident, [string]$Text, [bool]$Focus, [bool]$Near, $Texts, [int]$OffsetMinutes)
+    $inc = $Incident
+    $kept = @($inc.Events | Where-Object { $null -ne $_ })
+    $startOffset = $OffsetMinutes
+    if ($kept.Count -gt 0) { $startOffset = Get-WorkerPerfEventOffset $kept[0] $OffsetMinutes }
+    $before = [bool](Get-WorkerPerfField $inc 'Before')
+    $startDay = Format-WorkerPerfEventDate ([long]$inc.StartMs) $startOffset
+    $patterns = @(@($inc.Patterns) | Where-Object { $null -ne $_ } | ForEach-Object {
+            [ordered]@{ id = [string]$_.Id; text = (Get-WorkerPerfPatternStatement $_ $Texts $OffsetMinutes $before $startDay).TrimStart(); detail = (ConvertTo-WorkerPerfDetailOut $_.Detail $OffsetMinutes) }
+        })
+    $companions = @(@($inc.Companions) | Where-Object { $null -ne $_ } | ForEach-Object {
+            [ordered]@{ t = [long]$_.TimeMs; offsetMin = (Get-WorkerPerfEventOffset $_ $OffsetMinutes); group = [string]$_.Group; source = [string]$_.Source
+                id = [int]$_.EventId; kind = [string]$_.Kind; object = [string](Get-WorkerPerfField $_ 'Object') }
+        })
+    $start = [long]$inc.StartMs; $end = [long]$inc.EndMs
+    $moduleEvents = Get-WorkerPerfField $inc 'ModuleEvents'
+    if ($null -eq $moduleEvents) { $moduleEvents = $inc.Count }
+    $eventPart = [ordered]@{
+        kind = [string]$inc.Kind; key = [string]$inc.Key; group = [string]$inc.Group; count = [int]$inc.Count; eventsTruncated = [bool](Get-WorkerPerfField $inc 'EventsTruncated')
+        users = [string[]]@($inc.Users); sessions = [int[]]@($inc.Sessions); inSession = [bool]$inc.InSession; versions = [string[]]@($inc.Versions)
+        modules = @(@($inc.Modules) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ name = [string]$_.Name; count = [int]$_.Count } })
+        moduleEvents = [int]$moduleEvents; sameModule = [bool]$inc.SameModule
+        codes = @(@($inc.Codes) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ code = [string]$_.Code; text = [string]$_.Text; count = [int]$_.Count } })
+        app = [string]$inc.App; service = [string]$inc.Service; driver = [string]$inc.Driver; printer = [string]$inc.Printer; source = [string]$inc.Source
+        before = $before; patterns = $patterns; overlap = [int[]]@($inc.Overlap); companions = $companions
+    }
+    return [ordered]@{
+        id = [int]$inc.Id; type = 'ereignis'; chronic = $false; severity = [int]$inc.Severity
+        start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $null; resources = [string[]]@()
+        text = $Text; focus = $Focus; nearReported = $Near; scanActive = $false
+        events = @($kept | ForEach-Object { ConvertTo-WorkerPerfEventOut $_ $OffsetMinutes })
+        signals = @(); affected = @(); main = $null; cause = $null; contributors = [ordered]@{}
+        delayProcs = @(); endpoints = @(); ica = @(); security = [ordered]@{ products = @(); totalPct = $null }
+        companion = $null; chronicContext = @(); eventIncidents = [int[]]@(); event = $eventPart
+    }
 }
