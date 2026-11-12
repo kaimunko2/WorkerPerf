@@ -208,6 +208,10 @@
     "quality.eventReads[].label": "composed",
     "before.oldest[].log": "keyword",
     "before.readCounts[].log": "keyword",
-    "before.readCounts[].label": "composed"
+    "before.readCounts[].label": "composed",
+    "skipped[].id": "keyword",
+    "skipped[].label": "composed",
+    "skipped[].text": "composed",
+    "skipped[].places[]": "keyword"
   }
 }

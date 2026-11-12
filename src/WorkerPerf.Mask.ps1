@@ -19,7 +19,8 @@ $script:WorkerPerfMaskLevelKinds = @{
 # key ("procs.role": the role of a record under procs, also incidents[].contributors.cpu.procs[]); list levels do not count.
 # (1) Texts copied from the server as they are, which may hold names the evaluation does not know: emptied by
 # Clear-WorkerPerfReportFreeText. "?unavailable": only in a record whose id names a source that is not available (the
-# detail then carries the reason of the failed check; the detail of an available source is a fixed text of the collector).
+# detail then carries the reason of the failed check; the detail of an available source is a fixed text of the collector),
+# except the collector's fixed note of a source -Skip left out (Test-WorkerPerfSkipDetail).
 $script:WorkerPerfMaskFreeTextFields = @(
     'meta.endMessage', 'quality.sourceErrors[].firstMessage', 'quality.sources[].detail?unavailable', 'sollIst[].detail?unavailable',
     'procs[].cmd', 'events[].text', 'incidents[].events[].text', 'incidents[].event.patterns[].detail.events[].text',
@@ -33,7 +34,7 @@ $script:WorkerPerfMaskKeyedMaps = @()
 $script:WorkerPerfMaskKeywordFields = @(
     'type', 'kind', 'group', 'log', 'lead', 'resource', 'resources', 'measure', 'scope', 'status', 'direction', 'isolation',
     'endReason', 'metric', 'signalId', 'id', 'day', 'capped', 'worker', 'snapKind', 'unit', 'url',
-    'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role')
+    'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places')
 
 $script:WorkerPerfMaskIpv4Text = '(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)'
 $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^' + $script:WorkerPerfMaskIpv4Text + '$')
@@ -831,8 +832,9 @@ function Get-WorkerPerfMaskHolders($Data, [string]$Path) {
 function Clear-WorkerPerfReportFreeText($Data) {
     # Empties, in place, the texts of the report data that come from the server as they are and may hold names the
     # evaluation does not know: the fields of WorkerPerfMaskFreeTextFields (event messages, command lines, the first error
-    # message of a failed source call, the end message, the detail of a source that is not available). Texts the
-    # evaluation composes itself stay (they are masked by name). A missing key or $null stays.
+    # message of a failed source call, the end message, the detail of a source that is not available, unless it is the
+    # collector's fixed note of a source -Skip left out). Texts the evaluation composes itself stay (they are masked by
+    # name). A missing key or $null stays.
     $unavailable = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
     foreach ($s in @(Get-WorkerPerfMaskHolders $Data 'quality.sources[].id')) {
         if ($s.Contains('available') -and $false -eq $s['available']) { $unavailable[[string]$s['id']] = $true }
@@ -844,7 +846,9 @@ function Clear-WorkerPerfReportFreeText($Data) {
         $key = $path.Substring($path.LastIndexOf('.') + 1)
         foreach ($r in @(Get-WorkerPerfMaskHolders $Data $path)) {
             if ($onlyUnavailable -and -not $unavailable.ContainsKey([string](Get-WorkerPerfMaskItem $r 'id'))) { continue }
-            if ($r.Contains($key) -and $null -ne $r[$key]) { $r[$key] = '' }
+            if (-not $r.Contains($key) -or $null -eq $r[$key]) { continue }
+            if ($onlyUnavailable -and (Test-WorkerPerfSkipDetail ([string]$r[$key]))) { continue }
+            $r[$key] = ''
         }
     }
 }

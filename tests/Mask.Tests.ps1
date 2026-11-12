@@ -386,6 +386,21 @@ Describe 'Meldungstexte ueber den Plan hinaus' {
         $null -eq $d.meta.endMessage | Should -BeTrue
     }
 }
+Describe 'Vermerk einer weggelassenen Kategorie' {                                     # Messkategorien Task 3
+    It 'laesst nur den festen Vermerk des Collectors stehen, nie einen Text der Quelle, der ihn enthaelt' {
+        $src = { param($id, $detail) [ordered]@{ id = $id; available = $false; detail = $detail } }
+        $texts = @('abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Ereignisse,Rueckblick)',
+            'Zugriff verweigert fuer geheim01: abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Prozesse) von geheim02', 'Abgeschaltet (-Skip Prozesse)',
+            "abgeschaltet (-Skip Prozesse)`ngeheim03", "abgeschaltet (-Skip Prozesse)`n", 'abgeschaltet (-Skip Geheimname)', 'abgeschaltet (-Skip Prozesse,Geheimname)')
+        $ids = @(0..($texts.Count - 1) | ForEach-Object { "src$_" })
+        $d = [ordered]@{ quality = [ordered]@{ sources = @(0..($texts.Count - 1) | ForEach-Object { & $src $ids[$_] $texts[$_] }) }
+            sollIst = @(0..($texts.Count - 1) | ForEach-Object { [ordered]@{ id = $ids[$_]; detail = $texts[$_] } }) }
+        Clear-WorkerPerfReportFreeText $d
+        $kept = @('abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Ereignisse,Rueckblick)') + @('') * ($texts.Count - 2)
+        @($d.quality.sources | ForEach-Object { $_.detail }) | Should -Be $kept
+        @($d.sollIst | ForEach-Object { $_.detail }) | Should -Be $kept
+    }
+}
 Describe 'Abschlussrunde: Profilordner, Hostnamen, Bezeichnungen und weitere Pfade' {
     BeforeAll {
         function Get-FixRun([string]$Name, [hashtable]$Files, [string]$Meta = $null) {

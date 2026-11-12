@@ -76,5 +76,14 @@
   "companion.system.memory": "Speichermangel-Warnung",
   "mask.user": "Benutzer {0:00}", "mask.client": "Client {0:00}", "mask.sid": "Konto {0:00}", "mask.server": "Server {0:00}",
   "mask.share": "Freigabe {0:00}", "mask.domain": "Domäne {0:00}", "mask.address": "Adresse {0:00}", "mask.printer": "Drucker {0:00}",
-  "mask.other": "(Name entfernt)", "mask.level.Personen": "Personen maskiert", "mask.level.Alles": "alle Namen maskiert"
+  "mask.other": "(Name entfernt)", "mask.level.Personen": "Personen maskiert", "mask.level.Alles": "alle Namen maskiert",
+  "skip.label.Prozesse": "Prozesse", "skip.label.Laufwerke": "Laufwerke", "skip.label.Citrix": "Citrix", "skip.label.Ereignisse": "Ereignisse",
+  "skip.label.Rueckblick": "Rückblick", "skip.label.Drucken": "Drucken", "skip.label.Gegenstellen": "Gegenstellen",
+  "skip.text.Prozesse": "Prozesse wurden bei dieser Messung nicht erfasst.",
+  "skip.text.Laufwerke": "Antwortzeiten je Laufwerk, Profilcontainer und Freigabe wurden bei dieser Messung nicht erfasst.",
+  "skip.text.Citrix": "ICA-Werte je Sitzung wurden bei dieser Messung nicht erfasst.",
+  "skip.text.Ereignisse": "Ereignisse während der Messung wurden nicht erfasst.",
+  "skip.text.Rueckblick": "Ereignisse der Tage vor der Messung wurden nicht erfasst.",
+  "skip.text.Drucken": "Treiberliste und Zähler der Druckwarteschlangen wurden bei dieser Messung nicht erfasst.",
+  "skip.text.Gegenstellen": "Gegenstellen wurden bei dieser Messung nicht geprüft."
 }

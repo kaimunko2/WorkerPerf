@@ -314,6 +314,38 @@ function Get-WorkerPerfSkipDetail([string[]]$Categories) {
     return 'abgeschaltet (-Skip ' + ($Categories -join ',') + ')'
 }
 
+function Test-WorkerPerfSkipDetail([string]$Text) {
+    # $true when the text is the collector's note of a left-out source exactly: the pattern with its case, nothing after
+    # it (not even a line break, which $ would let pass) and only names of the category table.
+    if ($null -eq $Text -or $Text -notmatch '\A[^\r\n]*\z' -or $Text -cnotmatch $script:WorkerPerfSkipDetailPattern) { return $false }
+    $inner = $Text.Substring('abgeschaltet (-Skip '.Length, $Text.Length - 'abgeschaltet (-Skip '.Length - 1)
+    foreach ($n in $inner.Split(',')) { if (-not $script:WorkerPerfCategories.Contains($n)) { return $false } }
+    return $true
+}
+
+function Get-WorkerPerfRecordedSkip($Value) {
+    # The active categories in the field Skip of a meta.json, in the order of the table, each once: a text or a list of
+    # texts, compared without regard to case. $null, unknown and inactive values are dropped without an error; a capture
+    # from before -Skip has no field and so gives none.
+    $given = @{}
+    if ($null -ne $Value -and ($Value -is [string] -or $Value -is [System.Collections.IEnumerable])) {
+        foreach ($v in @($Value)) { if ($v -is [string]) { $given[$v.Trim().ToLowerInvariant()] = $true } }
+    }
+    foreach ($n in @($script:WorkerPerfCategories.Keys)) {
+        if ($given.ContainsKey($n.ToLowerInvariant()) -and $script:WorkerPerfCategories[$n].Active) { $n }
+    }
+}
+
+function Get-WorkerPerfSkippedOut([string[]]$Skip, [hashtable]$Texts) {
+    # The report entry of each left-out category: id, label and reason (texts skip.label.<id>, skip.text.<id>) and the
+    # places of the report that depend on it (Places of the table). An unknown name is dropped.
+    foreach ($id in @($Skip)) {
+        if ($null -eq $id -or -not $script:WorkerPerfCategories.Contains([string]$id)) { continue }
+        [ordered]@{ id = [string]$id; label = [string]$Texts['skip.label.' + $id]; text = [string]$Texts['skip.text.' + $id]
+            places = [string[]]@($script:WorkerPerfCategories[[string]$id].Places) }
+    }
+}
+
 function Set-WorkerPerfSkippedSources {
     # Marks in Sources every source of a category that -Skip left out (creating its entry when missing). The logs
     # events.<id> count as left out only when Ereignisse and Rueckblick both are: each present key events.* and each

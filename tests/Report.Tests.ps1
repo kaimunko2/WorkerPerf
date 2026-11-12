@@ -436,7 +436,7 @@ Describe 'Ereignisdaten im Einzelnen' {
         [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
         $d = Get-ReportData $out
         @($d.quality.eventReads | ForEach-Object { '{0}|{1}|{2}|{3}|{4}' -f $_.log, $_.label, $_.dropped, $_.skipped, $_.unformatted }) |
-            Should -Be @('application|Ereignisprotokoll Anwendung|1000|3|0', 'defender|Ereignisprotokoll Microsoft Defender|0|0|2')
+            Should -Be @('application|Ereignisprotokoll Anwendung|1000|1|0', 'defender|Ereignisprotokoll Microsoft Defender|0|0|2')   # Aussage angepasst (Messkategorien Task 3): ohne die Zaehler des Rueckblicks
         @($d.before.readCounts | ForEach-Object { '{0}|{1}|{2}' -f $_.log, $_.skipped, $_.unformatted }) | Should -Be @('application|2|1')
         @($d.before.readCounts[0].PSObject.Properties.Name) | Should -Not -Contain 'dropped'
         @($d.quality.sources | Where-Object readFailed | ForEach-Object { $_.id }) | Should -Be @('events.system')
@@ -456,6 +456,26 @@ Describe 'Ereignisdaten im Einzelnen' {
         $d2 = Get-ReportData $out2
         @($d2.quality.eventReads).Count | Should -Be 0; @($d2.before.readCounts).Count | Should -Be 0
         @($d2.quality.sources | Where-Object { $_.readFailed -or $_.lookbackRead }).Count | Should -Be 0
+    }
+    It 'zeigt bei den Zaehlern der Messung nur, was der Abruf waehrend der Messung uebersprang, nie negativ' {   # Messkategorien Task 3
+        # EventReadCounts zaehlt Rueckblick und Messung zusammen, LookbackReadCounts nur den Rueckblick
+        $cnt = { param($s, $u, $d) [pscustomobject]@{ SkippedRecords = $s; UnformattedMessages = $u; DroppedEvents = $d } }
+        $variant = { param([string]$Name, [scriptblock]$Edit)
+            $dir = Copy-SimRun $R.Run (Join-Path $TestDrive $Name); $f = Join-Path $dir 'meta.json'
+            $m = Get-Content $f -Raw | ConvertFrom-Json; & $Edit $m; [IO.File]::WriteAllText($f, ($m | ConvertTo-Json -Depth 8))
+            $out = Join-Path $TestDrive "$Name.html"
+            [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
+            @((Get-ReportData $out).quality.eventReads | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.log, $_.dropped, $_.skipped, $_.unformatted })
+        }
+        $both = & $variant 'reads-diff' { param($m)
+            $m | Add-Member -Force EventReadCounts ([pscustomobject]@{ application = (& $cnt 9 4 7); system = (& $cnt 2 2 0); defender = (& $cnt 0 0 5); smbclient = (& $cnt 1 0 0) })
+            $m | Add-Member -Force LookbackReadCounts ([pscustomobject]@{ application = (& $cnt 5 6 2); system = (& $cnt 2 2 0); applocker = (& $cnt 3 3 3) }) }
+        # application: 9-5, 4-6 -> 0, 7-2; system: alles im Rueckblick; applocker: nur im Rueckblick, nie negativ
+        $both | Should -Be @('application|5|4|0', 'defender|5|0|0', 'smbclient|0|1|0')
+        # ohne LookbackReadCounts bleiben die Zaehler, wie sie sind
+        $only = & $variant 'reads-nolb' { param($m)
+            $m | Add-Member -Force EventReadCounts ([pscustomobject]@{ application = (& $cnt 9 4 7) }); $m.PSObject.Properties.Remove('LookbackReadCounts') }
+        $only | Should -Be @('application|7|9|4')
     }
     It 'nennt das Ende der Aufzeichnung auch unter einem Ausschnitt mit -To' {          # Task 9, fix round 2 (N3)
         $D.before.captureEnd | Should -Be $D.tickT[-1]

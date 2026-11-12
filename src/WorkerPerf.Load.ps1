@@ -144,6 +144,8 @@ function Import-WorkerPerfRun {
     # format 3: the counters of the event reads per log (EventReadCounts: the whole capture; LookbackReadCounts: after the
     # lookback, newer captures only), as ordered log id -> @{ Dropped; Skipped; Unformatted } (I5); missing = none
     foreach ($k in 'EventReadCounts', 'LookbackReadCounts') { $meta[$k] = ConvertTo-WorkerPerfReadCounts (Get-WorkerPerfField $metaJson $k) }
+    # the categories -Skip left out (format 3 with -Skip); a capture from before has no field: everything was measured
+    $recordedSkip = [string[]]@(Get-WorkerPerfRecordedSkip (Get-WorkerPerfField $metaJson 'Skip'))
     # a capture in another format is not read; a missing field is tolerated (hand-written or damaged meta.json)
     if ($null -ne $meta['SchemaVersion']) {
         $ver = 0.0
@@ -1159,6 +1161,7 @@ function Import-WorkerPerfRun {
     $kinds = $snapKind.ToArray()
     return @{
         Meta = $meta
+        Skip = $recordedSkip
         Sources = $sources
         Tick = @{
             N = $nT; TimeMs = $tickMsArr; ElapsedSec = $raw['ElapsedSec']; Burst = $burst; CollectMs = $raw['CollectMs']

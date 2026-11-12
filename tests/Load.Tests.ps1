@@ -209,6 +209,15 @@ Describe 'Import-WorkerPerfRun: Ereignisse und Drucken (Format 3)' {
         $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
         $m.Meta['EventLookbackDays'] | Should -Be 7; $m.Meta['LookbackCapped'] | Should -Be @('system', 'application')
     }
+    It 'liest die weggelassenen Kategorien; ohne Angabe gilt alles als gemessen' {   # Review Focus 2
+        $dir = Write-TestRun 'skip' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
+        @((Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Skip).Count | Should -Be 0
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"Simulated":false,', '"Simulated":false,"Skip":["rueckblick","Netz","Zustand","Prozesse"],'))
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Skip | Should -Be @('Prozesse', 'Rueckblick')
+        # ein beschaedigtes Feld bricht nichts: kein Text, kein Wert, ein einzelner Text, eine Zahl
+        @(Get-WorkerPerfRecordedSkip $null).Count | Should -Be 0; @(Get-WorkerPerfRecordedSkip @($null, 5, '', 'Zustand')).Count | Should -Be 0
+        Get-WorkerPerfRecordedSkip 'CITRIX' | Should -Be @('Citrix'); @(Get-WorkerPerfRecordedSkip ([pscustomobject]@{ a = 'Citrix' })).Count | Should -Be 0
+    }
 }
 Describe 'Import-WorkerPerfRun: unlesbare Zeilen der Ereignis- und Druckdateien (Fix-Runde 1)' {
     It 'zaehlt Zeilen, die kuerzer als ihre eigene Kopfzeile sind' {                       # Minor 9

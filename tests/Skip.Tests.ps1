@@ -1,8 +1,16 @@
 BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1')
     $script:Capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
-    $script:Runs = New-SkipRuns (Join-Path $TestDrive 'runs')
+    $script:Report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
+    $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+    # die Aufzeichnungen von New-SkipRuns und je ein Bericht dazu
+    $script:Rep = New-SkipReports (Join-Path $TestDrive 'rep')
     $script:Names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+    $script:Runs = [ordered]@{}; $script:D = @{}
+    foreach ($k in @('Voll') + $Names + 'Alle') { $Runs[$k] = $Rep[$k].Run; $D[$k] = Get-ReportData $Rep[$k].Report }
+    $script:Places = @{ Prozesse = @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes'); Laufwerke = @('volumes', 'shares', 'sessions.profile')
+        Citrix = @('citrix', 'sessions.rtt', 'incidents.ica'); Ereignisse = @('events', 'sessions.events', 'incidents.events'); Rueckblick = @('before'); Drucken = @('print.drivers', 'print.queues')
+        Gegenstellen = @('probes', 'incidents.endpoints') }
     $script:Files = @{ Prozesse = @('processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv'); Laufwerke = @('volumes.csv', 'shares.csv'); Citrix = @('citrix.csv')
         Ereignisse = @('events.csv'); Rueckblick = @('events_before.csv'); Drucken = @('printdrivers.csv', 'printqueues.csv'); Gegenstellen = @('probes.csv') }
     $script:Ids = @{ Prozesse = @('process', 'input.process'); Laufwerke = @('disk.latency', 'smb.latency', 'profile.map'); Citrix = @('ica.rtt', 'ica.latency'); Ereignisse = @(); Rueckblick = @()
@@ -72,7 +80,7 @@ Describe 'Aufzeichnung mit -Skip' {
         $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK', 'Zustand' -OutputPath (Join-Path $TestDrive 'b') 6>&1)
         Get-Shape ([string]$b[-1]) | Should -BeExactly (Get-Shape $Runs.Rueckblick)   # Zustand: angenommen, ohne Wirkung, auch auf der Konsole
         $console = $b | Out-String
-        $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'; $console | Should -Not -Match 'Zustand' 
+        $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'; $console | Should -Not -Match 'Zustand'
     }
     It 'lehnt einen unbekannten Wert ab, bevor etwas angelegt wird' {
         $dir = Join-Path $TestDrive 'x'
@@ -89,7 +97,66 @@ Describe 'Aufzeichnung mit -Skip' {
         @($m.Sources.PSObject.Properties | Where-Object { -not $_.Value.Available -or $_.Value.Detail -notlike 'Simulation*' }).Count | Should -Be 0
     }
     It 'nennt beim Start die gemessenen und die weggelassenen Kategorien' {
-        $out = Get-Content (Join-Path $TestDrive 'runs/Voll.console.txt') -Raw   # die Konsolenausgabe des vollen Laufs aus New-SkipRuns
+        # die Konsolenausgabe des vollen Laufs: New-SkipRuns legt sie neben den Ordner Voll, der die Aufzeichnung enthaelt
+        $out = Get-Content (Join-Path (Split-Path (Split-Path $Runs.Voll -Parent) -Parent) 'Voll.console.txt') -Raw
         $out | Should -Match 'laeuft: [^\r\n]+\r?\nGemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen\r?\nNicht gemessen \(-Skip\): keine\r?\n'
+    }
+}
+Describe 'Berichtsdaten mit weggelassenen Kategorien' {
+    It 'nennt fuer <_> Kategorie, Grund und abhaengige Stellen' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen' {
+        $s = @($D[$_].skipped); $s.Count | Should -Be 1
+        $s[0].id | Should -Be $_; $s[0].label | Should -Be $Texts["skip.label.$_"]; $s[0].text | Should -Be $Texts["skip.text.$_"]; @($s[0].places) | Should -Be $Places[$_]
+    }
+    It 'zaehlt kein Signal einer weggelassenen Kategorie im Soll-Ist' {
+        $a = $D.Alle;   # nicht $d: PowerShell unterscheidet $d und $D nicht
+        @($a.skipped.id) | Should -Be $Names; $a.skipped[0].text | Should -Be 'Prozesse wurden bei dieser Messung nicht erfasst.'
+        foreach ($id in 'disk.latency', 'smb.latency', 'ica.rtt', 'ica.latency', 'probe.connect') {
+            $r = $a.sollIst | Where-Object id -eq $id; $r.measured | Should -BeFalse -Because $id; $r.status | Should -Be 0; $r.exceeded | Should -BeFalse
+        }
+        ($a.sollIst | Where-Object id -eq 'smb.latency').detail | Should -Be 'abgeschaltet (-Skip Laufwerke)'
+        @($a.sollIst | Where-Object measured).id | Should -Be @('cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'input.session')
+        $a.unmeasured.worker | Should -Be @('Datenträger-Antwortzeit', 'Freigabe-Antwortzeit (SMB)'); $a.before.status | Should -Be 'off'; $D.Rueckblick.before.status | Should -Be 'off'
+    }
+    It 'erkennt die Vorfaelle der Basis in jeder Kombination wie im vollstaendigen Lauf' {   # Review Focus 1
+        $win = { param($d) @($d.incidents | Where-Object { $_.type -ne 'ereignis' -and -not $_.chronic } | ForEach-Object { '{0}-{1}' -f ($_.start - $d.meta.start), ($_.end - $d.meta.start) }) }
+        $lead = { param($d) @($d.incidents | Where-Object { $_.lead -in 'cpu', 'memory' } | ForEach-Object { '{0}|{1}|{2}' -f $_.type, $_.lead, ($_.start - $d.meta.start) }) }
+        @(& $win $D.Voll).Count | Should -Be 7; @(& $lead $D.Voll).Count | Should -Be 2
+        foreach ($k in $Names + 'Alle') { & $win $D[$k] | Should -Be (& $win $D.Voll) -Because $k; & $lead $D[$k] | Should -Be (& $lead $D.Voll) -Because $k }
+    }
+    It 'wertet eine Aufzeichnung von vor diesem Plan als vollstaendig gemessen aus, mit demselben Bericht' {   # Review Focus 2
+        $old = Copy-SimRun $Runs.Voll (Join-Path $TestDrive 'alt'); $f = Join-Path $old 'meta.json'
+        [IO.File]::WriteAllText($f, ([IO.File]::ReadAllText($f) -replace '(?s)"Skip":\s*\[\s*\],\s*', '')); (Get-Meta $old).PSObject.Properties.Name | Should -Not -Contain 'Skip'
+        $out = Join-Path $TestDrive 'alt.html'; [void](& $Report -Path $old -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') 6>$null)
+        $norm = { param($file) [IO.File]::ReadAllText($file) -replace '"generated":\d+', '"generated":0' }
+        & $norm $out | Should -BeExactly (& $norm $Rep.Voll.Report)
+        @($D.Voll.skipped).Count | Should -Be 0; @($D.Voll.PSObject.Properties.Name)[-1] | Should -Be 'skipped'   # das neue Feld der Berichtsdaten, leer
+    }
+    It 'nennt fuer weggelassene Ereignisse keine Zaehler der Messung und laesst den Rueckblick leer, wenn er weggelassen ist' {
+        # ohne Ereignisse: die Zaehler der Messung fehlen (die Seite sagt dann nichts ueber sie, skipped nennt den Grund);
+        # der Rueckblick ist derselbe wie im vollen Lauf
+        @($D.Ereignisse.quality.eventReads).Count | Should -Be 0; @($D.Alle.quality.eventReads).Count | Should -Be 0
+        $D.Ereignisse.before.status | Should -Be $D.Voll.before.status; $D.Ereignisse.before.eventCount | Should -Be $D.Voll.before.eventCount
+        $D.Voll.before.status | Should -Be 'read'
+        foreach ($k in 'Rueckblick', 'Alle') {
+            $b = $D[$k].before; $b.status | Should -Be 'off' -Because $k; $b.eventCount | Should -Be 0
+            foreach ($f in 'readCounts', 'oldest', 'perDay', 'incidents', 'capped') { @($b.$f).Count | Should -Be 0 -Because "$k before.$f" }
+        }
+    }
+    It 'ordnet die Felder von skipped im Bestand tests/MaskCensus.json ein' {
+        $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
+        $paths = New-Object System.Collections.Generic.SortedSet[string] ([StringComparer]::Ordinal)
+        $walk = { param($v, [string]$p)
+            if ($null -eq $v -or $v -is [ValueType]) { return }
+            if ($v -is [string]) { [void]$paths.Add($p); return }
+            if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { & $walk $x "$p[]" }; return }
+            foreach ($q in $v.PSObject.Properties) { & $walk $q.Value $(if ($p) { "$p.$($q.Name)" } else { $q.Name }) } }
+        & $walk @($D.Alle.skipped) 'skipped'
+        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like 'skipped*' } | Sort-Object)
+    }
+    It 'behaelt Kategorien und Gruende im maskierten Bericht' {
+        $m = Get-ReportData $Rep.AlleMasked.Report
+        @($m.skipped.id) | Should -Be $Names; $m.skipped[0].text | Should -Be 'Prozesse wurden bei dieser Messung nicht erfasst.'; @($m.skipped[0].places) | Should -Be $Places.Prozesse
+        ($m.sollIst | Where-Object id -eq 'ica.rtt').detail | Should -Be 'abgeschaltet (-Skip Citrix)'; ($m.quality.sources | Where-Object id -eq 'process').detail | Should -Be 'abgeschaltet (-Skip Prozesse)'
+        [IO.File]::ReadAllText($Rep.AlleMasked.Report) | Should -Not -Match 'user0\d\d|SIM-VDA01|CONTOSO'
     }
 }

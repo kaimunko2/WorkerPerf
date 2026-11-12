@@ -535,7 +535,23 @@ function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
     }
     return , $list.ToArray()
 }
-$eventReadsOut = ConvertTo-ReadCountsOut $model.Meta['EventReadCounts'] -WithDropped
+# EventReadCounts counts the lookback and the capture together, LookbackReadCounts the lookback alone: the capture's own
+# counters are the difference per log and counter, never below zero (a capture without LookbackReadCounts keeps its own).
+# Without Ereignisse the capture read no events: no counter of the capture is shown (skipped names the reason).
+$captureReads = [ordered]@{}
+if (@($model.Skip) -notcontains 'Ereignisse') {
+    $lookbackReads = $model.Meta['LookbackReadCounts']
+    foreach ($id in @($model.Meta['EventReadCounts'].Keys)) {
+        $c = $model.Meta['EventReadCounts'][$id]; $own = @{}
+        foreach ($k in 'Dropped', 'Skipped', 'Unformatted') {
+            $n = [long]$c[$k]
+            if ($lookbackReads.Contains($id)) { $n = [Math]::Max([long]0, $n - [long]$lookbackReads[$id][$k]) }
+            $own[$k] = $n
+        }
+        $captureReads[$id] = $own
+    }
+}
+$eventReadsOut = ConvertTo-ReadCountsOut $captureReads -WithDropped
 $quality = [ordered]@{
     skippedTicks = $skippedTicks
     tickMsAvg = (Get-Round $tickMsSt.Avg 1); tickMsMax = (Get-Round $tickMsSt.Max 1)
@@ -1008,10 +1024,11 @@ $incidentEventCount = 0
 foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count; partial = [bool]$d.Partial }); $incidentEventCount += [int]$d.Count }
 # per log the oldest event read (M5), and what the lookback skipped per log (I5, LookbackReadCounts of newer captures)
 $oldestOut = @(@($lookback.Oldest) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ log = [string]$_.Log; t = [long]$_.TimeMs } })
-$lookbackReadsOut = ConvertTo-ReadCountsOut $model.Meta['LookbackReadCounts']
+$lookbackReadsOut = @()
+if (@($model.Skip) -notcontains 'Rueckblick') { $lookbackReadsOut = ConvertTo-ReadCountsOut $model.Meta['LookbackReadCounts'] }
 # What the page may say about the lookback (status):
 #   notRecorded  the capture has no lookback setting (format 2)
-#   off          -EventLookbackDays 0
+#   off          -EventLookbackDays 0 or -Skip Rueckblick
 #   missingFile  events_before.csv is missing
 #   unavailable  nothing was read: the lookback read failed (SourceErrors 'eventsbefore'), the capture's Sources do not
 #                list every log of events.json that has a lookback (the source does not read the lookback; the Windows
@@ -1037,7 +1054,7 @@ $allListed = ($listedCount -eq $lookbackLogs.Count)
 $lookbackStatus = 'read'
 $metaDays = Get-WorkerPerfField $model.Meta 'EventLookbackDays'
 if ($null -eq $metaDays) { $lookbackStatus = 'notRecorded' }
-elseif ([int]$metaDays -le 0) { $lookbackStatus = 'off' }
+elseif ([int]$metaDays -le 0 -or @($model.Skip) -contains 'Rueckblick') { $lookbackStatus = 'off' }
 elseif ([int]$lookback.EventCount -gt 0) {
     if ($allListed -and $usableCount -gt 0 -and $usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
 }
@@ -1092,6 +1109,8 @@ $data = [ordered]@{
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
     noFinding = ($incOut.Count -eq 0)
     before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
+    # the categories -Skip left out, with their reason and the places of the page that depend on them (last field)
+    skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
 }
 
 $maskObj = $null

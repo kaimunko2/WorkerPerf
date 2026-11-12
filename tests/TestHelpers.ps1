@@ -21,6 +21,23 @@ function New-SkipRuns([string]$OutDir) {
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs
 }
+function New-SkipReports([string]$OutDir) {
+    # Die Aufzeichnungen von New-SkipRuns (unter <OutDir>/skip) mit je einem Bericht <OutDir>/report-skip-<name>.html
+    # (Rollendatei <OutDir>/roles.sim.json), dazu Alle mit -Mask Alles; Name -> @{ Run; Report }, zusaetzlich AlleMasked.
+    [void](New-Item -ItemType Directory -Path $OutDir -Force)
+    $runs = New-SkipRuns (Join-Path $OutDir 'skip')
+    $report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $roles = New-SimRoleFile (Join-Path $OutDir 'roles.sim.json')
+    $out = [ordered]@{}
+    foreach ($k in @($runs.Keys)) {
+        $file = Join-Path $OutDir ('report-skip-{0}.html' -f $k.ToLowerInvariant())
+        [void](& $report -Path $runs[$k] -OutFile $file -RoleFile $roles 6>$null)
+        $out[$k] = @{ Run = $runs[$k]; Report = $file }
+    }
+    $masked = Join-Path $OutDir 'report-skip-alle-masked.html'
+    [void](& $report -Path $runs['Alle'] -OutFile $masked -RoleFile $roles -Mask Alles 6>$null)
+    $out['AlleMasked'] = @{ Run = $runs['Alle']; Report = $masked }
+    $out
+}
 function Get-ReportData([string]$Html) {
     $text = [IO.File]::ReadAllText($Html); $open = '<script id="wp-data" type="application/json">'
     $a = $text.IndexOf($open) + $open.Length
