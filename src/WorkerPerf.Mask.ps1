@@ -56,15 +56,25 @@ namespace WorkerPerf
         private readonly Dictionary<string, string> lookup;
         private readonly Dictionary<string, bool> protectedNames;
         private readonly string other;
+        private readonly Regex phrases;
+        private readonly Dictionary<string, bool> addresses;
         // the report data repeats most of its strings (keys, kinds, users, applications): each is replaced once
         private readonly Dictionary<string, string> done = new Dictionary<string, string>(StringComparer.Ordinal);
         private const int DoneLimit = 200000;
 
         // pattern: alternatives of the names (no group), an unknown SID (group sid) and a UNC server (group server).
         // lookup: lower-case (invariant) name -> replacement; protectedNames: names that stay; other: the replacement
-        // of a SID or UNC server that is not in lookup.
-        public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other)
+        // of a SID or UNC server that is not in lookup. phrasePattern: the protected names that hold white space or a
+        // word delimiter, as one pattern with group p at every position (null or empty without such names).
+        // addresses: the names of kind address.
+        public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other, string phrasePattern, string[] addresses)
         {
+            if (!string.IsNullOrEmpty(phrasePattern))
+            {
+                this.phrases = new Regex(phrasePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            }
+            this.addresses = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (string a in addresses) { if (!string.IsNullOrEmpty(a)) { this.addresses[a.ToLowerInvariant()] = true; } }
             this.pattern = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
             this.sidGroup = this.pattern.GroupNumberFromName("sid");
             this.serverGroup = this.pattern.GroupNumberFromName("server");
@@ -81,15 +91,17 @@ namespace WorkerPerf
             string rep;
             if (this.done.TryGetValue(text, out rep)) { return rep; }
             // the whole text is one name (a user, a client): no pattern needed
-            if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep) || this.IsProtected(text, 0, text.Length))
+            List<int> spans = null;
+            if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep) || this.IsProtected(text, 0, text.Length) || this.InPhrase(text, 0, text.Length, ref spans))
             {
-                rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m); });
+                rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m, ref spans); });
             }
             if (this.done.Count < DoneLimit) { this.done[text] = rep; }
             return rep;
         }
 
-        private string Evaluate(string text, Match m)
+        // spans: the occurrences of protected phrases in text (start, end pairs), found on the first name hit
+        private string Evaluate(string text, Match m, ref List<int> spans)
         {
             string rep;
             if (this.serverGroup >= 0)
@@ -107,8 +119,39 @@ namespace WorkerPerf
                 return this.other;
             }
             if (this.IsProtected(text, m.Index, m.Length)) { return m.Value; }
+            if (this.InPhrase(text, m.Index, m.Length, ref spans)) { return m.Value; }
+            if (this.addresses.Count > 0 && this.addresses.ContainsKey(m.Value.ToLowerInvariant()) && InDottedNumber(text, m.Index, m.Length)) { return m.Value; }
             if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
             return m.Value;
+        }
+
+        // The hit lies completely inside an occurrence of a protected phrase ("Nexus KIS" keeps a user nexus).
+        private bool InPhrase(string text, int index, int length, ref List<int> spans)
+        {
+            if (this.phrases == null) { return false; }
+            if (spans == null)
+            {
+                spans = new List<int>();
+                foreach (Match p in this.phrases.Matches(text))
+                {
+                    Group g = p.Groups["p"];
+                    if (g.Success) { spans.Add(g.Index); spans.Add(g.Index + g.Length); }
+                }
+            }
+            for (int i = 0; i < spans.Count; i += 2)
+            {
+                if (spans[i] <= index && index + length <= spans[i + 1]) { return true; }
+            }
+            return false;
+        }
+
+        // An address directly after a digit and a full stop or directly before a full stop and a digit is part of a
+        // longer dotted number (a version), not the address.
+        private static bool InDottedNumber(string text, int index, int length)
+        {
+            if (index >= 2 && text[index - 1] == '.' && char.IsDigit(text[index - 2])) { return true; }
+            int end = index + length;
+            return end + 1 < text.Length && text[end] == '.' && char.IsDigit(text[end + 1]);
         }
 
         private static bool IsDelimiter(char c)
@@ -467,7 +510,18 @@ function Set-WorkerPerfMaskNames {
     $Mask['Protected'] = [string[]]@($Protected | Where-Object { -not [string]::IsNullOrEmpty($_) })
     $Mask['Lookup'] = $lookup
     $Mask['Regex'] = $regex
-    $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, $Mask['Protected'], $other)
+    # protected names with white space or a word delimiter, searched as whole phrases at every position (longer first),
+    # so that overlapping occurrences are found too; a name hit inside one stays
+    $phrases = [string[]]@($Mask['Protected'] | Where-Object { $_ -match '[\s\\/()\[\],;:"''<>|=]' })
+    $phrasePattern = ''
+    if ($phrases.Count -gt 0) {
+        [Array]::Sort($phrases, [Comparison[string]] { param($a, $b)
+                if ($a.Length -ne $b.Length) { return $b.Length - $a.Length }
+                return [string]::CompareOrdinal($a, $b) })
+        $phrasePattern = '(?=(?<p>(?<![\p{L}\p{N}])(?:' + [string]::Join('|', [string[]]@($phrases | ForEach-Object { [regex]::Escape($_) })) + ')(?![\p{L}\p{N}])))'
+    }
+    $addresses = [string[]]@($entries | Where-Object { [string]$_.Kind -eq 'address' } | ForEach-Object { [string]$_.Name })
+    $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, $Mask['Protected'], $other, $phrasePattern, $addresses)
 }
 
 function Hide-WorkerPerfReportText($Text, $Mask) {

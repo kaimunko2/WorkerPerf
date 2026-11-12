@@ -256,6 +256,40 @@ Describe 'Ersetzen: Grenzfaelle' {
         $null -eq (Protect-WorkerPerfReportData $null $m) | Should -BeTrue; Protect-WorkerPerfReportData 'anna' $m | Should -Be 'Benutzer 01'
     }
 }
+Describe 'Geschuetzte Namen mit Leerraum und Adressen in Zahlenreihen' {
+    BeforeAll {
+        function New-PhraseMask([object[]]$Entries, [string[]]$Protected = @()) {
+            $m = New-WorkerPerfMask -Path (Write-TestRun 'leer3' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level 'Alles' -Texts $Texts
+            Set-WorkerPerfMaskNames -Mask $m -Entries $Entries -Protected $Protected
+            $m
+        }
+        $script:Nexus = @{ Kind = 'user'; Name = 'nexus'; Replacement = 'Benutzer 01' }
+    }
+    It 'laesst einen Treffer in einem geschuetzten Namen mit Leerzeichen stehen' {                # P2-R6
+        $m = New-PhraseMask @($Nexus) @('Nexus KIS', 'nexus.exe')
+        Hide-WorkerPerfReportText 'Nexus KIS' $m | Should -Be 'Nexus KIS'
+        Hide-WorkerPerfReportText 'Sitzung von nexus' $m | Should -Be 'Sitzung von Benutzer 01'
+        Hide-WorkerPerfReportText 'Nexus KIS (nexus)' $m | Should -Be 'Nexus KIS (Benutzer 01)'
+        Hide-WorkerPerfReportText 'nexus KIS am Anfang und am Ende NEXUS kis' $m | Should -Be 'nexus KIS am Anfang und am Ende NEXUS kis'
+        Hide-WorkerPerfReportText 'Nexus KISS' $m | Should -Be 'Benutzer 01 KISS'
+        Hide-WorkerPerfReportText 'XNexus KIS und Nexus KIS2' $m | Should -Be 'XNexus KIS und Benutzer 01 KIS2'
+    }
+    It 'schuetzt einen Treibernamen mit Leerzeichen und Klammern' {
+        $m = New-PhraseMask @(@{ Kind = 'user'; Name = 'hp'; Replacement = 'Benutzer 01' }) @('HP Universal Printing PCL 6 (v7.0.1)', 'HP')
+        Hide-WorkerPerfReportText 'Das Modul hpsimgr.dll gehört zum Druckertreiber HP Universal Printing PCL 6 (v7.0.1).' $m |
+            Should -Be 'Das Modul hpsimgr.dll gehört zum Druckertreiber HP Universal Printing PCL 6 (v7.0.1).'
+        $m2 = New-PhraseMask @(@{ Kind = 'user'; Name = 'hp'; Replacement = 'Benutzer 01' }) @('HP Universal Printing PCL 6 (v7.0.1)')
+        Hide-WorkerPerfReportText 'HP Universal Printing PCL 6 (v7.0.1), Sitzung von hp' $m2 | Should -Be 'HP Universal Printing PCL 6 (v7.0.1), Sitzung von Benutzer 01'
+        Hide-WorkerPerfReportText 'HP Universal Printing PCL 6 (v7.0.2)' $m2 | Should -Be 'Benutzer 01 Universal Printing PCL 6 (v7.0.2)'
+    }
+    It 'ersetzt eine Adresse nicht in einer laengeren Zahlenreihe' {
+        $m = New-PhraseMask @(@{ Kind = 'address'; Name = '10.0.2.1'; Replacement = 'Adresse 01' }, @{ Kind = 'user'; Name = 'u1'; Replacement = 'Benutzer 01' })
+        Hide-WorkerPerfReportText '1.10.0.2.1 und 10.0.2.1.7' $m | Should -Be '1.10.0.2.1 und 10.0.2.1.7'
+        Hide-WorkerPerfReportText 'an 10.0.2.1.' $m | Should -Be 'an Adresse 01.'
+        Hide-WorkerPerfReportText '10.0.2.1:1521 und a.10.0.2.1 und 10.0.2.1.x' $m | Should -Be 'Adresse 01:1521 und a.Adresse 01 und Adresse 01.x'
+        Hide-WorkerPerfReportText 'u1.7 bleibt kein Name' $m | Should -Be 'Benutzer 01.7 bleibt kein Name'
+    }
+}
 Describe 'Meldungstexte ueber den Plan hinaus' {
     It 'leert die Texte der Ereignisse von Mustern, des Rueckblicks und die Begruendung nicht verfuegbarer Quellen' {
         $ev = { param($t) [ordered]@{ t = 1; kind = 'crash'; text = $t } }
@@ -317,6 +351,13 @@ Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
     }
     It 'enthaelt keinen Namen der Aufzeichnung ausser in einem geschuetzten Wort' {
         $Sim.Mask.Entries.Count | Should -BeGreaterThan 20
+        $exp = New-Object System.Collections.Generic.List[string]
+        foreach ($x in 'server:SIM-VDA01=Server 01', 'server:ora01.sim.local=Server 02', 'domain:sim.local=Domäne 01', 'server:proxy.sim.local=Server 03', 'server:fs01.sim.local=Server 04') { $exp.Add($x) }
+        for ($i = 1; $i -le 25; $i++) {
+            $exp.Add(('user:user{0:000}=Benutzer {0:00}' -f $i)); if ($i -eq 1) { $exp.Add('domain:CONTOSO=Domäne 02') }; $exp.Add(('client:WS-{0}=Client {1:00}' -f (1037 + 37 * $i), $i))
+        }
+        foreach ($x in 'share:\\fs01\daten=Freigabe 01', 'server:fs01=Server 05', 'share:\\fs01\profile$=Freigabe 02', 'printer:PRN-EG-01=Drucker 01', 'printer:PRN-OG-02=Drucker 02') { $exp.Add($x) }
+        @($Sim.Mask.Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement }) | Should -Be $exp.ToArray()
         $Sim.MaskedJson | Should -Not -Match 'user0\d\d'; $Sim.MaskedJson | Should -Not -Match 'CONTOSO'; $Sim.MaskedJson | Should -Match 'Benutzer 01'
         $protected = @{}; foreach ($p in $Sim.Mask.Protected) { $protected[$p.ToLowerInvariant()] = $true }
         $strings = New-Object System.Collections.Generic.List[string]; Get-Strings $Sim.Masked $strings
