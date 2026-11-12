@@ -1535,6 +1535,9 @@ function setIncidentOpen(entry, open) {
 function showIncident(id, zoom) {
   const entry = document.querySelector(`#incidents .incident[data-id="${id}"], #before .incident[data-id="${id}"]`), inc = incById.get(id);
   if (!entry || !inc) return;
+  // an incident in the folded part of the lookback list: unfold it first
+  const rest = entry.closest(".rest[hidden]");
+  if (rest) { rest.hidden = false; rest.nextElementSibling?.classList.contains("more") && rest.nextElementSibling.remove(); }
   setIncidentOpen(entry, true);
   if (zoom && !(inc.event && inc.event.before)) { const w = incWindow(inc); window.WP.setZoom(w.t0, w.t1); }
   entry.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1581,7 +1584,20 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
   const el = document.getElementById("before"), max = Math.max(1, ...BEFORE.perDay.map((d) => d.count));
   const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
   const dayText = (day) => { const [y, m, d] = day.split("-").map(Number), dt = new Date(Date.UTC(y, m - 1, d)); return `${WD[dt.getUTCDay()]}, ${pad(d)}.${pad(m)}.${y}`; };
-  const days = BEFORE.perDay.map((d) => `<div class="day"><span class="dlabel">${esc(dayText(d.day))}</span><span class="dbar"><span class="dtrack" aria-hidden="true"><i style="width:${(d.count / max * 100).toFixed(1)}%"></i></span>${fmt(d.count, 0)}</span></div>`).join("");
+  // the first and the last day of the bars are partial days: the lookback enters the first at the clock time of the
+  // start and ends the last at the start (M5)
+  const days = BEFORE.perDay.map((d) => `<div class="day${d.partial ? " partial" : ""}"><span class="dlabel">${esc(dayText(d.day))}${d.partial ? ' <span class="tag">(Teil des Tages)</span>' : ""}</span><span class="dbar"><span class="dtrack" aria-hidden="true"><i style="width:${(d.count / max * 100).toFixed(1)}%"></i></span>${fmt(d.count, 0)}</span></div>`).join("");
+  // a log read incompletely (its cap, a read error or the time budget): read from its oldest event on, so the bars before
+  // that time are no quiet days (M5)
+  const oldestOf = new Map((BEFORE.oldest || []).map((o) => [o.log, o.t]));
+  const cappedText = BEFORE.capped.map((l) => esc(LOG_WORD[l] || l) + (oldestOf.has(l) ? " (gelesen ab " + esc(fmtDT(oldestOf.get(l))) + ")" : " (kein Ereignis gelesen)")).join(", ");
+  // what the lookback skipped per log (I5): numbers and fixed words only
+  const readHint = (BEFORE.readCounts || []).map((r) => esc(LOG_WORD[r.log] || r.log) + ": " + [r.skipped ? plural(r.skipped, "Datensatz", "Datensätze") + " nicht lesbar und übersprungen" : "",
+    r.unformatted ? plural(r.unformatted, "Meldungstext", "Meldungstexte") + " nicht lesbar" : ""].filter((x) => x).join(", ")).join("; ");
+  // a long list of incidents folds after 20 behind a button (M16)
+  const BEFORE_FOLD = 20, beforeSorted = BEFORE.incidents.slice().sort((a, b) => (b.focus - a.focus) || (a.start - b.start) || (a.id - b.id));
+  const beforeList = beforeSorted.length <= BEFORE_FOLD ? beforeSorted.map(incArticle).join("")
+    : beforeSorted.slice(0, BEFORE_FOLD).map(incArticle).join("") + `<div class="rest" hidden>${beforeSorted.slice(BEFORE_FOLD).map(incArticle).join("")}</div><button type="button" class="lnk more" id="beforeMore">weitere ${fmt(beforeSorted.length - BEFORE_FOLD, 0)} Vorfälle anzeigen</button>`;
   const nNear = BEFORE.nearCapture.length, nearStart = BEFORE.near.length - nNear;
   const near = !nearShown ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtDT(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` +
     `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
@@ -1603,14 +1619,15 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
     el.innerHTML = head + logLine + (state ? `<p class="bstate">${state}</p>` : "") + near;
   } else el.innerHTML = `${head}
     ${logLine}
-    ${BEFORE.capped.length ? `<p class="capped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: für ${BEFORE.capped.length === 1 ? "das Protokoll" : "die Protokolle"} ${esc(logWords(BEFORE.capped))} wurde die Obergrenze der gelesenen Ereignisse erreicht; ältere Ereignisse fehlen.</p>` : ""}
+    ${BEFORE.capped.length ? `<p class="capped" id="beforeCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen: ${BEFORE.capped.length === 1 ? "Protokoll" : "Protokolle"} ${cappedText}. Ältere Ereignisse ${BEFORE.capped.length === 1 ? "dieses Protokolls" : "dieser Protokolle"} fehlen; die Tage davor sind darum keine ruhigen Tage.</p>` : ""}
+    ${readHint ? `<p class="capped" id="beforeReads"><i class="sym" aria-hidden="true">▲</i> Beim Lesen des Rückblicks: ${readHint}. Die Zahlen unten zählen diese Ereignisse nicht oder ohne Meldungstext.</p>` : ""}
     <div class="kv"><span>Rückblick <b>${plural(BEFORE.days, "Tag", "Tage")} vor Beginn der Messung${BEFORE.from != null ? " (ab " + fmtDate(BEFORE.from) + ")" : ""}</b></span>
       <span>Ereignisse aus diesen Tagen <b>${fmt(BEFORE.eventCount, 0)}</b> (alle Arten)</span>
       <span>davon mit Vorfallsart <b>${fmt(BEFORE.incidentEventCount, 0)}</b> (Absturz, Hänger, Dienst, Drucken, Profil, System)</span>
       <span>Vorfälle <b>${fmt(BEFORE.incidents.length, 0)}</b></span></div>
     <div class="note">Sitzungsereignisse werden für diese Tage nicht gelesen.</div>
-    ${days ? `<h4>Ereignisse mit Vorfallsart je Tag</h4><div class="days">${days}</div><div class="note" style="margin-top:4px">Tage ohne solche Ereignisse sind nicht aufgeführt.</div>` : ""}
-    <h4>Vorfälle vor der Messung</h4>${BEFORE.incidents.length ? `<div class="before-incidents">${BEFORE.incidents.slice().sort((a, b) => (b.focus - a.focus) || (a.start - b.start) || (a.id - b.id)).map(incArticle).join("")}</div>` : '<div class="note">keine</div>'}
+    ${days ? `<h4>Ereignisse mit Vorfallsart je Tag</h4><div class="days">${days}</div><div class="note" style="margin-top:4px">Tage ohne solche Ereignisse sind nicht aufgeführt. Der erste und der letzte Tag des Rückblicks sind nur zum Teil erfasst: der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm.</div>` : ""}
+    <h4>Vorfälle vor der Messung</h4>${BEFORE.incidents.length ? `<div class="before-incidents">${beforeList}</div>` : '<div class="note">keine</div>'}
     ${near}`;
   el.hidden = false;
 }
@@ -1698,6 +1715,13 @@ if (PRINT.drivers.length || PRINT.queues.length) {
   const UNREAD_FILES = [["events", "events.csv"], ["eventsBefore", "events_before.csv"], ["printDrivers", "printdrivers.csv"], ["printQueues", "printqueues.csv"]];
   const unreadMore = UNREAD_FILES.filter(([key]) => unread[key] > 0);
   const unreadText = [`ticks.csv: ${fmt(unread.ticks, 0)}`, `snapshots.csv: ${fmt(unread.snapshots, 0)}`].concat(unreadMore.map(([key, file]) => `${file}: ${fmt(unread[key], 0)}`)).join(" · ");
+  // the counters of the event reads per log (I5): events over the cap of a read (counted up to a limit, so "mindestens"),
+  // records that could not be read, messages that could not be formatted; only numbers above zero
+  const reads = (Q.eventReads || []).map((r) => {
+    const parts = [r.dropped ? `mindestens ${plural(r.dropped, "Ereignis", "Ereignisse")} nicht aufgezeichnet (Obergrenze je Abruf)` : "",
+      r.skipped ? `${plural(r.skipped, "Datensatz", "Datensätze")} nicht lesbar und übersprungen` : "", r.unformatted ? `${plural(r.unformatted, "Meldungstext", "Meldungstexte")} nicht lesbar` : ""].filter((x) => x);
+    return `<li>${esc(r.label || r.log)}: ${parts.join(" · ")}</li>`;
+  }).join("");
   document.getElementById("quality").innerHTML = `<h3 style="margin-bottom:8px">Messqualität</h3>
     <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
       <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
@@ -1705,13 +1729,18 @@ if (PRINT.drivers.length || PRINT.queues.length) {
       <span>Verdichtung <b>${burstText}</b></span>
       <span>WorkerPerf selbst <b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)</span>` +
       (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
-    (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: Obergrenze erreicht für ${esc(logWords(BEFORE.capped))}.</p>` : "") +
+    (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
+    (reads ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</h4><ul class="errlist" id="eventReads">${reads}</ul>` +
+      '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>' : "") +
     (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
       `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
     `<div class="tablewrap small"><table id="tSources"></table></div>`;
   table("tSources", [
     { key: "label", head: "Quelle" },
-    { key: "available", head: "Verfügbar", fmt: (v) => v ? '<span class="status st-good"><i class="sym" aria-hidden="true">●</i> verfügbar</span>' : '<span class="status st-na"><i class="sym" aria-hidden="true">○</i> nicht verfügbar</span>', sortVal: (r) => r.available ? 1 : 0 },
+    // a log that could not be read at least once during the capture (M13); a switched-off log the lookback read (M14)
+    { key: "available", head: "Verfügbar", fmt: (v, r) => (v ? '<span class="status st-good"><i class="sym" aria-hidden="true">●</i> verfügbar</span>' : '<span class="status st-na"><i class="sym" aria-hidden="true">○</i> nicht verfügbar</span>') +
+      (r.readFailed ? ' <span class="status st-warn"><i class="sym" aria-hidden="true">▲</i> beim Lesen fehlgeschlagen</span>' : "") + (!v && r.lookbackRead ? ' <span class="note">im Rückblick gelesen</span>' : ""),
+      sortVal: (r) => r.available ? 1 : 0 },
     { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
   ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
 }

@@ -1140,6 +1140,14 @@ Describe 'Rueckblick und Druckzustand im Einzelnen' {
         $evs[1].ContainsKey('IncidentId') | Should -BeFalse -Because 'ein Ereignis der Messzeit gehoert nicht zum Rueckblick'
         $evs[0].IncidentId | Should -Be 1; $evs[0].SessionIndex | Should -Be -1 -Because 'vor der Messung gibt es keine Sitzung der Messung'
     }
+    It 'kennzeichnet den ersten und den letzten Tag als Teil des Tages und nennt je Protokoll das aelteste gelesene Ereignis (M5)' {
+        # T0 = 23:13:20 Ortszeit (+60 min) am 14.11.2023; der Rueckblick beginnt am 07.11. um 23:13:20
+        $evs = @((New-Ev (-7 * 1440 + 10)), (New-Ev (-3 * 1440)), (New-Ev (-3 * 1440 + 5) -More @{ Log = 'system' }), (New-Ev -10))
+        $l = Get-Lb (New-LbModel2 $evs)
+        @($l.PerDay | ForEach-Object { '{0}:{1}:{2}' -f $_.Day, $_.Count, $_.Partial }) | Should -Be @('2023-11-07:1:True', '2023-11-11:2:False', '2023-11-14:1:True')
+        @($l.Oldest | ForEach-Object { '{0}:{1}' -f $_.Log, (($_.TimeMs - $T0) / 60000) }) | Should -Be @('application:-10070', 'system:-4315')
+        @((Get-Lb (New-LbModel2 @() @{ OffsetMinutes = 0; EventLookbackDays = 0; LookbackCapped = @() })).Oldest).Count | Should -Be 0
+    }
     It 'liefert ohne Rueckblick leere Listen und Days 0' {
         $l = Get-Lb (New-LbModel2 @() @{ OffsetMinutes = 0; EventLookbackDays = $null; LookbackCapped = [string[]]@() })
         $l.Days | Should -Be 0; $l.EventCount | Should -Be 0; @($l.Incidents).Count | Should -Be 0; @($l.PerDay).Count | Should -Be 0; @($l.Near).Count | Should -Be 0; @($l.Capped).Count | Should -Be 0

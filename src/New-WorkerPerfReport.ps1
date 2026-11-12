@@ -502,15 +502,40 @@ foreach ($id in $sourceIds) {
     $label = [string]$id
     if ($thresholds.Contains($id)) { $label = [string]$thresholds[$id].label }
     elseif ($texts.ContainsKey('source.' + $id)) { $label = $texts['source.' + $id] }
-    $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail })
+    $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail
+            readFailed = [bool](Get-WorkerPerfField $src 'ReadFailed'); lookbackRead = [bool](Get-WorkerPerfField $src 'LookbackRead') })
 }
-# failed source calls of the capture: the source's text, else its key
+# failed source calls of the capture: the source's text, else its key; a log booked on its own ('events.<log id>',
+# 'eventsbefore.<log id>', M13) by the call's text and the log's
 $sourceErrorsOut = New-Object System.Collections.Generic.List[object]
 foreach ($e in @($model.SourceErrors | Sort-Object -Property @{ Expression = { $_.Source } })) {
     $label = [string]$e.Source
+    $cut = $label.IndexOf([char]'.')
     if ($texts.ContainsKey('sourcecall.' + $label)) { $label = $texts['sourcecall.' + $label] }
+    elseif ($cut -gt 0 -and $texts.ContainsKey('source.events.' + $label.Substring($cut + 1))) {
+        $call = $label.Substring(0, $cut); $log = $texts['source.events.' + $label.Substring($cut + 1)]
+        if ($call -eq 'events') { $label = $log }
+        elseif ($texts.ContainsKey('sourcecall.' + $call)) { $label = $texts['sourcecall.' + $call] + ' ' + [char]0x2013 + ' ' + $log }
+    }
     $sourceErrorsOut.Add([ordered]@{ source = [string]$e.Source; label = $label; count = [int]$e.Count; firstMs = $e.FirstMs; firstMessage = [string]$e.FirstMessage })
 }
+# the counters of the event reads per log (I5): only logs with a number above zero, numbers and the log's label
+function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($id in @($Counts.Keys)) {
+        $c = $Counts[$id]
+        $dropped = $(if ($WithDropped) { [long]$c.Dropped } else { [long]0 })
+        if ($dropped -le 0 -and [long]$c.Skipped -le 0 -and [long]$c.Unformatted -le 0) { continue }
+        $label = [string]$id
+        if ($texts.ContainsKey('source.events.' + $id)) { $label = [string]$texts['source.events.' + $id] }
+        $row = [ordered]@{ log = [string]$id; label = $label }
+        if ($WithDropped) { $row['dropped'] = $dropped }
+        $row['skipped'] = [long]$c.Skipped; $row['unformatted'] = [long]$c.Unformatted
+        $list.Add($row)
+    }
+    return , $list.ToArray()
+}
+$eventReadsOut = ConvertTo-ReadCountsOut $model.Meta['EventReadCounts'] -WithDropped
 $quality = [ordered]@{
     skippedTicks = $skippedTicks
     tickMsAvg = (Get-Round $tickMsSt.Avg 1); tickMsMax = (Get-Round $tickMsSt.Max 1)
@@ -523,6 +548,7 @@ $quality = [ordered]@{
         printDrivers = [int]$model.Unreadable.PrintDrivers; printQueues = [int]$model.Unreadable.PrintQueues }
     sourceErrors = $sourceErrorsOut.ToArray()
     sources = $sourcesOut.ToArray()
+    eventReads = $eventReadsOut
 }
 
 $thresholdsOut = New-Object System.Collections.Generic.List[object]
@@ -979,7 +1005,10 @@ if ($null -ne $reportedWallMs -and $reportedWallMs -lt $captureStartMs + [long]$
 }
 $perDayOut = New-Object System.Collections.Generic.List[object]
 $incidentEventCount = 0
-foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count }); $incidentEventCount += [int]$d.Count }
+foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count; partial = [bool]$d.Partial }); $incidentEventCount += [int]$d.Count }
+# per log the oldest event read (M5), and what the lookback skipped per log (I5, LookbackReadCounts of newer captures)
+$oldestOut = @(@($lookback.Oldest) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ log = [string]$_.Log; t = [long]$_.TimeMs } })
+$lookbackReadsOut = ConvertTo-ReadCountsOut $model.Meta['LookbackReadCounts']
 # What the page may say about the lookback (status):
 #   notRecorded  the capture has no lookback setting (format 2)
 #   off          -EventLookbackDays 0
@@ -997,7 +1026,8 @@ $listedCount = 0
 foreach ($l in $lookbackLogs) {
     $sid = 'events.' + $l.Id
     $avail = $false
-    if ($model.Sources.ContainsKey($sid)) { $listedCount++; $avail = [bool]$model.Sources[$sid].Available }
+    # a switched-off log is not available for the capture, but its events were read for the lookback (M14)
+    if ($model.Sources.ContainsKey($sid)) { $listedCount++; $avail = ([bool]$model.Sources[$sid].Available -or [bool](Get-WorkerPerfField $model.Sources[$sid] 'LookbackRead')) }
     $label = [string]$l.Id
     if ($texts.ContainsKey('source.' + $sid)) { $label = [string]$texts['source.' + $sid] }
     $logsOut.Add([ordered]@{ id = [string]$l.Id; label = $label; available = $avail })
@@ -1013,7 +1043,7 @@ elseif ([int]$lookback.EventCount -gt 0) {
 }
 elseif (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv'))) { $lookbackStatus = 'missingFile' }
 else {
-    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' })
+    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' -or $_.Source -like 'eventsbefore.*' })
     if ($failed.Count -gt 0 -or -not $allListed -or $usableCount -eq 0) { $lookbackStatus = 'unavailable' }
     elseif ($usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
 }
@@ -1024,6 +1054,7 @@ $beforeOut = [ordered]@{
     eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
     incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
     captureStart = $captureStartMs; status = $lookbackStatus; logs = $logsOut.ToArray(); captureEnd = $captureEndMs
+    oldest = $oldestOut; readCounts = $lookbackReadsOut
 }
 
 $driversOut = New-Object System.Collections.Generic.List[object]

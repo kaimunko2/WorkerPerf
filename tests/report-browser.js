@@ -591,6 +591,38 @@ async function checkMaskedPage(browser, dir, scheme) {             // Maskierung
   await n.close();
 }
 
+async function checkFinalWave(browser, dir, scheme) {               // Abschlussrunde des Plans: Zaehler, Rueckblick, Quellen
+  // the simulated hour: no counters, no folding, nothing read incompletely
+  const base = await open(browser, path.join(dir, 'report.html'), scheme);
+  ok(await base.page.locator('#eventReads').count() === 0 && await base.page.locator('#beforeReads').count() === 0 && await base.page.locator('#beforeMore').count() === 0, 'ohne Zaehler und kurze Liste: kein Hinweis');
+  ok(!(await base.page.locator('#tSources').innerText()).includes('beim Lesen fehlgeschlagen'), 'ohne Lesefehler kein Vermerk in den Quellen');
+  await base.page.close();
+  const p = await open(browser, patched(dir, 'report.html', 'report-finalwave.html', (J) => {
+    J.quality.eventReads = [{ log: 'application', label: 'Ereignisprotokoll Anwendung', dropped: 250, skipped: 3, unformatted: 0 }, { log: 'defender', label: 'Ereignisprotokoll Microsoft Defender', dropped: 0, skipped: 0, unformatted: 1 }];
+    J.before.readCounts = [{ log: 'application', label: 'Ereignisprotokoll Anwendung', skipped: 2, unformatted: 1 }];
+    J.before.capped = ['application', 'system'];
+    J.before.perDay[0].partial = true;
+    J.quality.sources.find((s) => s.id === 'events.system').readFailed = true;
+    const first = J.before.incidents[0];
+    for (let k = 0; k < 27; k++) J.before.incidents.push(Object.assign({}, first, { id: 1000 + k, start: first.start + (k + 1) * 3600000, end: first.end + (k + 1) * 3600000, focus: false }));
+  }), scheme);
+  const D = p.D, q = await p.page.locator('#quality').innerText();
+  ok(q.includes('Ereignisprotokoll Anwendung: mindestens 250 Ereignisse nicht aufgezeichnet (Obergrenze je Abruf) · 3 Datensätze nicht lesbar und übersprungen'), 'Messqualitaet nennt die nicht aufgezeichneten Ereignisse: ' + q);
+  ok(q.includes('Ereignisprotokoll Microsoft Defender: 1 Meldungstext nicht lesbar') && !q.includes('0 Datensätze'), 'nur Zahlen ueber null');
+  ok(q.includes('Rückblick unvollständig gelesen für Anwendung, System'), 'unvollstaendig gelesener Rueckblick in der Messqualitaet');
+  ok((await p.page.locator('#tSources tbody tr', { hasText: 'Ereignisprotokoll System' }).innerText()).includes('beim Lesen fehlgeschlagen'), 'Lesefehler beim Protokoll in den Quellen');
+  const b = await p.page.locator('#before').innerText();
+  const oldest = D.before.oldest.find((o) => o.log === 'application');
+  ok(b.includes('Rückblick unvollständig gelesen') && b.includes('Anwendung (gelesen ab ' + ddmmyyyy(oldest.t, D.meta.offsetMin)) && b.includes('System (kein Ereignis gelesen)') && !b.includes('Obergrenze der gelesenen'), 'je Protokoll gelesen ab: ' + b.split('\n').slice(0, 6).join(' / '));
+  ok(b.includes('Beim Lesen des Rückblicks: Anwendung: 2 Datensätze nicht lesbar und übersprungen, 1 Meldungstext nicht lesbar.'), 'Hinweis am Rueckblick: ' + b);
+  ok(await p.page.locator('#before .day.partial').count() === 1 && (await p.page.locator('#before .day.partial').innerText()).includes('(Teil des Tages)') && b.includes('nur zum Teil erfasst'), 'Teiltage gekennzeichnet');
+  ok(await p.page.locator('#before .before-incidents > .incident').count() === 20 && (await p.page.locator('#beforeMore').innerText()) === 'weitere 11 Vorfälle anzeigen', 'Liste der Vorfaelle vor der Messung nach 20 gefaltet');
+  await p.page.click('#beforeMore');
+  ok(await p.page.locator('#before .incident:visible').count() === 31 && await p.page.locator('#beforeMore').count() === 0, 'alle Vorfaelle nach dem Klick');
+  ok(p.page.errors.length === 0, 'Skriptfehler Abschlussrunde: ' + p.page.errors.join(' | '));
+  await p.page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
@@ -598,7 +630,7 @@ async function checkMaskedPage(browser, dir, scheme) {             // Maskierung
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
     await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
-    await checkMask(browser, dir, scheme); await checkMaskedPersonen(browser, dir, scheme);
+    await checkMask(browser, dir, scheme); await checkMaskedPersonen(browser, dir, scheme); await checkFinalWave(browser, dir, scheme);
   }
   await checkMaskedPage(browser, dir, 'light');
   console.log('browser checks passed: ' + checks);

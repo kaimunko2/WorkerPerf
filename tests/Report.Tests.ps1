@@ -420,6 +420,43 @@ Describe 'Ereignisdaten im Einzelnen' {
         # the same with the lookback rows of the simulation: still partial, never read
         (New-MetaVariant 'lbpart2' { param($m) $m.Sources.'events.system'.Available = $false }).status | Should -Be 'partial'
     }
+    It 'zeigt die Zaehler der Ereignis-Abrufe, Lesefehler je Protokoll und den Rueckblick eines abgeschalteten Protokolls (I5, M5, M13, M14)' {
+        $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'reads'); $f = Join-Path $dir 'meta.json'
+        $m = Get-Content $f -Raw | ConvertFrom-Json
+        $cnt = { param($s, $u, $d) [pscustomobject]@{ SkippedRecords = $s; UnformattedMessages = $u; DroppedEvents = $d } }
+        $m | Add-Member -Force EventReadCounts ([pscustomobject]@{ application = (& $cnt 3 0 1000); system = (& $cnt 0 0 0); defender = (& $cnt 0 2 0) })
+        $m | Add-Member -Force LookbackReadCounts ([pscustomobject]@{ application = (& $cnt 2 1 0); system = (& $cnt 0 0 0) })
+        $m.Sources.'events.system' | Add-Member -Force ReadFailed $true
+        $m.Sources.'events.printservice'.Available = $false; $m.Sources.'events.printservice' | Add-Member -Force LookbackRead $true
+        $err = { param($n, $msg) [pscustomobject]@{ Count = $n; FirstTime = $m.StartTime; FirstMessage = $msg } }
+        $m.SourceErrors = [pscustomobject]@{ 'events.system' = (& $err 2 'Sim nicht lesbar'); 'eventsbefore.application' = (& $err 1 'Sim nicht lesbar') }
+        $m.LookbackCapped = @('application')
+        [IO.File]::WriteAllText($f, ($m | ConvertTo-Json -Depth 8))
+        $out = Join-Path $TestDrive 'reads.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
+        $d = Get-ReportData $out
+        @($d.quality.eventReads | ForEach-Object { '{0}|{1}|{2}|{3}|{4}' -f $_.log, $_.label, $_.dropped, $_.skipped, $_.unformatted }) |
+            Should -Be @('application|Ereignisprotokoll Anwendung|1000|3|0', 'defender|Ereignisprotokoll Microsoft Defender|0|0|2')
+        @($d.before.readCounts | ForEach-Object { '{0}|{1}|{2}' -f $_.log, $_.skipped, $_.unformatted }) | Should -Be @('application|2|1')
+        @($d.before.readCounts[0].PSObject.Properties.Name) | Should -Not -Contain 'dropped'
+        @($d.quality.sources | Where-Object readFailed | ForEach-Object { $_.id }) | Should -Be @('events.system')
+        @($d.quality.sources | Where-Object lookbackRead | ForEach-Object { $_.id }) | Should -Be @('events.printservice')
+        ($d.before.logs | Where-Object id -eq 'printservice').available | Should -BeTrue                # im Rueckblick gelesen
+        ($d.quality.sourceErrors | Where-Object source -eq 'events.system').label | Should -Be 'Ereignisprotokoll System'
+        ($d.quality.sourceErrors | Where-Object source -eq 'eventsbefore.application').label | Should -Be ('Ereignisse vor der Messung ' + [char]0x2013 + ' Ereignisprotokoll Anwendung')
+        # the oldest event read per log: the lookback of the simulation reads only the application log
+        $first = @($d.before.incidents | ForEach-Object { $_.start } | Sort-Object)[0]
+        @($d.before.oldest | ForEach-Object { '{0}|{1}' -f $_.log, $_.t }) | Should -Be @("application|$first")
+        # a capture without these fields shows nothing of them
+        $old = Copy-SimRun $R.Run (Join-Path $TestDrive 'reads-old'); $g = Join-Path $old 'meta.json'
+        $o = Get-Content $g -Raw | ConvertFrom-Json; $o.PSObject.Properties.Remove('EventReadCounts'); $o.PSObject.Properties.Remove('LookbackReadCounts')
+        [IO.File]::WriteAllText($g, ($o | ConvertTo-Json -Depth 8))
+        $out2 = Join-Path $TestDrive 'reads-old.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $old -OutFile $out2 -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
+        $d2 = Get-ReportData $out2
+        @($d2.quality.eventReads).Count | Should -Be 0; @($d2.before.readCounts).Count | Should -Be 0
+        @($d2.quality.sources | Where-Object { $_.readFailed -or $_.lookbackRead }).Count | Should -Be 0
+    }
     It 'nennt das Ende der Aufzeichnung auch unter einem Ausschnitt mit -To' {          # Task 9, fix round 2 (N3)
         $D.before.captureEnd | Should -Be $D.tickT[-1]
         $to = Get-ServerTime $R.Run ($D.tickT[-1] - 10 * 60000)

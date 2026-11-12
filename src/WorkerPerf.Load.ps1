@@ -101,6 +101,24 @@ function Set-WorkerPerfUniqueLabels($Items) {
     }
 }
 
+function ConvertTo-WorkerPerfReadCounts($Value) {
+    # EventReadCounts of meta.json (log id -> SkippedRecords, UnformattedMessages, DroppedEvents) as ordered log id ->
+    # @{ Dropped; Skipped; Unformatted } ([long], 0 when missing or no number); anything else gives an empty map.
+    $out = [ordered]@{}
+    if ($null -eq $Value -or $Value -is [string] -or $Value -is [ValueType]) { return $out }
+    foreach ($p in $Value.PSObject.Properties) {
+        if ($null -eq $p.Value -or $p.Value -is [string] -or $p.Value -is [ValueType]) { continue }
+        $c = @{}
+        foreach ($pair in @(@('Dropped', 'DroppedEvents'), @('Skipped', 'SkippedRecords'), @('Unformatted', 'UnformattedMessages'))) {
+            $n = [long]0
+            if (-not [long]::TryParse([string](Get-WorkerPerfField $p.Value $pair[1]), [ref]$n) -or $n -lt 0) { $n = 0 }
+            $c[$pair[0]] = $n
+        }
+        $out[[string]$p.Name] = $c
+    }
+    return $out
+}
+
 function Import-WorkerPerfRun {
     # -From / -To: local time of the measured server (the clock time the tick timestamps carry), like every time the
     # report shows; the Kind of the values is ignored.
@@ -123,6 +141,9 @@ function Import-WorkerPerfRun {
     $capped = @()
     if ($meta.ContainsKey('LookbackCapped')) { $capped = @($meta['LookbackCapped'] | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ }) }
     $meta['LookbackCapped'] = [string[]]$capped
+    # format 3: the counters of the event reads per log (EventReadCounts: the whole capture; LookbackReadCounts: after the
+    # lookback, newer captures only), as ordered log id -> @{ Dropped; Skipped; Unformatted } (I5); missing = none
+    foreach ($k in 'EventReadCounts', 'LookbackReadCounts') { $meta[$k] = ConvertTo-WorkerPerfReadCounts (Get-WorkerPerfField $metaJson $k) }
     # a capture in another format is not read; a missing field is tolerated (hand-written or damaged meta.json)
     if ($null -ne $meta['SchemaVersion']) {
         $ver = 0.0
@@ -147,7 +168,10 @@ function Import-WorkerPerfRun {
             $detail = Get-WorkerPerfField $p.Value 'Detail'
             $d = ''
             if ($null -ne $detail) { $d = [string]$detail }
-            $sources[$p.Name] = @{ Available = ($null -ne $avail -and [bool]$avail); Detail = $d }
+            # optional marks (newer captures): ReadFailed, a log the capture could not read at least once (M13); LookbackRead,
+            # a switched-off log whose events the lookback read (M14)
+            $failed = Get-WorkerPerfField $p.Value 'ReadFailed'; $lbRead = Get-WorkerPerfField $p.Value 'LookbackRead'
+            $sources[$p.Name] = @{ Available = ($null -ne $avail -and [bool]$avail); Detail = $d; ReadFailed = ($true -eq $failed); LookbackRead = ($true -eq $lbRead) }
         }
     }
 

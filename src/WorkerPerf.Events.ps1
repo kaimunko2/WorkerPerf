@@ -1054,9 +1054,11 @@ function Get-WorkerPerfLookback {
     # The events of Model.EventsBefore before the first tick, grouped into incidents (Before, numbered from FirstId) with
     # the patterns that need no measurement. Returns @{ Days; FromMs; Capped; EventCount; Incidents; PerDay; Near }:
     # Days = Meta.EventLookbackDays (0 without), FromMs = first tick - Days, Capped = the logs whose lookback reached its
-    # cap, EventCount = all events before the first tick, PerDay = @{ Day = 'yyyy-MM-dd'; Count } of the events with an
-    # incident kind per day in the server's local time (ascending, days without such events left out), Near = all
-    # events within 15 minutes of ReportedMs when ReportedMs lies before the first tick, in time order.
+    # cap, EventCount = all events before the first tick, PerDay = @{ Day = 'yyyy-MM-dd'; Count; Partial } of the events
+    # with an incident kind per day in the server's local time (ascending, days without such events left out; Partial:
+    # the first day, which the lookback enters at the clock time of the start, and the day of the start, which it ends
+    # at the start, M5), Oldest = @{ Log; TimeMs } per log id: the oldest event read (in the order of the first event of
+    # each log), Near = all events within 15 minutes of ReportedMs when ReportedMs lies before the first tick, in time order.
     # ReportedWallMs instead gives the reported time as the server's wall clock (its fields read as UTC): Near then holds
     # the events whose own local time lies within 15 minutes of it, when it lies before the local time of the first
     # tick. An ambiguous clock time (the repeated hour at the end of daylight saving time) thus meets the events of both
@@ -1111,7 +1113,19 @@ function Get-WorkerPerfLookback {
     }
     $dayArr = $dayList.ToArray()
     [Array]::Sort($dayArr, [StringComparer]::Ordinal)
-    $perDay = @($dayArr | ForEach-Object { @{ Day = $_; Count = [int]$counts[$_] } })
+    $edgeDays = @{}
+    if ($days -gt 0 -and $fromMs -gt 0) {
+        foreach ($ms in $fromMs, $firstMs) { $edgeDays[[DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.AddMinutes($offset).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)] = $true }
+    }
+    $perDay = @($dayArr | ForEach-Object { @{ Day = $_; Count = [int]$counts[$_]; Partial = $edgeDays.ContainsKey($_) } })
+    # the oldest event read per log: a log read incompletely is read from this time on (M5)
+    $oldest = [ordered]@{}
+    foreach ($e in $records) {
+        $log = [string](Get-WorkerPerfField $e 'Log')
+        if ($log.Length -eq 0) { continue }
+        if (-not $oldest.Contains($log) -or [long]$e.TimeMs -lt [long]$oldest[$log]) { $oldest[$log] = [long]$e.TimeMs }
+    }
+    $oldestOut = @($oldest.Keys | ForEach-Object { @{ Log = [string]$_; TimeMs = [long]$oldest[$_] } })
 
     $near = New-Object System.Collections.Generic.List[object]
     if ($null -ne $ReportedWallMs -and [long]$ReportedWallMs -lt $firstMs + [long]$offset * 60000L) {
@@ -1124,7 +1138,7 @@ function Get-WorkerPerfLookback {
             if ($t -ge [long]$ReportedMs - $radius -and $t -le [long]$ReportedMs + $radius) { $near.Add($e) }
         }
     }
-    return @{ Days = $days; FromMs = $fromMs; Capped = $capped; EventCount = $records.Length; Incidents = $incidents; PerDay = $perDay; Near = $near.ToArray() }
+    return @{ Days = $days; FromMs = $fromMs; Capped = $capped; EventCount = $records.Length; Incidents = $incidents; PerDay = $perDay; Oldest = $oldestOut; Near = $near.ToArray() }
 }
 
 function Get-WorkerPerfCounterGrowth([double[]]$Values) {

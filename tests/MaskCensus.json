@@ -203,6 +203,11 @@
     "quality.sourceErrors[].label": "composed",
     "quality.sourceErrors[].firstMessage": "copied",
     "incidents[].event.patterns[].detail.events[].text": "copied",
-    "before.incidents[].event.patterns[].detail.events[].text": "copied"
+    "before.incidents[].event.patterns[].detail.events[].text": "copied",
+    "quality.eventReads[].log": "keyword",
+    "quality.eventReads[].label": "composed",
+    "before.oldest[].log": "keyword",
+    "before.readCounts[].log": "keyword",
+    "before.readCounts[].label": "composed"
   }
 }
