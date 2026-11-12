@@ -636,8 +636,9 @@ foreach ($pb in @($model.Probes)) {
     for ($i = 0; $i -lt $nP; $i++) { $failed[$i] = -not [string]::IsNullOrEmpty([string]$pb.Error[$i]) }
     $probesOut.Add([ordered]@{ name = [string]$pb.Name; role = [string]$pb.Role; host = [string]$pb.Host; port = [int]$pb.Port; ms = (New-JsonSeries ([double[]]$pb.Ms) 1); failed = $failed })
 }
+# without Prozesse no delay of the main application was measured: no tile, as without a configured main application
 $mainAppOut = $null
-if ($null -ne $model.MainApp) {
+if ($null -ne $model.MainApp -and @($model.Skip) -notcontains 'Prozesse') {
     $t = New-Object System.Collections.Generic.List[int]; $ms = New-Object System.Collections.Generic.List[double]
     $d = $model.MainApp.Delay
     for ($i = 0; $i -lt $nT; $i++) { if ($d[$i] -gt 0) { $t.Add($i); $ms.Add($d[$i]) } }

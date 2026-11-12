@@ -263,13 +263,15 @@ Describe 'Ereignisvorfaelle im Bericht' {
     }
     It 'wertet eine Aufzeichnung im Format 2 weiter aus' {
         $dir = Copy-SimRun $R.Run (Join-Path $TestDrive 'v2') @('events_before.csv', 'printdrivers.csv', 'printqueues.csv')
-        $meta = Join-Path $dir 'meta.json'; [IO.File]::WriteAllText($meta, ([IO.File]::ReadAllText($meta) -replace '"SchemaVersion":\s*3', '"SchemaVersion": 2'))
+        $meta = Join-Path $dir 'meta.json'; [IO.File]::WriteAllText($meta, ([IO.File]::ReadAllText($meta) -replace '"SchemaVersion":\s*3', '"SchemaVersion": 2' -replace '(?s)"Skip":\s*\[\s*\],\s*', ''))
         $f = Join-Path $dir 'events.csv'
         $rows = @([IO.File]::ReadAllLines($f) | Select-Object -Skip 1 | ForEach-Object { $x = Split-WorkerPerfCsvLine $_; if ($x[5] -eq 'security') { '{0},{1},{2},{3},{4}' -f $x[0], $x[2], $x[3], $x[6], $x[19] } })
         [IO.File]::WriteAllLines($f, @('Timestamp,Source,EventId,Kind,Text') + $rows)
         $out = Join-Path $TestDrive 'v2.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out 6>$null)
         $d2 = Get-ReportData $out; @($d2.incidents | Where-Object type -eq 'ereignis').Count | Should -Be 0; @($d2.incidents).Count | Should -Be 8
         @($d2.before.incidents).Count | Should -Be 0; @($d2.print.drivers).Count | Should -Be 0
+        # Messkategorien: eine Aufzeichnung im Format 2 kennt -Skip nicht; alles gilt als gemessen
+        @($d2.skipped).Count | Should -Be 0; @($d2.PSObject.Properties.Name) | Should -Contain 'skipped'; (Get-Content $meta -Raw) | Should -Not -Match '"Skip"'
     }
 }
 Describe 'Ereignisdaten im Einzelnen' {

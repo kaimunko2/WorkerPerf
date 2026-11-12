@@ -142,6 +142,33 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
             foreach ($f in 'readCounts', 'oldest', 'perDay', 'incidents', 'capped') { @($b.$f).Count | Should -Be 0 -Because "$k before.$f" }
         }
     }
+    It 'zeigt fuer weggelassene Ereignisse und Rueckblick keine Zaehler, auch wenn meta.json welche nennt' {   # Fix-Runde 1 (Minor 4)
+        # Der Collector laesst beide Zaehler einer weggelassenen Kategorie leer (oben); erst eine von Hand geaenderte
+        # meta.json nennt welche. Dieselbe Aenderung im vollen Lauf zeigt, dass die Zaehler sonst erscheinen.
+        $cnt = [pscustomobject]@{ application = [pscustomobject]@{ SkippedRecords = 4; UnformattedMessages = 2; DroppedEvents = 9 } }
+        $edit = { param([string]$Run, [string]$Name)
+            $dir = Copy-SimRun $Run (Join-Path $TestDrive "gate-$Name"); $f = Join-Path $dir 'meta.json'
+            $m = Get-Content $f -Raw | ConvertFrom-Json
+            $m | Add-Member -Force EventReadCounts $cnt; $m | Add-Member -Force LookbackReadCounts ([pscustomobject]@{ application = [pscustomobject]@{ SkippedRecords = 1; UnformattedMessages = 1; DroppedEvents = 0 } })
+            $m.EventLookbackDays = 7
+            [IO.File]::WriteAllText($f, ($m | ConvertTo-Json -Depth 8))
+            $out = Join-Path $TestDrive "gate-$Name.html"; [void](& $Report -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') 6>$null)
+            Get-ReportData $out }
+        $full = & $edit $Runs.Voll 'voll'
+        @($full.quality.eventReads | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.log, $_.dropped, $_.skipped, $_.unformatted }) | Should -Be @('application|9|3|1')
+        @($full.before.readCounts).Count | Should -Be 1; $full.before.status | Should -Be 'read'
+        $noEv = & $edit $Runs.Ereignisse 'ereignisse'
+        @($noEv.quality.eventReads).Count | Should -Be 0; @($noEv.before.readCounts).Count | Should -Be 1
+        $noLb = & $edit $Runs.Rueckblick 'rueckblick'
+        @($noLb.before.readCounts).Count | Should -Be 0; $noLb.before.status | Should -Be 'off'; @($noLb.quality.eventReads).Count | Should -Be 1
+    }
+    It 'zeigt die Hauptanwendung nur, wenn Prozesse gemessen wurden' {   # Fix-Runde 1 (Important 1)
+        $D.Voll.mainApp | Should -Not -BeNullOrEmpty; $D.Voll.mainApp.label | Should -Not -BeNullOrEmpty
+        foreach ($k in 'Prozesse', 'Alle') { $null -eq $D[$k].mainApp | Should -BeTrue -Because $k; @($D[$k].PSObject.Properties.Name) | Should -Contain 'mainApp' }
+        foreach ($k in 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen') {
+            $D[$k].mainApp.label | Should -Be $D.Voll.mainApp.label -Because $k; $D[$k].mainApp.status | Should -Be $D.Voll.mainApp.status -Because $k
+        }
+    }
     It 'ordnet die Felder von skipped im Bestand tests/MaskCensus.json ein' {
         $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
         $paths = New-Object System.Collections.Generic.SortedSet[string] ([StringComparer]::Ordinal)

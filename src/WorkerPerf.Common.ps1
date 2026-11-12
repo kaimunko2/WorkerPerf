@@ -315,11 +315,18 @@ function Get-WorkerPerfSkipDetail([string[]]$Categories) {
 }
 
 function Test-WorkerPerfSkipDetail([string]$Text) {
-    # $true when the text is the collector's note of a left-out source exactly: the pattern with its case, nothing after
-    # it (not even a line break, which $ would let pass) and only names of the category table.
+    # $true when the text is a note the collector writes for a left-out source, exactly: the pattern with its case,
+    # nothing after it (not even a line break, which $ would let pass), and names that are active categories of the table
+    # in their own spelling, each once and in the order of the table (the collector writes one name or Ereignisse,Rueckblick).
     if ($null -eq $Text -or $Text -notmatch '\A[^\r\n]*\z' -or $Text -cnotmatch $script:WorkerPerfSkipDetailPattern) { return $false }
+    $active = [string[]]@($script:WorkerPerfCategories.Keys | Where-Object { $script:WorkerPerfCategories[$_].Active })
     $inner = $Text.Substring('abgeschaltet (-Skip '.Length, $Text.Length - 'abgeschaltet (-Skip '.Length - 1)
-    foreach ($n in $inner.Split(',')) { if (-not $script:WorkerPerfCategories.Contains($n)) { return $false } }
+    $last = -1
+    foreach ($n in $inner.Split(',')) {
+        $at = [array]::IndexOf($active, $n)   # ordinal: compares with case
+        if ($at -le $last) { return $false }
+        $last = $at
+    }
     return $true
 }
 
