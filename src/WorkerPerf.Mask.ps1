@@ -1,9 +1,10 @@
 #Requires -Version 5.1
-# WorkerPerf report masking: collects the names of a whole capture and assigns their replacement names (definitions only).
+# WorkerPerf report masking: collects the names of a whole capture and assigns their replacement names, then replaces
+# them in texts and in the finished report data (definitions only).
 # Requires WorkerPerf.Common.ps1, WorkerPerf.Load.ps1 (Open-WorkerPerfCsvReader), WorkerPerf.EventConfig.ps1 (default
 # lists of accounts and domains that are not persons) and WorkerPerf.Events.ps1 (event and print driver readers, person check).
 # Separate from the masking of the probe script Test-WorkerPerfSources.ps1, which is not used here.
-# Get-WorkerPerfMaskRows emits plain pipeline output: wrap calls in @(...).
+# Get-WorkerPerfMaskRows and Get-WorkerPerfMaskList emit plain pipeline output: wrap calls in @(...).
 
 # kinds of names that each level replaces
 $script:WorkerPerfMaskLevelKinds = @{
@@ -27,6 +28,186 @@ $script:WorkerPerfMaskPathPatterns = New-Object System.Text.RegularExpressions.R
 # file names and version fields are never scanned for addresses.
 $script:WorkerPerfMaskTextPatterns = New-Object System.Text.RegularExpressions.Regex ($script:WorkerPerfMaskPathPatternText +
     '|(?<ip>(?<![\d.\\/])(?<!\b(?:version|v)[\s:=]*)' + $script:WorkerPerfMaskIpv4Text + '(?!\.?\d)(?![\\/]))'), 'IgnoreCase'
+
+# Running texts (report data): an account SID as a whole word, and the server of a UNC path (not the device prefixes \\?\
+# and \\.\). An IPv4 shape is not looked for: in a text it cannot be told from a version number.
+$script:WorkerPerfMaskSidWord = '(?<![\p{L}\p{N}-])S-1-5-21(?:-\d+){4}(?![\p{L}\p{N}]|-\d)'
+$script:WorkerPerfMaskUncServer = '\\\\(?<server>[^\\/\s,;"?.*:|<>][^\\/\s,;"*:|<>]*)'
+
+# The replacing itself, in C# 5 (Windows PowerShell 5.1; only mscorlib, System and System.Management.Automation, which
+# Add-Type references by default): one call per string and per match would cost a PowerShell function or script block
+# call each, and the report data of a long capture holds several hundred thousand strings.
+$script:WorkerPerfMaskSource = @'
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Management.Automation;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace WorkerPerf
+{
+    public sealed class ReportMasker
+    {
+        private readonly Regex pattern;
+        private readonly int sidGroup;
+        private readonly int serverGroup;
+        private readonly Dictionary<string, string> lookup;
+        private readonly Dictionary<string, bool> protectedNames;
+        private readonly string other;
+        // the report data repeats most of its strings (keys, kinds, users, applications): each is replaced once
+        private readonly Dictionary<string, string> done = new Dictionary<string, string>(StringComparer.Ordinal);
+        private const int DoneLimit = 200000;
+
+        // pattern: alternatives of the names (no group), an unknown SID (group sid) and a UNC server (group server).
+        // lookup: lower-case (invariant) name -> replacement; protectedNames: names that stay; other: the replacement
+        // of a SID or UNC server that is not in lookup.
+        public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other)
+        {
+            this.pattern = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            this.sidGroup = this.pattern.GroupNumberFromName("sid");
+            this.serverGroup = this.pattern.GroupNumberFromName("server");
+            this.lookup = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (DictionaryEntry e in lookup) { this.lookup[((string)e.Key).ToLowerInvariant()] = (string)e.Value; }
+            this.protectedNames = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (string p in protectedNames) { if (!string.IsNullOrEmpty(p)) { this.protectedNames[p.ToLowerInvariant()] = true; } }
+            this.other = other ?? string.Empty;
+        }
+
+        public string Hide(string text)
+        {
+            if (string.IsNullOrEmpty(text)) { return text; }
+            string rep;
+            if (this.done.TryGetValue(text, out rep)) { return rep; }
+            // the whole text is one name (a user, a client): no pattern needed
+            if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep) || this.IsProtected(text, 0, text.Length))
+            {
+                rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m); });
+            }
+            if (this.done.Count < DoneLimit) { this.done[text] = rep; }
+            return rep;
+        }
+
+        private string Evaluate(string text, Match m)
+        {
+            string rep;
+            if (this.serverGroup >= 0)
+            {
+                Group server = m.Groups[this.serverGroup];
+                if (server.Success)
+                {
+                    if (!this.lookup.TryGetValue(server.Value.ToLowerInvariant(), out rep)) { rep = this.other; }
+                    return m.Value.Substring(0, server.Index - m.Index) + rep;
+                }
+            }
+            if (this.sidGroup >= 0 && m.Groups[this.sidGroup].Success)
+            {
+                if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
+                return this.other;
+            }
+            if (this.IsProtected(text, m.Index, m.Length)) { return m.Value; }
+            if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
+            return m.Value;
+        }
+
+        private static bool IsDelimiter(char c)
+        {
+            if (char.IsWhiteSpace(c)) { return true; }
+            switch (c)
+            {
+                case '\\': case '/': case '(': case ')': case '[': case ']': case ',': case ';': case ':':
+                case '"': case '\'': case '<': case '>': case '|': case '=':
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        // The word around a hit (bounded by white space and \ / ( ) [ ] , ; : " ' < > | =) equals a protected name,
+        // also without the full stops at its end (a name at the end of a sentence).
+        private bool IsProtected(string text, int index, int length)
+        {
+            if (this.protectedNames.Count == 0) { return false; }
+            int a = index;
+            while (a > 0 && !IsDelimiter(text[a - 1])) { a--; }
+            int b = index + length;
+            while (b < text.Length && !IsDelimiter(text[b])) { b++; }
+            string word = text.Substring(a, b - a).ToLowerInvariant();
+            if (this.protectedNames.ContainsKey(word)) { return true; }
+            string trimmed = word.TrimEnd('.');
+            return trimmed.Length > 0 && trimmed.Length < word.Length && this.protectedNames.ContainsKey(trimmed);
+        }
+
+        // A new structure: dictionaries and custom objects become ordered dictionaries with masked keys (a key that
+        // becomes equal to an earlier one gets " (2)", " (3)" ...), lists become arrays (string[] stays string[], an
+        // array of a value type is copied), strings are masked; a StringBuilder (pre-rendered series) and everything
+        // else stays as it is.
+        public object Protect(object value)
+        {
+            if (value == null) { return null; }
+            string s = value as string;
+            if (s != null) { return this.Hide(s); }
+            PSObject ps = value as PSObject;
+            if (ps != null)
+            {
+                object inner = ps.BaseObject;
+                if (inner is PSCustomObject)
+                {
+                    OrderedDictionary od = new OrderedDictionary(StringComparer.OrdinalIgnoreCase);
+                    foreach (PSPropertyInfo p in ps.Properties) { this.AddKey(od, p.Name, this.Protect(p.Value)); }
+                    return od;
+                }
+                if (inner is string || inner is IEnumerable) { return this.Protect(inner); }
+                return value;
+            }
+            if (value is StringBuilder || value is ValueType) { return value; }
+            IDictionary dict = value as IDictionary;
+            if (dict != null)
+            {
+                OrderedDictionary od = new OrderedDictionary(StringComparer.OrdinalIgnoreCase);
+                foreach (DictionaryEntry e in dict) { this.AddKey(od, e.Key, this.Protect(e.Value)); }
+                return od;
+            }
+            Array arr = value as Array;
+            if (arr != null && arr.Rank == 1)
+            {
+                Type et = arr.GetType().GetElementType();
+                if (et.IsValueType) { return arr.Clone(); }
+                if (et == typeof(string))
+                {
+                    string[] src = (string[])arr;
+                    string[] dst = new string[src.Length];
+                    for (int i = 0; i < src.Length; i++) { dst[i] = this.Hide(src[i]); }
+                    return dst;
+                }
+            }
+            IEnumerable list = value as IEnumerable;
+            if (list != null)
+            {
+                List<object> items = new List<object>();
+                foreach (object x in list) { items.Add(this.Protect(x)); }
+                return items.ToArray();
+            }
+            return value;
+        }
+
+        private void AddKey(OrderedDictionary od, object key, object value)
+        {
+            string k = key as string;
+            if (k == null) { od[key] = value; return; }
+            k = this.Hide(k);
+            if (od.Contains(k))
+            {
+                int n = 2;
+                while (od.Contains(k + " (" + n.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")")) { n++; }
+                k = k + " (" + n.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
+            }
+            od.Add(k, value);
+        }
+    }
+}
+'@
 
 function Get-WorkerPerfMaskRows {
     # The distinct value combinations of some columns of a capture file, in the order of their first row, each as
@@ -246,18 +427,108 @@ function New-WorkerPerfMask {
     }
     $kinds = $script:WorkerPerfMaskLevelKinds[$Level]
     $entries = @($all | Where-Object { $kinds -contains $_.Kind })
+    $mask = @{ Level = $Level; Other = [string]$Texts['mask.other'] }
+    Set-WorkerPerfMaskNames -Mask $mask -Entries $entries -Protected ([string[]]$st.Protected.ToArray())
+    return $mask
+}
+
+function Set-WorkerPerfMaskNames {
+    # Sets the names of a mask (made by New-WorkerPerfMask, which calls this at its end): Entries = @{ Kind; Name;
+    # Replacement }[]; Protected; Lookup = lower-case name -> replacement; Regex = one pattern of all names, longer
+    # before shorter, whole names only, without regard to case ($null without names); Masker = the replacer that
+    # Hide-WorkerPerfReportText and Protect-WorkerPerfReportData use. Uses Mask.Level and Mask.Other (the text of
+    # mask.other). Changes the mask in place and returns nothing.
+    param($Mask, [object[]]$Entries = @(), [string[]]$Protected = @())
+    if (-not ('WorkerPerf.ReportMasker' -as [type])) { Add-Type -TypeDefinition $script:WorkerPerfMaskSource -Language CSharp }
+    $entries = @($Entries | Where-Object { $null -ne $_ })
     $lookup = @{}
-    foreach ($e in $entries) { $lookup[$e.Name.ToLowerInvariant()] = $e.Replacement }
+    foreach ($e in $entries) { $lookup[([string]$e.Name).ToLowerInvariant()] = [string]$e.Replacement }
     $regex = $null
+    $alternatives = New-Object System.Collections.Generic.List[string]
     if ($entries.Count -gt 0) {
         # longer names first (then ordinal), so that a short name never cuts a longer one; whole names: no letter or
         # digit directly before or after
-        $names = [string[]]@($entries | ForEach-Object { $_.Name })
+        $names = [string[]]@($entries | ForEach-Object { [string]$_.Name })
         [Array]::Sort($names, [Comparison[string]] { param($a, $b)
                 if ($a.Length -ne $b.Length) { return $b.Length - $a.Length }
                 return [string]::CompareOrdinal($a, $b) })
         $alt = [string]::Join('|', [string[]]@($names | ForEach-Object { [regex]::Escape($_) }))
-        $regex = New-Object System.Text.RegularExpressions.Regex ('(?<![\p{L}\p{N}])(?:' + $alt + ')(?![\p{L}\p{N}])'), 'IgnoreCase, CultureInvariant'
+        $namePattern = '(?<![\p{L}\p{N}])(?:' + $alt + ')(?![\p{L}\p{N}])'
+        $regex = New-Object System.Text.RegularExpressions.Regex $namePattern, 'IgnoreCase, CultureInvariant'
+        $alternatives.Add($namePattern)
     }
-    return @{ Level = $Level; Entries = $entries; Protected = [string[]]$st.Protected.ToArray(); Lookup = $lookup; Regex = $regex }
+    # then the fixed patterns for names that are not in Lookup: an account SID always (both levels replace accounts),
+    # the server of a UNC path only where the level replaces servers
+    $alternatives.Add('(?<sid>' + $script:WorkerPerfMaskSidWord + ')')
+    if ($script:WorkerPerfMaskLevelKinds[[string]$Mask.Level] -contains 'server') { $alternatives.Add($script:WorkerPerfMaskUncServer) }
+    $other = ''
+    if ($Mask.ContainsKey('Other')) { $other = [string]$Mask['Other'] }
+    $Mask['Entries'] = $entries
+    $Mask['Protected'] = [string[]]@($Protected | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $Mask['Lookup'] = $lookup
+    $Mask['Regex'] = $regex
+    $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, $Mask['Protected'], $other)
+}
+
+function Hide-WorkerPerfReportText($Text, $Mask) {
+    # A text with the names of the mask replaced: whole names, longer before shorter, without regard to case; a hit
+    # whose word (bounded by white space and \ / ( ) [ ] , ; : " ' < > | =) is a protected name stays. Then an account
+    # SID and (level Alles) a UNC server that are not in Lookup become the text of mask.other. $null stays $null.
+    if ($null -eq $Text) { return $null }
+    return $Mask.Masker.Hide([string]$Text)
+}
+
+function Protect-WorkerPerfReportData($Data, $Mask) {
+    # The report data with every string, dictionary key and property name masked, as a new structure (the input is not
+    # changed): dictionaries and custom objects become ordered dictionaries, lists become arrays, a StringBuilder
+    # (pre-rendered series of New-JsonSeries and New-JsonIntegers) and every other value stay as they are.
+    return , $Mask.Masker.Protect($Data)
+}
+
+function Get-WorkerPerfMaskItem($Record, [string]$Key) {
+    # The value under a key of a report record; $null when the record is no dictionary or lacks the key.
+    if ($Record -is [System.Collections.IDictionary] -and $Record.Contains($Key)) { return , $Record[$Key] }
+    return $null
+}
+
+function Get-WorkerPerfMaskList($Record, [string]$Key) {
+    # The dictionaries of the list under a key of a report record (nothing when it is missing or $null).
+    $v = Get-WorkerPerfMaskItem $Record $Key
+    foreach ($x in @($v)) { if ($x -is [System.Collections.IDictionary]) { $x } }
+}
+
+function Clear-WorkerPerfMaskField($Records, [string]$Key) {
+    # Sets the key to '' in each record that has it with a value that is not $null (a missing key or $null stays).
+    foreach ($r in $Records) { if ($r -is [System.Collections.IDictionary] -and $r.Contains($Key) -and $null -ne $r[$Key]) { $r[$Key] = '' } }
+}
+
+function Clear-WorkerPerfMaskIncident($Incident) {
+    # The message texts of an incident's events and of the events of its patterns (pattern companion).
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $Incident 'events') 'text'
+    foreach ($p in @(Get-WorkerPerfMaskList (Get-WorkerPerfMaskItem $Incident 'event') 'patterns')) {
+        Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList (Get-WorkerPerfMaskItem $p 'detail') 'events') 'text'
+    }
+}
+
+function Clear-WorkerPerfReportFreeText($Data) {
+    # Empties, in place, the texts of the report data that come from the server as they are and may hold names the
+    # evaluation does not know: event messages (events, incidents and lookback incidents with the events of their
+    # patterns, lookback near), command lines, the first error message of a failed source call, the end message, and
+    # the detail of a source that is not available (and of its row in sollIst), which carries the reason of the failed
+    # check. Texts the evaluation composes itself stay (they are masked by name). A missing key or $null stays.
+    $meta = Get-WorkerPerfMaskItem $Data 'meta'
+    Clear-WorkerPerfMaskField @($meta) 'endMessage'
+    $quality = Get-WorkerPerfMaskItem $Data 'quality'
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $quality 'sourceErrors') 'firstMessage'
+    $unavailable = @{}
+    foreach ($s in @(Get-WorkerPerfMaskList $quality 'sources')) {
+        if ($s.Contains('available') -and $false -eq $s['available']) { $unavailable[[string]$s['id']] = $true; Clear-WorkerPerfMaskField @($s) 'detail' }
+    }
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $Data 'sollIst' | Where-Object { $unavailable.ContainsKey([string](Get-WorkerPerfMaskItem $_ 'id')) }) 'detail'
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $Data 'procs') 'cmd'
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $Data 'events') 'text'
+    foreach ($inc in @(Get-WorkerPerfMaskList $Data 'incidents')) { Clear-WorkerPerfMaskIncident $inc }
+    $before = Get-WorkerPerfMaskItem $Data 'before'
+    Clear-WorkerPerfMaskField @(Get-WorkerPerfMaskList $before 'near') 'text'
+    foreach ($inc in @(Get-WorkerPerfMaskList $before 'incidents')) { Clear-WorkerPerfMaskIncident $inc }
 }

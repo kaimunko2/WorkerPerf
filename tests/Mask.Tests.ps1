@@ -142,3 +142,194 @@ Describe 'Benutzerordner, ICA-Sitzungen, Adressen und Vorrang der Personen' {
         finally { [Threading.Thread]::CurrentThread.CurrentCulture = $old }
     }
 }
+Describe 'Ersetzen' {
+    BeforeAll {
+        function New-TestMask([string[]]$Users, [string[]]$Protected = @(), [string]$Level = 'Personen') {
+            $m = New-WorkerPerfMask -Path (Write-TestRun 'leer' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level $Level -Texts $Texts
+            # Testzugang: dieselbe Funktion, die New-WorkerPerfMask nutzt, baut Lookup und Regex aus einer Namensliste
+            Set-WorkerPerfMaskNames -Mask $m -Entries @($Users | ForEach-Object -Begin { $n = 0 } -Process { $n++; @{ Kind = 'user'; Name = $_; Replacement = 'Benutzer {0:00}' -f $n } }) -Protected $Protected
+            $m
+        }
+    }
+    It 'ersetzt ganze Namen, laengere zuerst, ohne Ruecksicht auf die Schreibweise' {
+        $m = New-TestMask @('user01', 'user010', 'mu', 'mueller')
+        Hide-WorkerPerfReportText 'user010 und USER01, nicht user0100' $m | Should -Be 'Benutzer 02 und Benutzer 01, nicht user0100'
+        Hide-WorkerPerfReportText 'Mueller sagt mu' $m | Should -Be 'Benutzer 04 sagt Benutzer 03'
+    }
+    It 'ersetzt Benutzer in Pfaden und Instanznamen' {                                          # Review Focus 2
+        $m = New-TestMask @('mueller')
+        Hide-WorkerPerfReportText 'C:\Users\mueller_UPM_local\UpmTempMount' $m | Should -Be 'C:\Users\Benutzer 01_UPM_local\UpmTempMount'
+        Hide-WorkerPerfReportText '\\fs01\upm$\Mueller.KLINIK\x.vhdx KLINIK\MUELLER' $m | Should -Be '\\fs01\upm$\Benutzer 01.KLINIK\x.vhdx KLINIK\Benutzer 01'
+    }
+    It 'laesst Programm- und Gegenstellennamen stehen und ersetzt den Benutzer gleichen Namens' {   # Review Focus 1
+        $m = New-TestMask @('excel', 'oracle') @('EXCEL.EXE', 'Oracle-Listener')
+        Hide-WorkerPerfReportText 'Hauptverursacher: EXCEL.EXE in der Sitzung von excel; Gegenstelle Oracle-Listener (oracle)' $m |
+            Should -Be 'Hauptverursacher: EXCEL.EXE in der Sitzung von Benutzer 01; Gegenstelle Oracle-Listener (Benutzer 02)'
+    }
+    It 'entfernt unbekannte Konten-SIDs' { Hide-WorkerPerfReportText 'S-1-5-21-9-9-9-1001_x' (New-TestMask @()) | Should -Be '(Name entfernt)_x' }
+    It 'maskiert Texte, Schluessel und Eigenschaftsnamen und haelt gleich gewordene Schluessel getrennt' {   # Review Focus 4
+        $m = New-TestMask @('user1')
+        # Abweichung vom Plan: [ordered]@{ user1 = 1; User1 = 2 } ist ein Parserfehler (gleiche Schluessel im Literal);
+        # 'Benutzer 01' wird nach dem Ersetzen von user1 zum selben Schluessel
+        $d = [ordered]@{ meta = [ordered]@{ user = 'user1' }; byUser = [ordered]@{ user1 = 1; 'Benutzer 01' = 2 }; obj = [pscustomobject]@{ user1 = 'a user1' }
+            series = (New-Object System.Text.StringBuilder '[1,2,null]'); n = 3.5; list = @('user1', 7) }
+        $r = Protect-WorkerPerfReportData $d $m
+        $r.meta.user | Should -Be 'Benutzer 01'; @($r.byUser.Keys) | Should -Be @('Benutzer 01', 'Benutzer 01 (2)'); $r.byUser['Benutzer 01 (2)'] | Should -Be 2
+        $r.obj['Benutzer 01'] | Should -Be 'a Benutzer 01'; $r.series.ToString() | Should -Be '[1,2,null]'; $r.n | Should -Be 3.5; $r.list | Should -Be @('Benutzer 01', 7)
+    }
+    It 'leert Meldungstexte und Befehlszeilen' {
+        $d = [ordered]@{ meta = [ordered]@{ endMessage = 'x' }; events = @([ordered]@{ text = 'geheim' }); procs = @([ordered]@{ cmd = 'tool.exe /u geheim' })
+            incidents = @([ordered]@{ text = 'bleibt'; events = @([ordered]@{ text = 'geheim' }) }); before = [ordered]@{ near = @([ordered]@{ text = 'geheim' }); incidents = @() }
+            quality = [ordered]@{ sourceErrors = @([ordered]@{ firstMessage = 'geheim' }) } }
+        Clear-WorkerPerfReportFreeText $d
+        ($d | ConvertTo-Json -Depth 6) | Should -Not -Match 'geheim'; $d.incidents[0].text | Should -Be 'bleibt'
+    }
+}
+Describe 'Ersetzen: Grenzfaelle' {
+    BeforeAll {
+        function New-NameMask([string]$Level, [object[]]$Entries, [string[]]$Protected = @()) {
+            $m = New-WorkerPerfMask -Path (Write-TestRun 'leer2' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level $Level -Texts $Texts
+            Set-WorkerPerfMaskNames -Mask $m -Entries $Entries -Protected $Protected
+            $m
+        }
+        function New-UserMask([string[]]$Users, [string[]]$Protected = @()) {
+            $n = 0
+            New-NameMask 'Personen' @($Users | ForEach-Object { $n++; @{ Kind = 'user'; Name = $_; Replacement = 'Benutzer {0:00}' -f $n } }) $Protected
+        }
+    }
+    It 'ersetzt den Ordner eines Programms, das wie ein Benutzer heisst, und laesst die Programmdatei stehen' {   # Nexus-Fall
+        $m = New-UserMask @('nexus') @('nexus.exe')
+        Hide-WorkerPerfReportText 'C:\Program Files\Nexus\nexus.exe' $m | Should -Be 'C:\Program Files\Benutzer 01\nexus.exe'
+    }
+    It 'nimmt Regex-Zeichen in Namen woertlich' {
+        $m = New-UserMask @('a.b', 'a.b+c', 'm(1)')
+        Hide-WorkerPerfReportText 'a.b+c und m(1), nicht axb, a.bbc, axb+c oder m1; aber a.b' $m | Should -Be 'Benutzer 02 und Benutzer 03, nicht axb, a.bbc, axb+c oder m1; aber Benutzer 01'
+    }
+    It 'schuetzt einen Namen ohne Ruecksicht auf die Schreibweise, am Anfang, am Ende, in Anfuehrungszeichen und Klammern' {
+        $m = New-UserMask @('excel') @('EXCEL.EXE')
+        foreach ($t in 'excel.exe', 'Start: Excel.Exe', '"EXCEL.exe"', "'excel.EXE'", '(EXCEL.EXE)', '[excel.exe]', 'a=EXCEL.EXE|b', 'Absturz von EXCEL.EXE.') {
+            Hide-WorkerPerfReportText $t $m | Should -Be $t -Because $t
+        }
+        Hide-WorkerPerfReportText 'EXCEL.EXE von excel' $m | Should -Be 'EXCEL.EXE von Benutzer 01'
+        Hide-WorkerPerfReportText '"excel"' $m | Should -Be '"Benutzer 01"'
+        Hide-WorkerPerfReportText 'excel.exe.bak excel2' $m | Should -Be 'Benutzer 01.exe.bak excel2'
+    }
+    It 'laesst $null und leere Texte stehen' {
+        $m = New-UserMask @('anna')
+        $null -eq (Hide-WorkerPerfReportText $null $m) | Should -BeTrue; Hide-WorkerPerfReportText '' $m | Should -Be ''
+    }
+    It 'ersetzt bei Alles unbekannte Server in UNC-Pfaden, bei Personen nicht, und nie Adressen im Fliesstext' {
+        $alles = New-NameMask 'Alles' @(@{ Kind = 'server'; Name = 'fs01'; Replacement = 'Server 01' }, @{ Kind = 'user'; Name = 'anna'; Replacement = 'Benutzer 01' })
+        Hide-WorkerPerfReportText '\\nas99\daten\anna\x.txt und \\FS01\upm$' $alles | Should -Be '\\(Name entfernt)\daten\Benutzer 01\x.txt und \\Server 01\upm$'
+        Hide-WorkerPerfReportText 'Pfad \\?\C:\x und \\.\pipe\y' $alles | Should -Be 'Pfad \\?\C:\x und \\.\pipe\y'
+        Hide-WorkerPerfReportText 'an 10.9.9.9, Version 10.0.20348.1, C:\Citrix\8.2.0.114\x.dll' $alles | Should -Be 'an 10.9.9.9, Version 10.0.20348.1, C:\Citrix\8.2.0.114\x.dll'
+        $personen = New-NameMask 'Personen' @(@{ Kind = 'user'; Name = 'anna'; Replacement = 'Benutzer 01' })
+        Hide-WorkerPerfReportText '\\nas99\daten\anna S-1-5-21-1-2-3-4 s-1-5-21-1-2-3-4-5' $personen | Should -Be '\\nas99\daten\Benutzer 01 (Name entfernt) s-1-5-21-1-2-3-4-5'
+    }
+    It 'nimmt fuer eine bekannte SID ihren Ersatznamen' {
+        $m = New-NameMask 'Personen' @(@{ Kind = 'sid'; Name = 'S-1-5-21-1-2-3-1108'; Replacement = 'Konto 01' })
+        Hide-WorkerPerfReportText 'C:\Users\anna\S-1-5-21-1-2-3-1108\x und S-1-5-21-1-2-3-9' $m | Should -Be 'C:\Users\anna\Konto 01\x und (Name entfernt)'
+    }
+    It 'baut verschachtelte Daten neu auf und laesst Zahlen, Wahrheitswerte und Zeiten unveraendert' {
+        $m = New-UserMask @('anna')
+        $when = [datetime]'2026-01-15 08:00:00'
+        $in = [ordered]@{ rows = @([ordered]@{ user = 'anna'; sub = @(@{ k = 'anna' }, $null) }, [ordered]@{ user = $null; n = 1 })
+            empty = @(); one = @('anna'); b = $true; i = 42; l = [long]7; d = 2.5; t = $when; nul = $null; ints = [int[]]@(1, 2); strs = [string[]]@('anna', 'x')
+            gl = (New-Object 'System.Collections.Generic.List[object]') }
+        $in.gl.Add('anna')
+        $before = $in | ConvertTo-Json -Depth 8
+        $r = Protect-WorkerPerfReportData $in $m
+        ($in | ConvertTo-Json -Depth 8) | Should -Be $before                                  # Eingabe unveraendert
+        [object]::ReferenceEquals($r, $in) | Should -BeFalse; [object]::ReferenceEquals($r.rows[0], $in.rows[0]) | Should -BeFalse
+        $r.rows[0].user | Should -Be 'Benutzer 01'; $r.rows[0].sub[0].k | Should -Be 'Benutzer 01'; $null -eq $r.rows[0].sub[1] | Should -BeTrue
+        $r.rows[0].sub.Count | Should -Be 2; $r.rows[0].sub[0] | Should -BeOfType [System.Collections.IDictionary]
+        $r.rows[1].Contains('user') | Should -BeTrue; $null -eq $r.rows[1].user | Should -BeTrue
+        $r.empty.GetType().IsArray | Should -BeTrue; $r.empty.Count | Should -Be 0
+        $r.one.GetType().IsArray | Should -BeTrue; $r.one.Count | Should -Be 1; $r.one[0] | Should -Be 'Benutzer 01'
+        $r.gl.GetType().IsArray | Should -BeTrue; $r.gl[0] | Should -Be 'Benutzer 01'
+        $r.strs | Should -Be @('Benutzer 01', 'x'); $r.ints | Should -Be @(1, 2); $r.ints.GetType() | Should -Be ([int[]])
+        $r.b | Should -BeOfType [bool]; $r.b | Should -BeTrue; $r.i | Should -BeOfType [int]; $r.i | Should -Be 42; $r.l | Should -BeOfType [long]
+        $r.d | Should -BeOfType [double]; $r.d | Should -Be 2.5; $r.t | Should -BeOfType [datetime]; $r.t | Should -Be $when
+        $r.Contains('nul') | Should -BeTrue; $null -eq $r.nul | Should -BeTrue
+        $e = Protect-WorkerPerfReportData @() $m; $null -eq $e | Should -BeFalse; $e.GetType().IsArray | Should -BeTrue; $e.Count | Should -Be 0
+        $o = Protect-WorkerPerfReportData @('anna') $m; $o.GetType().IsArray | Should -BeTrue; $o.Count | Should -Be 1
+        $null -eq (Protect-WorkerPerfReportData $null $m) | Should -BeTrue; Protect-WorkerPerfReportData 'anna' $m | Should -Be 'Benutzer 01'
+    }
+}
+Describe 'Meldungstexte ueber den Plan hinaus' {
+    It 'leert die Texte der Ereignisse von Mustern, des Rueckblicks und die Begruendung nicht verfuegbarer Quellen' {
+        $ev = { param($t) [ordered]@{ t = 1; kind = 'crash'; text = $t } }
+        $pattern = [ordered]@{ id = 'companion'; text = 'Zeitnah: bleibt.'; detail = [ordered]@{ events = @((& $ev 'geheim')) } }
+        $d = [ordered]@{ meta = [ordered]@{ endMessage = $null }
+            quality = [ordered]@{ sourceErrors = @(); sources = @([ordered]@{ id = 'cpu.steal'; available = $false; detail = 'Pruefung fehlgeschlagen: geheim' }, [ordered]@{ id = 'cpu.host'; available = $true; detail = 'Processor / bleibt' }) }
+            sollIst = @([ordered]@{ id = 'cpu.steal'; detail = 'Pruefung fehlgeschlagen: geheim' }, [ordered]@{ id = 'cpu.host'; detail = '' })
+            events = @([ordered]@{ t = 1; kind = 'logon' }, [ordered]@{ t = 2; text = $null })
+            incidents = @([ordered]@{ text = 'bleibt'; events = @(); event = $null }, [ordered]@{ text = 'bleibt'; events = @((& $ev 'geheim')); event = [ordered]@{ codes = @([ordered]@{ code = '0x1'; text = 'Zugriffsverletzung' }); patterns = @($pattern) } })
+            before = [ordered]@{ near = @(); nearCapture = @(); incidents = @([ordered]@{ text = 'bleibt'; events = @((& $ev 'geheim')); event = [ordered]@{ patterns = @($pattern) } }) } }
+        Clear-WorkerPerfReportFreeText $d
+        ($d | ConvertTo-Json -Depth 10) | Should -Not -Match 'geheim'
+        $d.quality.sources[1].detail | Should -Be 'Processor / bleibt'; $d.quality.sources[0].detail | Should -Be ''; $d.sollIst[0].detail | Should -Be ''
+        $d.incidents[1].event.codes[0].text | Should -Be 'Zugriffsverletzung'; $d.incidents[1].event.patterns[0].text | Should -Be 'Zeitnah: bleibt.'
+        $d.events[0].Contains('text') | Should -BeFalse; $d.events[1].Contains('text') | Should -BeTrue; $null -eq $d.events[1].text | Should -BeTrue
+        $null -eq $d.meta.endMessage | Should -BeTrue
+    }
+}
+Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        # the names below are not used by the report script, which runs in the same scope
+        $maskSimOut = Join-Path $TestDrive 'sim'
+        $script:SimRun = Invoke-SimCapture (Join-Path $maskSimOut 'capture')
+        $maskSimRoles = New-SimRoleFile (Join-Path $maskSimOut 'roles.sim.json')
+        $maskSimReport = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
+        # the report data as the report script builds it (the script is dot-sourced in a child scope, which keeps $data);
+        # ConvertTo-JsonText is the report's own JSON writer
+        $script:Sim = & {
+            # a reported time 5 min before the capture fills before.near with events of the capture
+            $maskSimFirst = [DateTimeOffset]::Parse((Get-Content (Join-Path $SimRun 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture).ToUnixTimeMilliseconds()
+            $null = . $maskSimReport -Path $SimRun -OutFile (Join-Path $maskSimOut 'report.html') -RoleFile $maskSimRoles -FocusUser 'user003' -ReportedTime (Get-ServerTime $SimRun ($maskSimFirst - 300000)) 6>$null
+            $maskSimMask = New-WorkerPerfMask -Path $SimRun -Level 'Alles' -Texts $Texts -RoleLabels @(@(Read-WorkerPerfRoles $maskSimRoles) | ForEach-Object { [string]$_.label })
+            function Get-MaskSimJson($Value) { $w = New-Object System.IO.StringWriter; ConvertTo-JsonText $Value $w; $w.ToString() }
+            $maskSimPlain = Get-MaskSimJson $data
+            Clear-WorkerPerfReportFreeText $data
+            $maskSimCleared = Get-MaskSimJson $data
+            $maskSimMasked = Protect-WorkerPerfReportData $data $maskSimMask
+            @{ Data = $data; Masked = $maskSimMasked; Mask = $maskSimMask; Plain = $maskSimPlain; Cleared = $maskSimCleared; ClearedAfter = (Get-MaskSimJson $data)
+                MaskedJson = (Get-MaskSimJson $maskSimMasked) }
+        }
+        function Get-Strings($Value, $List) {
+            if ($null -eq $Value -or $Value -is [System.Text.StringBuilder] -or $Value -is [ValueType]) { return }
+            if ($Value -is [string]) { $List.Add($Value); return }
+            if ($Value -is [System.Collections.IDictionary]) { foreach ($k in $Value.Keys) { $List.Add([string]$k); Get-Strings $Value[$k] $List }; return }
+            foreach ($x in $Value) { Get-Strings $x $List }
+        }
+    }
+    It 'leert die Meldungstexte und laesst die Zahlen gleich' {
+        $Sim.Plain | Should -Match '"text":"[^"]+'; $Sim.Cleared | Should -Not -Match '"text":"(?!")[^"]*Session'
+        @($Sim.Data.events | Where-Object { $_.text -ne '' }).Count | Should -Be 0
+        foreach ($inc in @($Sim.Data.incidents) + @($Sim.Data.before.incidents)) { @($inc.events | Where-Object { $_.text -ne '' }).Count | Should -Be 0 }
+        @($Sim.Data.before.near).Count | Should -BeGreaterThan 0; @($Sim.Data.before.near | Where-Object { $_.text -ne '' }).Count | Should -Be 0
+        @($Sim.Masked.incidents).Count | Should -Be @($Sim.Data.incidents).Count; @($Sim.Masked.incidents).Count | Should -BeGreaterThan 8
+        @($Sim.Masked.sessions).Count | Should -Be @($Sim.Data.sessions).Count; @($Sim.Masked.procs).Count | Should -Be @($Sim.Data.procs).Count
+        @($Sim.Masked.events).Count | Should -Be @($Sim.Data.events).Count; $Sim.Masked.meta.ticks | Should -Be $Sim.Data.meta.ticks
+        $Sim.Masked.host.cpu.ToString() | Should -Be $Sim.Data.host.cpu.ToString()
+        $Sim.ClearedAfter | Should -Be $Sim.Cleared                                        # Protect aendert die Eingabe nicht
+    }
+    It 'enthaelt keinen Namen der Aufzeichnung ausser in einem geschuetzten Wort' {
+        $Sim.Mask.Entries.Count | Should -BeGreaterThan 20
+        $Sim.MaskedJson | Should -Not -Match 'user0\d\d'; $Sim.MaskedJson | Should -Not -Match 'CONTOSO'; $Sim.MaskedJson | Should -Match 'Benutzer 01'
+        $protected = @{}; foreach ($p in $Sim.Mask.Protected) { $protected[$p.ToLowerInvariant()] = $true }
+        $strings = New-Object System.Collections.Generic.List[string]; Get-Strings $Sim.Masked $strings
+        $left = New-Object System.Collections.Generic.List[string]
+        foreach ($s in $strings) {
+            foreach ($hit in $Sim.Mask.Regex.Matches($s)) {
+                $a = $hit.Index; $b = $hit.Index + $hit.Length
+                while ($a -gt 0 -and $s[$a - 1] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $a-- }
+                while ($b -lt $s.Length -and $s[$b] -notmatch '[\s\\/()\[\],;:"''<>|=]') { $b++ }
+                $word = $s.Substring($a, $b - $a).ToLowerInvariant()
+                if (-not $protected.ContainsKey($word) -and -not $protected.ContainsKey($word.TrimEnd('.'))) { $left.Add("$($hit.Value) in '$s'") }
+            }
+        }
+        $left | Should -BeNullOrEmpty
+    }
+}
