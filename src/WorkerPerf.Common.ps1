@@ -28,7 +28,7 @@ $script:WorkerPerfHeaders = [ordered]@{
 }
 
 $script:WorkerPerfOrigins = @('Herstellerangabe', 'Faustregel', 'eigene Annahme')
-$script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'System')
+$script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'Drucken', 'System')
 
 function Test-WorkerPerfWindows {
     return [bool](($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows)

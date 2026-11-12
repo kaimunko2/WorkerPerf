@@ -46,8 +46,11 @@ function Get-WorkerPerfEventNamePatterns($Json, [string]$Name, [string]$Path, [s
     if ($null -eq $prop -or $null -eq $prop.Value) { return , [string[]]$Default }
     $list = Get-WorkerPerfEventStringList $Json $Name $Path
     foreach ($s in $list) {
-        if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '/', '`')) -ge 0 -or $s.Trim('*').Length -eq 0) {
-            throw "events.json: Feld '$Name' enthaelt ein ungueltiges Muster ('$s'): erlaubt sind $What, '*' als einziger Platzhalter."
+        # at least one letter, digit or '$' (the computer accounts '*$'): '*', '*.*' or '*-*' would match nearly every name
+        $literal = $false
+        foreach ($ch in $s.ToCharArray()) { if ([char]::IsLetterOrDigit($ch) -or $ch -eq '$') { $literal = $true; break } }
+        if ($s.IndexOfAny([char[]]@('?', '[', ']', '\', '/', '`')) -ge 0 -or -not $literal) {
+            throw "events.json: Feld '$Name' enthaelt ein ungueltiges Muster ('$s'): erlaubt sind $What mit mindestens einem Buchstaben oder einer Ziffer, '*' als einziger Platzhalter."
         }
     }
     return , $list

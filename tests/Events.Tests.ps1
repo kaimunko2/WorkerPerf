@@ -467,6 +467,31 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         foreach ($i in $b) { @($i.Sessions).Count | Should -Be 0; @($i.Users).Count | Should -Be 1 }
         foreach ($e in @($M.EventsBefore)) { $e.SessionIndex | Should -Be -1 }
     }
+    It 'fasst den Rueckblick der simulierten Stunde mit Mustern, Datum und Haeufigkeit je Tag zusammen' {
+        $lb = Get-WorkerPerfLookback -Model $M -Config $Cfg -Settings $set -Roles $Roles -FirstId 5 -ReportedMs $null
+        $exp = @($SimExp | Where-Object { $_.Before })
+        @($lb.Incidents | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Kind, $_.App, (@($_.Patterns | ForEach-Object { $_.Id }) -join ','), $_.Count, $_.StartMs, $_.EndMs }) |
+            Should -Be @($exp | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Kind, $_.App, (@($_.Patterns) -join ','), $_.Count, $_.StartMs, $_.EndMs })
+        @($lb.Incidents.Id) | Should -Be @(5, 6, 7); $lb.Days | Should -Be 7; $lb.EventCount | Should -Be 5
+        ($lb.PerDay | Measure-Object Count -Sum).Sum | Should -Be 5; @($lb.PerDay).Count | Should -Be 2; @($lb.Near).Count | Should -Be 0
+        $off = [int]$M.Meta.OffsetMinutes
+        $at = { param($ms, $f) [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.AddMinutes($off).ToString($f, [cultureinfo]::InvariantCulture) }
+        $text = @($lb.Incidents | ForEach-Object { Get-WorkerPerfEventIncidentText -Incident $_ -Model $M -Texts $Texts -Config $Cfg -OffsetMinutes $off })
+        $text[0] | Should -BeExactly ((& $at $exp[0].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von EXCEL.EXE (1-mal). Benutzer: user001. Fehlerhaftes Modul: simaddin.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Ursache liegt wahrscheinlich im Modul simaddin.dll (betrifft EXCEL.EXE, WINWORD.EXE).')
+        $text[1] | Should -Match ('^' + [regex]::Escape((& $at $exp[1].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von WINWORD.EXE (1-mal). Benutzer: user002.'))
+        $span = (& $at $exp[2].StartMs 'dd.MM.yyyy HH:mm:ss') + [char]0x2013 + $(if ((& $at $exp[2].StartMs 'yyyyMMdd') -eq (& $at $exp[2].EndMs 'yyyyMMdd')) { & $at $exp[2].EndMs 'HH:mm:ss' } else { & $at $exp[2].EndMs 'dd.MM.yyyy HH:mm:ss' })
+        $text[2] | Should -BeExactly ($span + ': Absturz von nexus.exe (3-mal). Benutzer: user004. Fehlerhaftes Modul: nxreport.dll, immer dasselbe. Fehlercode: 0xc0000409 (Pufferüberlauf erkannt, Programm vom System beendet). Nur user004 betroffen, 3-mal: spricht für Profil oder Daten dieses Benutzers.')
+        $script:SimLbText = $text
+    }
+    It 'liefert den Druckzustand der simulierten Stunde' {
+        $ps = Get-WorkerPerfPrintState -Model $M -EventIncidents $SimInc
+        @($ps.Drivers | Where-Object Involved | ForEach-Object Name) | Should -Be @('HP Universal Printing PCL 6 (Sim)')
+        @($ps.Drivers | Where-Object PossiblyInvolved).Count | Should -Be 0
+        $q = @($ps.Queues | Where-Object Name -eq 'PRN-EG-01'); $q.Count | Should -Be 1; $q[0].MaxJobs | Should -Be 3; $q[0].JobErrors | Should -Be 1; $q[0].NotReadyErrors | Should -Be 0
+        @($ps.Processes | ForEach-Object Name) | Should -Contain 'spoolsv.exe'
+        foreach ($p in @($ps.Processes)) { $M.Proc[$p.K].Role | Should -Be 'Drucken' }
+        $script:SimPrint = $ps
+    }
     It 'ordnet die Abstuerze der Messzeit ihren Sitzungen zu' {
         foreach ($i in @($SimInc | Where-Object { $_.Kind -eq 'crash' -and -not $_.Before })) {
             @($i.Sessions).Count | Should -Be @($i.Users).Count
@@ -790,7 +815,7 @@ Describe 'Pruefung von Task 6, Runde 1' {
         $i = (Get-PatInc @((New-Ev 0), (New-Ev 5), (New-Ev 9.5 'hang' -Module ''), (New-Ev 10)))
         $c = @($i | Where-Object { $_.Kind -eq 'crash' })[0]
         $c.Patterns[0].Detail.Count | Should -Be 1; $c.Patterns[0].Detail.Crashes | Should -Be 3
-        Get-Text $c | Should -Match ' 1 von 3 wurden nach Nichtreagieren beendet\.'
+        Get-Text $c | Should -Match ' Nach Nichtreagieren beendet: 1 von 3\.'                       # N1 (Task 7): Aussage geaendert
         Get-Text (Get-PatInc @((New-Ev 9.5 'hang' -Module ''), (New-Ev 10)))[1] | Should -Match ' Wurde nach Nichtreagieren beendet\.'
     }
     It 'Minor: overlap sortiert und im Plural' {
@@ -820,22 +845,180 @@ Describe 'Pruefung von Task 6, Runde 1' {
         Get-Text $w | Should -Match ': Systemfehler – Speichermangel-Warnung \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
         Get-Text (Get-PatInc @(New-Ev 0 'system' '' 0 '' '' @{ Group = 'fileserver'; Source = 'SMB'; Object = 'fs01'; Module = ''; Code = '' }))[0] | Should -Match 'Systemfehler – Verbindungsabbruch zum Dateiserver fs01 \(1-mal\)'
     }
-    It 'Minor: Listen zeigen hoechstens zehn Eintraege' {
+    It 'Minor: Listen zeigen hoechstens zehn Eintraege' {                                         # N3 (Task 7): Aussagen geaendert
         $evs = @(1..40 | ForEach-Object { New-Ev ($_ / 10) -Sid (10 + $_) -User ('u{0:d2}' -f $_) })
         $t = Get-Text (Get-PatInc $evs)[0]
-        $t | Should -Match ' Benutzer: u01, u02, u03, u04, u05, u06, u07, u08, u09, u10 und 30 weitere\. '; $t | Should -Match ' 40 Benutzer betroffen'
+        $t | Should -Match ' Benutzer: u01, u02, u03, u04, u05, u06, u07, u08, u09, u10 \(\+30 weitere\)\. '; $t | Should -Match ' 40 Benutzer betroffen'
         $apps = @(1..15 | ForEach-Object { New-Ev ($_ / 10) -App ('app{0:d2}.exe' -f $_) -Module 'simaddin.dll' })
-        Get-Text (Get-PatInc $apps)[0] | Should -Match '\(betrifft app01\.exe, .*app10\.exe und 5 weitere\)\.'
+        Get-Text (Get-PatInc $apps)[0] | Should -Match '\(betrifft app01\.exe, .*app10\.exe \(\+5 weitere\)\)\.'
         $mods = @(1..12 | ForEach-Object { New-Ev ($_ / 10) -Module ('m{0:d2}.dll' -f $_) })
-        Get-Text (Get-PatInc $mods)[0] | Should -Match 'Fehlerhafte Module: m01\.dll \(1-mal\), .*m10\.dll \(1-mal\) und 2 weitere\.'
+        Get-Text (Get-PatInc $mods)[0] | Should -Match 'Fehlerhafte Module: m01\.dll \(1-mal\), .*m10\.dll \(1-mal\) \(\+2 weitere\)\.'
     }
     It 'Minor: eine Anwendung ohne Namen heisst unbekannte Anwendung' {
-        Get-Text (Get-PatInc @(New-Ev 0 -App ''))[0] | Should -Match ': Absturz von unbekannte Anwendung \(1-mal\)\.'
-        Get-Text (Get-PatInc @(New-Ev 0 'hang' -App '' -Module ''))[0] | Should -Match ': unbekannte Anwendung reagierte nicht'
+        # N1 (Task 7): Aussage geaendert, eigene Kopftexte ohne Anwendungsnamen
+        Get-Text (Get-PatInc @(New-Ev 0 -App ''))[0] | Should -Match '^\d\d:\d\d:\d\d: Absturz einer unbekannten Anwendung \(1-mal\)\.'
+        Get-Text (Get-PatInc @(New-Ev 0 'hang' -App '' -Module ''))[0] | Should -Match '^\d\d:\d\d:\d\d: Eine unbekannte Anwendung reagierte nicht und wurde beendet \(1-mal\)\.'
     }
     It 'Minor: afterhang findet den Haenger auch zwischen vielen anderen Haengern' {
         $evs = @(1..300 | ForEach-Object { New-Ev (8 + $_ / 200) 'hang' -App ('other{0}.exe' -f ($_ % 7)) -Sid (3 + $_ % 5) -Module '' }) + @((New-Ev 9 'hang' -Sid 5 -User 'u5' -Module ''), (New-Ev 9.5 'hang' -Sid -1 -User 'user002' -Module '' -More @{ SessionIndex = -1 }), (New-Ev 10))
         $c = @((Get-PatInc $evs) | Where-Object { $_.Kind -eq 'crash' })[0]
         $c.Patterns[0].Id | Should -Be 'afterhang'; $c.Patterns[0].Detail.HangMs | Should -Be ([long]($T0 + 9.5 * 60000))
+    }
+}
+Describe 'Rueckblick und Druckzustand' {
+    BeforeAll {
+        function New-LbModel([object[]]$Before) { @{ EventsBefore = $Before; Tick = @{ TimeMs = [long[]]@($T0, $T0 + 60000) }; Meta = @{ OffsetMinutes = 60; EventLookbackDays = 7; LookbackCapped = @('system') }; Sessions = @() } }
+    }
+    It 'trennt den Rueckblick von der Messzeit und zaehlt je Tag' {                               # Review Focus 3
+        $m = New-LbModel @((New-Ev (-3 * 1440)), (New-Ev (-3 * 1440 + 10)), (New-Ev (-3 * 1440 + 20)), (New-Ev (-1440) -App 'WINWORD.EXE' -Module 'mso.dll'), (New-Ev 0))   # Modul geaendert: in vbe7.dll waere es sharedmodule
+        $l = Get-WorkerPerfLookback -Model $m -Config $Cfg -Settings $Set -Roles $Roles -FirstId 20 -ReportedMs $null
+        $l.EventCount | Should -Be 4; @($l.Incidents).Count | Should -Be 2; $l.Incidents[0].Before | Should -BeTrue; $l.Incidents[0].Id | Should -Be 20
+        @($l.Incidents[0].Patterns | ForEach-Object Id) | Should -Be @('oneuser'); @($l.PerDay).Count | Should -Be 2; $l.PerDay[0].Count | Should -Be 3
+        $l.Capped | Should -Be @('system'); $l.Days | Should -Be 7
+    }
+    It 'liefert Ereignisse um eine gemeldete Zeit vor der Messung' {
+        $m = New-LbModel @((New-Ev -100), (New-Ev -80), (New-Ev -40))
+        @((Get-WorkerPerfLookback -Model $m -Config $Cfg -Settings $Set -Roles $Roles -FirstId 1 -ReportedMs ($T0 - 90 * 60000)).Near).Count | Should -Be 2
+        @((Get-WorkerPerfLookback -Model $m -Config $Cfg -Settings $Set -Roles $Roles -FirstId 1 -ReportedMs ($T0 + 60000)).Near).Count | Should -Be 0
+    }
+    It 'liefert den Druckzustand' {
+        $m = @{ PrintDrivers = @(@{ Name = 'Sim PCL 6'; Manufacturer = 'HP'; Version = '61'; Type = 3; Isolation = 'none'; Files = @('hpsimgr.dll') }, @{ Name = 'Sim KX'; Manufacturer = 'Kyocera'; Version = '8'; Type = 3; Isolation = 'isolated'; Files = @('kx.dll') })
+            PrintQueues = @(@{ TimeMs = $T0; Queue = 'Q1'; Jobs = 0; JobErrors = 5; NotReadyErrors = 0 }, @{ TimeMs = $T0 + 15000; Queue = 'Q1'; Jobs = 3; JobErrors = 6; NotReadyErrors = 0 },
+                            @{ TimeMs = $T0 + 30000; Queue = 'Q1'; Jobs = 1; JobErrors = 0; NotReadyErrors = 0 }, @{ TimeMs = $T0 + 45000; Queue = 'Q1'; Jobs = 0; JobErrors = 2; NotReadyErrors = 0 })
+            Proc = @(@{ K = 0; Name = 'spoolsv.exe'; Role = 'Drucken'; CpuMaxPct = 1.5; WsMaxKB = 40960 }, @{ K = 1; Name = 'EXCEL.EXE'; Role = ''; CpuMaxPct = 9; WsMaxKB = 1 }) }
+        $s = Get-WorkerPerfPrintState -Model $m -EventIncidents @(@{ Kind = 'print'; Key = 'Sim PCL 6'; Patterns = @() })
+        ($s.Drivers | Where-Object Name -eq 'Sim PCL 6').Involved | Should -BeTrue; ($s.Drivers | Where-Object Name -eq 'Sim KX').Isolated | Should -BeTrue
+        $s.Queues[0].MaxJobs | Should -Be 3; $s.Queues[0].JobErrors | Should -Be 3                  # 5 -> 6 (+1), Neustart auf 0, 0 -> 2 (+2)
+        @($s.Processes).Name | Should -Be @('spoolsv.exe'); $s.Processes[0].WsMaxMB | Should -Be 40
+    }
+}
+Describe 'Rueckblick und Druckzustand im Einzelnen' {
+    BeforeAll {
+        function New-LbModel2([object[]]$Before, $Meta = @{ OffsetMinutes = 60; EventLookbackDays = 7; LookbackCapped = @() }) { @{ EventsBefore = $Before; Tick = @{ TimeMs = [long[]]@($T0, $T0 + 60000) }; Meta = $Meta; Sessions = @() } }
+        function Get-Lb($Model, $Reported = $null) { Get-WorkerPerfLookback -Model $Model -Config $Cfg -Settings $Set -Roles $Roles -FirstId 1 -ReportedMs $Reported }
+    }
+    It 'beginnt den Rueckblick Days Tage vor dem ersten Takt und laesst Ereignisse ab dem ersten Takt weg' {
+        $evs = @((New-Ev -10), (New-Ev 0), (New-Ev 0.5))
+        $l = Get-Lb (New-LbModel2 $evs)
+        $l.FromMs | Should -Be ([long]($T0 - 7 * 86400000)); $l.EventCount | Should -Be 1; @($l.Incidents).Count | Should -Be 1; $l.Incidents[0].Count | Should -Be 1
+        $evs[1].ContainsKey('IncidentId') | Should -BeFalse -Because 'ein Ereignis der Messzeit gehoert nicht zum Rueckblick'
+        $evs[0].IncidentId | Should -Be 1; $evs[0].SessionIndex | Should -Be -1 -Because 'vor der Messung gibt es keine Sitzung der Messung'
+    }
+    It 'liefert ohne Rueckblick leere Listen und Days 0' {
+        $l = Get-Lb (New-LbModel2 @() @{ OffsetMinutes = 0; EventLookbackDays = $null; LookbackCapped = [string[]]@() })
+        $l.Days | Should -Be 0; $l.EventCount | Should -Be 0; @($l.Incidents).Count | Should -Be 0; @($l.PerDay).Count | Should -Be 0; @($l.Near).Count | Should -Be 0; @($l.Capped).Count | Should -Be 0
+        $l.FromMs | Should -Be ([long]$T0)
+        $l2 = Get-Lb @{ Tick = @{ TimeMs = [long[]]@($T0) }; Meta = @{ OffsetMinutes = 0 } }
+        $l2.EventCount | Should -Be 0; $l2.Days | Should -Be 0; @($l2.Capped).Count | Should -Be 0
+    }
+    It 'zaehlt je Tag in Ortszeit des Servers, aufsteigend, nur Ereignisse mit Vorfallsart' {
+        # T0 = 22:13:20 UTC; mit +60 min ist -50 min noch derselbe Ortstag, -80 min (21:53 Ortszeit) ebenso, -1400 min der Vortag
+        $evs = @((New-Ev -1400), (New-Ev -80), (New-Ev -50), (New-Ev -40 'logon' '' 3 'user002' '' @{ Group = 'session' }))
+        $l = Get-Lb (New-LbModel2 $evs)
+        @($l.PerDay | ForEach-Object { '{0}:{1}' -f $_.Day, $_.Count }) | Should -Be @('2023-11-13:1', '2023-11-14:2')
+        $l.EventCount | Should -Be 4
+        # -20 und -10 min: mit +60 min 22:53 und 23:03 am 14.11., mit +120 min 23:53 am 14.11. und 00:03 am 15.11.
+        $late = @((New-Ev -20), (New-Ev -10))
+        @((Get-Lb (New-LbModel2 $late)).PerDay | ForEach-Object { '{0}:{1}' -f $_.Day, $_.Count }) | Should -Be @('2023-11-14:2')
+        $l = Get-Lb (New-LbModel2 $late @{ OffsetMinutes = 120; EventLookbackDays = 7; LookbackCapped = @() })
+        @($l.PerDay | ForEach-Object { '{0}:{1}' -f $_.Day, $_.Count }) | Should -Be @('2023-11-14:1', '2023-11-15:1')
+    }
+    It 'nennt im Umkreis alle Ereignisse in zeitlicher Folge, Grenzen eingeschlossen, nur vor der Messung' {
+        $evs = @((New-Ev -105.0001), (New-Ev -105), (New-Ev -90 'logon' '' 3 'user002' '' @{ Group = 'session' }), (New-Ev -75), (New-Ev -74.99))
+        $near = @((Get-Lb (New-LbModel2 $evs) ($T0 - 90 * 60000)).Near)
+        @($near | ForEach-Object { [long]$_.TimeMs }) | Should -Be @([long]($T0 - 105 * 60000), [long]($T0 - 90 * 60000), [long]($T0 - 75 * 60000))
+        @((Get-Lb (New-LbModel2 $evs) $T0).Near).Count | Should -Be 0 -Because 'die gemeldete Zeit liegt nicht vor dem ersten Takt'
+    }
+    It 'prueft im Rueckblick nur die Muster ohne Messwerte' {
+        $hang = New-Ev -11 'hang' -Module ''
+        $l = Get-Lb (New-LbModel2 @($hang, (New-Ev -10), (New-Ev -10 -App 'WINWORD.EXE' -User 'user003' -Sid 4 -Module 'vbe7.dll')))
+        $excel = @($l.Incidents | Where-Object { $_.Kind -eq 'crash' -and $_.App -eq 'EXCEL.EXE' })[0]
+        @($excel.Patterns | ForEach-Object Id) | Should -Be @('afterhang', 'sharedmodule')
+        foreach ($i in @($l.Incidents)) { @($i.Overlap).Count | Should -Be 0; @($i.Patterns | Where-Object { $_.Id -in 'resource', 'overlap' }).Count | Should -Be 0 }
+    }
+    It 'nennt Datum und Uhrzeit fuer Vorfaelle vor der Messung, die der Messzeit bleiben unveraendert' {
+        $one = (Get-Inc @(New-Ev 0) -Before)[0]
+        Get-Text $one 60 | Should -Match '^14\.11\.2023 23:13:20: Absturz von EXCEL\.EXE \(1-mal\)\.'
+        $day = (Get-Inc @((New-Ev 0), (New-Ev 10)) -Before)[0]
+        Get-Text $day 60 | Should -Match ('^14\.11\.2023 23:13:20' + [char]0x2013 + '23:23:20: Absturz von EXCEL\.EXE \(2-mal\)\.')
+        $two = (Get-Inc @((New-Ev 0), (New-Ev 25), (New-Ev 50)) -Before)[0]
+        Get-Text $two 60 | Should -Match ('^14\.11\.2023 23:13:20' + [char]0x2013 + '15\.11\.2023 00:03:20: Absturz von EXCEL\.EXE \(3-mal\)\.')
+        $now = (Get-Inc @((New-Ev 0), (New-Ev 25), (New-Ev 50)))[0]
+        Get-Text $now 60 | Should -Match ('^23:13:20' + [char]0x2013 + '00:03:20: Absturz von EXCEL\.EXE \(3-mal\)\.')
+        Get-Text (Get-Inc @(New-Ev 0))[0] 60 | Should -Match '^23:13:20: Absturz'
+    }
+    It 'liefert Treiber, Warteschlangen und Druckprozesse auch mit Luecken' {
+        $m = @{ PrintDrivers = @(@{ Name = 'B Drv'; Manufacturer = 'M'; Version = '1'; Type = 4; Isolation = 'shared'; Files = [string[]]@('b.dll') })
+            PrintQueues = @(@{ TimeMs = $T0; Queue = 'Q2'; Jobs = [double]::NaN; JobErrors = 4; NotReadyErrors = 1 }, @{ TimeMs = $T0; Queue = 'q1'; Jobs = 2; JobErrors = 0; NotReadyErrors = 0 },
+                @{ TimeMs = $T0 + 15000; Queue = 'Q2'; Jobs = 1; JobErrors = [double]::NaN; NotReadyErrors = 3 }, @{ TimeMs = $T0 + 30000; Queue = 'Q2'; Jobs = 0; JobErrors = 6; NotReadyErrors = 1 },
+                @{ TimeMs = $T0 + 45000; Queue = 'Q2'; Jobs = 0; JobErrors = 7; NotReadyErrors = 2 })
+            Proc = @($null, @{ K = 1; Name = 'splwow64.exe'; Role = 'Drucken'; CpuMaxPct = 0.5; WsMaxKB = 1536 }, @{ K = 2; Name = 'spoolsv.exe'; Role = 'Drucken'; CpuMaxPct = 2; WsMaxKB = 2048 }) }
+        $s = Get-WorkerPerfPrintState -Model $m -EventIncidents @()
+        $d = $s.Drivers[0]; '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $d.Name, $d.Manufacturer, $d.Version, $d.Type, $d.Isolation, $d.Isolated, (@($d.Files) -join ';'), $d.Involved | Should -Be 'B Drv|M|1|4|shared|False|b.dll|False'
+        @($s.Queues | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.Name, $_.MaxJobs, $_.JobErrors, $_.NotReadyErrors }) | Should -Be @('q1:2:0:0', 'Q2:1:3:4')   # 4 -> (fehlt) -> 6 -> 7; 1 -> 3, Neustart auf 1 (+1), 1 -> 2
+        @($s.Processes | ForEach-Object { '{0}:{1}:{2}:{3}' -f $_.K, $_.Name, [string]$_.CpuMaxPct, [string]$_.WsMaxMB }) | Should -Be @('1:splwow64.exe:0.5:1.5', '2:spoolsv.exe:2:2')
+        $e = Get-WorkerPerfPrintState -Model @{ Meta = @{} } -EventIncidents $null
+        @($e.Drivers).Count | Should -Be 0; @($e.Queues).Count | Should -Be 0; @($e.Processes).Count | Should -Be 0
+        $n = Get-WorkerPerfPrintState -Model @{ PrintQueues = @(@{ TimeMs = $T0; Queue = 'Q'; Jobs = [double]::NaN; JobErrors = [double]::NaN; NotReadyErrors = [double]::NaN }) } -EventIncidents @()
+        $null -eq $n.Queues[0].MaxJobs | Should -BeTrue; $n.Queues[0].JobErrors | Should -Be 0
+    }
+    It 'nennt einen Treiber beteiligt nur als Schluessel oder einzigen Treiber eines Musters, mehrere als moeglich' {
+        $drv = @(@{ Name = 'HP A'; Manufacturer = 'HP'; Version = '1'; Type = 3; Isolation = 'none'; Files = @('unidrv.dll', 'hpa.dll') },
+            @{ Name = 'Kyo B'; Manufacturer = 'Kyocera'; Version = '2'; Type = 3; Isolation = 'none'; Files = @('UNIDRV.DLL', 'kyob.dll') },
+            @{ Name = 'Xer C'; Manufacturer = 'Xerox'; Version = '3'; Type = 4; Isolation = 'isolated'; Files = @('xerc.dll') })
+        $show = { param($s) @($s.Drivers | ForEach-Object { '{0}:{1}:{2}' -f $_.Name, $_.Involved, $_.PossiblyInvolved }) }
+        $shared = @(New-WorkerPerfEventIncidents -Events @(New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unidrv.dll') -Config $Cfg -Settings $Set -Drivers $drv -FirstId 1)
+        Add-WorkerPerfEventPatterns -Incidents $shared -AllEvents @($shared[0].Events) -Model $null -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $drv -PerfIncidents @() -Before
+        & $show (Get-WorkerPerfPrintState -Model @{ PrintDrivers = $drv } -EventIncidents $shared) | Should -Be @('HP A:False:True', 'Kyo B:False:True', 'Xer C:False:False')
+        # Schluessel ohne Beachtung der Gross- und Kleinschreibung; Muster printdriver mit einem Treiber auch an einem Absturz in einer Sitzung
+        $crash = @{ Kind = 'crash'; Key = 'EXCEL.EXE'; Patterns = @(@{ Id = 'printdriver'; Detail = @{ Module = 'xerc.dll'; Driver = 'Xer C'; Drivers = [string[]]@('Xer C') } }) }
+        & $show (Get-WorkerPerfPrintState -Model @{ PrintDrivers = $drv } -EventIncidents @(@{ Kind = 'print'; Key = 'kyo b'; Patterns = @() }, $crash)) | Should -Be @('HP A:False:False', 'Kyo B:True:False', 'Xer C:True:False')
+        # ein Drucker als Schluessel macht keinen Treiber beteiligt; beteiligt geht vor moeglich
+        & $show (Get-WorkerPerfPrintState -Model @{ PrintDrivers = $drv } -EventIncidents @(@{ Kind = 'print'; Key = 'PRN-1'; Patterns = @() }, @{ Kind = 'print'; Key = 'HP A'; Patterns = @() }, $shared[0])) |
+            Should -Be @('HP A:True:False', 'Kyo B:False:True', 'Xer C:False:False')
+    }
+}
+Describe 'Kleine Korrekturen aus der Pruefung von Task 6' {
+    It 'N1: Kopftexte ohne Anwendungsnamen und afterhang bei einem Teil der Abstuerze' {
+        $Texts.ContainsKey('event.app.unknown') | Should -BeFalse
+        Get-Text (Get-PatInc @(New-Ev 0 -App ''))[0] | Should -Match '^\d\d:\d\d:\d\d: Absturz einer unbekannten Anwendung \(1-mal\)\. Benutzer: user002\.'
+        Get-Text (Get-PatInc @((New-Ev 0 'hang' -App '' -Module ''), (New-Ev 1 'hang' -App '' -Module '')))[0] | Should -Match ('^\d\d:\d\d:\d\d' + [char]0x2013 + '\d\d:\d\d:\d\d: Eine unbekannte Anwendung reagierte nicht und wurde beendet \(2-mal\)\.')
+        $c = @((Get-PatInc @((New-Ev 0), (New-Ev 5), (New-Ev 9.5 'hang' -Module ''), (New-Ev 10))) | Where-Object { $_.Kind -eq 'crash' })[0]
+        Get-Text $c | Should -Match ' Nach Nichtreagieren beendet: 1 von 3\. '
+    }
+    It 'N3: der Rest einer gekuerzten Liste passt nach jedem Fall' {
+        $perf = @(1..13 | ForEach-Object { @{ Id = $_; StartMs = $T0; EndMs = $T0 + 60000 } })
+        Get-Text (Get-PatInc @(New-Ev 0) -Perf $perf)[0] | Should -Match ' Zeitgleich mit den Vorfällen 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 \(\+3 weitere\)\.$'
+        $evs = @(1..40 | ForEach-Object { New-Ev ($_ / 10) -Sid (10 + $_) -User ('user{0:d3}' -f $_) })
+        Get-Text (Get-PatInc $evs)[0] | Should -Match ' Benutzer: user001, user002, .*, user010 \(\+30 weitere\)\. '
+    }
+    It 'N2: gleichzeitige Begleitereignisse derselben Gruppe und Art stehen nach Quelle und Objekt' {
+        $d = New-Ev 11 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:' }; $e = New-Ev 11 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'E:' }
+        $n = New-Ev 11 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'Ntfs'; Object = 'C:' }
+        $clock = Format-WorkerPerfClock ([long]($T0 + 11 * 60000)) 0
+        $want = [regex]::Escape(" Zeitnah: $clock Datenträgerfehler C:, $clock Datenträgerfehler D:, $clock Datenträgerfehler E:.")
+        foreach ($order in @(@((New-Ev 10), $d, $e, $n), @($e, $n, $d, (New-Ev 10)), @($n, $e, (New-Ev 10), $d))) {
+            $i = @((Get-PatInc $order) | Where-Object { $_.Kind -eq 'crash' })[0]
+            Get-Text $i | Should -Match $want
+        }
+    }
+    It 'N4: (n von m) zaehlt nur Ereignisse, die ein Modul tragen koennen' {
+        $stop = New-Ev 0.1 'service' '' 0 '' '' @{ Service = 'Spooler'; Group = 'service'; Source = 'Service Control Manager'; EventId = 7034; Code = ''; Module = '' }
+        $i = (Get-PatInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'), $stop))[0]
+        $i.Count | Should -Be 2; $i.SameModule | Should -BeTrue
+        Get-Text $i | Should -Match ': Druckproblem – Sim PCL 6 \(2-mal\)\. Ohne Benutzersitzung\. Fehlerhaftes Modul: hpsimgr\.dll, immer dasselbe\. '
+        $j = (Get-PatInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'), (New-Ev 0.05 -App 'spoolsv.exe' -Sid 0 -User '' -Module '' -More @{ Driver = 'Sim PCL 6' }), $stop))[0]
+        $j.SameModule | Should -BeFalse; Get-Text $j | Should -Match 'Fehlerhaftes Modul: hpsimgr\.dll \(1 von 2\)\.'
+    }
+    It 'N5: ein Namensmuster braucht einen Buchstaben oder eine Ziffer' {
+        $f = Join-Path $TestDrive 'n5.json'; $base = '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}]'
+        foreach ($field in 'noModules', 'systemModules', 'nonPersonAccounts') {
+            foreach ($bad in '*.*', '*', '.*', '*-*', '*.') {
+                [IO.File]::WriteAllText($f, $base + ',"' + $field + '":["x.dll","' + $bad + '"]}')
+                { Read-WorkerPerfEventConfig $f } | Should -Throw "*Feld '$field'*('$bad')*" -Because "$field $bad"
+            }
+            [IO.File]::WriteAllText($f, $base + ',"' + $field + '":["*.dll","a*","*1*"]}'); { Read-WorkerPerfEventConfig $f } | Should -Not -Throw
+        }
+        [IO.File]::WriteAllText($f, $base + ',"nonPersonAccounts":["*$"]}'); @((Read-WorkerPerfEventConfig $f).NonPersonAccounts) | Should -Be @('*$')
     }
 }

@@ -66,6 +66,28 @@
       "note": "im Prüfergebnis kein eigener Prozess; der Client läuft vermutlich in der Anwendung, die ihn nutzt"
     },
     {
+      "role": "Drucken",
+      "label": "Druckdienst",
+      "processes": [
+        "spoolsv.exe",
+        "PrintIsolationHost.exe",
+        "splwow64.exe"
+      ],
+      "services": [
+        "Spooler"
+      ],
+      "note": ""
+    },
+    {
+      "role": "Drucken",
+      "label": "Citrix-Druckverwaltung",
+      "processes": [
+        "cpsvc.exe"
+      ],
+      "services": [],
+      "note": "ungeprüft"
+    },
+    {
       "role": "Citrix",
       "label": "Citrix VDA",
       "processes": [

@@ -86,6 +86,8 @@ Describe 'Resolve-WorkerPerfRole' {
         (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Foo;AppIDSvc' 0).Label | Should -Be 'AppLocker'
         (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Dnscache' 0).Role | Should -Be 'System'
         (Resolve-WorkerPerfRole $Roles 'winword.exe' '' 5).Role | Should -Be ''
+        (Resolve-WorkerPerfRole $Roles 'spoolsv.exe' 'Spooler' 0).Role | Should -Be 'Drucken'
+        (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Spooler' 0).Label | Should -Be 'Druckdienst'; (Resolve-WorkerPerfRole $Roles 'cpsvc.exe' '' 0).Label | Should -Be 'Citrix-Druckverwaltung'
     }
     It 'nennt den fehlerhaften Rolleneintrag' {
         { Read-WorkerPerfRoles (Write-Json 'r.json' '{"roles":[{"role":"Unsinn","label":"Testprodukt","processes":[],"services":[]}]}') } | Should -Throw '*Testprodukt*'
