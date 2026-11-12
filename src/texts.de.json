@@ -69,5 +69,8 @@
   "companion.scan-start": "Virenscan gestartet", "companion.scan-end": "Virenscan beendet", "companion.signature-update": "Signaturen aktualisiert",
   "companion.applocker-block": "AppLocker hat eine Ausführung blockiert", "companion.profileerror": "Profilfehler",
   "companion.system.storage": "Datenträgerfehler", "companion.system.fileserver": "Verbindungsabbruch zum Dateiserver",
-  "companion.system.memory": "Speichermangel-Warnung"
+  "companion.system.memory": "Speichermangel-Warnung",
+  "mask.user": "Benutzer {0:00}", "mask.client": "Client {0:00}", "mask.sid": "Konto {0:00}", "mask.server": "Server {0:00}",
+  "mask.share": "Freigabe {0:00}", "mask.domain": "Domäne {0:00}", "mask.address": "Adresse {0:00}", "mask.printer": "Drucker {0:00}",
+  "mask.other": "(Name entfernt)", "mask.level.Personen": "Personen maskiert", "mask.level.Alles": "alle Namen maskiert"
 }
