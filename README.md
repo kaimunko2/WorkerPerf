@@ -90,8 +90,12 @@ Zeile des Meldungstexts (höchstens 300 Zeichen). Die Felder kommen aus den Date
 dem übersetzten Text. Beim Start liest er einmalig die Ereignisse der letzten `-EventLookbackDays` Tage (ohne
 Sitzungsereignisse) in `events_before.csv` und die installierten Druckertreiber in `printdrivers.csv`. Erreicht ein
 Protokoll beim Rückblick die Obergrenze, vermerkt `meta.json` das (`LookbackCapped`), und der Bericht sagt, dass der
-Rückblick für dieses Protokoll unvollständig ist. Der Collector schaltet dafür kein Protokoll ein und ändert keine
-Einstellung. **Stand:** Die Windows-Datenquelle liest das alles; auf einem echten Server ist sie dafür noch nicht
+Rückblick für dieses Protokoll unvollständig gelesen ist und ab wann er Ereignisse enthält. Ein regulärer Abruf liest
+die Ereignisse bis 5 s vor dem Abruf, weil Windows ein Ereignis erst bis zu etwa einer Sekunde nach seinem
+Zeitstempel sichtbar macht; beim Ende der Aufzeichnung (Dauer, `stop.flag`, Größengrenze, Fehler, Strg+C, soweit das
+Aufräumen noch läuft) folgt ein letzter Abruf ohne diesen Abstand. Der Collector schaltet dafür kein Protokoll ein und
+ändert keine Einstellung; ein abgeschaltetes Protokoll liest nur der Rückblick, für die Ereignisse, die es noch
+enthält. **Stand:** Die Windows-Datenquelle liest das alles; auf einem echten Server ist sie dafür noch nicht
 gelaufen (siehe [Datenquellen](#datenquellen)).
 
 Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
@@ -305,7 +309,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 |---|---|---|
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
-| jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog neun; je Quelle eine Auswahl mit höchstens 23 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, die übrigen werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
+| jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
 | Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
@@ -315,7 +319,8 @@ länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
 ### Welche Last das bedeutet
 
 - **CPU:** Die Arbeit verteilt sich auf den Collector selbst (`powershell.exe`), den WMI-Anbieterhost
-  (`WmiPrvSE.exe`, er beantwortet die CIM-Abfragen) und die Anbieter der Leistungsindikatoren.
+  (`WmiPrvSE.exe`, er beantwortet die CIM-Abfragen), den Ereignisprotokolldienst (`EventLog`, ein `svchost.exe`; er
+  beantwortet die Ereignisabfragen) und die Anbieter der Leistungsindikatoren.
   *Schätzung für den geprüften VDA:* Ein Schnappschuss dauerte dort 0,4 s. Selbst wenn diese 0,4 s vollständig
   einen Kern belegten, wären das alle 15 s 2,7 % eines Kerns, auf 6 vCPUs also **rund 0,4 % des Hosts**; während
   einer Verdichtung (alle 6 s) 6,7 % eines Kerns, **rund 1,1 % des Hosts**. Hinzu kommt der schnelle Takt. Was er
@@ -327,6 +332,13 @@ länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
   (siehe [Offene Punkte](#offene-punkte)).
 - **Netzwerk:** keine Last, außer den optionalen Verbindungsproben (ein TCP-Verbindungsaufbau je Gegenstelle alle
   15 s, ohne Daten).
+- **Ereignisabfragen:** Jeder reguläre Schnappschuss stellt je Protokollname eine Abfrage mit unterer Zeitgrenze.
+  Was das den Ereignisprotokolldienst kostet, ist **nicht gemessen**. Bei Protokollen in der Standardgröße ist wenig
+  zu erwarten; ist das Anwendungs- oder Systemprotokoll auf mehrere hundert MB vergrößert, kann jede Abfrage viel
+  lesen. Diese Arbeit erscheint beim `svchost.exe` des Ereignisprotokolldienstes, nicht bei „WorkerPerf selbst".
+  Einen Schalter, der die Ereignisabfragen abstellt oder seltener macht, gibt es noch nicht; geplant ist
+  `-Skip Ereignisse`. Bis dahin hilft nur, die Messung abzubrechen, wenn die Abfragen zu teuer sind (siehe
+  [Empfehlung für den ersten Einsatz](#empfehlung-für-den-ersten-einsatz)).
 
 ### Was die Messung über ihre eigenen Kosten aufzeichnet
 
@@ -336,13 +348,14 @@ Der Bericht zeigt im Block **„Messqualität"**:
 |---|---|
 | Verspätete oder ausgelassene Takte | Takte, deren Abstand zum vorigen Takt mehr als das 1,5-Fache des schnellen Takts beträgt (`ElapsedSec` in `ticks.csv`) |
 | Messdauer je Takt (Ø, Max) | Dauer der Lesung aller Leistungsindikatoren eines Takts (`CollectMs` in `ticks.csv`) |
-| je Schnappschuss (Ø, Max) | Dauer eines Schnappschusses von der Abfrage bis zum Schreiben der Zeilen, am Stützpunkt mit der Dienstliste und der Abfrage der Profilcontainer (`CollectMs` in `snapshots.csv`); Proben und Ereignisse zählen nicht mit |
+| je Schnappschuss (Ø, Max) | Dauer eines Schnappschusses von der Abfrage bis zum Schreiben der Zeilen, am Stützpunkt mit der Dienstliste und der Abfrage der Profilcontainer, beim regulären Schnappschuss mit dem Abruf der Ereignisse und der Zähler der Druckwarteschlangen (`CollectMs` in `snapshots.csv`); die Verbindungsproben zählen nicht mit. Der Unterschied zwischen regulären (`R`) und verdichteten (`B`) Schnappschüssen ist ungefähr die Zeit der Ereignis- und Warteschlangenabrufe |
 | Verdichtung | Dauer, Zahl der Takte und der zusätzlichen Schnappschüsse und ihr gemessener Abstand |
-| WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Hosts) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Hosts; die Spitze ist der höchste Anteil an der Host-Kapazität in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei `WmiPrvSE.exe` |
+| WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Hosts) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Hosts; die Spitze ist der höchste Anteil an der Host-Kapazität in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` (CIM-Abfragen) und des Ereignisprotokolldienstes (`svchost.exe` mit dem Dienst `EventLog`, Ereignisabfragen) für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei diesen Prozessen |
 | Übersprungene unlesbare Zeilen | nur, wenn `ticks.csv`, `snapshots.csv`, `events.csv`, `events_before.csv`, `printdrivers.csv` oder `printqueues.csv` unlesbare Zeilen enthalten; `ticks.csv` und `snapshots.csv` stehen dann immer, die übrigen Dateien nur mit übersprungenen Zeilen |
-| Rückblick unvollständig | nur, wenn ein Protokoll beim Rückblick die Obergrenze erreichte (`LookbackCapped` in `meta.json`) |
-| Fehlgeschlagene Abfragen während der Aufzeichnung | je Quelle Anzahl, Zeitpunkt und Meldung des ersten Fehlers (`SourceErrors` in `meta.json`) |
-| Tabelle der Quellen | welche Quellen beim Start verfügbar waren, mit Hinweis |
+| Rückblick unvollständig gelesen | nur, wenn ein Protokoll beim Rückblick die Obergrenze erreichte, nicht lesbar war oder das Zeitbudget ablief (`LookbackCapped` in `meta.json`) |
+| Ereignisprotokolle: nicht vollständig aufgezeichnet | nur, wo eine Zahl über null liegt: je Protokoll die Ereignisse über der Obergrenze eines Abrufs („mindestens", weil höchstens 1000 je Abruf gezählt werden), die übersprungenen nicht lesbaren Datensätze und die Meldungstexte, die sich nicht formatieren ließen (`EventReadCounts` in `meta.json`); Aufzeichnungen ohne diese Zähler zeigen nichts |
+| Fehlgeschlagene Abfragen während der Aufzeichnung | je Quelle Anzahl, Zeitpunkt und Meldung des ersten Fehlers (`SourceErrors` in `meta.json`); ein nicht lesbares Ereignisprotokoll steht mit seinem Namen für sich |
+| Tabelle der Quellen | welche Quellen beim Start verfügbar waren, mit Hinweis; ein Ereignisprotokoll, das sich während der Aufzeichnung einmal nicht lesen ließ, trägt „▲ beim Lesen fehlgeschlagen", ein abgeschaltetes, das nur der Rückblick las, „im Rückblick gelesen" |
 
 ### Orientierungswerte
 
@@ -356,6 +369,7 @@ innerhalb der Schleife, also entscheidet seine Dauer im Vergleich zum Takt, ob T
 | Verspätete oder ausgelassene Takte, Anteil an allen Takten | unter 1 % | 1–5 % | über 5 % |
 | WorkerPerf selbst, Spitze in % des Hosts | unter 2 % | 2–5 % | über 5 % |
 | Fehlgeschlagene Abfragen | keine | einzelne | dieselbe Quelle wiederholt |
+| je Schnappschuss, Ø der regulären (`R`) gegen den der verdichteten (`B`) in `snapshots.csv` | Unterschied unter 100 ms | 100–500 ms | über 500 ms: die Ereignisabfragen sind teuer (Schätzung, nicht gemessen) |
 
 ### Was bei welcher Stufe zu tun ist
 
@@ -396,6 +410,12 @@ Zuerst eine Kurzmessung von 10 Minuten auf dem Test-Worker mit angemeldeten Benu
 Konsole (`-DurationMinutes 10`), danach den Bericht erstellen und den Block „Messqualität" mit der Tabelle oben
 vergleichen. Erst dann eine Messung über mehrere Stunden starten.
 
+Als Erstes dabei die Kosten der Ereignisabfragen ansehen, denn sie sind nicht gemessen und lassen sich noch nicht
+abschalten: vorher die Größe des Anwendungs- und des Systemprotokolls notieren (Ereignisanzeige, Eigenschaften des
+Protokolls); während der Kurzmessung die CPU des `svchost.exe` beobachten, in dem der Dienst `EventLog` läuft
+(Task-Manager, Registerkarte Dienste, „Gehe zu Details"); danach in `snapshots.csv` die Spalte `CollectMs` der
+regulären (`R`) gegen die der verdichteten (`B`) Schnappschüsse vergleichen.
+
 ## Demo-Bericht
 
 **[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
@@ -404,7 +424,11 @@ Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Worker, ein Dauerzusta
 und vier Vorfälle aus Ereignissen (eine Anwendung stürzt bei drei Benutzern im selben Modul ab, ein Absturz
 unmittelbar nach dem Arbeitsspeicher-Engpass, ein Ausfall der Druckwarteschlange in einem Treibermodul, ein
 Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung und der Zustand des Druckens. Alle
-Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht.
+Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht. Die simulierten Abstürze vor der
+Messung nennen fast alle einen Benutzer, deshalb zeigt die Demo dort die Muster „ein Benutzer" und „gemeinsames
+Modul"; ein echter Rückblick kann Benutzer nur nennen, wenn die Ereignisse ein Konto tragen (siehe
+[Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Ein simulierter Absturz ohne Sitzung und Konto zeigt, wie der
+Bericht das sagt.
 
 Die Seite liegt als `pages/index.html` im Repository. Der Workflow `.github/workflows/pages.yml` veröffentlicht bei
 jedem Push auf `main`, der diesen Ordner ändert, **nur den Ordner `pages/`** auf GitHub Pages – nichts sonst aus dem
@@ -474,9 +498,13 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 - **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
   Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
   (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
-  Vorfälle dieser Tage mit Datum und Mustern, ein Hinweis, wenn der Rückblick eines Protokolls an die Obergrenze
-  stieß, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es
-  solche gibt. Der Block sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-EventLookbackDays 0`), steht nur
+  Vorfälle dieser Tage mit Datum und Mustern (nach 20 Vorfällen gefaltet, der Rest auf Klick), ein Hinweis, wenn der
+  Rückblick eines Protokolls unvollständig gelesen ist (Obergrenze, Lesefehler oder Zeitbudget), mit der Zeit seines
+  ältesten gelesenen Ereignisses, damit die Tage davor nicht als ruhige Tage gelesen werden, ein Hinweis auf
+  Datensätze und Meldungstexte, die der Rückblick nicht lesen konnte, und mit `-ReportedTime` vor Beginn der Messung
+  die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es solche gibt. Der erste und der letzte Tag der Balken sind
+  als „Teil des Tages" gekennzeichnet: Der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm. Der Block
+  sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-EventLookbackDays 0`), steht nur
   das da; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht gelesen werden, weil die
   Ereignisquellen nicht verfügbar waren (so heute unter Windows), ebenso, jeweils ohne Zahlen. Waren nur einige
   Protokolle verfügbar, nennt er die gelesenen und die nicht gelesenen, und Zahlen, Balken und Vorfälle gelten nur
@@ -506,8 +534,9 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Sitzungen sind nicht bestimmbar." Fehlt der Messwert einer Worker-Ressource, schließt eine „Verzögerung ohne
   Engpass" einen Engpass dort nicht aus und nennt die fehlenden Messwerte.
 - **Messqualität:** verspätete oder ausgelassene Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des
-  Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständiger Rückblick
-  und fehlgeschlagene Abfragen der Datenquelle. Der Kopf des Berichts sagt, wenn eine Aufzeichnung nicht regulär
+  Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständig gelesener
+  Rückblick, je Ereignisprotokoll nicht aufgezeichnete Ereignisse, übersprungene Datensätze und nicht lesbare
+  Meldungstexte, und fehlgeschlagene Abfragen der Datenquelle. Der Kopf des Berichts sagt, wenn eine Aufzeichnung nicht regulär
   oder mit einem Fehler endete.
 
 ### Vorfälle aus Ereignissen
@@ -516,15 +545,28 @@ Die Auswertung bildet aus den Ereignissen eigene Vorfälle:
 
 | Art | entsteht, wenn |
 |---|---|
-| Anwendungsabsturz | eine Anwendung stürzt in einer Benutzersitzung ab; ein einzelner Absturz genügt |
-| Anwendungshänger | eine Anwendung reagierte in einer Benutzersitzung nicht und wurde beendet |
+| Anwendungsabsturz | eine Anwendung stürzt in einer Benutzersitzung ab; ein einzelner Absturz genügt; in den Tagen vor der Messung auch, wenn die Sitzung nicht ermittelt ist |
+| Anwendungshänger | eine Anwendung reagierte in einer Benutzersitzung nicht und wurde beendet; vor der Messung wie beim Absturz |
 | Dienstausfall | ein wichtiger Dienst endete unerwartet (Liste in `events.json`), oder ein beliebiger Dienst mindestens zweimal |
 | Druckproblem | Treiberfehler, fehlgeschlagene Aufträge oder Ausfall der Druckwarteschlange; ein Absturz der Druckwarteschlange zählt hierher |
-| Profilproblem | ein Profil ließ sich nicht laden oder entladen, oder die Profilverwaltung meldet Fehler |
-| Systemfehler | Datenträger- oder Dateisystemfehler, Speichermangel-Warnung, Verbindungsabbruch zum Dateiserver |
+| Profilproblem | ein Profil ließ sich nicht laden oder entladen, oder die Profilverwaltung von Citrix meldet einen Fehler |
+| Systemfehler | Datenträger- oder Dateisystemfehler, Speichermangel-Warnung, Verbindungsabbruch zum Dateiserver (jeweils ab der Ebene Warnung) |
 
-Abstürze und Hänger von Prozessen ohne Benutzersitzung sind Ereignisse in der Zeitleiste; ab dem zweiten Mal
-derselben Anwendung bilden sie einen Vorfall. Konten, die keine Person sind, gelten dabei nie als Benutzer: System-
+Ohne Vorfall, nur in der Ereignisliste, stehen: fehlgeschlagene Namensauflösung eines Dateiservers (SMB-Client
+30800, „Namensauflösung fehlgeschlagen"; sie sagt, dass ein Name nicht auflösbar war, nicht, dass eine Verbindung
+abbrach), fehlgeschlagene Treiberimporte (Druckdienst 600, 601) und Warnungen der Citrix-Profilverwaltung („Warnung
+der Profilverwaltung"). Sie sind auch kein Begleitereignis („zeitnah") eines Vorfalls.
+
+Zur Sitzung eines Absturzes oder Hängers kennt die Auswertung drei Fälle: Sitzung 0 (die Dienste; der Satz sagt
+„Ohne Benutzersitzung."), eine bekannte Sitzung, und eine unbekannte: das Ereignis nennt weder Sitzung noch Konto,
+und in der Messzeit fand sich kein Prozess mit seiner PID. Dann sagt der Satz „Sitzung nicht ermittelt." In den Tagen
+vor der Messung ist das der Normalfall, wenn die Absturzereignisse kein Konto tragen (das klassische `Application
+Error` 1000 schreibt keines): dort bildet schon ein einzelner Absturz einen Vorfall, je Anwendung zusammengefasst
+wie die anderen, als `▲ auffällig`. **Auf solchen Servern können die Muster „viele Benutzer" und „ein Benutzer" für
+die Tage vor der Messung nicht anschlagen**, weil kein Benutzer bekannt ist.
+
+Abstürze und Hänger von Prozessen ohne Benutzersitzung sind in der Messzeit Ereignisse in der Zeitleiste; ab dem
+zweiten Mal derselben Anwendung bilden sie einen Vorfall. Konten, die keine Person sind, gelten dabei nie als Benutzer: System-
 und Dienstkonten wie `SYSTEM`, `DWM-1` oder Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die
 Konten virtueller Domänen wie `NT SERVICE\MSSQLSERVER` oder `IIS APPPOOL\DefaultAppPool` (`nonPersonDomains`).
 Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst, Treiber oder Drucker, Quelle, betroffenes
@@ -538,15 +580,15 @@ Für jeden Vorfall prüft die Auswertung diese Muster und nennt alle, die zutref
 
 | Muster | trifft zu, wenn | Aussage im Bericht |
 |---|---|---|
-| Speichermangel | Arbeitsspeicher oder zugesagter Speicher lag in den 5 Minuten vor einem Ereignis über der kritischen Schwelle, oder Windows warnte im selben Zeitraum vor Speichermangel | „Wahrscheinlich Folge des Speichermangels." |
+| Speichermangel | nur bei Absturz, Hänger, Dienstausfall und dem Druckproblem eines Druckprozesses: Arbeitsspeicher oder zugesagter Speicher lag so viele Takte in Folge über der kritischen Schwelle, wie der Messwert für einen Befund verlangt (`minTicks`), der letzte davon in den 5 Minuten vor einem Ereignis, oder Windows warnte im selben Zeitraum vor Speichermangel | „Kann Folge des Speichermangels sein."; „Wahrscheinlich Folge des Speichermangels." nur, wenn der Fehlercode selbst Speichermangel sagt (`memory` in `errorCodes` von `events.json`, heute `0xc0000017`); trifft es nicht auf alle Ereignisse zu, mit dem Anteil („2 von 5 bei Speichermangel: …") |
 | nach Hänger | dieselbe Anwendung hing in derselben Sitzung höchstens 2 Minuten vor dem Absturz | „Wurde nach Nichtreagieren beendet." |
-| gemeinsames Modul | mindestens zwei verschiedene Anwendungen stürzen im selben Modul ab, und das Modul ist kein allgemeines Systemmodul (Liste in `events.json`) | „Ursache liegt wahrscheinlich im Modul … (betrifft …)." |
-| Druckertreiber | das fehlerhafte Modul ist eine Datei eines installierten Druckertreibers | „Das Modul … gehört zum Druckertreiber …"; gehört es zu mehreren Treibern, sagt der Bericht, dass nicht bestimmbar ist, welcher beteiligt war |
-| Schutzsoftware | das fehlerhafte Modul gehört laut `roles.json` zur Schutzsoftware | „Das Modul … gehört zur Schutzsoftware …" |
+| gemeinsames Modul | mindestens zwei verschiedene Anwendungen stürzen im selben Modul ab, und das Modul ist kein allgemeines Systemmodul (Liste in `events.json`) | „Ursache liegt wahrscheinlich im Modul … (betrifft …)."; steht daneben Speichermangel: „Das Modul … spricht für eine gemeinsame Ursache (betrifft …)." |
+| Druckertreiber | das fehlerhafte Modul ist eine Datei eines installierten Druckertreibers und kein allgemeines Systemmodul (eine Laufzeitbibliothek, die ein Treiber mitbringt, macht ihn nicht beteiligt) | „Das Modul … gehört zum Druckertreiber …"; gehört es zu mehreren Treibern, sagt der Bericht, dass nicht bestimmbar ist, welcher beteiligt war |
+| Schutzsoftware | das fehlerhafte Modul gehört laut `roles.json` zur Schutzsoftware und ist kein allgemeines Systemmodul | „Das Modul … gehört zur Schutzsoftware …" |
 | viele Benutzer | mindestens drei Benutzer, dieselbe Anwendung | „… Benutzer betroffen: spricht für Installation oder Update." |
 | ein Benutzer | ein Benutzer, mindestens drei Ereignisse | „Nur … betroffen, …-mal: spricht für Profil oder Daten dieses Benutzers." |
 | zeitnah | ein Datenträger-, Dateiserver-, Profil- oder Schutzsoftware-Ereignis höchstens 2 Minuten vor oder nach einem Ereignis des Vorfalls | „Zeitnah: …" mit Uhrzeit |
-| zeitgleich | ein Leistungsvorfall überlappt den Zeitraum | „Zeitgleich mit Vorfall …"; beide Vorfälle verweisen aufeinander |
+| zeitgleich | ein Ereignis des Vorfalls liegt im Zeitraum eines Leistungsvorfalls (ein Vorfall über Stunden ist nicht schon deshalb zeitgleich, weil sein Zeitraum einen Leistungsvorfall umspannt) | „Zeitgleich mit Vorfall …"; beide Vorfälle verweisen aufeinander |
 
 Trifft kein Muster zu, sagt der Bericht „Kein Muster erkannt." und nennt keine Ursache. **Die Muster sind Hinweise,
 kein Beweis:** Sie zeigen, was in den Daten zusammentrifft, und formulieren vorsichtig („wahrscheinlich",
@@ -597,7 +639,7 @@ Je Lauf ein Ordner mit (Format 3):
 
 | Datei | Zeilen | Inhalt |
 |---|---|---|
-| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen, Fehler der Datenquelle je Quelle (`SourceErrors`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs) |
+| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig |
 | `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
 | `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
 | `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
@@ -614,10 +656,12 @@ Je Lauf ein Ordner mit (Format 3):
 | `events.csv` | je Ereignis der Messzeit | `Timestamp`, `Log`, `Source`, `EventId`, `Level`, `Group`, `Kind`, `App`, `AppVersion`, `Module`, `ModuleVersion`, `Code`, `Pid`, `SessionId`, `User`, `Printer`, `Driver`, `Service`, `Object`, `Text` (erste Zeile, höchstens 300 Zeichen) |
 | `events_before.csv` | je Ereignis der Tage vor der Messung | dieselben Spalten wie `events.csv`; ohne Sitzungsereignisse |
 | `printdrivers.csv` | je Druckertreiber, einmal beim Start | `Name`, `Manufacturer`, `Version`, `Type` (3 oder 4), `Isolation` (`none`, `shared`, `isolated`), `Files` (nur Dateinamen, mit `;` getrennt) |
-| `printqueues.csv` | je regulärem Schnappschuss × Warteschlange | `Timestamp`, `Queue`, wartende Aufträge (`Jobs`), Zählerstände der Auftragsfehler (`JobErrors`) und der „nicht bereit"-Fehler (`NotReadyErrors`) |
+| `printqueues.csv` | je Warteschlange beim ersten Auftreten und bei jedem regulären Schnappschuss, an dem sich ein Wert geändert hat | `Timestamp`, `Queue`, wartende Aufträge (`Jobs`), Zählerstände der Auftragsfehler (`JobErrors`) und der „nicht bereit"-Fehler (`NotReadyErrors`); eine Zeile gilt bis zur nächsten derselben Warteschlange. Höchstwert und Zuwachs der Fehler sind dieselben wie aus einer Zeile je Schnappschuss; für einen Ausschnitt nimmt die Auswertung die letzte Zeile davor als Ausgangsstand |
 
 `T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
-Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden. Die Auswertung liest die Formate 2 und 3
+Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden – in Excel über den Import (*Daten → Aus
+Text/CSV*), nicht per Doppelklick: Ein Wert, der mit `=`, `+`, `-` oder `@` beginnt (das kann auch ein Meldungstext
+eines Ereignisses sein), würde sonst als Formel gelesen. Die Auswertung liest die Formate 2 und 3
 und nennt bei einem anderen die gelesenen Versionen. Aufzeichnungen im Format 2 bleiben damit auswertbar: Ihre
 `events.csv` hat nur die Spalten Zeit, Quelle, Kennung, Art und Text; die neuen Spalten gelten dort als leer, und es
 gibt keinen Rückblick, keine Treiberliste und keine Warteschlangen. Defender- und AppLocker-Ereignisse erscheinen
@@ -657,20 +701,27 @@ Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schn
 | ICA Round Trip | `root\citrix\euem` / `Citrix_Euem_RoundTrip` (`RoundtripTime`, `NetworkLatency`) | Klasse vorhanden; Werte zeigte das Prüfskript nicht |
 | Profilcontainer | `MSFT_Disk` mit `BusType` 15, Partitionen und Zugriffspfade | vorhanden: Citrix Profile Management, drei Container je Benutzer; Speicherort und Einhängepfad nennen beide den Benutzer |
 | Prozesse, Dienste, Sitzungen | `Win32_Process`, `Win32_Service`, WTS-Schnittstelle | vorhanden; ein Prozess-Schnappschuss von 800 Prozessen dauerte etwa 0,4 s |
-| Ereignisprotokolle | die Protokolle, Quellen und Kennungen aus `events.json` (Tabelle unten) über `EventLogReader` (wie das Prüfskript): je Protokollname eine strukturierte XML-Abfrage, darin je Quelle eine Auswahl mit ihren Kennungen (höchstens 23 je Auswahl) oder ihren Ebenen und den Zeitgrenzen als UTC-Zeitpunkte (`Get-WinEvent -FilterHashtable` würde die Zeitgrenzen als Ortszeit lesen); die Felder aus `ToXml()`, der Meldungstext aus `FormatDescription()`, der Benutzer aus den Datenfeldern, sonst aus dem Konto im Systemteil des Ereignisses | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Ein vorhandenes, aber abgeschaltetes Protokoll meldet der Collector wie ein fehlendes als „Protokoll nicht vorhanden oder abgeschaltet"; er schaltet es nicht ein. Scheitert die Abfrage eines vorhandenen Protokolls oder schlagen drei Datensätze in Folge fehl, endet das Lesen dieses Protokolls; das steht einmal mit der Fehlerklasse in `meta.json` (`SourceErrors`) und auf der Konsole. Ein einzelner nicht lesbarer Datensatz wird übersprungen, ein nicht formatierbarer Meldungstext bleibt leer; beides zählt `EventReadCounts` |
+| Ereignisprotokolle | die Protokolle, Quellen und Kennungen aus `events.json` (Tabelle unten) über `EventLogReader` (wie das Prüfskript): je Protokollname eine strukturierte XML-Abfrage, darin je Quelle eine Auswahl mit ihren Kennungen (höchstens 12 je Auswahl, also höchstens 20 Ausdrücke) und, wo der Eintrag sie nennt, ihren Ebenen, und den Zeitgrenzen als UTC-Zeitpunkte (`Get-WinEvent -FilterHashtable` würde die Zeitgrenzen als Ortszeit lesen); die Felder aus `ToXml()`, der Meldungstext aus `FormatDescription()`, der Benutzer aus den Datenfeldern, sonst aus dem Konto im Systemteil des Ereignisses. Ein Protokoll, für das `events.json` keinen Eintrag hat, wird nicht geöffnet | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Ein vorhandenes, aber abgeschaltetes Protokoll ist für die Messzeit „Protokoll abgeschaltet"; der Rückblick liest die Ereignisse, die es noch enthält (dass das bei einem abgeschalteten Protokoll geht, ist nicht auf einem Server geprüft); der Collector schaltet es nicht ein. Scheitert die Abfrage eines vorhandenen Protokolls oder schlagen drei Datensätze in Folge fehl, endet das Lesen dieses Protokolls; das steht einmal je Protokoll mit der Fehlerklasse in `meta.json` (`SourceErrors`) und auf der Konsole. Ein einzelner nicht lesbarer Datensatz wird übersprungen, ein nicht formatierbarer Meldungstext bleibt leer; beides zählt `EventReadCounts` |
 | Rückblick | dieselben Abfragen über `-EventLookbackDays` Tage, ohne Sitzungsprotokoll, die neuesten höchstens 2000 Ereignisse je Protokoll; ein Zeitbudget von 60 s, geprüft vor jedem Protokoll und zwischen seinen Datensätzen. Überschreiten kann es nur, was zwischen zwei Prüfungen liegt: das Öffnen einer Abfrage und das Lesen und Formatieren eines Datensatzes. Ein Protokoll, das die Obergrenze erreicht, nicht lesbar war oder wegen des Budgets nicht zu Ende gelesen wurde, gilt im Bericht als unvollständig | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
 | Druckertreiber | `root/StandardCimv2` / `MSFT_PrinterDriver` (`Name`, `Manufacturer`, `MajorVersion`, `DriverVersion`, Treiber-, Konfigurations-, Daten- und abhängige Dateien); Isolierung aus `PrintDriverIsolationGroups`, sonst aus den Richtlinien `PrintDriverIsolationExecutionPolicy` und `PrintDriverIsolationOverrideCompat` und dem Attribut 0x4 (`PrinterDriverAttributes`) im Registrierungsschlüssel des Treibers | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Die Isolierung ist die wirksame, wie Windows sie ableitet (dieselbe Regel wie im Prüfskript); ohne gesetzten Wert `PrintDriverIsolationGroups` entscheiden Richtlinie und Attribut. Lässt sich das Attribut nicht lesen und entscheiden die Richtlinien nicht, bleibt `Isolation` leer |
 | Druckwarteschlangen | `Print Queue` / `Jobs`, `Job Errors`, `Not Ready Errors` (Momentanwerte), alle Instanzen außer `_Total` | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
 | Verbindungsproben | TCP-Verbindungsaufbau zu den Gegenstellen aus `endpoints.json`, Zeitlimit 2 s | nicht geprüft (beim Prüflauf keine Datei mit Gegenstellen) |
 
 **Ereignisquellen.** Die Liste der Protokolle, Quellen und Kennungen steht in `src/events.json`: je Eintrag
-Protokoll, Quelle, Kennungen, Gruppe, Art und welche Datenfelder des Ereignisses zu lesen sind. Sie lässt sich
-ergänzen, ohne Code zu ändern. Die Windows-Datenquelle, die Auswertung und die Simulation lesen sie. Ein Datenfeld
+Protokoll, Quelle, Kennungen, Gruppe, Art und welche Datenfelder des Ereignisses zu lesen sind. Neue Kennungen und
+Quellen einer **vorhandenen Art** lassen sich ergänzen, ohne Code zu ändern. Eine **neue Art** braucht Code: ihren Namen
+in der Liste der Arten (`src/WorkerPerf.EventConfig.ps1`), ihr Wort in der Worttabelle der Seite
+(`src/report-template.html`) und, wenn sie Vorfälle bilden soll, die Regeln der Auswertung (`src/WorkerPerf.Events.ps1`).
+Die Windows-Datenquelle, die Auswertung und die Simulation lesen die Liste. Ein Datenfeld
 ist ein Name, eine Position (`#0` für das erste Datenfeld) oder `binary:utf16`, oder eine Liste davon: der erste
 Eintrag mit einem Wert gilt. So liest `Application Error` 1000 die benannten Felder, wo Windows sie benennt, und
 sonst die klassischen Positionen. Statt Kennungen kann ein Eintrag `"ids": "*"` mit `"levels"` (`critical`,
 `error`, `warning`, `information`) nennen: dann gilt jedes Ereignis der Quelle auf diesen Ebenen; ein Eintrag mit
-Kennungen geht vor. Der Dienstname von `Service Control Manager` kommt aus dem Binärteil des Ereignisses
+Kennungen geht vor, und mehrere solche Einträge einer Quelle dürfen sich in den Ebenen nicht überschneiden. Auch ein
+Eintrag mit Kennungen kann `"levels"` nennen; die Abfrage liest dann nur diese Ebenen. So nehmen die Einträge für
+Datenträger, Speicher und Dateiserver nur die Ebenen kritisch, Fehler und Warnung (ein informatives „Volume ist
+fehlerfrei" wird nicht gelesen). Ein Fehlercode in `errorCodes` kann `"memory": true` tragen, wenn er selbst
+Speichermangel sagt. Der Dienstname von `Service Control Manager` kommt aus dem Binärteil des Ereignisses
 (`binary:utf16`), ist also der Kurzname des Dienstes in jeder Sprache; `importantServices` nennt deshalb Kurznamen.
 
 | Gruppe | Inhalt | Windows-Protokoll |
@@ -679,14 +730,16 @@ Kennungen geht vor. Der Dienstname von `Service Control Manager` kommt aus dem B
 | Dienste (`service`) | unerwartet beendete oder neu gestartete Dienste | System |
 | Datenträger (`storage`) | Datenträger-, Dateisystem- und Controllerfehler | System |
 | Speicher (`memory`) | Warnung vor knappem virtuellem Speicher | System, Ressourcenerschöpfung |
-| Dateiserver (`fileserver`) | Verbindungsabbrüche und Zeitüberschreitungen | SMB-Client |
-| Profile (`profile`) | Fehler beim Laden und Entladen von Profilen, Meldungen der Citrix-Profilverwaltung | Anwendung, Benutzerprofildienst |
+| Dateiserver (`fileserver`) | Verbindungsabbrüche und Zeitüberschreitungen; fehlgeschlagene Namensauflösung als eigene Art ohne Vorfall | SMB-Client |
+| Profile (`profile`) | Fehler beim Laden und Entladen von Profilen, Fehler der Citrix-Profilverwaltung; ihre Warnungen als eigene Art ohne Vorfall | Anwendung (das Betriebsprotokoll des Benutzerprofildienstes steht im Katalog, hat aber noch keine Einträge) |
 | Drucken (`print`) | Fehler des Druckdienstes, Treiberfehler, fehlgeschlagene Aufträge, Citrix-Druckverwaltung | Druckdienst (Verwaltung), Anwendung, System |
 | Sitzungen (`session`) | Anmelden, Abmelden, Trennen, Wiederverbinden | Terminaldienste (Sitzungsverwaltung) |
 | Schutzsoftware (`security`) | Defender und AppLocker | Defender, AppLocker |
 
-Die Profilverwaltung von Citrix (`Citrix Profile Management`) liest der Collector nach Ebene, Fehler und
-Warnungen (siehe Offene Punkte). Für die Citrix-Druckverwaltung steht keine Quelle in `events.json`. Vom
+Die Profilverwaltung von Citrix (`Citrix Profile Management`) liest der Collector nach Ebene: kritische Meldungen und
+Fehler als Profilproblem, Warnungen als „Warnung der Profilverwaltung" ohne Vorfall (siehe Offene Punkte). Für die
+Citrix-Druckverwaltung steht keine Quelle in `events.json`; ihr Dienst `cpsvc` zählt zu den wichtigen und zu den
+Druckdiensten. Vom
 Druckdienst liest er die fehlgeschlagene Treiberinstallation (215) als Druckfehler und die fehlgeschlagenen
 Treiberimporte (600, 601) als eigene Art ohne Vorfall, beide mit dem Treibernamen; Wechsel des Standarddruckers und
 Meldungen ohne bekannte Felder bleiben draußen.
@@ -737,17 +790,19 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   ist; wie groß `events_before.csv` und `events.csv` werden; wie lange der Rückblick vor dem ersten Takt dauert
   (das Budget von 60 s plus das Lesen eines Datensatzes, das beim Erreichen des Budgets läuft; danach gilt der Rest
   als unvollständig).
-- **Abfrage der Ereignisprotokolle von Hand prüfen:** Ob eine Auswahl mit 23 Kennungen (und damit bis zu 31 der
-  laut Dokumentation erlaubten 32 Ausdrücke) auf einem Server angenommen wird, ist nicht geprüft. Erster Schritt:
+- **Abfrage der Ereignisprotokolle von Hand prüfen:** Ob die Abfrage auf einem Server angenommen wird, ist nicht
+  geprüft (eine Auswahl hat höchstens 12 Kennungen, also höchstens 20 Ausdrücke). Erster Schritt:
   eine Abfrage von Hand, `Get-WinEvent -FilterXml ([xml](New-WorkerPerfEventQueryXml …))` für Anwendung und System mit
   einem Zeitfenster um ein bekanntes Ereignis; sie muss dieses Ereignis liefern, ohne die Meldung, die Abfrage sei
   ungültig. Danach prüfen, dass die Ereignisse der Stunde vor dem Start in `events_before.csv` stehen.
-- **Zeiger der Ereignisse:** Der Collector liest Ereignisse bis zur Zeit des Abrufs; ein Ereignis, das das
-  Ereignisprotokoll erst nach dem Abruf festschreibt, aber mit einer früheren Zeit stempelt, fehlt in `events.csv`.
-- **Kennungen der Citrix-Profilverwaltung:** Der Collector liest sie nach Ebene (Fehler und Warnungen), weil die
-  Bedeutung der einzelnen Kennungen noch nicht bekannt ist. Die erste echte Aufzeichnung zeigt, welche davon
-  Routinemeldungen sind und in `events.json` ausgenommen werden sollten (ein Eintrag mit diesen Kennungen und der
-  Art `info` geht dem Eintrag nach Ebene vor). Diese Ereignisse teilen sich die Obergrenzen des Anwendungsprotokolls
+- **Zeiger der Ereignisse:** Der Collector liest Ereignisse bis 5 s vor dem Abruf und zum Ende ohne diesen Abstand.
+  Macht Windows ein Ereignis unter Last später als 5 s nach seinem Zeitstempel sichtbar, fehlt es in `events.csv`.
+  Bei der ersten Kurzmessung die Zahl der Ereignisse je Quelle in `events.csv` mit einer Abfrage von Hand über
+  dasselbe Zeitfenster vergleichen.
+- **Kennungen der Citrix-Profilverwaltung:** Der Collector liest sie nach Ebene, weil die Bedeutung der einzelnen
+  Kennungen noch nicht bekannt ist: Fehler bilden Profilprobleme, Warnungen stehen nur in der Ereignisliste. Die
+  erste echte Aufzeichnung zeigt, welche Warnungen zählen und welche Fehler Routinemeldungen sind; beides lässt sich
+  in `events.json` mit einem Eintrag für diese Kennungen ändern (er geht dem Eintrag nach Ebene vor). Diese Ereignisse teilen sich die Obergrenzen des Anwendungsprotokolls
   (200 je Abruf, 2000 im Rückblick) mit Abstürzen, Hängern und Profilfehlern: sind ihre Warnungen häufig, verdrängen
   sie im Rückblick ältere Ereignisse der anderen Quellen, und das Anwendungsprotokoll gilt dann als unvollständig.
 - **Fehlgeschlagene Treiberimporte (Druckdienst 600 und 601):** Sie können bei jeder Anmeldung entstehen, wenn der
@@ -761,6 +816,12 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   bekommen das Konto aus dem Systemteil des Ereignisses. Die Konten SYSTEM, LOCAL SERVICE und NETWORK SERVICE
   erkennt der Collector an ihrer SID; andere SIDs übersetzt Windows, je SID einmal und höchstens 1 s lang, nach
   einer Zeitüberschreitung 10 Minuten lang nicht. Ob die Ereignisse diese SID tragen, zeigt die erste Aufzeichnung.
+  Das klassische `Application Error` 1000 und `Application Hang` 1002 tragen nach allem, was bekannt ist, kein Konto;
+  ihre Abstürze vor der Messung heißen dann „Sitzung nicht ermittelt", und die Muster „viele Benutzer" und „ein
+  Benutzer" schlagen für diese Tage nicht an (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
+- **Quellen und Ebenen der Datenträgerereignisse:** Unter welchem Quellennamen (`Ntfs` oder
+  `Microsoft-Windows-Ntfs`) und auf welchen Ebenen der Server die Ereignisse 98, 55, 153 und 51 schreibt, ist nicht
+  geprüft; das Prüfskript las im Systemprotokoll nur die Ebenen 1 bis 3.
 - **Maskierung unter Windows PowerShell 5.1:** `-Mask` und `-MaskMapFile` sind nur unter PowerShell 7 mit der
   Simulation getestet. Bei der ersten echten Auswertung einmal mit `-Mask Alles` auswerten, den Bericht durchsehen
   und prüfen, dass kein echter Benutzer-, Client- oder Servername mehr darin steht.

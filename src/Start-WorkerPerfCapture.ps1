@@ -12,8 +12,9 @@
           inputdelay.csv, inputdelay_proc.csv)
       snapshots (-IntervalSeconds, default 15 s): processes, sessions and Citrix metrics
           (snapshots.csv, processes.csv, procinfo.csv, procend.csv, sessions.csv, citrix.csv),
-          with each regular snapshot also endpoint probes (probes.csv), events (events.csv) and the
-          counters of the print queues (printqueues.csv)
+          with each regular snapshot also endpoint probes (probes.csv), events up to 5 s before the read
+          (events.csv; one more read without that lag when the capture ends) and the counters of the print
+          queues (printqueues.csv, a row only when a value changes)
 
     At the start the events of the last -EventLookbackDays days go to events_before.csv and the
     installed print drivers to printdrivers.csv.
