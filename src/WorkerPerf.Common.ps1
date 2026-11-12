@@ -27,6 +27,26 @@ $script:WorkerPerfHeaders = [ordered]@{
     'printqueues.csv'     = 'Timestamp,Queue,Jobs,JobErrors,NotReadyErrors'
 }
 
+# Measurement categories that -Skip leaves out, in this order: name -> files, sources (ids in meta.json Sources) and
+# places of the report. The sources events.<id> belong to Ereignisse and Rueckblick together. A category that is not
+# active is accepted by -Skip and has no effect. Everything else is the base: ticks.csv, inputdelay.csv, snapshots.csv,
+# sessions.csv, meta.json and thresholds.json.
+$script:WorkerPerfCategories = [ordered]@{
+    'Prozesse'     = @{ Files = @('processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv'); Sources = @('process', 'input.process')
+        Places = @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes'); Active = $true }
+    'Laufwerke'    = @{ Files = @('volumes.csv', 'shares.csv'); Sources = @('disk.latency', 'smb.latency', 'profile.map')
+        Places = @('volumes', 'shares', 'sessions.profile'); Active = $true }
+    'Citrix'       = @{ Files = @('citrix.csv'); Sources = @('ica.rtt', 'ica.latency'); Places = @('citrix', 'sessions.rtt', 'incidents.ica'); Active = $true }
+    'Ereignisse'   = @{ Files = @('events.csv'); Sources = @(); Places = @('events', 'sessions.events', 'incidents.events'); Active = $true }
+    'Rueckblick'   = @{ Files = @('events_before.csv'); Sources = @(); Places = @('before'); Active = $true }
+    'Drucken'      = @{ Files = @('printdrivers.csv', 'printqueues.csv'); Sources = @('print.drivers', 'print.queues')
+        Places = @('print.drivers', 'print.queues'); Active = $true }
+    'Gegenstellen' = @{ Files = @('probes.csv'); Sources = @('probe.connect'); Places = @('probes', 'incidents.endpoints'); Active = $true }
+    'Zustand'      = @{ Files = @(); Sources = @(); Places = @(); Active = $false }
+}
+# The note in Sources of a source that -Skip left out
+$script:WorkerPerfSkipDetailPattern = '^abgeschaltet \(-Skip [A-Za-z]+(,[A-Za-z]+)*\)$'
+
 $script:WorkerPerfOrigins = @('Herstellerangabe', 'Faustregel', 'eigene Annahme')
 $script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'Drucken', 'System')
 
@@ -268,4 +288,45 @@ function Resolve-WorkerPerfRole($Roles, [string]$ProcessName, [string]$Services,
     $role = ''
     if ($SessionId -eq 0) { $role = 'System' }
     return [pscustomobject]@{ Role = $role; Label = '' }
+}
+
+function Resolve-WorkerPerfSkip([string[]]$Skip, [bool]$NoCitrix = $false, [int]$EventLookbackDays = 7) {
+    # The active categories that -Skip leaves out, in the order of the table, each once. A value may hold several
+    # names separated by commas; case does not matter. -NoCitrix adds Citrix, -EventLookbackDays 0 adds Rueckblick.
+    $names = @($script:WorkerPerfCategories.Keys)
+    $chosen = @{}
+    foreach ($value in @($Skip)) {
+        if ($null -eq $value) { continue }
+        foreach ($part in ([string]$value).Split(',')) {
+            $p = $part.Trim()
+            if ($p.Length -eq 0) { continue }
+            $match = @($names | Where-Object { $_ -eq $p })
+            if ($match.Count -eq 0) { throw ("Unbekannte Kategorie '{0}' bei -Skip. Gueltige Werte: {1}." -f $p, ($names -join ', ')) }
+            $chosen[$match[0]] = $true
+        }
+    }
+    if ($NoCitrix) { $chosen['Citrix'] = $true }
+    if ($EventLookbackDays -eq 0) { $chosen['Rueckblick'] = $true }
+    foreach ($n in $names) { if ($chosen.ContainsKey($n) -and $script:WorkerPerfCategories[$n].Active) { $n } }
+}
+
+function Get-WorkerPerfSkipDetail([string[]]$Categories) {
+    return 'abgeschaltet (-Skip ' + ($Categories -join ',') + ')'
+}
+
+function Set-WorkerPerfSkippedSources {
+    # Marks in Sources every source of a category that -Skip left out (creating its entry when missing). The logs
+    # events.<id> count as left out only when Ereignisse and Rueckblick both are: each present key events.* and each
+    # events.<id> of -EventLogIds.
+    param($Sources, [string[]]$Skip = @(), [string[]]$EventLogIds = @())
+    foreach ($cat in @($Skip)) {
+        if (-not $script:WorkerPerfCategories.Contains($cat)) { continue }
+        foreach ($id in @($script:WorkerPerfCategories[$cat].Sources)) {
+            $Sources[$id] = @{ Available = $false; Detail = (Get-WorkerPerfSkipDetail @($cat)) }
+        }
+    }
+    if (@($Skip) -contains 'Ereignisse' -and @($Skip) -contains 'Rueckblick') {
+        $ids = @(@($Sources.Keys) | Where-Object { ([string]$_).StartsWith('events.') }) + @(@($EventLogIds) | Where-Object { $_ } | ForEach-Object { 'events.' + $_ })
+        foreach ($id in $ids) { $Sources[$id] = @{ Available = $false; Detail = (Get-WorkerPerfSkipDetail @('Ereignisse', 'Rueckblick')) } }
+    }
 }

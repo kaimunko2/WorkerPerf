@@ -75,8 +75,10 @@ function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
     @{ Events = @([pscustomobject]@{ Time = $Until.AddMinutes(-5); Log = 'system'; Source = 'Sim'; EventId = 7031; Kind = 'service'; Text = 'vorher' }); Capped = @() } }
 '@
         $run = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
-        @(Get-Content (Join-Path $run 'events_before.csv')).Count | Should -Be 1
-        (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EventLookbackDays | Should -Be 0
+        # Aussage geaendert (Messkategorien, Task 1): -EventLookbackDays 0 ist -Skip Rueckblick, die Datei einer weggelassenen
+        # Kategorie wird nicht angelegt
+        Test-Path (Join-Path $run 'events_before.csv') | Should -BeFalse
+        $m = Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json; $m.EventLookbackDays | Should -Be 0; @($m.Skip) | Should -Be @('Rueckblick')
     }
     It 'bleibt unter 10 MB' { (Get-ChildItem $Run | Measure-Object Length -Sum).Sum | Should -BeLessThan 10MB }
     # Aussage geaendert: expected.json nennt auch die Ereignisvorfaelle (Task 4)

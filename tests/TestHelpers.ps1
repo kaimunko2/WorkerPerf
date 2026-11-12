@@ -1,9 +1,18 @@
 # tests/TestHelpers.ps1
-function Invoke-SimCapture([string]$OutDir) {
-    # 60 Minuten Simulation unter deutscher Kultur; liefert den Aufzeichnungsordner
+function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}) {
+    # 60 Minuten Simulation unter deutscher Kultur; $Extra geht an den Collector (etwa @{ Skip = @('Prozesse') });
+    # liefert den Aufzeichnungsordner
     [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
     $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
-    (& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir 6>$null) | Select-Object -Last 1
+    (& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir @Extra 6>$null) | Select-Object -Last 1
+}
+function New-SkipRuns([string]$OutDir) {
+    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Alle (alle sieben); Name -> Aufzeichnungsordner
+    $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+    $runs = [ordered]@{ Voll = (Invoke-SimCapture (Join-Path $OutDir 'Voll')) }
+    foreach ($n in $names) { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
+    $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
+    $runs
 }
 function Get-ReportData([string]$Html) {
     $text = [IO.File]::ReadAllText($Html); $open = '<script id="wp-data" type="application/json">'

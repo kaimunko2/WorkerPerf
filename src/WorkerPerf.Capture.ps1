@@ -327,12 +327,15 @@ function Save-WorkerPerfMeta {
 }
 
 function New-WorkerPerfWriters {
-    param([string]$RunDir)
+    # One writer per file of the format, without the files of the categories that -Skip leaves out; the result holds
+    # only the files that were created.
+    param([string]$RunDir, [string[]]$Skip = @())
 
+    $left = @(@($Skip) | Where-Object { $script:WorkerPerfCategories.Contains([string]$_) } | ForEach-Object { $script:WorkerPerfCategories[[string]$_].Files })
     $encoding = New-Object System.Text.UTF8Encoding($false)
     $writers = @{}
     try {
-        foreach ($name in $script:WorkerPerfHeaders.Keys) {
+        foreach ($name in @($script:WorkerPerfHeaders.Keys | Where-Object { $left -notcontains $_ })) {
             $stream = New-Object System.IO.FileStream((Join-Path $RunDir $name), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
             $w = New-Object System.IO.StreamWriter($stream, $encoding)
             $w.AutoFlush = $false

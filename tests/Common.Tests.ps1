@@ -129,3 +129,38 @@ Describe 'Formatkonstanten' {
         $WorkerPerfHeaders['ticks.csv'].Split(',').Count | Should -Be 19
     }
 }
+Describe 'Messkategorien' {
+    It 'liefert die Kategorien in der Reihenfolge der Tabelle, jede einmal, ohne Ruecksicht auf die Schreibweise' {   # Review Focus 4
+        Resolve-WorkerPerfSkip @('rueckblick', 'PROZESSE', 'Prozesse') | Should -Be @('Prozesse', 'Rueckblick')
+        Resolve-WorkerPerfSkip @('Drucken,citrix', ' Zustand ', '') | Should -Be @('Citrix', 'Drucken')   # eine Zeichenkette mit Kommas; Zustand: angenommen, ohne Wirkung
+        @(Resolve-WorkerPerfSkip @()).Count | Should -Be 0
+    }
+    It 'bildet die alten Schalter auf dieselbe Liste ab' {   # Review Focus 5
+        Resolve-WorkerPerfSkip @() $true | Should -Be @('Citrix'); Resolve-WorkerPerfSkip @('Citrix') $true | Should -Be @('Citrix')
+        Resolve-WorkerPerfSkip @() $false 0 | Should -Be @('Rueckblick'); Resolve-WorkerPerfSkip @('Rueckblick') $false 3 | Should -Be @('Rueckblick')
+    }
+    It 'lehnt einen unbekannten Wert mit den gueltigen Werten ab' {
+        { Resolve-WorkerPerfSkip @('Prozesse', 'Netz') } | Should -Throw "*'Netz'*Gueltige Werte: Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand.*"
+    }
+    It 'fuehrt die acht Kategorien mit Dateien, Quellen und Stellen der Tabelle' {
+        @($WorkerPerfCategories.Keys) | Should -Be @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
+        @($WorkerPerfCategories.Keys | Where-Object { -not $WorkerPerfCategories[$_].Active }) | Should -Be @('Zustand')
+        $WorkerPerfCategories.Prozesse.Places | Should -Be @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes')
+        @($WorkerPerfCategories.Ereignisse.Sources).Count | Should -Be 0; $WorkerPerfCategories.Rueckblick.Files | Should -Be @('events_before.csv')
+        # jede Datei gehoert hoechstens einer Kategorie; die Basis bleibt uebrig
+        $files = @($WorkerPerfCategories.Values | ForEach-Object { $_.Files })
+        @($files | Sort-Object -Unique).Count | Should -Be $files.Count
+        @($WorkerPerfHeaders.Keys | Where-Object { $files -notcontains $_ }) | Should -Be @('ticks.csv', 'inputdelay.csv', 'snapshots.csv', 'sessions.csv')
+    }
+    It 'vermerkt die Quellen einer weggelassenen Kategorie und die Protokolle nur, wenn Ereignisse und Rueckblick fehlen' {
+        Get-WorkerPerfSkipDetail @('Ereignisse', 'Rueckblick') | Should -Be 'abgeschaltet (-Skip Ereignisse,Rueckblick)'
+        'abgeschaltet (-Skip Citrix)' | Should -Match $WorkerPerfSkipDetailPattern; 'abgeschaltet (-NoCitrix)' | Should -Not -Match $WorkerPerfSkipDetailPattern
+        $new = { [ordered]@{ 'ica.rtt' = @{ Available = $false; Detail = 'abgeschaltet (-NoCitrix)' }; 'events.system' = @{ Available = $true; Detail = 'x' }; sessions = @{ Available = $true; Detail = 'x' } } }
+        $s = & $new; Set-WorkerPerfSkippedSources -Sources $s -Skip @('Citrix', 'Ereignisse') -EventLogIds @('system', 'application')
+        $s['ica.rtt'].Detail | Should -Be 'abgeschaltet (-Skip Citrix)'; $s['ica.latency'].Available | Should -BeFalse   # angelegt
+        $s['events.system'].Available | Should -BeTrue; $s.Contains('events.application') | Should -BeFalse; $s.sessions.Available | Should -BeTrue
+        $s = & $new; Set-WorkerPerfSkippedSources -Sources $s -Skip @('Ereignisse', 'Rueckblick') -EventLogIds @('application')
+        foreach ($id in 'events.system', 'events.application') { $s[$id].Available | Should -BeFalse; $s[$id].Detail | Should -Be 'abgeschaltet (-Skip Ereignisse,Rueckblick)' }
+        $s['ica.rtt'].Detail | Should -Be 'abgeschaltet (-NoCitrix)'   # Citrix nicht weggelassen: der Eintrag der Quelle bleibt
+    }
+}
