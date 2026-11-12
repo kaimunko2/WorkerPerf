@@ -58,7 +58,7 @@ section[hidden] { display: none; }
 .st-crit .sym, .sig.st-crit { color: var(--crit); } .st-na .sym { color: var(--muted); }
 .status .pct { font-weight: 400; color: var(--text2); }
 .tile.info .value small { color: var(--text2); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 12px; margin-bottom: 12px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
 .card.wide { margin-bottom: 12px; }
 .cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
@@ -88,7 +88,7 @@ section[hidden] { display: none; }
 .tip em { font-style: normal; margin-left: auto; padding-left: 14px; font-variant-numeric: tabular-nums; color: var(--text); }
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
 input[type=search], select { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
-input[type=search] { min-width: 260px; }
+input[type=search] { min-width: min(260px, 100%); }
 label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font-size: 13px; }
 .tablewrap { overflow: auto; max-height: 560px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -178,7 +178,7 @@ td .sig { margin-right: 4px; }
 .incident .detail[hidden] { display: none; }
 .incident h4 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
 .incident .detail > :first-child, .essentials h4 { margin-top: 0; }
-.essentials { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; margin-bottom: 4px; }
+.essentials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; margin-bottom: 4px; }
 ul.plain { list-style: none; margin: 0; padding: 0; }
 ul.plain li { padding: 2px 0; overflow-wrap: anywhere; }
 ul.plain .num, .mainline .num { font-variant-numeric: tabular-nums; color: var(--text2); }
@@ -187,7 +187,7 @@ ul.affected { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .lnk { font: inherit; color: var(--s1); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .lnk:hover { text-decoration: underline; }
 .zoomto { font: inherit; font-size: 12px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
-.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 10px; }
 @media (min-width: 1300px) { .grid3.contrib { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); } }
 @media (max-width: 1299px) { .grid3.contrib { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid3.contrib > :first-child { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .grid3.contrib { grid-template-columns: minmax(0, 1fr); } }
@@ -195,8 +195,8 @@ ul.affected { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .tablewrap.small table { font-size: 12px; }
 .tablewrap.small th, .tablewrap.small td { padding: 4px 8px; }
 .tablewrap.small caption { text-align: left; font-weight: 600; font-size: 12px; padding: 6px 8px 2px; color: var(--text2); }
-.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 28px; }
-.sigcharts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; }
+.evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 4px 28px; }
+.sigcharts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 10px; }
 .sigcharts .card { padding: 10px 12px; }
 td.wrap { white-space: normal; min-width: 120px; max-width: 300px; }
 #sollist td.src { min-width: 200px; }
@@ -217,6 +217,26 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 .tablenote { margin: -6px 0 14px; max-width: 110ch; }
 .mainline + .mainline { margin-top: 4px; }
 #quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } #quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }
+/* events, the days before the capture, printing */
+.ihead .inum { color: var(--text2); font-variant-numeric: tabular-nums; }
+.incident .patterns li { padding: 2px 0; }
+.incident .patterns li.none { color: var(--text2); }
+.incident .detail .kv { margin-bottom: 4px; }
+.evlist td.wrap { min-width: 260px; max-width: 520px; }
+#before .bnote { margin: 0 0 8px; font-weight: 600; }
+#before .incident + .incident { margin-top: 10px; }
+#before .capped, #quality .capped { margin: 0 0 10px; }
+.capped .sym { font-style: normal; color: var(--warn); }
+.days { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; align-items: center; font-size: 13px; max-width: 640px; }
+.day { display: contents; }
+.day .dlabel { color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.day .dbar { display: flex; align-items: center; gap: 8px; min-width: 0; font-variant-numeric: tabular-nums; }
+.day .dtrack { flex: 0 1 240px; min-width: 0; }
+.day .dtrack i { display: block; height: 10px; min-width: 2px; border-radius: 2px; background: var(--bar); }
+#print h4 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+#print .cardhead + h4 { margin-top: 4px; }
+.sess-events { margin: 0 0 16px; }
+.sess-events li { display: flex; gap: 10px; }
 @media print { nav, .toolbar, .zoombar { display: none; } .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
 </style>
 </head>
@@ -247,6 +267,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
     <div class="card wide"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div>
       <details class="evlist" id="eventList" hidden><summary></summary><div class="tablewrap small" style="max-height:360px"><table id="tEvents"></table></div><div class="note" id="eventMore"></div></details></div>
     <div id="incidents"></div>
+    <div class="card wide" id="before" hidden></div>
+    <div class="card wide" id="print" hidden></div>
     <h2>Soll-Ist-Vergleich</h2>
     <div class="tablewrap" style="margin-bottom:12px;max-height:none"><table id="sollist"></table></div>
     <p class="note tablenote" id="sollNote">Bei Messwerten mit mehreren Instanzen (Sitzungen, Laufwerke, Freigaben, Gegenstellen) gelten Ø, P95 und Max für die jeweils schlechteste Instanz je Zeitpunkt.
@@ -332,6 +354,12 @@ const srv = (ms) => new Date(ms + OFF);
 const fmtTime = (ms, sec) => { if (ms == null) return "–"; const d = srv(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + (sec ? ":" + pad(d.getUTCSeconds()) : ""); };
 const fmtDate = (ms) => { const d = srv(ms); return pad(d.getUTCDate()) + "." + pad(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(); };
 const fmtDT = (ms, sec) => ms == null ? "–" : fmtDate(ms) + " " + fmtTime(ms, sec);
+// Events carry their own UTC offset (offsetMin): an event is shown in the local time of its own time stamp, which differs
+// from the capture's offset for days before the capture across a daylight-saving change.
+const evD = (ms, offMin) => new Date(ms + (offMin == null ? M.offsetMin || 0 : offMin) * 60000);
+const evTime = (ms, offMin, sec) => { const d = evD(ms, offMin); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + (sec ? ":" + pad(d.getUTCSeconds()) : ""); };
+const evDate = (ms, offMin) => { const d = evD(ms, offMin); return pad(d.getUTCDate()) + "." + pad(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(); };
+const evDT = (e, sec) => evDate(e.t, e.offsetMin) + " " + evTime(e.t, e.offsetMin, sec);
 const fmtDur = (min) => { if (min == null) return "–"; const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? h + " h " + pad(m) + " min" : m + " min"; };
 const fmtSpan = (ms) => {
   const r = (v) => Math.abs(v - Math.round(v)) < 0.05 ? fmt(Math.round(v), 0) : fmt(v, 1);
@@ -930,8 +958,10 @@ function showSession(i) {
   const s = sessByIdx.get(i), host = document.getElementById("dSessions"), u = ++uid;
   const ctx = D.citrix.filter((c) => c.s === i);
   const vol = s.profileVolume != null ? D.volumes[s.profileVolume] : null;
+  const sev = (s.events || []).map((k) => D.events[k]).filter(Boolean);
   host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
     <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
+    ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e.kind))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="grid2">
       ${chartBox("CPU (% des Hosts)", "chart-cpu")}
       ${chartBox("Working Set (MB)", "chart-ws")}
@@ -1015,7 +1045,20 @@ document.querySelector("nav").addEventListener("keydown", (ev) => {
 });
 // ---------- findings ----------
 const INC = D.incidents || [], FOCUS = M.focus || { user: null, found: false, sessions: [], reportedMs: null };
-const TYPE_WORD = { "engpass": "Engpass", "ohne-engpass": "Verzögerung ohne Engpass", "umfeld": "Umfeld" };
+const TYPE_WORD = { "engpass": "Engpass", "ohne-engpass": "Verzögerung ohne Engpass", "umfeld": "Umfeld", "ereignis": "Vorfall aus Ereignissen" };
+// events: the groups of src/events.json, the kinds of an incident from events (short word on a timeline mark, long word in
+// the list) and the kinds of single events
+const GROUP_WORD = { app: "Anwendungen", service: "Dienste", storage: "Datenträger", memory: "Speicher", fileserver: "Dateiserver", profile: "Profile", print: "Drucken", session: "Sitzungen", security: "Schutzsoftware" };
+const EVINC_WORD = { crash: "Absturz", hang: "Hänger", service: "Dienst", print: "Drucken", profileerror: "Profil", system: "System" };
+const EVINC_LONG = { crash: "Anwendungsabsturz", hang: "Anwendungshänger", service: "Dienstausfall", print: "Druckproblem", profileerror: "Profilproblem", system: "Systemfehler" };
+const KIND_WORD = { "scan-start": "Scan gestartet", "scan-end": "Scan beendet", "applocker-block": "Start blockiert", "signature-update": "Signaturen aktualisiert",
+  crash: "Absturz", hang: "Hänger", "app-detail": "Fehlerbericht", service: "Dienst beendet", print: "Druckfehler", profileerror: "Profilfehler", system: "Systemfehler",
+  logon: "Anmeldung", logoff: "Abmeldung", disconnect: "Getrennt", reconnect: "Wiederverbunden" };
+// logs of src/events.json, for the note on a capped lookback
+const LOG_WORD = { application: "Anwendung", system: "System", printservice: "Druckdienst", smbclient: "SMB-Client", profileservice: "Benutzerprofildienst", session: "Sitzungsverwaltung", defender: "Defender", applocker: "AppLocker" };
+const ISOLATION_WORD = { none: "keine", shared: "gemeinsam", isolated: "isoliert" };
+const kindWord = (k) => KIND_WORD[k] || k || "–";
+const BEFORE_INC = (D.before && D.before.incidents) || [];
 const RES_WORD = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", share: "Freigabe", profile: "Profilcontainer", network: "Netzstrecke", endpoint: "Gegenstelle", input: "Eingabeverzögerung" };
 // measure of a ranking; the I/O share of a profile container is a share within the owning session (scope "session")
 const MEASURE_WORD = { cpu: "Anteil an der CPU-Zeit", memory: "Anteil am Arbeitsspeicher aller Prozesse (Working Set)", io: "Anteil an der I/O-Menge", "io.session": "Anteil an der I/O-Menge dieser Sitzung" };
@@ -1027,8 +1070,9 @@ const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 const pct = (v) => v == null ? "–" : (Number.isInteger(v) ? fmt(v, 0) : fmt(v, 1)) + " %";
 const sevKey = (sev) => sev >= 2 ? "2" : "1";
 const sevHtml = (sev) => { const s = STATUS[sevKey(sev)]; return `<i class="sym" aria-hidden="true">${s[0]}</i> ${s[1]}`; };
-const typeText = (inc) => (inc.chronic ? "Dauerzustand · " : "") + TYPE_WORD[inc.type];
-const incById = new Map(INC.map((i) => [i.id, i]));
+const typeText = (inc) => inc.type === "ereignis" ? TYPE_WORD.ereignis + " · " + (EVINC_LONG[inc.event.kind] || inc.event.kind) : (inc.chronic ? "Dauerzustand · " : "") + TYPE_WORD[inc.type];
+// incidents of the capture and of the days before it (ids are unique across both)
+const incById = new Map(INC.concat(BEFORE_INC).map((i) => [i.id, i]));
 const sessName = (s) => sessLabel(sessByIdx.get(s));
 const lnkS = (s) => s == null || s < 0 || !sessByIdx.has(s) ? "–" : `<button type="button" class="lnk" data-s="${s}">${esc(sessName(s))}</button>`;
 const lnkA = (a, name) => a == null || a < 0 || !appByIdx.has(a) ? esc(name) : `<button type="button" class="lnk" data-a="${a}">${esc(name)}</button>`;
@@ -1038,7 +1082,15 @@ function incWindow(inc) {
   const margin = Math.max(30000, (inc.end - inc.start) / 4);
   return { t0: Math.max(FULL.t0, inc.start - margin), t1: Math.min(FULL.t1, inc.end + margin) };
 }
-const incTime = (inc) => rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc.start < 3600000) + " · " + fmtSpan(Math.max(0, inc.end - inc.start));
+// span of an incident from events: each end in the local time of its own event (the first and the last kept event)
+function evIncRange(inc) {
+  const a = inc.events[0], b = inc.events[inc.events.length - 1], oa = a ? a.offsetMin : null, ob = b ? b.offsetMin : null;
+  const da = evDate(inc.start, oa), db = evDate(inc.end, ob);
+  if (inc.end <= inc.start) return da + " " + evTime(inc.start, oa, true);
+  return da === db ? `${da} ${evTime(inc.start, oa, true)}–${evTime(inc.end, ob, true)}` : `${da} ${evTime(inc.start, oa, true)} bis ${db} ${evTime(inc.end, ob, true)}`;
+}
+const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > inc.start ? " · " + fmtSpan(inc.end - inc.start) : "")
+  : rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc.start < 3600000) + " · " + fmtSpan(Math.max(0, inc.end - inc.start));
 
 // head sentence: number of incidents per type, singular and plural, zero counts left out
 {
@@ -1048,7 +1100,8 @@ const incTime = (inc) => rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc
     [(i) => !i.chronic && i.type === "umfeld", "Auffälligkeit im Umfeld", "Auffälligkeiten im Umfeld"],
     [(i) => i.chronic && i.type === "engpass", "Dauerzustand mit Engpass", "Dauerzustände mit Engpass"],
     [(i) => i.chronic && i.type === "ohne-engpass", "Dauerzustand ohne Engpass", "Dauerzustände ohne Engpass"],
-    [(i) => i.chronic && i.type === "umfeld", "Dauerzustand im Umfeld", "Dauerzustände im Umfeld"]];
+    [(i) => i.chronic && i.type === "umfeld", "Dauerzustand im Umfeld", "Dauerzustände im Umfeld"],
+    [(i) => i.type === "ereignis", "Vorfall aus Ereignissen", "Vorfälle aus Ereignissen"]];
   const parts = KINDS.map(([f, one, many]) => [INC.filter(f).length, one, many]).filter((k) => k[0] > 0).map((k) => plural(k[0], k[1], k[2]));
   document.getElementById("findHead").textContent = INC.length ? `${plural(INC.length, "Vorfall", "Vorfälle")}: ${parts.join(", ")}.` : "Keine Vorfälle im Messzeitraum.";
 }
@@ -1069,7 +1122,11 @@ const incTime = (inc) => rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc
     const nf = INC.filter((i) => i.focus).length, nn = INC.filter((i) => i.nearReported).length, counts = [];
     if (FOCUS.user && FOCUS.found) counts.push(nf === 1 ? "1 Vorfall betrifft den Benutzer" : `${nf} Vorfälle betreffen den Benutzer`);
     if (FOCUS.reportedMs != null) counts.push(nn === 1 ? "1 Vorfall liegt nahe der gemeldeten Uhrzeit (bis 15 min davor oder danach)" : `${nn} Vorfälle liegen nahe der gemeldeten Uhrzeit (bis 15 min davor oder danach)`);
-    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "");
+    // incidents of the days before the capture are counted apart: they are not in the list of the capture
+    const bf = BEFORE_INC.filter((i) => i.focus).length, bn = BEFORE_INC.filter((i) => i.nearReported).length, bcounts = [];
+    if (FOCUS.user && FOCUS.found && bf) bcounts.push(bf === 1 ? "1 Vorfall betrifft den Benutzer" : `${bf} Vorfälle betreffen den Benutzer`);
+    if (FOCUS.reportedMs != null && bn) bcounts.push(bn === 1 ? "1 Vorfall liegt nahe der gemeldeten Uhrzeit" : `${bn} Vorfälle liegen nahe der gemeldeten Uhrzeit`);
+    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "");
     el.hidden = false;
   }
 }
@@ -1101,6 +1158,7 @@ function markLabel(inc) {
     const sg = inc.signals[0], th = sg ? TH.get(sg.id) : null;
     return "Dauerzustand" + (sg ? ": " + (th ? th.label : sg.label) + (sg.instance ? " – " + sg.label : "") : "");
   }
+  if (inc.type === "ereignis") return EVINC_WORD[inc.event.kind] || "Ereignis";
   const word = inc.lead || inc.resources[0];
   return inc.type === "ohne-engpass" ? "Verzögerung" : MARK_WORD[word] || RES_WORD[word] || "Umfeld";
 }
@@ -1114,6 +1172,10 @@ function packLanes(items, pw) {
   }
   return Math.max(1, ends.length);
 }
+// events in rows by group, in the order of GROUP_WORD; an event without a known group (format 2) goes into a last row
+const EVENTS_BY_ROW = new Map();
+for (const e of D.events) { const g = GROUP_WORD[e.group] ? e.group : "other"; if (!EVENTS_BY_ROW.has(g)) EVENTS_BY_ROW.set(g, []); EVENTS_BY_ROW.get(g).push(e); }
+const EVENT_ROWS = Object.keys(GROUP_WORD).concat(["other"]).filter((g) => EVENTS_BY_ROW.has(g));
 let tlWidth = -1;
 function drawTimeline(force) {
   const host = document.getElementById("timeline");
@@ -1122,8 +1184,9 @@ function drawTimeline(force) {
   if (!force && W === tlWidth) { updateTimelineZoom(); return; }
   tlWidth = W;
   const span = FULL.t1 - FULL.t0, X = (t) => ((t - FULL.t0) / span) * pw;
+  // a mark of an incident from events is as wide as its word, so it can be told from a performance incident at a glance
   const place = (inc) => {
-    const x0 = Math.max(0, X(inc.start)), w = Math.max(TL_MIN_W, X(inc.end) - x0);
+    const x0 = Math.max(0, X(inc.start)), w = Math.max(TL_MIN_W, X(inc.end) - x0, inc.type === "ereignis" ? 24 + 6.5 * markLabel(inc).length : 0);
     return { inc, x: Math.min(x0, pw - w), w };
   };
   const acute = INC.filter((i) => !i.chronic).sort((a, b) => a.start - b.start).map(place);
@@ -1141,9 +1204,10 @@ function drawTimeline(force) {
   let h = `<div class="tl-row"><div class="tl-label">Vorfälle</div><div class="tl-track" style="height:${nA * TL_LANE + 4}px">` +
     acute.map((it) => markHtml(it, 3 + it.lane * TL_LANE)).join("") + (acute.length ? "" : `<span class="note" style="position:absolute;top:5px">keine</span>`) + "</div></div>";
   if (nC) h += `<div class="tl-row"><div class="tl-label">Dauerzustände</div><div class="tl-track" style="height:${nC * 20 + 4}px">` + chronic.map((it) => markHtml(it, 3 + it.lane * 20)).join("") + "</div></div>";
-  if (D.events.length) {
-    h += `<div class="tl-row"><div class="tl-label">Ereignisse</div><div class="tl-track" style="height:22px">` +
-      D.events.map((e) => `<span class="event" data-kind="${esc(e.kind)}" style="left:${X(Math.max(FULL.t0, Math.min(FULL.t1, e.t))).toFixed(1)}px" title="${esc(fmtTime(e.t, true) + " · " + e.source + " " + e.id + ": " + e.text)}"></span>`).join("") + "</div></div>";
+  for (const g of EVENT_ROWS) {
+    h += `<div class="tl-row" data-group="${esc(g)}"><div class="tl-label">${esc(GROUP_WORD[g] || "Weitere Ereignisse")}</div><div class="tl-track" style="height:22px">` +
+      EVENTS_BY_ROW.get(g).map((e) => `<span class="event" data-group="${esc(e.group || "")}" data-kind="${esc(e.kind)}" style="left:${X(Math.max(FULL.t0, Math.min(FULL.t1, e.t))).toFixed(1)}px" ` +
+        `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e.kind) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + e.text)}"></span>`).join("") + "</div></div>";
   }
   // time axis: first and last label on the edges, round server-local times in between
   const ticks = timeTicks(FULL.t0, FULL.t1, pw, 34);
@@ -1170,22 +1234,31 @@ function updateTimelineZoom() {
 }
 document.getElementById("tlLegend").innerHTML =
   `<span class="st-crit"><i class="sym" aria-hidden="true">◆</i> kritisch</span><span class="st-warn"><i class="sym" aria-hidden="true">▲</i> auffällig</span>` +
-  (D.events.length ? '<span><i class="ev"></i>Ereignis (Defender, AppLocker; Tooltip mit Text)</span>' : "") +
+  (D.events.length ? `<span><i class="ev"></i>Ereignis (Tooltip mit Zeit und Text), eine Zeile je Gruppe: ${esc(EVENT_ROWS.map((g) => GROUP_WORD[g] || "Weitere Ereignisse").join(", "))}</span>` : "") +
   (FOCUS.reportedMs != null ? '<span><i class="rep"></i>gemeldete Uhrzeit</span>' : "") +
   (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
 WP.onZoom(updateTimelineZoom);
+// a time cut leaves events of the capture out of every list
+if (D.eventsOutsideCut > 0) {
+  const n = D.eventsOutsideCut, el = document.createElement("div");
+  el.className = "note"; el.id = "eventsOutsideCut"; el.style.marginTop = "6px";
+  el.textContent = n === 1 ? "1 Ereignis der Aufzeichnung liegt außerhalb des gewählten Zeitraums und ist hier nicht aufgeführt."
+    : `${fmt(n, 0)} Ereignisse der Aufzeichnung liegen außerhalb des gewählten Zeitraums und sind hier nicht aufgeführt.`;
+  document.getElementById("tlLegend").after(el);
+}
 
 // events as a list as well: the timeline ticks are reachable by mouse only
 {
-  const KIND_WORD = { "scan-start": "Scan gestartet", "scan-end": "Scan beendet", "applocker-block": "Start blockiert" };
   const MAX_EVENTS = 200, evs = D.events.map((e, k) => Object.assign({ k }, e)), box = document.getElementById("eventList");
   if (evs.length) {
     box.hidden = false;
     box.querySelector("summary").textContent = `Ereignisse (${fmt(evs.length, 0)})`;
     table("tEvents", [
-      { key: "t", head: "Zeit", num: true, fmt: (v) => fmtTime(v, true) },
+      { key: "t", head: "Zeit", num: true, fmt: (v, r) => evTime(v, r.offsetMin, true) },
+      { key: "group", head: "Gruppe", fmt: (v) => esc(GROUP_WORD[v] || "–"), sortVal: (r) => GROUP_WORD[r.group] || "" },
+      { key: "kind", head: "Art", fmt: (v) => esc(kindWord(v)) },
+      { key: "user", head: "Benutzer", fmt: (v) => esc(v || "–") },
       { key: "source", head: "Quelle", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.id)}</span>` },
-      { key: "kind", head: "Art", fmt: (v) => esc(KIND_WORD[v] || v || "–") },
       { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
     ], evs.slice(0, MAX_EVENTS), { sort: null, id: (r) => r.k, text: () => "", onSelect: (k) => { const t = evs[k].t; window.WP.setZoom(t - 60000, t + 60000); } });
     if (evs.length > MAX_EVENTS) document.getElementById("eventMore").textContent = `weitere ${fmt(evs.length - MAX_EVENTS, 0)} Ereignisse nicht aufgeführt`;
@@ -1196,14 +1269,18 @@ window.addEventListener("resize", () => { clearTimeout(drawTimeline._t); drawTim
 // ---------- findings: incident list ----------
 // order: incidents of the reported user first, then by start; chronic conditions last
 const incOrder = INC.slice().sort((a, b) => (b.focus - a.focus) || (a.chronic - b.chronic) || (a.start - b.start) || (a.id - b.id));
-document.getElementById("incidents").innerHTML = incOrder.map((inc) => {
+// the number names the incident the sentences refer to ("Zeitgleich mit Vorfall 3")
+function incArticle(inc) {
   const k = sevKey(inc.severity), cls = ["incident", "sev" + k, "type-" + inc.type, inc.focus ? "focus" : "", inc.nearReported ? "near" : "", inc.chronic ? "chronic" : ""].filter(Boolean).join(" ");
   const flags = (inc.focus ? '<span class="flag">betrifft den gemeldeten Benutzer</span>' : "") + (inc.nearReported ? '<span class="flag">nahe der gemeldeten Uhrzeit</span>' : "");
+  const when = inc.type === "ereignis" ? plural(inc.event.count, "Ereignis", "Ereignisse") + (inc.end > inc.start ? " in " + fmtSpan(inc.end - inc.start) : "")
+    : "Dauer " + fmtSpan(Math.max(0, inc.end - inc.start));
   return `<article class="${cls}" data-id="${inc.id}">
-    <div class="ihead"><span class="badge st-${STATUS[k][2]}">${sevHtml(inc.severity)}</span><span class="itype">${esc(typeText(inc))}</span>${flags}<span class="when">Dauer ${fmtSpan(Math.max(0, inc.end - inc.start))}</span></div>
+    <div class="ihead"><span class="badge st-${STATUS[k][2]}">${sevHtml(inc.severity)}</span><span class="inum">Vorfall ${inc.id}</span><span class="itype">${esc(typeText(inc))}</span>${flags}<span class="when">${when}</span></div>
     <p class="text" role="button" tabindex="0" aria-expanded="false" aria-controls="incd${inc.id}">${esc(inc.text)}</p>
     <div class="detail" id="incd${inc.id}" hidden></div></article>`;
-}).join("");
+}
+document.getElementById("incidents").innerHTML = incOrder.map(incArticle).join("");
 
 // Cause box of an opened incident: the same statement as the incident's text, by type.
 // engpass: the main cause, a security product as the largest consumer, or why no main cause is named.
@@ -1293,7 +1370,48 @@ function signalCharts(inc) {
   });
 }
 const decOf = (unit) => unit === "" ? 2 : unit === "%" ? 1 : 0;
+// link to another incident: number, type and time
+const incLink = (id) => {
+  const o = incById.get(id); if (!o) return "";
+  const what = o.type === "ereignis" ? (EVINC_LONG[o.event.kind] || o.event.kind) + (o.event.key ? " – " + o.event.key : "") : typeText(o);
+  return `<li><button type="button" class="lnk" data-incident="${id}">Vorfall ${id}: ${esc(what)}</button> <span class="num">${esc(incTime(o))}</span></li>`;
+};
+// opened incident from events: count, span, users, module; then the patterns, the events and the overlapping incidents
+function renderEventDetail(inc, host) {
+  const ev = inc.event, u = ++uid, list = inc.events.map((e, k) => Object.assign({ k }, e));
+  const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(evIncRange(inc))}</b></span>`];
+  if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? esc(ev.users.join(", ")) : "–"}</b></span>`);
+  if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${ev.sessions.map(lnkS).join(", ")}</span>`);
+  else if (!ev.inSession) kv.push("<span><b>ohne Benutzersitzung</b></span>");
+  if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + esc((ev.versions.length === 1 ? "Version " : "Versionen ") + ev.versions.join(", ")) : ""}</span>`);
+  if (ev.service) kv.push(`<span>Dienst <b>${esc(ev.service)}</b></span>`);
+  if (ev.driver) kv.push(`<span>Treiber <b>${esc(ev.driver)}</b></span>`);
+  if (ev.printer) kv.push(`<span>Drucker <b>${esc(ev.printer)}</b></span>`);
+  if (ev.modules.length) kv.push(`<span>Fehlerhaftes Modul <b>${ev.modules.map((m) => esc(m.name) + " (" + fmt(m.count, 0) + " von " + fmt(ev.moduleEvents, 0) + ")").join(", ")}</b>${ev.sameModule ? ", immer dasselbe" : ""}</span>`);
+  if (ev.codes.length) kv.push(`<span>Fehlercode <b>${ev.codes.map((c) => esc(c.code) + (c.text ? " (" + esc(c.text) + ")" : "") + ' <span style="white-space:nowrap">' + fmt(c.count, 0) + "-mal</span>").join(", ")}</b></span>`);
+  kv.push(`<span>Quelle <b>${esc(ev.source || "–")}</b></span>`);
+  const patterns = ev.patterns.length ? ev.patterns.map((p) => `<li>${esc(p.text)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
+  const shown = list.length - 1, withDate = ev.before;
+  host.innerHTML = `<div class="kv">${kv.join("")}</div>
+    <h4>Muster</h4><ul class="plain patterns">${patterns}</ul>
+    <div class="note">${ev.before ? "Für die Tage vor der Messung gelten nur die Muster, die keine Messwerte brauchen. " : ""}Ein Muster ist ein Hinweis auf eine Ursache, kein Nachweis.</div>
+    ${ev.overlap.length ? `<h4>Zeitgleiche Leistungsvorfälle</h4><ul class="plain">${ev.overlap.map(incLink).join("")}</ul>` : ""}
+    <div class="evlist"><h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Ereignisse des Vorfalls (${fmt(ev.count, 0)})${ev.before ? "" : ` <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button>`}</h4>
+      <div class="tablewrap small" style="max-height:320px"><table id="iev${u}"></table></div>
+      ${ev.eventsTruncated ? `<div class="note">Aufgeführt sind die ersten ${fmt(shown, 0)} und das letzte der ${fmt(ev.count, 0)} Ereignisse.</div>` : ""}</div>`;
+  table("iev" + u, [
+    { key: "t", head: withDate ? "Datum und Zeit" : "Zeit", num: true, fmt: (v, r) => withDate ? evDT(r, true) : evTime(v, r.offsetMin, true) },
+    { key: "kind", head: "Art", fmt: (v) => esc(kindWord(v)) },
+    { key: "user", head: "Benutzer", fmt: (v, r) => r.s != null && r.s >= 0 && sessByIdx.has(r.s) ? lnkS(r.s) : esc(v || "–"), sortVal: (r) => r.user || "" },
+    { key: "app", head: "Anwendung", fmt: (v) => esc(v || "–") },
+    { key: "module", head: "Modul", fmt: (v) => esc(v || "–") },
+    { key: "code", head: "Code", fmt: (v) => esc(v || "–") },
+    { key: "source", head: "Quelle", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.id)}</span>` },
+    { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
+  ], list, { sort: null, id: (r) => r.k, text: () => "" });
+}
 function renderDetail(inc, host) {
+  if (inc.type === "ereignis") { renderEventDetail(inc, host); return; }
   const u = ++uid, win = incWindow(inc);
   const affected = inc.affected.map((a) => `<li>${lnkS(a.s)} <span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span></li>`).join("");
   const charts = signalCharts(inc);
@@ -1320,7 +1438,8 @@ function renderDetail(inc, host) {
     }
     evid.push(h + "</div>");
   }
-  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${fmtTime(e.t, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
+  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
+  if ((inc.eventIncidents || []).length) evid.push(`<div><h4>Zeitgleiche Vorfälle aus Ereignissen</h4><ul class="plain">${inc.eventIncidents.map(incLink).join("")}</ul></div>`);
   if (inc.chronicContext.length) evid.push(`<div><h4>Dauerzustände im Hintergrund</h4><ul class="plain">${inc.chronicContext.map((c) => {
     const th = TH.get(c.signalId), st = STATUS[sevKey(c.severity)];
     return `<li><button type="button" class="lnk" data-incident="${c.incidentId}">${esc((th ? th.label : c.signalId) + " – " + c.label)}</button> <span class="status st-${st[2]}"><i class="sym" aria-hidden="true">${st[0]}</i> ${st[1]}</span>` +
@@ -1365,13 +1484,13 @@ function setIncidentOpen(entry, open) {
   if (open) refreshCharts();
 }
 function showIncident(id, zoom) {
-  const entry = document.querySelector(`#incidents .incident[data-id="${id}"]`), inc = incById.get(id);
+  const entry = document.querySelector(`#incidents .incident[data-id="${id}"], #before .incident[data-id="${id}"]`), inc = incById.get(id);
   if (!entry || !inc) return;
   setIncidentOpen(entry, true);
-  if (zoom) { const w = incWindow(inc); window.WP.setZoom(w.t0, w.t1); }
+  if (zoom && !(inc.event && inc.event.before)) { const w = incWindow(inc); window.WP.setZoom(w.t0, w.t1); }
   entry.scrollIntoView({ behavior: "smooth", block: "start" });
 }
-document.getElementById("incidents").addEventListener("click", (ev) => {
+const onIncidentClick = (ev) => {
   const b = ev.target.closest("button.lnk, button.zoomto");
   if (b) {
     if (b.classList.contains("zoomto")) { const w = incWindow(incById.get(Number(b.dataset.incident))); window.WP.setZoom(w.t0, w.t1); return; }
@@ -1383,16 +1502,93 @@ document.getElementById("incidents").addEventListener("click", (ev) => {
   }
   const t = ev.target.closest(".incident > .text");
   if (t) setIncidentOpen(t.parentNode, !t.parentNode.classList.contains("open"));
-});
-document.getElementById("incidents").addEventListener("keydown", (ev) => {
+};
+const onIncidentKey = (ev) => {
   const t = ev.target.closest(".incident > .text");
   if (!t || (ev.key !== "Enter" && ev.key !== " ")) return;
   ev.preventDefault(); setIncidentOpen(t.parentNode, !t.parentNode.classList.contains("open"));
-});
+};
+for (const id of ["incidents", "before"]) { document.getElementById(id).addEventListener("click", onIncidentClick); document.getElementById(id).addEventListener("keydown", onIncidentKey); }
 document.getElementById("timeline").addEventListener("click", (ev) => {
   const m = ev.target.closest(".mark[data-incident]");
   if (m) showIncident(Number(m.dataset.incident), true);
 });
+
+// ---------- findings: the days before the capture ----------
+// Shown when the lookback read events or reached its cap. Two counts with different meanings: all events read from these
+// days, and those of an incident kind (the bars per day count the latter).
+const BEFORE = D.before || { days: 0, from: null, capped: [], eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [] };
+const logWords = (logs) => logs.map((l) => LOG_WORD[l] || l).join(", ");
+const reportedBefore = FOCUS.reportedMs != null && FOCUS.reportedMs < FULL.t0;
+if (BEFORE.eventCount > 0 || BEFORE.capped.length || BEFORE.near.length) {
+  const el = document.getElementById("before"), max = Math.max(1, ...BEFORE.perDay.map((d) => d.count));
+  const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const dayText = (day) => { const [y, m, d] = day.split("-").map(Number), dt = new Date(Date.UTC(y, m - 1, d)); return `${WD[dt.getUTCDay()]}, ${pad(d)}.${pad(m)}.${y}`; };
+  const days = BEFORE.perDay.map((d) => `<div class="day"><span class="dlabel">${esc(dayText(d.day))}</span><span class="dbar"><span class="dtrack" aria-hidden="true"><i style="width:${(d.count / max * 100).toFixed(1)}%"></i></span>${fmt(d.count, 0)}</span></div>`).join("");
+  const nNear = BEFORE.nearCapture.length, nearStart = BEFORE.near.length - nNear;
+  const near = !reportedBefore ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtTime(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` + (BEFORE.near.length
+    ? `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e.kind))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`
+    : '<div class="note">Keine Ereignisse in diesem Zeitraum.</div>');
+  el.innerHTML = `<div class="cardhead"><h3>Vor der Messung</h3></div>
+    <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
+    ${BEFORE.capped.length ? `<p class="capped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: für ${BEFORE.capped.length === 1 ? "das Protokoll" : "die Protokolle"} ${esc(logWords(BEFORE.capped))} wurde die Obergrenze der gelesenen Ereignisse erreicht; ältere Ereignisse fehlen.</p>` : ""}
+    <div class="kv"><span>Rückblick <b>${plural(BEFORE.days, "Tag", "Tage")} vor Beginn der Messung${BEFORE.from != null ? " (ab " + fmtDate(BEFORE.from) + ")" : ""}</b></span>
+      <span>Ereignisse aus diesen Tagen <b>${fmt(BEFORE.eventCount, 0)}</b> (alle Arten)</span>
+      <span>davon mit Vorfallsart <b>${fmt(BEFORE.incidentEventCount, 0)}</b> (Absturz, Hänger, Dienst, Drucken, Profil, System)</span>
+      <span>Vorfälle <b>${fmt(BEFORE.incidents.length, 0)}</b></span></div>
+    <div class="note">Sitzungsereignisse werden für diese Tage nicht gelesen.</div>
+    ${days ? `<h4>Ereignisse mit Vorfallsart je Tag</h4><div class="days">${days}</div><div class="note" style="margin-top:4px">Tage ohne solche Ereignisse sind nicht aufgeführt.</div>` : ""}
+    <h4>Vorfälle vor der Messung</h4>${BEFORE.incidents.length ? `<div class="before-incidents">${BEFORE.incidents.slice().sort((a, b) => (b.focus - a.focus) || (a.start - b.start) || (a.id - b.id)).map(incArticle).join("")}</div>` : '<div class="note">keine</div>'}
+    ${near}`;
+  el.hidden = false;
+}
+
+// ---------- findings: printing ----------
+// The facts for the print guidance: drivers, queues, and the processes of the role "Drucken". A restarted process appears as
+// several rows of the same name; they are joined into one line (start of the earliest, end of the latest, the maximum).
+const PRINT = D.print || { drivers: [], queues: [], processes: [] };
+if (PRINT.drivers.length || PRINT.queues.length) {
+  const el = document.getElementById("print"), procByK = new Map(D.procs.map((p) => [p.k, p]));
+  const firstOf = (r) => (procByK.get(r.k) || {}).first ?? 0;
+  const byName = new Map();
+  for (const r of PRINT.processes) { if (!byName.has(r.name)) byName.set(r.name, []); byName.get(r.name).push(r); }
+  const procRows = [...byName.entries()].map(([name, rows], k) => {
+    rows = rows.slice().sort((a, b) => firstOf(a) - firstOf(b));
+    const vals = (f) => rows.map((r) => r[f]).filter((v) => v != null);
+    return { k, name, rows, cpuMax: vals("cpuMax").length ? Math.max(...vals("cpuMax")) : null, wsStartMB: rows[0].wsStartMB, wsEndMB: rows[rows.length - 1].wsEndMB,
+      wsMaxMB: vals("wsMaxMB").length ? Math.max(...vals("wsMaxMB")) : null };
+  });
+  el.innerHTML = `<div class="cardhead"><h3>Drucken</h3></div>
+    <h4>Druckertreiber (${PRINT.drivers.length})</h4>${PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' : '<div class="note">Keine Treiberliste aufgezeichnet.</div>'}
+    <h4>Druckwarteschlangen (${PRINT.queues.length})</h4>${PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>'}
+    <h4>Prozesse der Rolle Drucken</h4>${procRows.length ? `<div class="tablewrap small"><table id="tPrintProcs"></table></div><div class="note" style="margin-top:4px">Arbeitsspeicher (Working Set) über die Messung, ohne Bewertung. Wurde ein Prozess neu gestartet, gilt der Anfang für den ersten und das Ende für den letzten Prozess.</div>` : '<div class="note">Keine Prozesse der Rolle Drucken in der Messung.</div>'}`;
+  if (PRINT.drivers.length) table("tPrintDrivers", [
+    { key: "name", head: "Name" },
+    { key: "manufacturer", head: "Hersteller", fmt: (v) => esc(v || "–") },
+    { key: "version", head: "Version", fmt: (v) => esc(v || "–") },
+    { key: "type", head: "Bauart", fmt: (v) => v ? "Typ " + esc(v) : "–" },
+    { key: "isolation", head: "Isolierung", fmt: (v) => esc(ISOLATION_WORD[v] || v || "–") },
+    { key: "involved", head: "An einem Vorfall beteiligt", cls: "wrap", fmt: (v, r) => v ? "<b>beteiligt</b>" : r.possiblyInvolved ? "möglicherweise beteiligt <span class=\"note\">(einer von mehreren Treibern mit dem fehlerhaften Modul)</span>" : "nein",
+      sortVal: (r) => r.involved ? 2 : r.possiblyInvolved ? 1 : 0 },
+    { key: "files", head: "Treiberdateien", cls: "wrap", fmt: (v) => esc((v || []).join(", ") || "–"), sortVal: (r) => (r.files || []).join(", ") }
+  ], PRINT.drivers.map((d, k) => Object.assign({ k }, d)), { sort: null, id: (r) => r.k, text: () => "" });
+  if (PRINT.queues.length) table("tPrintQueues", [
+    { key: "name", head: "Warteschlange" },
+    cNum("maxJobs", "Wartende Aufträge Max", 0, "höchste Zahl wartender Aufträge während der Messung"),
+    cNum("jobErrors", "Auftragsfehler", 0, "Zuwachs während der Messung"),
+    cNum("notReadyErrors", "„Nicht bereit“-Fehler", 0, "Zuwachs während der Messung")
+  ], PRINT.queues.map((q, k) => Object.assign({ k }, q)), { sort: null, id: (r) => r.k, text: () => "" });
+  if (procRows.length) table("tPrintProcs", [
+    { key: "name", head: "Prozess" },
+    { key: "rows", head: "PID", fmt: (v) => v.map((r) => lnkK(r.k, String((procByK.get(r.k) || {}).pid ?? "–"))).join(", ") + (v.length > 1 ? ' <span class="tag">neu gestartet</span>' : ""), sortVal: (r) => r.rows.length },
+    cNum("cpuMax", "CPU Max %", 1),
+    cNum("wsStartMB", "Arbeitsspeicher am Anfang", 0, "", { fmt: fmtMB }),
+    cNum("wsEndMB", "am Ende", 0, "", { fmt: fmtMB }),
+    cNum("wsMaxMB", "höchstens", 0, "", { fmt: fmtMB })
+  ], procRows, { sort: null, id: (r) => r.k, text: () => "" });
+  el.addEventListener("click", (ev) => { const b = ev.target.closest("button.lnk[data-k]"); if (b) { activate("procs"); procTable.select(Number(b.dataset.k)); } });
+  el.hidden = false;
+}
 
 // ---------- findings: target table, limits, quality ----------
 {
@@ -1426,13 +1622,18 @@ document.getElementById("timeline").addEventListener("click", (ev) => {
   const burstText = !Q.burstTicks ? "nicht aktiv" : `${fmtSpan((Q.burstMin || 0) * 60000)} (${fmt(Q.burstTicks, 0)} Takte), ${fmt(Q.burstSnapshots, 0)} zusätzliche Schnappschüsse` +
     (Q.burstSnapSec != null ? ` im Abstand von ${fmt(Q.burstSnapSec, Number.isInteger(Q.burstSnapSec) ? 0 : 1)} s` : "");
   const unread = Q.unreadable || { ticks: 0, snapshots: 0 }, srcErr = Q.sourceErrors || [];
+  // ticks.csv and snapshots.csv always (as before), the other files where rows were skipped
+  const UNREAD_FILES = [["events", "events.csv"], ["eventsBefore", "events_before.csv"], ["printDrivers", "printdrivers.csv"], ["printQueues", "printqueues.csv"]];
+  const unreadMore = UNREAD_FILES.filter(([key]) => unread[key] > 0);
+  const unreadText = [`ticks.csv: ${fmt(unread.ticks, 0)}`, `snapshots.csv: ${fmt(unread.snapshots, 0)}`].concat(unreadMore.map(([key, file]) => `${file}: ${fmt(unread[key], 0)}`)).join(" · ");
   document.getElementById("quality").innerHTML = `<h3 style="margin-bottom:8px">Messqualität</h3>
     <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
       <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
       <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
       <span>Verdichtung <b>${burstText}</b></span>
       <span>WorkerPerf selbst <b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)</span>` +
-      (unread.ticks || unread.snapshots ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>ticks.csv: ${fmt(unread.ticks, 0)} · snapshots.csv: ${fmt(unread.snapshots, 0)}</b></span>` : "") + `</div>` +
+      (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
+    (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: Obergrenze erreicht für ${esc(logWords(BEFORE.capped))}.</p>` : "") +
     (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
       `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || "ohne Meldung")}</li>`).join("")}</ul>` : "") +
     `<div class="tablewrap small"><table id="tSources"></table></div>`;

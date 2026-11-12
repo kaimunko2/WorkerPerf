@@ -20,13 +20,21 @@
 >   [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker).
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
-> - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Vorfällen](https://kaimunko2.github.io/WorkerPerf/)
->   (GitHub Pages; Einrichtung siehe [Demo-Bericht](#demo-bericht)).
+> - **Ereignisse, Abstürze und Drucken:** Auswertung und Bericht sind fertig und mit der Simulation getestet
+>   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). **Auf einem Windows-Server liest der Collector bisher nur
+>   die Ereignisse von Defender und AppLocker.** Die übrigen Ereignisprotokolle, den Rückblick auf die Tage vor der
+>   Messung, die Treiberliste und die Zähler der Druckwarteschlangen liefert heute nur die Simulation; die
+>   Windows-Datenquelle dafür folgt, sobald das Prüfskript gezeigt hat, welche Kennungen auf dem Worker entstehen.
+> - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Leistungsvorfällen und vier Vorfällen aus
+>   Ereignissen](https://kaimunko2.github.io/WorkerPerf/) (GitHub Pages; Einrichtung siehe [Demo-Bericht](#demo-bericht)).
 
 Zeichnet Performance und Ressourcenverbrauch eines Citrix-Terminalserver-Workers
 (Citrix DaaS / CVAD Multi-Session VDA, Shared Desktop) auf und wertet sie für einen
 Messzeitraum aus: Der Bericht nennt Engpässe als **Vorfälle**, ihren Hauptverursacher bis auf
-Sitzung, Anwendung und Prozess, die betroffenen Sitzungen und den Vergleich mit dem Soll.
+Sitzung, Anwendung und Prozess, die betroffenen Sitzungen und den Vergleich mit dem Soll. Dazu kommen Störungen
+aus den Windows-Ereignisprotokollen – Abstürze und Hänger von Anwendungen, ausgefallene Dienste, Druckprobleme,
+Profil- und Systemfehler – als eigene Vorfälle mit Hinweisen auf die Ursache, die Tage vor der Messung und der
+Zustand des Druckens.
 
 - Keine Installation, keine Module, kein Agent: drei PowerShell-Skripte (ab Windows PowerShell 5.1) –
   Prüfskript, Collector und Auswertung.
@@ -71,6 +79,19 @@ Der betroffene Takt oder Schnappschuss entfällt, die Konsole warnt einmal je Qu
 die Fehler je Quelle mit Zeit und Meldung des ersten (`SourceErrors`). Der Bericht führt sie unter
 „Messqualität" auf.
 
+**Ereignisse und Drucken:** Bei jedem regulären Schnappschuss liest der Collector die neuen Ereignisse der
+Protokolle aus `src\events.json` (mit einer Obergrenze je Abruf) und die Zähler der Druckwarteschlangen. Je
+Ereignis speichert er Zeit, Protokoll, Quelle, Kennung, Stufe, Gruppe und Art, wo vorhanden Anwendung und Version,
+fehlerhaftes Modul und Version, Fehlercode, Prozess, Sitzung, Benutzer, Drucker, Treiber und Dienst, und die erste
+Zeile des Meldungstexts (höchstens 300 Zeichen). Die Felder kommen aus den Datenfeldern des Ereignisses, nicht aus
+dem übersetzten Text. Beim Start liest er einmalig die Ereignisse der letzten `-EventLookbackDays` Tage (ohne
+Sitzungsereignisse) in `events_before.csv` und die installierten Druckertreiber in `printdrivers.csv`. Erreicht ein
+Protokoll beim Rückblick die Obergrenze, vermerkt `meta.json` das (`LookbackCapped`), und der Bericht sagt, dass der
+Rückblick für dieses Protokoll unvollständig ist. Der Collector schaltet dafür kein Protokoll ein und ändert keine
+Einstellung. **Stand:** Auf einem Windows-Server liest er bisher nur Defender und AppLocker; die übrigen
+Protokolle, der Rückblick, die Treiberliste und die Warteschlangen kommen heute nur aus der Simulation (siehe
+[Datenquellen](#datenquellen)).
+
 Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
 `src\endpoints.json`; als Vorlage dient `src\endpoints.example.json`. Fehlt die Datei, entfallen die Proben.
 
@@ -92,7 +113,8 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 | `-IncludeCommandLine` | Befehlszeilen der Prozesse mitschreiben (können sensible Daten enthalten) |
 | `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
-| `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Vorfällen ab statt das lokale System zu messen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
+| `-EventLookbackDays` | beim Start die Ereignisse so vieler Tage vor dem Start in `events_before.csv` lesen, 0–90, Standard 7; 0 schaltet den Rückblick ab |
+| `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen ab statt das lokale System zu messen, mit einem simulierten Rückblick über sieben Tage, Treiberliste und Warteschlangen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
 
 ### 2. Auswerten (am besten auf einem anderen Rechner)
 
@@ -107,7 +129,9 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`). Die Auswertung bewertet jede Messreihe
 gegen die Schwellwerte, fasst die Befunde zu Vorfällen zusammen (Engpass auf dem Worker, Verzögerung
 ohne Engpass, Umfeld, Dauerzustand), nennt Betroffene und Verursacher im Klartext und stellt alle
-Messwerte dem Soll gegenüber. Findet sie nichts, sagt der Bericht das ausdrücklich.
+Messwerte dem Soll gegenüber. Aus den Ereignissen bildet sie Vorfälle aus Ereignissen und gleicht sie mit der
+Messung ab (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Findet sie nichts, sagt der Bericht das
+ausdrücklich.
 
 **Uhrzeiten:** `-From`, `-To` und `-ReportedTime` sind Ortszeit des gemessenen Servers – dieselbe Zeit, die der
 Bericht überall anzeigt –, auch wenn der auswertende Rechner in einer anderen Zeitzone steht.
@@ -122,14 +146,14 @@ unter Windows PowerShell 5.1 kann sie dafür eine Minute oder länger brauchen.
 | `-OutFile` | Zieldatei, Standard `<Path>\report.html` |
 | `-From`, `-To` | nur Messungen in diesem Zeitraum bewerten, als Ortszeit des gemessenen Servers; liegt der Zeitraum außerhalb der Aufzeichnung, nennt die Meldung deren Zeitraum |
 | `-ThresholdFile` | Schwellwerte, Standard `thresholds.json` neben dem Skript |
-| `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System), Standard `roles.json` neben dem Skript |
+| `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System, Drucken), Standard `roles.json` neben dem Skript |
 | `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
-| `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben |
+| `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben. Liegt sie vor Beginn der Messung, nennt der Block „Vor der Messung" die Ereignisse bis 15 Minuten um diese Uhrzeit |
 | `-TopProcesses` | Zahl der Einzelprozesse je Rangliste (CPU-Zeit, Spitzenspeicher), Standard 150 |
 
-Schwellwerte und Rollen werden erst bei der Auswertung gelesen. Eine Messung lässt sich deshalb
-jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der Hauptanwendung in
-`roles.json` eingetragen sind.
+Schwellwerte, Rollen und die Liste der Ereignisse (`events.json`) werden erst bei der Auswertung gelesen. Eine
+Messung lässt sich deshalb jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der
+Hauptanwendung in `roles.json` eingetragen sind.
 
 ### Ohne VDA ausprobieren
 
@@ -138,7 +162,7 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 .\src\New-WorkerPerfReport.ps1 -Path $run
 ```
 
-Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle, die die Auswertung finden soll.
+Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle und Muster, die die Auswertung finden soll.
 
 ## Auswirkung der Messung auf den Worker
 
@@ -154,7 +178,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 |---|---|---|
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
-| jeder reguläre Schnappschuss zusätzlich | Ereignisprotokolle Defender und AppLocker seit dem letzten Abruf (höchstens 200 je Protokoll); Verbindungsproben, nur mit `endpoints.json` | – |
+| jeder reguläre Schnappschuss zusätzlich | Ereignisprotokolle Defender und AppLocker seit dem letzten Abruf (höchstens 200 je Protokoll); Verbindungsproben, nur mit `endpoints.json`. Die übrigen Protokolle aus `events.json` und die Zähler der Druckwarteschlangen kommen hinzu, sobald die Windows-Datenquelle sie liest | – |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
 | Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
@@ -188,7 +212,8 @@ Der Bericht zeigt im Block **„Messqualität"**:
 | je Schnappschuss (Ø, Max) | Dauer eines Schnappschusses von der Abfrage bis zum Schreiben der Zeilen, am Stützpunkt mit der Dienstliste und der Abfrage der Profilcontainer (`CollectMs` in `snapshots.csv`); Proben und Ereignisse zählen nicht mit |
 | Verdichtung | Dauer, Zahl der Takte und der zusätzlichen Schnappschüsse und ihr gemessener Abstand |
 | WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Hosts) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Hosts; die Spitze ist der höchste Anteil an der Host-Kapazität in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei `WmiPrvSE.exe` |
-| Übersprungene unlesbare Zeilen | nur, wenn `ticks.csv` oder `snapshots.csv` unlesbare Zeilen enthalten |
+| Übersprungene unlesbare Zeilen | nur, wenn `ticks.csv`, `snapshots.csv`, `events.csv`, `events_before.csv`, `printdrivers.csv` oder `printqueues.csv` unlesbare Zeilen enthalten; `ticks.csv` und `snapshots.csv` stehen dann immer, die übrigen Dateien nur mit übersprungenen Zeilen |
+| Rückblick unvollständig | nur, wenn ein Protokoll beim Rückblick die Obergrenze erreichte (`LookbackCapped` in `meta.json`) |
 | Fehlgeschlagene Abfragen während der Aufzeichnung | je Quelle Anzahl, Zeitpunkt und Meldung des ersten Fehlers (`SourceErrors` in `meta.json`) |
 | Tabelle der Quellen | welche Quellen beim Start verfügbar waren, mit Hinweis |
 
@@ -247,9 +272,12 @@ vergleichen. Erst dann eine Messung über mehrere Stunden starten.
 ## Demo-Bericht
 
 **[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
-erfundenen Worker `SIM-VDA01`: acht Vorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver, Profilcontainer, zwei
-Verzögerungen ohne Engpass auf dem Worker, ein Dauerzustand der Netzstrecke eines Benutzers). Alle Namen und Werte
-stammen aus der Simulation; echte Messdaten enthält die Seite nicht.
+erfundenen Worker `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver,
+Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Worker, ein Dauerzustand der Netzstrecke eines Benutzers)
+und vier Vorfälle aus Ereignissen (eine Anwendung stürzt bei drei Benutzern im selben Modul ab, ein Absturz
+unmittelbar nach dem Arbeitsspeicher-Engpass, ein Ausfall der Druckwarteschlange in einem Treibermodul, ein
+Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung und der Zustand des Druckens. Alle
+Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht.
 
 Die Seite liegt als `pages/index.html` im Repository. Der Workflow `.github/workflows/pages.yml` veröffentlicht bei
 jedem Push auf `main`, der diesen Ordner ändert, **nur den Ordner `pages/`** auf GitHub Pages – nichts sonst aus dem
@@ -273,34 +301,59 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 
 | Reiter | Inhalt |
 |---|---|
-| **Befunde** (Startreiter) | ein Satz mit der Zahl der Vorfälle je Typ, Zeitleiste, Vorfallsliste, Soll-Ist-Tabelle, Grenzen der Aussage, Messqualität |
+| **Befunde** (Startreiter) | ein Satz mit der Zahl der Vorfälle je Typ, Zeitleiste, Vorfallsliste, „Vor der Messung", „Drucken", Soll-Ist-Tabelle, Grenzen der Aussage, Messqualität |
 | **Übersicht** | je Messwert eine Kachel mit Maximum, Ø, P95 und Bewertung gegen das Soll, CPU und RAM gestapelt nach Sitzung oder Anwendung, Host-Verläufe für CPU, Speicher, Eingabeverzögerung, Datenträger, Freigaben, Gegenstellen, Netzwerk, Sitzungszahl |
-| **Sitzungen** | je Sitzung: Benutzer, Client, Dauer, Aktiv-Anteil, CPU-Anteil/-Zeit/Ø/P95/Max, RAM, Commit, I/O, ICA RTT. Detail: Verläufe, Anwendungen und Prozesse der Sitzung, Citrix-Messwerte |
+| **Sitzungen** | je Sitzung: Benutzer, Client, Dauer, Aktiv-Anteil, CPU-Anteil/-Zeit/Ø/P95/Max, RAM, Commit, I/O, ICA RTT. Detail: Sitzungsereignisse (Anmeldung, Abmeldung, Trennen, Wiederverbinden) mit Uhrzeit, Verläufe, Anwendungen und Prozesse der Sitzung, Citrix-Messwerte |
 | **Anwendungen** | je Prozessname über alle Sitzungen: Instanzen, CPU, RAM gesamt und je Instanz, I/O. Detail: Verläufe und betroffene Sitzungen |
 | **Prozesse** | die ressourcenintensivsten Einzelprozesse mit Verlauf (CPU, Working Set), Handles, Threads |
 
-Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des gemessenen Servers.
+Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des gemessenen Servers. Ein Ereignis
+erscheint in der Ortszeit seines eigenen Zeitstempels; liegt zwischen einem Tag vor der Messung und der Messung
+eine Umstellung auf Sommer- oder Winterzeit, zeigt der Bericht beide jeweils in ihrer eigenen Ortszeit.
 
 Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten:
 
 - **Zeitleiste:** ein Balken über die ganze Messung. Jeder Vorfall ist eine Markierung von Beginn bis Ende
   mit Symbol und Farbe der Schwere (`▲ auffällig`, `◆ kritisch`); überlappende Vorfälle liegen in eigenen
-  Zeilen. Dauerzustände stehen als schmale Linie darunter, Defender- und AppLocker-Ereignisse als kleine
-  Striche (Text im Tooltip), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung
-  öffnet den Vorfall und stellt alle Diagramme auf sein Zeitfenster mit Rand.
+  Zeilen. Vorfälle aus Ereignissen tragen das Wort ihrer Art (Absturz, Hänger, Dienst, Drucken, Profil, System).
+  Dauerzustände stehen als schmale Linie darunter, Ereignisse als kleine Striche in einer Zeile je Gruppe
+  (Anwendungen, Dienste, Datenträger, Speicher, Dateiserver, Profile, Drucken, Sitzungen, Schutzsoftware; Zeit und
+  Text im Tooltip), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung öffnet den Vorfall
+  und stellt alle Diagramme auf sein Zeitfenster mit Rand. Unter der Zeitleiste stehen die Ereignisse auch als
+  Liste (die ersten 200). Wertet der Bericht nur einen Ausschnitt aus (`-From`, `-To`), sagt er, wie viele Ereignisse der
+  Aufzeichnung außerhalb liegen.
 - **Vorfallstypen:** *Engpass* – eine Ressource des Workers (CPU, Arbeitsspeicher, Datenträger, Freigabe,
   Profilcontainer) lag über dem Soll und Benutzer spürten es. *Verzögerung ohne Engpass* – Benutzer warteten,
   ohne dass der Worker ausgelastet war; die Ursache liegt in der Anwendung oder dahinter (Datenbank, Proxy,
   Netz). *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine Gegenstelle, nicht der Worker.
+  *Vorfall aus Ereignissen* – ein Absturz, Hänger, Dienstausfall, Druck-, Profil- oder Systemfehler aus den
+  Ereignisprotokollen (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
 - **Vorfallsliste:** je Vorfall Schwere, Typ und ein Absatz im Klartext. Ein Klick auf den Text klappt die
   Belege auf: Betroffene mit ihrer höchsten Eingabeverzögerung, Hauptverursacher, Verlauf der beteiligten
   Messwerte, je Ressource die Ranglisten der Prozesse, Anwendungen und Sitzungen mit Anteil und Normalwert,
   Prozesse mit der höchsten Eingabeverzögerung, Gegenstellen, ICA Round Trip, Anteil der Schutzprodukte,
   Ereignisse und Dauerzustände im Hintergrund. Vorfälle im Umfeld und Dauerzustände zeigen nur Belege ihrer
-  eigenen Befunde (eigene Sitzung, eigene Gegenstelle), keine Ereignisse des Zeitraums. Ein Klick auf einen
-  Benutzer, eine Anwendung oder einen Prozess öffnet ihn im jeweiligen Reiter.
+  eigenen Befunde (eigene Sitzung, eigene Gegenstelle), keine Ereignisse des Zeitraums. Ein Leistungsvorfall
+  verweist auf die Vorfälle aus Ereignissen in seinem Zeitraum. Ein Vorfall aus Ereignissen zeigt aufgeklappt Anzahl,
+  Zeitraum, Benutzer und Sitzungen, Anwendung und Version, fehlerhafte Module und Fehlercodes, die zutreffenden
+  Muster (oder „Kein Muster erkannt"), seine Ereignisse und die zeitgleichen Leistungsvorfälle; bei mehr als 50
+  Ereignissen stehen die ersten 49 und das letzte in der Liste, und der Bericht sagt das. Ein Klick auf einen
+  Benutzer, eine Anwendung, einen Prozess oder einen Vorfall öffnet ihn.
 - **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
   Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet.
+- **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
+  Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
+  (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
+  Vorfälle dieser Tage mit Datum und Mustern, ein Hinweis, wenn der Rückblick eines Protokolls an die Obergrenze
+  stieß, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse bis 15 Minuten um diese Uhrzeit. Der Block
+  erscheint nur, wenn der Rückblick Ereignisse gelesen hat oder unvollständig ist.
+- **Drucken:** die Druckertreiber mit Hersteller, Version, Bauart (Typ 3 oder Typ 4), Isolierung und ob sie an
+  einem Vorfall beteiligt waren („beteiligt" oder, wenn das fehlerhafte Modul zu mehreren Treibern gehört,
+  „möglicherweise beteiligt"); die Druckwarteschlangen mit der höchsten Zahl wartender Aufträge und dem Zuwachs der
+  Auftrags- und „nicht bereit"-Fehler während der Messung; die Prozesse der Rolle „Drucken" mit CPU-Höchstwert und
+  Arbeitsspeicher am Anfang, am Ende und höchstens, ohne Bewertung. Wurde ein Druckprozess neu gestartet, steht er
+  in einer Zeile: Anfang des ersten, Ende des letzten Prozesses. Der Block erscheint nur mit Treibern oder
+  Warteschlangen.
 - **Soll-Ist-Tabelle:** je Messwert Soll, Bewertung, Ø, P95, Maximum, die Zeitanteile normal / auffällig /
   kritisch als Balken und in Zahlen, die am stärksten betroffene Instanz und die Herkunft des Sollwerts mit
   Link auf die Quelle. Nicht gemessene Werte stehen mit `○ nicht gemessen` und dem Grund darin. Bei Messwerten
@@ -317,8 +370,51 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Sitzungen sind nicht bestimmbar." Fehlt der Messwert einer Worker-Ressource, schließt eine „Verzögerung ohne
   Engpass" einen Engpass dort nicht aus und nennt die fehlenden Messwerte.
 - **Messqualität:** verspätete oder ausgelassene Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des
-  Collectors, übersprungene unlesbare Zeilen und fehlgeschlagene Abfragen der Datenquelle. Der Kopf des Berichts
-  sagt, wenn eine Aufzeichnung nicht regulär oder mit einem Fehler endete.
+  Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständiger Rückblick
+  und fehlgeschlagene Abfragen der Datenquelle. Der Kopf des Berichts sagt, wenn eine Aufzeichnung nicht regulär
+  oder mit einem Fehler endete.
+
+### Vorfälle aus Ereignissen
+
+Die Auswertung bildet aus den Ereignissen eigene Vorfälle:
+
+| Art | entsteht, wenn |
+|---|---|
+| Anwendungsabsturz | eine Anwendung stürzt in einer Benutzersitzung ab; ein einzelner Absturz genügt |
+| Anwendungshänger | eine Anwendung reagierte in einer Benutzersitzung nicht und wurde beendet |
+| Dienstausfall | ein wichtiger Dienst endete unerwartet (Liste in `events.json`), oder ein beliebiger Dienst mindestens zweimal |
+| Druckproblem | Treiberfehler, fehlgeschlagene Aufträge oder Ausfall der Druckwarteschlange; ein Absturz der Druckwarteschlange zählt hierher |
+| Profilproblem | ein Profil ließ sich nicht laden oder entladen, oder die Profilverwaltung meldet Fehler |
+| Systemfehler | Datenträger- oder Dateisystemfehler, Speichermangel-Warnung, Verbindungsabbruch zum Dateiserver |
+
+Abstürze und Hänger von Prozessen ohne Benutzersitzung sind Ereignisse in der Zeitleiste; ab dem zweiten Mal
+derselben Anwendung bilden sie einen Vorfall. Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst,
+Treiber oder Drucker, Quelle, betroffenes Laufwerk oder Server) gehören zu einem Vorfall, solange zwischen zwei
+aufeinanderfolgenden höchstens 30 Minuten liegen (`eventGroupMinutes` in `thresholds.json`). Ein Vorfall nennt
+Anzahl, Zeitraum, Benutzer, Versionen der Anwendung, fehlerhafte Module mit Anzahl und ob es immer dasselbe war,
+und die Fehlercodes mit einer Erklärung in Alltagssprache. In einer Benutzersitzung gilt er als `◆ kritisch`, sonst
+als `▲ auffällig`. Sitzungsereignisse bilden keine Vorfälle; sie stehen in der Zeitleiste und bei der Sitzung.
+
+Für jeden Vorfall prüft die Auswertung diese Muster und nennt alle, die zutreffen:
+
+| Muster | trifft zu, wenn | Aussage im Bericht |
+|---|---|---|
+| Speichermangel | Arbeitsspeicher oder zugesagter Speicher lag in den 5 Minuten vor einem Ereignis über der kritischen Schwelle, oder Windows warnte im selben Zeitraum vor Speichermangel | „Wahrscheinlich Folge des Speichermangels." |
+| nach Hänger | dieselbe Anwendung hing in derselben Sitzung höchstens 2 Minuten vor dem Absturz | „Wurde nach Nichtreagieren beendet." |
+| gemeinsames Modul | mindestens zwei verschiedene Anwendungen stürzen im selben Modul ab, und das Modul ist kein allgemeines Systemmodul (Liste in `events.json`) | „Ursache liegt wahrscheinlich im Modul … (betrifft …)." |
+| Druckertreiber | das fehlerhafte Modul ist eine Datei eines installierten Druckertreibers | „Das Modul … gehört zum Druckertreiber …"; gehört es zu mehreren Treibern, sagt der Bericht, dass nicht bestimmbar ist, welcher beteiligt war |
+| Schutzsoftware | das fehlerhafte Modul gehört laut `roles.json` zur Schutzsoftware | „Das Modul … gehört zur Schutzsoftware …" |
+| viele Benutzer | mindestens drei Benutzer, dieselbe Anwendung | „… Benutzer betroffen: spricht für Installation oder Update." |
+| ein Benutzer | ein Benutzer, mindestens drei Ereignisse | „Nur … betroffen, …-mal: spricht für Profil oder Daten dieses Benutzers." |
+| zeitnah | ein Datenträger-, Dateiserver-, Profil- oder Schutzsoftware-Ereignis höchstens 2 Minuten vor oder nach einem Ereignis des Vorfalls | „Zeitnah: …" mit Uhrzeit |
+| zeitgleich | ein Leistungsvorfall überlappt den Zeitraum | „Zeitgleich mit Vorfall …"; beide Vorfälle verweisen aufeinander |
+
+Trifft kein Muster zu, sagt der Bericht „Kein Muster erkannt." und nennt keine Ursache. **Die Muster sind Hinweise,
+kein Beweis:** Sie zeigen, was in den Daten zusammentrifft, und formulieren vorsichtig („wahrscheinlich",
+„spricht für"); die Auswertung wählt unter mehreren zutreffenden Mustern keines aus. Für die Tage vor der Messung
+gelten nur die Muster ohne Messwerte (alle außer Speichermangel und zeitgleich). Die Zeitabstände stehen in
+`thresholds.json`, die Listen der Protokolle, Kennungen, wichtigen Dienste, Systemmodule und Fehlercodes in
+`events.json`.
 
 ### Lesehilfe zu den Messwerten
 
@@ -358,11 +454,11 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 
 ## Datenformat
 
-Je Lauf ein Ordner mit (Format 2):
+Je Lauf ein Ordner mit (Format 3):
 
 | Datei | Zeilen | Inhalt |
 |---|---|---|
-| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen, Fehler der Datenquelle je Quelle (`SourceErrors`) |
+| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen, Fehler der Datenquelle je Quelle (`SourceErrors`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick die Obergrenze erreichte (`LookbackCapped`) |
 | `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
 | `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
 | `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
@@ -376,11 +472,17 @@ Je Lauf ein Ordner mit (Format 2):
 | `procend.csv` | je beendetem Prozess | Schnappschuss und Schlüssel `K` |
 | `citrix.csv` | je Schnappschuss × Sitzung × Messwert | Citrix-WMI-Werte (z. B. `RoundtripTime`) |
 | `probes.csv` | je Probe | Verbindungszeit je Gegenstelle; bei einem Fehler die Fehlerklasse und die Dauer bis zum Abbruch |
-| `events.csv` | je Ereignis | Defender-Scans, AppLocker-Sperren und andere relevante Ereignisse |
+| `events.csv` | je Ereignis der Messzeit | `Timestamp`, `Log`, `Source`, `EventId`, `Level`, `Group`, `Kind`, `App`, `AppVersion`, `Module`, `ModuleVersion`, `Code`, `Pid`, `SessionId`, `User`, `Printer`, `Driver`, `Service`, `Object`, `Text` (erste Zeile, höchstens 300 Zeichen) |
+| `events_before.csv` | je Ereignis der Tage vor der Messung | dieselben Spalten wie `events.csv`; ohne Sitzungsereignisse |
+| `printdrivers.csv` | je Druckertreiber, einmal beim Start | `Name`, `Manufacturer`, `Version`, `Type` (3 oder 4), `Isolation` (`none`, `shared`, `isolated`), `Files` (nur Dateinamen, mit `;` getrennt) |
+| `printqueues.csv` | je regulärem Schnappschuss × Warteschlange | `Timestamp`, `Queue`, wartende Aufträge (`Jobs`), Zählerstände der Auftragsfehler (`JobErrors`) und der „nicht bereit"-Fehler (`NotReadyErrors`) |
 
 `T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
-Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden. Die Auswertung liest nur die
-Formatversion 2 und nennt bei einer anderen beide Versionen.
+Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden. Die Auswertung liest die Formate 2 und 3
+und nennt bei einem anderen die gelesenen Versionen. Aufzeichnungen im Format 2 bleiben damit auswertbar: Ihre
+`events.csv` hat nur die Spalten Zeit, Quelle, Kennung, Art und Text; die neuen Spalten gelten dort als leer, und es
+gibt keinen Rückblick, keine Treiberliste und keine Warteschlangen. Defender- und AppLocker-Ereignisse erscheinen
+wie bisher.
 
 **Größenordnung:** Die simulierte Stunde (25 Sitzungen, rund 280 Prozesse) belegt etwa 5 MB;
 Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschuss verändert haben.
@@ -392,6 +494,7 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 | Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Vorfällen (`-Simulate`) | vorhanden, in den Tests geprüft |
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
 | Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
+| Ereignisse außer Defender und AppLocker, Rückblick, Druckertreiber, Druckwarteschlangen | Simulation; für Windows folgt die Datenquelle nach dem Ergebnis des Prüfskripts | **unter Windows noch nicht angebunden**; die Windows-Datenquelle liefert dafür heute nichts. Treiberliste und Warteschlangen stehen in der Tabelle der Quellen als „noch nicht umgesetzt", die übrigen Ereignisprotokolle fehlen dort noch |
 
 Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
 `System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
@@ -415,8 +518,28 @@ Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schn
 | ICA Round Trip | `root\citrix\euem` / `Citrix_Euem_RoundTrip` (`RoundtripTime`, `NetworkLatency`) | Klasse vorhanden; Werte zeigte das Prüfskript nicht |
 | Profilcontainer | `MSFT_Disk` mit `BusType` 15, Partitionen und Zugriffspfade | vorhanden: Citrix Profile Management, drei Container je Benutzer; Speicherort und Einhängepfad nennen beide den Benutzer |
 | Prozesse, Dienste, Sitzungen | `Win32_Process`, `Win32_Service`, WTS-Schnittstelle | vorhanden; ein Prozess-Schnappschuss von 800 Prozessen dauerte etwa 0,4 s |
-| Ereignisse | Protokolle `Microsoft-Windows-Windows Defender/Operational` (1000, 1001, 1002, 2000) und `Microsoft-Windows-AppLocker/EXE and DLL`, `.../MSI and Script` (8004, 8007) | lesbar |
+| Ereignisse | Protokolle `Microsoft-Windows-Windows Defender/Operational` (1000, 1001, 1002, 2000) und `Microsoft-Windows-AppLocker/EXE and DLL`, `.../MSI and Script` (8004, 8007); die übrigen Protokolle der Tabelle unten noch nicht | lesbar |
 | Verbindungsproben | TCP-Verbindungsaufbau zu den Gegenstellen aus `endpoints.json`, Zeitlimit 2 s | nicht geprüft (beim Prüflauf keine Datei mit Gegenstellen) |
+
+**Ereignisquellen.** Die Liste der Protokolle, Quellen und Kennungen steht in `src/events.json`: je Eintrag
+Protokoll, Quelle, Kennungen, Gruppe, Art und welche Datenfelder des Ereignisses zu lesen sind. Sie lässt sich
+ergänzen, ohne Code zu ändern. Die Auswertung und die Simulation lesen sie; die Windows-Datenquelle wird sie lesen,
+sobald sie angebunden ist.
+
+| Gruppe | Inhalt | Windows-Protokoll |
+|---|---|---|
+| Anwendungen (`app`) | Absturz, Hänger, .NET-Laufzeitfehler, Fehlerberichte | Anwendung |
+| Dienste (`service`) | unerwartet beendete oder neu gestartete Dienste | System |
+| Datenträger (`storage`) | Datenträger-, Dateisystem- und Controllerfehler | System |
+| Speicher (`memory`) | Warnung vor knappem virtuellem Speicher | System, Ressourcenerschöpfung |
+| Dateiserver (`fileserver`) | Verbindungsabbrüche und Zeitüberschreitungen | SMB-Client |
+| Profile (`profile`) | Fehler beim Laden und Entladen von Profilen, Meldungen der Citrix-Profilverwaltung | Anwendung, Benutzerprofildienst |
+| Drucken (`print`) | Fehler des Druckdienstes, Treiberfehler, fehlgeschlagene Aufträge, Citrix-Druckverwaltung | Druckdienst (Verwaltung), Anwendung, System |
+| Sitzungen (`session`) | Anmelden, Abmelden, Trennen, Wiederverbinden | Terminaldienste (Sitzungsverwaltung) |
+| Schutzsoftware (`security`) | Defender und AppLocker | Defender, AppLocker |
+
+Welche Kennungen der Citrix-Druckverwaltung und der Profilverwaltung auf einem Worker entstehen, ermittelt das
+Prüfskript; die Liste wird danach ergänzt.
 
 Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
 anderen Worker, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es
@@ -454,6 +577,10 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
+- **Ereignisse, Rückblick und Drucken unter Windows:** Die Windows-Datenquelle liest bisher nur Defender und
+  AppLocker. Die übrigen Protokolle aus `events.json`, der Rückblick, die Treiberliste und die Zähler der
+  Druckwarteschlangen folgen, sobald das Prüfskript auf einem Worker gezeigt hat, welche Protokolle lesbar sind
+  und welche Kennungen dort entstehen. Bis dahin liefert sie nur die Simulation.
 - **Kosten des schnellen Takts unter Windows PowerShell 5.1:** nicht gemessen. Gemessen ist nur die Prozessabfrage
   des Prüfskripts (0,4 s für 800 Prozesse). Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
   „Messqualität" (siehe [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker)).

@@ -221,10 +221,157 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   await k.page.close();
 }
 
+async function checkEvents(browser, dir, scheme) {                 // Ereignisse, Abstuerze, Drucken
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  const ev = D.incidents.filter((i) => i.type === 'ereignis');
+  ok(ev.length === 4 && await page.locator('#incidents .incident.type-ereignis').count() === ev.length, 'Ereignisvorfaelle in der Liste');
+  ok(await page.locator('#timeline .mark.type-ereignis').count() === ev.length, 'Ereignisvorfaelle in der Zeitleiste');
+  for (const g of ['app', 'session', 'security', 'profile']) ok(await page.locator(`#timeline .tl-row[data-group="${g}"] .event`).count() === D.events.filter((e) => e.group === g).length, 'Ereigniszeile ' + g);
+  const many = ev.find((i) => i.event.app === 'OUTLOOK.EXE');
+  const entry = await openIncident(page, many.id);
+  ok((await entry.locator('.detail .patterns').innerText()).includes('spricht für Installation oder Update'), 'Aussage des Musters');
+  const prof = ev.find((i) => i.event.kind === 'profileerror');
+  ok((await (await openIncident(page, prof.id)).locator('.detail .patterns').innerText()).includes('Kein Muster erkannt'), 'kein Muster');
+  ok((await page.locator('#before').innerText()).includes('Für diese Zeit liegen keine Messwerte vor.'), 'Vor der Messung mit Hinweis');
+  ok(await page.locator('#before .day').count() === D.before.perDay.length && await page.locator('#before .incident').count() === D.before.incidents.length, 'Rueckblick je Tag und Vorfall');
+  ok(await page.locator('#tPrintDrivers tbody tr').count() === 3 && (await page.locator('#tPrintQueues').innerText()).includes('PRN-EG-01'), 'Tabelle Drucken');
+  await page.click('nav button[data-tab=sessions]');
+  const s14 = D.sessions.find((s) => s.user === 'user014');
+  await page.click(`#tSessions tbody tr[data-id="${s14.i}"]`);
+  ok(await page.locator('#dSessions .sess-events li').count() === 2, 'Sitzungsereignisse bei der Sitzung');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await page.close();
+}
+
+// local clock time of an event in its own UTC offset
+const evHms = (e) => new Date(e.t + e.offsetMin * 60000).toISOString().substr(11, 8);
+async function checkEventDetails(browser, dir, scheme) {           // Ereignisse: Einzelheiten der Anzeige
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  const ev = D.incidents.filter((i) => i.type === 'ereignis');
+  ok((await page.locator('#findHead').innerText()).includes('4 Vorfälle aus Ereignissen'), 'Kopfsatz nennt die Vorfaelle aus Ereignissen');
+  const outlook = ev.find((i) => i.event.app === 'OUTLOOK.EXE'), entry = await openIncident(page, outlook.id);
+  ok((await entry.locator('.badge').innerText()).includes('kritisch') && (await entry.locator('.text').innerText()) === outlook.text, 'Ereignisvorfall: Satz und Schwere als Wort');
+  ok(await entry.locator('.detail .patterns li').count() === outlook.event.patterns.length, 'eine Zeile je Muster');
+  ok(await entry.locator('.detail .evlist tbody tr').count() === outlook.events.length, 'Ereignisse des Vorfalls');
+  ok((await entry.locator('.detail .evlist').innerText()).includes(evHms(outlook.events[0])), 'Zeit des Ereignisses in seiner Ortszeit');
+  const head = await entry.locator('.detail .kv').innerText();
+  ok(head.includes('olmapi32.dll') && head.includes('user010') && head.includes('3'), 'Kopfzeile mit Modul, Benutzern und Anzahl');
+  ok((await page.locator(`#timeline .mark[data-incident="${outlook.id}"]`).getAttribute('aria-label')).includes('Absturz'), 'Markierung mit dem Wort der Art');
+  // the crash after the memory incident and the memory incident refer to each other
+  const chrome = ev.find((i) => i.event.app === 'chrome.exe'), mem = D.incidents.find((i) => i.lead === 'memory');
+  let e2 = await openIncident(page, chrome.id);
+  ok(await e2.locator(`.detail .lnk[data-incident="${mem.id}"]`).count() === 1, 'Verweis auf den Leistungsvorfall');
+  e2 = await openIncident(page, mem.id);
+  ok(await e2.locator(`.detail .lnk[data-incident="${chrome.id}"]`).count() === 1, 'Leistungsvorfall verweist auf den Ereignisvorfall');
+  await e2.locator(`.detail .lnk[data-incident="${chrome.id}"]`).click();
+  ok(await page.locator(`#incidents .incident[data-id="${chrome.id}"]`).evaluate((n) => n.classList.contains('open')), 'Verweis oeffnet den Ereignisvorfall');
+  // the print incident: the driver is named as involved, in words
+  const drv = await page.locator('#tPrintDrivers tbody tr', { hasText: 'HP Universal Printing PCL 6 (Sim)' }).innerText();
+  ok(drv.includes('beteiligt') && drv.includes('Typ 3') && !drv.includes('möglicherweise'), 'Treiber als beteiligt bezeichnet');
+  ok((await page.locator('#tPrintDrivers tbody tr', { hasText: 'Kyocera' }).innerText()).includes('isoliert'), 'Isolierung als Wort');
+  const spool = await page.locator('#tPrintProcs tbody tr', { hasText: 'spoolsv.exe' }).innerText();
+  ok(spool.includes('16 MB'), 'Arbeitsspeicher der Druckwarteschlange');
+  // lookback: both counts labelled, per-day bars with their number, lookback incidents with their date
+  const before = await page.locator('#before').innerText();
+  ok(before.includes('Ereignisse aus diesen Tagen') && before.includes('davon mit Vorfallsart'), 'beide Zahlen des Rueckblicks benannt');
+  ok((await page.locator('#before .day').first().innerText()).includes('07.11.2026') && (await page.locator('#before .day').first().innerText()).includes('2'), 'Balken mit Datum und Zahl');
+  const nexus = D.before.incidents.find((i) => i.event.app === 'nexus.exe');
+  const be = page.locator(`#before .incident[data-id="${nexus.id}"]`);
+  await be.locator('.text').click();
+  ok((await be.locator('.detail .patterns').innerText()).includes('spricht für Profil oder Daten dieses Benutzers'), 'Muster im Rueckblick');
+  ok((await be.locator('.detail .evlist').innerText()).includes('09.11.2026'), 'Rueckblick-Ereignisse mit Datum');
+  ok(await be.locator('.detail .zoomto').count() === 0, 'kein Zoom fuer die Zeit vor der Messung');
+  // events table and timeline rows
+  ok((await page.locator('#tlLegend').innerText()).includes('Anwendungen') && (await page.locator('#tlLegend').innerText()).includes('Sitzungen'), 'Legende nennt die Gruppen');
+  ok((await page.locator('#timeline .tl-row[data-group="app"] .tl-label').innerText()) === 'Anwendungen', 'Zeile mit dem Wort der Gruppe');
+  ok(await page.locator('#eventsOutsideCut').count() === 0, 'ohne Ausschnitt kein Hinweis');
+  ok(!(await page.locator('#quality').innerText()).includes('unvollständig'), 'ohne Obergrenze kein Hinweis');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await page.close();
+
+  // without event files: the report without a finding stays as it was
+  const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
+  ok(await n.page.locator('#timeline .event').count() === 0 && await n.page.locator('#timeline .tl-row[data-group]').count() === 0, 'ohne Ereignisse keine Ereigniszeilen');
+  ok(await n.page.locator('#before').isHidden() && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisse kein Rueckblick und keine Ereignisvorfaelle');
+  ok((await n.page.locator('#findHead').innerText()) === 'Keine Vorfälle im Messzeitraum.' && await n.page.locator('#eventList').isHidden(), 'Kopfsatz und Ereignisliste wie bisher');
+  ok(n.page.errors.length === 0, 'Skriptfehler ohne Ereignisse: ' + n.page.errors.join(' | '));
+  await n.page.close();
+
+  // a time cut names the events it leaves out
+  const c = await open(browser, path.join(dir, 'report-nodata.html'), scheme);
+  ok(c.D.eventsOutsideCut > 0 && (await c.page.locator('#eventsOutsideCut').innerText()).includes(c.D.eventsOutsideCut + ' Ereignisse der Aufzeichnung liegen außerhalb'), 'Hinweis auf Ereignisse ausserhalb des Ausschnitts');
+  await c.page.close();
+
+  // states changed in the data: markup in server texts, a possibly involved driver, a restarted spooler, a capped lookback,
+  // unreadable rows of the event files, a cut event list, events near a reported time before the capture
+  const bad = '<img src=x onerror="window.__xss=1">';
+  const v = await open(browser, patched(dir, 'report.html', 'report-events-variant.html', (J) => {
+    const out = J.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'OUTLOOK.EXE');
+    J.events[0].text = 'Text ' + bad; out.text = 'Satz ' + bad; out.events[0].text = 'Ereignis ' + bad; out.events[0].app = bad;
+    out.event.modules[0].name = bad; out.event.users[0] = bad; out.event.patterns[0].text = 'Muster ' + bad;
+    out.event.eventsTruncated = true; out.event.count = 120;
+    J.print.drivers[1].name = bad; J.print.drivers[1].possiblyInvolved = true; J.print.queues[0].name = bad;
+    const p = J.print.processes[0], proc = J.procs.find((x) => x.k === p.k), k2 = Math.max(...J.procs.map((x) => x.k)) + 1;
+    J.procs.push(Object.assign({}, proc, { k: k2, pid: 9999, first: proc.first - 600000, last: proc.first - 1000 }));
+    J.print.processes = [Object.assign({}, p, { wsStartMB: 40, wsEndMB: 70, wsMaxMB: 75.5 }), Object.assign({}, p, { k: k2, wsStartMB: 12, wsEndMB: 30, wsMaxMB: 31 })];
+    J.before.capped = ['application'];
+    J.before.near = [J.before.incidents[0].events[0]];
+    J.meta.focus = Object.assign({}, J.meta.focus, { reportedMs: J.before.incidents[0].start + 60000 });
+    J.quality.unreadable = Object.assign({}, J.quality.unreadable, { events: 2, printQueues: 1 });
+    J.sessions.find((s) => s.user === 'user014').user = 'u' + bad;
+  }), scheme);
+  ok(await v.page.evaluate(() => window.__xss === undefined) && await v.page.locator('#tab-findings img').count() === 0, 'Markup aus den Daten wird nicht ausgefuehrt');
+  const ve = await openIncident(v.page, D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'OUTLOOK.EXE').id);
+  ok((await ve.locator('.text').innerText()).includes('Satz ' + bad) && (await ve.locator('.detail .evlist').innerText()).includes('Ereignis ' + bad), 'Markup erscheint als Text');
+  ok((await ve.locator('.detail .patterns').innerText()).includes('Muster ' + bad) && (await ve.locator('.detail .kv').innerText()).includes(bad), 'Muster und Kopfzeile als Text');
+  ok(await ve.locator('.detail img').count() === 0, 'kein Bild im Vorfall');
+  ok((await ve.locator('.detail .evlist').innerText()).includes('die ersten 2 und das letzte der 120 Ereignisse'), 'gekuerzte Ereignisliste benannt');
+  await v.page.click('#eventList summary');
+  ok((await v.page.locator('#tEvents').innerText()).includes('Text ' + bad), 'Ereignisliste zeigt Markup als Text');
+  const pd = await v.page.locator('#tPrintDrivers tbody tr', { hasText: bad }).innerText();
+  ok(pd.includes('möglicherweise beteiligt'), 'moeglicherweise beteiligter Treiber in Worten');
+  ok((await v.page.locator('#tPrintQueues').innerText()).includes(bad), 'Warteschlange als Text');
+  const sp = await v.page.locator('#tPrintProcs tbody tr', { hasText: 'spoolsv.exe' });
+  ok(await sp.count() === 1, 'neu gestarteter Druckprozess in einer Zeile');
+  const spt = await sp.innerText();
+  ok(spt.includes('12 MB') && spt.includes('70 MB') && spt.includes('76 MB') && spt.includes('9999'), 'Anfang des ersten, Ende des letzten Prozesses, Hoechstwert: ' + spt);
+  const vb = await v.page.locator('#before').innerText();
+  ok(vb.includes('unvollständig') && vb.includes('Anwendung'), 'unvollstaendiger Rueckblick im Block');
+  ok(vb.includes('Ereignisse um die gemeldete Uhrzeit') && vb.includes(D.before.incidents[0].events[0].text), 'Ereignisse um die gemeldete Zeit');
+  const vq = await v.page.locator('#quality').innerText();
+  ok(vq.includes('ticks.csv: 0 · snapshots.csv: 0 · events.csv: 2 · printqueues.csv: 1'), 'uebersprungene Zeilen der Ereignisdateien: ' + vq);
+  ok(vq.includes('Rückblick unvollständig') && vq.includes('Anwendung'), 'Obergrenze des Rueckblicks in der Messqualitaet');
+  await v.page.click('nav button[data-tab=sessions]');
+  await v.page.click(`#tSessions tbody tr[data-id="${D.sessions.find((s) => s.user === 'user014').i}"]`);
+  ok((await v.page.locator('#dSessions .sess-events').innerText()).includes('Anmeldung') && await v.page.locator('#dSessions img').count() === 0, 'Sitzungsereignisse mit Art; Benutzername als Text');
+  ok(v.page.errors.length === 0, 'Skriptfehler Ereignis-Varianten: ' + v.page.errors.join(' | '));
+  await v.page.close();
+}
+
+async function checkNarrow(browser, dir, scheme) {                  // schmale Ansicht ohne seitliches Rollen der Seite
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+  page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  await page.goto('file://' + path.join(dir, 'report.html'));
+  const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
+  for (const inc of [D.incidents.find((i) => i.type === 'ereignis'), D.incidents.find((i) => i.lead === 'memory')]) await openIncident(page, inc.id);
+  await page.locator(`#before .incident[data-id="${D.before.incidents[0].id}"] .text`).click();
+  const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(w[0] <= w[1], 'Befunde schmal ohne seitliches Rollen: ' + w.join(' > '));
+  await page.click('nav button[data-tab=sessions]');
+  await page.click(`#tSessions tbody tr[data-id="${D.sessions.find((s) => s.user === 'user014').i}"]`);
+  const w2 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(w2[0] <= w2[1], 'Sitzung schmal ohne seitliches Rollen: ' + w2.join(' > '));
+  ok(page.errors.length === 0, 'Skriptfehler schmal: ' + page.errors.join(' | '));
+  await page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
-  for (const scheme of ['light', 'dark']) { await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme); }
+  for (const scheme of ['light', 'dark']) {
+    await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
+    await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
+  }
   console.log('browser checks passed: ' + checks);
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });
