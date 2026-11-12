@@ -44,7 +44,10 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         @(Import-Csv (Join-Path $Run 'events.csv') | Where-Object Group -eq 'security').Kind | Should -Be @('scan-start', 'scan-end', 'applocker-block')
         @(Import-Csv (Join-Path $Run 'events.csv')).Count | Should -Be 13
         @(Import-Csv (Join-Path $Run 'events_before.csv')).Count | Should -Be 6; @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 3
-        @(Import-Csv (Join-Path $Run 'printqueues.csv')).Count | Should -Be (240 * 2)
+        # Aussage geaendert (M6): eine Zeile beim ersten Auftreten einer Warteschlange und bei jeder Aenderung eines Werts
+        # (PRN-EG-01: Start, 3 Auftraege ab 2595 s, ein Fehler mehr ab 2610 s, leer ab 2715 s; PRN-OG-02 bleibt unveraendert)
+        @(Import-Csv (Join-Path $Run 'printqueues.csv') | ForEach-Object { '{0}|{1}|{2}' -f $_.Queue, $_.Jobs, $_.JobErrors }) | Should -Be @('PRN-EG-01|0|2', 'PRN-OG-02|0|0',
+            'PRN-EG-01|3|2', 'PRN-EG-01|3|3', 'PRN-EG-01|0|3')
         ((Import-Csv (Join-Path $Run 'events.csv')) | Where-Object App -eq 'chrome.exe').User | Should -Be 'user008'
         @(Get-Content (Join-Path $Run 'citrix.csv')).Count | Should -BeGreaterThan 1000
     }
@@ -108,7 +111,7 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
         $e = $FailMeta.SourceErrors
         $e.fast.Count | Should -Be 1; $e.fast.FirstMessage | Should -Be 'Testfehler im schnellen Takt'
         $e.snapshot.Count | Should -Be 1; $e.snapshot.FirstMessage | Should -Be 'Testfehler im Schnappschuss'
-        $e.events.Count | Should -Be 240; $e.events.FirstMessage | Should -Be 'Testfehler im Ereignisprotokoll'
+        $e.events.Count | Should -Be 241; $e.events.FirstMessage | Should -Be 'Testfehler im Ereignisprotokoll'    # Aussage geaendert (P1-R34): 240 Abrufe und der letzte zum Ende
         # ConvertFrom-Json liefert Zeiten je nach PowerShell-Version als DateTime oder als Text
         $toDto = { param($v) if ($v -is [datetime]) { [DateTimeOffset]$v } else { [DateTimeOffset]::Parse($v, [cultureinfo]::InvariantCulture) } }
         ((& $toDto $e.fast.FirstTime) - (& $toDto $FailMeta.StartTime)).TotalSeconds | Should -Be 598
@@ -131,7 +134,7 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
         $FailData.incidents.Count | Should -Be 8; $FailData.meta.endReason | Should -Be 'duration'
         $q = $FailData.quality
         @($q.sourceErrors).source | Should -Be @('events', 'fast', 'snapshot')
-        ($q.sourceErrors | Where-Object source -eq 'events').count | Should -Be 240
+        ($q.sourceErrors | Where-Object source -eq 'events').count | Should -Be 241                               # Aussage geaendert (P1-R34)
         ($q.sourceErrors | Where-Object source -eq 'events').label | Should -Be 'Ereignisprotokoll'
         ($q.sourceErrors | Where-Object source -eq 'fast').firstMessage | Should -Be 'Testfehler im schnellen Takt'
         ($q.sourceErrors | Where-Object source -eq 'fast').firstMs | Should -Be ($FailData.meta.start + 596000)
@@ -227,7 +230,7 @@ function Get-WorkerPerfPrintQueues {
     }
     It 'schreibt Treiberliste und Warteschlangen je regulaerem Schnappschuss' {
         @(Get-Content (Join-Path $LbRun 'printdrivers.csv')) | Should -Be @($WorkerPerfHeaders['printdrivers.csv'], 'Sim PCL 6,Sim,1.0,3,shared,a.dll;b.dll')
-        $q = @(Import-Csv (Join-Path $LbRun 'printqueues.csv')); $q.Count | Should -Be 240
+        $q = @(Import-Csv (Join-Path $LbRun 'printqueues.csv')); $q.Count | Should -Be 1                         # Aussage geaendert (M6): die Werte aendern sich nicht
         $q[0].Queue | Should -Be 'Drucker 1'; $q[0].NotReadyErrors | Should -Be '3'
     }
 }
@@ -322,5 +325,47 @@ function Initialize-WorkerPerfSource { param([datetime]`$StartTime, [object[]]`$
         @($ticks | Where-Object { [double]$_.ElapsedSec -ne 2 }).Count | Should -Be 0
         @($ticks | ForEach-Object { [DateTimeOffset]::Parse($_.Timestamp, [cultureinfo]::InvariantCulture).Offset } | Sort-Object -Unique).Count | Should -Be 2   # Sommer- und Normalzeit
         (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EndReason | Should -Be 'duration'
+    }
+}
+Describe 'Ereignisse, die Windows spaet sichtbar macht, und die letzten Sekunden der Aufzeichnung (P1-R34)' {
+    BeforeAll {
+        # Ein Absturz mit dem Zeitstempel 299 s wird erst ab 302 s sichtbar (er liegt vor dem Abruf bei 300 s, erscheint aber
+        # erst danach); ein Absturz bei 1208 s ist sofort sichtbar. Die Aufzeichnung endet ueber stop.flag bei 1210 s, nach
+        # dem letzten regulaeren Abruf bei 1200 s. Die Quelle liest bis jetzt, ohne obere Grenze.
+        $capture = New-PatchedSource (Join-Path $TestDrive 'srclate') @'
+$script:TestEvents = ${function:Get-WorkerPerfEvents}
+$script:TestLate = $null
+function Get-WorkerPerfEvents { param([datetime]$Since)
+    & $script:TestEvents -Since $Since
+    if ($null -eq $script:TestLate) {
+        $c = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile
+        $script:TestLate = @(@{ Visible = 302; E = (New-WorkerPerfSimCrash $c 299 'spaet.exe' '1.0' 'spaet.dll' '1.0' '0xc0000005') },
+            @{ Visible = 1208; E = (New-WorkerPerfSimCrash $c 1208 'zuletzt.exe' '1.0' 'zuletzt.dll' '1.0' '0xc0000005') })
+    }
+    foreach ($x in $script:TestLate) {
+        if ((Get-WorkerPerfSimElapsed) -ge $x.Visible -and $script:WorkerPerfSimStart.AddSeconds($x.E.Sec) -gt $Since) { ConvertTo-WorkerPerfSimEventRecord $x.E }
+    }
+}
+$script:TestWait = ${function:Wait-WorkerPerfTick}
+function Wait-WorkerPerfTick { param([datetime]$Until, [string]$StopFlagPath)
+    $r = & $script:TestWait -Until $Until -StopFlagPath $StopFlagPath
+    if (-not [string]::IsNullOrEmpty($StopFlagPath) -and (Get-WorkerPerfSimElapsed) -ge 1210) { return $true }
+    $r
+}
+'@
+        $script:LateRun = (& $capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'late') 6>$null) | Select-Object -Last 1
+        $script:LateEvents = @(Import-Csv (Join-Path $LateRun 'events.csv'))
+        $script:LateMeta = Get-Content (Join-Path $LateRun 'meta.json') -Raw | ConvertFrom-Json
+    }
+    It 'schreibt ein spaet sichtbares Ereignis mit frueherem Zeitstempel genau einmal' {
+        @($LateEvents | Where-Object App -eq 'spaet.exe').Count | Should -Be 1
+    }
+    It 'nimmt ein Ereignis der letzten Sekunden vor dem Ende auf' {
+        $LateMeta.EndReason | Should -Be 'stopflag'
+        @($LateEvents | Where-Object App -eq 'zuletzt.exe').Count | Should -Be 1
+    }
+    It 'schreibt auch die Ereignisse des Drehbuchs bis zum Ende je einmal' {
+        @($LateEvents | Where-Object App -eq 'chrome.exe').Count | Should -Be 1
+        @($LateEvents | Group-Object { $_.Timestamp + '|' + $_.App + '|' + $_.EventId } | Where-Object Count -gt 1).Count | Should -Be 0
     }
 }

@@ -1100,6 +1100,34 @@ Describe 'Rueckblick und Druckzustand' {
         @($s.Processes).Name | Should -Be @('spoolsv.exe'); $s.Processes[0].WsMaxMB | Should -Be 40
     }
 }
+Describe 'Warteschlangen nur bei Aenderung (M6)' {
+    BeforeAll { . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1') }
+    It 'ergibt aus den Zeilen bei Aenderung dieselben Hoechstwerte und Fehlerzuwaechse wie aus allen Zeilen, auch in einem Ausschnitt' {
+        # every 15 s a sample of two queues; the error counter of A rises at 60 s and starts again from 0 at 120 s (spooler restart)
+        $full = @(foreach ($s in 0..20) {
+                $t = [long]($T0 + $s * 15000)
+                $err = $(if ($s * 15 -ge 120) { 1.0 } elseif ($s * 15 -ge 60) { 4.0 } else { 2.0 })
+                @{ TimeMs = $t; Queue = 'A'; Jobs = $(if ($s -ge 5 -and $s -le 7) { 3.0 } else { 0.0 }); JobErrors = $err; NotReadyErrors = 0.0 }
+                @{ TimeMs = $t; Queue = 'B'; Jobs = 0.0; JobErrors = 0.0; NotReadyErrors = 0.0 }
+            })
+        $last = @{}
+        $changed = @(foreach ($q in $full) { $v = '{0}|{1}|{2}' -f $q.Jobs, $q.JobErrors, $q.NotReadyErrors; if ($last[$q.Queue] -ne $v) { $last[$q.Queue] = $v; $q } })
+        $changed.Count | Should -BeLessThan $full.Count
+        $show = { param($rows) @((Get-WorkerPerfPrintState -Model @{ PrintDrivers = @(); PrintQueues = $rows; Proc = @() } -EventIncidents @()).Queues | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.Name, $_.MaxJobs, $_.JobErrors, $_.NotReadyErrors }) }
+        & $show $changed | Should -Be (& $show $full)
+        & $show $full | Should -Be @('A|3|3|0', 'B|0|0|0')
+        # a cut from 100 s to 300 s read from both files: the last row before the cut is the baseline
+        $write = { param($rows, $name) $d = Join-Path $TestDrive $name; [void](New-Item -ItemType Directory -Path $d -Force); $f = Join-Path $d 'printqueues.csv'
+            $lines = @($WorkerPerfHeaders['printqueues.csv']) + @($rows | ForEach-Object { '{0},{1},{2},{3},{4}' -f [DateTimeOffset]::FromUnixTimeMilliseconds($_.TimeMs).ToString('o', [cultureinfo]::InvariantCulture), $_.Queue, $_.Jobs, $_.JobErrors, $_.NotReadyErrors })
+            [IO.File]::WriteAllLines($f, $lines); $d }
+        $from = $T0 + 100000; $to = $T0 + 300000
+        $a = @(Read-WorkerPerfPrintQueues (& $write $full 'pq-full') $from $to ([ref]0))
+        $b = @(Read-WorkerPerfPrintQueues (& $write $changed 'pq-changed') $from $to ([ref]0))
+        $a.Count | Should -BeGreaterThan $b.Count
+        & $show $b | Should -Be (& $show $a)
+        & $show $b | Should -Be @('A|3|1|0', 'B|0|0|0')                                        # A: 3 jobs at 105 s, the restart at 120 s counts 1
+    }
+}
 Describe 'Rueckblick und Druckzustand im Einzelnen' {
     BeforeAll {
         function New-LbModel2([object[]]$Before, $Meta = @{ OffsetMinutes = 60; EventLookbackDays = 7; LookbackCapped = @() }) { @{ EventsBefore = $Before; Tick = @{ TimeMs = [long[]]@($T0, $T0 + 60000) }; Meta = $Meta; Sessions = @() } }

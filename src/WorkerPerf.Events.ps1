@@ -76,26 +76,35 @@ function Read-WorkerPerfPrintDrivers([string]$Path, [ref]$Skipped) {
 
 function Read-WorkerPerfPrintQueues([string]$Path, [long]$FromMs, [long]$ToMs, [ref]$Skipped) {
     # printqueues.csv rows with FromMs <= TimeMs <= ToMs: @{ TimeMs; Queue; Jobs; JobErrors; NotReadyErrors } (counters as
-    # [double], NaN when unreadable; the error counters are running raw values).
+    # [double], NaN when unreadable; the error counters are running raw values), and per queue its last row before
+    # FromMs: the collector writes a row only when a value changes (M6), so that row holds the values in force at FromMs
+    # (the baseline of the error counters, and the waiting jobs of a queue that did not change in the range).
     $csv = Read-WorkerPerfCsvFile $Path 'printqueues.csv' -OwnHeader
     if ($null -ne $Skipped) { $Skipped.Value = [int]$csv.Skipped }
     $col = $csv.Col
     foreach ($k in 'Timestamp', 'Queue', 'Jobs', 'JobErrors', 'NotReadyErrors') { if (-not $col.ContainsKey($k)) { return } }
     $inv = [Globalization.CultureInfo]::InvariantCulture
     $style = [Globalization.NumberStyles]::Float
+    $before = [ordered]@{}
     foreach ($f in $csv.Rows) {
         $dto = ConvertTo-WorkerPerfTimestamp $f[[int]$col['Timestamp']]
         if ($null -eq $dto) { continue }
         $ms = $dto.ToUnixTimeMilliseconds()
-        if ($ms -lt $FromMs -or $ms -gt $ToMs) { continue }
+        if ($ms -gt $ToMs) { continue }
         $q = @{ TimeMs = $ms; Queue = $f[[int]$col['Queue']] }
         foreach ($k in 'Jobs', 'JobErrors', 'NotReadyErrors') {
             $v = [double]::NaN
             if (-not [double]::TryParse($f[[int]$col[$k]], $style, $inv, [ref]$v)) { $v = [double]::NaN }
             $q[$k] = $v
         }
+        if ($ms -lt $FromMs) {
+            $prev = $before[[string]$q.Queue]
+            if ($null -eq $prev -or [long]$prev.TimeMs -le $ms) { $before[[string]$q.Queue] = $q }
+            continue
+        }
         $q
     }
+    foreach ($q in $before.Values) { $q }
 }
 
 # ---- incidents from events ----

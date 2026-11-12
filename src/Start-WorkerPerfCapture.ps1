@@ -190,6 +190,7 @@ $meta = [ordered]@{
     EventLookbackDays    = $EventLookbackDays
     LookbackCapped       = @()
     EventReadCounts      = [ordered]@{}
+    LookbackReadCounts   = [ordered]@{}
     CollectorPid         = $source.CollectorPid
     Endpoints            = @($source.Endpoints)
     Sources              = $source.Sources
@@ -209,8 +210,18 @@ function Register-SourceError([string]$Source, $ErrorRecord) {
     Register-SourceMessage $Source ([string]$ErrorRecord.Exception.Message)
 }
 function Register-SourceMessage([string]$Source, [string]$message) {
+    # A log the source could not read is booked as '<call>.<log id>' (one entry per log); during the capture its entry in
+    # Sources is marked as well (ReadFailed), so the report does not keep showing it as read without a trace.
+    $name = $sourceNames[$Source]
+    $cut = $Source.IndexOf([char]'.')
+    if ($null -eq $name -and $cut -gt 0) { $name = '{0} ({1})' -f $sourceNames[$Source.Substring(0, $cut)], $Source.Substring($cut + 1) }
+    if ($null -eq $name) { $name = $Source }
+    if ($cut -gt 0 -and $Source.Substring(0, $cut) -eq 'events' -and $meta.Sources.Contains($Source)) {
+        $entry = $meta.Sources[$Source]
+        if ($entry -is [System.Collections.IDictionary] -and -not $entry.Contains('ReadFailed')) { $entry['ReadFailed'] = $true }
+    }
     if (Add-WorkerPerfSourceError -Errors $meta.SourceErrors -Source $Source -Time (Get-WorkerPerfNow) -Message $message) {
-        Write-Warning ("Datenquelle '{0}' meldet einen Fehler; die Aufzeichnung laeuft weiter, weitere Fehler dieser Quelle werden nur gezaehlt: {1}" -f $sourceNames[$Source], $message)
+        Write-Warning ("Datenquelle '{0}' meldet einen Fehler; die Aufzeichnung laeuft weiter, weitere Fehler dieser Quelle werden nur gezaehlt: {1}" -f $name, $message)
         # saved at once, so the failure is on record even if the capture is killed later
         try { Save-Meta } catch { Write-Verbose $_.Exception.Message }
     }
@@ -245,6 +256,7 @@ $tickCount = 0
 $snapCount = 0
 $regularCount = 0
 $skipped = 0
+$eventsReady = $false
 try {
     [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json'))
     Save-Meta
@@ -262,6 +274,8 @@ try {
         }
         catch { Register-SourceError 'eventsbefore' $_ }
         Register-SourceFailures
+        # the counters as they stand after the lookback: what the lookback skipped (the report names it at the lookback)
+        try { $meta.LookbackReadCounts = Get-WorkerPerfEventCounts } catch { Write-Verbose $_.Exception.Message }
         $wEventsBefore.Flush()
     }
     try { foreach ($d in @(Get-WorkerPerfPrintDrivers)) { if ($null -ne $d) { $wDrivers.WriteLine((ConvertTo-WorkerPerfPrintDriverRow $d)) } } }
@@ -301,29 +315,50 @@ try {
     $lastEvents = $startTime
     $probeT = 0
     $sw = New-Object System.Diagnostics.Stopwatch
+    # the last row written per print queue (its values without the time): a queue gets a row at its first appearance
+    # and when a value changes (M6)
+    $queueLast = @{}
 
+    # The events since the cursor up to Until: Windows makes an event visible up to about a second after its time stamp,
+    # so the regular reads end EventLagSeconds before now and the cursor moves to that bound (P1-R34); the read at the
+    # end of the capture runs without that lag. Run with '.' in this scope.
+    $eventLagSeconds = 5
+    $readEvents = {
+        param([datetime]$Until)
+        if ((ConvertTo-WorkerPerfUtc $Until) -gt (ConvertTo-WorkerPerfUtc $lastEvents)) {
+            try {
+                $newEvents = @(Select-WorkerPerfEventsInWindow -Events @(Get-WorkerPerfEvents -Since $lastEvents) -After $lastEvents -Until $Until)
+                if ($newEvents.Count -gt 0) {
+                    foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes @(Get-WorkerPerfProcessMemoryEntries $procMemory) `
+                                -Sessions @($lastSnap.Sessions) -MaxGapSeconds $eventGapSeconds)) {
+                        $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
+                    }
+                }
+                $lastEvents = $Until
+            }
+            catch { Register-SourceError 'events' $_ }
+        }
+        Register-SourceFailures
+    }
     # The reads of the regular slot besides the snapshot: events since the cursor and the print queue counters. Run
     # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
     $readSlot = {
-        $eventsUntil = Get-WorkerPerfNow
-        try {
-            $newEvents = @(Select-WorkerPerfEventsInWindow -Events @(Get-WorkerPerfEvents -Since $lastEvents) -After $lastEvents -Until $eventsUntil)
-            if ($newEvents.Count -gt 0) {
-                foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes @(Get-WorkerPerfProcessMemoryEntries $procMemory) `
-                            -Sessions @($lastSnap.Sessions) -MaxGapSeconds $eventGapSeconds)) {
-                    $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
-                }
-            }
-            $lastEvents = $eventsUntil
-        }
-        catch { Register-SourceError 'events' $_ }
-        Register-SourceFailures
+        . $readEvents ((Get-WorkerPerfNow).AddSeconds(-$eventLagSeconds))
         try {
             $queueTime = Get-WorkerPerfNow
-            foreach ($q in @(Get-WorkerPerfPrintQueues)) { if ($null -ne $q) { $wQueues.WriteLine((ConvertTo-WorkerPerfPrintQueueRow $q $queueTime)) } }
+            foreach ($q in @(Get-WorkerPerfPrintQueues)) {
+                if ($null -eq $q) { continue }
+                $row = ConvertTo-WorkerPerfPrintQueueRow $q $queueTime
+                $name = [string](Get-WorkerPerfField $q 'Queue')
+                $values = $row.Substring($row.IndexOf([char]',') + 1)
+                if ($queueLast.ContainsKey($name) -and $queueLast[$name] -eq $values) { continue }
+                $queueLast[$name] = $values
+                $wQueues.WriteLine($row)
+            }
         }
         catch { Register-SourceError 'printqueues' $_ }
     }
+    $eventsReady = $true
 
     while ($true) {
         if ($scheduled -gt $endAt) { $endReason = 'duration'; break }
@@ -464,6 +499,15 @@ finally {
     # The cleanup must not replace the error that ended the capture: each step is guarded, its failure is reported
     # as a warning after the message above, and the original error leaves the script.
     $problems = New-Object System.Collections.Generic.List[string]
+    # One last read of the events, without lag, before the files are closed: however the capture ends (its duration,
+    # stop.flag, a limit, an error, Ctrl+C as far as the cleanup runs), the events of its last seconds are in it (P1-R34).
+    if ($eventsReady) {
+        try { . $readEvents (Get-WorkerPerfNow); $wEvents.Flush() }
+        catch {
+            # a second Ctrl+C stops this read too; that is no failure to report
+            if ($_.Exception -isnot [System.Management.Automation.PipelineStoppedException]) { $problems.Add('letzter Abruf der Ereignisse fehlgeschlagen: ' + $_.Exception.Message) }
+        }
+    }
     foreach ($w in $allWriters) { try { $w.Dispose() } catch { Write-Verbose $_.Exception.Message } }
     if (-not $endReason) { $endReason = 'interrupted' }
     try {

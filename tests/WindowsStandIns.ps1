@@ -260,7 +260,8 @@ function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
     $log = $selects[0].QueryPath
     foreach ($sel in $selects) { if ($sel.Path -ne $log) { throw 'Stand-in: Select und Query nennen verschiedene Protokolle' } }
     if ($script:WinFake.FailLogs.ContainsKey($log)) { throw (New-Object ($script:WinFake.FailLogs[$log]) "Protokoll $log nicht lesbar") }
-    if ($script:WinFake.Logs -notcontains $log -or $script:WinFake.DisabledLogs -contains $log) { throw (New-Object System.IO.FileNotFoundException "Protokoll $log nicht vorhanden") }
+    # a log that is switched off still holds its events and can be read, as on Windows (M14)
+    if ($script:WinFake.Logs -notcontains $log) { throw (New-Object System.IO.FileNotFoundException "Protokoll $log nicht vorhanden") }
     $all = @($script:WinFake.Events | Where-Object { $_.LogName -eq $log })
     if ($log -like '*Defender*' -and $script:WinFake.ManyEvents -gt 0) {
         # one event per second, each with its own fixed record id

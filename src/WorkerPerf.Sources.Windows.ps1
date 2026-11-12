@@ -393,17 +393,19 @@ $script:WorkerPerfWinEuemClass = 'Citrix_Euem_RoundTrip'
 $script:WorkerPerfCitrixKeepZero = 'Latency|Round|RTT'
 
 # Events: the catalogue next to this file when Initialize-WorkerPerfSource gets none. At most 200 events per log and read
-# of the measurement, at most 2000 per log in the lookback; at most 23 ids per select of an event query (a select may
+# of the measurement, at most 2000 per log in the lookback; at most 12 ids per select of an event query (a select may
 # hold at most 32 expressions). The lookback stops after a time budget, checked before each log and between its
 # records; formatting the Message of a record (FormatDescription) is the slow part of an event.
 $script:WorkerPerfWinEventFile = Join-Path $PSScriptRoot 'events.json'
 $script:WorkerPerfWinMaxEvents = 200
 $script:WorkerPerfWinLookbackMax = 2000
-# records of a regular read beyond its cap that are only counted (DroppedEvents in meta.json; the count stops there)
-$script:WorkerPerfWinCountBeyond = 10000
-# 23 ids per select: the select then holds at most 31 of the 32 expressions an event query allows (provider, 23 ids,
-# 5 levels, 2 time bounds); that this limit holds as documented is not yet verified on a server
-$script:WorkerPerfWinMaxIdsPerQuery = 23
+# records of a regular read beyond its cap that are only counted (DroppedEvents in meta.json; the count stops there, so
+# the number is a lower bound: each record counted costs a read inside the regular slot)
+$script:WorkerPerfWinCountBeyond = 1000
+# 12 ids per select: the select then holds at most 20 expressions (provider, 12 ids, 5 levels, 2 time bounds), well
+# below the 32 of the query schema; Microsoft's pages disagree on the limit (some name 23 for Get-WinEvent), and a
+# select over it makes the query of the whole log invalid
+$script:WorkerPerfWinMaxIdsPerQuery = 12
 $script:WorkerPerfWinLookbackBudgetSec = 60
 # Reads: one EventLogReader per log name and read (a log of the catalogue with two names takes two).
 # Account of an event's SID: time limit of one lookup, and how long lookups pause after one ran into it.
@@ -926,10 +928,10 @@ function ConvertTo-WorkerPerfServiceMap([object[]]$Services) {
 
 function New-WorkerPerfEventQueries($Config, [string]$LogId, [string[]]$Names) {
     # The queries of one log of the catalogue: one per log name, read with one EventLogReader. Each holds
-    # its selects: per provider its ids, at most 23 per select (with the levels of the entries that name levels), and for
+    # its selects: per provider its ids, at most 12 per select (with the levels of the entries that name levels), and for
     # the entries with "ids": "*" one select by level. Emits @{ LogName; Selects = @(@{ Provider; Ids; Levels }) }
-    # (Ids and Levels int[] or $null). A select stays below the 32 expressions an event query allows: provider, at most
-    # 23 ids, at most 5 levels, 2 time bounds.
+    # (Ids and Levels int[] or $null). A select stays at or below 20 expressions: provider, at most 12 ids, at most 5
+    # levels, 2 time bounds.
     $byProvider = [ordered]@{}
     foreach ($e in @($Config.Entries)) {
         if ($e.log -ne $LogId) { continue }
@@ -1462,24 +1464,36 @@ function Initialize-WorkerPerfSource {
     catch { $sources['profile.map'] = @{ Available = $false; Detail = ('MSFT_Disk nicht lesbar: {0}' -f $_.Exception.Message) } }
 
     # ---- event logs: every log of the catalogue that an entry reads, available or not ----
+    # The capture reads the enabled log names; the lookback also reads a log name that exists but is switched off, for
+    # the events it holds from before (M14). A log with no enabled name stays not available for the capture; when the
+    # lookback reads it, its source entry says so (LookbackRead).
     if ($null -eq $EventConfig) { $EventConfig = Read-WorkerPerfEventConfig $script:WorkerPerfWinEventFile }
     $state.EventConfig = $EventConfig
     foreach ($l in @(Get-WorkerPerfEventReadLogs $EventConfig)) {
         $readable = New-Object System.Collections.Generic.List[string]
+        $present = New-Object System.Collections.Generic.List[string]
         foreach ($name in @($l.Names)) {
             try {
                 $info = Get-WinEvent -ListLog $name -ErrorAction Stop
-                if ($null -ne $info -and [bool]$info.IsEnabled) { $readable.Add($name) }
+                if ($null -ne $info) {
+                    $present.Add($name)
+                    if ([bool]$info.IsEnabled) { $readable.Add($name) }
+                }
             }
             catch { Write-Verbose ('Protokoll {0} nicht vorhanden: {1}' -f $name, $_.Exception.Message) }
         }
         $id = 'events.' + $l.Id
-        if ($readable.Count -gt 0) {
+        $lookbackNames = [string[]]@()
+        if ($l.Lookback) { $lookbackNames = $present.ToArray() }
+        if ($readable.Count -gt 0 -or $lookbackNames.Count -gt 0) {
             $names = $readable.ToArray()
-            $state.Logs.Add(@{ Id = $l.Id; Names = $names; Lookback = [bool]$l.Lookback; Queries = @(New-WorkerPerfEventQueries $EventConfig $l.Id $names) })
+            $log = @{ Id = $l.Id; Names = $names; Lookback = ($lookbackNames.Count -gt 0); Queries = @(New-WorkerPerfEventQueries $EventConfig $l.Id $names)
+                LookbackNames = $lookbackNames; LookbackQueries = @(New-WorkerPerfEventQueries $EventConfig $l.Id $lookbackNames) }
+            $state.Logs.Add($log)
             # every provider name must be writable as a query literal; a catalogue that breaks this stops here, not in a read
-            foreach ($q in $state.Logs[$state.Logs.Count - 1].Queries) { [void](New-WorkerPerfEventQueryXml $q ([datetime]::UtcNow) $null) }
-            $sources[$id] = @{ Available = $true; Detail = ($names -join ', ') }
+            foreach ($q in @($log.Queries) + @($log.LookbackQueries)) { [void](New-WorkerPerfEventQueryXml $q ([datetime]::UtcNow) $null) }
+            if ($names.Length -gt 0) { $sources[$id] = @{ Available = $true; Detail = ($names -join ', ') } }
+            else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll abgeschaltet; der Rueckblick liest die vorhandenen Ereignisse'; LookbackRead = $true } }
         }
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
@@ -1688,14 +1702,15 @@ function Get-WorkerPerfErrorText($Exception) {
     return [string]$ex.Message
 }
 
-function Add-WorkerPerfLogError([string]$Source, [string]$LogName, [string]$Class, [string]$Text) {
+function Add-WorkerPerfLogError([string]$Source, [string]$LogId, [string]$LogName, [string]$Class, [string]$Text) {
     # A log name that could not be read: queued once per data source call kind ('events', 'eventsbefore') and log name
-    # for Receive-WorkerPerfSourceErrors, which the collector books into SourceErrors of meta.json and warns about once.
+    # for Receive-WorkerPerfSourceErrors, under '<kind>.<log id>' (M13: one entry of SourceErrors in meta.json per log),
+    # which the collector books and warns about once.
     $st = $script:WinState
     $key = $Source + '|' + $LogName
     if ($st.LogErrorsSeen.ContainsKey($key)) { return }
     $st.LogErrorsSeen[$key] = $true
-    $st.LogErrors.Add(@{ Source = $Source; Message = ("Ereignisprotokoll '{0}' nicht lesbar ({1}): {2}" -f $LogName, $Class, $Text) })
+    $st.LogErrors.Add(@{ Source = ($Source + '.' + $LogId); Message = ("Ereignisprotokoll '{0}' nicht lesbar ({1}): {2}" -f $LogName, $Class, $Text) })
 }
 
 function Get-WorkerPerfEventCounter([string]$LogId) {
@@ -1777,7 +1792,7 @@ function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$M
         $reader = $null
         try { $reader = Open-WorkerPerfEventReader $xml ([bool]$Oldest) }
         catch {
-            Add-WorkerPerfLogError $Source $q.LogName (Get-WorkerPerfErrorClass $_.Exception) (Get-WorkerPerfErrorText $_.Exception)
+            Add-WorkerPerfLogError $Source $Log.Id $q.LogName (Get-WorkerPerfErrorClass $_.Exception) (Get-WorkerPerfErrorText $_.Exception)
             $failed = $true
             continue
         }
@@ -1785,7 +1800,7 @@ function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$M
         finally { try { $reader.Dispose() } catch { $null = $_ } }
         $counter.SkippedRecords += $part.Skipped
         $counter.UnformattedMessages += $part.Unformatted
-        if ($part.Failed) { Add-WorkerPerfLogError $Source $q.LogName $part.Class $part.Text; $failed = $true }
+        if ($part.Failed) { Add-WorkerPerfLogError $Source $Log.Id $q.LogName $part.Class $part.Text; $failed = $true }
         if ($part.BudgetHit) { $budgetHit = $true }
         $beyondTotal += $part.Beyond
         foreach ($ev in $part.Records) {
@@ -1808,17 +1823,22 @@ function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$M
 
 function Get-WorkerPerfEventCounts {
     # Per log of the catalogue: records skipped because they could not be read, messages that could not be formatted,
-    # and events of a regular read that the cap of 200 did not keep (numbers only, for EventReadCounts in meta.json).
+    # and events of a regular read that the cap of 200 did not keep, counted up to 1000 per read, so at least that many
+    # (numbers only, for EventReadCounts in meta.json). A copy, built key by key.
     $st = $script:WinState
     $out = [ordered]@{}
     if ($null -eq $st) { return $out }
-    foreach ($k in @($st.EventCounts.Keys)) { $out[$k] = [ordered]@{} + $st.EventCounts[$k] }
+    foreach ($k in @($st.EventCounts.Keys)) {
+        $copy = [ordered]@{}
+        foreach ($c in @($st.EventCounts[$k].Keys)) { $copy[$c] = $st.EventCounts[$k][$c] }
+        $out[$k] = $copy
+    }
     return $out
 }
 
 function Receive-WorkerPerfSourceErrors {
     # The failures of the source's calls that did not stop the call (a log that could not be read), once each, since the
-    # last call: @{ Source ('events', 'eventsbefore'); Message }.
+    # last call: @{ Source ('events.<log id>', 'eventsbefore.<log id>'); Message }.
     $st = $script:WinState
     if ($null -eq $st) { return }
     $list = $st.LogErrors.ToArray()
@@ -1841,7 +1861,7 @@ function Get-WorkerPerfEvents {
         if ($r.More) {
             $counter = Get-WorkerPerfEventCounter $l.Id
             $counter.DroppedEvents += $r.Dropped
-            Write-WarningOnce ('events.dropped:' + $l.Id) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die neueren fehlen in events.csv." -f ($l.Names -join ', '), $script:WorkerPerfWinMaxEvents)
+            Write-WarningOnce ('events.dropped:' + $l.Id) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die neueren fehlen in events.csv; ihre Zahl steht in meta.json (EventReadCounts) und im Bericht." -f ($l.Names -join ', '), $script:WorkerPerfWinMaxEvents)
         }
         foreach ($ev in $r.Events) {
             $u = ConvertTo-WorkerPerfUtcTime ([datetime]$ev.TimeCreated)
@@ -1871,7 +1891,9 @@ function Get-WorkerPerfEventsBefore {
     foreach ($l in $st.Logs) {
         if (-not $l.Lookback) { continue }
         if ($clock.ElapsedMilliseconds -ge $budgetMs) { $capped.Add($l.Id); continue }
-        $r = Read-WorkerPerfWinLogEvents $l $fromUtc $untilUtc $script:WorkerPerfWinLookbackMax -Source 'eventsbefore' -Clock $clock -BudgetMs $budgetMs
+        # the lookback reads every log name that exists, also one that is switched off (M14)
+        $lb = @{ Id = $l.Id; Names = $l.LookbackNames; Queries = $l.LookbackQueries }
+        $r = Read-WorkerPerfWinLogEvents $lb $fromUtc $untilUtc $script:WorkerPerfWinLookbackMax -Source 'eventsbefore' -Clock $clock -BudgetMs $budgetMs
         if ($r.More -or $r.Failed -or $r.BudgetHit) { $capped.Add($l.Id) }
         foreach ($ev in $r.Events) {
             if ($clock.ElapsedMilliseconds -ge $budgetMs) {

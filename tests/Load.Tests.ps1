@@ -194,8 +194,10 @@ Describe 'Import-WorkerPerfRun: Ereignisse und Drucken (Format 3)' {
     It 'liest Warteschlangen im Zeitraum und Treiber ohne Bauart' {
         $q = @("$(Get-Ts 3),Drucker 1,0,4,1", "$(Get-Ts 9),Drucker 1,2,5,1", "$(Get-Ts 30),Drucker 1,0,5,1", 'kaputt')
         $m = Import-TestRun 'pq' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'printqueues.csv' = $q; 'printdrivers.csv' = @('Typ 4 Treiber,,,,,') } @{ From = $Base.AddSeconds(5).DateTime; To = $Base.AddSeconds(20).DateTime }
-        @($m.PrintQueues).Count | Should -Be 1; $m.PrintQueues[0].Queue | Should -Be 'Drucker 1'; $m.PrintQueues[0].Jobs | Should -Be 2; $m.PrintQueues[0].JobErrors | Should -Be 5
+        # Aussage geaendert (M6): dazu die letzte Zeile vor dem Zeitraum, die Werte, die bei seinem Beginn galten
+        @($m.PrintQueues).Count | Should -Be 2; $m.PrintQueues[0].Queue | Should -Be 'Drucker 1'; $m.PrintQueues[0].Jobs | Should -Be 2; $m.PrintQueues[0].JobErrors | Should -Be 5
         $m.PrintQueues[0].TimeMs | Should -Be $Base.AddSeconds(9).ToUnixTimeMilliseconds()
+        $m.PrintQueues[1].TimeMs | Should -Be $Base.AddSeconds(3).ToUnixTimeMilliseconds(); $m.PrintQueues[1].JobErrors | Should -Be 4
         $m.PrintDrivers[0].Type | Should -Be 0; @($m.PrintDrivers[0].Files).Count | Should -Be 0; $m.PrintDrivers[0].Isolation | Should -Be ''
     }
     It 'liest Rueckblick und Vermerk aus meta.json und duldet ihr Fehlen' {
