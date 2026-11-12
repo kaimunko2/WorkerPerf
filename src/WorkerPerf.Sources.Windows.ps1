@@ -5,7 +5,8 @@
 # works in every display language. What can be checked without Windows (instance names, profile container mapping,
 # conversion of counter values, Citrix rows, events) sits in pure functions; the Windows calls are thin wrappers that
 # the tests replace (Open-/Read-WorkerPerfWinCategory, Get-WorkerPerfWinSampleValue, Get-CimInstance, Get-WinEvent,
-# Get-WinSessionRaw).
+# Get-WinSessionRaw, Get-WorkerPerfSidAccount and the registry readers of printing). The events come from the logs,
+# providers and ids of the event catalogue (events.json, WorkerPerf.EventConfig.ps1 must be dot-sourced before).
 
 # C# source of the WTS session wrapper (load with Add-Type -TypeDefinition $script:WorkerPerfWtsSource).
 $script:WorkerPerfWtsSource = @'
@@ -162,6 +163,34 @@ namespace WorkerPerf
             if (!GetDiskFreeSpaceExW(directory, out freeForCaller, out total, out totalFree))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             return (double)freeForCaller;
+        }
+    }
+}
+'@
+
+# C# source of the SID lookup: the account of an event's System part. Translating a domain SID can ask a domain
+# controller, which may take long or hang; the lookup runs on a pool thread and is given up after the time limit.
+$script:WorkerPerfSidSource = @'
+using System;
+using System.Security.Principal;
+using System.Threading.Tasks;
+
+namespace WorkerPerf
+{
+    public static class SidLookup
+    {
+        // "DOMAIN\name" of a SID, or null when Windows cannot translate it; timedOut when it took longer than timeoutMs
+        // (the abandoned lookup finishes on its pool thread).
+        public static string Translate(string sid, int timeoutMs, out bool timedOut)
+        {
+            timedOut = false;
+            Task<string> task = Task.Factory.StartNew<string>(delegate
+            {
+                try { return new SecurityIdentifier(sid).Translate(typeof(NTAccount)).Value; }
+                catch (Exception) { return null; }
+            });
+            if (!task.Wait(timeoutMs)) { timedOut = true; return null; }
+            return task.Result;
         }
     }
 }
@@ -363,12 +392,27 @@ $script:WorkerPerfWinEuemClass = 'Citrix_Euem_RoundTrip'
 # the size of citrix.csv.
 $script:WorkerPerfCitrixKeepZero = 'Latency|Round|RTT'
 
-$script:WorkerPerfWinEventLogs = @(
-    @{ Source = 'Defender'; Log = 'Microsoft-Windows-Windows Defender/Operational'; Ids = @(1000, 1001, 1002, 2000) }
-    @{ Source = 'AppLocker'; Log = 'Microsoft-Windows-AppLocker/EXE and DLL'; Ids = @(8004, 8007) }
-    @{ Source = 'AppLocker'; Log = 'Microsoft-Windows-AppLocker/MSI and Script'; Ids = @(8004, 8007) }
-)
+# Events: the catalogue next to this file when Initialize-WorkerPerfSource gets none. At most 200 events per log and read
+# of the measurement, at most 2000 per log in the lookback; at most 23 ids per query (a longer id list makes the
+# query of the event log invalid). The lookback stops after a time budget, so it delays the first tick by a bounded
+# time: Message (the text from the provider's message file) is the slow part of an event.
+$script:WorkerPerfWinEventFile = Join-Path $PSScriptRoot 'events.json'
 $script:WorkerPerfWinMaxEvents = 200
+$script:WorkerPerfWinLookbackMax = 2000
+$script:WorkerPerfWinMaxIdsPerQuery = 23
+$script:WorkerPerfWinLookbackBudgetSec = 60
+# Account of an event's SID: time limit of one lookup, and how long lookups pause after one ran into it.
+$script:WorkerPerfWinSidTimeoutMs = 1000
+$script:WorkerPerfWinSidPauseMinutes = 10
+
+# Printing: the driver list (CIM), the isolation settings of the spooler and the queue counters (instantaneous values,
+# one instance per queue besides _Total).
+$script:WorkerPerfWinDriverNamespace = 'root/StandardCimv2'
+$script:WorkerPerfWinDriverClass = 'MSFT_PrinterDriver'
+$script:WorkerPerfWinPrintKey = 'SYSTEM\CurrentControlSet\Control\Print'
+$script:WorkerPerfWinPrintPolicyKey = 'SOFTWARE\Policies\Microsoft\Windows NT\Printers'
+$script:WorkerPerfWinPrintQueueCategory = 'Print Queue'
+$script:WorkerPerfWinPrintQueueCounters = @('Jobs', 'Job Errors', 'Not Ready Errors')
 
 $script:WorkerPerfWinProcessProperties = @('ProcessId', 'ParentProcessId', 'Name', 'SessionId', 'KernelModeTime', 'UserModeTime', 'WorkingSetSize',
     'PrivatePageCount', 'ReadTransferCount', 'WriteTransferCount', 'ReadOperationCount', 'WriteOperationCount', 'HandleCount', 'ThreadCount',
@@ -386,6 +430,7 @@ $script:WinEndpoints = @()
 $script:WinProbe = $null
 $script:WtsAvailable = $false
 $script:WarnedOnce = @{}
+$script:WinSidTypeFailed = $false
 
 #endregion
 
@@ -874,16 +919,136 @@ function ConvertTo-WorkerPerfServiceMap([object[]]$Services) {
     return $map
 }
 
-function ConvertTo-WorkerPerfEventKind([string]$Source, [int]$EventId) {
-    if ($Source -eq 'Defender') {
-        if ($EventId -eq 1000) { return 'scan-start' }
-        if ($EventId -eq 1001 -or $EventId -eq 1002) { return 'scan-end' }
-        if ($EventId -eq 2000) { return 'signature-update' }
+function New-WorkerPerfEventQueries($Config, [string]$LogId, [string[]]$Names) {
+    # The queries of one log of the catalogue: per log name and provider its ids, at most 23 per query, and for the
+    # entries with "ids": "*" one query by level. Emits @{ LogName; Provider; Ids (int[] or $null); Levels (int[] or $null) }.
+    $byProvider = [ordered]@{}
+    foreach ($e in @($Config.Entries)) {
+        if ($e.log -ne $LogId) { continue }
+        $k = $e.provider.ToLowerInvariant()
+        if (-not $byProvider.Contains($k)) {
+            $byProvider[$k] = @{ Name = $e.provider; Ids = (New-Object System.Collections.Generic.List[int]); Levels = (New-Object System.Collections.Generic.List[int]) }
+        }
+        $p = $byProvider[$k]
+        if ($e.allIds) { foreach ($lv in @($e.levels)) { if (-not $p.Levels.Contains([int]$lv)) { $p.Levels.Add([int]$lv) } } }
+        else { foreach ($i in @($e.ids)) { if (-not $p.Ids.Contains([int]$i)) { $p.Ids.Add([int]$i) } } }
     }
-    elseif ($Source -eq 'AppLocker') {
-        if ($EventId -eq 8004 -or $EventId -eq 8007) { return 'applocker-block' }
+    $max = $script:WorkerPerfWinMaxIdsPerQuery
+    foreach ($name in @($Names)) {
+        foreach ($p in $byProvider.Values) {
+            $ids = $p.Ids.ToArray()
+            for ($i = 0; $i -lt $ids.Length; $i += $max) {
+                $n = [Math]::Min($max, $ids.Length - $i)
+                $chunk = New-Object int[] $n
+                [Array]::Copy($ids, $i, $chunk, 0, $n)
+                @{ LogName = $name; Provider = $p.Name; Ids = $chunk; Levels = $null }
+            }
+            if ($p.Levels.Count -gt 0) { @{ LogName = $name; Provider = $p.Name; Ids = $null; Levels = $p.Levels.ToArray() } }
+        }
     }
-    return $null
+}
+
+function ConvertFrom-WorkerPerfDriverVersion([uint64]$Value) {
+    # DriverVersion of MSFT_PrinterDriver: four 16-bit parts, highest first -> 'a.b.c.d'; '' for 0 (not set).
+    if ($Value -eq 0) { return '' }
+    $parts = foreach ($shift in 48, 32, 16, 0) { [string](($Value -shr $shift) -band 0xFFFF) }
+    return ($parts -join '.')
+}
+
+function ConvertFrom-WorkerPerfIsolationGroups([string]$Value) {
+    # PrintDriverIsolationGroups (its strings joined with '\\'): groups separated by '\\', drivers within a group by '\'.
+    # The first group runs inside the spooler (none), the second in the shared process (shared), every further one
+    # alone (isolated). Driver name (case-insensitive) -> none/shared/isolated; a driver in several groups keeps the first.
+    $map = @{}
+    if ([string]::IsNullOrEmpty($Value)) { return $map }
+    $groups = $Value -split '\\\\'
+    for ($g = 0; $g -lt $groups.Length; $g++) {
+        $kind = 'isolated'
+        if ($g -eq 0) { $kind = 'none' } elseif ($g -eq 1) { $kind = 'shared' }
+        foreach ($name in ($groups[$g] -split '\\')) {
+            if ($name -ne '' -and -not $map.ContainsKey($name)) { $map[$name] = $kind }
+        }
+    }
+    return $map
+}
+
+function ConvertTo-WorkerPerfDword($Value) {
+    # A registry DWORD as an unsigned number; $null when the value is missing or no number.
+    if ($null -eq $Value) { return $null }
+    $v = $null
+    try { $v = [int64]$Value } catch { return $null }
+    if ($v -lt 0) { $v += 4294967296 }
+    return $v
+}
+
+function Get-WorkerPerfEffectiveIsolation([string]$Name, $Groups, $Attribute, $Policy) {
+    # The mode a driver runs in, as the probe script derives it (Microsoft's decision map, "Printer driver isolation"):
+    # isolation switched off by policy (PrintDriverIsolationExecutionPolicy = 0) puts every driver into the spooler;
+    # otherwise a driver listed in PrintDriverIsolationGroups ($Groups, from ConvertFrom-WorkerPerfIsolationGroups) runs
+    # in that mode; otherwise every driver runs shared when PrintDriverIsolationOverrideCompat = 1; otherwise a driver
+    # compatible with isolation (PrinterDriverAttributes bit 0x4) runs shared, an incompatible one in the spooler.
+    # $Policy: policy value name -> value (only the values that are set). '' when the attribute was not read and the
+    # policies do not decide.
+    $exec = $null; $override = $null
+    if ($null -ne $Policy) {
+        $exec = ConvertTo-WorkerPerfDword (Get-WorkerPerfField $Policy 'PrintDriverIsolationExecutionPolicy')
+        $override = ConvertTo-WorkerPerfDword (Get-WorkerPerfField $Policy 'PrintDriverIsolationOverrideCompat')
+    }
+    if ($null -ne $exec -and $exec -eq 0) { return 'none' }
+    if ($null -ne $Groups -and $Name -ne '' -and $Groups.ContainsKey($Name)) { return [string]$Groups[$Name] }
+    if ($null -ne $override -and $override -eq 1) { return 'shared' }
+    $a = ConvertTo-WorkerPerfDword $Attribute
+    if ($null -eq $a) { return '' }
+    if (($a -band 4) -ne 0) { return 'shared' }
+    return 'none'
+}
+
+function ConvertTo-WorkerPerfPrintDriver($Driver, $Groups, $Attribute, $Policy) {
+    # One driver of MSFT_PrinterDriver as a record of printdrivers.csv: Type = MajorVersion (3 or 4), Files = the file
+    # names without path of the driver, configuration, data and dependent files, each once (case-insensitive).
+    $files = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($f in @((Get-WorkerPerfField $Driver 'Path'), (Get-WorkerPerfField $Driver 'ConfigFile'), (Get-WorkerPerfField $Driver 'DataFile')) + @(Get-WorkerPerfField $Driver 'DependentFiles')) {
+        $t = [string]$f
+        if ($t.Trim().Length -eq 0) { continue }
+        $leaf = $t.Substring($t.LastIndexOfAny([char[]]@('\', '/')) + 1).Trim()
+        if ($leaf.Length -eq 0 -or $seen.ContainsKey($leaf)) { continue }
+        $seen[$leaf] = $true
+        $files.Add($leaf)
+    }
+    $type = $null
+    $major = Get-WorkerPerfField $Driver 'MajorVersion'
+    if ($null -ne $major) { try { $type = [int]$major } catch { $type = $null } }
+    $version = ''
+    $raw = Get-WorkerPerfField $Driver 'DriverVersion'
+    if ($null -ne $raw) { try { $version = ConvertFrom-WorkerPerfDriverVersion ([uint64]$raw) } catch { $version = '' } }
+    $name = [string](Get-WorkerPerfField $Driver 'Name')
+    return [pscustomobject]@{
+        Name = $name; Manufacturer = [string](Get-WorkerPerfField $Driver 'Manufacturer'); Version = $version; Type = $type
+        Isolation = (Get-WorkerPerfEffectiveIsolation $name $Groups $Attribute $Policy); Files = [string[]]$files.ToArray()
+    }
+}
+
+function ConvertTo-WorkerPerfPrintQueueRows($Values) {
+    # One record per print queue from the counter values (counter -> instance -> value), without totals, sorted by name.
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($cn in $script:WorkerPerfWinPrintQueueCounters) {
+        $v = $Values[$cn]
+        if ($null -eq $v) { continue }
+        foreach ($i in $v.Keys) { if (-not (Test-WorkerPerfTotalInstance ([string]$i)) -and -not $names.Contains([string]$i)) { $names.Add([string]$i) } }
+    }
+    $arr = $names.ToArray()
+    [Array]::Sort($arr, [StringComparer]::Ordinal)
+    $get = { param($counter, $queue) $v = $Values[$counter]; if ($null -ne $v -and $v.ContainsKey($queue)) { $v[$queue] } else { $null } }
+    foreach ($q in $arr) {
+        [pscustomobject]@{ Queue = $q; Jobs = (& $get 'Jobs' $q); JobErrors = (& $get 'Job Errors' $q); NotReadyErrors = (& $get 'Not Ready Errors' $q) }
+    }
+}
+
+function ConvertTo-WorkerPerfUtcTime([datetime]$Time) {
+    # Event times are compared in UTC: in the repeated hour at the end of daylight saving time local times are ambiguous.
+    if ($Time.Kind -eq [DateTimeKind]::Utc) { return $Time }
+    return $Time.ToUniversalTime()
 }
 
 #endregion
@@ -956,6 +1121,60 @@ function Register-WorkerPerfNativeTypes {
 
 function Register-WorkerPerfProbeType {
     if (-not ('WorkerPerf.Probe' -as [type])) { Add-Type -TypeDefinition $script:WorkerPerfProbeSource -Language CSharp }
+}
+
+function Get-WorkerPerfSidAccount([string]$Sid) {
+    # @{ Name ('DOMAIN\name' or ''); TimedOut }: the translation of a SID by Windows, given up after the time limit.
+    if ($script:WinSidTypeFailed) { return @{ Name = ''; TimedOut = $false } }
+    if (-not ('WorkerPerf.SidLookup' -as [type])) {
+        try { Add-Type -TypeDefinition $script:WorkerPerfSidSource -Language CSharp }
+        catch {
+            $script:WinSidTypeFailed = $true
+            Write-WarningOnce 'sid' "Konten der Ereignisse nicht aufloesbar, Ereignisse ohne Benutzer bleiben ohne: $($_.Exception.Message)"
+            return @{ Name = ''; TimedOut = $false }
+        }
+    }
+    $timedOut = $false
+    $name = [WorkerPerf.SidLookup]::Translate($Sid, $script:WorkerPerfWinSidTimeoutMs, [ref]$timedOut)
+    return @{ Name = [string]$name; TimedOut = [bool]$timedOut }
+}
+
+function Open-WorkerPerfRegistryKey([string]$SubKey) {
+    # A key below HKLM, read only; $null when it does not exist. Unlike the registry provider, a '/' stays part of a name.
+    return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($SubKey, $false)
+}
+
+function Get-WorkerPerfPrintIsolationGroups {
+    # PrintDriverIsolationGroups of the spooler (one or several strings), or $null when it is not set.
+    $key = Open-WorkerPerfRegistryKey $script:WorkerPerfWinPrintKey
+    if ($null -eq $key) { return $null }
+    try { return $key.GetValue('PrintDriverIsolationGroups') } finally { $key.Close() }
+}
+
+function Get-WorkerPerfPrintIsolationPolicy {
+    # The group policies on driver isolation that are set: value name -> value.
+    $policy = @{}
+    $key = Open-WorkerPerfRegistryKey $script:WorkerPerfWinPrintPolicyKey
+    if ($null -eq $key) { return $policy }
+    try {
+        $present = @($key.GetValueNames())
+        foreach ($name in 'PrintDriverIsolationExecutionPolicy', 'PrintDriverIsolationOverrideCompat') {
+            if ($present -contains $name) { $policy[$name] = $key.GetValue($name) }
+        }
+    }
+    finally { $key.Close() }
+    return $policy
+}
+
+function Get-WorkerPerfPrintDriverAttribute($Driver) {
+    # PrinterDriverAttributes below the driver's key (...\Print\Environments\<env>\Drivers\Version-<n>\<name>), or $null.
+    $name = [string](Get-WorkerPerfField $Driver 'Name')
+    $environment = [string](Get-WorkerPerfField $Driver 'PrinterEnvironment')
+    $version = [string](Get-WorkerPerfField $Driver 'MajorVersion')
+    if ($name -eq '' -or $environment -eq '' -or $version -eq '') { return $null }
+    $key = Open-WorkerPerfRegistryKey ('{0}\Environments\{1}\Drivers\Version-{2}\{3}' -f $script:WorkerPerfWinPrintKey, $environment, $version, $name)
+    if ($null -eq $key) { return $null }
+    try { return $key.GetValue('PrinterDriverAttributes') } finally { $key.Close() }
 }
 
 function Get-WinProcessRaw {
@@ -1082,8 +1301,10 @@ function Update-WorkerPerfProfileMap($State, [object[]]$Sessions) {
 #region ---------- data source interface ------------------------------------------------------------------------------
 
 function Initialize-WorkerPerfSource {
-    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix)
-    # StartTime exists for the common interface: the clock of this source is the system clock.
+    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix,
+          [object]$EventConfig = $null)
+    # StartTime exists for the common interface: the clock of this source is the system clock. EventConfig: the event
+    # catalogue (Read-WorkerPerfEventConfig); without it the source reads events.json next to this file.
 
     $script:WarnedOnce = @{}
     if (-not (Test-WorkerPerfElevated)) {
@@ -1100,6 +1321,7 @@ function Initialize-WorkerPerfSource {
         LogicalProcessors = 1
         IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; NoCitrix = [bool]$NoCitrix
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
+        EventConfig = $null; SidCache = @{}; SidPauseUntil = [datetime]::MinValue; PrintDrivers = $false; PrintQueue = $null
     }
 
     # ---- performance counters: one status per counter group ----
@@ -1174,23 +1396,50 @@ function Initialize-WorkerPerfSource {
     }
     catch { $sources['profile.map'] = @{ Available = $false; Detail = ('MSFT_Disk nicht lesbar: {0}' -f $_.Exception.Message) } }
 
-    # ---- event logs ----
-    foreach ($src in 'Defender', 'AppLocker') {
+    # ---- event logs: every log of the catalogue, available or not ----
+    if ($null -eq $EventConfig) { $EventConfig = Read-WorkerPerfEventConfig $script:WorkerPerfWinEventFile }
+    $state.EventConfig = $EventConfig
+    foreach ($l in @($EventConfig.Logs.Values)) {
         $readable = New-Object System.Collections.Generic.List[string]
-        foreach ($l in @($script:WorkerPerfWinEventLogs | Where-Object { $_.Source -eq $src })) {
+        foreach ($name in @($l.Names)) {
             try {
-                $info = Get-WinEvent -ListLog $l.Log -ErrorAction Stop
-                if ($null -ne $info -and [bool]$info.IsEnabled) { $state.Logs.Add($l); $readable.Add($l.Log) }
+                $info = Get-WinEvent -ListLog $name -ErrorAction Stop
+                if ($null -ne $info -and [bool]$info.IsEnabled) { $readable.Add($name) }
             }
-            catch { Write-Verbose ('Protokoll {0} nicht vorhanden: {1}' -f $l.Log, $_.Exception.Message) }
+            catch { Write-Verbose ('Protokoll {0} nicht vorhanden: {1}' -f $name, $_.Exception.Message) }
         }
-        $id = 'events.' + $src.ToLowerInvariant()
-        if ($readable.Count -gt 0) { $sources[$id] = @{ Available = $true; Detail = ($readable.ToArray() -join ', ') } }
+        $id = 'events.' + $l.Id
+        if ($readable.Count -gt 0) {
+            $names = $readable.ToArray()
+            $state.Logs.Add(@{ Id = $l.Id; Names = $names; Lookback = [bool]$l.Lookback; Queries = @(New-WorkerPerfEventQueries $EventConfig $l.Id $names) })
+            $sources[$id] = @{ Available = $true; Detail = ($names -join ', ') }
+        }
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
 
-    # ---- printing (Task 10 reads the drivers and the queue counters) ----
-    foreach ($id in 'print.drivers', 'print.queues') { $sources[$id] = @{ Available = $false; Detail = 'noch nicht umgesetzt' } }
+    # ---- printing: driver list and queue counters ----
+    try {
+        [void](Get-CimClass -Namespace $script:WorkerPerfWinDriverNamespace -ClassName $script:WorkerPerfWinDriverClass -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
+        $state.PrintDrivers = $true
+        $sources['print.drivers'] = @{ Available = $true; Detail = ('{0}: {1}' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) }
+    }
+    catch { $sources['print.drivers'] = @{ Available = $false; Detail = ('{0}: Klasse {1} nicht vorhanden' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) } }
+    $reason = ''
+    try {
+        foreach ($c in $script:WorkerPerfWinPrintQueueCounters) {
+            $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinPrintQueueCategory $c)
+            if ($reason) { break }
+        }
+        if (-not $reason) {
+            $state.PrintQueue = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory
+            if ($null -eq $state.PrintQueue) { $reason = 'Kategorie nicht vorhanden' }
+        }
+    }
+    catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.PrintQueue = $null }
+    if ($reason) { $sources['print.queues'] = @{ Available = $false; Detail = ('{0}: {1}' -f $script:WorkerPerfWinPrintQueueCategory, $reason) } }
+    else {
+        $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
+    }
 
     $state.LogicalProcessors = [Math]::Max(1, [int]$cs.NumberOfLogicalProcessors)
     $script:WinState = $state
@@ -1317,58 +1566,176 @@ function Receive-WorkerPerfProbes {
     }
 }
 
-function Get-WorkerPerfEvents {
-    param([datetime]$Since)
-    # Events of the logs found at the start with Since < Time <= now, oldest first; at most the newest 200 per log and
-    # call (one warning per log when more were there).
+function Resolve-WorkerPerfEventSid([string]$Sid) {
+    # The account of an event's SID: the well-known service accounts by their SID, any other once per SID through
+    # Windows (cached, also when Windows knows none). After a lookup ran into its time limit the lookups pause for
+    # 10 minutes ('' meanwhile), so an unreachable domain controller delays a read by at most one time limit.
+    if ([string]::IsNullOrWhiteSpace($Sid)) { return '' }
+    $known = Resolve-WorkerPerfWellKnownSid $Sid
+    if ($known) { return $known }
     $st = $script:WinState
-    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
-    $now = [datetime]::Now
-    $rows = New-Object System.Collections.Generic.List[object]
-    foreach ($l in $st.Logs) {
+    if ($st.SidCache.ContainsKey($Sid)) { return [string]$st.SidCache[$Sid] }
+    if ([datetime]::UtcNow -lt $st.SidPauseUntil) { return '' }
+    $r = $null
+    try { $r = Get-WorkerPerfSidAccount $Sid }
+    catch { $r = @{ Name = ''; TimedOut = $false } }
+    if ($r.TimedOut) {
+        $st.SidPauseUntil = [datetime]::UtcNow.AddMinutes($script:WorkerPerfWinSidPauseMinutes)
+        return ''
+    }
+    $st.SidCache[$Sid] = [string]$r.Name
+    return [string]$r.Name
+}
+
+function ConvertTo-WorkerPerfWinEventRecord($Config, [string]$LogId, $Event) {
+    # A record of an event of the log from its XML and the catalogue, or $null (not in the catalogue, unreadable). The
+    # User comes from the data fields, else from the account of the System part.
+    if ($null -eq $Event -or $null -eq $Event.TimeCreated) { return $null }
+    $xml = ''
+    try { $xml = [string]$Event.ToXml() } catch { return $null }
+    $parsed = ConvertFrom-WorkerPerfEventXml $xml
+    if ($null -eq $parsed) { return $null }
+    $entry = Resolve-WorkerPerfEventEntry $Config $LogId $parsed.Provider $parsed.EventId $parsed.Level
+    if ($null -eq $entry) { return $null }
+    $text = ''
+    try { $text = [string]$Event.Message } catch { $text = '' }
+    $rec = ConvertTo-WorkerPerfEventRecord $entry $parsed ([datetime]$Event.TimeCreated) $text
+    if ($null -eq $rec) { return $null }
+    if ($rec.User.Length -eq 0 -and $parsed.UserSid.Length -gt 0) { $rec.User = ConvertTo-WorkerPerfEventAccountName (Resolve-WorkerPerfEventSid $parsed.UserSid) $Config }
+    return $rec
+}
+
+function Read-WorkerPerfWinLogEvents($Log, [datetime]$StartUtc, $EndUtc, [int]$Max) {
+    # The raw events of one log of the catalogue (all its queries) with StartUtc <= time (<= EndUtc), newest first, at
+    # most Max: @{ Events; More (more were there) }. A query that fails gives one warning per log name; no matching
+    # event, provider or log is no error (the error ids are language neutral).
+    $all = New-Object System.Collections.Generic.List[object]
+    $seen = @{}
+    foreach ($q in @($Log.Queries)) {
+        $filter = @{ LogName = $q.LogName; ProviderName = $q.Provider; StartTime = $StartUtc }
+        if ($null -ne $q.Ids) { $filter['Id'] = $q.Ids }
+        if ($null -ne $q.Levels) { $filter['Level'] = $q.Levels }
+        if ($null -ne $EndUtc) { $filter['EndTime'] = $EndUtc }
         $events = @()
         try {
             # one more than kept, to notice that events were dropped
-            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $l.Log; Id = $l.Ids; StartTime = $Since } -MaxEvents ($script:WorkerPerfWinMaxEvents + 1) -ErrorAction Stop)
+            $events = @(Get-WinEvent -FilterHashtable $filter -MaxEvents ($Max + 1) -ErrorAction Stop)
         }
         catch {
-            # no matching events is not an error; the error id is language neutral
-            if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') {
-                Write-WarningOnce ('events:' + $l.Log) ("Ereignisprotokoll '{0}' nicht lesbar: {1}" -f $l.Log, $_.Exception.Message)
+            if ($_.FullyQualifiedErrorId -notlike 'NoMatching*') {
+                Write-WarningOnce ('events:' + $q.LogName) ("Ereignisprotokoll '{0}' nicht lesbar: {1}" -f $q.LogName, $_.Exception.Message)
             }
             continue
         }
-        if ($events.Count -gt $script:WorkerPerfWinMaxEvents) {
-            # Get-WinEvent returns the newest first: the newest 200 are kept, the older ones of this window are lost
-            Write-WarningOnce ('events.dropped:' + $l.Log) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die aelteren fehlen in events.csv." -f $l.Log, $script:WorkerPerfWinMaxEvents)
-            $events = @($events[0..($script:WorkerPerfWinMaxEvents - 1)])
-        }
         foreach ($ev in $events) {
             if ($null -eq $ev -or $null -eq $ev.TimeCreated) { continue }
-            $t = [datetime]$ev.TimeCreated
-            if ($t -le $Since -or $t -gt $now) { continue }
-            $kind = ConvertTo-WorkerPerfEventKind $l.Source ([int]$ev.Id)
-            if ($null -eq $kind) { continue }
-            $text = ''
-            try { $text = Get-WorkerPerfEventText ([string]$ev.Message) } catch { $text = '' }
-            $rows.Add([pscustomobject]@{ Time = $t; Source = $l.Source; EventId = [int]$ev.Id; Kind = $kind; Text = $text })
+            # a provider with an id entry and a level entry may return an event twice
+            $rid = $null
+            try { $rid = $ev.RecordId } catch { $rid = $null }
+            if ($null -ne $rid) {
+                $k = [string]$q.LogName + '|' + [string]$rid
+                if ($seen.ContainsKey($k)) { continue }
+                $seen[$k] = $true
+            }
+            $all.Add($ev)
         }
     }
-    $rows.ToArray() | Sort-Object -Property Time
+    $sorted = @($all.ToArray() | Sort-Object -Property @{ Expression = { ConvertTo-WorkerPerfUtcTime ([datetime]$_.TimeCreated) }; Descending = $true })
+    $more = $sorted.Count -gt $Max
+    if ($more) { $sorted = @($sorted[0..($Max - 1)]) }
+    return @{ Events = $sorted; More = $more }
+}
+
+function Get-WorkerPerfEvents {
+    param([datetime]$Since)
+    # Events of the catalogue in the logs found at the start with Since < Time <= now (compared in UTC), oldest first;
+    # at most the newest 200 per log and call (one warning per log when more were there).
+    $st = $script:WinState
+    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    $nowUtc = [datetime]::UtcNow
+    $sinceUtc = ConvertTo-WorkerPerfUtcTime $Since
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($l in $st.Logs) {
+        $r = Read-WorkerPerfWinLogEvents $l $sinceUtc $null $script:WorkerPerfWinMaxEvents
+        if ($r.More) {
+            # the newest 200 are kept, the older ones of this window are lost
+            Write-WarningOnce ('events.dropped:' + $l.Id) ("Ereignisprotokoll '{0}': mehr als {1} Ereignisse seit dem letzten Abruf, die aelteren fehlen in events.csv." -f ($l.Names -join ', '), $script:WorkerPerfWinMaxEvents)
+        }
+        foreach ($ev in $r.Events) {
+            $u = ConvertTo-WorkerPerfUtcTime ([datetime]$ev.TimeCreated)
+            if ($u -le $sinceUtc -or $u -gt $nowUtc) { continue }
+            $rec = ConvertTo-WorkerPerfWinEventRecord $st.EventConfig $l.Id $ev
+            if ($null -ne $rec) { $rows.Add($rec) }
+        }
+    }
+    $rows.ToArray() | Sort-Object -Property @{ Expression = { ConvertTo-WorkerPerfUtcTime $_.Time } }
 }
 
 function Get-WorkerPerfEventsBefore {
-    # Placeholder of the common interface: Task 10 reads the lookback of the logs in events.json here.
+    # The lookback: events of the catalogue in the logs with lookback from Until - Days to Until, at most the newest
+    # 2000 per log; a log that reached that cap goes to Capped (by its id), and so does every log not read to the end
+    # when the time budget of the lookback ran out. Returns @{ Events (oldest first); Capped }.
     param([int]$Days, [datetime]$Until)
-    return @{ Events = @(); Capped = @() }
+    $st = $script:WinState
+    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    $events = New-Object System.Collections.Generic.List[object]
+    $capped = New-Object System.Collections.Generic.List[string]
+    if ($Days -le 0) { return @{ Events = @(); Capped = @() } }
+    $untilUtc = ConvertTo-WorkerPerfUtcTime $Until
+    $fromUtc = $untilUtc.AddDays(-$Days)
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $budgetMs = [double]$script:WorkerPerfWinLookbackBudgetSec * 1000
+    foreach ($l in $st.Logs) {
+        if (-not $l.Lookback) { continue }
+        if ($clock.ElapsedMilliseconds -ge $budgetMs) { $capped.Add($l.Id); continue }
+        $r = Read-WorkerPerfWinLogEvents $l $fromUtc $untilUtc $script:WorkerPerfWinLookbackMax
+        if ($r.More) { $capped.Add($l.Id) }
+        foreach ($ev in $r.Events) {
+            if ($clock.ElapsedMilliseconds -ge $budgetMs) {
+                if (-not $capped.Contains($l.Id)) { $capped.Add($l.Id) }
+                break
+            }
+            $u = ConvertTo-WorkerPerfUtcTime ([datetime]$ev.TimeCreated)
+            if ($u -le $fromUtc -or $u -gt $untilUtc) { continue }
+            $rec = ConvertTo-WorkerPerfWinEventRecord $st.EventConfig $l.Id $ev
+            if ($null -ne $rec) { $events.Add($rec) }
+        }
+    }
+    $sorted = @($events.ToArray() | Sort-Object -Property @{ Expression = { ConvertTo-WorkerPerfUtcTime $_.Time } })
+    return @{ Events = $sorted; Capped = $capped.ToArray() }
 }
 
 function Get-WorkerPerfPrintDrivers {
-    # Placeholder of the common interface (Sources 'print.drivers' says "noch nicht umgesetzt"): Task 10 fills it. No output.
+    # The printer drivers (MSFT_PrinterDriver) with their effective isolation; no output when the class was missing at
+    # the start. The isolation settings are read once per call; an unreadable one leaves the isolation to the others.
+    $st = $script:WinState
+    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    if (-not $st.PrintDrivers) { return }
+    $drivers = @(Get-CimInstance -Namespace $script:WorkerPerfWinDriverNamespace -ClassName $script:WorkerPerfWinDriverClass `
+            -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
+    $groups = $null
+    try { $groups = @(Get-WorkerPerfPrintIsolationGroups) }
+    catch { Write-WarningOnce 'print.groups' "PrintDriverIsolationGroups nicht lesbar: $($_.Exception.Message)" }
+    $map = ConvertFrom-WorkerPerfIsolationGroups ((@($groups) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ }) -join '\\')
+    $policy = @{}
+    try { $p = Get-WorkerPerfPrintIsolationPolicy; if ($null -ne $p) { $policy = $p } }
+    catch { Write-WarningOnce 'print.policy' "Richtlinien der Treiberisolierung nicht lesbar: $($_.Exception.Message)" }
+    foreach ($d in $drivers) {
+        if ($null -eq $d) { continue }
+        $attribute = $null
+        try { $attribute = Get-WorkerPerfPrintDriverAttribute $d } catch { $attribute = $null }
+        ConvertTo-WorkerPerfPrintDriver $d $map $attribute $policy
+    }
 }
 
 function Get-WorkerPerfPrintQueues {
-    # Placeholder of the common interface (Sources 'print.queues' says "noch nicht umgesetzt"): Task 10 fills it. No output.
+    # The raw values of the queue counters (Jobs, Job Errors, Not Ready Errors) per queue, without _Total; no output when
+    # the category was missing at the start.
+    $st = $script:WinState
+    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    if ($null -eq $st.PrintQueue) { return }
+    $current = Read-WorkerPerfWinCategory $st.PrintQueue
+    ConvertTo-WorkerPerfPrintQueueRows (Get-WorkerPerfWinInstantValues -Current $current -Counters $script:WorkerPerfWinPrintQueueCounters)
 }
 
 function Get-WorkerPerfFreeSpaceMB {

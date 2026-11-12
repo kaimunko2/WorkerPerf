@@ -143,6 +143,21 @@ Describe 'Gedaechtnis der Prozesse und Fenster der Ereignisse (Fix-Runde 1)' {
         $r = @(Complete-WorkerPerfEventSession -Events @((New-CrashEvent 38), (New-CrashEvent 46)) -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
         $r[0].SessionId | Should -Be 3; $r[1].SessionId | Should -Be 7; $r[1].User | Should -Be 'user006'
     }
+    It 'nimmt bei einer Startzeit im Ereignis nur den Prozess mit dieser Startzeit (Task 10)' {
+        # beide Prozesse lebten zur Zeit des Absturzes laut Gedaechtnis; die Startzeit des Ereignisses nennt den alten
+        $mem = New-WorkerPerfProcessMemory
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 3 $Old) -Time $t.AddSeconds(15)
+        Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 7 $t.AddSeconds(20)) -Time $t.AddSeconds(30)
+        $e1 = New-CrashEvent 25; $e1 | Add-Member -NotePropertyName ProcessStart -NotePropertyValue $Old.ToUniversalTime().AddMilliseconds(0.4)
+        $e2 = New-CrashEvent 25; $e2 | Add-Member -NotePropertyName ProcessStart -NotePropertyValue $t.AddSeconds(20).ToUniversalTime()
+        $e3 = New-CrashEvent 25; $e3 | Add-Member -NotePropertyName ProcessStart -NotePropertyValue $null
+        $e4 = New-CrashEvent 25; $e4 | Add-Member -NotePropertyName ProcessStart -NotePropertyValue $t.AddSeconds(5).ToUniversalTime()
+        $r = @(Complete-WorkerPerfEventSession -Events @($e1, $e2, $e3, $e4) -Processes @(Get-WorkerPerfProcessMemoryEntries $mem) -Sessions $Sess -MaxGapSeconds 35)
+        $r[0].SessionId | Should -Be 3; $r[0].User | Should -Be 'user002'
+        $r[1].SessionId | Should -Be 7
+        $r[2].SessionId | Should -Be 7                                                        # ohne Startzeit: der zuletzt gestartete
+        $r[3].SessionId | Should -BeNullOrEmpty                                               # kein Prozess mit dieser Startzeit
+    }
     It 'laesst ein Ereignis lange nach dem letzten Sehen und vor dem Start des Prozesses leer' {
         $mem = New-WorkerPerfProcessMemory
         Update-WorkerPerfProcessMemory -Memory $mem -Processes @(New-MemProc 812 3 $Old) -Time $t

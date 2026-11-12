@@ -118,13 +118,13 @@ $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'WorkerPerf.Common.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
 if ($Simulate) {
     if ($DurationMinutes -lt 60) { throw '-Simulate erfordert -DurationMinutes von mindestens 60 (das Drehbuch dauert 60 Minuten).' }
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Simulation.ps1')
 }
 else {
     if (-not (Test-WorkerPerfWindows)) { throw 'Die Aufzeichnung realer Daten ist nur unter Windows moeglich. Fuer Testdaten -Simulate verwenden.' }
-    . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Windows.ps1')
 }
 
@@ -137,9 +137,11 @@ if (-not $OutputPath) {
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile)
+# the event catalogue: which logs, providers and ids the source reads and how it reads their fields
+$eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$IncludeCommandLine -NoCitrix:$NoCitrix
+    -IncludeCommandLine:$IncludeCommandLine -NoCitrix:$NoCitrix -EventConfig $eventConfig
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 

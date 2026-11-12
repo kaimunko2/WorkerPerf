@@ -101,7 +101,7 @@ Describe 'Simulation' {
             $e.Group | Should -BeExactly $entry.group; $e.Kind | Should -BeExactly $entry.kind
             # alle Felder eines Datensatzes von ConvertTo-WorkerPerfEventRecord
             @($e.PSObject.Properties.Name | Sort-Object) | Should -Be @('App', 'AppVersion', 'Code', 'Driver', 'EventId', 'Group', 'Kind', 'Level', 'Log', 'Module', 'ModuleVersion',
-                'Object', 'Pid', 'Printer', 'Service', 'SessionId', 'Source', 'Text', 'Time', 'User')
+                'Object', 'Pid', 'Printer', 'ProcessStart', 'Service', 'SessionId', 'Source', 'Text', 'Time', 'User')     # ProcessStart: Task 10
         }
     }
     It 'liefert Rueckblick, Treiber und Warteschlangen' {

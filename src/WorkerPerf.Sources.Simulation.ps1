@@ -137,7 +137,7 @@ function New-WorkerPerfSimEvent {
         Sec = $Sec; Log = $entry.log; Source = $entry.provider; EventId = $EventId; Level = $Level; Group = $entry.group; Kind = $entry.kind
         App = $App; AppVersion = $AppVersion; Module = $Module; ModuleVersion = $ModuleVersion; Code = (Format-WorkerPerfErrorCode $Code)
         Pid = $(if ($null -ne $ProcessId) { [int]$ProcessId } else { $null }); SessionId = $(if ($null -ne $SessionId) { [int]$SessionId } else { $null })
-        User = $User; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = (Get-WorkerPerfEventText $Text)
+        User = $User; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = (Get-WorkerPerfEventText $Text); ProcessStart = $null
     }
 }
 
@@ -147,7 +147,7 @@ function ConvertTo-WorkerPerfSimEventRecord($Scene) {
         Time = $script:WorkerPerfSimStart.AddSeconds($Scene.Sec); Log = $Scene.Log; Source = $Scene.Source; EventId = $Scene.EventId; Level = $Scene.Level
         Group = $Scene.Group; Kind = $Scene.Kind; App = $Scene.App; AppVersion = $Scene.AppVersion; Module = $Scene.Module; ModuleVersion = $Scene.ModuleVersion
         Code = $Scene.Code; Pid = $Scene.Pid; SessionId = $Scene.SessionId; User = $Scene.User; Printer = $Scene.Printer; Driver = $Scene.Driver
-        Service = $Scene.Service; Object = $Scene.Object; Text = $Scene.Text
+        Service = $Scene.Service; Object = $Scene.Object; Text = $Scene.Text; ProcessStart = $Scene.ProcessStart
     }
 }
 
@@ -167,7 +167,9 @@ function New-WorkerPerfSimSessionEvent($Config, [double]$Sec, [int]$EventId, [st
 }
 
 function Initialize-WorkerPerfSource {
-    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix)
+    param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [switch]$NoCitrix,
+          [object]$EventConfig = $null)
+    # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
 
     if ($null -eq $StartTime -or $StartTime -eq [datetime]::MinValue) {
         $n = [datetime]::Now
@@ -323,7 +325,8 @@ function Initialize-WorkerPerfSource {
     # and user. The profile error names its user but no session: Windows writes the account into the System part of
     # the event, and the Windows source resolves it to the user name. The logon with the profile error lies before the
     # memory scene and far from other scenes, so it matches no pattern (the resource pattern looks 5 minutes back).
-    $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile
+    $cfg = $EventConfig
+    if ($null -eq $cfg) { $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile }
     $spoolerPid = @($script:WorkerPerfSimProcs | Where-Object { $_.Name -eq 'spoolsv.exe' -and $_.SessionId -eq 0 })[0].Pid
     $defender = 'Microsoft-Windows-Windows Defender'
     $script:WorkerPerfSimEvents = @(

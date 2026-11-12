@@ -125,7 +125,8 @@ Describe 'Rohereignis -> Datensatz' {
     It 'schreibt ein Ereignis mit fehlenden Feldern mit leeren Werten' {
         $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 '<EventData><Data>nur ein Wert</Data></EventData>')
         $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) $null
-        $r.App | Should -Be ''; $r.Pid | Should -BeNullOrEmpty; $r.Kind | Should -Be 'crash'; $r.Text | Should -Be ''
+        # Aussage geaendert (Task 10, P1-R26): das einzige unbenannte Feld ist die Anwendung (#0), die uebrigen fehlen
+        $r.App | Should -Be 'nur ein Wert'; $r.Module | Should -Be ''; $r.Code | Should -Be ''; $r.ProcessStart | Should -BeNullOrEmpty; $r.Pid | Should -BeNullOrEmpty; $r.Kind | Should -Be 'crash'; $r.Text | Should -Be ''
         $r.Printer | Should -Be ''; $r.Object | Should -Be ''; $r.SessionId | Should -BeNullOrEmpty
     }
     It 'vereinheitlicht Fehlercodes und kuerzt Texte auf 300 Zeichen' {
@@ -138,14 +139,16 @@ Describe 'Rohereignis -> Datensatz' {
 
 Describe 'Inhalt von events.json' {
     It 'legt Gruppe, Art und Felder jedes Eintrags fest: <Log> <Provider> <Id>' -TestCases @(
-        @{ Log = 'application'; Provider = 'Application Error'; Id = 1000; Group = 'app'; Kind = 'crash'; Fields = 'app=AppName;appVersion=AppVersion;module=ModuleName;moduleVersion=ModuleVersion;code=ExceptionCode;pid=ProcessId/hex' }
-        @{ Log = 'application'; Provider = 'Application Hang'; Id = 1002; Group = 'app'; Kind = 'hang'; Fields = 'app=#0;appVersion=#1;pid=#2/hex' }
+        # Aussage geaendert (Task 10, P1-R26): benannte Felder zuerst, die klassischen Positionen dahinter; dazu die Startzeit des Prozesses
+        @{ Log = 'application'; Provider = 'Application Error'; Id = 1000; Group = 'app'; Kind = 'crash'; Fields = 'app=AppName|#0;appVersion=AppVersion|#1;module=ModuleName|#3;moduleVersion=ModuleVersion|#4;code=ExceptionCode|#6;pid=ProcessId|#8/hex;processStart=ProcessCreationTime|#9' }
+        @{ Log = 'application'; Provider = 'Application Hang'; Id = 1002; Group = 'app'; Kind = 'hang'; Fields = 'app=#0;appVersion=#1;pid=#2/hex;processStart=#3' }
         @{ Log = 'application'; Provider = '.NET Runtime'; Id = 1026; Group = 'app'; Kind = 'app-detail'; Fields = '' }
         @{ Log = 'application'; Provider = 'Windows Error Reporting'; Id = 1001; Group = 'app'; Kind = 'app-detail'; Fields = '' }
         @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 21; Group = 'session'; Kind = 'logon'; Fields = 'user=User;session=SessionID' }
         @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 23; Group = 'session'; Kind = 'logoff'; Fields = 'user=User;session=SessionID' }
         @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 24; Group = 'session'; Kind = 'disconnect'; Fields = 'user=User;session=SessionID' }
         @{ Log = 'session'; Provider = 'Microsoft-Windows-TerminalServices-LocalSessionManager'; Id = 25; Group = 'session'; Kind = 'reconnect'; Fields = 'user=User;session=SessionID' }
+        @{ Log = 'system'; Provider = 'Service Control Manager'; Id = 7023; Group = 'service'; Kind = 'service'; Fields = 'service=binary:utf16' }
         @{ Log = 'system'; Provider = 'Service Control Manager'; Id = 7031; Group = 'service'; Kind = 'service'; Fields = 'service=binary:utf16' }
         @{ Log = 'system'; Provider = 'Service Control Manager'; Id = 7034; Group = 'service'; Kind = 'service'; Fields = 'service=binary:utf16' }
         @{ Log = 'system'; Provider = 'disk'; Id = 7; Group = 'storage'; Kind = 'system'; Fields = 'object=#0' }
@@ -160,6 +163,10 @@ Describe 'Inhalt von events.json' {
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 372; Group = 'print'; Kind = 'print'; Fields = '' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 808; Group = 'print'; Kind = 'print'; Fields = '' }
         @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 6161; Group = 'print'; Kind = 'print'; Fields = '' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 600; Group = 'print'; Kind = 'print'; Fields = 'driver=Driver' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 601; Group = 'print'; Kind = 'print'; Fields = 'driver=Driver' }
+        @{ Log = 'printservice'; Provider = 'Microsoft-Windows-PrintService'; Id = 215; Group = 'print'; Kind = 'print'; Fields = 'driver=DriverName' }
+        @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30800; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30803; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
         @{ Log = 'smbclient'; Provider = 'Microsoft-Windows-SMBClient'; Id = 30807; Group = 'fileserver'; Kind = 'system'; Fields = 'object=ServerName' }
         @{ Log = 'profileservice'; Provider = 'Microsoft-Windows-User Profiles Service'; Id = 1511; Group = 'profile'; Kind = 'profileerror'; Fields = '' }
@@ -175,15 +182,19 @@ Describe 'Inhalt von events.json' {
         $e | Should -Not -BeNullOrEmpty
         $e.group | Should -Be $Group; $e.kind | Should -Be $Kind
         $actual = @($e.fields.Keys | Sort-Object | ForEach-Object {
-                $f = $e.fields[$_]; "$_=$($f.Field)" + $(if ($f.Format -eq 'hex') { '/hex' } else { '' }) }) -join ';'
+                $f = $e.fields[$_]; "$_=$(@($f.Field) -join '|')" + $(if ($f.Format -eq 'hex') { '/hex' } else { '' }) }) -join ';'
         $expected = (@($Fields -split ';' | Where-Object { $_ } | Sort-Object) -join ';')
         $actual | Should -Be $expected
     }
     It 'hat genau die erwarteten Kennungen je Quelle' {
         $count = 0; foreach ($e in $Cfg.Entries) { $count += @($e.ids).Count }
-        $count | Should -Be 45
+        $count | Should -Be 50                                                   # Aussage geaendert (Task 10, P1-R27): 600, 601, 215, 30800, 7023
+        (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 823) | Should -BeNullOrEmpty
+        (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 318) | Should -BeNullOrEmpty
+        (Resolve-WorkerPerfEventEntry $Cfg 'printservice' 'Microsoft-Windows-PrintService' 365) | Should -BeNullOrEmpty
+        @($Cfg.Entries | Where-Object { $_.allIds }).provider | Should -Be @('Citrix Profile Management')
         @((Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 7), (Resolve-WorkerPerfEventEntry $Cfg 'system' 'disk' 153)) | ForEach-Object { $_.ids -join ',' } | Select-Object -Unique | Should -Be '7,11,51,153'
-        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30805).ids -join ',' | Should -Be '30803,30804,30805,30806,30807'
+        (Resolve-WorkerPerfEventEntry $Cfg 'smbclient' 'Microsoft-Windows-SMBClient' 30805).ids -join ',' | Should -Be '30800,30803,30804,30805,30806,30807'
         (Resolve-WorkerPerfEventEntry $Cfg 'applocker' 'Microsoft-Windows-AppLocker' 8004).ids -join ',' | Should -Be '8004,8007'
     }
     It 'findet nichts bei unbekannter Quelle oder falschem Protokoll' {
@@ -225,6 +236,107 @@ Describe 'Inhalt von events.json' {
         $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 "<EventData><Data Name='AppName'></Data><Data Name='ProcessId'/></EventData>")
         $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) ''
         $r.App | Should -Be ''; $r.Pid | Should -BeNullOrEmpty
+    }
+}
+Describe 'Alternativen, Ebenen und Konto der Ereignisse (Task 10)' {
+    BeforeAll {
+        function New-Cfg([string]$Events) {
+            $f = Join-Path $TestDrive ('cfg' + [guid]::NewGuid().ToString('n') + '.json')
+            [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[' + $Events + ']}'); $f
+        }
+        # Application Error 1000 wie auf dem Zielserver: 15 unbenannte Datenfelder in der klassischen Reihenfolge (Werte erfunden)
+        $script:Unnamed = '<EventData><Data>EXCEL.EXE</Data><Data>16.0.1</Data><Data>65a1b2c3</Data><Data>vbe7.dll</Data><Data>7.1.10</Data><Data>5f00aa11</Data>' +
+            '<Data>c0000005</Data><Data>000e1f2c</Data><Data>1f1c</Data><Data>01dad0e2a1b2c3d4</Data><Data>C:\Programme\x.exe</Data><Data>C:\Programme\vbe7.dll</Data>' +
+            '<Data>00000000-0000-0000-0000-000000000001</Data><Data></Data><Data></Data></EventData>'
+    }
+    It 'liest Absturzdaten aus unbenannten Feldern nach Position' {
+        $p = ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 $Unnamed)
+        $r = ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1000) $p ([datetime]::Now) ''
+        $r.App | Should -Be 'EXCEL.EXE'; $r.AppVersion | Should -Be '16.0.1'; $r.Module | Should -Be 'vbe7.dll'; $r.ModuleVersion | Should -Be '7.1.10'
+        $r.Code | Should -Be '0xc0000005'; $r.Pid | Should -Be 7964                                       # 1f1c hex
+        $r.ProcessStart | Should -Be ([datetime]::FromFileTimeUtc(0x01dad0e2a1b2c3d4)); $r.ProcessStart.Kind | Should -Be 'Utc'
+    }
+    It 'nimmt die erste Alternative, die einen Wert liefert' {
+        $c = Read-WorkerPerfEventConfig (New-Cfg '{"log":"a","provider":"X","ids":[1],"group":"app","kind":"crash","fields":{"app":["AppName","#0"],"pid":{"field":["ProcessId","#2"],"format":"hex"}}}')
+        $e = Resolve-WorkerPerfEventEntry $c 'a' 'X' 1
+        $e.fields['app'].Field | Should -Be @('AppName', '#0')
+        $named = ConvertFrom-WorkerPerfEventXml (New-Xml 'X' 1 "<EventData><Data Name='Other'>falsch.exe</Data><Data Name='AppName'>WORD.EXE</Data><Data Name='ProcessId'>0x10</Data></EventData>")
+        $r = ConvertTo-WorkerPerfEventRecord $e $named ([datetime]::Now) ''
+        $r.App | Should -Be 'WORD.EXE'; $r.Pid | Should -Be 16
+        $empty = ConvertFrom-WorkerPerfEventXml (New-Xml 'X' 1 "<EventData><Data Name='Other'>PUNKT.EXE</Data><Data Name='AppName'> </Data><Data Name='Rest'>1a</Data></EventData>")
+        $r = ConvertTo-WorkerPerfEventRecord $e $empty ([datetime]::Now) ''
+        $r.App | Should -Be 'PUNKT.EXE'; $r.Pid | Should -Be 26                                         # leeres AppName: #0; ProcessId fehlt: #2
+        (ConvertTo-WorkerPerfEventRecord $e (ConvertFrom-WorkerPerfEventXml (New-Xml 'X' 1 '')) ([datetime]::Now) '').App | Should -Be ''
+    }
+    It 'weist ungueltige Listen von Feldverweisen ab' -TestCases @(
+        @{ Fields = '{"app":[]}'; Msg = "*Eintrag 1 (X 1)*Feld 'fields.app'*Liste*" }
+        @{ Fields = '{"app":["AppName",5]}'; Msg = "*Eintrag 1 (X 1)*Feld 'fields.app'*" }
+        @{ Fields = '{"app":["AppName","#x"]}'; Msg = "*Eintrag 1 (X 1)*Feld 'fields.app'*Position*" }
+        @{ Fields = '{"pid":{"field":[],"format":"hex"}}'; Msg = "*Eintrag 1 (X 1)*Feld 'fields.pid.field'*" }
+        @{ Fields = '{"processStart":{"field":"#9","format":"hex"}}'; Msg = "*Eintrag 1 (X 1)*Feld 'fields.processStart.format'*" }
+    ) {
+        { Read-WorkerPerfEventConfig (New-Cfg ('{"log":"a","provider":"X","ids":[1],"group":"app","kind":"crash","fields":' + $Fields + '}')) } | Should -Throw $Msg
+    }
+    It 'liest die Startzeit des Prozesses als FILETIME und laesst Unlesbares leer' {
+        ConvertFrom-WorkerPerfEventFileTime '0x01dad0e2a1b2c3d4' | Should -Be ([datetime]::FromFileTimeUtc(0x01dad0e2a1b2c3d4))
+        ConvertFrom-WorkerPerfEventFileTime '01dad0e2a1b2c3d4' | Should -Be ([datetime]::FromFileTimeUtc(0x01dad0e2a1b2c3d4))
+        foreach ($bad in '', '0', 'xyz', '0xffffffffffffffff', '2026-01-15') { ConvertFrom-WorkerPerfEventFileTime $bad | Should -BeNullOrEmpty -Because $bad }
+    }
+    It 'nimmt mit "ids": "*" jede Kennung der Quelle auf den genannten Ebenen' {
+        $c = Read-WorkerPerfEventConfig (New-Cfg ('{"log":"a","provider":"Sim Profil","ids":"*","levels":["error","warning"],"group":"profile","kind":"profileerror"},' +
+                '{"log":"a","provider":"Sim Profil","ids":[7],"group":"app","kind":"app-detail"}'))
+        (Resolve-WorkerPerfEventEntry $c 'a' 'sim profil' 1234 2).kind | Should -Be 'profileerror'
+        (Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 5 3).kind | Should -Be 'profileerror'
+        Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 5 4 | Should -BeNullOrEmpty                 # Information
+        Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 5 | Should -BeNullOrEmpty                   # Ebene unbekannt
+        (Resolve-WorkerPerfEventEntry $c 'a' 'Sim Profil' 7 4).kind | Should -Be 'app-detail'          # die genannte Kennung geht vor
+        Resolve-WorkerPerfEventEntry $c 'a' 'Andere Quelle' 5 2 | Should -BeNullOrEmpty
+        $e = @($c.Entries)[0]; $e.allIds | Should -BeTrue; @($e.ids).Count | Should -Be 0; $e.levels | Should -Be @(2, 3)
+    }
+    It 'prueft die Ebene auch bei einem Eintrag mit Kennungen' {
+        $c = Read-WorkerPerfEventConfig (New-Cfg '{"log":"a","provider":"X","ids":[1],"levels":["critical","information"],"group":"app","kind":"info"}')
+        (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1 1).kind | Should -Be 'info'
+        (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1 0).kind | Should -Be 'info'; (Resolve-WorkerPerfEventEntry $c 'a' 'X' 1 4).kind | Should -Be 'info'
+        Resolve-WorkerPerfEventEntry $c 'a' 'X' 1 2 | Should -BeNullOrEmpty
+    }
+    It 'weist "*" ohne Ebenen, unbekannte Ebenen und doppelte Eintraege ab' -TestCases @(
+        @{ Events = '{"log":"a","provider":"X","ids":"*","group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'ids'*levels*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":[],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'ids'*levels*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["Error"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*Error*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["fatal"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 1 (X `*)*Feld 'levels'*fatal*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"*","levels":["error"],"group":"profile","kind":"profileerror"},{"log":"a","provider":"x","ids":"*","levels":["warning"],"group":"profile","kind":"profileerror"}'; Msg = "*Eintrag 2 (x `*)*Feld 'ids'*doppelt*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"7","group":"app","kind":"crash"},{"log":"a","provider":"X","ids":[7],"group":"app","kind":"crash"}'; Msg = "*Eintrag 2 (X 7)*doppelte Kennung 7*" }
+        @{ Events = '{"log":"a","provider":"X","ids":"alle","group":"app","kind":"crash"}'; Msg = "*Eintrag 1 (X alle)*Feld 'ids'*keine ganze Zahl*" }
+    ) {
+        { Read-WorkerPerfEventConfig (New-Cfg $Events) } | Should -Throw $Msg
+    }
+    It 'liest die Profilverwaltung von Citrix nach Ebene' {
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 1003 2).group | Should -Be 'profile'
+        (Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 3).kind | Should -Be 'profileerror'
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Profile Management' 5 4 | Should -BeNullOrEmpty
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Desktop Service' 1002 2 | Should -BeNullOrEmpty
+        Resolve-WorkerPerfEventEntry $Cfg 'application' 'Citrix Telemetry Service' 1 2 | Should -BeNullOrEmpty
+    }
+    It 'liest das Konto aus dem Systemteil' {
+        $sys = "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-User Profiles Service'/><EventID>1511</EventID><Level>3</Level>" +
+            "<Security UserID='S-1-5-21-1-2-3-1108'/></System></Event>"
+        $p = ConvertFrom-WorkerPerfEventXml $sys
+        $p.UserSid | Should -Be 'S-1-5-21-1-2-3-1108'
+        (ConvertTo-WorkerPerfEventRecord (Resolve-WorkerPerfEventEntry $Cfg 'application' $p.Provider 1511) $p ([datetime]::Now) '').User | Should -Be ''
+        (ConvertFrom-WorkerPerfEventXml (New-Xml 'Application Error' 1000 '')).UserSid | Should -Be ''
+    }
+    It 'nennt die Dienstkonten unabhaengig von der Sprache und nur mit Domaene, wenn sie keine Person ist' {
+        Resolve-WorkerPerfWellKnownSid 'S-1-5-18' | Should -Be 'SYSTEM'; Resolve-WorkerPerfWellKnownSid 's-1-5-19' | Should -Be 'LOCAL SERVICE'
+        Resolve-WorkerPerfWellKnownSid 'S-1-5-20' | Should -Be 'NETWORK SERVICE'; Resolve-WorkerPerfWellKnownSid 'S-1-5-21-1-2-3-500' | Should -Be ''
+        Resolve-WorkerPerfWellKnownSid '' | Should -Be ''
+        ConvertTo-WorkerPerfEventAccountName 'KLINIK\anna' $Cfg | Should -Be 'anna'
+        ConvertTo-WorkerPerfEventAccountName 'NT SERVICE\SimDienst' $Cfg | Should -Be 'NT SERVICE\SimDienst'
+        ConvertTo-WorkerPerfEventAccountName 'Window Manager\DWM-3' $Cfg | Should -Be 'Window Manager\DWM-3'
+        ConvertTo-WorkerPerfEventAccountName 'SYSTEM' $Cfg | Should -Be 'SYSTEM'; ConvertTo-WorkerPerfEventAccountName '' $Cfg | Should -Be ''
+        foreach ($a in 'SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'NT SERVICE\SimDienst', 'Window Manager\DWM-3', ('NT-AUTORIT' + [char]0xC4 + 'T\LOKALER DIENST')) {
+            Test-WorkerPerfEventPersonUser (ConvertTo-WorkerPerfEventAccountName $a $Cfg) $Cfg | Should -BeFalse -Because $a
+        }
+        Test-WorkerPerfEventPersonUser (ConvertTo-WorkerPerfEventAccountName 'KLINIK\anna' $Cfg) $Cfg | Should -BeTrue
     }
 }
 Describe 'Fehlerfaelle' {

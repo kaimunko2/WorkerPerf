@@ -21,10 +21,9 @@
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
 > - **Ereignisse, Abstürze und Drucken:** Auswertung und Bericht sind fertig und mit der Simulation getestet
->   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). **Auf einem Windows-Server liest der Collector bisher nur
->   die Ereignisse von Defender und AppLocker.** Die übrigen Ereignisprotokolle, den Rückblick auf die Tage vor der
->   Messung, die Treiberliste und die Zähler der Druckwarteschlangen liefert heute nur die Simulation; die
->   Windows-Datenquelle dafür folgt, sobald das Prüfskript gezeigt hat, welche Kennungen auf dem Worker entstehen.
+>   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Die Windows-Datenquelle liest alle Protokolle aus
+>   `events.json`, den Rückblick, die Treiberliste und die Zähler der Druckwarteschlangen. **Auf einem echten Server
+>   ist dieser Teil noch nicht gelaufen**; getestet ist er unter Linux mit nachgestellten Windows-Aufrufen.
 > - **Maskierte Berichte:** Die Auswertung kann Namen im Bericht durch Ersatznamen wie „Benutzer 01" ersetzen
 >   (`-Mask Personen` oder `-Mask Alles`, siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)).
 >   Das ist fertig und mit der Simulation getestet; **unter Windows PowerShell 5.1 auf einem Server ist es noch
@@ -92,9 +91,8 @@ dem übersetzten Text. Beim Start liest er einmalig die Ereignisse der letzten `
 Sitzungsereignisse) in `events_before.csv` und die installierten Druckertreiber in `printdrivers.csv`. Erreicht ein
 Protokoll beim Rückblick die Obergrenze, vermerkt `meta.json` das (`LookbackCapped`), und der Bericht sagt, dass der
 Rückblick für dieses Protokoll unvollständig ist. Der Collector schaltet dafür kein Protokoll ein und ändert keine
-Einstellung. **Stand:** Auf einem Windows-Server liest er bisher nur Defender und AppLocker; die übrigen
-Protokolle, der Rückblick, die Treiberliste und die Warteschlangen kommen heute nur aus der Simulation (siehe
-[Datenquellen](#datenquellen)).
+Einstellung. **Stand:** Die Windows-Datenquelle liest das alles; auf einem echten Server ist sie dafür noch nicht
+gelaufen (siehe [Datenquellen](#datenquellen)).
 
 Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
 `src\endpoints.json`; als Vorlage dient `src\endpoints.example.json`. Fehlt die Datei, entfallen die Proben.
@@ -307,7 +305,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 |---|---|---|
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
-| jeder reguläre Schnappschuss zusätzlich | Ereignisprotokolle Defender und AppLocker seit dem letzten Abruf (höchstens 200 je Protokoll); Verbindungsproben, nur mit `endpoints.json`. Die übrigen Protokolle aus `events.json` und die Zähler der Druckwarteschlangen kommen hinzu, sobald die Windows-Datenquelle sie liest | – |
+| jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf (je Protokoll und Quelle eine Abfrage mit höchstens 23 Kennungen, höchstens 200 Ereignisse je Protokoll), die Zähler der Druckwarteschlangen (eine Lesung); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
 | Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
@@ -635,7 +633,7 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 | Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen, dazu Sitzungs- und Defender-/AppLocker-Ereignisse, ein Rückblick über sieben Tage mit drei Vorfällen, Treiberliste und Warteschlangen (`-Simulate`) | vorhanden, in den Tests geprüft |
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
 | Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
-| Ereignisse außer Defender und AppLocker, Rückblick, Druckertreiber, Druckwarteschlangen | Simulation; für Windows folgt die Datenquelle nach dem Ergebnis des Prüfskripts | **unter Windows noch nicht angebunden**; die Windows-Datenquelle liefert dafür heute nichts. Treiberliste und Warteschlangen stehen in der Tabelle der Quellen als „noch nicht umgesetzt", die übrigen Ereignisprotokolle fehlen dort noch |
+| Ereignisprotokolle, Rückblick, Druckertreiber, Druckwarteschlangen | Windows-Datenquelle, Quellen in der Tabelle unten | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
 
 Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
 `System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
@@ -659,13 +657,21 @@ Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schn
 | ICA Round Trip | `root\citrix\euem` / `Citrix_Euem_RoundTrip` (`RoundtripTime`, `NetworkLatency`) | Klasse vorhanden; Werte zeigte das Prüfskript nicht |
 | Profilcontainer | `MSFT_Disk` mit `BusType` 15, Partitionen und Zugriffspfade | vorhanden: Citrix Profile Management, drei Container je Benutzer; Speicherort und Einhängepfad nennen beide den Benutzer |
 | Prozesse, Dienste, Sitzungen | `Win32_Process`, `Win32_Service`, WTS-Schnittstelle | vorhanden; ein Prozess-Schnappschuss von 800 Prozessen dauerte etwa 0,4 s |
-| Ereignisse | Protokolle `Microsoft-Windows-Windows Defender/Operational` (1000, 1001, 1002, 2000) und `Microsoft-Windows-AppLocker/EXE and DLL`, `.../MSI and Script` (8004, 8007); die übrigen Protokolle der Tabelle unten noch nicht | lesbar |
+| Ereignisprotokolle | die Protokolle, Quellen und Kennungen aus `events.json` (Tabelle unten) über `Get-WinEvent`, je Quelle mit ihren Kennungen (höchstens 23 je Abfrage) oder ihren Ebenen; die Felder aus `ToXml()`, der Benutzer aus den Datenfeldern, sonst aus dem Konto im Systemteil des Ereignisses | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Ein vorhandenes, aber abgeschaltetes Protokoll meldet der Collector wie ein fehlendes als „Protokoll nicht vorhanden oder abgeschaltet"; er schaltet es nicht ein |
+| Rückblick | dieselben Abfragen über `-EventLookbackDays` Tage, ohne Sitzungsprotokoll, höchstens 2000 Ereignisse je Protokoll und höchstens 60 s für den ganzen Rückblick | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
+| Druckertreiber | `root/StandardCimv2` / `MSFT_PrinterDriver` (`Name`, `Manufacturer`, `MajorVersion`, `DriverVersion`, Treiber-, Konfigurations-, Daten- und abhängige Dateien); Isolierung aus `PrintDriverIsolationGroups`, sonst aus den Richtlinien `PrintDriverIsolationExecutionPolicy` und `PrintDriverIsolationOverrideCompat` und dem Attribut 0x4 (`PrinterDriverAttributes`) im Registrierungsschlüssel des Treibers | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Die Isolierung ist die wirksame, wie Windows sie ableitet (dieselbe Regel wie im Prüfskript); ohne gesetzten Wert `PrintDriverIsolationGroups` entscheiden Richtlinie und Attribut. Lässt sich das Attribut nicht lesen und entscheiden die Richtlinien nicht, bleibt `Isolation` leer |
+| Druckwarteschlangen | `Print Queue` / `Jobs`, `Job Errors`, `Not Ready Errors` (Momentanwerte), alle Instanzen außer `_Total` | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
 | Verbindungsproben | TCP-Verbindungsaufbau zu den Gegenstellen aus `endpoints.json`, Zeitlimit 2 s | nicht geprüft (beim Prüflauf keine Datei mit Gegenstellen) |
 
 **Ereignisquellen.** Die Liste der Protokolle, Quellen und Kennungen steht in `src/events.json`: je Eintrag
 Protokoll, Quelle, Kennungen, Gruppe, Art und welche Datenfelder des Ereignisses zu lesen sind. Sie lässt sich
-ergänzen, ohne Code zu ändern. Die Auswertung und die Simulation lesen sie; die Windows-Datenquelle wird sie lesen,
-sobald sie angebunden ist.
+ergänzen, ohne Code zu ändern. Die Windows-Datenquelle, die Auswertung und die Simulation lesen sie. Ein Datenfeld
+ist ein Name, eine Position (`#0` für das erste Datenfeld) oder `binary:utf16`, oder eine Liste davon: der erste
+Eintrag mit einem Wert gilt. So liest `Application Error` 1000 die benannten Felder, wo Windows sie benennt, und
+sonst die klassischen Positionen. Statt Kennungen kann ein Eintrag `"ids": "*"` mit `"levels"` (`critical`,
+`error`, `warning`, `information`) nennen: dann gilt jedes Ereignis der Quelle auf diesen Ebenen; ein Eintrag mit
+Kennungen geht vor. Der Dienstname von `Service Control Manager` kommt aus dem Binärteil des Ereignisses
+(`binary:utf16`), ist also der Kurzname des Dienstes in jeder Sprache; `importantServices` nennt deshalb Kurznamen.
 
 | Gruppe | Inhalt | Windows-Protokoll |
 |---|---|---|
@@ -679,8 +685,10 @@ sobald sie angebunden ist.
 | Sitzungen (`session`) | Anmelden, Abmelden, Trennen, Wiederverbinden | Terminaldienste (Sitzungsverwaltung) |
 | Schutzsoftware (`security`) | Defender und AppLocker | Defender, AppLocker |
 
-Welche Kennungen der Citrix-Druckverwaltung und der Profilverwaltung auf einem Worker entstehen, ermittelt das
-Prüfskript; die Liste wird danach ergänzt.
+Die Profilverwaltung von Citrix (`Citrix Profile Management`) liest der Collector nach Ebene, Fehler und
+Warnungen (siehe Offene Punkte). Für die Citrix-Druckverwaltung steht keine Quelle in `events.json`. Vom
+Druckdienst liest er die Treiberfehler 600, 601 und 215 mit dem Treibernamen; Wechsel des Standarddruckers und
+Meldungen ohne bekannte Felder bleiben draußen.
 
 Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
 anderen Worker, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es
@@ -723,10 +731,23 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
-- **Ereignisse, Rückblick und Drucken unter Windows:** Die Windows-Datenquelle liest bisher nur Defender und
-  AppLocker. Die übrigen Protokolle aus `events.json`, der Rückblick, die Treiberliste und die Zähler der
-  Druckwarteschlangen folgen, sobald das Prüfskript auf einem Worker gezeigt hat, welche Protokolle lesbar sind
-  und welche Kennungen dort entstehen. Bis dahin liefert sie nur die Simulation.
+- **Ereignisse, Rückblick und Drucken unter Windows:** geschrieben, auf einem echten Server noch nicht gelaufen.
+  Bei der ersten Kurzmessung mit Rückblick prüfen: keine Warnung zu einem Protokoll, das laut Prüfskript vorhanden
+  ist; wie groß `events_before.csv` und `events.csv` werden; wie lange der Rückblick vor dem ersten Takt dauert
+  (höchstens 60 s und die Dauer einer laufenden Abfrage, danach gilt der Rest als unvollständig).
+- **Kennungen der Citrix-Profilverwaltung:** Der Collector liest sie nach Ebene (Fehler und Warnungen), weil die
+  Bedeutung der einzelnen Kennungen noch nicht bekannt ist. Die erste echte Aufzeichnung zeigt, welche davon
+  Routinemeldungen sind und in `events.json` ausgenommen werden sollten (ein Eintrag mit diesen Kennungen und der
+  Art `info` geht dem Eintrag nach Ebene vor).
+- **Treiberfehler 600 und 601 des Druckdienstes:** Sie können bei jeder Anmeldung entstehen, wenn der Treiber eines
+  Clientdruckers nicht importiert werden kann. Die Auswertung fasst sie je Treiber zu Vorfällen zusammen, solange
+  zwischen zwei Ereignissen höchstens 30 Minuten liegen; sind sie häufig, ergibt das im Rückblick viele
+  Druckvorfälle. Mit der ersten echten Aufzeichnung entscheiden, ob sie als `info` geführt oder anders
+  zusammengefasst werden.
+- **Benutzer aus dem Konto des Ereignisses:** Ereignisse ohne Benutzer in den Datenfeldern (Absturz, Profilfehler)
+  bekommen das Konto aus dem Systemteil des Ereignisses. Die Konten SYSTEM, LOCAL SERVICE und NETWORK SERVICE
+  erkennt der Collector an ihrer SID; andere SIDs übersetzt Windows, je SID einmal und höchstens 1 s lang, nach
+  einer Zeitüberschreitung 10 Minuten lang nicht. Ob die Ereignisse diese SID tragen, zeigt die erste Aufzeichnung.
 - **Maskierung unter Windows PowerShell 5.1:** `-Mask` und `-MaskMapFile` sind nur unter PowerShell 7 mit der
   Simulation getestet. Bei der ersten echten Auswertung einmal mit `-Mask Alles` auswerten, den Bericht durchsehen
   und prüfen, dass kein echter Benutzer-, Client- oder Servername mehr darin steht.
@@ -747,9 +768,9 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
 - **Zuordnung der ICA-Werte zur Sitzung:** über den Namen der WinStation (`ICA-CGP 2` gegen `ICA-CGP#2`),
   sonst über den Benutzernamen, wenn er nur eine Sitzung hat. Die Schreibweise der WinStation-Namen hat das
   Prüfskript nicht erfasst.
-- **Rollen:** In `roles.json` sind für Arctic Wolf Aurora der Dienst und Prozess `CylanceSvc` eingetragen. Für
-  Nexus KIS und den Oracle-Client zeigte das Prüfergebnis keinen eindeutigen Prozess; ihre Prozessnamen bei der
-  ersten Messung mit angemeldeten Anwendern ergänzen.
+- **Rollen:** In `roles.json` sind für Arctic Wolf Aurora der Dienst und Prozess `CylanceSvc` eingetragen, für
+  Nexus KIS die Anwendung und der Prozess ihres Dienstes (unter `processes`, weil der Kurzname des Dienstes nicht
+  bekannt ist). Der Oracle-Client hat keinen eigenen Prozess; er läuft in der Anwendung, die ihn nutzt.
 - **Datenmenge:** Ob eine Messung über 8 Stunden mit vielen Prozessen (1.500) unter 100 MB bleibt, ist nicht
   geprüft; `sessions.csv` und `citrix.csv` schreiben jede Sitzung bei jedem Schnappschuss. Die Kategorie
   `ICA Session` hat rund 80 Zähler je Sitzung; mit dem Standard von `-CitrixMetricFilter` (Latenz, Round Trip,

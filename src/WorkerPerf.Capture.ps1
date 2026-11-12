@@ -485,8 +485,9 @@ function Complete-WorkerPerfEventSession {
     # from the session with that SessionId. A process existed at the event's time when it started at or before it and
     # was last seen at most MaxGapSeconds before it (fields it lacks are not checked). Of several, the one started last
     # wins. A process that started after the event is not the one the event names (its PID was reused): such an event
-    # keeps its empty session. A Pid or SessionId that is not a number counts as empty. Emits the events (the same
-    # objects); an event that cannot be completed is emitted as it is.
+    # keeps its empty session. An event that carries the start time of its process (ProcessStart, as Application Error
+    # 1000 does) takes only a process started within a second of it. A Pid or SessionId that is not a number counts as
+    # empty. Emits the events (the same objects); an event that cannot be completed is emitted as it is.
     param([AllowEmptyCollection()][object[]]$Events, [AllowEmptyCollection()][object[]]$Processes, [AllowEmptyCollection()][object[]]$Sessions,
           [double]$MaxGapSeconds = 60)
     $byPid = @{}
@@ -513,11 +514,14 @@ function Complete-WorkerPerfEventSession {
                 if ($null -ne $evPid -and $byPid.ContainsKey([long]$evPid)) {
                     $time = Get-WorkerPerfField $e 'Time'
                     $timeUtc = $(if ($time -is [datetime]) { ConvertTo-WorkerPerfUtc $time } else { $null })
+                    $start = Get-WorkerPerfField $e 'ProcessStart'
+                    $startUtc = $(if ($start -is [datetime]) { ConvertTo-WorkerPerfUtc $start } else { $null })
                     $best = $null; $bestCreated = $null
                     foreach ($proc in $byPid[[long]$evPid]) {
                         $created = Get-WorkerPerfField $proc 'CreationDate'
                         $createdUtc = $(if ($created -is [datetime]) { ConvertTo-WorkerPerfUtc $created } else { $null })
                         $seen = Get-WorkerPerfField $proc 'LastSeen'
+                        if ($null -ne $startUtc -and $null -ne $createdUtc -and [Math]::Abs(($createdUtc - $startUtc).TotalSeconds) -gt 1) { continue }
                         if ($null -ne $timeUtc) {
                             if ($null -ne $createdUtc -and $createdUtc -gt $timeUtc) { continue }
                             if ($seen -is [datetime] -and ((ConvertTo-WorkerPerfUtc $seen).AddSeconds($MaxGapSeconds) -lt $timeUtc)) { continue }

@@ -88,6 +88,10 @@ Describe 'Resolve-WorkerPerfRole' {
         (Resolve-WorkerPerfRole $Roles 'winword.exe' '' 5).Role | Should -Be ''
         (Resolve-WorkerPerfRole $Roles 'spoolsv.exe' 'Spooler' 0).Role | Should -Be 'Drucken'
         (Resolve-WorkerPerfRole $Roles 'svchost.exe' 'Spooler' 0).Label | Should -Be 'Druckdienst'; (Resolve-WorkerPerfRole $Roles 'cpsvc.exe' '' 0).Label | Should -Be 'Citrix-Druckverwaltung'
+        # Task 10: die Prozesse von Nexus KIS (vom Auftraggeber freigegeben); der Dienstprozess steht unter processes
+        (Resolve-WorkerPerfRole $Roles 'nexus.framework.healthcare.exe' '' 4).Label | Should -Be 'Nexus KIS'
+        (Resolve-WorkerPerfRole $Roles 'NexusService.exe' '' 0).Label | Should -Be 'Nexus KIS'
+        @(($Roles | Where-Object Label -eq 'Oracle-Client').processes).Count | Should -Be 0
     }
     It 'nennt den fehlerhaften Rolleneintrag' {
         { Read-WorkerPerfRoles (Write-Json 'r.json' '{"roles":[{"role":"Unsinn","label":"Testprodukt","processes":[],"services":[]}]}') } | Should -Throw '*Testprodukt*'

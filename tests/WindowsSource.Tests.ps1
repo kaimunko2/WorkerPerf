@@ -18,12 +18,33 @@ Describe 'Windows-Datenquelle: plattformunabhaengige Teile' {
         Resolve-WorkerPerfProfileOwner -Paths @('\\fs01\upm$\Mueller.KLINIK\Win2022\ProfileContainer.vhdx') -Sessions $s | Should -Be 5
         Resolve-WorkerPerfProfileOwner -Paths @('\\fs01\upm$\gast\ProfileContainer.vhdx') -Sessions $s | Should -BeNullOrEmpty
     }
-    It 'bildet Ereigniskennungen auf Arten ab' {
-        ConvertTo-WorkerPerfEventKind 'Defender' 1000 | Should -Be 'scan-start'
-        ConvertTo-WorkerPerfEventKind 'Defender' 1001 | Should -Be 'scan-end'; ConvertTo-WorkerPerfEventKind 'Defender' 1002 | Should -Be 'scan-end'
-        ConvertTo-WorkerPerfEventKind 'Defender' 2000 | Should -Be 'signature-update'
-        ConvertTo-WorkerPerfEventKind 'AppLocker' 8004 | Should -Be 'applocker-block'; ConvertTo-WorkerPerfEventKind 'AppLocker' 8007 | Should -Be 'applocker-block'
-        ConvertTo-WorkerPerfEventKind 'AppLocker' 8002 | Should -BeNullOrEmpty
+    # Aussage ersetzt (Task 10): 'bildet Ereigniskennungen auf Arten ab' prueft jetzt die Zuordnung ueber events.json (unten), weil die feste Zuordnung dorthin umzieht
+    It 'liest Treiberversion und Isolationsgruppen' {
+        ConvertFrom-WorkerPerfDriverVersion (([uint64]61 -shl 48) + ([uint64]1 -shl 32) + 2) | Should -Be '61.1.0.2'   # [uint64] vor dem Schieben: ein Int32 schiebt nur um 48 mod 32
+        ConvertFrom-WorkerPerfDriverVersion ([uint64]0) | Should -Be ''
+        $g = ConvertFrom-WorkerPerfIsolationGroups 'Sim A\Sim B\\Sim C\\Sim D\\Sim E'
+        $g['sim a'] | Should -Be 'none'; $g['Sim B'] | Should -Be 'none'; $g['Sim C'] | Should -Be 'shared'; $g['Sim D'] | Should -Be 'isolated'; $g['Sim E'] | Should -Be 'isolated'
+        (ConvertFrom-WorkerPerfIsolationGroups '').Count | Should -Be 0; (ConvertFrom-WorkerPerfIsolationGroups $null).Count | Should -Be 0
+    }
+    It 'leitet die wirksame Isolierung wie das Pruefskript ab (P1-R29)' -TestCases @(
+        @{ Name = 'Sim C'; Groups = 'Sim A\\Sim C'; Attr = 0; Exec = 1; Override = $null; Want = 'shared' }      # Gruppe geht vor
+        @{ Name = 'Sim C'; Groups = 'Sim A\\Sim B\\Sim C'; Attr = 4; Exec = $null; Override = $null; Want = 'isolated' }
+        @{ Name = 'Sim C'; Groups = 'Sim A\\Sim C'; Attr = 4; Exec = 0; Override = $null; Want = 'none' }      # Isolierung abgeschaltet
+        @{ Name = 'Sim X'; Groups = $null; Attr = 4; Exec = 1; Override = $null; Want = 'shared' }               # isolierbar laut Attribut 0x4
+        @{ Name = 'Sim X'; Groups = $null; Attr = 2; Exec = 1; Override = $null; Want = 'none' }
+        @{ Name = 'Sim X'; Groups = $null; Attr = 2; Exec = $null; Override = 1; Want = 'shared' }               # Kompatibilitaet uebersteuert
+        @{ Name = 'Sim X'; Groups = $null; Attr = $null; Exec = 1; Override = $null; Want = '' }                 # Attribut nicht gelesen
+        @{ Name = 'Sim X'; Groups = $null; Attr = -2147483644; Exec = 1; Override = $null; Want = 'shared' }     # DWORD mit gesetztem Vorzeichenbit
+    ) {
+        $policy = @{}
+        if ($null -ne $Exec) { $policy['PrintDriverIsolationExecutionPolicy'] = $Exec }
+        if ($null -ne $Override) { $policy['PrintDriverIsolationOverrideCompat'] = $Override }
+        Get-WorkerPerfEffectiveIsolation $Name (ConvertFrom-WorkerPerfIsolationGroups $Groups) $Attr $policy | Should -Be $Want
+    }
+    It 'liest die Warteschlangen ohne Summe' {
+        $v = @{ 'Jobs' = @{ '_Total' = 3.0; 'PRN-A' = 1.0; 'PRN-B' = 2.0 }; 'Job Errors' = @{ '_Total' = 5.0; 'PRN-A' = 5.0; 'PRN-B' = 0.0 }; 'Not Ready Errors' = @{ 'PRN-A' = 1.0 } }
+        $q = @(ConvertTo-WorkerPerfPrintQueueRows $v)
+        $q.Queue | Should -Be @('PRN-A', 'PRN-B'); $q[0].JobErrors | Should -Be 5; $q[0].NotReadyErrors | Should -Be 1; $q[1].NotReadyErrors | Should -BeNullOrEmpty
     }
     It 'misst Verbindungen gleichzeitig und ohne zu blockieren' {
         $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0); $listener.Start()
@@ -293,7 +314,7 @@ Describe 'Windows-Datenquelle: Citrix, Dienste, Ereignisse, Warten' {
         $script:WinFake.ManyEvents = 250
         $out = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddHours(-1)) 3>&1)
         $warn = @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
-        $ev = @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] })
+        $ev = @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] -and $_.Log -eq 'defender' })
         $ev.Count | Should -Be 200
         ($ev | Measure-Object -Property Time -Minimum).Minimum | Should -BeGreaterThan ([datetime]::Now.AddSeconds(-202))
         $warn.Count | Should -Be 1; $warn[0].Message | Should -Match 'Defender'
@@ -319,6 +340,7 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
     # darueber laeuft wie auf dem Server. Die Daten haben die Form des Pruefergebnisses, die Namen sind erfunden.
     BeforeAll {
         . (Join-Path $PSScriptRoot 'WindowsStandIns.ps1')
+        $script:Cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json')
     }
     BeforeEach { Reset-WinStandIns }
     It 'meldet Eckdaten und verfuegbare Quellen' {
@@ -333,14 +355,154 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
             $info.Sources[$id].Available | Should -BeTrue -Because $id
         }
     }
-    It 'erfuellt die Schnittstelle von Format 3 mit leeren Platzhaltern bis Task 10' {
-        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>$null
-        foreach ($id in 'print.drivers', 'print.queues') {
-            $info.Sources[$id].Available | Should -BeFalse -Because $id; $info.Sources[$id].Detail | Should -Be 'noch nicht umgesetzt'
+    # Aussage ersetzt (Task 10): 'erfuellt die Schnittstelle von Format 3 mit leeren Platzhaltern bis Task 10' - die Platzhalter sind gefuellt
+    # Aussage ersetzt: 'bildet Ereigniskennungen auf Arten ab' prueft jetzt die Zuordnung ueber events.json, weil die feste Zuordnung dorthin umzieht
+    It 'liefert Ereignisse mit strukturierten Feldern ueber events.json' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        @($ev | Where-Object Group -eq 'security').Kind | Should -Be @('scan-start', 'scan-end')
+        $c = $ev | Where-Object Kind -eq 'crash'; $c.App | Should -Be 'EXCEL.EXE'; $c.Module | Should -Be 'vbe7.dll'; $c.Pid | Should -Be 7964; $c.Log | Should -Be 'application'
+        $c.Code | Should -Be '0xc0000005'; $c.AppVersion | Should -Be '16.0.18129.20158'; $c.Source | Should -Be 'Application Error'; $c.Level | Should -Be 2
+        $c.User | Should -Be 'mueller'                                                       # aus der SID im Systemteil, ohne Domaene
+        $c.ProcessStart.Kind | Should -Be 'Utc'; [Math]::Abs(($c.ProcessStart - [datetime]::UtcNow.AddHours(-2)).TotalMinutes) | Should -BeLessThan 1
+        $c.Text | Should -Be 'Name der fehlerhaften Anwendung: EXCEL.EXE, Version: 16.0.18129.20158'
+        # die Profilverwaltung von Citrix nach Ebene: die Warnung, nicht die Information; Quellen ausserhalb des Katalogs nicht
+        $p = @($ev | Where-Object Source -eq 'Citrix Profile Management'); $p.Count | Should -Be 1; $p[0].EventId | Should -Be 1003; $p[0].Kind | Should -Be 'profileerror'
+        @($ev | Where-Object Source -eq 'Citrix Desktop Service').Count | Should -Be 0
+        $svc = $ev | Where-Object Kind -eq 'service'; $svc.Service | Should -Be 'Spooler'; $svc.User | Should -Be 'SYSTEM'
+        $pr = $ev | Where-Object Group -eq 'print'; $pr.Driver | Should -Be 'Sim PCL 6'; $pr.User | Should -Be 'NT SERVICE\SimDienst'
+        @($ev | ForEach-Object { $_.Time }) | Should -Be @($ev | ForEach-Object { $_.Time } | Sort-Object)
+        @($ev | Where-Object Group -eq 'session').Count | Should -Be 0                         # die Anmeldung liegt vor dem Fenster
+        @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-15)) | Where-Object Group -eq 'session').User | Should -Be @('mueller')
+    }
+    It 'fragt je Protokoll und Quelle hoechstens 23 Kennungen ab' {
+        $f = Join-Path $TestDrive 'viele.json'
+        $ids = (1..30 | ForEach-Object { 5000 + $_ }) -join ','
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"application","names":["Application"],"lookback":true}],"events":[{"log":"application","provider":"Sim Quelle","ids":[' + $ids + '],"group":"app","kind":"app-detail"}]}')
+        Add-WinStandInEvent 'Application' 'Sim Quelle' 5030 2 (-1) 'dreissigste Kennung'
+        Add-WinStandInEvent 'Application' 'Sim Quelle' 5001 2 (-1) 'erste Kennung'
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig (Read-WorkerPerfEventConfig $f) 3>$null)
+        $script:WinFake.EventQueries = 0
+        $out = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>&1)
+        @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
+        @($out.EventId | Sort-Object) | Should -Be @(5001, 5030); $script:WinFake.EventQueries | Should -Be 2
+    }
+    It 'nennt jedes Protokoll aus events.json in den Quellen' {
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
+        foreach ($id in @($Cfg.Logs.Keys)) {
+            $info.Sources.Contains("events.$id") | Should -BeTrue -Because $id; $info.Sources["events.$id"].Available | Should -BeTrue -Because $id
         }
+        $info.Sources['events.applocker'].Detail | Should -Be 'Microsoft-Windows-AppLocker/EXE and DLL, Microsoft-Windows-AppLocker/MSI and Script'
+        $info.Sources['events.application'].Detail | Should -Be 'Application'
+    }
+    It 'liest den Rueckblick ohne Sitzungsprotokoll und vermerkt die Obergrenze' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.ManyEvents = 2500
+        $sw = [Diagnostics.Stopwatch]::StartNew()
         $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now)
-        @($b.Events).Count | Should -Be 0; @($b.Capped).Count | Should -Be 0
-        @(Get-WorkerPerfPrintDrivers).Count | Should -Be 0; @(Get-WorkerPerfPrintQueues).Count | Should -Be 0
+        $script:LookbackMs = $sw.ElapsedMilliseconds
+        Write-Host ("    Rueckblick mit 2500 Defender-Ereignissen (2000 gelesen) in {0} ms" -f $LookbackMs)
+        $b.Capped | Should -Contain 'defender'; @($b.Events | Where-Object Log -eq 'defender').Count | Should -Be 2000
+        @($b.Events | Where-Object Group -eq 'session').Count | Should -Be 0
+        @($b.Capped) | Should -Be @('defender')
+        @($b.Events | Where-Object Kind -eq 'crash').App | Should -Be @('EXCEL.EXE')
+        ($b.Events | Where-Object Log -eq 'defender' | Measure-Object -Property Time -Minimum).Minimum | Should -BeGreaterThan ([datetime]::Now.AddSeconds(-2030))   # die neuesten 2000
+    }
+    It 'liest den Rueckblick bis zum Ende und nicht weiter als die Tage' {
+        Add-WinStandInEvent 'Application' 'Application Hang' 1002 2 (-20000) 'zu alt' -Data @('alt.exe', '1', '10')
+        Add-WinStandInEvent 'Application' 'Application Hang' 1002 2 (-60) 'im Rueckblick' -Data @('WINWORD.EXE', '16.0', '1a2c', '01dad0e2a1b2c3d4')
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now.AddMinutes(-30))
+        @($b.Events | Where-Object Kind -eq 'hang').App | Should -Be @('WINWORD.EXE'); @($b.Events | Where-Object Kind -eq 'crash').Count | Should -Be 0
+        @($b.Capped).Count | Should -Be 0
+        @((Get-WorkerPerfEventsBefore -Days 0 -Until ([datetime]::Now)).Events).Count | Should -Be 0
+    }
+    It 'begrenzt die Zeit des Rueckblicks und vermerkt die nicht fertig gelesenen Protokolle' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $keep = $script:WorkerPerfWinLookbackBudgetSec
+        try {
+            $script:WorkerPerfWinLookbackBudgetSec = 0
+            $b = Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null
+            @($b.Events).Count | Should -Be 0
+            @($b.Capped) | Should -Be @(@($Cfg.Logs.Values | Where-Object { $_.Lookback } | ForEach-Object { $_.Id }))
+        }
+        finally { $script:WorkerPerfWinLookbackBudgetSec = $keep }
+    }
+    It 'meldet ein fehlendes Protokoll als nicht verfuegbar und liest die anderen' {
+        $script:WinFake.Logs = @($script:WinFake.Logs | Where-Object { $_ -ne 'Microsoft-Windows-PrintService/Admin' })
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
+        $info.Sources['events.printservice'].Available | Should -BeFalse; $info.Sources['events.application'].Available | Should -BeTrue
+        @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>$null).Count | Should -BeGreaterThan 0
+    }
+    It 'meldet ein abgeschaltetes Protokoll als nicht verfuegbar, ohne bei jedem Abruf zu warnen' {
+        $script:WinFake.DisabledLogs = @('Microsoft-Windows-PrintService/Admin', 'Microsoft-Windows-AppLocker/MSI and Script')
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
+        $info.Sources['events.printservice'].Available | Should -BeFalse
+        $info.Sources['events.printservice'].Detail | Should -Be 'Protokoll nicht vorhanden oder abgeschaltet'
+        $info.Sources['events.applocker'].Available | Should -BeTrue; $info.Sources['events.applocker'].Detail | Should -Be 'Microsoft-Windows-AppLocker/EXE and DLL'
+        $out = @(foreach ($k in 1..3) { Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-10)) 3>&1 })
+        @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
+        @($out | Where-Object { $_ -isnot [System.Management.Automation.WarningRecord] -and $_.Group -eq 'print' }).Count | Should -Be 0
+        @((Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>&1) | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Count | Should -Be 0
+    }
+    It 'loest jede SID einmal auf und fragt nach einer Zeitueberschreitung eine Weile nicht mehr' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $script:WinFake.SidLookups = 0
+        Resolve-WorkerPerfEventSid 'S-1-5-21-1000-2000-3000-1108' | Should -Be 'KLINIK\mueller'
+        Resolve-WorkerPerfEventSid 'S-1-5-21-1000-2000-3000-1108' | Should -Be 'KLINIK\mueller'
+        Resolve-WorkerPerfEventSid 'S-1-5-18' | Should -Be 'SYSTEM'; Resolve-WorkerPerfEventSid 'S-1-5-20' | Should -Be 'NETWORK SERVICE'
+        Resolve-WorkerPerfEventSid '' | Should -Be ''
+        Resolve-WorkerPerfEventSid 'S-1-5-21-9-9-9-500' | Should -Be ''                       # unbekannt: leer, und gemerkt
+        Resolve-WorkerPerfEventSid 'S-1-5-21-9-9-9-500' | Should -Be ''
+        $script:WinFake.SidLookups | Should -Be 2                                             # bekannte Dienstkonten ohne Abfrage
+        $script:WinFake.SidTimeout = @('S-1-5-21-1000-2000-3000-2001')
+        Resolve-WorkerPerfEventSid 'S-1-5-21-1000-2000-3000-2001' | Should -Be ''
+        Resolve-WorkerPerfEventSid 'S-1-5-80-1-2-3-4-5' | Should -Be ''                       # Pause nach der Zeitueberschreitung
+        $script:WinFake.SidLookups | Should -Be 3
+        Resolve-WorkerPerfEventSid 'S-1-5-18' | Should -Be 'SYSTEM'
+    }
+    It 'liefert Treiberliste und Warteschlangen' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        $d = @(Get-WorkerPerfPrintDrivers); $d.Count | Should -Be 2
+        ($d | Where-Object Name -eq 'Sim PCL 6').Isolation | Should -Be 'none'; ($d | Where-Object Name -eq 'Sim PCL 6').Type | Should -Be 3
+        ($d | Where-Object Name -eq 'Sim PCL 6').Files | Should -Be @('hpsimgr.dll', 'hpsimui.dll')
+        ConvertFrom-WorkerPerfDriverVersion (([uint64]61 -shl 48) + ([uint64]1 -shl 32) + 2) | Should -Be '61.1.0.2'   # [uint64] vor dem Schieben: ein Int32 schiebt nur um 48 mod 32
+        $q = @(Get-WorkerPerfPrintQueues); $q.Queue | Should -Be @('PRN-TEST-01'); $q[0].JobErrors | Should -Be 4
+        $v4 = $d | Where-Object Name -eq 'Sim Klasse v4'
+        $v4.Isolation | Should -Be 'shared'; $v4.Type | Should -Be 4; $v4.Version | Should -Be '10.0.0.20348'; $v4.Manufacturer | Should -Be 'Sim'
+        $v4.Files | Should -Be @('simklasse.dll', 'simklasse.gpd')
+        ($d | Where-Object Name -eq 'Sim PCL 6').Version | Should -Be '61.310.1.25919'
+        $q[0].Jobs | Should -Be 1; $q[0].NotReadyErrors | Should -Be 0
+    }
+    It 'nimmt die Isolationsgruppen vor Richtlinie und Attribut und meldet die Druckquellen' {
+        $script:WinFake.IsolationGroups = [string[]]@('Sim Klasse v4', '', 'sim pcl 6')
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
+        $info.Sources['print.drivers'].Available | Should -BeTrue; $info.Sources['print.drivers'].Detail | Should -Be 'root/StandardCimv2: MSFT_PrinterDriver'
+        $info.Sources['print.queues'].Available | Should -BeTrue; $info.Sources['print.queues'].Detail | Should -Be 'Print Queue / Jobs, Job Errors, Not Ready Errors'
+        $d = @(Get-WorkerPerfPrintDrivers)
+        ($d | Where-Object Name -eq 'Sim PCL 6').Isolation | Should -Be 'isolated'; ($d | Where-Object Name -eq 'Sim Klasse v4').Isolation | Should -Be 'none'
+        $script:WinFake.IsolationGroups = $null; $script:WinFake.IsolationPolicy = @{ PrintDriverIsolationExecutionPolicy = 0 }
+        @(Get-WorkerPerfPrintDrivers).Isolation | Should -Be @('none', 'none')
+        $script:WinFake.IsolationPolicy = @{}; $script:WinFake.DriverAttributes = @{}
+        @(Get-WorkerPerfPrintDrivers).Isolation | Should -Be @('', '')
+    }
+    It 'meldet fehlende Druckquellen als nicht verfuegbar' {
+        $script:WinFake.PrintDriverClass = $false; $script:WinFake.Perf.Remove('Print Queue')
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null
+        $info.Sources['print.drivers'].Available | Should -BeFalse; $info.Sources['print.drivers'].Detail | Should -Match 'MSFT_PrinterDriver'
+        $info.Sources['print.queues'].Available | Should -BeFalse; $info.Sources['print.queues'].Detail | Should -Be 'Print Queue: Kategorie nicht vorhanden'
+        @(Get-WorkerPerfPrintQueues).Count | Should -Be 0
+    }
+    It 'vergleicht den Zeiger der Ereignisse in UTC (Rechner in Asia/Tokyo)' {
+        $files = @('WorkerPerf.Common.ps1', 'WorkerPerf.EventConfig.ps1', 'WorkerPerf.Sources.Windows.ps1', 'WorkerPerf.Capture.ps1') | ForEach-Object { (Resolve-Path (Join-Path $PSScriptRoot "../src/$_")).Path }
+        $standIns = (Resolve-Path (Join-Path $PSScriptRoot 'WindowsStandIns.ps1')).Path
+        $code = ((($files + $standIns) | ForEach-Object { ". '$_'; " }) -join '') +
+            "Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) 3>`$null); " +
+            "(@(Get-WorkerPerfEvents -Since ([datetime]::UtcNow.AddMinutes(-5)) | Where-Object Group -eq 'security') | ForEach-Object { `$_.Text }) -join '|'"
+        $old = $env:TZ
+        try { $env:TZ = 'Asia/Tokyo'; $out = & (Get-Process -Id $PID).Path -NoProfile -Command $code }
+        finally { $env:TZ = $old }
+        $out | Should -Be 'Die Ueberpruefung wurde gestartet.|Die Ueberpruefung wurde beendet.'
     }
     It 'meldet fehlende Kategorien, Klassen und Protokolle als nicht verfuegbar' {
         $script:WinFake.Perf.Remove('VM Processor'); $script:WinFake.Perf.Remove('ICA Session'); $script:WinFake.EuemClass = $false
@@ -425,9 +587,10 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $ica = @($snap.Citrix | Where-Object Source -eq 'ICA Session'); $ica.Count | Should -Be 1; $ica[0].SessionId | Should -Be 2
         @($snap.Citrix | Where-Object Metric -eq 'RoundtripTime').Count | Should -Be 1
         (Get-WorkerPerfServices)[900] | Should -Be 'RpcSs'
-        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)))
+        # Aussage geaendert (Task 10): die Quelle ist der Name des Anbieters aus events.json, nicht mehr 'Defender'
+        $ev = @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) | Where-Object Group -eq 'security')
         @($ev.Kind) | Should -Be @('scan-start', 'scan-end')
-        $ev[0].Source | Should -Be 'Defender'; $ev[0].Text | Should -Be 'Die Ueberpruefung wurde gestartet.'
+        $ev[0].Source | Should -Be 'Microsoft-Windows-Windows Defender'; $ev[0].Text | Should -Be 'Die Ueberpruefung wurde gestartet.'; $ev[0].Log | Should -Be 'defender'
     }
     It 'liefert Prozesse und Sitzungen, wenn die Citrix-Abfrage scheitert' {
         [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -CitrixMetricFilter 'Latency|Round' 3>$null)
@@ -466,5 +629,15 @@ Describe 'Collector mit der Windows-Datenquelle und nachgestellten Windows-Aufru
         @(Import-Csv (Join-Path $Run 'procinfo.csv')).Name | Should -Contain 'EXCEL.EXE'
         @(Import-Csv (Join-Path $Run 'sessions.csv')).User | Should -Contain 'mueller'
         @(Import-Csv (Join-Path $Run 'citrix.csv')).Metric | Should -Contain 'Latency - Last Recorded'
+    }
+    It 'schreibt Rueckblick, Treiberliste, Warteschlangen und die Quellen der Ereignisse' {
+        @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 2
+        $b = @(Import-Csv (Join-Path $Run 'events_before.csv'))
+        @($b | Where-Object Kind -eq 'crash').App | Should -Be @('EXCEL.EXE'); @($b | Where-Object Kind -eq 'crash').User | Should -Be @('mueller')
+        @($b | Where-Object Group -eq 'session').Count | Should -Be 0
+        @(Import-Csv (Join-Path $Run 'printqueues.csv')).Queue | Select-Object -Unique | Should -Be @('PRN-TEST-01')
+        foreach ($id in 'events.application', 'events.system', 'events.printservice', 'events.smbclient', 'events.profileservice', 'events.session', 'events.defender',
+            'events.applocker', 'print.drivers', 'print.queues') { $Meta.Sources.$id.Available | Should -BeTrue -Because $id }
+        @($Meta.LookbackCapped).Count | Should -Be 0
     }
 }

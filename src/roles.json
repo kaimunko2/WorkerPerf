@@ -54,16 +54,19 @@
     {
       "role": "Hauptanwendung",
       "label": "Nexus KIS",
-      "processes": [],
+      "processes": [
+        "nexus.framework.healthcare.exe",
+        "NexusService.exe"
+      ],
       "services": [],
-      "note": "im Prüfergebnis kein Prozess der Anwendung in einer Benutzersitzung; Prozessnamen bei der ersten Messung mit angemeldeten KIS-Benutzern ergänzen"
+      "note": "NexusService.exe ist der Prozess des Nexus-Dienstes; er steht unter processes, weil der Kurzname des Dienstes nicht bekannt ist"
     },
     {
       "role": "Hauptanwendung",
       "label": "Oracle-Client",
       "processes": [],
       "services": [],
-      "note": "im Prüfergebnis kein eigener Prozess; der Client läuft vermutlich in der Anwendung, die ihn nutzt"
+      "note": "auf dem Zielserver kein eigener Prozess; der Client läuft in der Anwendung, die ihn nutzt"
     },
     {
       "role": "Drucken",

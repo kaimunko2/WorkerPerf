@@ -14,7 +14,14 @@ $script:WorkerPerfDefaultNonPersonAccounts = @('SYSTEM', 'LOCAL SERVICE', 'NETWO
 $script:WorkerPerfDefaultNonPersonDomains = @('NT SERVICE', 'IIS APPPOOL', 'NT AUTHORITY', ('NT-AUTORIT' + [char]0xC4 + 'T'), 'Window Manager', 'Font Driver Host')
 # The list noModules that src/events.json ships: what Windows writes when it found no module ('unknown', 'StackHash_*').
 $script:WorkerPerfDefaultNoModules = @('unknown', 'StackHash_*')
-$script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object')
+$script:WorkerPerfEventFieldKeys = @('app', 'appVersion', 'module', 'moduleVersion', 'code', 'pid', 'session', 'user', 'printer', 'driver', 'service', 'object',
+    'processStart')
+# Event levels of an entry ("levels" in events.json) -> the Level values of the System part. Information is written
+# as 4, by some providers as 0 (LogAlways).
+$script:WorkerPerfEventLevels = [ordered]@{ critical = @(1); error = @(2); warning = @(3); information = @(0, 4) }
+# Accounts of the well-known service SIDs, independent of the display language of Windows (a German Windows calls
+# LOCAL SERVICE "LOKALER DIENST"): the names that nonPersonAccounts lists first.
+$script:WorkerPerfWellKnownSids = @{ 'S-1-5-18' = 'SYSTEM'; 'S-1-5-19' = 'LOCAL SERVICE'; 'S-1-5-20' = 'NETWORK SERVICE' }
 
 function ConvertTo-WorkerPerfEventInt($Value) {
     # JSON number (Int32, Int64, Decimal or Double depending on the PowerShell version) or numeric text -> [int]; else $null.
@@ -98,8 +105,9 @@ function Read-WorkerPerfEventConfig([string]$Path) {
         $n++
         $provider = [string](Get-WorkerPerfField $e 'provider')
         $idsValue = Get-WorkerPerfField $e 'ids'
-        $rawIds = $(if ($null -eq $idsValue) { @() } else { @($idsValue) })
-        $shown = ($rawIds | ForEach-Object { [string]$_ }) -join ', '
+        $allIds = ($idsValue -is [string] -and $idsValue -eq '*')
+        $rawIds = $(if ($null -eq $idsValue -or $allIds) { @() } else { @($idsValue) })
+        $shown = $(if ($allIds) { '*' } else { ($rawIds | ForEach-Object { [string]$_ }) -join ', ' })
         $where = "events.json: Eintrag $n ($provider $shown)"
         $log = [string](Get-WorkerPerfField $e 'log')
         if (-not $logs.Contains($log)) { throw "$where`: Feld 'log' verweist auf kein bekanntes Protokoll ('$log')." }
@@ -110,7 +118,17 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             if ($null -eq $i) { throw "$where`: Feld 'ids' enthaelt keine ganze Zahl ('$raw')." }
             $ids.Add($i)
         }
-        if ($ids.Count -eq 0) { throw "$where`: Feld 'ids' fehlt oder ist leer." }
+        if ($ids.Count -eq 0 -and -not $allIds) { throw "$where`: Feld 'ids' fehlt oder ist leer." }
+        # levels: optional; required with "ids": "*", which takes every event of the provider at these levels
+        $levels = New-Object System.Collections.Generic.List[int]
+        $levelNames = Get-WorkerPerfEventStringList $e 'levels' $Path
+        foreach ($ln in $levelNames) {
+            if (@($script:WorkerPerfEventLevels.Keys) -cnotcontains $ln) {
+                throw "$where`: Feld 'levels' enthaelt eine unbekannte Ebene ('$ln'); erlaubt sind critical, error, warning und information."
+            }
+            foreach ($lv in $script:WorkerPerfEventLevels[$ln]) { if (-not $levels.Contains($lv)) { $levels.Add($lv) } }
+        }
+        if ($allIds -and $levels.Count -eq 0) { throw "$where`: Feld 'ids' ist '*' ohne Feld 'levels'; alle Kennungen einer Quelle nur mit den Ebenen, die gelesen werden." }
         $group = [string](Get-WorkerPerfField $e 'group')
         if ($script:WorkerPerfEventGroups -cnotcontains $group) { throw "$where`: Feld 'group' ist ungueltig ('$group')." }
         $kind = [string](Get-WorkerPerfField $e 'kind')
@@ -122,33 +140,38 @@ function Read-WorkerPerfEventConfig([string]$Path) {
             foreach ($p in $rawFields.PSObject.Properties) {
                 if ($script:WorkerPerfEventFieldKeys -cnotcontains $p.Name) { throw "$where`: Feld 'fields.$($p.Name)' ist kein bekannter Feldschluessel." }
                 $ref = $p.Value
-                $format = 'decimal'
-                if ($ref -is [string]) { $refText = $ref }
-                elseif ($ref -isnot [pscustomobject]) { throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n', 'binary:utf16' oder ein Objekt mit 'field' sein." }
-                else {
-                    # object form: { "field": <reference>, "format": "hex" | "decimal" }, only for the numeric keys
-                    $refText = Get-WorkerPerfField $ref 'field'
+                $format = $(if ($p.Name -eq 'processStart') { 'filetime' } else { 'decimal' })
+                $label = "fields.$($p.Name)"
+                if ($ref -is [pscustomobject]) {
+                    # object form: { "field": <reference or list>, "format": "hex" | "decimal" }, the format only for the numeric keys
                     $fmt = Get-WorkerPerfField $ref 'format'
                     if ($null -ne $fmt) {
                         if ($script:WorkerPerfEventNumberKeys -cnotcontains $p.Name) { throw "$where`: Feld 'fields.$($p.Name).format' ist nur fuer pid und session erlaubt." }
                         if ($fmt -isnot [string] -or @('hex', 'decimal') -cnotcontains $fmt) { throw "$where`: Feld 'fields.$($p.Name).format' muss 'hex' oder 'decimal' sein." }
                         $format = $fmt
                     }
-                    if ($refText -isnot [string] -or [string]::IsNullOrWhiteSpace($refText)) { throw "$where`: Feld 'fields.$($p.Name).field' muss ein Datenname, '#n' oder 'binary:utf16' sein." }
+                    $prop = $ref.PSObject.Properties['field']
+                    $ref = $(if ($null -eq $prop) { $null } else { $prop.Value })
+                    $label = "fields.$($p.Name).field"
                 }
-                if ($refText -isnot [string] -or [string]::IsNullOrWhiteSpace($refText)) { throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n' oder 'binary:utf16' sein." }
-                if ($refText.StartsWith('#') -and $refText -notmatch '^#\d+$') { throw "$where`: Feld 'fields.$($p.Name)' hat eine ungueltige Position ('$refText')." }
-                $fields[$p.Name] = @{ Field = $refText; Format = $format }
+                elseif ($ref -isnot [string] -and $ref -isnot [object[]]) {
+                    throw "$where`: Feld 'fields.$($p.Name)' muss ein Datenname, '#n', 'binary:utf16', eine Liste davon oder ein Objekt mit 'field' sein."
+                }
+                $fields[$p.Name] = @{ Field = (Get-WorkerPerfEventFieldReferences $ref $where $label); Format = $format }
             }
         }
+        $keys = @($ids | ForEach-Object { "$log|$($provider.ToLowerInvariant())|$_" })
+        if ($allIds) { $keys = @("$log|$($provider.ToLowerInvariant())|*") }
         $seen = @{}
-        foreach ($i in $ids) {
-            $key = "$log|$($provider.ToLowerInvariant())|$i"
-            if ($index.ContainsKey($key) -or $seen.ContainsKey($key)) { throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $i fuer Protokoll und Quelle." }
+        foreach ($key in $keys) {
+            if ($index.ContainsKey($key) -or $seen.ContainsKey($key)) {
+                if ($allIds) { throw "$where`: Feld 'ids' ist '*' fuer Protokoll und Quelle doppelt vorhanden." }
+                throw "$where`: Feld 'ids' enthaelt die doppelte Kennung $($key.Substring($key.LastIndexOf('|') + 1)) fuer Protokoll und Quelle."
+            }
             $seen[$key] = $true
         }
-        $entry = [pscustomobject]@{ log = $log; provider = $provider; ids = $ids.ToArray(); group = $group; kind = $kind; fields = $fields }
-        foreach ($i in $ids) { $index["$log|$($provider.ToLowerInvariant())|$i"] = $entry }
+        $entry = [pscustomobject]@{ log = $log; provider = $provider; ids = $ids.ToArray(); allIds = $allIds; levels = $levels.ToArray(); group = $group; kind = $kind; fields = $fields }
+        foreach ($key in $keys) { $index[$key] = $entry }
         $entries.Add($entry)
     }
 
@@ -183,10 +206,35 @@ function Read-WorkerPerfEventConfig([string]$Path) {
     }
 }
 
-function Resolve-WorkerPerfEventEntry($Config, [string]$LogId, [string]$Provider, [int]$EventId) {
-    $key = "$LogId|$($Provider.ToLowerInvariant())|$EventId"
-    if ($Config.Index.ContainsKey($key)) { return $Config.Index[$key] }
-    return $null
+function Get-WorkerPerfEventFieldReferences($Value, [string]$Where, [string]$Label) {
+    # A field reference of events.json: a data name, '#n' or 'binary:utf16', or a list of them (alternatives: the first
+    # that gives a non-empty value wins). Returns the alternatives as string[].
+    $list = @()
+    if ($Value -is [string]) { $list = @($Value) }
+    elseif ($Value -is [object[]]) { $list = @($Value) }
+    if ($list.Count -eq 0) { throw "$Where`: Feld '$Label' muss ein Datenname, '#n', 'binary:utf16' oder eine nicht leere Liste davon sein." }
+    foreach ($r in $list) {
+        if ($r -isnot [string] -or [string]::IsNullOrWhiteSpace($r)) { throw "$Where`: Feld '$Label' muss ein Datenname, '#n', 'binary:utf16' oder eine nicht leere Liste davon sein." }
+        if ($r.StartsWith('#') -and $r -notmatch '^#\d+$') { throw "$Where`: Feld '$Label' hat eine ungueltige Position ('$r')." }
+    }
+    return , [string[]]$list
+}
+
+function Resolve-WorkerPerfEventEntry($Config, [string]$LogId, [string]$Provider, [int]$EventId, $Level = $null) {
+    # The catalogue entry of an event: by log, provider and id, else the entry with "ids": "*" of log and provider. An
+    # entry with levels takes the event only when its Level is one of them ($null: level unknown, no match).
+    $p = $Provider.ToLowerInvariant()
+    $entry = $null
+    $key = "$LogId|$p|$EventId"
+    if ($Config.Index.ContainsKey($key)) { $entry = $Config.Index[$key] }
+    else {
+        $key = "$LogId|$p|*"
+        if ($Config.Index.ContainsKey($key)) { $entry = $Config.Index[$key] }
+    }
+    if ($null -eq $entry) { return $null }
+    $levels = @(Get-WorkerPerfField $entry 'levels')
+    if ($levels.Count -gt 0 -and ($null -eq $Level -or $levels -notcontains [int]$Level)) { return $null }
+    return $entry
 }
 
 function ConvertFrom-WorkerPerfEventXml([string]$Xml) {
@@ -224,8 +272,12 @@ function ConvertFrom-WorkerPerfEventXml([string]$Xml) {
     $binary = ''
     $node = $doc.SelectSingleNode('//e:EventData/e:Binary', $ns)
     if ($null -ne $node) { $binary = $node.InnerText.Trim() }
+    # the account Windows writes into the System part (a SID); Resolve-WorkerPerfWellKnownSid or the data source names it
+    $userSid = ''
+    $node = $doc.SelectSingleNode('//e:System/e:Security', $ns)
+    if ($null -ne $node -and $null -ne $node.Attributes['UserID']) { $userSid = $node.Attributes['UserID'].Value.Trim() }
 
-    return @{ Provider = $provider; EventId = $eventId; Level = $level; Named = $named; Positional = $positional.ToArray(); Binary = $binary }
+    return @{ Provider = $provider; EventId = $eventId; Level = $level; Named = $named; Positional = $positional.ToArray(); Binary = $binary; UserSid = $userSid }
 }
 
 function ConvertFrom-WorkerPerfHexUtf16([string]$Hex) {
@@ -239,18 +291,60 @@ function ConvertFrom-WorkerPerfHexUtf16([string]$Hex) {
     return $text.Trim()
 }
 
-function Get-WorkerPerfEventFieldValue($Parsed, [string]$Reference) {
-    # '' when the event does not carry the field.
-    if ([string]::IsNullOrEmpty($Reference)) { return '' }
-    if ($Reference -eq 'binary:utf16') { return (ConvertFrom-WorkerPerfHexUtf16 $Parsed.Binary) }
-    $value = $null
-    if ($Reference -match '^#(\d+)$') {
-        $pos = [int]$Matches[1]
-        if ($pos -lt @($Parsed.Positional).Count) { $value = $Parsed.Positional[$pos] }
+function Get-WorkerPerfEventFieldValue($Parsed, $Reference) {
+    # The value of a field reference (one, or a list of alternatives: the first non-empty value wins); '' when the
+    # event carries none of them.
+    foreach ($ref in @($Reference)) {
+        $r = [string]$ref
+        if ([string]::IsNullOrEmpty($r)) { continue }
+        $value = $null
+        if ($r -eq 'binary:utf16') { $value = ConvertFrom-WorkerPerfHexUtf16 $Parsed.Binary }
+        elseif ($r -match '^#(\d+)$') {
+            $pos = [int]$Matches[1]
+            if ($pos -lt @($Parsed.Positional).Count) { $value = $Parsed.Positional[$pos] }
+        }
+        elseif ($Parsed.Named.ContainsKey($r)) { $value = $Parsed.Named[$r] }
+        if ($null -eq $value) { continue }
+        $text = ([string]$value).Trim()
+        if ($text.Length -gt 0) { return $text }
     }
-    elseif ($Parsed.Named.ContainsKey($Reference)) { $value = $Parsed.Named[$Reference] }
-    if ($null -eq $value) { return '' }
-    return ([string]$value).Trim()
+    return ''
+}
+
+function ConvertFrom-WorkerPerfEventFileTime([string]$Text) {
+    # A FILETIME written as hex (with or without 0x, as Application Error 1000 writes the start time of the faulting
+    # process) -> UTC time; $null for anything else, also 0 and values outside the calendar.
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $t = $Text.Trim()
+    if ($t -match '^0[xX]([0-9a-fA-F]{1,16})$') { $t = $Matches[1] }
+    elseif ($t -notmatch '^[0-9a-fA-F]{1,16}$') { return $null }
+    $v = [int64]0
+    if (-not [int64]::TryParse($t, [Globalization.NumberStyles]::AllowHexSpecifier, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { return $null }
+    if ($v -le 0 -or $v -gt [datetime]::MaxValue.ToFileTimeUtc()) { return $null }
+    return [datetime]::FromFileTimeUtc($v)
+}
+
+function Resolve-WorkerPerfWellKnownSid([string]$Sid) {
+    # SYSTEM, LOCAL SERVICE, NETWORK SERVICE for their SIDs, whatever the language of Windows; '' for any other SID.
+    if ([string]::IsNullOrEmpty($Sid)) { return '' }
+    $name = $script:WorkerPerfWellKnownSids[$Sid.Trim().ToUpperInvariant()]
+    if ($null -eq $name) { return '' }
+    return [string]$name
+}
+
+function ConvertTo-WorkerPerfEventAccountName([string]$Account, $Config) {
+    # The account of an event's System part as an event user: without its domain, as a session names its user, except
+    # when the domain is one of nonPersonDomains (NT SERVICE\..., Window Manager\...): it stays, so the account is
+    # never taken for a person.
+    if ([string]::IsNullOrEmpty($Account)) { return '' }
+    $a = $Account.Trim()
+    $cut = $a.LastIndexOf('\')
+    if ($cut -lt 0) { return $a }
+    $domain = $a.Substring(0, $cut)
+    $domains = Get-WorkerPerfField $Config 'NonPersonDomains'
+    if ($null -eq $domains) { $domains = $script:WorkerPerfDefaultNonPersonDomains }
+    if ($domain.Length -gt 0 -and (Test-WorkerPerfNamePattern $domain ([string[]]@($domains)))) { return $a }
+    return $a.Substring($cut + 1)
 }
 
 function ConvertTo-WorkerPerfEventNumber([string]$Text, [string]$Format = 'decimal') {
@@ -290,6 +384,8 @@ function Get-WorkerPerfEventText([string]$Text) {
 }
 
 function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [string]$Message) {
+    # User comes from the data fields; a data source fills an empty User from Parsed.UserSid (the account Windows wrote
+    # into the System part, see ConvertTo-WorkerPerfEventAccountName).
     if ($null -eq $Entry -or $null -eq $Parsed) { return $null }
     $f = $Entry.fields
     $get = {
@@ -326,6 +422,8 @@ function ConvertTo-WorkerPerfEventRecord($Entry, $Parsed, [datetime]$Time, [stri
         Service       = (& $get 'service')
         Object        = (& $get 'object')
         Text          = (Get-WorkerPerfEventText $Message)
+        # start time of the process the event names (UTC), so that a reused process id is not taken for a newer process
+        ProcessStart  = (ConvertFrom-WorkerPerfEventFileTime (& $get 'processStart'))
     }
 }
 
