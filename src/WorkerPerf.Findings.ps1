@@ -632,6 +632,8 @@ function Add-WorkerPerfIncidentDetail {
     }
 
     $inputTh = $null; if ($Thresholds.Contains('input.session')) { $inputTh = $Thresholds['input.session'] }
+    # a capture without -Skip Prozesse (or from before -Skip) has its process data
+    $noProcesses = (@(Get-WorkerPerfField $Model 'Skip') -contains 'Prozesse')
     $icaWarn = [double]::NaN; if ($Thresholds.Contains('ica.rtt')) { $icaWarn = [double]$Thresholds['ica.rtt'].warn }
 
     foreach ($inc in @($Incidents)) {
@@ -720,6 +722,7 @@ function Add-WorkerPerfIncidentDetail {
         #   security  a security product (from the minimum share on) holds the largest share, or no application reaches the minimum
         #   none      neither reaches the minimum share
         #   nodata    no process lived in the snapshots of the window
+        #   notmeasured  -Skip Prozesse: the capture recorded no processes at all
         $cause = $null
         if ($inc.Type -eq 'engpass' -and $null -ne $inc.Lead -and $contrib.ContainsKey([string]$inc.Lead)) {
             $rank = $contrib[[string]$inc.Lead]
@@ -737,6 +740,7 @@ function Add-WorkerPerfIncidentDetail {
             if ($null -ne $largest -and ($null -eq $m -or $largest.SharePct -gt $m.SharePct)) { $kind = 'security' }
             elseif ($null -ne $m) { $kind = 'main' }
             elseif (-not $hasProcessData) { $kind = 'nodata' }
+            if ($noProcesses) { $kind = 'notmeasured' }
             $causeSec = $null
             if ($kind -eq 'security') { $causeSec = @{ Label = [string]$largest.Label; SharePct = $largest.SharePct } }
             $cause = @{
@@ -881,6 +885,7 @@ function Get-WorkerPerfIncidentText {
     $text = ''
     $affectedCount = @($Incident.Affected).Count
     $inputMissing = $false; $workerMissing = @()
+    $skipped = @(Get-WorkerPerfField $Model 'Skip')   # a model without Skip counts as fully measured
     if ($null -ne $Unmeasured) { $inputMissing = [bool]$Unmeasured.Input; $workerMissing = @($Unmeasured.Worker) }
     $affectedText = $Texts['affected.none']
     if ($affectedCount -eq 1) { $affectedText = $Texts['affected.one'] }
@@ -930,6 +935,7 @@ function Get-WorkerPerfIncidentText {
                 }
             }
             elseif ($cause.Kind -eq 'nodata') { $text += $Texts['main.nodata'] }
+            elseif ($cause.Kind -eq 'notmeasured') { $text += & $fmt 'main.notmeasured' @($Texts['skip.text.Prozesse']) }
             else { $text += & $fmt 'main.none' @((Format-WorkerPerfTextNumber ([double]$cause.MinSharePct)), $measure) }
         }
         $c = $Incident.Companion
@@ -944,13 +950,15 @@ function Get-WorkerPerfIncidentText {
         $text = & $fmt 'ohne' @($t0, $t1, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
         $text += $affectedText
         $dp = @($Incident.DelayProcesses)
-        if ($dp.Count -gt 0) {
+        if ($skipped -contains 'Prozesse') { $text += & $fmt 'ohne.process.notmeasured' @($Texts['skip.text.Prozesse']) }
+        elseif ($dp.Count -gt 0) {
             $who = & $userText ([int]$dp[0].SessionIndex) (Get-WorkerPerfUserName $Model ([int]$dp[0].SessionIndex))
             $text += & $fmt 'ohne.process' @($dp[0].Name, $who)
         }
         # with an unmeasured worker resource the cause cannot be placed outside the worker
         if ($workerMissing.Count -gt 0) { $text += & $fmt 'ohne.unmeasured' @(($workerMissing -join ', ')) }
         else { $text += $Texts['ohne.cause'] }
+        if ($skipped -contains 'Gegenstellen') { $text += ' ' + $Texts['skip.text.Gegenstellen'] }
         $probeUnit = Get-WorkerPerfThresholdField $Thresholds 'probe.connect' 'unit'
         foreach ($e in @($Incident.Endpoints)) {
             if ($e.Failed) { $text += & $fmt 'endpoint.context' @($e.Name, $Texts['probe.error']) }

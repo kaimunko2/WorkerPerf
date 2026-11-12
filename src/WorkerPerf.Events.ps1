@@ -355,8 +355,9 @@ function Get-WorkerPerfFirstValue([System.Collections.Generic.List[object]]$Reco
 function New-WorkerPerfEventIncidents {
     # Incidents from event records: records of the same incident kind and key (without regard to case) in time order
     # form one incident while the gap to the previous record is at most GroupMinutes. A crash or hang becomes an incident
-    # when one record lies in a user session or the group has two records or more, and with -Before (the lookback, where
-    # no session can be matched) also when one record's session is unknown (P1-R32); a service failure when the service
+    # when one record lies in a user session, the group has two records or more, or one record's session is unknown
+    # (P1-R32: in the lookback no session can be matched, and in the capture a single crash of an application at its
+    # start is what a user reports; a single one of session 0 is none); a service failure when the service
     # is an important one or it failed twice or more; print, profile and system problems always. Numbered from FirstId
     # by start, kind and key. Events keeps at most 50 records; Count counts all. ModuleEvents counts the records that can
     # name a module (crashes and records that name one); SameModule: one real module in all of them. Every record gets
@@ -465,7 +466,7 @@ function New-WorkerPerfEventIncidents {
         }
         $service = Get-WorkerPerfFirstValue $records 'Service'
         $keep = $true
-        if ($kind -eq 'crash' -or $kind -eq 'hang') { $keep = ($inSession -or $records.Count -ge 2 -or ($Before -and $unknownSession)) }
+        if ($kind -eq 'crash' -or $kind -eq 'hang') { $keep = ($inSession -or $records.Count -ge 2 -or $unknownSession) }
         elseif ($kind -eq 'service') { $keep = (@($Config.ImportantServices) -contains $service -or $records.Count -ge 2) }
         if (-not $keep) { continue }
 
@@ -511,7 +512,7 @@ function New-WorkerPerfEventIncidents {
                 Versions = [string[]]$versions.ToArray(); Modules = $modules; ModuleEvents = $moduleEvents; SameModule = ($modules.Count -eq 1 -and $modules[0].Count -eq $moduleEvents -and (Test-WorkerPerfRealModule ([string]$modules[0].Name) $Config))
                 Codes = $codes; App = (Get-WorkerPerfFirstValue $records 'App'); Service = $service; Driver = $driver
                 Printer = (Get-WorkerPerfFirstValue $records 'Printer'); Source = (Get-WorkerPerfFirstValue $records 'Source'); Before = [bool]$Before
-                Patterns = @(); Overlap = @(); Companions = @()
+                Patterns = @(); Unchecked = @(); Overlap = @(); Companions = @()
                 SortKey = $first.Key.ToLowerInvariant(); Records = $records
             })
     }
@@ -579,9 +580,16 @@ function Add-WorkerPerfEventPatterns {
     # the incidents were made from). Every performance incident gets EventIncidents (int[]). With -Before only the
     # patterns without measurement are checked and Model and PerfIncidents may be $null. A performance incident that is a
     # lasting condition (Chronic) spans the whole capture and is no overlap.
+    # -Skip (the categories the capture left out) sets Unchecked (@{ Id; Category }, in this order) on every incident: the
+    # patterns that would need a category left out are neither formed nor counted as not applying. printdriver/Drucken:
+    # without Drucken, when the incident names a real module. users/Prozesse: without Prozesse, in the capture, when a
+    # crash or hang of the incident has an unknown session (Get-WorkerPerfEventSessionState, the same decision as the
+    # incident's SessionUnknown): without process data the collector matched no process to a session; manyusers and
+    # oneuser are not formed then.
     param([object[]]$Incidents, [object[]]$AllEvents, $Model, $Thresholds, $Settings, $Config, [object[]]$Roles, [object[]]$Drivers,
-        [object[]]$PerfIncidents, [switch]$Before)
+        [object[]]$PerfIncidents, [switch]$Before, [string[]]$Skip = @())
     if ($null -eq $Drivers) { $Drivers = @() }
+    if ($null -eq $Skip) { $Skip = @() }
     if ($null -eq $Roles) { $Roles = @() }
     $all = Get-WorkerPerfEventsByTime @($AllEvents)
     $toMs = { param($Minutes) [long]([double]$Minutes * 60000) }
@@ -710,6 +718,15 @@ function Add-WorkerPerfEventPatterns {
         $memberMs = [long[]]@($members | ForEach-Object { [long]$_.TimeMs })
         $moduleNames = @($inc.Modules | ForEach-Object { [string]$_.Name } | Where-Object { Test-WorkerPerfRealModule $_ $Config })
         $found = @{}
+        $unchecked = New-Object System.Collections.Generic.List[object]
+        if ($Skip -contains 'Drucken' -and $moduleNames.Count -gt 0) { $unchecked.Add(@{ Id = 'printdriver'; Category = 'Drucken' }) }
+        if ($Skip -contains 'Prozesse' -and -not $Before) {
+            foreach ($m in $members) {
+                $mk = [string]$m.Kind
+                if (($mk -eq 'crash' -or $mk -eq 'hang') -and (Get-WorkerPerfEventSessionState $m $Config) -eq 'unknown') { $unchecked.Add(@{ Id = 'users'; Category = 'Prozesse' }); break }
+            }
+        }
+        $notChecked = @{}; foreach ($u in $unchecked) { $notChecked[$u.Id] = $true }
 
         # resource (P1-R35): only where memory is a plausible cause, a crash, hang or service failure, or a print problem
         # from a print process; per record of these kinds: memory at or above the critical value for the signal's
@@ -804,6 +821,7 @@ function Add-WorkerPerfEventPatterns {
 
         # printdriver: a module that is a file of a listed driver; a file of several drivers names none of them (Driver '')
         foreach ($name in $moduleNames) {
+            if ($notChecked.ContainsKey('printdriver')) { break }
             if (Test-WorkerPerfNamePattern (Get-WorkerPerfLeafName $name) ([string[]]@($Config.SystemModules))) { continue }
             $names = Get-WorkerPerfModuleDrivers $name $Drivers
             if ($names.Length -eq 0) { continue }
@@ -825,8 +843,10 @@ function Add-WorkerPerfEventPatterns {
             if ($found.ContainsKey('securitymodule')) { break }
         }
 
-        # manyusers and oneuser over the users of all records
+        # manyusers and oneuser over the users of all records (not with users unchecked: a record without session may
+        # belong to any person)
         $users = @($inc.Users)
+        if ($notChecked.ContainsKey('users')) { $users = @() }
         if (($inc.Kind -eq 'crash' -or $inc.Kind -eq 'hang') -and $users.Count -ge [int]$Settings.ManyUsers) { $found['manyusers'] = @{ Users = $users.Count } }
         if ($users.Count -eq 1) {
             $n = 0
@@ -870,6 +890,7 @@ function Add-WorkerPerfEventPatterns {
             if ($allowed -contains $id -and $found.ContainsKey($id)) { $patterns.Add(@{ Id = $id; Detail = $found[$id] }) }
         }
         $inc.Patterns = $patterns.ToArray()
+        $inc['Unchecked'] = $unchecked.ToArray()
         $inc.Overlap = [int[]]$overlap.ToArray()
         $inc.Companions = $companions.ToArray()
     }
@@ -1011,9 +1032,13 @@ function Get-WorkerPerfEventIncidentText {
     if (($kind -eq 'crash' -or $kind -eq 'hang') -and $subject.Length -eq 0) { [void]$sb.Append(($Texts["event.$kind.noapp"] -f $clock, (& $times $inc.Count))) }
     else { [void]$sb.Append(($Texts["event.$kind"] -f $clock, $subject, (& $times $inc.Count))) }
 
-    # without users: an unknown session is said as such (P1-R32), "Ohne Benutzersitzung" only for session 0
+    # without users: an unknown session is said as such (P1-R32), "Ohne Benutzersitzung" only for session 0; neither with
+    # users unchecked (the statement of the unchecked patterns gives the reason)
     $users = @($inc.Users)
+    $unchecked = @(@(Get-WorkerPerfField $inc 'Unchecked') | Where-Object { $null -ne $_ })
+    $usersUnchecked = (@($unchecked | Where-Object { [string]$_.Id -eq 'users' }).Count -gt 0)
     if ($users.Count -gt 0) { [void]$sb.Append(($Texts['event.users'] -f (Join-WorkerPerfTextList $users $Texts))) }
+    elseif ($usersUnchecked) { }   # nothing about the session: the unchecked statement below names the reason
     elseif ([bool](Get-WorkerPerfField $inc 'SessionUnknown')) { [void]$sb.Append($Texts['event.session.unknown']) }
     elseif ([bool](Get-WorkerPerfField $inc 'NoUserSession')) { [void]$sb.Append($Texts['event.nouser']) }
     # modules: only real ones ('unknown', StackHash_* and empty name none); "n von m" counts the records that can name
@@ -1039,7 +1064,8 @@ function Get-WorkerPerfEventIncidentText {
     $patterns = @($inc.Patterns)
     $withResource = (@($patterns | Where-Object { $null -ne $_ -and [string]$_.Id -eq 'resource' }).Count -gt 0)
     foreach ($p in $patterns) { [void]$sb.Append((Get-WorkerPerfPatternStatement $p $Texts $OffsetMinutes $withDate $startDay $withResource)) }
-    if ($patterns.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
+    if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@($unchecked | ForEach-Object { $Texts['pattern.unchecked.' + [string]$_.Id] })) -join ', '))) }
+    if ($patterns.Count -eq 0 -and $unchecked.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
     return $sb.ToString()
 }
 
@@ -1052,7 +1078,8 @@ $script:WorkerPerfReportedRadiusMinutes = 15
 
 function Get-WorkerPerfLookback {
     # The events of Model.EventsBefore before the first tick, grouped into incidents (Before, numbered from FirstId) with
-    # the patterns that need no measurement. Returns @{ Days; FromMs; Capped; EventCount; Incidents; PerDay; Near }:
+    # the patterns that need no measurement (Model.Skip: those a category left out would need stay unchecked).
+    # Returns @{ Days; FromMs; Capped; EventCount; Incidents; PerDay; Near }:
     # Days = Meta.EventLookbackDays (0 without), FromMs = first tick - Days, Capped = the logs whose lookback reached its
     # cap, EventCount = all events before the first tick, PerDay = @{ Day = 'yyyy-MM-dd'; Count; Partial } of the events
     # with an incident kind per day in the server's local time (ascending, days without such events left out; Partial:
@@ -1097,7 +1124,7 @@ function Get-WorkerPerfLookback {
     $incidents = @(New-WorkerPerfEventIncidents -Events $records -Config $Config -Settings $Settings -Drivers $drivers -FirstId $FirstId -Before)
     if ($incidents.Count -gt 0) {
         Add-WorkerPerfEventPatterns -Incidents $incidents -AllEvents $records -Model $null -Thresholds $null -Settings $Settings -Config $Config -Roles $Roles `
-            -Drivers $drivers -PerfIncidents $null -Before
+            -Drivers $drivers -PerfIncidents $null -Before -Skip ([string[]]@(@(Get-WorkerPerfField $Model 'Skip') | Where-Object { $null -ne $_ }))
     }
 
     # per day in the server's local time of each record (its own offset, else the capture's); sorted, because a
@@ -1309,6 +1336,9 @@ function ConvertTo-WorkerPerfEventIncidentOut {
     $patterns = @(@($inc.Patterns) | Where-Object { $null -ne $_ } | ForEach-Object {
             [ordered]@{ id = [string]$_.Id; text = (Get-WorkerPerfPatternStatement $_ $Texts $OffsetMinutes $before $startDay $withResource).TrimStart(); detail = (ConvertTo-WorkerPerfDetailOut $_.Detail $OffsetMinutes) }
         })
+    $unchecked = @(@(Get-WorkerPerfField $inc 'Unchecked') | Where-Object { $null -ne $_ } | ForEach-Object {
+            [ordered]@{ id = [string]$_.Id; category = [string]$_.Category; text = [string]$Texts['pattern.unchecked.' + [string]$_.Id] }
+        })
     $companions = @(@($inc.Companions) | Where-Object { $null -ne $_ } | ForEach-Object {
             [ordered]@{ t = [long]$_.TimeMs; offsetMin = (Get-WorkerPerfEventOffset $_ $OffsetMinutes); group = [string]$_.Group; source = [string]$_.Source
                 id = [int]$_.EventId; kind = [string]$_.Kind; object = [string](Get-WorkerPerfField $_ 'Object') }
@@ -1324,7 +1354,7 @@ function ConvertTo-WorkerPerfEventIncidentOut {
         moduleEvents = [int]$moduleEvents; sameModule = [bool]$inc.SameModule
         codes = @(@($inc.Codes) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ code = [string]$_.Code; text = [string]$_.Text; count = [int]$_.Count } })
         app = [string]$inc.App; service = [string]$inc.Service; driver = [string]$inc.Driver; printer = [string]$inc.Printer; source = [string]$inc.Source
-        before = $before; patterns = $patterns; overlap = [int[]]@($inc.Overlap); companions = $companions
+        before = $before; patterns = $patterns; unchecked = $unchecked; overlap = [int[]]@($inc.Overlap); companions = $companions
     }
     return [ordered]@{
         id = [int]$inc.Id; type = 'ereignis'; chronic = $false; severity = [int]$inc.Severity

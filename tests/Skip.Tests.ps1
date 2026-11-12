@@ -160,3 +160,74 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         [IO.File]::ReadAllText($Rep.AlleMasked.Report) | Should -Not -Match 'user0\d\d|SIM-VDA01|CONTOSO'
     }
 }
+Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Review Focus 3
+    BeforeAll { function Get-Ev($Data, [scriptblock]$Where) { @($Data.incidents | Where-Object { $_.type -eq 'ereignis' } | Where-Object $Where) } }   # nicht $d: PowerShell unterscheidet $d und $D nicht
+    It 'nennt beim Verursacher den Grund statt fehlender Prozessdaten' {
+        $rp = $D.Prozesse; $cpu = $rp.incidents | Where-Object lead -eq 'cpu'
+        $cpu.cause.kind | Should -Be 'notmeasured'; $cpu.main | Should -BeNullOrEmpty
+        $cpu.text | Should -BeLike '*Betroffen: 6 Sitzungen. Kein Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst.'
+        $back = $rp.incidents | Where-Object { $_.type -eq 'ohne-engpass' -and @($_.affected).Count -eq 8 }
+        $back.text | Should -BeLike '*Betroffen: 8 Sitzungen. Prozess mit der höchsten Verzögerung nicht ermittelt: Prozesse wurden bei dieser Messung nicht erfasst. Die Ursache liegt*Gegenstelle Oracle-Listener: *'
+        @($rp.incidents | Where-Object { $_.text -match 'keine Prozessdaten' }).Count | Should -Be 0
+        ($D.Voll.incidents | Where-Object lead -eq 'cpu').cause.kind | Should -Be 'main'
+    }
+    It 'sagt bei einer Verzoegerung ohne Engpass, was nicht geprueft wurde' {
+        $back = $D.Gegenstellen.incidents | Where-Object { $_.type -eq 'ohne-engpass' -and @($_.affected).Count -eq 8 }
+        $back.text | Should -BeLike '*(Datenbank, Proxy, Netz). Gegenstellen wurden bei dieser Messung nicht geprüft.'; @($back.endpoints).Count | Should -Be 0
+        $late = @($D.Laufwerke.incidents | Where-Object type -eq 'ohne-engpass'); $late.Count | Should -Be 5
+        foreach ($i in $late) { $i.text | Should -Match 'Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit \(SMB\); ein Engpass dort ist nicht ausgeschlossen\.' }
+    }
+    It 'bildet kein Muster, das eine weggelassene Kategorie braucht, und sagt nicht "kein Muster"' {
+        $p = (Get-Ev $D.Drucken { $_.event.kind -eq 'print' })[0]
+        @($p.event.patterns).Count | Should -Be 0; @($p.event.unchecked | ForEach-Object { '{0}|{1}|{2}' -f $_.id, $_.category, $_.text }) | Should -Be @('printdriver|Drucken|Bezug zu einem Druckertreiber (Drucken nicht gemessen)')
+        $p.text | Should -BeLike '*Nicht geprüft: Bezug zu einem Druckertreiber (Drucken nicht gemessen).'; $p.text | Should -Not -Match 'Kein Muster erkannt'
+        $o = (Get-Ev $D.Prozesse { $_.event.app -eq 'OUTLOOK.EXE' })[0]
+        @($o.event.patterns.id) | Should -Not -Contain 'manyusers'; @($o.event.unchecked.id) | Should -Be @('users')
+        # erweitert: auch "Sitzung nicht ermittelt" entfaellt, den Grund nennt der Satz zum nicht geprueften Muster
+        $o.text | Should -BeLike '*Nicht geprüft: Zuordnung zu Benutzern und Sitzungen (Prozesse nicht gemessen).'; $o.text | Should -Not -Match 'Ohne Benutzersitzung|Kein Muster erkannt|Sitzung nicht ermittelt'
+        $pr = (Get-Ev $D.Prozesse { $_.event.kind -eq 'profileerror' })[0]   # nennt seinen Benutzer selbst
+        @($pr.event.unchecked).Count | Should -Be 0; $pr.text | Should -Match 'Benutzer: user014\. Kein Muster erkannt\.'
+        @(@($D.Prozesse.before.incidents) | Where-Object { @($_.event.patterns.id) -contains 'oneuser' }).Count | Should -Be 1   # der Rueckblick nennt Benutzer selbst
+        @(@($D.Prozesse.before.incidents) | Where-Object { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0
+    }
+    It 'bildet ohne Prozesse auch aus dem einzelnen Absturz mit unbekannter Sitzung einen Vorfall' {
+        # ohne Prozesse ordnet der Collector keinem Absturz eine Sitzung zu; der einzelne Absturz von chrome.exe bleibt ein Vorfall
+        @(Get-Ev $D.Prozesse { $true } | ForEach-Object { $_.event.kind + ':' + $_.event.app }) | Should -Be @('profileerror:', 'crash:chrome.exe', 'crash:OUTLOOK.EXE', 'print:spoolsv.exe')
+        $c = (Get-Ev $D.Prozesse { $_.event.app -eq 'chrome.exe' })[0]
+        @($c.event.patterns.id) | Should -Be @('resource', 'overlap'); @($c.event.unchecked.id) | Should -Be @('users')
+        $c.text | Should -BeLike '*Zeitgleich mit Vorfall 3. Nicht geprüft: Zuordnung zu Benutzern und Sitzungen (Prozesse nicht gemessen).'
+        $c.text | Should -Not -Match 'Ohne Benutzersitzung|Sitzung nicht ermittelt|Kein Muster erkannt'
+        # jede Kombination hat die vier Ereignisvorfaelle der Messung, ausser ohne Ereignisse (dann keinen)
+        foreach ($k in @('Voll') + $Names + 'Alle') {
+            $want = $(if ($k -eq 'Ereignisse' -or $k -eq 'Alle') { 0 } else { 4 })
+            @(Get-Ev $D[$k] { $true }).Count | Should -Be $want -Because $k
+        }
+    }
+    It 'behaelt ein nicht geprueftes Muster im maskierten Bericht' {
+        $out = Join-Path $TestDrive 'dm.html'; [void](& $Report -Path $Runs.Drucken -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') -Mask Alles 6>$null)
+        $u = (Get-Ev (Get-ReportData $out) { $_.event.kind -eq 'print' })[0].event.unchecked
+        '{0}|{1}|{2}' -f $u[0].id, $u[0].category, $u[0].text | Should -Be 'printdriver|Drucken|Bezug zu einem Druckertreiber (Drucken nicht gemessen)'
+    }
+    It 'ordnet die Felder von unchecked im Bestand tests/MaskCensus.json ein' {
+        $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
+        $paths = New-Object System.Collections.Generic.SortedSet[string] ([StringComparer]::Ordinal)
+        $walk = { param($v, [string]$p)
+            if ($null -eq $v -or $v -is [ValueType]) { return }
+            if ($v -is [string]) { [void]$paths.Add($p); return }
+            if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { & $walk $x "$p[]" }; return }
+            foreach ($q in $v.PSObject.Properties) { & $walk $q.Value $(if ($p) { "$p.$($q.Name)" } else { $q.Name }) } }
+        # ohne Drucken nennen Vorfaelle der Messung und des Rueckblicks ein Modul
+        foreach ($i in @($D.Drucken.incidents)) { if ($null -ne $i.event) { & $walk @($i.event.unchecked) 'incidents[].event.unchecked' } }
+        foreach ($i in @($D.Drucken.before.incidents)) { & $walk @($i.event.unchecked) 'before.incidents[].event.unchecked' }
+        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like '*unchecked*' } | Sort-Object)
+        @($paths | ForEach-Object { '{0}={1}' -f $_, $census.$_ }) | Should -Be @('before.incidents[].event.unchecked[].category=keyword', 'before.incidents[].event.unchecked[].id=keyword',
+            'before.incidents[].event.unchecked[].text=composed', 'incidents[].event.unchecked[].category=keyword', 'incidents[].event.unchecked[].id=keyword', 'incidents[].event.unchecked[].text=composed')
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1'); $WorkerPerfMaskKeywordFields | Should -Contain 'unchecked.category'
+    }
+    It 'laesst ohne -Skip nichts ungeprueft und haelt Ereignisse und Rueckblick getrennt' {
+        @(Get-Ev $D.Voll { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0; @(Get-Ev $D.Voll { $true }).Count | Should -Be 4
+        @($D.Voll.before.incidents | Where-Object { @($_.event.unchecked).Count -gt 0 }).Count | Should -Be 0
+        # Aussage angepasst: der Rueckblick der simulierten Stunde hat seit der Korrekturrunde des Ereignisplans vier Vorfaelle
+        @(Get-Ev $D.Ereignisse { $true }).Count | Should -Be 0; @($D.Ereignisse.before.incidents).Count | Should -Be 4
+    }
+}

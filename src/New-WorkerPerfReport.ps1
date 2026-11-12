@@ -402,7 +402,7 @@ $printDrivers = @(@($model.PrintDrivers) | Where-Object { $null -ne $_ })
 Set-WorkerPerfEventSessions -Events $events -Model $model -Config $eventConfig
 $eventIncidents = @(New-WorkerPerfEventIncidents -Events $events -Config $eventConfig -Settings $eventSettings -Drivers $printDrivers -FirstId ($incidents.Count + 1))
 Add-WorkerPerfEventPatterns -Incidents $eventIncidents -AllEvents $events -Model $model -Thresholds $thresholds -Settings $eventSettings -Config $eventConfig `
-    -Roles $roles -Drivers $printDrivers -PerfIncidents $incidents
+    -Roles $roles -Drivers $printDrivers -PerfIncidents $incidents -Skip ([string[]]@($model.Skip))
 $lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId ($incidents.Count + $eventIncidents.Count + 1) -ReportedWallMs $reportedWallMs
 $beforeIncidents = @($lookback.Incidents)
 $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents (@($eventIncidents) + @($beforeIncidents))

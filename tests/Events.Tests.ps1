@@ -1359,10 +1359,20 @@ Describe 'Abschlussrunde: Sitzung, Ursachen und Treiber nur, soweit die Daten si
         $i = Get-Inc @((New-Bare 0), (New-Bare 20), (New-Bare 25 'anders.exe'), (New-Bare 300)) -Before
         @($i | ForEach-Object { $_.App + ':' + $_.Count }) | Should -Be @('simtool.exe:2', 'anders.exe:1', 'simtool.exe:1')
     }
-    It 'C1: laesst in der Messzeit den einzelnen Absturz ohne Sitzung weg und nennt bei zweien die unbekannte Sitzung' {
-        (Get-Inc @(New-Bare 0)).Count | Should -Be 0
+    It 'C1: nennt in der Messzeit bei zwei Abstuerzen ohne Sitzung die unbekannte Sitzung' {
+        # Aussage geaendert (Messkategorien Task 4): der einzelne Absturz mit unbekannter Sitzung bildet auch in der
+        # Messzeit einen Vorfall (siehe den folgenden Test); bisher stand hier (Get-Inc @(New-Bare 0)).Count | Should -Be 0
         $i = Get-PatInc @((New-Bare 0), (New-Bare 1))
         $i.Count | Should -Be 1; Get-Text $i[0] | Should -Match ': Absturz von simtool\.exe \(2-mal\)\. Sitzung nicht ermittelt\. '
+    }
+    It 'C1: bildet in der Messzeit aus einem einzelnen Absturz mit unbekannter Sitzung einen Vorfall, aus einem in Sitzung 0 keinen' {   # Messkategorien Task 4
+        $i = Get-PatInc @(New-Bare 0)
+        $i.Count | Should -Be 1; $i[0].Severity | Should -Be 1; $i[0].SessionUnknown | Should -BeTrue; $i[0].NoUserSession | Should -BeFalse
+        Get-Text $i[0] | Should -Match ': Absturz von simtool\.exe \(1-mal\)\. Sitzung nicht ermittelt\. Fehlerhaftes Modul: simtool\.dll'
+        (Get-Inc @(New-Bare 0 -Kind 'hang')).Count | Should -Be 1
+        (Get-Inc @(New-Ev 0 -App 'dienst.exe' -Sid 0 -User '')).Count | Should -Be 0
+        (Get-Inc @(New-Ev 0 -App 'dienst.exe' -Sid 0 -User 'SYSTEM')).Count | Should -Be 0
+        (Get-Inc @(New-Ev 0 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 })).Count | Should -Be 0   # Dienstkonto ohne Sitzungsnummer: nicht unbekannt
     }
     It 'C1: sagt "Ohne Benutzersitzung" nur fuer Sitzung 0 und ueber ein Dienstkonto ohne Sitzungsnummer nichts' {
         Get-Text (Get-PatInc @((New-Ev 0 -App 'dienst.exe' -Sid 0 -User 'SYSTEM'), (New-Ev 1 -App 'dienst.exe' -Sid 0 -User 'SYSTEM')))[0] | Should -Match ' \(2-mal\)\. Ohne Benutzersitzung\. '
@@ -1443,5 +1453,64 @@ Describe 'Abschlussrunde: Sitzung, Ursachen und Treiber nur, soweit die Daten si
             Test-WorkerPerfEventPersonUser 'KLINIK\user005' $Cfg | Should -BeTrue
         }
         finally { [cultureinfo]::CurrentCulture = $old }
+    }
+}
+Describe 'Muster mit weggelassenen Kategorien (Messkategorien Task 4)' {
+    BeforeAll {
+        function New-Bare2([double]$Min, [string]$App = 'simtool.exe', [string]$Kind = 'crash', [string]$Module = 'simtool.dll') { New-Ev $Min $Kind $App -1 '' $Module @{ SessionIndex = -1 } }
+        function Get-SkipInc([object[]]$Events, [string[]]$Skip, [switch]$Before) {
+            $inc = Get-Inc $Events -Before:$Before
+            $model = $(if ($Before) { $null } else { New-PatternModel (@(50) * 60) })
+            Add-WorkerPerfEventPatterns -Incidents $inc -AllEvents $Events -Model $model -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents @() -Before:$Before -Skip $Skip
+            , $inc
+        }
+        function Get-Unchecked($Incident) { @($Incident.Unchecked) | ForEach-Object { $_.Id + '/' + $_.Category } }   # schlichte Pipeline-Ausgabe
+    }
+    It 'laesst ohne -Skip nichts ungeprueft' {
+        $all = Get-PatInc @((New-Bare2 0), (New-Bare2 1), (New-Ev 5)); $all.Count | Should -Be 2
+        foreach ($i in $all) { , $i.Unchecked | Should -BeOfType [object[]]; @($i.Unchecked).Count | Should -Be 0 }
+    }
+    It 'nennt ohne Drucken den Bezug zum Druckertreiber bei jedem Vorfall mit einem echten Modul' {
+        $i = Get-SkipInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'), (New-Ev 10), (New-Ev 30 -App 'B.EXE' -Module 'unknown'), (New-Ev 50 'hang' -App 'C.EXE' -Module '')) @('Drucken')
+        @($i | ForEach-Object { $_.Key + '=' + (@(Get-Unchecked $_) -join ',') }) | Should -Be @('Sim PCL 6=printdriver/Drucken', 'EXCEL.EXE=printdriver/Drucken', 'B.EXE=', 'C.EXE=')
+        @($i[0].Patterns | ForEach-Object Id) | Should -Not -Contain 'printdriver'   # nicht gebildet, auch wenn eine Treiberliste vorlaege
+        Get-Unchecked (Get-SkipInc @(New-Ev 0) @('Drucken') -Before)[0] | Should -Be @('printdriver/Drucken')   # auch im Rueckblick
+    }
+    It 'nennt ohne Prozesse die Zuordnung zu Benutzern, wenn ein Absturz oder Haenger keine Sitzung hat' {
+        $bare = @((New-Bare2 0), (New-Bare2 1), (New-Bare2 2))
+        $i = Get-SkipInc $bare @('Prozesse')
+        Get-Unchecked $i[0] | Should -Be @('users/Prozesse'); @($i[0].Patterns | ForEach-Object Id) | Should -Not -Contain 'manyusers'
+        # gemischt: drei Abstuerze von user002 und einer ohne Sitzung: oneuser wird nicht gebildet
+        $mix = @((New-Ev 0 -App 'simtool.exe'), (New-Ev 1 -App 'simtool.exe'), (New-Ev 2 -App 'simtool.exe'), (New-Bare2 3))
+        @((Get-PatInc $mix)[0].Patterns | ForEach-Object Id) | Should -Contain 'oneuser'
+        $m = (Get-SkipInc $mix @('Prozesse'))[0]; Get-Unchecked $m | Should -Be @('users/Prozesse'); @($m.Patterns | ForEach-Object Id) | Should -Not -Contain 'oneuser'
+        # mit Sitzung, Sitzung 0, Dienstkonto ohne Sitzungsnummer, im Rueckblick und eine Systemmeldung: nichts ungeprueft
+        @((Get-SkipInc @((New-Ev 0 -App 'simtool.exe'), (New-Ev 1 -App 'simtool.exe')) @('Prozesse'))[0].Unchecked).Count | Should -Be 0
+        @((Get-SkipInc @((New-Ev 0 -App 'dienst.exe' -Sid 0 -User ''), (New-Ev 1 -App 'dienst.exe' -Sid 0 -User '')) @('Prozesse'))[0].Unchecked).Count | Should -Be 0
+        @((Get-SkipInc @((New-Ev 0 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 }), (New-Ev 1 -App 'dienst.exe' -Sid -1 -User 'SYSTEM' -More @{ SessionIndex = -1 })) @('Prozesse'))[0].Unchecked).Count | Should -Be 0
+        @((Get-SkipInc $bare @('Prozesse') -Before)[0].Unchecked).Count | Should -Be 0
+        @((Get-SkipInc @(New-Ev 0 'system' '' -1 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = ''; SessionIndex = -1 }) @('Prozesse'))[0].Unchecked).Count | Should -Be 0
+        Get-Unchecked (Get-SkipInc @(New-Bare2 0 -Kind 'hang' -Module '') @('Prozesse'))[0] | Should -Be @('users/Prozesse')
+    }
+    It 'sagt im Klartext, was nicht geprueft wurde, statt "kein Muster" und ohne Satz zur Sitzung' {
+        $i = (Get-SkipInc @(New-Bare2 0) @('Prozesse', 'Drucken'))[0]
+        Get-Unchecked $i | Should -Be @('printdriver/Drucken', 'users/Prozesse')
+        Get-Text $i | Should -Match ': Absturz von simtool\.exe \(1-mal\)\. Fehlerhaftes Modul: simtool\.dll, immer dasselbe\. Fehlercode: 0xc0000005 \(Zugriffsverletzung\)\. Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\)\.$'
+        $z = (Get-SkipInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown'), (New-Ev 1 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown')) @('Prozesse'))[0]
+        Get-Text $z | Should -Match ' Ohne Benutzersitzung\. .* Kein Muster erkannt\.$'   # Sitzung 0 ist bekannt
+        # Muster und nicht gepruefte Muster zusammen: erst die Aussagen, dann der Satz
+        $mem = (Get-SkipInc @(New-Bare2 10) @('Prozesse')); Add-WorkerPerfEventPatterns -Incidents $mem -AllEvents @($mem[0].Events) -Model (New-PatternModel (@(95) * 60)) -Thresholds $Th -Settings $Set -Config $Cfg -Roles $Roles -Drivers $Drv -PerfIncidents @() -Skip @('Prozesse')
+        Get-Text $mem[0] | Should -Match 'Speichermangel[^.]*\. Nicht geprüft: Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\)\.$'
+    }
+    It 'gibt die nicht geprueften Muster nach den Mustern in die Berichtsdaten' {
+        $i = (Get-SkipInc @(New-Bare2 0) @('Prozesse', 'Drucken'))[0]
+        $o = ConvertTo-WorkerPerfEventIncidentOut -Incident $i -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        $keys = @($o.event.Keys); $keys[[array]::IndexOf($keys, 'patterns') + 1] | Should -Be 'unchecked'
+        @($o.event.unchecked | ForEach-Object { '{0}|{1}|{2}' -f $_.id, $_.category, $_.text }) | Should -Be @('printdriver|Drucken|Bezug zu einem Druckertreiber (Drucken nicht gemessen)', 'users|Prozesse|Zuordnung zu Benutzern und Sitzungen (Prozesse nicht gemessen)')
+        $n = ConvertTo-WorkerPerfEventIncidentOut -Incident (Get-PatInc @(New-Ev 0))[0] -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
+        , $n.event.unchecked | Should -BeOfType [object[]]; @($n.event.unchecked).Count | Should -Be 0
+        # ein Vorfall ohne das Feld (aelterer Aufrufer) gilt als vollstaendig geprueft
+        $old = (Get-Inc @(New-Ev 0))[0]; $old.Remove('Unchecked'); @((ConvertTo-WorkerPerfEventIncidentOut -Incident $old -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0).event.unchecked).Count | Should -Be 0
+        Get-Text $old | Should -Match 'Kein Muster erkannt\.$'
     }
 }
