@@ -436,6 +436,39 @@ Describe 'Abschlussrunde: Profilordner, Hostnamen, Bezeichnungen und weitere Pfa
         Hide-WorkerPerfReportText 'Treiber HP Universal Printing PCL 6 (v7.0.1)' $m | Should -Be 'Treiber HP Universal Printing PCL 6 (v7.0.1)'
         $m.Designations | Should -Not -Contain 'fs01'; $m.Shadowed | Should -Not -Contain 'fs01'           # ersetzt, nicht entstellt
     }
+    It 'laesst eine Bezeichnung keinen Namen schuetzen, den nur Alles ersetzt: <Text>' -TestCases @(          # P2-R13 praezisiert
+        @{ Text = 'Dateiserver-fs01'; Alles = 'Dateiserver-Server 01' }, @{ Text = 'Dateiserver fs01'; Alles = 'Dateiserver Server 01' }
+        @{ Text = 'fs01 (Dateiserver)'; Alles = 'Server 01 (Dateiserver)' }, @{ Text = 'FS01/Profile'; Alles = 'Server 01/Profile' }
+    ) {
+        $m = New-WorkerPerfMask -Path (Write-TestRun 'leer8' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level 'Alles' -Texts $Texts
+        Set-WorkerPerfMaskNames -Mask $m -Entries @(@{ Kind = 'server'; Name = 'fs01'; Replacement = 'Server 01' }, @{ Kind = 'user'; Name = 'oracle'; Replacement = 'Benutzer 01' }) `
+            -Designations @('Dateiserver-fs01', 'Dateiserver fs01', 'fs01 (Dateiserver)', 'FS01/Profile', 'Oracle-Listener', 'Oracle-Listener Haus 2')
+        Hide-WorkerPerfReportText $Text $m | Should -Be $Alles
+        Hide-WorkerPerfReportText 'Oracle-Listener (oracle), Oracle-Listener Haus 2' $m | Should -Be 'Oracle-Listener (Benutzer 01), Oracle-Listener Haus 2'
+    }
+    It 'ersetzt den ersten Teil eines Hostnamens auch im Wort einer Bezeichnung, einen gleichnamigen Benutzer nicht' {   # P2-R13 praezisiert
+        $meta = '{"SchemaVersion":3,"Computer":"vda01","Sources":{},"SourceErrors":{},"Endpoints":[{"Name":"Oracle-Listener","Host":"oracle.sim.local","Port":1521,"Role":"Datenbank"}]}'
+        $host1 = Get-FixRun 'mask-oracle-host' @{} $meta
+        Get-RunEntries $host1 'Alles' | Should -Be @('server:vda01=Server 01', 'server:oracle.sim.local=Server 02', 'server:oracle=Server 02', 'domain:sim.local=Domäne 01')
+        Hide-WorkerPerfReportText 'Oracle-Listener auf oracle.sim.local' (New-WorkerPerfMask -Path $host1 -Level 'Alles' -Texts $Texts) | Should -Be 'Server 02-Listener auf Server 02'
+        Hide-WorkerPerfReportText 'Oracle-Listener auf oracle.sim.local' (New-WorkerPerfMask -Path $host1 -Level 'Personen' -Texts $Texts) | Should -Be 'Oracle-Listener auf oracle.sim.local'
+        # a user of the same name wins over the server (P2-R5): a person, whom the designation shields at both levels
+        $pair = Get-FixRun 'mask-oracle-pair' @{ 'sessions.csv' = @('0,2,oracle,KLINIK,Active,ICA-1,WS-0001,,0') } $meta
+        Get-RunEntries $pair 'Alles' | Should -Be @('server:vda01=Server 01', 'server:oracle.sim.local=Server 02', 'user:oracle=Benutzer 01', 'domain:sim.local=Domäne 01',
+            'domain:KLINIK=Domäne 02', 'client:WS-0001=Client 01')
+        foreach ($level in 'Personen', 'Alles') {
+            $exp = $(if ($level -eq 'Alles') { 'Oracle-Listener auf Server 02, Sitzung von Benutzer 01' } else { 'Oracle-Listener auf Benutzer 01.sim.local, Sitzung von Benutzer 01' })   # ein Personenname auch im Hostnamen
+            Hide-WorkerPerfReportText 'Oracle-Listener auf oracle.sim.local, Sitzung von oracle' (New-WorkerPerfMask -Path $pair -Level $level -Texts $Texts) | Should -Be $exp -Because $level
+        }
+    }
+    It 'nimmt aus einem Containerpfad Server und Freigabe des UNC-Anfangs und den Benutzer aus dem Pfad' {     # Nachtrag
+        $p = Get-FixRun 'mask-backing' @{ 'volumes.csv' = @('0,HarddiskVolume19,profile,2,\\fs01\fslogix\S-1-5-21-1-2-3-1105_user010\Profile_user010.VHDX,1,1,5,5,1,1,0',
+                '0,HarddiskVolume20,profile,2,\\fs02\upm$,1,1,5,5,1,1,0') } $NoEndpoints
+        Get-RunEntries $p 'Alles' | Should -Be @('server:vda01=Server 01', 'share:\\fs01\fslogix=Freigabe 01', 'server:fs01=Server 02', 'share:\\fs02\upm$=Freigabe 02', 'server:fs02=Server 03',
+            'sid:S-1-5-21-1-2-3-1105=Konto 01', 'user:user010=Benutzer 01')
+        Hide-WorkerPerfReportText '\\fs01\fslogix\S-1-5-21-1-2-3-1105_user010\Profile_user010.VHDX' (New-WorkerPerfMask -Path $p -Level 'Alles' -Texts $Texts) |
+            Should -Be 'Freigabe 01\Konto 01_Benutzer 01\Profile_Benutzer 01.VHDX'
+    }
     It 'nimmt ein Konto-SID mit angehaengtem Namen und den Namen dazu auf' {                     # Minor 9
         $p = Get-FixRun 'mask-fslogix' @{ 'volumes.csv' = @('0,HarddiskVolume19,profile,2,\\fs01\fslogix\S-1-5-21-1-2-3-1105_user010\Profile_user010.VHDX,1,1,5,5,1,1,0',
                 '0,HarddiskVolume20,profile,2,\\fs01\fslogix\ottokar.hahn_S-1-5-21-1-2-3-1190\Profile_ottokar.hahn.VHDX,1,1,5,5,1,1,0') } $NoEndpoints
@@ -513,7 +546,8 @@ Describe 'Simulierte Stunde, maskiert' {
             $meta = Join-Path $dir 'meta.json'; $m = [IO.File]::ReadAllText($meta)
             $m = $m.Replace('"EndReason": "duration"', '"EndReason": "error"').Replace('"EndMessage": null', '"EndMessage": "Ende CANARYEND"')
             $m = $m.Replace('"SourceErrors": {}', '"SourceErrors": { "proc.info": { "Count": 2, "FirstTime": "2026-11-12T11:00:00.0000000+00:00", "FirstMessage": "Fehler CANARYERR" } }')
-            $m = [regex]::Replace($m, '("cpu\.steal": \{\s*"Detail": )"[^"]*"(,\s*"Available": )true', '$1"Grund CANARYSRC"$2false')
+            # the order of Available and Detail in meta.json varies from capture to capture: the whole entry is written anew
+            $m = [regex]::Replace($m, '"cpu\.steal": \{[^{}]*\}', '"cpu.steal": { "Available": false, "Detail": "Grund CANARYSRC" }')
             [IO.File]::WriteAllText($meta, $m)
             foreach ($t in 'EndReason": "error', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { if (-not $m.Contains($t)) { throw "Kanarienvogel nicht gesetzt: $t" } }
             $dir

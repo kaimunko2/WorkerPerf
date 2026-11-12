@@ -215,8 +215,12 @@ Fehlt er, ist der Bericht nicht maskiert.
   `-Mask Alles` denselben Ersatznamen; der Rest (`sim.local`) gilt als Domäne. Ausgenommen ist ein erster Teil, der
   ein Wort des Berichts ist (etwa `proxy`) oder schon als Name anderer Art vorkommt (etwa als Domäne).
 - Die Bezeichnungen, die Sie selbst vergeben (die Namen und Rollen der Gegenstellen in `endpoints.json`, die
-  Bezeichnungen der Rollen in `roles.json`), schützen keinen Namen, der darin als eigenes Wort steht: aus
-  „Dateiserver fs01" wird bei `-Mask Alles` „Dateiserver Server 02".
+  Bezeichnungen der Rollen in `roles.json`), schützen keinen Server, keine Freigabe, Domäne, Adresse und keinen
+  Drucker: bei `-Mask Alles` wird ein solcher Name darin überall ersetzt, wo er nicht an Buchstaben oder Ziffern
+  grenzt. Aus „Dateiserver fs01", „Dateiserver-fs01", „fs01 (Dateiserver)" und „FS01/Profile" wird jeweils
+  „Server 02"; heißt der Host `oracle.sim.local`, wird aus „Oracle-Listener" „Server 03-Listener". Einen Benutzer-
+  oder Clientnamen ersetzen sie nur, wo er darin als eigenes Wort steht; ein Benutzer `oracle` bleibt in
+  „Oracle-Listener" stehen.
 - Ein Personenname geht einem Produktnamen vor. Heißt ein Benutzer wie ein Programm, ein Dienst oder ein Hersteller
   (zum Beispiel `hp`), wird dieses Wort dort ersetzt, wo es allein steht. Mehrteilige Produktnamen, etwa der Name
   eines Druckertreibers, bleiben stehen.
@@ -255,8 +259,9 @@ Fehlt er, ist der Bericht nicht maskiert.
   „Hinweis: 2 Namen gleichen Woertern des Berichts (Benutzer 01, Benutzer 15) …"; diese Stellen besonders sorgfältig
   durchsehen. Ebenso wird bei `-Mask Alles` eine Warteschlange, die genau wie ihr Druckertreiber heißt (so legt
   Windows sie an), auch in der Liste der Treiber ersetzt.
-- Ein Name, der in einer eigenen Bezeichnung nur Teil eines längeren Wortes ist, bleibt stehen: in
-  „Dateiserver-fs01" bleibt `fs01`, in „Oracle-Listener" ein Benutzer `oracle`.
+- Ein Benutzer- oder Clientname, der in einer eigenen Bezeichnung nur Teil eines längeren Wortes ist, bleibt dort
+  stehen: in „Oracle-Listener" ein Benutzer `oracle`. Heißen ein Benutzer und ein Server gleich, gilt der Name als
+  Benutzer.
 - Benutzer ohne Sitzung in der Messung erkennt die Auswertung nur in Ordnern unter `<Laufwerk>:\Users\`, in Pfaden
   der Citrix-Profilverwaltung (`…_UPM_local`), in FSLogix-Ordnern (`<SID>_<Name>`, `<Name>_<SID>`), in
   ICA-Sitzungsnamen und in den Konten der Ereignisse. In anderen Pfaden bleibt ihr Name stehen, etwa im

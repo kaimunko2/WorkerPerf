@@ -96,6 +96,8 @@ namespace WorkerPerf
         private readonly string other;
         private readonly Regex phrases;
         private readonly Regex designations;
+        private readonly Dictionary<string, bool> designationWords;
+        private readonly Dictionary<string, bool> persons;
         private readonly Dictionary<string, bool> addresses;
         // the report data repeats most of its strings (keys, kinds, users, applications): each is replaced once
         private readonly Dictionary<string, string> done = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -105,10 +107,15 @@ namespace WorkerPerf
         // lookup: lower-case (invariant) name -> replacement; protectedNames: names that stay; other: the replacement
         // of a SID or UNC server that is not in lookup. phrasePattern: the protected names that hold white space or a
         // word delimiter, as one pattern with group p at every position (null or empty without such names).
-        // addresses: the names of kind address. designationPattern: like phrasePattern, for the designations the customer
-        // wrote (endpoint designations, role labels): they keep a hit only where it is part of a longer word.
-        public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other, string phrasePattern, string[] addresses, string designationPattern)
+        // addresses: the names of kind address. The designations the customer wrote (endpoint designations, role labels)
+        // shield only names of a person (persons: the names of kind user, client and sid, P2-R13): designationWords, the
+        // designations that are one word, keep a person name inside that word; designationPattern, like phrasePattern,
+        // keeps a person name inside a designation with white space or a delimiter where it is part of a longer word.
+        public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other, string phrasePattern, string[] addresses,
+            string[] designationWords, string designationPattern, string[] persons)
         {
+            this.designationWords = ToSet(designationWords, true);
+            this.persons = ToSet(persons, true);
             if (!string.IsNullOrEmpty(phrasePattern))
             {
                 this.phrases = new Regex(phrasePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -165,9 +172,13 @@ namespace WorkerPerf
                 if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
                 return this.other;
             }
-            if (this.IsProtected(text, m.Index, m.Length)) { return m.Value; }
+            if (IsProtected(this.protectedNames, text, m.Index, m.Length)) { return m.Value; }
             if (InSpan(this.phrases, text, m.Index, m.Length, ref spans)) { return m.Value; }
-            if (!IsWholeWord(text, m.Index, m.Length) && InSpan(this.designations, text, m.Index, m.Length, ref named)) { return m.Value; }
+            if (this.persons.ContainsKey(m.Value.ToLowerInvariant()))
+            {
+                if (IsProtected(this.designationWords, text, m.Index, m.Length)) { return m.Value; }
+                if (!IsWholeWord(text, m.Index, m.Length) && InSpan(this.designations, text, m.Index, m.Length, ref named)) { return m.Value; }
+            }
             if (this.addresses.Count > 0 && this.addresses.ContainsKey(m.Value.ToLowerInvariant()) && InDottedNumber(text, m.Index, m.Length)) { return m.Value; }
             if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
             return m.Value;
@@ -227,17 +238,17 @@ namespace WorkerPerf
 
         // The word around a hit (bounded by white space and \ / ( ) [ ] , ; : " ' < > | =) equals a protected name,
         // also without the full stops at its end (a name at the end of a sentence).
-        private bool IsProtected(string text, int index, int length)
+        private static bool IsProtected(Dictionary<string, bool> names, string text, int index, int length)
         {
-            if (this.protectedNames.Count == 0) { return false; }
+            if (names.Count == 0) { return false; }
             int a = index;
             while (a > 0 && !IsDelimiter(text[a - 1])) { a--; }
             int b = index + length;
             while (b < text.Length && !IsDelimiter(text[b])) { b++; }
             string word = text.Substring(a, b - a).ToLowerInvariant();
-            if (this.protectedNames.ContainsKey(word)) { return true; }
+            if (names.ContainsKey(word)) { return true; }
             string trimmed = word.TrimEnd('.');
-            return trimmed.Length > 0 && trimmed.Length < word.Length && this.protectedNames.ContainsKey(trimmed);
+            return trimmed.Length > 0 && trimmed.Length < word.Length && names.ContainsKey(trimmed);
         }
 
         // A new structure: dictionaries and custom objects become ordered dictionaries, lists become arrays (string[]
@@ -261,8 +272,13 @@ namespace WorkerPerf
 
         private static Dictionary<string, bool> ToSet(string[] names)
         {
+            return ToSet(names, false);
+        }
+
+        private static Dictionary<string, bool> ToSet(string[] names, bool lower)
+        {
             Dictionary<string, bool> set = new Dictionary<string, bool>(StringComparer.Ordinal);
-            if (names != null) { foreach (string n in names) { if (!string.IsNullOrEmpty(n)) { set[n] = true; } } }
+            if (names != null) { foreach (string n in names) { if (!string.IsNullOrEmpty(n)) { set[lower ? n.ToLowerInvariant() : n] = true; } } }
             return set;
         }
 
@@ -577,7 +593,12 @@ function New-WorkerPerfMask {
     # (3) shares.csv, (4) volumes.csv
     foreach ($r in @(Get-WorkerPerfMaskRows $Path 'shares.csv' @('Share'))) { Add-WorkerPerfMaskUncName $st 'share' $r[0] }
     $volumes = @(Get-WorkerPerfMaskRows $Path 'volumes.csv' @('Volume', 'Backing'))
-    foreach ($r in $volumes) { Add-WorkerPerfMaskUncName $st 'share' $r[1] }
+    # the backing of a profile container is a share or a whole path on it (\\fs01\fslogix\<SID>_<user>\x.vhdx): its share
+    # and server come from the UNC prefix, its user from the path patterns below (step 8)
+    foreach ($r in $volumes) {
+        $m = [regex]::Match($r[1].Trim(), '^\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?\\[^\\/]+', 'IgnoreCase')
+        if ($m.Success) { Add-WorkerPerfMaskUncName $st 'share' $m.Value }
+    }
     # (5) probes.csv
     foreach ($r in @(Get-WorkerPerfMaskRows $Path 'probes.csv' @('Host'))) { Add-WorkerPerfMaskHost $st $r[0] }
 
@@ -706,13 +727,16 @@ function Set-WorkerPerfMaskNames {
     $Mask['Shadowed'] = [string[]]@($Protected | Where-Object { & $isName $_ })
     $Mask['Lookup'] = $lookup
     $Mask['Regex'] = $regex
-    # a designation that is one word protects like a protected name (the hit then is part of that word); one with white
-    # space or a delimiter keeps a hit only where it is part of a longer word
-    $words = [string[]]@($Mask['Protected']) + [string[]]@($Mask['Designations'] | Where-Object { $_ -notmatch '[\s\\/()\[\],;:"''<>|=]' })
+    # a designation shields only the names of a person (P2-R13): one that is one word like a protected name (the hit then
+    # is part of that word); one with white space or a delimiter where the hit is part of a longer word. The names only
+    # level Alles replaces (server, share, domain, address, printer) are replaced in a designation wherever they stand.
+    $designationWords = [string[]]@($Mask['Designations'] | Where-Object { $_ -notmatch '[\s\\/()\[\],;:"''<>|=]' })
     $phrasePattern = Get-WorkerPerfMaskPhrasePattern $Mask['Protected']
     $designationPattern = Get-WorkerPerfMaskPhrasePattern $Mask['Designations']
     $addresses = [string[]]@($entries | Where-Object { [string]$_.Kind -eq 'address' } | ForEach-Object { [string]$_.Name })
-    $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, $words, $other, $phrasePattern, $addresses, $designationPattern)
+    $persons = [string[]]@($entries | Where-Object { $script:WorkerPerfMaskLevelKinds['Personen'] -contains [string]$_.Kind } | ForEach-Object { [string]$_.Name })
+    $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, [string[]]@($Mask['Protected']), $other, $phrasePattern,
+        $addresses, $designationWords, $designationPattern, $persons)
 }
 
 function Get-WorkerPerfMaskVocabularyHits($Mask, [hashtable]$Texts, [string[]]$Units = @()) {
