@@ -38,17 +38,31 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         ($regular | Measure-Object RowsWritten -Average).Average | Should -BeLessThan (0.6 * [double]$regular[0].Processes)
     }
     It 'meldet das Ende des robocopy-Prozesses' { @(Get-Content (Join-Path $Run 'procend.csv')).Count | Should -BeGreaterThan 1 }
+    # Aussagen geaendert: neue Ereignisse, Rueckblick, Treiber und Warteschlangen der Simulation (Task 4)
     It 'legt Proben, Ereignisse und Citrix-Werte ab' {
         @(Import-Csv (Join-Path $Run 'probes.csv')).Count | Should -Be (240 * 3)
-        @(Import-Csv (Join-Path $Run 'events.csv')).Kind | Should -Be @('scan-start', 'scan-end', 'applocker-block')
+        @(Import-Csv (Join-Path $Run 'events.csv') | Where-Object Group -eq 'security').Kind | Should -Be @('scan-start', 'scan-end', 'applocker-block')
+        @(Import-Csv (Join-Path $Run 'events.csv')).Count | Should -Be 13
+        @(Import-Csv (Join-Path $Run 'events_before.csv')).Count | Should -Be 5; @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 3
+        @(Import-Csv (Join-Path $Run 'printqueues.csv')).Count | Should -Be (240 * 2)
+        ((Import-Csv (Join-Path $Run 'events.csv')) | Where-Object App -eq 'chrome.exe').User | Should -Be 'user008'
         @(Get-Content (Join-Path $Run 'citrix.csv')).Count | Should -BeGreaterThan 1000
     }
-    It 'legt die Druckertreiber und Warteschlangen der Simulation leer an' {
-        @(Get-Content (Join-Path $Run 'events_before.csv')).Count | Should -Be 1
-        @(Get-Content (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 1; @(Get-Content (Join-Path $Run 'printqueues.csv')).Count | Should -Be 1
+    # Aussagen geaendert: die Simulation legt jetzt Rueckblick, Treiber und Warteschlangen an (Task 4)
+    It 'ergaenzt Sitzung und Benutzer der Abstuerze ueber die PID und legt die Druckdateien an' {
         $ev = @(Import-Csv (Join-Path $Run 'events.csv'))
-        $ev.Log | Should -Be @('defender', 'defender', 'applocker'); $ev.Group | Should -Be @('security', 'security', 'security')
-        $ev.Source | Should -Be @('Microsoft-Windows-Windows Defender', 'Microsoft-Windows-Windows Defender', 'Microsoft-Windows-AppLocker')
+        $sec = $ev | Where-Object Group -eq 'security'
+        $sec.Log | Should -Be @('defender', 'defender', 'applocker')
+        $sec.Source | Should -Be @('Microsoft-Windows-Windows Defender', 'Microsoft-Windows-Windows Defender', 'Microsoft-Windows-AppLocker')
+        @($ev | Where-Object Kind -eq 'crash' | ForEach-Object { '{0}|{1}|{2}' -f $_.App, $_.SessionId, $_.User }) | Should -Be @('chrome.exe|9|user008',
+            'OUTLOOK.EXE|11|user010', 'OUTLOOK.EXE|12|user011', 'OUTLOOK.EXE|13|user012', 'spoolsv.exe|0|')
+        @($ev | Where-Object Group -eq 'session' | ForEach-Object { '{0}|{1}|{2}' -f $_.Kind, $_.SessionId, $_.User }) | Should -Be @('logoff|15|user014',
+            'logon|15|user014', 'disconnect|23|user022', 'reconnect|23|user022')
+        $b = @(Import-Csv (Join-Path $Run 'events_before.csv')); @($b.App) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE', 'nexus.exe', 'nexus.exe', 'nexus.exe')
+        (Import-Csv (Join-Path $Run 'printdrivers.csv'))[0].Files | Should -Be 'hpsimgr.dll;hpsimui.dll'
+        $q = @(Import-Csv (Join-Path $Run 'printqueues.csv') | Where-Object Queue -eq 'PRN-EG-01')
+        ($q | Measure-Object { [int]$_.Jobs } -Maximum).Maximum | Should -Be 3
+        [int]$q[-1].JobErrors - [int]$q[0].JobErrors | Should -Be 1
     }
     It 'liest ohne Rueckblick nichts vor dem Start' {                                                 # Review Focus 3
         # eine Quelle, deren Rueckblick ein Ereignis liefern wuerde (Fix-Runde 1, Minor 11)
@@ -61,7 +75,8 @@ function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
         (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EventLookbackDays | Should -Be 0
     }
     It 'bleibt unter 10 MB' { (Get-ChildItem $Run | Measure-Object Length -Sum).Sum | Should -BeLessThan 10MB }
-    It 'legt das Soll-Ergebnis ab' { $Exp.Count | Should -Be 8; $Exp[1].Key | Should -Be 'cpu' }
+    # Aussage geaendert: expected.json nennt auch die Ereignisvorfaelle (Task 4)
+    It 'legt das Soll-Ergebnis ab' { @($Exp | Where-Object Type -ne 'ereignis').Count | Should -Be 8; $Exp[1].Key | Should -Be 'cpu' }
     It 'verlangt fuer die Simulation mindestens 60 Minuten' {
         { & (Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1') -Simulate -DurationMinutes 10 -OutputPath (Join-Path $TestDrive 'kurz') 6>$null } | Should -Throw '*60*'
     }
@@ -233,7 +248,7 @@ function Get-WorkerPerfPrintQueues { throw 'Testfehler bei den Warteschlangen' }
         $e.printdrivers.Count | Should -Be 1; $e.printqueues.Count | Should -Be 240
         foreach ($word in 'Ereignisse vor der Messung', 'Druckertreiber', 'Druckwarteschlangen') { @($LfWarnings | Where-Object { $_ -like "*$word*" }).Count | Should -Be 1 -Because $word }
         $LfWarnings.Count | Should -Be 3; $LfMeta.EndReason | Should -Be 'duration'; $LfMeta.Ticks | Should -Be 1800
-        @(Get-Content (Join-Path $LfRun 'events.csv')).Count | Should -Be 4
+        @(Get-Content (Join-Path $LfRun 'events.csv')).Count | Should -Be 14                       # Aussage geaendert (Task 4): Kopfzeile und 13 Ereignisse des Drehbuchs
     }
     It 'nennt sie im Bericht mit ihren Texten' {
         $out = Join-Path $TestDrive 'lbfail.html'

@@ -11,8 +11,10 @@ BeforeAll {
 }
 Describe 'Durchlauf Simulation -> Bericht' {
     It 'findet genau die Vorfaelle des Drehbuchs' {
-        $D.incidents.Count | Should -Be $Exp.Count; $D.noFinding | Should -BeFalse
-        foreach ($e in $Exp) {
+        # Aussage geaendert (Task 4): expected.json nennt auch die Ereignisvorfaelle, die der Bericht erst ab Task 8 bildet
+        $perf = @($Exp | Where-Object Type -ne 'ereignis')
+        $D.incidents.Count | Should -Be $perf.Count; $D.noFinding | Should -BeFalse
+        foreach ($e in $perf) {
             $hit = Find-Incident $D $e
             $hit.Count | Should -Be 1 -Because $e.Key
             if ($e.MainApp) { $hit[0].main.app | Should -Be $e.MainApp -Because $e.Key; $hit[0].main.user | Should -Be $e.MainUser -Because $e.Key }

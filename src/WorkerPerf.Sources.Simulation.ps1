@@ -4,6 +4,10 @@
 # Every value is a pure function of the virtual clock: noise comes from a hash of time and key, cumulative process
 # counters from a closed formula (base rate times lifetime plus scripted extra times overlap with its window).
 
+# The scenes take log, provider, group and kind of every event from the event catalogue (events.json).
+. (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
+$script:WorkerPerfSimEventFile = Join-Path $PSScriptRoot 'events.json'
+
 $script:WorkerPerfSimCores = 8
 $script:WorkerPerfSimRamMB = 65536
 $script:WorkerPerfSimCommitLimitMB = 98304
@@ -118,6 +122,48 @@ function New-WorkerPerfSimProcess {
 function Add-WorkerPerfSimExtra($Proc, [string]$Window, [double]$Cores = 0, [double]$ReadBps = 0, [double]$WriteBps = 0) {
     $w = $script:WorkerPerfSimWindows[$Window]
     $Proc.Extra.Add(@{ A = [double]$w.A; B = [double]$w.B; Cores = $Cores; Rd = $ReadBps; Wr = $WriteBps })
+}
+
+function New-WorkerPerfSimEvent {
+    # One scripted event with every field of ConvertTo-WorkerPerfEventRecord, at Sec seconds after the start (negative:
+    # before it). Log, Source, Group and Kind come from the catalogue entry of log, provider and id, so the scenes and
+    # events.json cannot drift apart; an event the catalogue does not know is an error of the scenario.
+    param($Config, [double]$Sec, [string]$LogId, [string]$Provider, [int]$EventId, [int]$Level, [string]$Text,
+          [string]$App = '', [string]$AppVersion = '', [string]$Module = '', [string]$ModuleVersion = '', [string]$Code = '',
+          $ProcessId = $null, $SessionId = $null, [string]$User = '')
+    $entry = Resolve-WorkerPerfEventEntry $Config $LogId $Provider $EventId
+    if ($null -eq $entry) { throw ('Simulation: Ereignis {0} {1} im Protokoll {2} fehlt in events.json.' -f $Provider, $EventId, $LogId) }
+    return @{
+        Sec = $Sec; Log = $entry.log; Source = $entry.provider; EventId = $EventId; Level = $Level; Group = $entry.group; Kind = $entry.kind
+        App = $App; AppVersion = $AppVersion; Module = $Module; ModuleVersion = $ModuleVersion; Code = (Format-WorkerPerfErrorCode $Code)
+        Pid = $(if ($null -ne $ProcessId) { [int]$ProcessId } else { $null }); SessionId = $(if ($null -ne $SessionId) { [int]$SessionId } else { $null })
+        User = $User; Printer = ''; Driver = ''; Service = ''; Object = ''; Text = (Get-WorkerPerfEventText $Text)
+    }
+}
+
+function ConvertTo-WorkerPerfSimEventRecord($Scene) {
+    # The record the collector receives: Time instead of the scenario second.
+    return [pscustomobject]@{
+        Time = $script:WorkerPerfSimStart.AddSeconds($Scene.Sec); Log = $Scene.Log; Source = $Scene.Source; EventId = $Scene.EventId; Level = $Scene.Level
+        Group = $Scene.Group; Kind = $Scene.Kind; App = $Scene.App; AppVersion = $Scene.AppVersion; Module = $Scene.Module; ModuleVersion = $Scene.ModuleVersion
+        Code = $Scene.Code; Pid = $Scene.Pid; SessionId = $Scene.SessionId; User = $Scene.User; Printer = $Scene.Printer; Driver = $Scene.Driver
+        Service = $Scene.Service; Object = $Scene.Object; Text = $Scene.Text
+    }
+}
+
+function New-WorkerPerfSimCrash($Config, [double]$Sec, [string]$App, [string]$AppVersion, [string]$Module, [string]$ModuleVersion, [string]$Code,
+                                $ProcessId = $null, $SessionId = $null, [string]$User = '') {
+    # 'Application Error' 1000 as Windows words its first line.
+    $text = 'Faulting application name: {0}, version: {1}, faulting module name: {2}, version: {3}, exception code: {4}' -f $App, $AppVersion, $Module, $ModuleVersion, $Code
+    return (New-WorkerPerfSimEvent $Config $Sec 'application' 'Application Error' 1000 2 $text -App $App -AppVersion $AppVersion -Module $Module `
+            -ModuleVersion $ModuleVersion -Code $Code -ProcessId $ProcessId -SessionId $SessionId -User $User)
+}
+
+function New-WorkerPerfSimSessionEvent($Config, [double]$Sec, [int]$EventId, [string]$What, [int]$SessionId) {
+    # Session manager events name their user and session themselves (fields 'User' and 'SessionID' in events.json).
+    $user = 'user{0:d3}' -f ($SessionId - 1)
+    $text = 'Remote Desktop Services: Session {0} succeeded: User: {1}\{2}, Session ID: {3}' -f $What, $script:WorkerPerfSimDomain, $user, $SessionId
+    return (New-WorkerPerfSimEvent $Config $Sec 'session' 'Microsoft-Windows-TerminalServices-LocalSessionManager' $EventId 4 $text -SessionId $SessionId -User $user)
 }
 
 function Initialize-WorkerPerfSource {
@@ -271,20 +317,49 @@ function Initialize-WorkerPerfSource {
     }
     $script:WorkerPerfSimInputBySid = $bySid
 
-    # Log ids, provider names, groups and kinds as in events.json
+    # ---- events: scenes of the hour, the lookback before the start, print drivers and queues ----
+    # A crash names no session: the collector finds it through the pid of a process that ran at the time (the crashed
+    # process keeps running in the simulation, so the measured hour stays as it is). Session events name their session
+    # and user. The profile error names neither (events.json reads no user field of it); its text names the user.
+    $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile
+    $spoolerPid = @($script:WorkerPerfSimProcs | Where-Object { $_.Name -eq 'spoolsv.exe' -and $_.SessionId -eq 0 })[0].Pid
+    $defender = 'Microsoft-Windows-Windows Defender'
     $script:WorkerPerfSimEvents = @(
-        @{ Sec = 1490.0; Log = 'defender'; Source = 'Microsoft-Windows-Windows Defender'; EventId = 1000; Level = 4; Group = 'security'; Kind = 'scan-start'
-            Text = 'Microsoft Defender Antivirus scan has started.' }
-        @{ Sec = 1620.0; Log = 'defender'; Source = 'Microsoft-Windows-Windows Defender'; EventId = 1001; Level = 4; Group = 'security'; Kind = 'scan-end'
-            Text = 'Microsoft Defender Antivirus scan has finished.' }
-        @{ Sec = 1800.0; Log = 'applocker'; Source = 'Microsoft-Windows-AppLocker'; EventId = 8004; Level = 2; Group = 'security'; Kind = 'applocker-block'
-            Text = '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.' })
+        (New-WorkerPerfSimCrash $cfg 1100 'chrome.exe' '131.0.6778.86' 'chrome.dll' '131.0.6778.86' '0xc0000017' -ProcessId $pidOf['9|chrome.exe'])
+        (New-WorkerPerfSimSessionEvent $cfg 1300 23 'logoff' 15)
+        (New-WorkerPerfSimSessionEvent $cfg 1340 21 'logon' 15)
+        (New-WorkerPerfSimEvent $cfg 1345 'application' 'Microsoft-Windows-User Profiles Service' 1511 3 `
+                'Windows cannot find the local profile and is logging you on with a temporary profile (user014).')
+        (New-WorkerPerfSimEvent $cfg 1490 'defender' $defender 1000 4 'Microsoft Defender Antivirus scan has started.')
+        (New-WorkerPerfSimEvent $cfg 1620 'defender' $defender 1001 4 'Microsoft Defender Antivirus scan has finished.')
+        (New-WorkerPerfSimEvent $cfg 1800 'applocker' 'Microsoft-Windows-AppLocker' 8004 2 '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.')
+        (New-WorkerPerfSimCrash $cfg 2100 'OUTLOOK.EXE' '16.0.18129.20158' 'olmapi32.dll' '16.0.18129.20100' '0xc0000005' -ProcessId $pidOf['11|OUTLOOK.EXE'])
+        (New-WorkerPerfSimCrash $cfg 2160 'OUTLOOK.EXE' '16.0.18129.20158' 'olmapi32.dll' '16.0.18129.20100' '0xc0000005' -ProcessId $pidOf['12|OUTLOOK.EXE'])
+        (New-WorkerPerfSimSessionEvent $cfg 2200 24 'disconnect' 23)
+        (New-WorkerPerfSimCrash $cfg 2220 'OUTLOOK.EXE' '16.0.18129.20158' 'olmapi32.dll' '16.0.18129.20100' '0xc0000005' -ProcessId $pidOf['13|OUTLOOK.EXE'])
+        (New-WorkerPerfSimSessionEvent $cfg 2230 25 'reconnection' 23)
+        (New-WorkerPerfSimCrash $cfg 2600 'spoolsv.exe' '10.0.20348.2849' 'hpsimgr.dll' '61.310.1.25919' '0xc0000005' -ProcessId $spoolerPid))
+    # The lookback has no processes to find a session in, so its crashes name session and user (session id = user number + 1).
+    $script:WorkerPerfSimEventsBefore = @(
+        (New-WorkerPerfSimCrash $cfg -432000 'EXCEL.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 2 -User 'user001')
+        (New-WorkerPerfSimCrash $cfg -431000 'WINWORD.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 3 -User 'user002')
+        (New-WorkerPerfSimCrash $cfg -259200 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004')
+        (New-WorkerPerfSimCrash $cfg -258600 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004')
+        (New-WorkerPerfSimCrash $cfg -258000 'nexus.exe' '8.2.0.114' 'nxreport.dll' '8.2.0.114' '0xc0000409' -SessionId 5 -User 'user004'))
+    $script:WorkerPerfSimPrintDrivers = @(
+        @{ Name = 'HP Universal Printing PCL 6 (Sim)'; Manufacturer = 'HP'; Version = '61.310.1.25919'; Type = 3; Isolation = 'none'; Files = @('hpsimgr.dll', 'hpsimui.dll') }
+        @{ Name = 'Microsoft IPP Class Driver'; Manufacturer = 'Microsoft'; Version = '10.0.20348.1'; Type = 4; Isolation = 'shared'; Files = @('mxdwdrv.dll') }
+        @{ Name = 'Kyocera Sim KX'; Manufacturer = 'Kyocera'; Version = '8.3.1016'; Type = 3; Isolation = 'isolated'; Files = @('kxsim.dll') })
+    # Queue PRN-EG-01 holds 3 jobs from 2590 to 2700 s; its job error counter (a running raw value) rises by 1 with the
+    # spooler crash at 2600 s.
+    $script:WorkerPerfSimQueues = @(
+        @{ Queue = 'PRN-EG-01'; JobErrors = 2; Jobs = 3; JobsA = 2590.0; JobsB = 2700.0; ErrorAt = 2600.0 }
+        @{ Queue = 'PRN-OG-02'; JobErrors = 0; Jobs = 0; JobsA = 0.0; JobsB = 0.0; ErrorAt = [double]::PositiveInfinity })
 
     $sources = [ordered]@{}
     foreach ($id in $script:WorkerPerfSimSignalIds) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
-    foreach ($id in 'process', 'sessions', 'input.process', 'profile.map', 'events.defender', 'events.applocker') {
-        $sources[$id] = @{ Available = $true; Detail = 'Simulation' }
-    }
+    $ids = @('process', 'sessions', 'input.process', 'profile.map') + @($cfg.Logs.Keys | ForEach-Object { 'events.' + $_ }) + @('print.drivers', 'print.queues')
+    foreach ($id in $ids) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } }
     $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen'
     if ($NoCitrix) {
         foreach ($id in 'ica.rtt', 'ica.latency') { $sources[$id] = @{ Available = $false; Detail = 'abgeschaltet (-NoCitrix)' } }
@@ -504,26 +579,34 @@ function Get-WorkerPerfEvents {
     param([datetime]$Since)
     foreach ($ev in $script:WorkerPerfSimEvents) {
         $t = $script:WorkerPerfSimStart.AddSeconds($ev.Sec)
-        if ($t -gt $Since -and $t -le $script:WorkerPerfSimNow) {
-            [pscustomobject]@{ Time = $t; Log = $ev.Log; Source = $ev.Source; EventId = $ev.EventId; Level = $ev.Level; Group = $ev.Group; Kind = $ev.Kind
-                App = ''; AppVersion = ''; Module = ''; ModuleVersion = ''; Code = ''; Pid = $null; SessionId = $null; User = ''
-                Printer = ''; Driver = ''; Service = ''; Object = ''; Text = $ev.Text }
-        }
+        if ($t -gt $Since -and $t -le $script:WorkerPerfSimNow) { ConvertTo-WorkerPerfSimEventRecord $ev }
     }
 }
 
 function Get-WorkerPerfEventsBefore {
-    # The scripted hour has no events before the start yet.
+    # The scripted lookback: the events up to Until that are at most Days days older; the simulation caps no log.
     param([int]$Days, [datetime]$Until)
-    return @{ Events = @(); Capped = @() }
+    $from = $Until.AddDays(-$Days)
+    $events = @(foreach ($ev in $script:WorkerPerfSimEventsBefore) {
+            $t = $script:WorkerPerfSimStart.AddSeconds($ev.Sec)
+            if ($Days -gt 0 -and $t -gt $from -and $t -le $Until) { ConvertTo-WorkerPerfSimEventRecord $ev }
+        })
+    return @{ Events = $events; Capped = @() }
 }
 
 function Get-WorkerPerfPrintDrivers {
-    # The scripted hour has no print drivers yet: no output.
+    foreach ($d in $script:WorkerPerfSimPrintDrivers) {
+        [pscustomobject]@{ Name = $d.Name; Manufacturer = $d.Manufacturer; Version = $d.Version; Type = $d.Type; Isolation = $d.Isolation; Files = @($d.Files) }
+    }
 }
 
 function Get-WorkerPerfPrintQueues {
-    # The scripted hour has no print queues yet: no output.
+    # Waiting jobs in the window JobsA < t <= JobsB, the job error counter one higher from ErrorAt on; never "not ready".
+    $e = Get-WorkerPerfSimElapsed
+    foreach ($q in $script:WorkerPerfSimQueues) {
+        [pscustomobject]@{ Queue = $q.Queue; Jobs = $(if ($e -gt $q.JobsA -and $e -le $q.JobsB) { $q.Jobs } else { 0 })
+            JobErrors = $(if ($e -ge $q.ErrorAt) { $q.JobErrors + 1 } else { $q.JobErrors }); NotReadyErrors = 0 }
+    }
 }
 
 function Get-WorkerPerfFreeSpaceMB {
@@ -532,7 +615,8 @@ function Get-WorkerPerfFreeSpaceMB {
 }
 
 function Get-WorkerPerfExpected {
-    # Simulation only: the incidents the analysis must find, sorted by start.
+    # Simulation only: the incidents the analysis must find, sorted by start; the lookback rows (Before) come last.
+    # Performance incidents span their scenario window, event incidents their first to last event.
     $startMs = ([DateTimeOffset]$script:WorkerPerfSimStart).ToUnixTimeMilliseconds()
     $rows = @(
         @{ Key = 'homeoffice'; Type = 'umfeld'; Lead = $null; Chronic = $true; MainApp = $null; MainUser = $null; Affected = 0; DelayApp = $null; Endpoint = $null; Companion = $null }
@@ -543,13 +627,34 @@ function Get-WorkerPerfExpected {
         @{ Key = 'profile'; Type = 'engpass'; Lead = 'profile'; Chronic = $false; MainApp = 'OUTLOOK.EXE'; MainUser = 'user009'; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = $null }
         @{ Key = 'backend'; Type = 'ohne-engpass'; Lead = $null; Chronic = $false; MainApp = $null; MainUser = $null; Affected = 8; DelayApp = 'nexus.exe'; Endpoint = 'Oracle-Listener'; Companion = $null }
         @{ Key = 'hang'; Type = 'ohne-engpass'; Lead = $null; Chronic = $false; MainApp = $null; MainUser = $null; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = $null })
-    $out = foreach ($r in $rows) {
+    # event incidents: key, kind, patterns, first and last event second, app, driver, event count, users in order of appearance
+    $eventRows = @(
+        @{ Key = 'crash.memory'; Kind = 'crash'; Patterns = @('resource', 'overlap'); Before = $false; A = 1100; B = 1100; App = 'chrome.exe'; Driver = $null; Count = 1; Users = @('user008') }
+        @{ Key = 'profile.logon'; Kind = 'profileerror'; Patterns = @(); Before = $false; A = 1345; B = 1345; App = $null; Driver = $null; Count = 1; Users = @() }
+        @{ Key = 'crash.manyusers'; Kind = 'crash'; Patterns = @('manyusers'); Before = $false; A = 2100; B = 2220; App = 'OUTLOOK.EXE'; Driver = $null; Count = 3
+            Users = @('user010', 'user011', 'user012') }
+        @{ Key = 'print.spooler'; Kind = 'print'; Patterns = @('printdriver'); Before = $false; A = 2600; B = 2600; App = 'spoolsv.exe'; Driver = 'HP Universal Printing PCL 6 (Sim)'
+            Count = 1; Users = @() }
+        @{ Key = 'before.shared.excel'; Kind = 'crash'; Patterns = @('sharedmodule'); Before = $true; A = -432000; B = -432000; App = 'EXCEL.EXE'; Driver = $null; Count = 1; Users = @('user001') }
+        @{ Key = 'before.shared.word'; Kind = 'crash'; Patterns = @('sharedmodule'); Before = $true; A = -431000; B = -431000; App = 'WINWORD.EXE'; Driver = $null; Count = 1; Users = @('user002') }
+        @{ Key = 'before.oneuser'; Kind = 'crash'; Patterns = @('oneuser'); Before = $true; A = -259200; B = -258000; App = 'nexus.exe'; Driver = $null; Count = 3; Users = @('user004') })
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($r in $rows) {
         $w = $script:WorkerPerfSimWindows[$r.Key]
-        [pscustomobject][ordered]@{
-            Key = $r.Key; Type = $r.Type; Lead = $r.Lead; Chronic = $r.Chronic
-            StartMs = [long]($startMs + [long]($w.A * 1000)); EndMs = [long]($startMs + [long]($w.B * 1000))
-            MainApp = $r.MainApp; MainUser = $r.MainUser; Affected = $r.Affected; DelayApp = $r.DelayApp; Endpoint = $r.Endpoint; Companion = $r.Companion
-        }
+        $out.Add([pscustomobject][ordered]@{
+                Key = $r.Key; Type = $r.Type; Lead = $r.Lead; Chronic = $r.Chronic
+                StartMs = [long]($startMs + [long]($w.A * 1000)); EndMs = [long]($startMs + [long]($w.B * 1000))
+                MainApp = $r.MainApp; MainUser = $r.MainUser; Affected = $r.Affected; DelayApp = $r.DelayApp; Endpoint = $r.Endpoint; Companion = $r.Companion
+                Kind = $null; Patterns = [string[]]@(); Before = $false; App = $null; Driver = $null; Count = 0; Users = [string[]]@()
+            })
     }
-    $out | Sort-Object -Property StartMs
+    foreach ($r in $eventRows) {
+        $out.Add([pscustomobject][ordered]@{
+                Key = $r.Key; Type = 'ereignis'; Lead = $null; Chronic = $false
+                StartMs = [long]($startMs + [long]($r.A * 1000)); EndMs = [long]($startMs + [long]($r.B * 1000))
+                MainApp = $null; MainUser = $null; Affected = 0; DelayApp = $null; Endpoint = $null; Companion = $null
+                Kind = $r.Kind; Patterns = [string[]]$r.Patterns; Before = $r.Before; App = $r.App; Driver = $r.Driver; Count = $r.Count; Users = [string[]]$r.Users
+            })
+    }
+    $out.ToArray() | Sort-Object -Property @{ Expression = { [bool]$_.Before } }, StartMs
 }
