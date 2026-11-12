@@ -9,8 +9,19 @@ $script:WorkerPerfEventNumberColumns = @('EventId', 'Level', 'Pid', 'SessionId')
 # Format 2 wrote no group: these kinds were all of the security group.
 $script:WorkerPerfSecurityKinds = @('scan-start', 'scan-end', 'signature-update', 'applocker-block')
 
+# a time stamp that names its offset: ends in 'Z' or in '+hh:mm' / '-hh:mm' (also without colon)
+$script:WorkerPerfOffsetPattern = New-Object System.Text.RegularExpressions.Regex '(Z|[+-]\d\d:?\d\d)\s*$', 'IgnoreCase'
+
+function Get-WorkerPerfEventOffset($Event, [int]$Default) {
+    # The UTC offset in minutes of a record's own time stamp (OffsetMinutes from Read-WorkerPerfEventCsv), else Default.
+    $o = Get-WorkerPerfField $Event 'OffsetMinutes'
+    if ($null -eq $o) { return $Default }
+    return [int]$o
+}
+
 function Read-WorkerPerfEventCsv([string]$Path, [string]$FileName, [ref]$Skipped) {
-    # Events of events.csv or events_before.csv in format 2 or 3 as hashtables with TimeMs and every column of format 3:
+    # Events of events.csv or events_before.csv in format 2 or 3 as hashtables with TimeMs, OffsetMinutes (the time
+    # stamp's own UTC offset, $null when it names none) and every column of format 3:
     # a column the file lacks is '', the number columns are [int] (empty or unreadable = -1). Sorted by time, on equal
     # times by position in the file (a scan-start and scan-end in the same millisecond must keep their order to pair).
     $csv = Read-WorkerPerfCsvFile $Path $FileName -OwnHeader
@@ -23,7 +34,11 @@ function Read-WorkerPerfEventCsv([string]$Path, [string]$FileName, [ref]$Skipped
     foreach ($f in $csv.Rows) {
         $dto = ConvertTo-WorkerPerfTimestamp $f[$cTs]
         if ($null -eq $dto) { continue }
-        $e = @{ TimeMs = $dto.ToUnixTimeMilliseconds() }
+        # the record's own UTC offset (its local time on that day, across a daylight-saving change); $null when the
+        # time stamp names none (the reader then took the machine's offset; the analysis falls back to the capture's)
+        $off = $null
+        if ($script:WorkerPerfOffsetPattern.IsMatch($f[$cTs])) { $off = [int]$dto.Offset.TotalMinutes }
+        $e = @{ TimeMs = $dto.ToUnixTimeMilliseconds(); OffsetMinutes = $off }
         foreach ($n in $names) {
             $text = ''
             if ($col.ContainsKey($n)) { $text = $f[[int]$col[$n]] }
@@ -293,7 +308,7 @@ function New-WorkerPerfEventIncidents {
     # when one record lies in a user session or the group has two records or more; a service failure when the service
     # is an important one or it failed twice or more; print, profile and system problems always. Numbered from FirstId
     # by start, kind and key. Events keeps at most 50 records; Count counts all. ModuleEvents counts the records that can
-    # name a module (crashes and records that name one); SameModule: one module in all of them. Every record gets
+    # name a module (crashes and records that name one); SameModule: one real module in all of them. Every record gets
     # IncidentId: the Id of its incident, or 0 (so Add-WorkerPerfEventPatterns can look at all records of an incident).
     param([object[]]$Events, $Config, $Settings, [object[]]$Drivers, [int]$FirstId, [switch]$Before)
     if ($null -eq $Drivers) { $Drivers = @() }
@@ -432,7 +447,7 @@ function New-WorkerPerfEventIncidents {
                 StartMs = [long]$records[0].TimeMs; EndMs = [long]$records[$records.Count - 1].TimeMs; Count = $records.Count
                 Events = $kept.ToArray(); EventsTruncated = $truncated; Users = [string[]]$users.ToArray(); Sessions = [int[]]$sessions.ToArray()
                 InSession = $inSession; Severity = $(if ($inSession) { 2 } else { 1 })
-                Versions = [string[]]$versions.ToArray(); Modules = $modules; ModuleEvents = $moduleEvents; SameModule = ($modules.Count -eq 1 -and $modules[0].Count -eq $moduleEvents)
+                Versions = [string[]]$versions.ToArray(); Modules = $modules; ModuleEvents = $moduleEvents; SameModule = ($modules.Count -eq 1 -and $modules[0].Count -eq $moduleEvents -and (Test-WorkerPerfRealModule ([string]$modules[0].Name) $Config))
                 Codes = $codes; App = (Get-WorkerPerfFirstValue $records 'App'); Service = $service; Driver = $driver
                 Printer = (Get-WorkerPerfFirstValue $records 'Printer'); Source = (Get-WorkerPerfFirstValue $records 'Source'); Before = [bool]$Before
                 Patterns = @(); Overlap = @(); Companions = @()
@@ -798,15 +813,16 @@ function Format-WorkerPerfEventDate([long]$Ms, [int]$OffsetMinutes) {
     return $t.ToString('dd.MM.yyyy', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
-function Format-WorkerPerfEventSpan([long]$StartMs, [long]$EndMs, [int]$OffsetMinutes, [bool]$WithDate) {
+function Format-WorkerPerfEventSpan([long]$StartMs, [long]$EndMs, [int]$StartOffset, [int]$EndOffset, [bool]$WithDate) {
     # 'HH:mm:ss' or 'HH:mm:ss-HH:mm:ss' (en dash); with the date 'dd.MM.yyyy HH:mm:ss', a span on one day
-    # 'dd.MM.yyyy HH:mm:ss-HH:mm:ss' and a span across days with both dates.
+    # 'dd.MM.yyyy HH:mm:ss-HH:mm:ss' and a span across days with both dates. Each end in the local time of its own
+    # offset (a span across a daylight-saving change has two).
     $dash = [string][char]0x2013
-    $from = Format-WorkerPerfClock $StartMs $OffsetMinutes
-    $to = Format-WorkerPerfClock $EndMs $OffsetMinutes
+    $from = Format-WorkerPerfClock $StartMs $StartOffset
+    $to = Format-WorkerPerfClock $EndMs $EndOffset
     if ($WithDate) {
-        $fromDay = Format-WorkerPerfEventDate $StartMs $OffsetMinutes
-        $toDay = Format-WorkerPerfEventDate $EndMs $OffsetMinutes
+        $fromDay = Format-WorkerPerfEventDate $StartMs $StartOffset
+        $toDay = Format-WorkerPerfEventDate $EndMs $EndOffset
         $from = $fromDay + ' ' + $from
         if ($toDay -ne $fromDay) { $to = $toDay + ' ' + $to }
     }
@@ -817,13 +833,20 @@ function Format-WorkerPerfEventSpan([long]$StartMs, [long]$EndMs, [int]$OffsetMi
 function Get-WorkerPerfEventIncidentText {
     # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
     # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
-    # Times are the server's local time (OffsetMinutes, as Format-WorkerPerfClock); an incident before the capture
-    # (Before) names the date as well, the times of its companions stay clock times. Model is not needed for the text.
+    # Times are the server's local time of each record: its own offset (OffsetMinutes of the record), else the
+    # capture's (-OffsetMinutes). An incident before the capture (Before) names the date as well; a companion on
+    # another day than the incident's first record names its date too. Model is not needed for the text.
     # Lists name at most 10 entries; counts are always the full numbers.
     param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
     $inc = $Incident
     $times = { param($n) $(if ([int]$n -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$n }) }
-    $clock = Format-WorkerPerfEventSpan ([long]$inc.StartMs) ([long]$inc.EndMs) $OffsetMinutes ([bool](Get-WorkerPerfField $inc 'Before'))
+    # Events keeps the first and the last record of the incident
+    $kept = @($inc.Events)
+    $startOffset = $OffsetMinutes; $endOffset = $OffsetMinutes
+    if ($kept.Count -gt 0) { $startOffset = Get-WorkerPerfEventOffset $kept[0] $OffsetMinutes; $endOffset = Get-WorkerPerfEventOffset $kept[$kept.Count - 1] $OffsetMinutes }
+    $withDate = [bool](Get-WorkerPerfField $inc 'Before')
+    $clock = Format-WorkerPerfEventSpan ([long]$inc.StartMs) ([long]$inc.EndMs) $startOffset $endOffset $withDate
+    $startDay = Format-WorkerPerfEventDate ([long]$inc.StartMs) $startOffset
     $kind = [string]$inc.Kind
     $subject = ''
     switch ($kind) {
@@ -885,7 +908,15 @@ function Get-WorkerPerfEventIncidentText {
             'manyusers' { $text = $text -f $d.Users }
             'oneuser' { $text = $text -f $d.User, $d.Count }
             'companion' {
-                $list = @($d.Events | ForEach-Object { (Format-WorkerPerfClock ([long]$_.TimeMs) $OffsetMinutes) + ' ' + (Get-WorkerPerfEventWhat $_ $Texts) })
+                $list = @($d.Events | ForEach-Object {
+                        $o = Get-WorkerPerfEventOffset $_ $OffsetMinutes
+                        $at = Format-WorkerPerfClock ([long]$_.TimeMs) $o
+                        if ($withDate) {
+                            $day = Format-WorkerPerfEventDate ([long]$_.TimeMs) $o
+                            if ($day -ne $startDay) { $at = $day + ' ' + $at }
+                        }
+                        $at + ' ' + (Get-WorkerPerfEventWhat $_ $Texts)
+                    })
                 $text = $text -f ($list -join ', ')
             }
             'overlap' {
@@ -947,14 +978,20 @@ function Get-WorkerPerfLookback {
             -Drivers $drivers -PerfIncidents $null -Before
     }
 
-    # per day in the server's local time; the records are in time order, so the days come out ascending
-    $perDay = New-Object System.Collections.Generic.List[object]
+    # per day in the server's local time of each record (its own offset, else the capture's); sorted, because a
+    # change of offset could in theory put a later record on an earlier local day
+    $counts = @{}
+    $dayList = New-Object System.Collections.Generic.List[string]
     foreach ($e in $records) {
         if ($null -eq (Get-WorkerPerfEventIncidentKind $e $Config)) { continue }
-        $day = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$e.TimeMs).UtcDateTime.AddMinutes($offset).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
-        if ($perDay.Count -gt 0 -and $perDay[$perDay.Count - 1].Day -eq $day) { $perDay[$perDay.Count - 1].Count++ }
-        else { $perDay.Add(@{ Day = $day; Count = 1 }) }
+        $o = Get-WorkerPerfEventOffset $e $offset
+        $day = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$e.TimeMs).UtcDateTime.AddMinutes($o).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+        if (-not $counts.ContainsKey($day)) { $counts[$day] = 0; $dayList.Add($day) }
+        $counts[$day]++
     }
+    $dayArr = $dayList.ToArray()
+    [Array]::Sort($dayArr, [StringComparer]::Ordinal)
+    $perDay = @($dayArr | ForEach-Object { @{ Day = $_; Count = [int]$counts[$_] } })
 
     $near = New-Object System.Collections.Generic.List[object]
     if ($null -ne $ReportedMs -and [long]$ReportedMs -lt $firstMs) {
@@ -964,7 +1001,7 @@ function Get-WorkerPerfLookback {
             if ($t -ge [long]$ReportedMs - $radius -and $t -le [long]$ReportedMs + $radius) { $near.Add($e) }
         }
     }
-    return @{ Days = $days; FromMs = $fromMs; Capped = $capped; EventCount = $records.Length; Incidents = $incidents; PerDay = $perDay.ToArray(); Near = $near.ToArray() }
+    return @{ Days = $days; FromMs = $fromMs; Capped = $capped; EventCount = $records.Length; Incidents = $incidents; PerDay = $perDay; Near = $near.ToArray() }
 }
 
 function Get-WorkerPerfCounterGrowth([double[]]$Values) {

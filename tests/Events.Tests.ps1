@@ -1022,3 +1022,74 @@ Describe 'Kleine Korrekturen aus der Pruefung von Task 6' {
         [IO.File]::WriteAllText($f, $base + ',"nonPersonAccounts":["*$"]}'); @((Read-WorkerPerfEventConfig $f).NonPersonAccounts) | Should -Be @('*$')
     }
 }
+Describe 'Pruefung von Task 7, Runde 1' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
+        function Read-Rows([string[]]$Rows) {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('n')); [void](New-Item -ItemType Directory -Path $dir)
+            [IO.File]::WriteAllLines((Join-Path $dir 'events_before.csv'), @($WorkerPerfHeaders['events.csv']) + $Rows)
+            , @(Read-WorkerPerfEventCsv $dir 'events_before.csv' ([ref]0))
+        }
+        function New-Row([string]$Ts, [string]$App = 'EXCEL.EXE', [string]$User = 'user002', [string]$Group = 'app', [string]$Kind = 'crash', [string]$Object = '') {
+            "$Ts,application,Application Error,1000,2,$Group,$Kind,$App,16.0,vbe7.dll,,0xc0000005,812,3,$User,,,,$Object,x"
+        }
+        function Get-LbAt([object[]]$Records, [int]$Offset, [string]$FirstTick = '2026-11-12T10:00:00+00:00') {
+            $first = [DateTimeOffset]::Parse($FirstTick, [cultureinfo]::InvariantCulture).ToUnixTimeMilliseconds()
+            $m = @{ EventsBefore = $Records; Tick = @{ TimeMs = [long[]]@($first) }; Meta = @{ OffsetMinutes = $Offset; EventLookbackDays = 7; LookbackCapped = @() } }
+            Get-WorkerPerfLookback -Model $m -Config $Cfg -Settings $Set -Roles $Roles -FirstId 1 -ReportedMs $null
+        }
+        function Get-LbText($Incident, [int]$Offset) { Get-WorkerPerfEventIncidentText -Incident $Incident -Model $null -Texts $Texts -Config $Cfg -OffsetMinutes $Offset }
+    }
+    It 'I1: jedes Ereignis behaelt den Zeitversatz seines Zeitstempels, ohne Versatz gilt der der Messung' {
+        $r = Read-Rows @((New-Row '2026-11-07T00:30:00+01:00'), (New-Row '2026-11-07T03:30:00Z'), (New-Row '2026-11-07T04:30:00-05:30'), (New-Row '2026-11-07T05:30:00'))
+        @($r | ForEach-Object { if ($null -eq $_.OffsetMinutes) { 'null' } else { [string]$_.OffsetMinutes } } | Sort-Object) | Should -Be @('-330', '0', '60', 'null')   # Reihenfolge nach Zeit haengt von der Zone der Maschine ab
+        $l = Get-LbAt @($r[0]) 0
+        @($l.PerDay | ForEach-Object { '{0}:{1}' -f $_.Day, $_.Count }) | Should -Be @('2026-11-07:1')
+        Get-LbText $l.Incidents[0] 0 | Should -Match '^07\.11\.2026 00:30:00: Absturz von EXCEL\.EXE \(1-mal\)\.'
+        # ohne Versatz im Zeitstempel: der Versatz der Messung
+        $n = @{ TimeMs = [DateTimeOffset]::Parse('2026-11-07T00:30:00Z').ToUnixTimeMilliseconds() } + @{}
+        foreach ($k in $r[0].Keys) { if ($k -ne 'TimeMs') { $n[$k] = $r[0][$k] } }; $n['OffsetMinutes'] = $null
+        Get-LbText (Get-LbAt @($n) 120).Incidents[0] 120 | Should -Match '^07\.11\.2026 02:30:00: '
+    }
+    It 'I1: ein Rueckblick ueber das Ende der Sommerzeit zeigt jedes Ereignis in der Ortszeit seines Tages' {
+        # Ende der Sommerzeit am 25.10.2026 um 03:00 MESZ; die Messung laeuft in MEZ (+60)
+        $r = Read-Rows @((New-Row '2026-10-24T00:30:00+02:00' -App 'a.exe'), (New-Row '2026-10-24T12:00:00+02:00' -App 'b.exe'), (New-Row '2026-10-26T00:30:00+01:00' -App 'c.exe'), (New-Row '2026-10-26T12:00:00+01:00' -App 'd.exe'))
+        $l = Get-LbAt $r 60
+        @($l.PerDay | ForEach-Object { '{0}:{1}' -f $_.Day, $_.Count }) | Should -Be @('2026-10-24:2', '2026-10-26:2')
+        @($l.Incidents | ForEach-Object { (Get-LbText $_ 60).Substring(0, 19) }) | Should -Be @('24.10.2026 00:30:00', '24.10.2026 12:00:00', '26.10.2026 00:30:00', '26.10.2026 12:00:00')
+    }
+    It 'I1: eine Spanne, deren Enden verschiedene Versaetze haben, nennt jedes Ende in seiner Ortszeit' {
+        # 02:50 MESZ = 00:50 UTC, 02:10 MEZ = 01:10 UTC: 20 Minuten spaeter, ein Vorfall
+        $r = Read-Rows @((New-Row '2026-10-25T02:50:00+02:00'), (New-Row '2026-10-25T02:10:00+01:00'))
+        $l = Get-LbAt $r 60
+        @($l.Incidents).Count | Should -Be 1
+        Get-LbText $l.Incidents[0] 60 | Should -Match ('^25\.10\.2026 02:50:00' + [char]0x2013 + '02:10:00: Absturz von EXCEL\.EXE \(2-mal\)\.')
+        $s = Read-Rows @((New-Row '2026-10-25T23:50:00+01:00'), (New-Row '2026-10-26T00:10:00+01:00'))
+        Get-LbText (Get-LbAt $s 0).Incidents[0] 0 | Should -Match ('^25\.10\.2026 23:50:00' + [char]0x2013 + '26\.10\.2026 00:10:00: ')
+        # in der Messzeit ebenfalls je Ende der eigene Versatz, ohne Datum
+        $now = @(New-WorkerPerfEventIncidents -Events $r -Config $Cfg -Settings $Set -Drivers @() -FirstId 1)
+        Get-LbText $now[0] 0 | Should -Match ('^02:50:00' + [char]0x2013 + '02:10:00: Absturz')
+    }
+    It 'M1: die Fehlermeldung eines Namensmusters nennt, was erlaubt ist' {
+        $f = Join-Path $TestDrive 'm1.json'
+        [IO.File]::WriteAllText($f, '{"logs":[{"id":"a","names":["A"],"lookback":true}],"events":[{"log":"a","provider":"P","ids":[1],"group":"app","kind":"crash"}],"noModules":["*.*"]}')
+        { Read-WorkerPerfEventConfig $f } | Should -Throw "*mindestens einem Buchstaben, einer Ziffer oder '$'*"
+    }
+    It 'M2: ein Begleitereignis an einem anderen Tag nennt im Rueckblick sein Datum' {
+        $r = Read-Rows @((New-Row '2026-11-01T23:59:30+01:00'), (New-Row '2026-11-02T00:00:30+01:00' -App '' -User '' -Group 'storage' -Kind 'system' -Object 'D:'),
+            (New-Row '2026-11-03T10:00:00+01:00' -App 'w.exe'), (New-Row '2026-11-03T10:01:00+01:00' -App '' -User '' -Group 'storage' -Kind 'system' -Object 'E:'))
+        $l = Get-LbAt $r 60
+        $a = @($l.Incidents | Where-Object { $_.App -eq 'EXCEL.EXE' })[0]; $b = @($l.Incidents | Where-Object { $_.App -eq 'w.exe' })[0]
+        Get-LbText $a 60 | Should -Match ([regex]::Escape(' Zeitnah: 02.11.2026 00:00:30 Datenträgerfehler D:.'))
+        Get-LbText $b 60 | Should -Match ([regex]::Escape(' Zeitnah: 10:01:00 Datenträgerfehler E:.'))
+        # in der Messzeit bleibt es die Uhrzeit
+        $c = (Get-PatInc @((New-Ev 0), (New-Ev 1 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:' })))[0]
+        Get-Text $c (24 * 60 - 1) | Should -Match ' Zeitnah: \d\d:\d\d:\d\d Datenträgerfehler D:\.'
+    }
+    It 'M6: SameModule ist falsch ohne echtes Modul' {
+        $stop = New-Ev 0.1 'service' '' 0 '' '' @{ Service = 'Spooler'; Group = 'service'; Source = 'Service Control Manager'; EventId = 7034; Code = ''; Module = '' }
+        (Get-Inc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown' -More @{ Driver = 'Sim PCL 6' }), $stop))[0].SameModule | Should -BeFalse
+        (Get-Inc @((New-Ev 0 -Module 'StackHash_1a2b'), (New-Ev 1 -Module 'StackHash_1a2b')))[0].SameModule | Should -BeFalse
+        (Get-Inc @((New-Ev 0), (New-Ev 1)))[0].SameModule | Should -BeTrue
+    }
+}
