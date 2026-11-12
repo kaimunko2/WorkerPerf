@@ -87,6 +87,8 @@ Describe 'Simulation' {
         @($ev | Where-Object Group -eq 'session' | ForEach-Object { '{0}|{1}' -f $_.User, $_.SessionId }) | Should -Be @('user014|15', 'user014|15', 'user022|23', 'user022|23')
         $pr = $ev | Where-Object Group -eq 'profile'
         $pr.Kind | Should -Be 'profileerror'; $pr.EventId | Should -Be 1511; $pr.Log | Should -Be 'application'; $pr.Text | Should -Match 'user014'
+        # der Profildienst nennt den Benutzer (Konto im System-Teil des Ereignisses), aber keine Sitzung
+        $pr.User | Should -Be 'user014'; $pr.SessionId | Should -BeNullOrEmpty
     }
     It 'nimmt Protokoll, Quelle, Gruppe und Art jedes Ereignisses aus events.json' {
         $cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json')
@@ -147,7 +149,7 @@ Describe 'Simulation' {
             (($r.StartMs - $ms) / 1000), (($r.EndMs - $ms) / 1000), $r.Affected }
         $rows = @{}; foreach ($r in $e) { $rows[$r.Key] = & $show $r }
         $rows['crash.memory'] | Should -Be 'crash|resource+overlap|False|chrome.exe||1|user008|1100|1100|0'
-        $rows['profile.logon'] | Should -Be 'profileerror||False|||1||1345|1345|0'
+        $rows['profile.logon'] | Should -Be 'profileerror||False|||1|user014|1345|1345|0'
         $rows['crash.manyusers'] | Should -Be 'crash|manyusers|False|OUTLOOK.EXE||3|user010+user011+user012|2100|2220|0'
         $rows['print.spooler'] | Should -Be 'print|printdriver|False|spoolsv.exe|HP Universal Printing PCL 6 (Sim)|1||2600|2600|0'
         $rows['before.shared.excel'] | Should -Be 'crash|sharedmodule|True|EXCEL.EXE||1|user001|-432000|-432000|0'

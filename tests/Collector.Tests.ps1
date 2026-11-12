@@ -58,6 +58,7 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
             'OUTLOOK.EXE|11|user010', 'OUTLOOK.EXE|12|user011', 'OUTLOOK.EXE|13|user012', 'spoolsv.exe|0|')
         @($ev | Where-Object Group -eq 'session' | ForEach-Object { '{0}|{1}|{2}' -f $_.Kind, $_.SessionId, $_.User }) | Should -Be @('logoff|15|user014',
             'logon|15|user014', 'disconnect|23|user022', 'reconnect|23|user022')
+        $pr = $ev | Where-Object Group -eq 'profile'; $pr.User | Should -Be 'user014'; $pr.SessionId | Should -Be ''
         $b = @(Import-Csv (Join-Path $Run 'events_before.csv')); @($b.App) | Should -Be @('EXCEL.EXE', 'WINWORD.EXE', 'nexus.exe', 'nexus.exe', 'nexus.exe')
         (Import-Csv (Join-Path $Run 'printdrivers.csv'))[0].Files | Should -Be 'hpsimgr.dll;hpsimui.dll'
         $q = @(Import-Csv (Join-Path $Run 'printqueues.csv') | Where-Object Queue -eq 'PRN-EG-01')

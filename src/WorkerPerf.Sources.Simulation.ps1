@@ -320,7 +320,8 @@ function Initialize-WorkerPerfSource {
     # ---- events: scenes of the hour, the lookback before the start, print drivers and queues ----
     # A crash names no session: the collector finds it through the pid of a process that ran at the time (the crashed
     # process keeps running in the simulation, so the measured hour stays as it is). Session events name their session
-    # and user. The profile error names neither (events.json reads no user field of it); its text names the user.
+    # and user. The profile error names its user but no session: Windows writes the account into the System part of
+    # the event, and the Windows source resolves it to the user name.
     $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile
     $spoolerPid = @($script:WorkerPerfSimProcs | Where-Object { $_.Name -eq 'spoolsv.exe' -and $_.SessionId -eq 0 })[0].Pid
     $defender = 'Microsoft-Windows-Windows Defender'
@@ -329,7 +330,7 @@ function Initialize-WorkerPerfSource {
         (New-WorkerPerfSimSessionEvent $cfg 1300 23 'logoff' 15)
         (New-WorkerPerfSimSessionEvent $cfg 1340 21 'logon' 15)
         (New-WorkerPerfSimEvent $cfg 1345 'application' 'Microsoft-Windows-User Profiles Service' 1511 3 `
-                'Windows cannot find the local profile and is logging you on with a temporary profile (user014).')
+                'Windows cannot find the local profile and is logging you on with a temporary profile (user014).' -User 'user014')
         (New-WorkerPerfSimEvent $cfg 1490 'defender' $defender 1000 4 'Microsoft Defender Antivirus scan has started.')
         (New-WorkerPerfSimEvent $cfg 1620 'defender' $defender 1001 4 'Microsoft Defender Antivirus scan has finished.')
         (New-WorkerPerfSimEvent $cfg 1800 'applocker' 'Microsoft-Windows-AppLocker' 8004 2 '%OSDRIVE%\USERS\USER008\DOWNLOADS\TOOL.EXE was prevented from running.')
@@ -339,7 +340,8 @@ function Initialize-WorkerPerfSource {
         (New-WorkerPerfSimCrash $cfg 2220 'OUTLOOK.EXE' '16.0.18129.20158' 'olmapi32.dll' '16.0.18129.20100' '0xc0000005' -ProcessId $pidOf['13|OUTLOOK.EXE'])
         (New-WorkerPerfSimSessionEvent $cfg 2230 25 'reconnection' 23)
         (New-WorkerPerfSimCrash $cfg 2600 'spoolsv.exe' '10.0.20348.2849' 'hpsimgr.dll' '61.310.1.25919' '0xc0000005' -ProcessId $spoolerPid))
-    # The lookback has no processes to find a session in, so its crashes name session and user (session id = user number + 1).
+    # The lookback has no processes to find a session in, so its crashes name session and user (session id = user number + 1;
+    # the user comes from the account in the System part of the event, as for the profile error).
     $script:WorkerPerfSimEventsBefore = @(
         (New-WorkerPerfSimCrash $cfg -432000 'EXCEL.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 2 -User 'user001')
         (New-WorkerPerfSimCrash $cfg -431000 'WINWORD.EXE' '16.0.18129.20158' 'simaddin.dll' '2.4.0.0' '0xc0000005' -SessionId 3 -User 'user002')
@@ -630,7 +632,7 @@ function Get-WorkerPerfExpected {
     # event incidents: key, kind, patterns, first and last event second, app, driver, event count, users in order of appearance
     $eventRows = @(
         @{ Key = 'crash.memory'; Kind = 'crash'; Patterns = @('resource', 'overlap'); Before = $false; A = 1100; B = 1100; App = 'chrome.exe'; Driver = $null; Count = 1; Users = @('user008') }
-        @{ Key = 'profile.logon'; Kind = 'profileerror'; Patterns = @(); Before = $false; A = 1345; B = 1345; App = $null; Driver = $null; Count = 1; Users = @() }
+        @{ Key = 'profile.logon'; Kind = 'profileerror'; Patterns = @(); Before = $false; A = 1345; B = 1345; App = $null; Driver = $null; Count = 1; Users = @('user014') }
         @{ Key = 'crash.manyusers'; Kind = 'crash'; Patterns = @('manyusers'); Before = $false; A = 2100; B = 2220; App = 'OUTLOOK.EXE'; Driver = $null; Count = 3
             Users = @('user010', 'user011', 'user012') }
         @{ Key = 'print.spooler'; Kind = 'print'; Patterns = @('printdriver'); Before = $false; A = 2600; B = 2600; App = 'spoolsv.exe'; Driver = 'HP Universal Printing PCL 6 (Sim)'
