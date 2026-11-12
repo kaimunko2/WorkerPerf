@@ -315,10 +315,11 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 
 - **Zeitleiste:** ein Balken über die ganze Messung. Jeder Vorfall ist eine Markierung von Beginn bis Ende
   mit Symbol und Farbe der Schwere (`▲ auffällig`, `◆ kritisch`); überlappende Vorfälle liegen in eigenen
-  Zeilen. Vorfälle aus Ereignissen tragen das Wort ihrer Art (Absturz, Hänger, Dienst, Drucken, Profil, System).
+  Zeilen. Neben der Markierung eines Vorfalls aus Ereignissen steht das Wort seiner Art (Absturz, Hänger, Dienst,
+  Drucken, Profil, System); ein Vorfall aus einem einzigen Ereignis ist eine schmale Markierung an seinem Zeitpunkt.
   Dauerzustände stehen als schmale Linie darunter, Ereignisse als kleine Striche in einer Zeile je Gruppe
   (Anwendungen, Dienste, Datenträger, Speicher, Dateiserver, Profile, Drucken, Sitzungen, Schutzsoftware; Zeit und
-  Text im Tooltip), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung öffnet den Vorfall
+  Text im Tooltip, die Uhrzeit dort in der Ortszeit des Ereignisses), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung öffnet den Vorfall
   und stellt alle Diagramme auf sein Zeitfenster mit Rand. Unter der Zeitleiste stehen die Ereignisse auch als
   Liste (die ersten 200). Wertet der Bericht nur einen Ausschnitt aus (`-From`, `-To`), sagt er, wie viele Ereignisse der
   Aufzeichnung außerhalb liegen.
@@ -340,13 +341,19 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Ereignissen stehen die ersten 49 und das letzte in der Liste, und der Bericht sagt das. Ein Klick auf einen
   Benutzer, eine Anwendung, einen Prozess oder einen Vorfall öffnet ihn.
 - **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
-  Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet.
+  Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet. Liegt
+  die gemeldete Uhrzeit in der Aufzeichnung, aber außerhalb des mit `-From`/`-To` gewählten Zeitraums, sagt der Kopf
+  das und wie viele Ereignisse der Aufzeichnung der Zeitraum auslässt.
 - **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
   Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
   (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
   Vorfälle dieser Tage mit Datum und Mustern, ein Hinweis, wenn der Rückblick eines Protokolls an die Obergrenze
-  stieß, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse bis 15 Minuten um diese Uhrzeit. Der Block
-  erscheint nur, wenn der Rückblick Ereignisse gelesen hat oder unvollständig ist.
+  stieß, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es
+  solche gibt. Der Block sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-EventLookbackDays 0`), steht nur
+  das da; konnte er nicht gelesen werden, weil die Ereignisquellen nicht verfügbar waren (so heute unter Windows),
+  ebenso, ohne Zahlen; wurde er gelesen und enthält keine Ereignisse, sagt der Block, dass in diesen Tagen keine
+  Ereignisse der erfassten Arten in den Protokollen stehen. Aufzeichnungen im Format 2 haben keinen Rückblick; dort
+  erscheint der Block nur mit Ereignissen um eine gemeldete Uhrzeit vor der Messung.
 - **Drucken:** die Druckertreiber mit Hersteller, Version, Bauart (Typ 3 oder Typ 4), Isolierung und ob sie an
   einem Vorfall beteiligt waren („beteiligt" oder, wenn das fehlerhafte Modul zu mehreren Treibern gehört,
   „möglicherweise beteiligt"); die Druckwarteschlangen mit der höchsten Zahl wartender Aufträge und dem Zuwachs der
@@ -491,7 +498,7 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 
 | Bereich | Quelle | Stand |
 |---|---|---|
-| Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Vorfällen (`-Simulate`) | vorhanden, in den Tests geprüft |
+| Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen, dazu Sitzungs- und Defender-/AppLocker-Ereignisse, ein Rückblick über sieben Tage mit drei Vorfällen, Treiberliste und Warteschlangen (`-Simulate`) | vorhanden, in den Tests geprüft |
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
 | Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
 | Ereignisse außer Defender und AppLocker, Rückblick, Druckertreiber, Druckwarteschlangen | Simulation; für Windows folgt die Datenquelle nach dem Ergebnis des Prüfskripts | **unter Windows noch nicht angebunden**; die Windows-Datenquelle liefert dafür heute nichts. Treiberliste und Warteschlangen stehen in der Tabelle der Quellen als „noch nicht umgesetzt", die übrigen Ereignisprotokolle fehlen dort noch |

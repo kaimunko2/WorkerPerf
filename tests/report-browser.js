@@ -243,6 +243,7 @@ async function checkEvents(browser, dir, scheme) {                 // Ereignisse
   await page.close();
 }
 
+const ddmmyyyy = (ms, offMin) => { const d = new Date(ms + offMin * 60000).toISOString(); return d.substr(8, 2) + '.' + d.substr(5, 2) + '.' + d.substr(0, 4); };
 // local clock time of an event in its own UTC offset
 const evHms = (e) => new Date(e.t + e.offsetMin * 60000).toISOString().substr(11, 8);
 async function checkEventDetails(browser, dir, scheme) {           // Ereignisse: Einzelheiten der Anzeige
@@ -292,7 +293,8 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   // without event files: the report without a finding stays as it was
   const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
   ok(await n.page.locator('#timeline .event').count() === 0 && await n.page.locator('#timeline .tl-row[data-group]').count() === 0, 'ohne Ereignisse keine Ereigniszeilen');
-  ok(await n.page.locator('#before').isHidden() && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisse kein Rueckblick und keine Ereignisvorfaelle');
+  // changed in fix round 1 (I1): without events_before.csv the card says that nothing was read, instead of being hidden
+  ok((await n.page.locator('#before').innerText()).includes('Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar.') && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisse: Rueckblick nicht gelesen, keine Ereignisvorfaelle');
   ok((await n.page.locator('#findHead').innerText()) === 'Keine Vorfälle im Messzeitraum.' && await n.page.locator('#eventList').isHidden(), 'Kopfsatz und Ereignisliste wie bisher');
   ok(n.page.errors.length === 0, 'Skriptfehler ohne Ereignisse: ' + n.page.errors.join(' | '));
   await n.page.close();
@@ -338,6 +340,7 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   const vb = await v.page.locator('#before').innerText();
   ok(vb.includes('unvollständig') && vb.includes('Anwendung'), 'unvollstaendiger Rueckblick im Block');
   ok(vb.includes('Ereignisse um die gemeldete Uhrzeit') && vb.includes(D.before.incidents[0].events[0].text), 'Ereignisse um die gemeldete Zeit');
+  ok(vb.includes('Ereignisse um die gemeldete Uhrzeit ' + ddmmyyyy(D.before.incidents[0].start + 60000, D.meta.offsetMin)), 'gemeldete Uhrzeit mit Datum');
   const vq = await v.page.locator('#quality').innerText();
   ok(vq.includes('ticks.csv: 0 · snapshots.csv: 0 · events.csv: 2 · printqueues.csv: 1'), 'uebersprungene Zeilen der Ereignisdateien: ' + vq);
   ok(vq.includes('Rückblick unvollständig') && vq.includes('Anwendung'), 'Obergrenze des Rueckblicks in der Messqualitaet');
@@ -365,12 +368,96 @@ async function checkNarrow(browser, dir, scheme) {                  // schmale A
   await page.close();
 }
 
+async function checkFix1(browser, dir, scheme) {                   // Task 9, Korrekturrunde 1
+  const bt = async (page) => page.locator('#before').innerText();
+  // C1: a reported time inside the capture but before the cut: the page names the cut, never "no events"
+  const c = await open(browser, path.join(dir, 'report-cutrep.html'), scheme);
+  ok(c.D.meta.focus.reportedMs >= c.D.before.captureStart && c.D.meta.focus.reportedMs < c.D.meta.start && c.D.eventsOutsideCut > 0, 'Eingabe: gemeldete Zeit in der Aufzeichnung vor dem Ausschnitt');
+  let t = await bt(c.page);
+  ok(!t.includes('Keine Ereignisse') && !t.includes('Ereignisse um die gemeldete Uhrzeit'), 'Ausschnitt: keine falsche Aussage im Rueckblick');
+  const fi = await c.page.locator('#focusInfo').innerText();
+  ok(fi.includes('außerhalb des gewählten Zeitraums') && fi.includes(c.D.eventsOutsideCut + ' Ereignisse der Aufzeichnung liegen außerhalb des gewählten Zeitraums'), 'Ausschnitt laesst die Ereignisse um die gemeldete Zeit aus: ' + fi);
+  ok(c.page.errors.length === 0, 'Skriptfehler Ausschnitt: ' + c.page.errors.join(' | '));
+  await c.page.close();
+  // I1: what was read, never a result that was not measured
+  const empty = (J) => { Object.assign(J.before, { eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [] }); };
+  const cases = [
+    ['off', (J) => { empty(J); J.before.status = 'off'; J.before.days = 0; }, 'Der Rückblick war abgeschaltet (-EventLookbackDays 0).'],
+    ['unavailable', (J) => { empty(J); J.before.status = 'unavailable'; }, 'Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar.'],
+    ['read', (J) => { empty(J); J.before.status = 'read'; }, 'In den 7 Tagen vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen.']];
+  for (const [name, change, text] of cases) {
+    const p = await open(browser, patched(dir, 'report.html', `report-lb-${name}.html`, (J) => { change(J); J.meta.focus = Object.assign({}, J.meta.focus, { reportedMs: J.before.captureStart - 3600000 }); }), scheme);
+    t = await bt(p.page);
+    ok(t.includes(text), 'Rueckblick ' + name + ': ' + t.split('\n').slice(0, 3).join(' / '));
+    ok(!t.includes('Ereignisse aus diesen Tagen') && !t.includes('Vorfälle vor der Messung') && await p.page.locator('#before .day').count() === 0, 'Rueckblick ' + name + ' ohne Zahlen, Balken und Vorfallsliste');
+    ok(!t.includes('Ereignisse um die gemeldete Uhrzeit'), 'Rueckblick ' + name + ': keine leere Liste um die gemeldete Zeit');
+    ok(p.page.errors.length === 0, 'Skriptfehler Rueckblick ' + name + ': ' + p.page.errors.join(' | '));
+    await p.page.close();
+  }
+  const f2 = await open(browser, patched(dir, 'report.html', 'report-lb-fmt2.html', (J) => { empty(J); J.before.status = 'notRecorded'; J.before.days = 0; }), scheme);
+  ok(await f2.page.locator('#before').isHidden(), 'Format 2 ohne Rueckblick: keine Karte');
+  await f2.page.close();
+  // M1, M3, M4, M5 on the simulated hour
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  for (const inc of D.incidents.filter((i) => i.type === 'ereignis' && i.start === i.end)) {
+    const box = await page.locator(`#timeline .mark[data-incident="${inc.id}"]`).boundingBox();
+    ok(box.width <= 13, 'Zeitpunkt-Vorfall nicht als Zeitspanne gezeichnet: ' + box.width);
+    ok((await page.locator(`#timeline .mark-word[data-incident="${inc.id}"]`).innerText()).length > 0, 'Wort neben der Markierung');
+  }
+  ok((await page.locator('#tlLegend').innerText()).includes('Ortszeit des Ereignisses'), 'Legende: Tooltip in der Ortszeit des Ereignisses');
+  const chrome = D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'chrome.exe');
+  const ce = await openIncident(page, chrome.id);
+  ok((await ce.locator('.detail .lnk[data-incident]').first().innerText()).includes('Arbeitsspeicher-Engpass'), 'Verweis nennt die Ressource wie der Satz');
+  await page.click('#eventList summary');
+  const sec = D.events.find((e) => e.kind === 'scan-start');
+  ok((await page.locator('#tEvents').innerText()).includes('Virenscan gestartet') && !(await page.locator('#tEvents').innerText()).includes('Scan gestartet\t'), 'ein Wort fuer dasselbe Ereignis' + (sec ? '' : ' (kein Scan in den Daten)'));
+  ok(page.errors.length === 0, 'Skriptfehler Runde 1: ' + page.errors.join(' | '));
+  await page.close();
+  // M3: at most 10 users, versions and sessions in the head line, the rest on demand
+  const out = D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'OUTLOOK.EXE');
+  const many = await open(browser, patched(dir, 'report.html', 'report-many.html', (J) => {
+    const o = J.incidents.find((i) => i.id === out.id);
+    o.event.users = Array.from({ length: 60 }, (_, k) => 'user' + String(100 + k));
+    o.event.versions = Array.from({ length: 60 }, (_, k) => '16.0.' + k);
+    o.event.sessions = J.sessions.map((s) => s.i);
+  }), scheme);
+  const me = await openIncident(many.page, out.id);
+  let kv = await me.locator('.detail .kv').innerText();
+  ok(kv.includes('user109') && !kv.includes('user110') && kv.includes('(+50 weitere)') && kv.includes('16.0.9') && !kv.includes('16.0.10'), 'Kopfzeile hoechstens 10 Eintraege: ' + kv.slice(0, 200));
+  await me.locator('.detail .kv button.more').first().click();
+  kv = await me.locator('.detail .kv').innerText();
+  ok(kv.includes('user159'), 'die ganze Liste bleibt erreichbar');
+  ok(many.page.errors.length === 0, 'Skriptfehler viele Benutzer: ' + many.page.errors.join(' | '));
+  await many.page.close();
+}
+
+async function checkLongNames(browser, dir, scheme) {               // I2: lange Namen ohne seitliches Rollen
+  const long = 'Microsoft.VisualStudio.Diagnostics.ServiceModelSink.Extended.Instrumentation.Runtime.4.0.dll';
+  const file = patched(dir, 'report.html', 'report-long.html', (J) => {
+    const o = J.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'OUTLOOK.EXE');
+    o.event.modules[0].name = long; o.event.app = long.replace('.dll', '.exe'); o.events[0].module = long;
+    const pr = J.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print');
+    pr.event.driver = long.replace('.dll', ' Druckertreiber'); pr.event.modules[0].name = long; J.print.drivers[0].name = pr.event.driver;
+  });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+  page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  await page.goto('file://' + file);
+  const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
+  for (const inc of D.incidents.filter((i) => i.type === 'ereignis' && (i.event.kind === 'print' || i.event.modules.some((m) => m.name.length > 80)))) await openIncident(page, inc.id);
+  ok(long.length >= 90, 'Name mit 90 Zeichen');
+  const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(w[0] <= w[1], 'lange Namen schmal ohne seitliches Rollen: ' + w.join(' > '));
+  ok(page.errors.length === 0, 'Skriptfehler lange Namen: ' + page.errors.join(' | '));
+  await page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
   for (const scheme of ['light', 'dark']) {
     await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
+    await checkFix1(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
   }
   console.log('browser checks passed: ' + checks);
   await browser.close();

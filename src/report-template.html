@@ -136,6 +136,7 @@ td .sig { margin-right: 4px; }
 .reported.end span { left: auto; right: 4px; }
 .mark { position: absolute; z-index: 2; height: 20px; border: 0; border-radius: 4px; padding: 0 5px; margin: 0; font: 600 11px/20px "Segoe UI", system-ui, sans-serif; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; cursor: pointer; }
 .mark.narrow { padding: 0; text-align: center; overflow: visible; }
+.mark-word { position: absolute; z-index: 2; height: 20px; font: 600 11px/20px "Segoe UI", system-ui, sans-serif; color: var(--text); white-space: nowrap; cursor: pointer; padding: 0 4px; }
 .mark.sev1 { background: var(--warn); color: #1d1600; }
 .mark.sev2 { background: var(--crit); color: #fff; }
 .mark:hover { filter: brightness(1.08); }
@@ -222,6 +223,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 .incident .patterns li { padding: 2px 0; }
 .incident .patterns li.none { color: var(--text2); }
 .incident .detail .kv { margin-bottom: 4px; }
+.incident .detail .kv > span, #before .kv > span { min-width: 0; overflow-wrap: anywhere; }
+.incident .detail .kv button.more { margin-left: 4px; }
 .evlist td.wrap { min-width: 260px; max-width: 520px; }
 #before .bnote { margin: 0 0 8px; font-weight: 600; }
 #before .incident + .incident { margin-top: 10px; }
@@ -961,7 +964,7 @@ function showSession(i) {
   const sev = (s.events || []).map((k) => D.events[k]).filter(Boolean);
   host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
     <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
-    ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e.kind))}</span></li>`).join("")}</ul></div>` : ""}
+    ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e))}</span></li>`).join("")}</ul></div>` : ""}
     <div class="grid2">
       ${chartBox("CPU (% des Hosts)", "chart-cpu")}
       ${chartBox("Working Set (MB)", "chart-ws")}
@@ -1051,13 +1054,21 @@ const TYPE_WORD = { "engpass": "Engpass", "ohne-engpass": "Verzögerung ohne Eng
 const GROUP_WORD = { app: "Anwendungen", service: "Dienste", storage: "Datenträger", memory: "Speicher", fileserver: "Dateiserver", profile: "Profile", print: "Drucken", session: "Sitzungen", security: "Schutzsoftware" };
 const EVINC_WORD = { crash: "Absturz", hang: "Hänger", service: "Dienst", print: "Drucken", profileerror: "Profil", system: "System" };
 const EVINC_LONG = { crash: "Anwendungsabsturz", hang: "Anwendungshänger", service: "Dienstausfall", print: "Druckproblem", profileerror: "Profilproblem", system: "Systemfehler" };
-const KIND_WORD = { "scan-start": "Scan gestartet", "scan-end": "Scan beendet", "applocker-block": "Start blockiert", "signature-update": "Signaturen aktualisiert",
+// the words of the pattern sentences (companion.<kind> in texts.de.json) where they name the same event
+const KIND_WORD = { "scan-start": "Virenscan gestartet", "scan-end": "Virenscan beendet", "applocker-block": "AppLocker hat eine Ausführung blockiert", "signature-update": "Signaturen aktualisiert",
   crash: "Absturz", hang: "Hänger", "app-detail": "Fehlerbericht", service: "Dienst beendet", print: "Druckfehler", profileerror: "Profilfehler", system: "Systemfehler",
   logon: "Anmeldung", logoff: "Abmeldung", disconnect: "Getrennt", reconnect: "Wiederverbunden" };
+const SYSTEM_WORD = { storage: "Datenträgerfehler", fileserver: "Verbindungsabbruch zum Dateiserver", memory: "Speichermangel-Warnung" };
 // logs of src/events.json, for the note on a capped lookback
 const LOG_WORD = { application: "Anwendung", system: "System", printservice: "Druckdienst", smbclient: "SMB-Client", profileservice: "Benutzerprofildienst", session: "Sitzungsverwaltung", defender: "Defender", applocker: "AppLocker" };
 const ISOLATION_WORD = { none: "keine", shared: "gemeinsam", isolated: "isoliert" };
-const kindWord = (k) => KIND_WORD[k] || k || "–";
+// word of a single event: kind "system" by its group, as the pattern sentences say it
+const kindWord = (e) => (e.kind === "system" && SYSTEM_WORD[e.group]) || KIND_WORD[e.kind] || e.kind || "–";
+// resource word of a performance incident's sentence ("{0}-Engpass" with resource.<lead> of texts.de.json)
+const SENT_RES = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", share: "Dateiserver", profile: "Profilcontainer", network: "Netzstrecke", endpoint: "Gegenstelle", input: "Eingabeverzögerung" };
+// at most 10 entries of a list, the rest behind a button (the sentences cut the same lists at 10 with " (+n weitere)")
+const capList = (items) => items.length <= 10 ? items.join(", ")
+  : items.slice(0, 10).join(", ") + `<span class="rest" hidden>, ${items.slice(10).join(", ")}</span> <button type="button" class="lnk more">(+${items.length - 10} weitere)</button>`;
 const BEFORE_INC = (D.before && D.before.incidents) || [];
 const RES_WORD = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", share: "Freigabe", profile: "Profilcontainer", network: "Netzstrecke", endpoint: "Gegenstelle", input: "Eingabeverzögerung" };
 // measure of a ranking; the I/O share of a profile container is a share within the owning session (scope "session")
@@ -1115,8 +1126,11 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
       : `Benutzer <b>${esc(FOCUS.user)}</b> in der Messung nicht gefunden`);
   }
   if (FOCUS.reportedMs != null) {
-    const out = FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1;
-    parts.push(`gemeldete Uhrzeit <b>${fmtTime(FOCUS.reportedMs, false)}</b>${out ? " (außerhalb der Messung)" : ""}`);
+    // before the start of the capture (its first tick, also under a cut), outside a cut, or after the end of the capture
+    const capStart = (D.before && D.before.captureStart != null) ? D.before.captureStart : FULL.t0;
+    const cut = capStart < FULL.t0 || D.eventsOutsideCut > 0, out = FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1;
+    const where = FOCUS.reportedMs < capStart ? " (vor Beginn der Messung)" : !out ? "" : cut ? " (außerhalb des gewählten Zeitraums)" : " (außerhalb der Messung)";
+    parts.push(`gemeldete Uhrzeit <b>${fmtTime(FOCUS.reportedMs, false)}</b>${where}`);
   }
   if (parts.length) {
     const nf = INC.filter((i) => i.focus).length, nn = INC.filter((i) => i.nearReported).length, counts = [];
@@ -1126,7 +1140,12 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
     const bf = BEFORE_INC.filter((i) => i.focus).length, bn = BEFORE_INC.filter((i) => i.nearReported).length, bcounts = [];
     if (FOCUS.user && FOCUS.found && bf) bcounts.push(bf === 1 ? "1 Vorfall betrifft den Benutzer" : `${bf} Vorfälle betreffen den Benutzer`);
     if (FOCUS.reportedMs != null && bn) bcounts.push(bn === 1 ? "1 Vorfall liegt nahe der gemeldeten Uhrzeit" : `${bn} Vorfälle liegen nahe der gemeldeten Uhrzeit`);
-    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "");
+    // a reported time that the cut leaves out: its events are not in this report, never "there were none"
+    const n = D.eventsOutsideCut || 0, cutOut = FOCUS.reportedMs != null && FOCUS.reportedMs >= ((D.before && D.before.captureStart != null) ? D.before.captureStart : FULL.t0) &&
+      (FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1) && n > 0;
+    const cutText = !cutOut ? "" : " Ereignisse um die gemeldete Uhrzeit zeigt der Bericht nicht: " +
+      (n === 1 ? "1 Ereignis der Aufzeichnung liegt außerhalb des gewählten Zeitraums." : `${fmt(n, 0)} Ereignisse der Aufzeichnung liegen außerhalb des gewählten Zeitraums.`);
+    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "") + cutText;
     el.hidden = false;
   }
 }
@@ -1166,9 +1185,11 @@ function markLabel(inc) {
 function packLanes(items, pw) {
   const ends = [];
   for (const it of items) {
-    let l = ends.findIndex((e) => e + 2 <= it.x);
+    // an item may reserve more room than its mark (px0..px1: the word beside a mark of an incident from events)
+    const a = it.px0 ?? it.x, e = it.px1 ?? it.x + it.w;
+    let l = ends.findIndex((end) => end + 2 <= a);
     if (l < 0) { l = ends.length; ends.push(0); }
-    ends[l] = it.x + it.w; it.lane = l;
+    ends[l] = e; it.lane = l;
   }
   return Math.max(1, ends.length);
 }
@@ -1184,10 +1205,16 @@ function drawTimeline(force) {
   if (!force && W === tlWidth) { updateTimelineZoom(); return; }
   tlWidth = W;
   const span = FULL.t1 - FULL.t0, X = (t) => ((t - FULL.t0) / span) * pw;
-  // a mark of an incident from events is as wide as its word, so it can be told from a performance incident at a glance
+  // a mark runs from start to end (at least TL_MIN_W, so it can be hit); an incident from events has the word of its kind
+  // beside the mark, on the right or, near the right edge, on the left, and its lane keeps room for the word
   const place = (inc) => {
-    const x0 = Math.max(0, X(inc.start)), w = Math.max(TL_MIN_W, X(inc.end) - x0, inc.type === "ereignis" ? 24 + 6.5 * markLabel(inc).length : 0);
-    return { inc, x: Math.min(x0, pw - w), w };
+    const x0 = Math.max(0, X(inc.start)), w = Math.max(TL_MIN_W, X(inc.end) - x0), x = Math.min(x0, pw - w), it = { inc, x, w };
+    if (inc.type === "ereignis") {
+      const ww = 10 + 6.5 * markLabel(inc).length;
+      it.wordX = x + w + ww <= pw ? x + w : Math.max(0, x - ww);
+      it.px0 = Math.min(x, it.wordX); it.px1 = Math.max(x + w, it.wordX + ww);
+    }
+    return it;
   };
   const acute = INC.filter((i) => !i.chronic).sort((a, b) => a.start - b.start).map(place);
   const chronic = INC.filter((i) => i.chronic).sort((a, b) => a.start - b.start).map(place);
@@ -1195,11 +1222,12 @@ function drawTimeline(force) {
   const markHtml = (it, top) => {
     const inc = it.inc, st = STATUS[sevKey(inc.severity)], open = document.querySelector(`#incidents .incident[data-id="${inc.id}"].open`) ? " open" : "";
     const label = markLabel(inc), aria = `${st[1]}: ${typeText(inc)}, ${label}, ${incTime(inc)}`;
-    const narrow = it.w < 20, inner = inc.chronic
+    const ev = inc.type === "ereignis", narrow = it.w < 20, inner = inc.chronic
       ? `<span><i class="sym" aria-hidden="true">${st[0]}</i> <span class="lbl">${esc(label)}</span></span>`
-      : (narrow ? st[0] : `${st[0]}<span class="lbl"> ${esc(label)}</span>`);
+      : (narrow || ev ? st[0] : `${st[0]}<span class="lbl"> ${esc(label)}</span>`);
+    const word = ev ? `<span class="mark-word" data-incident="${inc.id}" aria-hidden="true" style="left:${it.wordX.toFixed(1)}px;top:${top}px">${esc(label)}</span>` : "";
     return `<button type="button" class="mark sev${sevKey(inc.severity)} type-${inc.type}${inc.chronic ? " chronic" : ""}${narrow && !inc.chronic ? " narrow" : ""}${open}" data-incident="${inc.id}" ` +
-      `style="left:${it.x.toFixed(1)}px;width:${it.w.toFixed(1)}px;top:${top}px" aria-label="${esc(aria)}" title="${esc(inc.text)}">${inner}</button>`;
+      `style="left:${it.x.toFixed(1)}px;width:${it.w.toFixed(1)}px;top:${top}px" aria-label="${esc(aria)}" title="${esc(inc.text)}">${inner}</button>` + word;
   };
   let h = `<div class="tl-row"><div class="tl-label">Vorfälle</div><div class="tl-track" style="height:${nA * TL_LANE + 4}px">` +
     acute.map((it) => markHtml(it, 3 + it.lane * TL_LANE)).join("") + (acute.length ? "" : `<span class="note" style="position:absolute;top:5px">keine</span>`) + "</div></div>";
@@ -1207,7 +1235,7 @@ function drawTimeline(force) {
   for (const g of EVENT_ROWS) {
     h += `<div class="tl-row" data-group="${esc(g)}"><div class="tl-label">${esc(GROUP_WORD[g] || "Weitere Ereignisse")}</div><div class="tl-track" style="height:22px">` +
       EVENTS_BY_ROW.get(g).map((e) => `<span class="event" data-group="${esc(e.group || "")}" data-kind="${esc(e.kind)}" style="left:${X(Math.max(FULL.t0, Math.min(FULL.t1, e.t))).toFixed(1)}px" ` +
-        `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e.kind) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + e.text)}"></span>`).join("") + "</div></div>";
+        `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + e.text)}"></span>`).join("") + "</div></div>";
   }
   // time axis: first and last label on the edges, round server-local times in between
   const ticks = timeTicks(FULL.t0, FULL.t1, pw, 34);
@@ -1234,7 +1262,7 @@ function updateTimelineZoom() {
 }
 document.getElementById("tlLegend").innerHTML =
   `<span class="st-crit"><i class="sym" aria-hidden="true">◆</i> kritisch</span><span class="st-warn"><i class="sym" aria-hidden="true">▲</i> auffällig</span>` +
-  (D.events.length ? `<span><i class="ev"></i>Ereignis (Tooltip mit Zeit und Text), eine Zeile je Gruppe: ${esc(EVENT_ROWS.map((g) => GROUP_WORD[g] || "Weitere Ereignisse").join(", "))}</span>` : "") +
+  (D.events.length ? `<span><i class="ev"></i>Ereignis (Tooltip mit Text und Uhrzeit in der Ortszeit des Ereignisses), eine Zeile je Gruppe: ${esc(EVENT_ROWS.map((g) => GROUP_WORD[g] || "Weitere Ereignisse").join(", "))}</span>` : "") +
   (FOCUS.reportedMs != null ? '<span><i class="rep"></i>gemeldete Uhrzeit</span>' : "") +
   (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
 WP.onZoom(updateTimelineZoom);
@@ -1256,7 +1284,7 @@ if (D.eventsOutsideCut > 0) {
     table("tEvents", [
       { key: "t", head: "Zeit", num: true, fmt: (v, r) => evTime(v, r.offsetMin, true) },
       { key: "group", head: "Gruppe", fmt: (v) => esc(GROUP_WORD[v] || "–"), sortVal: (r) => GROUP_WORD[r.group] || "" },
-      { key: "kind", head: "Art", fmt: (v) => esc(kindWord(v)) },
+      { key: "kind", head: "Art", fmt: (v, r) => esc(kindWord(r)) },
       { key: "user", head: "Benutzer", fmt: (v) => esc(v || "–") },
       { key: "source", head: "Quelle", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.id)}</span>` },
       { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
@@ -1373,17 +1401,19 @@ const decOf = (unit) => unit === "" ? 2 : unit === "%" ? 1 : 0;
 // link to another incident: number, type and time
 const incLink = (id) => {
   const o = incById.get(id); if (!o) return "";
-  const what = o.type === "ereignis" ? (EVINC_LONG[o.event.kind] || o.event.kind) + (o.event.key ? " – " + o.event.key : "") : typeText(o);
+  const what = o.type === "ereignis" ? (EVINC_LONG[o.event.kind] || o.event.kind) + (o.event.key ? " – " + o.event.key : "")
+    : o.type === "engpass" && SENT_RES[o.lead] ? SENT_RES[o.lead] + "-Engpass" + (o.chronic ? " als Dauerzustand" : "")
+    : o.type === "ohne-engpass" ? "Eingabeverzögerung ohne Engpass" + (o.chronic ? " als Dauerzustand" : "") : typeText(o);
   return `<li><button type="button" class="lnk" data-incident="${id}">Vorfall ${id}: ${esc(what)}</button> <span class="num">${esc(incTime(o))}</span></li>`;
 };
 // opened incident from events: count, span, users, module; then the patterns, the events and the overlapping incidents
 function renderEventDetail(inc, host) {
   const ev = inc.event, u = ++uid, list = inc.events.map((e, k) => Object.assign({ k }, e));
   const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(evIncRange(inc))}</b></span>`];
-  if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? esc(ev.users.join(", ")) : "–"}</b></span>`);
-  if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${ev.sessions.map(lnkS).join(", ")}</span>`);
+  if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
+  if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${capList(ev.sessions.map(lnkS))}</span>`);
   else if (!ev.inSession) kv.push("<span><b>ohne Benutzersitzung</b></span>");
-  if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + esc((ev.versions.length === 1 ? "Version " : "Versionen ") + ev.versions.join(", ")) : ""}</span>`);
+  if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + (ev.versions.length === 1 ? "Version " : "Versionen ") + capList(ev.versions.map(esc)) : ""}</span>`);
   if (ev.service) kv.push(`<span>Dienst <b>${esc(ev.service)}</b></span>`);
   if (ev.driver) kv.push(`<span>Treiber <b>${esc(ev.driver)}</b></span>`);
   if (ev.printer) kv.push(`<span>Drucker <b>${esc(ev.printer)}</b></span>`);
@@ -1401,7 +1431,7 @@ function renderEventDetail(inc, host) {
       ${ev.eventsTruncated ? `<div class="note">Aufgeführt sind die ersten ${fmt(shown, 0)} und das letzte der ${fmt(ev.count, 0)} Ereignisse.</div>` : ""}</div>`;
   table("iev" + u, [
     { key: "t", head: withDate ? "Datum und Zeit" : "Zeit", num: true, fmt: (v, r) => withDate ? evDT(r, true) : evTime(v, r.offsetMin, true) },
-    { key: "kind", head: "Art", fmt: (v) => esc(kindWord(v)) },
+    { key: "kind", head: "Art", fmt: (v, r) => esc(kindWord(r)) },
     { key: "user", head: "Benutzer", fmt: (v, r) => r.s != null && r.s >= 0 && sessByIdx.has(r.s) ? lnkS(r.s) : esc(v || "–"), sortVal: (r) => r.user || "" },
     { key: "app", head: "Anwendung", fmt: (v) => esc(v || "–") },
     { key: "module", head: "Modul", fmt: (v) => esc(v || "–") },
@@ -1491,6 +1521,8 @@ function showIncident(id, zoom) {
   entry.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 const onIncidentClick = (ev) => {
+  const more = ev.target.closest("button.more");
+  if (more) { more.previousElementSibling.hidden = false; more.remove(); return; }
   const b = ev.target.closest("button.lnk, button.zoomto");
   if (b) {
     if (b.classList.contains("zoomto")) { const w = incWindow(incById.get(Number(b.dataset.incident))); window.WP.setZoom(w.t0, w.t1); return; }
@@ -1510,27 +1542,39 @@ const onIncidentKey = (ev) => {
 };
 for (const id of ["incidents", "before"]) { document.getElementById(id).addEventListener("click", onIncidentClick); document.getElementById(id).addEventListener("keydown", onIncidentKey); }
 document.getElementById("timeline").addEventListener("click", (ev) => {
-  const m = ev.target.closest(".mark[data-incident]");
+  const m = ev.target.closest(".mark[data-incident], .mark-word[data-incident]");
   if (m) showIncident(Number(m.dataset.incident), true);
 });
 
 // ---------- findings: the days before the capture ----------
-// Shown when the lookback read events or reached its cap. Two counts with different meanings: all events read from these
-// days, and those of an incident kind (the bars per day count the latter).
+// The card states what was read (before.status): the lookback was switched off, its sources were not available, it was
+// read and holds no events, or the summary of what it holds. A capture without a lookback setting (format 2) shows the
+// card only for events around a reported time before the capture. Two counts with different meanings: all events read
+// from these days, and those of an incident kind (the bars per day count the latter).
 const BEFORE = D.before || { days: 0, from: null, capped: [], eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [] };
 const logWords = (logs) => logs.map((l) => LOG_WORD[l] || l).join(", ");
-const reportedBefore = FOCUS.reportedMs != null && FOCUS.reportedMs < FULL.t0;
-if (BEFORE.eventCount > 0 || BEFORE.capped.length || BEFORE.near.length) {
+const BEFORE_STATUS = BEFORE.status || (BEFORE.eventCount > 0 || BEFORE.capped.length ? "read" : "notRecorded");
+// "before the capture" is decided against the capture's first tick, never against the start of a cut
+const reportedBefore = FOCUS.reportedMs != null && FOCUS.reportedMs < (BEFORE.captureStart != null ? BEFORE.captureStart : FULL.t0);
+const nearShown = reportedBefore && BEFORE.near.length > 0;
+if (BEFORE_STATUS !== "notRecorded" || nearShown) {
   const el = document.getElementById("before"), max = Math.max(1, ...BEFORE.perDay.map((d) => d.count));
   const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
   const dayText = (day) => { const [y, m, d] = day.split("-").map(Number), dt = new Date(Date.UTC(y, m - 1, d)); return `${WD[dt.getUTCDay()]}, ${pad(d)}.${pad(m)}.${y}`; };
   const days = BEFORE.perDay.map((d) => `<div class="day"><span class="dlabel">${esc(dayText(d.day))}</span><span class="dbar"><span class="dtrack" aria-hidden="true"><i style="width:${(d.count / max * 100).toFixed(1)}%"></i></span>${fmt(d.count, 0)}</span></div>`).join("");
   const nNear = BEFORE.nearCapture.length, nearStart = BEFORE.near.length - nNear;
-  const near = !reportedBefore ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtTime(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` + (BEFORE.near.length
-    ? `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e.kind))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`
-    : '<div class="note">Keine Ereignisse in diesem Zeitraum.</div>');
-  el.innerHTML = `<div class="cardhead"><h3>Vor der Messung</h3></div>
-    <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
+  const near = !nearShown ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtDT(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` +
+    `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(e.text)}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
+  const head = `<div class="cardhead"><h3>Vor der Messung</h3></div>
+    <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>`;
+  const summary = BEFORE_STATUS === "read" && (BEFORE.eventCount > 0 || BEFORE.capped.length);
+  if (!summary) {
+    const state = BEFORE_STATUS === "off" ? "Der Rückblick war abgeschaltet (-EventLookbackDays 0)."
+      : BEFORE_STATUS === "unavailable" ? "Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar."
+      : BEFORE_STATUS === "read" ? (BEFORE.days === 1 ? "Am Tag vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen."
+        : `In den ${BEFORE.days} Tagen vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen.`) : "";
+    el.innerHTML = head + (state ? `<p class="bstate">${state}</p>` : "") + near;
+  } else el.innerHTML = `${head}
     ${BEFORE.capped.length ? `<p class="capped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig: für ${BEFORE.capped.length === 1 ? "das Protokoll" : "die Protokolle"} ${esc(logWords(BEFORE.capped))} wurde die Obergrenze der gelesenen Ereignisse erreicht; ältere Ereignisse fehlen.</p>` : ""}
     <div class="kv"><span>Rückblick <b>${plural(BEFORE.days, "Tag", "Tage")} vor Beginn der Messung${BEFORE.from != null ? " (ab " + fmtDate(BEFORE.from) + ")" : ""}</b></span>
       <span>Ereignisse aus diesen Tagen <b>${fmt(BEFORE.eventCount, 0)}</b> (alle Arten)</span>

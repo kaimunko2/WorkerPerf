@@ -381,5 +381,27 @@ Describe 'Ereignisdaten im Einzelnen' {
         $c.before.from | Should -Be $D.before.from; $c.before.eventCount | Should -Be 5
         $cut = @($D.events | Where-Object { $_.t -lt $c.meta.start }).Count; $cut | Should -BeGreaterThan 0
         $c.eventsOutsideCut | Should -Be $cut; @($c.events).Count | Should -Be (13 - $cut); $D.eventsOutsideCut | Should -Be 0
+        # the start of the capture stays the first tick under the cut, so the page need not take the cut for the start (Task 9, C1)
+        $D.before.captureStart | Should -Be $D.meta.start; $c.before.captureStart | Should -Be $D.before.captureStart
+        $c.before.captureStart | Should -BeLessThan $c.meta.start
+    }
+    It 'sagt, ob der Rueckblick gelesen, abgeschaltet, nicht verfuegbar oder nicht aufgezeichnet ist' {     # Task 9, I1
+        $D.before.status | Should -Be 'read'
+        (Get-ReportData $R.None).before.status | Should -Be 'unavailable'          # ohne events_before.csv
+        function New-MetaVariant([string]$Name, [scriptblock]$Change, [switch]$HeaderOnly) {
+            $dir = Copy-SimRun $R.Run (Join-Path $TestDrive $Name); $f = Join-Path $dir 'meta.json'
+            if ($HeaderOnly) { $lb = Join-Path $dir 'events_before.csv'; [IO.File]::WriteAllLines($lb, @([IO.File]::ReadAllLines($lb)[0])) }
+            $m = Get-Content $f -Raw | ConvertFrom-Json; & $Change $m; [IO.File]::WriteAllText($f, ($m | ConvertTo-Json -Depth 8))
+            $out = Join-Path $TestDrive "$Name.html"
+            [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
+            (Get-ReportData $out).before
+        }
+        (New-MetaVariant 'lboff' { param($m) $m.EventLookbackDays = 0 }).status | Should -Be 'off'
+        # the Windows source of today lists no lookback log apart from Defender and AppLocker and writes only the header line
+        $win = New-MetaVariant 'lbwin' { param($m) foreach ($id in 'application', 'system', 'printservice', 'smbclient', 'profileservice') { $m.Sources.PSObject.Properties.Remove("events.$id") } } -HeaderOnly
+        $win.status | Should -Be 'unavailable'
+        # read and empty: every lookback log listed and available, the file holds only its header line
+        (New-MetaVariant 'lbempty' { param($m) } -HeaderOnly).status | Should -Be 'read'
+        (New-MetaVariant 'lbfmt2' { param($m) $m.PSObject.Properties.Remove('EventLookbackDays') }).status | Should -Be 'notRecorded'
     }
 }

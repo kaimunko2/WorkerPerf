@@ -929,10 +929,31 @@ if ($null -ne $reportedWallMs -and $reportedWallMs -lt $captureStartMs + [long]$
 $perDayOut = New-Object System.Collections.Generic.List[object]
 $incidentEventCount = 0
 foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count }); $incidentEventCount += [int]$d.Count }
+# What the page may say about the lookback (status):
+#   notRecorded  the capture has no lookback setting (format 2)
+#   off          -EventLookbackDays 0
+#   unavailable  nothing was read: events_before.csv is missing, the lookback read failed (SourceErrors 'eventsbefore'),
+#                or the capture's Sources do not list every log of events.json that has a lookback, or list none of them
+#                as available (the Windows source of today lists only Defender and AppLocker)
+#   read         the lookback was read; it may hold no events
+# A lookback that holds events counts as read whatever else is true.
+$lookbackStatus = 'read'
+$metaDays = Get-WorkerPerfField $model.Meta 'EventLookbackDays'
+if ($null -eq $metaDays) { $lookbackStatus = 'notRecorded' }
+elseif ([int]$metaDays -le 0) { $lookbackStatus = 'off' }
+elseif ([int]$lookback.EventCount -eq 0) {
+    $lookbackLogs = @($eventConfig.Logs.Values | Where-Object { $_.Lookback } | ForEach-Object { 'events.' + $_.Id })
+    $listed = @($lookbackLogs | Where-Object { $model.Sources.ContainsKey($_) })
+    $usable = @($listed | Where-Object { $model.Sources[$_].Available })
+    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' })
+    if (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv')) -or $failed.Count -gt 0 -or
+        $listed.Count -lt $lookbackLogs.Count -or $usable.Count -eq 0) { $lookbackStatus = 'unavailable' }
+}
 $beforeOut = [ordered]@{
     days = [int]$lookback.Days; from = [long]$lookback.FromMs; capped = [string[]]@($lookback.Capped)
     eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
     incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
+    captureStart = $captureStartMs; status = $lookbackStatus
 }
 
 $driversOut = New-Object System.Collections.Generic.List[object]
