@@ -389,7 +389,7 @@ async function checkFix1(browser, dir, scheme) {                   // Task 9, Ko
   // I1: what was read, never a result that was not measured
   const empty = (J) => { Object.assign(J.before, { eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [] }); };
   const cases = [
-    ['off', (J) => { empty(J); J.before.status = 'off'; J.before.days = 0; }, 'Der Rückblick war abgeschaltet (-EventLookbackDays 0).'],
+    ['off', (J) => { empty(J); J.before.status = 'off'; J.before.days = 0; }, 'Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0).'],
     ['unavailable', (J) => { empty(J); J.before.status = 'unavailable'; }, 'Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar.'],
     ['read', (J) => { empty(J); J.before.status = 'read'; }, 'In den 7 Tagen vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen.']];
   for (const [name, change, text] of cases) {
@@ -623,6 +623,70 @@ async function checkFinalWave(browser, dir, scheme) {               // Abschluss
   await p.page.close();
 }
 
+async function checkSkip(browser, dir, scheme) {   // Messkategorien
+  const full = await open(browser, path.join(dir, 'report.html'), scheme);
+  ok(await full.page.locator('#skipInfo').count() === 0 && await full.page.locator('.notmeasured').count() === 0, 'ohne -Skip kein Hinweis und keine Stelle "nicht gemessen"');
+  await full.page.close();
+  for (const n of ['prozesse', 'laufwerke', 'citrix', 'ereignisse', 'rueckblick', 'drucken', 'gegenstellen', 'alle', 'alle-masked']) {   // Review Focus 1
+    const { page, D } = await open(browser, path.join(dir, `report-skip-${n}.html`), scheme);
+    for (const t of ['overview', 'apps', 'procs', 'sessions']) await page.click(`nav button[data-tab=${t}]`);
+    await page.click('#tSessions tbody tr >> nth=0'); await page.click('nav button[data-tab=findings]');
+    for (const i of D.incidents) await openIncident(page, i.id);
+    const info = await page.locator('header #skipInfo').innerText();
+    ok(info.includes('Nicht gemessen (-Skip): ' + D.skipped.map((s) => s.label).join(', ')), n + ': Kopf nennt die Kategorien: ' + info);
+    const all = await page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent; });
+    for (const s of D.skipped) {
+      ok(all.includes(s.text + ' (-Skip ' + s.id + ')'), n + ': Grund von ' + s.id + ' steht auf der Seite');
+      for (const p of s.places) ok(await page.locator(`.notmeasured[data-place="${p}"]`).count() > 0, n + ': Stelle ' + p + ' sagt "nicht gemessen"');
+    }
+    // an input delay that could not be checked for a bottleneck (without Laufwerke) is never called "ohne Engpass"
+    if (n === 'laufwerke' || n === 'alle') {
+      ok(D.incidents.some((i) => i.type === 'ohne-engpass' && i.unverified), n + ': Daten mit ungeprueftem Vorfall ohne erkannten Engpass');
+      const shown = await page.evaluate(() => document.body.innerText);
+      ok(!shown.includes('ohne Engpass') && shown.includes('ohne erkannten Engpass'), n + ': kein "ohne Engpass" fuer einen ungeprueften Vorfall');
+    }
+    ok(page.errors.length === 0, n + ': Skriptfehler: ' + page.errors.join(' | '));
+    await page.close();
+  }
+  const p = await open(browser, path.join(dir, 'report-skip-prozesse.html'), scheme);
+  const cpu = p.D.incidents.find((i) => i.lead === 'cpu'), sentence = 'Kein Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst.';
+  let entry = await openIncident(p.page, cpu.id);
+  ok((await entry.locator('.causebox').innerText()).includes(sentence) && cpu.text.includes(sentence), 'Verursacher: Text und Seite gleich');   // Review Focus 3
+  ok(!(await entry.locator('.detail').innerText()).match(/keine Prozessdaten|keine Prozesse mit der Rolle Sicherheit/), 'kein "keine" fuer nicht Gemessenes');
+  // counts that are 0 only because processes were not measured are not printed as numbers
+  const foot = await p.page.locator('footer').innerText();
+  ok(!foot.includes('von 0 Prozessen') && !foot.includes('Prozess-Messwerte') && await p.page.locator('footer .notmeasured[data-place="procs"]').count() === 1, 'Fuss ohne Prozesszahlen: ' + foot);
+  await p.page.click('nav button[data-tab=sessions]');
+  ok(await p.page.locator('#tab-sessions .notmeasured[data-place="sessions.resources"]').count() === 1, 'Hinweis ueber der Sitzungstabelle');
+  const row = await p.page.locator('#tSessions tbody tr >> nth=0').innerText(), heads = await p.page.locator('#tSessions thead th').allInnerTexts();
+  const cells = row.split('\t'), at = (h) => cells[heads.findIndex((x) => x.startsWith(h))];
+  ok(['CPU-Anteil %', 'CPU-Zeit s', 'CPU Ø %', 'RAM Ø', 'I/O MB', 'Prozesse Ø'].every((h) => at(h) === '–'), 'Spalten der Prozessdaten zeigen "–": ' + row);
+  await p.page.click('#tSessions tbody tr >> nth=0');
+  ok(!(await p.page.locator('#dSessions .kv').innerText()).match(/CPU-Anteil 0/), 'Sitzungsansicht ohne 0 % CPU-Anteil');
+  await p.page.click('nav button[data-tab=findings]');
+  // a crash without process data: the assignment to sessions was not checked, never "Sitzung nicht ermittelt"
+  const chrome = p.D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'chrome.exe');
+  ok(chrome && chrome.event.sessionUnknown && chrome.event.unchecked.some((u) => u.id === 'users'), 'Daten: chrome.exe ohne Zuordnung, nicht geprueft');
+  entry = await openIncident(p.page, chrome.id);
+  const det = await entry.locator('.detail').innerText(), pats = await entry.locator('.patterns li').allInnerTexts();
+  ok(!det.includes('Sitzung nicht ermittelt') && !det.match(/ohne Benutzersitzung/i), 'chrome.exe: keine Aussage zur Sitzung: ' + det.slice(0, 300));
+  ok(chrome.event.unchecked.every((u) => pats.some((t) => t.includes('nicht geprüft: ' + u.text))) && !pats.some((t) => t.includes('Kein Muster erkannt')), 'chrome.exe: je Eintrag ein "nicht geprueft": ' + pats.join(' / '));
+  ok(p.page.errors.length === 0, 'Skriptfehler prozesse: ' + p.page.errors.join(' | '));
+  await p.page.close();
+  const d = await open(browser, path.join(dir, 'report-skip-drucken.html'), scheme);
+  entry = await openIncident(d.page, d.D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print').id);
+  const pat = await entry.locator('.patterns').innerText();
+  ok(pat.includes('nicht geprüft: Bezug zu einem Druckertreiber (Drucken nicht gemessen)') && !pat.includes('Kein Muster erkannt'), 'Muster nicht geprueft statt "kein Muster"');
+  ok(!(await d.page.locator('#print').innerText()).includes('Keine Treiberliste aufgezeichnet'), 'Drucken: nicht "keine Treiberliste"');
+  await d.page.close();
+  const r = await open(browser, path.join(dir, 'report-skip-rueckblick.html'), scheme);
+  ok((await r.page.locator('#before').innerText()).includes('Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0).'), 'Rueckblick abgeschaltet');
+  await r.page.close();
+  const e = await open(browser, path.join(dir, 'report-skip-ereignisse.html'), scheme);
+  ok(e.D.quality.eventReads.length === 0 && await e.page.locator('#quality .notmeasured[data-place="events"]').count() === 1, 'Messqualitaet: Ereignisprotokolle nicht gemessen');
+  await e.page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
@@ -631,6 +695,7 @@ async function checkFinalWave(browser, dir, scheme) {               // Abschluss
     await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
     await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
     await checkMask(browser, dir, scheme); await checkMaskedPersonen(browser, dir, scheme); await checkFinalWave(browser, dir, scheme);
+    await checkSkip(browser, dir, scheme);
   }
   await checkMaskedPage(browser, dir, 'light');
   console.log('browser checks passed: ' + checks);

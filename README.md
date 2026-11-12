@@ -117,10 +117,61 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 | `-ThresholdFile` | Schwellwerte und Auslöser-Signale, Standard `thresholds.json` neben dem Skript |
 | `-EndpointFile` | Gegenstellen für die Proben, Standard `endpoints.json` neben dem Skript; fehlt sie, gibt es keine Proben |
 | `-IncludeCommandLine` | Befehlszeilen der Prozesse mitschreiben (können sensible Daten enthalten) |
-| `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen |
+| `-Skip` | Messkategorien weglassen, etwa `-Skip Prozesse,Rueckblick` (siehe [Kategorien weglassen](#kategorien-weglassen--skip)) |
+| `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen; dasselbe wie `-Skip Citrix` |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
-| `-EventLookbackDays` | beim Start die Ereignisse so vieler Tage vor dem Start in `events_before.csv` lesen, 0–90, Standard 7; 0 schaltet den Rückblick ab |
+| `-EventLookbackDays` | beim Start die Ereignisse so vieler Tage vor dem Start in `events_before.csv` lesen, 0–90, Standard 7; 0 schaltet den Rückblick ab, dasselbe wie `-Skip Rueckblick` |
 | `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen ab statt das lokale System zu messen, mit einem simulierten Rückblick über sieben Tage, Treiberliste und Warteschlangen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
+
+#### Kategorien weglassen (`-Skip`)
+
+Im Standard misst der Collector alles. Wer den Messaufwand oder die Startzeit verringern will, lässt einzelne
+Kategorien bewusst weg. Was der Collector nicht liest, belastet den Server nicht; nachholen lässt es sich aber auch
+nicht. Der Standard bleibt deshalb der vollständige Lauf.
+
+```powershell
+.\src\Start-WorkerPerfCapture.ps1 -DurationMinutes 10 -Skip Prozesse,Rueckblick
+```
+
+| Wert | Kategorie | Kosten | Beim Weglassen fehlt |
+|---|---|---|---|
+| `Prozesse` | Prozess-Schnappschüsse, Eingabeverzögerung je Prozess | am höchsten; wächst mit der Zahl der Prozesse | Verursacher eines Vorfalls, Zuordnung von Abstürzen zu Sitzungen, Rollen |
+| `Laufwerke` | Antwortzeiten je Laufwerk, Profilcontainer und Freigabe | mittel; wächst mit der Zahl der Container | Antwortzeiten je Laufwerk, Container und Freigabe |
+| `Citrix` | ICA-Werte je Sitzung | mittel; wächst mit der Zahl der Sitzungen | ICA-Latenz und Laufzeit je Sitzung |
+| `Ereignisse` | Ereignisse während der Messung | klein je Takt | Abstürze, Hänger, Dienst-, Druck-, Profil- und Dateiserver-Ereignisse im Messzeitraum, Sitzungsereignisse |
+| `Rueckblick` | Ereignisse der Tage vor der Messung | einmalig beim Start | der Abschnitt „Vor der Messung" |
+| `Drucken` | Treiberliste, Zähler der Warteschlangen | einmalig, dazu kleine Zähler je Takt | Druckzustand, Treiberbezug bei Druckvorfällen |
+| `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | klein je Takt | Erreichbarkeit und Antwortzeit der Ziele |
+| `Zustand` | das Zustandsbild (geplant) | einmalig beim Start | der Bereich „Zustand des Workers" |
+
+Regeln:
+
+- **Basis:** CPU, Wartezeit der VM, Arbeitsspeicher, Datenträger gesamt, Netzwerk, Sitzungen und die
+  Eingabeverzögerung je Sitzung laufen immer und lassen sich nicht abschalten. Ohne sie werden keine Vorfälle erkannt,
+  und sie sind der billigste Teil. Die Eingabeverzögerung je Sitzung gehört dazu, weil sie das Signal dafür ist, was
+  Benutzer spüren.
+- **Vorhandene Schalter:** `-NoCitrix` entspricht `-Skip Citrix`, `-EventLookbackDays 0` entspricht
+  `-Skip Rueckblick`. Beide bleiben gültig, auch zusammen mit `-Skip`; was eine der beiden Schreibweisen weglässt,
+  bleibt weggelassen (`-EventLookbackDays 7 -Skip Rueckblick` liest keinen Rückblick).
+- **Werte:** Groß- und Kleinschreibung ist egal, doppelte Werte zählen einmal. Ein unbekannter Wert bricht den Start
+  mit einer Meldung ab, die die gültigen Werte nennt.
+- **`Zustand`** wird schon angenommen, wirkt aber erst, wenn das Zustandsbild gebaut ist; bis dahin steht er weder in
+  `meta.json` noch im Bericht.
+- **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
+  („Gemessen: Basis, …" und „Nicht gemessen (-Skip): …").
+- **Kombinationen:** Der Collector lehnt keine ab; der Bericht benennt, was fehlt. `Rueckblick` und `Ereignisse` sind
+  unabhängig voneinander. Ohne `Ereignisse` gibt es während der Messung keine Sitzungsereignisse (Anmelden, Trennen);
+  die Sitzungsliste der Basis bleibt. Ohne `Drucken` bleiben Druckereignisse sichtbar, der Bezug zu Treibern fehlt.
+- **Ohne `Prozesse`** lässt sich die Sitzung eines abgestürzten Prozesses nicht ermitteln. Jeder einzelne Absturz oder
+  Hänger bildet dann einen Vorfall, auch von Hintergrunddiensten, höchstens einer je Anwendung in 30 Minuten, und
+  trägt „Nicht geprüft: Zuordnung zu Benutzern und Sitzungen". `Prozesse` spart am meisten und macht zugleich die
+  Vorfälle unerklärbar (siehe [Was bei welcher Stufe zu tun ist](#was-bei-welcher-stufe-zu-tun-ist)).
+- **`-Skip Ereignisse`** ist der Schalter, wenn das Lesen der Ereignisprotokolle die regulären Schnappschüsse
+  langsam macht (siehe [Welche Last das bedeutet](#welche-last-das-bedeutet), Ereignisabfragen, und die Messdauer je
+  Schnappschuss unter „Messqualität").
+
+Im Bericht steht an jeder Stelle, die von einer weggelassenen Kategorie abhängt, „nicht gemessen" mit dem Grund
+(siehe [Der Bericht](#der-bericht)).
 
 ### 2. Auswerten (am besten auf einem anderen Rechner)
 
@@ -261,6 +312,10 @@ Fehlt er, ist der Bericht nicht maskiert.
   „Hinweis: 2 Namen gleichen Woertern des Berichts (Benutzer 01, Benutzer 15) …"; diese Stellen besonders sorgfältig
   durchsehen. Ebenso wird bei `-Mask Alles` eine Warteschlange, die genau wie ihr Druckertreiber heißt (so legt
   Windows sie an), auch in der Liste der Treiber ersetzt.
+- Bei `-Mask Alles` wird ein maskierter Bericht schwer lesbar, wenn ein Server wie eine Anwendung oder wie ein
+  gängiges Wort heißt (auch der erste Teil eines Hostnamens wie `mail`, `print`, `time`, `www`): Rollenbezeichnungen,
+  Programmordner und solche Wörter werden dann zu „Server NN" oder entstellt, und aus dem Zusammenhang lässt sich der
+  Name erraten.
 - Ein Benutzer- oder Clientname, der in einer eigenen Bezeichnung nur Teil eines längeren Wortes ist, bleibt dort
   stehen: in „Oracle-Listener" ein Benutzer `oracle`. Heißen ein Benutzer und ein Server gleich, gilt der Name als
   Benutzer.
@@ -336,9 +391,9 @@ länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
   Was das den Ereignisprotokolldienst kostet, ist **nicht gemessen**. Bei Protokollen in der Standardgröße ist wenig
   zu erwarten; ist das Anwendungs- oder Systemprotokoll auf mehrere hundert MB vergrößert, kann jede Abfrage viel
   lesen. Diese Arbeit erscheint beim `svchost.exe` des Ereignisprotokolldienstes, nicht bei „WorkerPerf selbst".
-  Einen Schalter, der die Ereignisabfragen abstellt oder seltener macht, gibt es noch nicht; geplant ist
-  `-Skip Ereignisse`. Bis dahin hilft nur, die Messung abzubrechen, wenn die Abfragen zu teuer sind (siehe
-  [Empfehlung für den ersten Einsatz](#empfehlung-für-den-ersten-einsatz)).
+  `-Skip Ereignisse` stellt die Ereignisabfragen während der Messung ab (der Rückblick beim Start bleibt, außer mit
+  `-Skip Rueckblick`); seltener machen lassen sie sich nicht. Ob sie zu teuer sind, zeigt der Unterschied zwischen
+  regulären und verdichteten Schnappschüssen (siehe [Orientierungswerte](#orientierungswerte)).
 
 ### Was die Messung über ihre eigenen Kosten aufzeichnet
 
@@ -382,11 +437,22 @@ innerhalb der Schleife, also entscheidet seine Dauer im Vergleich zum Takt, ob T
 |---|---|---|
 | `-IntervalSeconds 30` | die Hälfte der Schnappschüsse | gröbere Zuordnung zu Prozessen; kurzlebige Prozesse fehlen öfter |
 | `-BurstIntervalSeconds 10`, `-BurstHoldSeconds 30` | Schnappschüsse während der Vorfälle | weniger Einzelheiten zum Verursacher genau dann, wenn es zählt |
-| `-NoCitrix` | ICA- und EUEM-Abfragen | ICA Round Trip und Latenz „nicht gemessen" |
+| `-Skip Prozesse` | den teuersten Teil: Prozess-Schnappschüsse und Eingabeverzögerung je Prozess | Verursacher der Vorfälle, Zuordnung von Abstürzen zu Sitzungen, Rollen, Anwendungen und Prozesse; nur weglassen, wenn die Messung selbst spürbar stört |
+| `-Skip Laufwerke` | Zähler je Laufwerk, Profilcontainer und Freigabe | Antwortzeiten von Laufwerken, Containern und Freigaben; eine Verzögerung heißt dann „ohne erkannten Engpass" |
+| `-Skip Citrix` (wie `-NoCitrix`) | ICA- und EUEM-Abfragen | ICA Round Trip und Latenz „nicht gemessen" |
+| `-Skip Ereignisse` | die Ereignisabfragen jedes regulären Schnappschusses | Vorfälle aus Ereignissen und Sitzungsereignisse während der Messung |
+| `-Skip Rueckblick` (wie `-EventLookbackDays 0`) | das Lesen der Tage vor der Messung beim Start | der Abschnitt „Vor der Messung" |
+| `-Skip Drucken` | Treiberliste beim Start und Zähler der Warteschlangen | Druckzustand und Treiberbezug bei Druckvorfällen |
+| `-Skip Gegenstellen` | die Verbindungsproben | Erreichbarkeit und Antwortzeit der Gegenstellen (wie ohne `endpoints.json`) |
 | `-CitrixMetricFilter 'Latency\|Round'` | Zeilen in `citrix.csv` | keine Bandbreiten je Sitzung |
 | `-FastIntervalSeconds 3` oder `5` | ein Drittel bzw. drei Fünftel der Zählerlesungen | gröbere Zeitauflösung; kurze Spitzen erscheinen gemittelt |
 | `-IncludeCommandLine` weglassen (Standard) | Befehlszeilen in der Prozessabfrage | – |
 | keine `endpoints.json` | die Verbindungsproben | keine Aussage über Gegenstellen |
+
+Wie viel eine Kategorie auf einem bestimmten Server kostet, zeigt erst die Messung dort: im Block „Messqualität" die
+Messdauer je Takt und je Schnappschuss. Die Kosten in der Tabelle unter
+[Kategorien weglassen](#kategorien-weglassen--skip) sind Größenordnungen. Den größten Effekt hat `Prozesse`; genau
+diese Kategorie macht Vorfälle erklärbar. Deshalb `Prozesse` nur weglassen, wenn die Messung selbst spürbar stört.
 
 Den Ausgabeordner auf ein lokales Datenlaufwerk legen, nicht auf eine Freigabe und nicht in das Benutzerprofil
 oder einen Profilcontainer: Sonst gehen die eigenen Schreibzugriffe über das Netz und verfälschen die gemessenen
@@ -477,7 +543,9 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 - **Vorfallstypen:** *Engpass* – eine Ressource des Workers (CPU, Arbeitsspeicher, Datenträger, Freigabe,
   Profilcontainer) lag über dem Soll und Benutzer spürten es. *Verzögerung ohne Engpass* – Benutzer warteten,
   ohne dass der Worker ausgelastet war; die Ursache liegt in der Anwendung oder dahinter (Datenbank, Proxy,
-  Netz). *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine Gegenstelle, nicht der Worker.
+  Netz). Ohne `Laufwerke` (`-Skip Laufwerke`) ist nicht geprüft, ob Laufwerke, Profilcontainer oder Freigaben
+  langsam waren; eine solche Verzögerung heißt dann *Verzögerung ohne erkannten Engpass*, im Satz, im Typ und in
+  der Zählung des Kopfsatzes. *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine Gegenstelle, nicht der Worker.
   *Vorfall aus Ereignissen* – ein Absturz, Hänger, Dienstausfall, Druck-, Profil- oder Systemfehler aus den
   Ereignisprotokollen (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
 - **Vorfallsliste:** je Vorfall Schwere, Typ und ein Absatz im Klartext. Ein Klick auf den Text klappt die
@@ -504,8 +572,8 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Datensätze und Meldungstexte, die der Rückblick nicht lesen konnte, und mit `-ReportedTime` vor Beginn der Messung
   die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es solche gibt. Der erste und der letzte Tag der Balken sind
   als „Teil des Tages" gekennzeichnet: Der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm. Der Block
-  sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-EventLookbackDays 0`), steht nur
-  das da; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht gelesen werden, weil die
+  sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-Skip Rueckblick` oder `-EventLookbackDays 0`), steht
+  nur das da, mit „nicht gemessen" und dem Grund; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht gelesen werden, weil die
   Ereignisquellen nicht verfügbar waren (so heute unter Windows), ebenso, jeweils ohne Zahlen. Waren nur einige
   Protokolle verfügbar, nennt er die gelesenen und die nicht gelesenen, und Zahlen, Balken und Vorfälle gelten nur
   für die gelesenen. Wurden alle Protokolle gelesen und enthalten sie keine Ereignisse, sagt der Block, dass in
@@ -517,7 +585,8 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Auftrags- und „nicht bereit"-Fehler während der Messung; die Prozesse der Rolle „Drucken" mit CPU-Höchstwert und
   Arbeitsspeicher am Anfang, am Ende und höchstens, ohne Bewertung. Wurde ein Druckprozess neu gestartet, steht er
   in einer Zeile: Anfang des ersten, Ende des letzten Prozesses. Der Block erscheint nur mit Treibern oder
-  Warteschlangen.
+  Warteschlangen, oder wenn `Drucken` weggelassen wurde; dann sagt er bei Treibern und Warteschlangen „nicht
+  gemessen".
 - **Soll-Ist-Tabelle:** je Messwert Soll, Bewertung, Ø, P95, Maximum, die Zeitanteile normal / auffällig /
   kritisch als Balken und in Zahlen, die am stärksten betroffene Instanz und die Herkunft des Sollwerts mit
   Link auf die Quelle. Nicht gemessene Werte stehen mit `○ nicht gemessen` und dem Grund darin. Bei Messwerten
@@ -533,6 +602,22 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 - **Nicht gemessen:** Fehlt die Eingabeverzögerung, sagt ein Vorfall „Eingabeverzögerung nicht gemessen; betroffene
   Sitzungen sind nicht bestimmbar." Fehlt der Messwert einer Worker-Ressource, schließt eine „Verzögerung ohne
   Engpass" einen Engpass dort nicht aus und nennt die fehlenden Messwerte.
+- **Weggelassene Kategorien (`-Skip`):** Der Kopf nennt sie unter dem Untertitel („○ Nicht gemessen (-Skip):
+  Prozesse, Rückblick"). An jeder Stelle, die von einer weggelassenen Kategorie abhängt, steht
+  „○ nicht gemessen – <Grund> (-Skip <Kategorie>)" statt einer leeren Tabelle, eines leeren Diagramms oder „keine":
+  ohne `Prozesse` die Reiter Anwendungen und Prozesse, die gestapelten Diagramme, die Hauptanwendung, die
+  Ressourcen der Sitzungen (in der Tabelle „–"), Verursacher, Schutzprodukte und die Prozesse mit der höchsten
+  Eingabeverzögerung eines Vorfalls, die Prozesse der Rolle Drucken und im Fuß die Prozesszahlen und der Anteil von
+  WorkerPerf; ohne `Laufwerke`, `Citrix` und `Gegenstellen` die Diagramme, die Sitzungsansicht und die Belege der
+  Vorfälle; ohne `Ereignisse` eine Zeile der Zeitleiste, die Sitzungsereignisse, „Ereignisse im Fenster" und die
+  Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` und `Drucken` die Blöcke „Vor der Messung" und
+  „Drucken". Nichts davon zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer
+  weggelassenen Kategorie als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten
+  weder als erfüllt noch als verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein
+  Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst." Ein Muster eines Vorfalls aus
+  Ereignissen, das eine weggelassene Kategorie bräuchte, steht als „nicht geprüft: …" (etwa „Bezug zu einem
+  Druckertreiber (Drucken nicht gemessen)") und nie als „Kein Muster erkannt"; ohne `Prozesse` sagt ein Absturz
+  nichts über seine Sitzung, auch nicht „Sitzung nicht ermittelt".
 - **Messqualität:** verspätete oder ausgelassene Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des
   Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständig gelesener
   Rückblick, je Ereignisprotokoll nicht aufgezeichnete Ereignisse, übersprungene Datensätze und nicht lesbare
@@ -639,7 +724,7 @@ Je Lauf ein Ordner mit (Format 3):
 
 | Datei | Zeilen | Inhalt |
 |---|---|---|
-| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig |
+| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig; dazu die mit `-Skip` weggelassenen Kategorien (`Skip`, eine Liste von Kategorienamen, ohne `-Skip` leer; fehlt das Feld, gilt die Aufzeichnung als vollständig gemessen) |
 | `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
 | `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
 | `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
@@ -658,6 +743,10 @@ Je Lauf ein Ordner mit (Format 3):
 | `printdrivers.csv` | je Druckertreiber, einmal beim Start | `Name`, `Manufacturer`, `Version`, `Type` (3 oder 4), `Isolation` (`none`, `shared`, `isolated`), `Files` (nur Dateinamen, mit `;` getrennt) |
 | `printqueues.csv` | je Warteschlange beim ersten Auftreten und bei jedem regulären Schnappschuss, an dem sich ein Wert geändert hat | `Timestamp`, `Queue`, wartende Aufträge (`Jobs`), Zählerstände der Auftragsfehler (`JobErrors`) und der „nicht bereit"-Fehler (`NotReadyErrors`); eine Zeile gilt bis zur nächsten derselben Warteschlange. Höchstwert und Zuwachs der Fehler sind dieselben wie aus einer Zeile je Schnappschuss; für einen Ausschnitt nimmt die Auswertung die letzte Zeile davor als Ausgangsstand |
 
+Die Dateien einer mit `-Skip` weggelassenen Kategorie werden nicht angelegt (etwa `processes.csv`, `procinfo.csv`,
+`procend.csv` und `inputdelay_proc.csv` ohne `Prozesse`); die Basis (`ticks.csv`, `inputdelay.csv`,
+`snapshots.csv`, `sessions.csv`, `meta.json`, `thresholds.json`) entsteht immer. Das Format bleibt 3.
+
 `T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
 Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden – in Excel über den Import (*Daten → Aus
 Text/CSV*), nicht per Doppelklick: Ein Wert, der mit `=`, `+`, `-` oder `@` beginnt (das kann auch ein Meldungstext
@@ -674,7 +763,7 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 
 | Bereich | Quelle | Stand |
 |---|---|---|
-| Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen, dazu Sitzungs- und Defender-/AppLocker-Ereignisse, ein Rückblick über sieben Tage mit drei Vorfällen, Treiberliste und Warteschlangen (`-Simulate`) | vorhanden, in den Tests geprüft |
+| Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen, dazu Sitzungs- und Defender-/AppLocker-Ereignisse, ein Rückblick über sieben Tage mit vier Vorfällen (einer davon ein Absturz ohne Sitzung), Treiberliste und Warteschlangen (`-Simulate`) | vorhanden, in den Tests geprüft |
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
 | Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
 | Ereignisprotokolle, Rückblick, Druckertreiber, Druckwarteschlangen | Windows-Datenquelle, Quellen in der Tabelle unten | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
@@ -760,7 +849,9 @@ teilen sich die Abfragen auf, und der Collector sieht den Mittelwert zweier Höc
 Der Collector spricht seine Datenquelle über eine feste Schnittstelle an: die Simulation (`-Simulate`) oder die
 Windows-Datenquelle. Was die Aufzeichnung als verfügbar oder nicht verfügbar meldet, steht in `meta.json`
 und im Bericht unter „Messqualität"; nicht verfügbare Signale erscheinen als „nicht gemessen" und werden
-nicht bewertet.
+nicht bewertet. Die Quellen einer mit `-Skip` weggelassenen Kategorie stehen dort als nicht verfügbar mit dem Vermerk
+`abgeschaltet (-Skip <Wert>)`, an derselben Stelle wie bisher bei `-NoCitrix`; die Ereignisprotokolle gelten nur als
+abgeschaltet, wenn `Ereignisse` und `Rueckblick` beide weggelassen sind (`abgeschaltet (-Skip Ereignisse,Rueckblick)`).
 
 ## Datenschutz
 

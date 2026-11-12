@@ -33,6 +33,18 @@ h3 { font-size: 13px; margin: 0; font-weight: 600; }
 /* masking level of the report, next to the subtitle; real text, so it is read aloud and printed */
 #maskInfo { margin-top: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
 #maskInfo .sym { font-style: normal; margin-right: 4px; }
+/* categories left out with -Skip: named in the head and at every place that depends on them */
+#skipInfo { margin-top: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+#skipInfo .sym { font-style: normal; margin-right: 4px; color: var(--muted); }
+.notmeasured { color: var(--text2); font-size: 13px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 6px; overflow-wrap: anywhere; }
+.notmeasured .status { margin: 0 2px 0 0; }
+.notmeasured.inline { display: inline; padding: 0; border: 0; font-size: inherit; }
+.notmeasured.inline .status { font-size: inherit; }
+.toolbar[hidden], .seg[hidden] { display: none; }
+#tab-sessions > .notmeasured, #tab-apps > .notmeasured, #tab-procs > .notmeasured { margin-bottom: 10px; }
+.incident .patterns li.unchecked { color: var(--text2); }
+.incident .patterns li.unchecked .sym { font-style: normal; color: var(--muted); }
+.tl-row .notmeasured { margin: 3px 0; padding: 3px 8px; font-size: 12px; }
 .note { color: var(--muted); font-size: 12px; }
 .topbar { position: sticky; top: 0; z-index: 20; background: var(--page); }
 nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -391,6 +403,15 @@ const TH = new Map(D.thresholds.map((t) => [t.id, t]));
 // Status: 0 normal, 1 auffaellig, 2 kritisch, na nicht gemessen. Always symbol plus word.
 const STATUS = { "0": ["●", "normal", "good"], "1": ["▲", "auffällig", "warn"], "2": ["◆", "kritisch", "crit"], "na": ["○", "nicht gemessen", "na"] };
 const statusHtml = (st, extra) => `<span class="status st-${STATUS[st][2]}"><i class="sym" aria-hidden="true">${STATUS[st][0]}</i> ${STATUS[st][1]}${extra ? ` <span class="pct">${extra}</span>` : ""}</span>`;
+// Categories left out with -Skip (skipped[] { id, label, text, places }): the hint for a place of the page that depends on one,
+// as HTML, or "" where the place was measured. Where the hint stands, the empty table, chart or "keine" is left out.
+const SKIPPED = D.skipped || [];
+const SKIP_AT = new Map(SKIPPED.flatMap((s) => s.places.map((p) => [p, s])));
+function notMeasured(place, inline) {
+  const s = SKIP_AT.get(place); if (!s) return "";
+  const tag = inline ? "span" : "div";
+  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)} (-Skip ${esc(s.id)})</${tag}>`;
+}
 const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
 // Small inline marker for table cells whose value reached a target band.
 const sigMark = (v, th) => { const l = levelOf(v, th); return l ? `<i class="sig st-${STATUS[l][2]}" title="${STATUS[l][1]}">${STATUS[l][0]}</i>` : ""; };
@@ -833,8 +854,19 @@ if (M.mask != null && M.mask !== "") {
   info.append(sym, document.createTextNode("Maskiert: " + (Object.prototype.hasOwnProperty.call(MASK_INFO, M.mask) ? MASK_INFO[M.mask] : String(M.mask))));
   document.getElementById("subtitle").after(info);
 }
-document.getElementById("footer").textContent = `${fmt(M.ticks, 0)} Takte, ${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. ` +
-  `Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts), ${fmt(Q.skippedTicks, 0)} verspätete Takte. ` +
+// categories left out with -Skip: between the subtitle and the masking level
+if (SKIPPED.length) {
+  const info = document.createElement("div"), sym = document.createElement("i");
+  info.id = "skipInfo"; info.className = "sub";
+  sym.className = "sym"; sym.setAttribute("aria-hidden", "true"); sym.textContent = "○";
+  info.append(sym, document.createTextNode("Nicht gemessen (-Skip): " + SKIPPED.map((s) => s.label).join(", ")));
+  document.getElementById("subtitle").after(info);
+}
+// without process data the counts of processes and the share of WorkerPerf itself are 0 only because nothing was measured
+document.getElementById("footer").innerHTML = `${fmt(M.ticks, 0)} Takte, ` +
+  (notMeasured("procs") ? `${fmt(M.snapshots, 0)} Schnappschüsse, Prozessdaten: ${notMeasured("procs", true)} Messaufwand: ` :
+    `${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts), `) +
+  `${fmt(Q.skippedTicks, 0)} verspätete Takte. ` +
   `Diagramme zeigen die volle Auflösung; mit mehr als ${fmt(MAX_POINTS, 0)} Punkten im Ausschnitt werden sie auf ${fmt(BUCKETS, 0)} Abschnitte verdichtet. Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated)}.`;
 
 // ---------- overview: tiles ----------
@@ -874,6 +906,12 @@ function mainAppTile(a) {
 
 // ---------- overview: charts ----------
 function drawStacks() {
+  // the stacked charts are built from the process snapshots
+  if (notMeasured("procs")) {
+    for (const id of ["chCpuStack", "chMemStack"]) document.getElementById(id).innerHTML = notMeasured("procs");
+    for (const id of ["segCpu", "segMem"]) document.getElementById(id).hidden = true;
+    return;
+  }
   const by = (id) => document.querySelector("#" + id + " button[aria-pressed=true]").dataset.by;
   const src = (b) => b === "sessions" ? [D.sessions, sessLabel] : [D.apps, (a) => a.name];
   let [items, label] = src(by("segCpu"));
@@ -898,14 +936,17 @@ chart("chInput", { series: [{ name: "Eingabeverzögerung", values: H_.inputMax }
 if (D.mainApp) {
   document.getElementById("hMainApp").textContent = `Eingabeverzögerung ${D.mainApp.label} (Hauptanwendung, ms)`;
   chart("chMainApp", { series: [{ name: D.mainApp.label, t: D.mainApp.t, v: D.mainApp.ms, missing: 0 }], unit: "ms", decimals: 0, signal: "input.session", agg: "max" });
-} else document.getElementById("cardMainApp").remove();
+} else if (notMeasured("apps")) document.getElementById("chMainApp").innerHTML = notMeasured("apps");
+else document.getElementById("cardMainApp").remove();
 {
   const vols = D.volumes.map((v) => ({ v, peak: maxOf(v.ms) })).filter((o) => o.peak != null).sort((a, b) => b.peak - a.peak).slice(0, 5);
-  chart("chVolumes", { series: vols.map((o, k) => ({ name: o.v.label || o.v.name, color: SERIES[k], t: o.v.t, v: o.v.ms })), unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", legend: true, empty: "Keine Laufwerke gemessen." });
-  chart("chShares", { series: D.shares.slice(0, 8).map((s, k) => ({ name: s.label || s.name, color: SERIES[k], t: s.t, v: s.ms })), unit: "ms", decimals: 1, signal: "smb.latency", agg: "max", legend: true, empty: "Keine Freigaben gemessen.",
-    note: D.shares.length > 8 ? `Die ersten 8 von ${D.shares.length} Freigaben.` : "" });
-  chart("chProbes", { axis: "snap", series: D.probes.slice(0, 8).map((p, k) => ({ name: p.name + (p.role ? " (" + p.role + ")" : ""), color: SERIES[k], values: p.ms, fail: p.failed, resp: true })), unit: "ms", decimals: 1, signal: "probe.connect", agg: "max", legend: true,
-    empty: "Keine Gegenstellen konfiguriert.", note: D.probes.length > 8 ? `Die ersten 8 von ${D.probes.length} Gegenstellen.` : "" });
+  // a chart of a category left out with -Skip shows the hint instead of "Keine … gemessen"
+  const skipChart = (id, place, draw) => { if (notMeasured(place)) document.getElementById(id).innerHTML = notMeasured(place); else draw(); };
+  skipChart("chVolumes", "volumes", () => chart("chVolumes", { series: vols.map((o, k) => ({ name: o.v.label || o.v.name, color: SERIES[k], t: o.v.t, v: o.v.ms })), unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", legend: true, empty: "Keine Laufwerke gemessen." }));
+  skipChart("chShares", "shares", () => chart("chShares", { series: D.shares.slice(0, 8).map((s, k) => ({ name: s.label || s.name, color: SERIES[k], t: s.t, v: s.ms })), unit: "ms", decimals: 1, signal: "smb.latency", agg: "max", legend: true, empty: "Keine Freigaben gemessen.",
+    note: D.shares.length > 8 ? `Die ersten 8 von ${D.shares.length} Freigaben.` : "" }));
+  skipChart("chProbes", "probes", () => chart("chProbes", { axis: "snap", series: D.probes.slice(0, 8).map((p, k) => ({ name: p.name + (p.role ? " (" + p.role + ")" : ""), color: SERIES[k], values: p.ms, fail: p.failed, resp: true })), unit: "ms", decimals: 1, signal: "probe.connect", agg: "max", legend: true,
+    empty: "Keine Gegenstellen konfiguriert.", note: D.probes.length > 8 ? `Die ersten 8 von ${D.probes.length} Gegenstellen.` : "" }));
 }
 chart("chDisk", { series: [{ name: "Lesen", values: scaleS(H_.diskR, KB2MB) }, { name: "Schreiben", color: "--s2", values: scaleS(H_.diskW, KB2MB) }], unit: "MB/s", decimals: 2 });
 chart("chIops", { series: [{ name: "Lesen", values: H_.iopsR }, { name: "Schreiben", color: "--s2", values: H_.iopsW }], decimals: 0 });
@@ -934,6 +975,12 @@ const sessCols = [
   cNum("inWarnPct", "Eingabe ab auffällig %", 1, "Anteil der Takte der Sitzung mit Eingabeverzögerung ab 'auffällig'")
 ];
 if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
+// the resources of a session are sums over its processes: without process data their 0 is no measured value
+const SESS_RES = ["cpuShare", "cpuSec", "cpuAvg", "cpuP95", "cpuMax", "wsAvg", "wsMax", "privMax", "ioMB", "procsAvg"];
+if (notMeasured("sessions.resources")) {
+  for (const c of sessCols) if (SESS_RES.includes(c.key)) Object.assign(c, { fmt: () => "–", bar: false, sortVal: () => null });
+  document.querySelector("#tab-sessions > .tablewrap").insertAdjacentHTML("beforebegin", notMeasured("sessions.resources"));
+}
 
 const pairCols = (first) => [first,
   cNum("inst", "Instanzen", 0),
@@ -977,33 +1024,38 @@ function showSession(i) {
   const ctx = D.citrix.filter((c) => c.s === i);
   const vol = s.profileVolume != null ? D.volumes[s.profileVolume] : null;
   const sev = (s.events || []).map((k) => D.events[k]).filter(Boolean);
+  const res = { procs: notMeasured("sessions.resources"), ev: notMeasured("sessions.events"), rtt: notMeasured("sessions.rtt"), profile: notMeasured("sessions.profile"), citrix: notMeasured("citrix") };
   host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
-    <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${fmt(s.cpuShare, 1)} %</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
-    ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e))}</span></li>`).join("")}</ul></div>` : ""}
+    <div class="kv"><span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${notMeasured("sessions.resources") ? "–" : fmt(s.cpuShare, 1) + " %"}</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
+    ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e))}</span></li>`).join("")}</ul></div>`
+      : res.ev ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3>${res.ev}</div>` : ""}
     <div class="grid2">
       ${chartBox("CPU (% des Hosts)", "chart-cpu")}
       ${chartBox("Working Set (MB)", "chart-ws")}
       ${chartBox("I/O (KB/s)", "chart-io")}
       ${chartBox("Eingabeverzögerung (ms)", "chart-input")}
       ${chartBox("ICA Round Trip (ms)", "chart-rtt")}
-      ${vol ? chartBox("Antwortzeit des Profilcontainers (ms)", "chart-profile") : ""}
+      ${vol || res.profile ? chartBox("Antwortzeit des Profilcontainers (ms)", "chart-profile") : ""}
     </div>
-    <h2>Anwendungen dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sa${u}"></table></div>
-    ${ctx.length ? `<h2 style="margin-top:16px">Citrix-Messwerte</h2><div class="tablewrap" style="max-height:240px"><table id="sx${u}"></table></div>` : ""}
-    <h2 style="margin-top:16px">Ressourcenintensivste Prozesse dieser Sitzung</h2><div class="tablewrap" style="max-height:340px"><table id="sp${u}"></table></div><div id="spd${u}" class="detail"></div>`;
+    <h2>Anwendungen dieser Sitzung</h2>${res.procs || `<div class="tablewrap" style="max-height:340px"><table id="sa${u}"></table></div>`}
+    ${ctx.length ? `<h2 style="margin-top:16px">Citrix-Messwerte</h2><div class="tablewrap" style="max-height:240px"><table id="sx${u}"></table></div>` : res.citrix ? `<h2 style="margin-top:16px">Citrix-Messwerte</h2>${res.citrix}` : ""}
+    <h2 style="margin-top:16px">Ressourcenintensivste Prozesse dieser Sitzung</h2>${res.procs || `<div class="tablewrap" style="max-height:340px"><table id="sp${u}"></table></div><div id="spd${u}" class="detail"></div>`}`;
   const q = (c) => host.querySelector("." + c);
-  chart(q("chart-cpu"), { axis: "snap", series: [{ name: "CPU", values: s.cpu }], unit: "%", decimals: 2, agg: "max" });
-  chart(q("chart-ws"), { axis: "snap", series: [{ name: "RAM", values: s.ws }], unit: "MB", decimals: 0 });
-  chart(q("chart-io"), { axis: "snap", series: [{ name: "I/O", values: s.io }], unit: "KB/s", decimals: 0 });
+  // a chart of a category left out with -Skip shows the hint
+  const sChart = (cls, hint, opt) => { if (hint) q(cls).innerHTML = hint; else chart(q(cls), opt); };
+  sChart("chart-cpu", res.procs, { axis: "snap", series: [{ name: "CPU", values: s.cpu }], unit: "%", decimals: 2, agg: "max" });
+  sChart("chart-ws", res.procs, { axis: "snap", series: [{ name: "RAM", values: s.ws }], unit: "MB", decimals: 0 });
+  sChart("chart-io", res.procs, { axis: "snap", series: [{ name: "I/O", values: s.io }], unit: "KB/s", decimals: 0 });
   chart(q("chart-input"), { series: [{ name: "Eingabeverzögerung", t: s.inT, v: s.inMs, missing: 0, from: s.first, to: s.last }], unit: "ms", decimals: 0, signal: "input.session", agg: "max",
     note: s.inT.length ? "" : "In dieser Sitzung wurde keine Eingabeverzögerung über 0 ms gemessen." });
-  chart(q("chart-rtt"), { axis: "snap", series: [{ name: "ICA RTT", values: s.rtt, resp: true }], unit: "ms", decimals: 0, signal: "ica.rtt", agg: "max",
+  sChart("chart-rtt", res.rtt, { axis: "snap", series: [{ name: "ICA RTT", values: s.rtt, resp: true }], unit: "ms", decimals: 0, signal: "ica.rtt", agg: "max",
     empty: "Keine ICA-Messwerte für diese Sitzung." });
-  if (vol) chart(q("chart-profile"), { series: [{ name: vol.label || vol.name, t: vol.t, v: vol.ms }], unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Messwerte des Profilcontainers." });
-  table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v)?.name), sortVal: (r) => appByIdx.get(r.a)?.name || "" }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
+  if (res.profile) q("chart-profile").innerHTML = res.profile;
+  else if (vol) chart(q("chart-profile"), { series: [{ name: vol.label || vol.name, t: vol.t, v: vol.ms }], unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Messwerte des Profilcontainers." });
+  if (!res.procs) table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v)?.name), sortVal: (r) => appByIdx.get(r.a)?.name || "" }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
   if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1, "Mittelwert über die Schnappschüsse mit einem Wert: Bandbreiten von 0 zeichnet der Collector nicht auf, ihr Mittel gilt nur für die Zeit mit Datenverkehr"), cNum("max", "Max", 1), cNum("n", "Messungen", 0, "Schnappschüsse mit einem Wert")], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
   const procs = D.procs.filter((p) => p.s === i);
-  table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
+  if (!res.procs) table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
   host.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession });
@@ -1038,11 +1090,19 @@ const appTable = table("tApps", [
   cNum("wsPerInst", "RAM Ø je Instanz", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0)
 ], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => [r.name, r.role, r.roleLabel].join(" "), filterInput: "fApps", roleSelect: "fRoleApps", onSelect: showApp });
+// a tab whose list comes from a category left out with -Skip: the hint instead of the filters and the empty table
+function skipTab(tab, place) {
+  const sec = document.getElementById("tab-" + tab); if (!notMeasured(place)) return;
+  for (const el of sec.querySelectorAll(":scope > .toolbar, :scope > .tablewrap")) el.hidden = true;
+  sec.insertAdjacentHTML("afterbegin", notMeasured(place));
+}
+skipTab("apps", "apps");
 
 // ---------- processes ----------
-document.getElementById("procNote").textContent = `Enthält die ${fmt(D.procs.length, 0)} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O, die Spitzenreiter jeder Sitzung und alle Prozesse aus den Ranglisten der Befunde).`;
+if (!notMeasured("procs")) document.getElementById("procNote").textContent = `Enthält die ${fmt(D.procs.length, 0)} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O, die Spitzenreiter jeder Sitzung und alle Prozesse aus den Ranglisten der Befunde).`;
 const procTable = table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: procText, filterInput: "fProcs", roleSelect: "fRoleProcs", rowClass: (r) => r.isCollector ? "collector" : "",
   onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+skipTab("procs", "procs");
 
 // ---------- tabs ----------
 const tabButtons = [...document.querySelectorAll("nav button[data-tab]")];
@@ -1097,7 +1157,11 @@ const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 const pct = (v) => v == null ? "–" : (Number.isInteger(v) ? fmt(v, 0) : fmt(v, 1)) + " %";
 const sevKey = (sev) => sev >= 2 ? "2" : "1";
 const sevHtml = (sev) => { const s = STATUS[sevKey(sev)]; return `<i class="sym" aria-hidden="true">${s[0]}</i> ${s[1]}`; };
-const typeText = (inc) => inc.type === "ereignis" ? TYPE_WORD.ereignis + " · " + (EVINC_LONG[inc.event.kind] || inc.event.kind) : (inc.chronic ? "Dauerzustand · " : "") + TYPE_WORD[inc.type];
+// an input delay that could not be checked for every bottleneck (unverified: without Laufwerke) is "ohne erkannten Engpass",
+// in the same words as its sentence
+const UNVERIFIED_WORD = "Verzögerung ohne erkannten Engpass";
+const typeText = (inc) => inc.type === "ereignis" ? TYPE_WORD.ereignis + " · " + (EVINC_LONG[inc.event.kind] || inc.event.kind)
+  : (inc.chronic ? "Dauerzustand · " : "") + (inc.type === "ohne-engpass" && inc.unverified ? UNVERIFIED_WORD : TYPE_WORD[inc.type]);
 // incidents of the capture and of the days before it (ids are unique across both)
 const incById = new Map(INC.concat(BEFORE_INC).map((i) => [i.id, i]));
 const sessName = (s) => sessLabel(sessByIdx.get(s));
@@ -1123,10 +1187,12 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
 {
   const KINDS = [
     [(i) => !i.chronic && i.type === "engpass", "Engpass", "Engpässe"],
-    [(i) => !i.chronic && i.type === "ohne-engpass", "Verzögerung ohne Engpass", "Verzögerungen ohne Engpass"],
+    [(i) => !i.chronic && i.type === "ohne-engpass" && !i.unverified, "Verzögerung ohne Engpass", "Verzögerungen ohne Engpass"],
+    [(i) => !i.chronic && i.type === "ohne-engpass" && i.unverified, "Verzögerung ohne erkannten Engpass", "Verzögerungen ohne erkannten Engpass"],
     [(i) => !i.chronic && i.type === "umfeld", "Auffälligkeit im Umfeld", "Auffälligkeiten im Umfeld"],
     [(i) => i.chronic && i.type === "engpass", "Dauerzustand mit Engpass", "Dauerzustände mit Engpass"],
-    [(i) => i.chronic && i.type === "ohne-engpass", "Dauerzustand ohne Engpass", "Dauerzustände ohne Engpass"],
+    [(i) => i.chronic && i.type === "ohne-engpass" && !i.unverified, "Dauerzustand ohne Engpass", "Dauerzustände ohne Engpass"],
+    [(i) => i.chronic && i.type === "ohne-engpass" && i.unverified, "Dauerzustand ohne erkannten Engpass", "Dauerzustände ohne erkannten Engpass"],
     [(i) => i.chronic && i.type === "umfeld", "Dauerzustand im Umfeld", "Dauerzustände im Umfeld"],
     [(i) => i.type === "ereignis", "Vorfall aus Ereignissen", "Vorfälle aus Ereignissen"]];
   const parts = KINDS.map(([f, one, many]) => [INC.filter(f).length, one, many]).filter((k) => k[0] > 0).map((k) => plural(k[0], k[1], k[2]));
@@ -1255,6 +1321,8 @@ function drawTimeline(force) {
       EVENTS_BY_ROW.get(g).map((e) => `<span class="event" data-group="${esc(e.group || "")}" data-kind="${esc(e.kind)}" style="left:${X(Math.max(FULL.t0, Math.min(FULL.t1, e.t))).toFixed(1)}px" ` +
         `title="${esc(evTime(e.t, e.offsetMin, true) + " · " + kindWord(e) + (e.user ? " · " + e.user : "") + " · " + e.source + " " + e.id + ": " + msgText(e.text))}"></span>`).join("") + "</div></div>";
   }
+  // events left out with -Skip: one row with the hint instead of the rows of events
+  if (notMeasured("events")) h += `<div class="tl-row" data-group="skipped"><div class="tl-label">Ereignisse</div><div class="tl-track">${notMeasured("events")}</div></div>`;
   // time axis: first and last label on the edges, round server-local times in between
   const ticks = timeTicks(FULL.t0, FULL.t1, pw, 34);
   let ax = `<span class="tl-tick first" style="left:0">${fmtTime(FULL.t0)}</span>`;
@@ -1349,6 +1417,8 @@ function mainHtml(inc) {
         (c.other ? `<div class="mainline">Größter Anteil außerhalb der Schutzsoftware: ${mainEntryHtml(c.other, measure)}</div>` : "");
     }
     if (c.kind === "nodata") return '<div class="mainline">Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.</div>';
+    // processes left out with -Skip: the sentence of the category, as in the incident's text
+    if (c.kind === "notmeasured") return `<div class="mainline">Kein Hauptverursacher ermittelt: ${esc((SKIPPED.find((s) => s.id === "Prozesse") || {}).text || "")}</div>`;
     return `<div class="mainline">Kein einzelner Hauptverursacher: kein Prozess erreicht ${pct(c.minSharePct)} ${measure}.</div>`;
   }
   if (inc.type === "ohne-engpass") {
@@ -1421,7 +1491,7 @@ const incLink = (id) => {
   const o = incById.get(id); if (!o) return "";
   const what = o.type === "ereignis" ? (EVINC_LONG[o.event.kind] || o.event.kind) + (o.event.key ? " – " + o.event.key : "")
     : o.type === "engpass" && SENT_RES[o.lead] ? SENT_RES[o.lead] + "-Engpass" + (o.chronic ? " als Dauerzustand" : "")
-    : o.type === "ohne-engpass" ? "Eingabeverzögerung ohne Engpass" + (o.chronic ? " als Dauerzustand" : "") : typeText(o);
+    : o.type === "ohne-engpass" ? (o.unverified ? "Eingabeverzögerung ohne erkannten Engpass" : "Eingabeverzögerung ohne Engpass") + (o.chronic ? " als Dauerzustand" : "") : typeText(o);
   return `<li><button type="button" class="lnk" data-incident="${id}">Vorfall ${id}: ${esc(what)}</button> <span class="num">${esc(incTime(o))}</span></li>`;
 };
 // opened incident from events: count, span, users, module; then the patterns, the events and the overlapping incidents
@@ -1429,9 +1499,11 @@ function renderEventDetail(inc, host) {
   const ev = inc.event, u = ++uid, list = inc.events.map((e, k) => Object.assign({ k }, e));
   const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(evIncRange(inc))}</b></span>`];
   if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
+  // the assignment to users and sessions not checked (without processes): no statement about the session, as in the sentence
+  const unchecked = ev.unchecked || [], noAssign = unchecked.some((x) => x.id === "users");
   if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${capList(ev.sessions.map(lnkS))}</span>`);
-  else if (ev.sessionUnknown) kv.push("<span><b>Sitzung nicht ermittelt</b></span>");
-  else if (ev.noUserSession) kv.push("<span><b>ohne Benutzersitzung</b></span>");
+  else if (ev.sessionUnknown && !noAssign) kv.push("<span><b>Sitzung nicht ermittelt</b></span>");
+  else if (ev.noUserSession && !noAssign) kv.push("<span><b>ohne Benutzersitzung</b></span>");
   if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + (ev.versions.length === 1 ? "Version " : "Versionen ") + capList(ev.versions.map(esc)) : ""}</span>`);
   if (ev.service) kv.push(`<span>Dienst <b>${esc(ev.service)}</b></span>`);
   if (ev.driver) kv.push(`<span>Treiber <b>${esc(ev.driver)}</b></span>`);
@@ -1439,7 +1511,9 @@ function renderEventDetail(inc, host) {
   if (ev.modules.length) kv.push(`<span>Fehlerhaftes Modul <b>${ev.modules.map((m) => esc(m.name) + " (" + fmt(m.count, 0) + " von " + fmt(ev.moduleEvents, 0) + ")").join(", ")}</b>${ev.sameModule ? ", immer dasselbe" : ""}</span>`);
   if (ev.codes.length) kv.push(`<span>Fehlercode <b>${ev.codes.map((c) => esc(c.code) + (c.text ? " (" + esc(c.text) + ")" : "") + ' <span style="white-space:nowrap">' + fmt(c.count, 0) + "-mal</span>").join(", ")}</b></span>`);
   kv.push(`<span>Quelle <b>${esc(ev.source || "–")}</b></span>`);
-  const patterns = ev.patterns.length ? ev.patterns.map((p) => `<li>${esc(p.text)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
+  // a pattern that would need a category left out with -Skip: "nicht geprüft", never "Kein Muster erkannt"
+  const patterns = ev.patterns.length || unchecked.length ? ev.patterns.map((p) => `<li>${esc(p.text)}</li>`).join("") +
+    unchecked.map((x) => `<li class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(x.text)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
   const shown = list.length - 1, withDate = ev.before;
   host.innerHTML = `<div class="kv">${kv.join("")}</div>
     <h4>Muster</h4><ul class="plain patterns">${patterns}</ul>
@@ -1464,22 +1538,32 @@ function renderDetail(inc, host) {
   const u = ++uid, win = incWindow(inc);
   const affected = inc.affected.map((a) => `<li>${lnkS(a.s)} <span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span></li>`).join("");
   const charts = signalCharts(inc);
-  const contrib = contribTables(inc, u);
+  const contrib = contribTables(inc, u), skipContrib = inc.type !== "umfeld" && notMeasured("incidents.contributors");
   const sigRows = inc.signals.map((sg, k) => Object.assign({ k }, sg));
   // umfeld incidents and chronic states show only evidence of their own findings: no events and no scan of the window,
   // and the share of the security products only where a worker resource is ranked
   const narrow = inc.type === "umfeld" || inc.chronic;
   const evid = [];
-  if (inc.delayProcs.length) evid.push(`<div><h4>Höchste Eingabeverzögerung je Prozess</h4><ul class="plain">${inc.delayProcs.map((d) =>
+  // sections of a category left out with -Skip carry its hint where a reader looks for them
+  const skipped = (place, head) => notMeasured(place) ? `<div><h4>${head}</h4>${notMeasured(place)}</div>` : "";
+  const skipDelay = inc.type !== "umfeld" && skipped("incidents.delayProcs", "Höchste Eingabeverzögerung je Prozess");
+  const skipEndpoints = skipped("incidents.endpoints", "Gegenstellen (Verbindungsaufbau, Spitze)");
+  const skipIca = inc.type !== "engpass" && skipped("incidents.ica", "ICA Round Trip (Spitze)");
+  const skipEvents = !narrow && skipped("incidents.events", "Ereignisse im Fenster");
+  if (skipDelay) evid.push(skipDelay);
+  else if (inc.delayProcs.length) evid.push(`<div><h4>Höchste Eingabeverzögerung je Prozess</h4><ul class="plain">${inc.delayProcs.map((d) =>
     `<li>${lnkK(d.k, d.name)} <span class="tag">${esc(d.pid)}</span>${d.role ? ` <span class="tag">${esc(d.role)}</span>` : ""} · ${lnkS(d.s)} <span class="num">${sigMark(d.maxMs, TH.get("input.session"))}${fmt(d.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
-  if (inc.endpoints.length) evid.push(`<div><h4>Gegenstellen (Verbindungsaufbau, Spitze)</h4><ul class="plain">${inc.endpoints.map((e) =>
+  if (skipEndpoints) evid.push(skipEndpoints);
+  else if (inc.endpoints.length) evid.push(`<div><h4>Gegenstellen (Verbindungsaufbau, Spitze)</h4><ul class="plain">${inc.endpoints.map((e) =>
     `<li>${esc(e.name)}${e.role && e.role !== e.name ? ` <span class="tag">${esc(e.role)}</span>` : ""} <span class="num">${e.maxMs == null ? "keine Antwort" : sigMark(e.maxMs, TH.get("probe.connect")) + fmt(e.maxMs, 1) + " ms"}${e.failed && e.maxMs != null ? " · mit Verbindungsfehlern" : ""}</span></li>`).join("")}</ul></div>`);
-  if (inc.ica.length) evid.push(`<div><h4>ICA Round Trip (Spitze)</h4><ul class="plain">${inc.ica.map((r) => `<li>${lnkS(r.s)} <span class="num">${sigMark(r.maxMs, TH.get("ica.rtt"))}${fmt(r.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
+  if (skipIca) evid.push(skipIca);
+  else if (inc.ica.length) evid.push(`<div><h4>ICA Round Trip (Spitze)</h4><ul class="plain">${inc.ica.map((r) => `<li>${lnkS(r.s)} <span class="num">${sigMark(r.maxMs, TH.get("ica.rtt"))}${fmt(r.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
   if (inc.type !== "umfeld") {
     const sec = inc.security || { products: [], totalPct: 0 };
     const leadMeasure = { memory: "memory", disk: "io", share: "io", profile: "io" }[inc.lead] || "cpu";
     const leadScope = ((inc.contributors || {})[inc.lead] || {}).scope;
-    let h = `<div><h4>Schutzprodukte – ${esc(MEASURE_WORD[measureKey(leadMeasure, leadScope)])}</h4><ul class="plain">${sec.products.map((p) => `<li>${esc(p.label || "ohne Bezeichnung")} <span class="num">${pct(p.sharePct)}</span></li>`).join("") || "<li class=\"note\">keine Prozesse mit der Rolle Sicherheit</li>"}` +
+    let h = skipContrib ? `<div><h4>Schutzprodukte – ${esc(MEASURE_WORD[measureKey(leadMeasure, leadScope)])}</h4>${skipContrib}` :
+      `<div><h4>Schutzprodukte – ${esc(MEASURE_WORD[measureKey(leadMeasure, leadScope)])}</h4><ul class="plain">${sec.products.map((p) => `<li>${esc(p.label || "ohne Bezeichnung")} <span class="num">${pct(p.sharePct)}</span></li>`).join("") || "<li class=\"note\">keine Prozesse mit der Rolle Sicherheit</li>"}` +
       (sec.products.length ? `<li><b>zusammen ${pct(sec.totalPct)}</b></li>` : "") + "</ul>";
     if (inc.companion) {
       const c = inc.companion;
@@ -1487,7 +1571,8 @@ function renderDetail(inc, host) {
     }
     evid.push(h + "</div>");
   }
-  if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
+  if (skipEvents) evid.push(skipEvents);
+  else if (!narrow) evid.push(`<div><h4>Ereignisse im Fenster</h4><ul class="plain">${inc.events.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span> ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}</li>`).join("") || '<li class="note">keine</li>'}</ul>${inc.scanActive ? '<div class="note">Während des Vorfalls lief ein Virenscan.</div>' : ""}</div>`);
   if ((inc.eventIncidents || []).length) evid.push(`<div><h4>Zeitgleiche Vorfälle aus Ereignissen</h4><ul class="plain">${inc.eventIncidents.map(incLink).join("")}</ul></div>`);
   if (inc.chronicContext.length) evid.push(`<div><h4>Dauerzustände im Hintergrund</h4><ul class="plain">${inc.chronicContext.map((c) => {
     const th = TH.get(c.signalId), st = STATUS[sevKey(c.severity)];
@@ -1506,7 +1591,7 @@ function renderDetail(inc, host) {
     <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>
       <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button></h4>
     <div class="sigcharts">${charts.map((c, k) => `<div class="card chartbox"><h3>${esc(c.title)}</h3><div class="sc${k}"></div></div>`).join("")}</div>
-    ${contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
+    ${skipContrib ? `<h4>Verursacher</h4><div class="contributors">${skipContrib}</div>` : contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
     <div class="evidence">${evid.join("")}</div>
     <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>`;
   charts.forEach((c, k) => chart(host.querySelector(".sc" + k), {
@@ -1515,7 +1600,7 @@ function renderDetail(inc, host) {
     empty: "Für diesen Messwert ist kein Verlauf gespeichert.",
     note: c.total > 8 ? `Die ersten 8 von ${c.total} Messreihen.` : c.missing ? "Nicht für alle Messreihen ist ein Verlauf gespeichert." : ""
   }));
-  contrib.forEach((c) => c.build());
+  if (!skipContrib) contrib.forEach((c) => c.build());
   table("isg" + u, [
     { key: "id", head: "Messwert", fmt: (v) => esc(TH.get(v)?.label || v) },
     { key: "label", head: "Instanz", fmt: (v, r) => r.instance || r.s >= 0 ? esc(v) : "–" },
@@ -1609,14 +1694,14 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
     `Nicht gelesen: ${esc(logs.filter((l) => !l.available).map((l) => l.label).join(", ") || "–")}.</p>`;
   const summary = (BEFORE_STATUS === "read" || partial) && (BEFORE.eventCount > 0 || BEFORE.capped.length);
   if (!summary) {
-    const state = BEFORE_STATUS === "off" ? "Der Rückblick war abgeschaltet (-EventLookbackDays 0)."
+    const state = BEFORE_STATUS === "off" ? "Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0)."
       : BEFORE_STATUS === "missingFile" ? "Für die Tage vor der Messung liegt keine Ereignisdatei vor (events_before.csv fehlt)."
       : BEFORE_STATUS === "unavailable" ? "Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar."
       : partial ? (BEFORE.days === 1 ? "In den gelesenen Protokollen stehen für den Tag vor der Messung keine Ereignisse der erfassten Arten."
         : `In den gelesenen Protokollen stehen für die ${BEFORE.days} Tage vor der Messung keine Ereignisse der erfassten Arten.`)
       : BEFORE_STATUS === "read" ? (BEFORE.days === 1 ? "Am Tag vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen."
         : `In den ${BEFORE.days} Tagen vor der Messung stehen keine Ereignisse der erfassten Arten in den Protokollen.`) : "";
-    el.innerHTML = head + logLine + (state ? `<p class="bstate">${state}</p>` : "") + near;
+    el.innerHTML = head + notMeasured("before") + logLine + (state ? `<p class="bstate">${state}</p>` : "") + near;
   } else el.innerHTML = `${head}
     ${logLine}
     ${BEFORE.capped.length ? `<p class="capped" id="beforeCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen: ${BEFORE.capped.length === 1 ? "Protokoll" : "Protokolle"} ${cappedText}. Ältere Ereignisse ${BEFORE.capped.length === 1 ? "dieses Protokolls" : "dieser Protokolle"} fehlen; die Tage davor sind darum keine ruhigen Tage.</p>` : ""}
@@ -1636,7 +1721,8 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
 // The facts for the print guidance: drivers, queues, and the processes of the role "Drucken". A restarted process appears as
 // several rows of the same name; they are joined into one line (start of the earliest, end of the latest, the maximum).
 const PRINT = D.print || { drivers: [], queues: [], processes: [] };
-if (PRINT.drivers.length || PRINT.queues.length) {
+// the card also appears when it holds only the hints of categories left out with -Skip
+if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queues"].some((p) => notMeasured(p))) {
   const el = document.getElementById("print"), procByK = new Map(D.procs.map((p) => [p.k, p]));
   const firstOf = (r) => (procByK.get(r.k) || {}).first ?? 0;
   const byName = new Map();
@@ -1648,9 +1734,9 @@ if (PRINT.drivers.length || PRINT.queues.length) {
       wsMaxMB: vals("wsMaxMB").length ? Math.max(...vals("wsMaxMB")) : null };
   });
   el.innerHTML = `<div class="cardhead"><h3>Drucken</h3></div>
-    <h4>Druckertreiber (${PRINT.drivers.length})</h4>${PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' : '<div class="note">Keine Treiberliste aufgezeichnet.</div>'}
-    <h4>Druckwarteschlangen (${PRINT.queues.length})</h4>${PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>'}
-    <h4>Prozesse der Rolle Drucken</h4>${procRows.length ? `<div class="tablewrap small"><table id="tPrintProcs"></table></div><div class="note" style="margin-top:4px">Arbeitsspeicher (Working Set) über die Messung, ohne Bewertung. Wurde ein Prozess neu gestartet, gilt der Anfang für den ersten und das Ende für den letzten Prozess.</div>` : '<div class="note">Keine Prozesse der Rolle Drucken in der Messung.</div>'}`;
+    <h4>Druckertreiber${notMeasured("print.drivers") ? "" : ` (${PRINT.drivers.length})`}</h4>${notMeasured("print.drivers") || (PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' : '<div class="note">Keine Treiberliste aufgezeichnet.</div>')}
+    <h4>Druckwarteschlangen${notMeasured("print.queues") ? "" : ` (${PRINT.queues.length})`}</h4>${notMeasured("print.queues") || (PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>')}
+    <h4>Prozesse der Rolle Drucken</h4>${notMeasured("print.processes") ? notMeasured("print.processes") : procRows.length ? `<div class="tablewrap small"><table id="tPrintProcs"></table></div><div class="note" style="margin-top:4px">Arbeitsspeicher (Working Set) über die Messung, ohne Bewertung. Wurde ein Prozess neu gestartet, gilt der Anfang für den ersten und das Ende für den letzten Prozess.</div>` : '<div class="note">Keine Prozesse der Rolle Drucken in der Messung.</div>'}`;
   if (PRINT.drivers.length) table("tPrintDrivers", [
     { key: "name", head: "Name" },
     { key: "manufacturer", head: "Hersteller", fmt: (v) => esc(v || "–") },
@@ -1727,11 +1813,12 @@ if (PRINT.drivers.length || PRINT.queues.length) {
       <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
       <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
       <span>Verdichtung <b>${burstText}</b></span>
-      <span>WorkerPerf selbst <b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)</span>` +
+      <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)`}</span>` +
       (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
     (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
     (reads ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</h4><ul class="errlist" id="eventReads">${reads}</ul>` +
-      '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>' : "") +
+      '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>'
+      : notMeasured("events") ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</h4><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
     (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
       `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
     `<div class="tablewrap small"><table id="tSources"></table></div>`;
