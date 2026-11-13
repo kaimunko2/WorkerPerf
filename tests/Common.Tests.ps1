@@ -178,3 +178,66 @@ Describe 'Messkategorien' {
         $s['ica.rtt'].Detail | Should -Be 'abgeschaltet (-NoCitrix)'   # Citrix nicht weggelassen: der Eintrag der Quelle bleibt
     }
 }
+Describe 'Zustandsbild: Format und Werteliste' {
+    It 'fuehrt elf Bereiche in fester Reihenfolge und jeden Wert bei genau einem Bereich' {
+        $WorkerPerfHealthFormatVersion | Should -Be 1
+        $WorkerPerfHealthAreas | Should -Be @('size', 'operation', 'sessions', 'vda', 'profile', 'print', 'security', 'network', 'events', 'maintenance', 'apps')
+        $count = @{}
+        foreach ($id in $WorkerPerfHealthValues.Keys) {
+            $v = $WorkerPerfHealthValues[$id]; $id | Should -BeLike ($v.Area + '.*'); $count[$v.Area] = 1 + [int]$count[$v.Area]
+            $v.Type | Should -Match '^(number|bool|time|list|text(:(host|hosts|share|path|user|client|domain|address|protected|free))?)$' -Because $id
+            if ($v.Type -eq 'list') {
+                @($v.Fields.Keys).Count | Should -BeGreaterThan 0 -Because $id
+                foreach ($t in $v.Fields.Values) { $t | Should -Match '^(number|bool|time|value|text(:(host|hosts|share|path|user|client|domain|address|protected|free))?)$' -Because $id }
+            }
+        }
+        $want = @{ size = 16; operation = 8; sessions = 3; vda = 16; profile = 5; print = 8; security = 19; network = 12; events = 1; maintenance = 14; apps = 1 }
+        foreach ($a in $WorkerPerfHealthAreas) { $count[$a] | Should -Be $want[$a] -Because $a }
+        @($WorkerPerfHealthValues.Keys).Count | Should -Be 103
+        $WorkerPerfHealthValues['vda.controllers'].Fields['Entry'] | Should -Be 'text:host'; $WorkerPerfHealthValues['maintenance.tasks'].Fields['Path'] | Should -Be 'text:free'
+        $WorkerPerfHealthValues['vda.wemServer'].Type | Should -Be 'text:host'; $WorkerPerfHealthValues['vda.wemCacheLocation'].Type | Should -Be 'text:path'
+        @($WorkerPerfHealthValues['operation.volumes'].Fields.Keys) | Should -Be @('Drive', 'SizeGB', 'FreeGB', 'FileSystem', 'System', 'PageFile')
+        @($WorkerPerfHealthValues['apps.probes'].Fields.Keys) | Should -Be @('App', 'Id', 'Kind', 'Read', 'State', 'Reason', 'Value', 'Names')
+        $WorkerPerfHealthValues['apps.probes'].Fields['Value'] | Should -Be 'value'; $WorkerPerfHealthValues['apps.probes'].Fields['Names'] | Should -Be 'text:free'
+        $WorkerPerfHealthValues['operation.lastBoot'].Type | Should -Be 'time'; $WorkerPerfHealthValues['print.mappingClientVersion'].Type | Should -Be 'text'; $WorkerPerfHealthValues['size.memTotalMB'].Unit | Should -Be 'MB'
+        @($WorkerPerfHealthValues.Keys | Where-Object { -not $WorkerPerfHealthValues[$_].Documented }) | Should -Be @('size.vmtoolsPresent', 'size.vmtoolsService',
+            'operation.pendingServicing', 'operation.pendingUpdate', 'vda.policyRaw', 'profile.policyGpo', 'profile.policyStudio', 'security.applockerCollections')
+    }
+    It 'ergaenzt einen Bereich um die nicht gelesenen Werte und stuft ihn ein' {   # Review Focus 1
+        $a = Complete-WorkerPerfHealthArea 'events' @{ 'events.logs' = (New-WorkerPerfHealthValue 'read' '' @()) } 12.5
+        $a.Status | Should -Be 'read'; $a.DurationMs | Should -Be 12.5; $a.Error | Should -Be ''
+        $p = Complete-WorkerPerfHealthArea 'print' @{ 'print.queueCount' = (New-WorkerPerfHealthValue 'read' '' 2); 'print.spooler' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } 10 '' $true
+        $p.Status | Should -Be 'partial'
+        @($p.Values.Keys) | Should -Be @('print.isolationExecution', 'print.isolationOverride', 'print.queueCount', 'print.spooler', 'print.spoolerStartMode', 'print.citrixPrintService', 'print.operationalLog', 'print.mappingClientVersion')
+        $p.Values['print.operationalLog'].State | Should -Be 'unreadable'; $p.Values['print.operationalLog'].Reason | Should -Be 'timeout'
+        $f = Complete-WorkerPerfHealthArea 'vda' @{} 3 'Zugriff verweigert'
+        $f.Status | Should -Be 'failed'; $f.Error | Should -Be 'Zugriff verweigert'; $f.Values['vda.version'].Reason | Should -Be 'error'
+        { Complete-WorkerPerfHealthArea 'vda' @{ 'print.spooler' = (New-WorkerPerfHealthValue 'read' '' 'Running') } 1 } | Should -Throw '*print.spooler*'
+        { New-WorkerPerfHealthValue 'gelesen' } | Should -Throw; { New-WorkerPerfHealthValue 'unreadable' 'kaputt' } | Should -Throw
+    }
+    It 'laesst eine Liste eine Liste sein, auch mit einem oder keinem Eintrag' {
+        $one = Complete-WorkerPerfHealthArea 'size' @{ 'size.pagefiles' = (New-WorkerPerfHealthValue 'read' '' ([ordered]@{ Path = 'C:\pagefile.sys'; AllocatedMB = 1 }))
+            'size.netAdapters' = (New-WorkerPerfHealthValue 'read' '' @()) } 1
+        ($one.Values['size.pagefiles'].Value -is [array]) | Should -BeTrue; @($one.Values['size.pagefiles'].Value).Count | Should -Be 1
+        ($one.Values['size.netAdapters'].Value -is [array]) | Should -BeTrue; @($one.Values['size.netAdapters'].Value).Count | Should -Be 0
+        ($one | ConvertTo-Json -Depth 10 -Compress) | Should -Match '"size\.pagefiles":\{"State":"read","Reason":"","Value":\[\{"Path"'
+    }
+    It 'schreibt den Kopf des Zustandsbilds und fuellt fehlende Bereiche' {
+        $at = [datetime]::SpecifyKind([datetime]'2026-01-15T08:00:00', [DateTimeKind]::Local)
+        $h = New-WorkerPerfHealth $at 4210 @{ events = (Complete-WorkerPerfHealthArea 'events' @{ 'events.logs' = (New-WorkerPerfHealthValue 'read' '' @()) } 5) }
+        $h.FormatVersion | Should -Be 1; $h.DurationMs | Should -Be 4210; $h.ReadAt | Should -Match '^2026-01-15T08:00:00\.0000000[+-]\d\d:\d\d$'
+        @($h.Areas.Keys) | Should -Be $WorkerPerfHealthAreas; $h.Areas['size'].Status | Should -Be 'failed'; $h.Areas['size'].Error | Should -Be 'notRead'; $h.Areas['events'].Status | Should -Be 'read'
+        $h.Areas['apps'].Values['apps.probes'].State | Should -Be 'unreadable'
+        $WorkerPerfHealthAreaErrors | Should -Be @('budget', 'noReader', 'notRead', 'notInFile')
+        @($WorkerPerfHealthWemServices).Count | Should -Be 3; $WorkerPerfHealthWemServices[0] | Should -Be @('Citrix WEM Agent Host Service', 'Norskale Agent Host Service'); $WorkerPerfHealthWemServices[2] | Should -Be @('System Event Notification Service')
+        ConvertTo-WorkerPerfHealthTime ([datetime]::new(1970, 1, 2, 0, 0, 0, [DateTimeKind]::Utc)) | Should -Be 86400000; ConvertTo-WorkerPerfHealthTime ([datetime]::MinValue) | Should -Be 0
+    }
+    It 'speichert keine Zahl, die nicht endlich ist' {
+        # Windows PowerShell 5.1 schriebe NaN und Infinity ohne Anfuehrungszeichen: die ganze Datei waere kein gueltiges JSON
+        (New-WorkerPerfHealthValue 'read' '' ([double]::NaN)).State | Should -Be 'unreadable'; (New-WorkerPerfHealthValue 'read' '' ([double]::NaN)).Reason | Should -Be 'error'
+        (New-WorkerPerfHealthValue 'read' '' ([double]::PositiveInfinity)).Value | Should -BeNullOrEmpty; (New-WorkerPerfHealthValue 'read' '' 96.5).Value | Should -Be 96.5
+        $a = Complete-WorkerPerfHealthArea 'profile' @{ 'profile.containers' = (New-WorkerPerfHealthValue 'read' '' @([ordered]@{ Location = '\\fs01\profile$\a.vhdx'; UsedPct = [double]::NaN })) } 1
+        $a.Values['profile.containers'].State | Should -Be 'read'; $a.Values['profile.containers'].Value[0].UsedPct | Should -BeNullOrEmpty
+        ($a | ConvertTo-Json -Depth 10) | Should -Not -Match 'NaN|Infinity'
+    }
+}

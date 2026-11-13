@@ -47,6 +47,101 @@ $script:WorkerPerfCategories = [ordered]@{
 # The note in Sources of a source that -Skip left out
 $script:WorkerPerfSkipDetailPattern = '^abgeschaltet \(-Skip [A-Za-z]+(,[A-Za-z]+)*\)$'
 
+# Health picture (health.json): read values with their state, no rating, no threshold, no German text.
+$script:WorkerPerfHealthFormatVersion = 1
+$script:WorkerPerfHealthAreas = @('size', 'operation', 'sessions', 'vda', 'profile', 'print', 'security', 'network', 'events', 'maintenance', 'apps')
+# Keywords that Error of an area can carry besides the message of an exception: overall time limit reached, no reader,
+# not read, not in the file.
+$script:WorkerPerfHealthAreaErrors = @('budget', 'noReader', 'notRead', 'notInFile')
+# The services the WEM agent needs, each as the list of its documented display names; the first group is the agent service.
+$script:WorkerPerfHealthWemServices = @(@('Citrix WEM Agent Host Service', 'Norskale Agent Host Service'),
+    @('Citrix WEM User Logon Service', 'Citrix WEM Agent User Logon Service'), @('System Event Notification Service'))
+
+# The fixed list of read values, in the order of the plan's tables: id -> Area, Type, Unit, Fields (only for a list:
+# field name -> type) and Documented ($false: the read source is not documented; the value is a raw value only).
+# Each row: id, type, unit, fields ('Name=type, ...'), 'undocumented' where the source is not documented.
+$script:WorkerPerfHealthValues = & {
+    $services = 'Name=text:protected, State=text, StartMode=text'
+    $policy = 'Key=text, Name=text, Value=text:free'
+    $rows = @(
+        @('size.cpuLogical', 'number'), @('size.cpuSockets', 'number'), @('size.memTotalMB', 'number', 'MB'),
+        @('size.commitTotalMB', 'number', 'MB'), @('size.commitLimitMB', 'number', 'MB'), @('size.commitPeakMB', 'number', 'MB'),
+        @('size.pagefiles', 'list', '', 'Path=text:path, AllocatedMB=number, PeakUsageMB=number, Temporary=bool'),
+        @('size.pagefileManaged', 'bool'), @('size.hypervisor', 'bool'), @('size.model', 'text'),
+        @('size.vmtoolsPresent', 'bool', '', '', 'undocumented'), @('size.vmtoolsService', 'text', '', '', 'undocumented'),
+        @('size.vmtoolsVersion', 'text'),
+        @('size.netAdapters', 'list', '', 'Name=text, Service=text, SpeedMbit=number, Enabled=bool'),
+        @('size.storageControllers', 'list', '', 'Name=text, Driver=text'), @('size.balloonDriver', 'text'),
+
+        @('operation.lastBoot', 'time'), @('operation.pendingRename', 'number'),
+        @('operation.pendingServicing', 'bool', '', '', 'undocumented'), @('operation.pendingUpdate', 'bool', '', '', 'undocumented'),
+        @('operation.lastUpdate', 'time'), @('operation.lastUpdateId', 'text'), @('operation.powerPlan', 'text'),
+        @('operation.volumes', 'list', '', 'Drive=text, SizeGB=number, FreeGB=number, FileSystem=text, System=bool, PageFile=bool'),
+
+        @('sessions.list', 'list', '', ('Id=number, State=text, WinStation=text:path, User=text:user, Domain=text:domain, Client=text:client, ' +
+            'LogonTime=time, ConnectTime=time, DisconnectTime=time, IdleMinutes=number')),
+        @('sessions.limits', 'list', '', 'Terminal=text, IdleLimitMin=number, DisconnectedLimitMin=number, ActiveLimitMin=number, BrokenAction=number, FromPolicy=bool'),
+        @('sessions.localProfiles', 'list', '', 'Path=text:path, Loaded=bool, Special=bool, LastUse=time, Temporary=bool'),
+
+        @('vda.version', 'text'), @('vda.services', 'list', '', $services), @('vda.desktopService', 'text'),
+        @('vda.controllers', 'list', '', 'Entry=text:host, Kind=text, From=text'), @('vda.listOfSids', 'bool'), @('vda.farmGuid', 'bool'),
+        @('vda.policyRaw', 'list', '', $policy, 'undocumented'), @('vda.persistentDataLocation', 'text:path'), @('vda.wemService', 'text'),
+        @('vda.wemServices', 'list', '', $services), @('vda.wemVersion', 'text'), @('vda.wemServer', 'text:host'),
+        @('vda.wemCacheLocation', 'text:path'), @('vda.wemGpNetworkTimeout', 'number', 's'), @('vda.teamsService', 'text'),
+        @('vda.webSocketService', 'text'),
+
+        @('profile.service', 'text'), @('profile.version', 'text'), @('profile.policyGpo', 'list', '', $policy, 'undocumented'),
+        @('profile.policyStudio', 'list', '', $policy, 'undocumented'),
+        @('profile.containers', 'list', '', ('Location=text:path, Mount=text:path, Owner=text:user, SessionId=number, SizeGB=number, ' +
+            'AllocatedGB=number, VolumeSizeGB=number, VolumeFreeGB=number, UsedPct=number')),
+
+        @('print.isolationExecution', 'number'), @('print.isolationOverride', 'number'), @('print.queueCount', 'number'),
+        @('print.spooler', 'text'), @('print.spoolerStartMode', 'text'), @('print.citrixPrintService', 'text'),
+        @('print.operationalLog', 'bool'), @('print.mappingClientVersion', 'text'),
+
+        @('security.services', 'list', '', $services), @('security.defenderService', 'text'), @('security.defenderMode', 'text'),
+        @('security.defenderRealTime', 'bool'), @('security.defenderTamper', 'bool'), @('security.defenderSignatureAgeDays', 'number', 'Tage'),
+        @('security.defenderSignaturesOutOfDate', 'bool'), @('security.defenderVersion', 'text'),
+        @('security.defenderExclusionPaths', 'list', '', 'Path=text:free'), @('security.defenderExclusionProcesses', 'list', '', 'Path=text:free'),
+        @('security.defenderExclusionExtensions', 'list', '', 'Extension=text'), @('security.defenderSharedSignatures', 'text:path'),
+        @('security.defenderNetworkProtection', 'number'), @('security.defenderForcePassive', 'number'), @('security.mdeOnboarding', 'number'),
+        @('security.mdeService', 'text'), @('security.filters', 'list', '', 'Name=text:protected, Altitude=text, Instances=number, Legacy=bool'),
+        @('security.applockerService', 'text'),
+        @('security.applockerCollections', 'list', '', 'Collection=text, Enforcement=number, Rules=number', 'undocumented'),
+
+        @('network.domainMember', 'bool'), @('network.smbRequireSigning', 'bool'), @('network.smbDirectoryCache', 'number'),
+        @('network.smbFileInfoCache', 'number'), @('network.smbFileNotFoundCache', 'number'), @('network.smb1', 'text'),
+        @('network.smbConnections', 'list', '', 'Share=text:share, Dialect=text, Signed=bool, Encrypted=bool, Connections=number'),
+        @('network.dnsServers', 'list', '', 'Interface=number, Address=text:address'), @('network.rss', 'list', '', 'Description=text, Enabled=bool'),
+        @('network.timeType', 'text'), @('network.timeServers', 'text:hosts'), @('network.timeService', 'text'),
+
+        @('events.logs', 'list', '', ('Log=text, Present=bool, Enabled=bool, MaxSizeMB=number, FileSizeMB=number, Records=number, Mode=text, ' +
+            'Full=bool, Oldest=time')),
+
+        @('maintenance.tasks', 'list', '', ('Path=text:free, Enabled=bool, State=text, NextRun=time, LastRun=time, Triggers=text, ' +
+            'RepeatMinutes=number, Action=text:free')),
+        @('maintenance.taskCount', 'number'), @('maintenance.scanDay', 'number'), @('maintenance.scanTime', 'text'),
+        @('maintenance.quickScanTime', 'text'), @('maintenance.scanType', 'number'), @('maintenance.scanRandomize', 'bool'),
+        @('maintenance.scanCpuLoad', 'number', '%'), @('maintenance.updateOptions', 'number'), @('maintenance.updateDay', 'number'),
+        @('maintenance.updateHour', 'number'), @('maintenance.updateNoRebootWithUsers', 'number'), @('maintenance.searchService', 'text'),
+        @('maintenance.updateService', 'text'),
+
+        @('apps.probes', 'list', '', 'App=text, Id=text, Kind=text, Read=text, State=text, Reason=text, Value=value, Names=text:free')
+    )
+    $list = [ordered]@{}
+    foreach ($row in $rows) {
+        $fields = $null
+        if ($row.Count -gt 3 -and $row[3]) {
+            $fields = [ordered]@{}
+            foreach ($pair in ($row[3] -split ', ')) { $nameAndType = $pair -split '=', 2; $fields[$nameAndType[0]] = $nameAndType[1] }
+        }
+        $unit = ''; if ($row.Count -gt 2) { $unit = $row[2] }
+        $list[$row[0]] = @{ Area = $row[0].Split('.')[0]; Type = $row[1]; Unit = $unit; Fields = $fields
+            Documented = -not ($row.Count -gt 4 -and $row[4] -eq 'undocumented') }
+    }
+    $list
+}
+
 $script:WorkerPerfOrigins = @('Herstellerangabe', 'Faustregel', 'eigene Annahme')
 $script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'Drucken', 'System')
 
@@ -368,4 +463,84 @@ function Set-WorkerPerfSkippedSources {
         $ids = @(@($Sources.Keys) | Where-Object { ([string]$_).StartsWith('events.') }) + @(@($EventLogIds) | Where-Object { $_ } | ForEach-Object { 'events.' + $_ })
         foreach ($id in $ids) { $Sources[$id] = @{ Available = $false; Detail = (Get-WorkerPerfSkipDetail @('Ereignisse', 'Rueckblick')) } }
     }
+}
+
+function Test-WorkerPerfHealthNonFinite($Value) {
+    # True for NaN and plus or minus infinity: Windows PowerShell 5.1 writes them unquoted, which is no valid JSON.
+    return (($Value -is [double] -or $Value -is [single]) -and ([double]::IsNaN([double]$Value) -or [double]::IsInfinity([double]$Value)))
+}
+
+function New-WorkerPerfHealthValue([string]$State, [string]$Reason = '', $Value = $null) {
+    # One read value of health.json. A content that is not a finite number is not stored: the value is unreadable.
+    if (@('read', 'absent', 'unreadable') -cnotcontains $State) { throw "Zustandsbild: unbekannter Zustand '$State'." }
+    if (@('', 'rights', 'notInstalled', 'timeout', 'error') -cnotcontains $Reason) { throw "Zustandsbild: unbekannter Grund '$Reason'." }
+    if (Test-WorkerPerfHealthNonFinite $Value) { return [ordered]@{ State = 'unreadable'; Reason = 'error'; Value = $null } }
+    return [ordered]@{ State = $State; Reason = $Reason; Value = $Value }
+}
+
+function ConvertTo-WorkerPerfHealthListItem($Item) {
+    # An entry of a list value as an ordered record; a field that carries a number that is not finite becomes $null.
+    if ($null -eq $Item) { return $null }
+    $pairs = @()
+    if ($Item -is [System.Collections.IDictionary]) { $pairs = @(foreach ($k in @($Item.Keys)) { , @($k, $Item[$k]) }) }
+    elseif ($Item -is [System.Management.Automation.PSCustomObject]) { $pairs = @(foreach ($p in $Item.PSObject.Properties) { , @($p.Name, $p.Value) }) }
+    else { return $Item }
+    $out = [ordered]@{}
+    foreach ($pair in $pairs) {
+        $v = $pair[1]; if (Test-WorkerPerfHealthNonFinite $v) { $v = $null }
+        $out[[string]$pair[0]] = $v
+    }
+    return $out
+}
+
+function Complete-WorkerPerfHealthArea([string]$Area, [System.Collections.IDictionary]$Values, [double]$DurationMs, [string]$ErrorText = '', [bool]$TimedOut = $false) {
+    # One area of health.json: its values in the order of the value list, each missing value unreadable (timeout or
+    # error), a read list always an array. Status: failed without a read or absent value, partial with an unreadable one.
+    if ($script:WorkerPerfHealthAreas -cnotcontains $Area) { throw "Zustandsbild: unbekannter Bereich '$Area'." }
+    $ids = @(@($script:WorkerPerfHealthValues.Keys) | Where-Object { $script:WorkerPerfHealthValues[$_].Area -ceq $Area })
+    if ($null -eq $Values) { $Values = @{} }
+    foreach ($key in @($Values.Keys)) {
+        if ($ids -cnotcontains [string]$key) { throw "Zustandsbild: der Wert '$key' gehoert nicht zum Bereich '$Area'." }
+    }
+    $missingReason = 'error'; if ($TimedOut) { $missingReason = 'timeout' }
+    $out = [ordered]@{}
+    $known = 0; $unreadable = 0
+    foreach ($id in $ids) {
+        if (-not $Values.Contains($id)) { $out[$id] = New-WorkerPerfHealthValue 'unreadable' $missingReason }
+        else {
+            $given = $Values[$id]
+            $entry = [ordered]@{ State = [string](Get-WorkerPerfField $given 'State'); Reason = [string](Get-WorkerPerfField $given 'Reason')
+                Value = (Get-WorkerPerfField $given 'Value') }
+            if ($script:WorkerPerfHealthValues[$id].Type -eq 'list' -and $entry.State -eq 'read') {
+                $items = @()
+                if ($null -ne $entry.Value) { $items = @(foreach ($item in @($entry.Value)) { , (ConvertTo-WorkerPerfHealthListItem $item) }) }
+                $entry.Value = [object[]]$items
+            }
+            $out[$id] = $entry
+        }
+        if ($out[$id].State -eq 'unreadable') { $unreadable++ } else { $known++ }
+    }
+    $status = 'read'
+    if ($known -eq 0) { $status = 'failed' } elseif ($unreadable -gt 0) { $status = 'partial' }
+    return [ordered]@{ Status = $status; DurationMs = $DurationMs; Error = $ErrorText; Values = $out }
+}
+
+function New-WorkerPerfHealth([datetime]$ReadAt, [double]$DurationMs, [System.Collections.IDictionary]$Areas) {
+    # The whole health picture: the head and every area in fixed order; a missing area is failed with 'notRead'.
+    if ($null -eq $Areas) { $Areas = @{} }
+    foreach ($key in @($Areas.Keys)) {
+        if ($script:WorkerPerfHealthAreas -cnotcontains [string]$key) { throw "Zustandsbild: unbekannter Bereich '$key'." }
+    }
+    $out = [ordered]@{}
+    foreach ($id in $script:WorkerPerfHealthAreas) {
+        if ($Areas.Contains($id)) { $out[$id] = $Areas[$id] } else { $out[$id] = Complete-WorkerPerfHealthArea $id @{} 0 'notRead' }
+    }
+    return [ordered]@{ FormatVersion = $script:WorkerPerfHealthFormatVersion
+        ReadAt = $ReadAt.ToString('o', [System.Globalization.CultureInfo]::InvariantCulture); DurationMs = $DurationMs; Areas = $out }
+}
+
+function ConvertTo-WorkerPerfHealthTime([datetime]$Time) {
+    # Milliseconds since 1970 (UTC), the type time of health.json; [datetime]::MinValue (unknown) gives 0.
+    if ($Time -eq [datetime]::MinValue) { return [long]0 }
+    return [long](New-Object DateTimeOffset ($Time)).ToUnixTimeMilliseconds()
 }
