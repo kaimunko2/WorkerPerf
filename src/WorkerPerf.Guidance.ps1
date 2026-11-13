@@ -27,6 +27,9 @@ $script:WorkerPerfGuidanceConditions = @('cause.app', 'cause.security', 'cause.n
 # every unmeasured.<signal> and skipped.<category>
 $script:WorkerPerfGuidanceGapConditions = @('cause.notmeasured', 'pattern.unchecked', 'incident.unverified')
 $script:WorkerPerfGuidanceGapPrefixes = @('unmeasured.', 'skipped.')
+# conditions that only name a coincidence in time with another incident: something the report found, but it says nothing
+# about cause and effect
+$script:WorkerPerfGuidanceCoincidenceConditions = @('pattern.overlap')
 # catalogue parts and the keys each text part must have, in the order they are checked
 $script:WorkerPerfGuidanceParts = @('version', 'terms', 'vendors', 'userView', 'lagebild', 'hints', 'copy', 'fallbackNote', 'situations')
 $script:WorkerPerfGuidancePartKeys = [ordered]@{
@@ -601,15 +604,22 @@ function Test-WorkerPerfGuidanceGapCondition([string]$Name) {
     return $false
 }
 
+function Test-WorkerPerfGuidanceTrailingCondition([string]$Name) {
+    # Whether a condition gives an element no place before the general ones: it only names a gap, or only a coincidence
+    # in time with another incident.
+    return ((Test-WorkerPerfGuidanceGapCondition $Name) -or ($script:WorkerPerfGuidanceCoincidenceConditions -ccontains $Name))
+}
+
 function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
     # text can be filled. Three groups, the order of the file within each: first the elements with a condition that
-    # says more than a gap, then the general ones, last those whose conditions all name a gap (what is unknown is not
-    # the first thing to do). Plain pipeline output (the caller writes @(...)). Templates (a List[string]) receives the
-    # templates of the texts of the elements emitted (not their sources), for the glossary.
+    # says more than a gap or a coincidence in time, then the general ones, last those whose conditions all name a gap
+    # or a coincidence in time (what is unknown, or merely happened at the same time, is not the first thing to do).
+    # Plain pipeline output (the caller writes @(...)). Templates (a List[string]) receives the templates of the texts
+    # of the elements emitted (not their sources), for the glossary.
     $withCondition = New-Object System.Collections.Generic.List[object]
     $general = New-Object System.Collections.Generic.List[object]
-    $gaps = New-Object System.Collections.Generic.List[object]
+    $trailing = New-Object System.Collections.Generic.List[object]
     $fields = $script:WorkerPerfGuidanceOutputFields[$ListName]
     foreach ($el in (Get-WorkerPerfGuidanceList $Entry $ListName)) {
         $when = Get-WorkerPerfGuidanceList $el 'when'
@@ -630,12 +640,12 @@ function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Condi
         if (-not $complete) { continue }
         if ($null -ne $Templates) { foreach ($t in $used) { $Templates.Add($t) } }
         if ($when.Count -eq 0) { $general.Add($item) }
-        elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceGapCondition ([string]$_)) }).Count -eq 0) { $gaps.Add($item) }
+        elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceTrailingCondition ([string]$_)) }).Count -eq 0) { $trailing.Add($item) }
         else { $withCondition.Add($item) }
     }
     foreach ($item in $withCondition) { $item }
     foreach ($item in $general) { $item }
-    foreach ($item in $gaps) { $item }
+    foreach ($item in $trailing) { $item }
 }
 
 function Get-WorkerPerfGuidanceTech($Incident, $Texts) {

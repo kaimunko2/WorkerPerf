@@ -626,6 +626,54 @@ Describe 'Anleitung zusammenstellen' {
         $g = New-WorkerPerfGuidance -Catalogue $cat9 -Facts @{ Situation = 'cpu'; Conditions = @($Name); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
         @($g.checks.text) | Should -Be $(if ($Gap) { @('Allgemein', 'Bedingt') } else { @('Bedingt', 'Allgemein') })
     }
+    It 'stellt Elemente, die nur ein zeitliches Zusammentreffen nennen, hinter die allgemeinen' {      # fix round 1, item B4
+        $cat10 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.situations.crash.checks = @(
+                    @{ text = 'Zusammentreffen'; where = 'w'; sign = 's'; when = @('pattern.overlap') }
+                    @{ text = 'Muster'; where = 'w'; sign = 's'; when = @('pattern.resource') }
+                    @{ text = 'Allgemein 1'; where = 'w'; sign = 's' }
+                    @{ text = 'Luecke'; where = 'w'; sign = 's'; when = @('pattern.unchecked') }
+                    @{ text = 'Zusammentreffen mit Muster'; where = 'w'; sign = 's'; when = @('pattern.overlap', 'pattern.companion') }
+                    @{ text = 'Zusammentreffen mit Luecke'; where = 'w'; sign = 's'; when = @('skipped.Drucken', 'pattern.overlap') }
+                    @{ text = 'Allgemein 2'; where = 'w'; sign = 's' })
+                $c.situations.crash.remedies = @(@{ text = 'Zusammentreffen'; precondition = 'p'; when = @('pattern.overlap') }, @{ text = 'Allgemein'; precondition = 'p' },
+                    @{ text = 'Muster'; precondition = 'p'; when = @('pattern.resource') })
+                $c.situations.crash.contacts = @(@{ text = 'Zusammentreffen'; when = @('pattern.overlap') }, @{ text = 'Allgemein' }) })
+        $inc = New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash' } }
+        # the coincidence is the only pattern: the general elements lead, it is never the first thing to do
+        $g = New-WorkerPerfGuidance -Catalogue $cat10 -Facts @{ Situation = 'crash'; Conditions = @('pattern.overlap'); Values = @{} } -Incident $inc -Texts $Texts
+        @($g.checks.text) | Should -Be @('Allgemein 1', 'Allgemein 2', 'Zusammentreffen')
+        @($g.remedies.text) | Should -Be @('Allgemein', 'Zusammentreffen')
+        @($g.contacts.text) | Should -Be @('Allgemein', 'Zusammentreffen')
+        # with patterns that say more and with gaps: those patterns, the general elements, then coincidence and gaps in file order;
+        # a condition that says more keeps an element in front, whatever else its 'when' names
+        $all = @('skipped.Drucken', 'pattern.resource', 'pattern.companion', 'pattern.overlap', 'pattern.unchecked')
+        $g = New-WorkerPerfGuidance -Catalogue $cat10 -Facts @{ Situation = 'crash'; Conditions = $all; Values = @{} } -Incident $inc -Texts $Texts
+        @($g.checks.text) | Should -Be @('Muster', 'Zusammentreffen mit Muster', 'Allgemein 1', 'Allgemein 2', 'Zusammentreffen', 'Luecke', 'Zusammentreffen mit Luecke')
+        @($g.remedies.text) | Should -Be @('Muster', 'Allgemein', 'Zusammentreffen')
+    }
+    It 'stellt von den Mustern nur das Zusammentreffen mit einem Leistungsvorfall hinter die allgemeinen Elemente (<Name>)' -TestCases @(      # fix round 1, item B4
+        @{ Name = 'pattern.overlap'; Late = $true }; @{ Name = 'pattern.companion'; Late = $false }; @{ Name = 'pattern.resource'; Late = $false }
+        @{ Name = 'pattern.afterhang'; Late = $false }; @{ Name = 'pattern.sharedmodule'; Late = $false }; @{ Name = 'pattern.printdriver'; Late = $false }
+        @{ Name = 'pattern.securitymodule'; Late = $false }; @{ Name = 'pattern.manyusers'; Late = $false }; @{ Name = 'pattern.oneuser'; Late = $false }
+        @{ Name = 'pattern.none'; Late = $false }
+    ) {
+        $cat11 = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.crash.checks = @(@{ text = 'Bedingt'; where = 'w'; sign = 's'; when = @($Name); source = 'Hersteller, Titel' },
+                    @{ text = 'Allgemein'; where = 'w'; sign = 's' }) })
+        $g = New-WorkerPerfGuidance -Catalogue $cat11 -Facts @{ Situation = 'crash'; Conditions = @($Name); Values = @{} } -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash' } }) -Texts $Texts
+        @($g.checks.text) | Should -Be $(if ($Late) { @('Allgemein', 'Bedingt') } else { @('Bedingt', 'Allgemein') })
+        # a coincidence is something the report found: it is not a gap
+        Test-WorkerPerfGuidanceGapCondition $Name | Should -BeFalse
+        Test-WorkerPerfGuidanceTrailingCondition $Name | Should -Be $Late
+    }
+    It 'zaehlt jede Luecke und das Zusammentreffen zu den Bedingungen, die ein Element nicht nach vorn stellen' {      # ruling P3-R36, item B4
+        foreach ($n in 'unmeasured.cpu.steal', 'skipped.Drucken', 'cause.notmeasured', 'pattern.unchecked', 'incident.unverified', 'pattern.overlap') {
+            Test-WorkerPerfGuidanceTrailingCondition $n | Should -BeTrue -Because $n
+        }
+        foreach ($n in 'cause.app', 'cause.none', 'affected.unknown', 'before', 'scan', 'lead.cpu', 'spooler.crash', 'driver.vendor.HP', 'role.Drucken') {
+            Test-WorkerPerfGuidanceTrailingCondition $n | Should -BeFalse -Because $n
+        }
+    }
     It 'gibt die Elemente als schlichte Pipeline-Ausgabe und haelt die Listen der Anleitung als Feld' {
         $one = @(Get-WorkerPerfGuidanceItems $Cat2.situations.cpu 'checks' @() @{})
         $one.Count | Should -Be 1; $one[0] | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]
