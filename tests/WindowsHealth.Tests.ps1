@@ -146,3 +146,121 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         $script:WinFake.Calls['registry:' + $root + '\{A1}'] | Should -Be 2
     }
 }
+Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
+    BeforeEach { Reset-WinStandIns }
+    It 'liest Sitzungen mit Trennzeitpunkt, Zeitlimits und lokale Profile' {
+        $script:WinFake.Sessions.Add([pscustomobject]@{ SessionId = 3; State = 'Disconnected'; WinStation = ''; User = 'gast'; Domain = 'KLINIK'; ClientName = 'WS-0002'
+                LogonTime = [datetime]::Now.AddHours(-30); IdleSec = 7200; ConnectTime = [datetime]::Now.AddHours(-30); DisconnectTime = [datetime]::Now.AddHours(-26) })
+        $h = Read-Health; $h.Areas['sessions'].Status | Should -Be 'read'
+        $s = (Get-V $h 'sessions.list').Value; @($s).Count | Should -Be 3
+        $g = $s | Where-Object User -eq 'gast'; $g.State | Should -Be 'Disconnected'; $g.Client | Should -Be 'WS-0002'; $g.Domain | Should -Be 'KLINIK'; $g.IdleMinutes | Should -Be 120
+        ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - $g.DisconnectTime) / 3600000 | Should -BeGreaterThan 25.9
+        ($s | Where-Object User -eq 'mueller').DisconnectTime | Should -Be 0           # ein Sitzungsobjekt ohne das Feld: unbekannt
+        ((Get-V $h 'sessions.limits').Value | Where-Object Terminal -eq 'ICA-CGP').DisconnectedLimitMin | Should -Be 0
+        $script:WinFake.Cim['Win32_TSSessionSetting'][1].DisconnectedSessionLimit = 14400000; $script:WinFake.Cim['Win32_TSSessionSetting'][1].PolicySourceDisconnectedSessionLimit = 1
+        $l = (Get-V (Read-Health) 'sessions.limits').Value | Where-Object Terminal -eq 'ICA-CGP'; $l.DisconnectedLimitMin | Should -Be 240; $l.FromPolicy | Should -BeTrue
+        $p = (Get-V $h 'sessions.localProfiles').Value; @($p).Count | Should -Be 4
+        @(($p | Where-Object { -not $_.Loaded -and -not $_.Special }).Path) | Should -Be @('C:\Users\gast', 'C:\Users\TEMP'); ($p | Where-Object Path -eq 'C:\Users\TEMP').Temporary | Should -BeTrue
+        $script:WinFake.CimFail['Win32_TSSessionSetting'] = New-WinStandInDenied 'cim'
+        $h = Read-Health; (Get-V $h 'sessions.limits').Reason | Should -Be 'rights'; (Get-V $h 'sessions.list').State | Should -Be 'read'; $h.Areas['sessions'].Status | Should -Be 'partial'
+    }
+    It 'liest Version, Dienste und Controllerliste des VDA; die Richtlinie geht vor' {
+        $h = Read-Health; $h.Areas['vda'].Status | Should -Be 'read'
+        (Get-V $h 'vda.version').Value | Should -Be '2203.0.4000.4033'; (Get-V $h 'vda.desktopService').Value | Should -Be 'Running'
+        @((Get-V $h 'vda.services').Value.Name) | Should -Be @('BrokerAgent', 'ctxProfile', 'WemAgentSvc', 'WemLogonSvc', 'CtxTeamsSvc', 'CtxHdxWebSocketService', 'CpSvc')
+        $c = (Get-V $h 'vda.controllers').Value; @($c.Entry) | Should -Be @('ddc01.klinik.example', 'ddc02'); @($c.Kind) | Should -Be @('fqdn', 'short'); @($c.From | Select-Object -Unique) | Should -Be @('policy')
+        (Get-V $h 'vda.listOfSids').Value | Should -BeTrue; (Get-V $h 'vda.farmGuid').Value | Should -BeFalse
+        $raw = (Get-V $h 'vda.policyRaw').Value; ($raw | Where-Object Name -eq 'SimDrucker').Value | Should -Be '\\prn01\Etage2'; ($raw | Where-Object Name -eq 'SimDrucker').Key | Should -Be 'ICAPolicies'
+        @($raw | Where-Object { $_.Key -match 'UserProfileManager|VirtualDesktopAgent' }).Count | Should -Be 0
+        ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'S-1-5-21-1-2-3-1001'                # der Inhalt von ListOfSIDs wird nicht gespeichert
+        $script:WinFake.Registry.Remove('SOFTWARE\Policies\Citrix\VirtualDesktopAgent')
+        $c = (Get-V (Read-Health) 'vda.controllers').Value; @($c.Entry) | Should -Be @('10.1.1.5'); $c[0].Kind | Should -Be 'ip'; $c[0].From | Should -Be 'registry'
+        ConvertTo-WorkerPerfControllerKind 'fd00::5' | Should -Be 'ip'
+    }
+    It 'nennt einen Worker ohne VDA und ohne Profilverwaltung nicht installiert' {   # Review Focus 3
+        $script:WinFake.Services = @($script:WinFake.Services | Where-Object { $_.PathName -notmatch 'Citrix' }); $script:WinFake.Cim.Remove('Citrix_VirtualDesktopInfo')
+        foreach ($k in @($script:WinFake.Registry.Keys | Where-Object { $_ -match 'Citrix|\{B2\}' })) { $script:WinFake.Registry.Remove($k) }
+        $script:WinFake.Disks.Clear()
+        $h = Read-Health
+        foreach ($id in 'vda.version', 'vda.desktopService', 'profile.service', 'profile.version', 'vda.persistentDataLocation', 'vda.wemService', 'vda.wemServices', 'vda.wemVersion', 'vda.wemServer',
+            'vda.wemCacheLocation', 'vda.wemGpNetworkTimeout', 'vda.teamsService', 'vda.webSocketService') { (Get-V $h $id).State | Should -Be 'absent' -Because $id; (Get-V $h $id).Reason | Should -Be 'notInstalled' -Because $id }
+        foreach ($id in 'vda.controllers', 'vda.services', 'vda.policyRaw', 'profile.containers', 'profile.policyGpo') { (Get-V $h $id).State | Should -Be 'read' -Because $id; @((Get-V $h $id).Value).Count | Should -Be 0 -Because $id }
+        $h.Areas['vda'].Status | Should -Be 'read'; $h.Areas['profile'].Status | Should -Be 'read'
+    }
+    It 'liest den WEM-Agenten, die Dienste der Teams-Umleitung und den bestaendigen Datenort' {
+        $h = Read-Health
+        (Get-V $h 'vda.wemService').Value | Should -Be 'Running'; (Get-V $h 'vda.wemVersion').Value | Should -Be '2407.1.0.1'
+        @((Get-V $h 'vda.wemServices').Value.Name) | Should -Be @('Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'System Event Notification Service')
+        @((Get-V $h 'vda.wemServices').Value.StartMode | Select-Object -Unique) | Should -Be @('Auto')
+        (Get-V $h 'vda.wemServer').Value | Should -Be 'wem01.klinik.example'; (Get-V $h 'vda.wemCacheLocation').Value | Should -Be 'D:\WEMCache'; (Get-V $h 'vda.wemGpNetworkTimeout').Value | Should -Be 120
+        (Get-V $h 'vda.teamsService').Value | Should -Be 'Running'; (Get-V $h 'vda.webSocketService').Value | Should -Be 'Running'; (Get-V $h 'vda.persistentDataLocation').Value | Should -Be 'D:\PersistentData'
+        # der fruehere Anzeigename zaehlt; ein leerer Cache-Ort heisst: nicht gesetzt
+        ($script:WinFake.Services | Where-Object Name -eq 'WemAgentSvc').DisplayName = 'Norskale Agent Host Service'
+        $script:WinFake.Registry['SYSTEM\CurrentControlSet\Control\Norskale\Agent Host']['AgentCacheAlternateLocation'] = ''
+        $h = Read-Health; (Get-V $h 'vda.wemService').Value | Should -Be 'Running'; @((Get-V $h 'vda.wemServices').Value.Name)[0] | Should -Be 'Norskale Agent Host Service'
+        (Get-V $h 'vda.wemCacheLocation').State | Should -Be 'absent'; (Get-V $h 'vda.wemCacheLocation').Reason | Should -Be ''
+        # ein Worker mit VDA, aber ohne WEM-Agent                                                     # Review Focus 3
+        $script:WinFake.Services = @($script:WinFake.Services | Where-Object { $_.Name -notlike 'Wem*' })
+        $script:WinFake.Calls.Clear()                                                                     # ZB-R12: nur die Lesung ohne Agent zaehlt
+        $h = Read-Health; foreach ($id in 'vda.wemService', 'vda.wemServices', 'vda.wemCacheLocation', 'vda.wemGpNetworkTimeout') { (Get-V $h $id).Reason | Should -Be 'notInstalled' -Because $id }
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\Policies\Norskale\Agent Host'
+        (Get-V $h 'vda.version').State | Should -Be 'read'; $h.Areas['vda'].Status | Should -Be 'read'
+    }
+    It 'findet das Programm eines Dienstes auch in Anfuehrungszeichen und mit Argumenten' {
+        Get-WorkerPerfServiceExe '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe" /svc' | Should -Be 'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'
+        Get-WorkerPerfServiceExe 'C:\Windows\System32\svchost.exe -k netsvcs -p' | Should -Be 'C:\Windows\System32\svchost.exe'
+        Get-WorkerPerfServiceExe 'C:\Program Files\Citrix\System32\CpSvc.exe' | Should -Be 'C:\Program Files\Citrix\System32\CpSvc.exe'; Get-WorkerPerfServiceExe '' | Should -Be ''
+        ($script:WinFake.Services | Where-Object Name -eq 'ctxProfile').PathName | Should -BeLike '"*UserProfileManager.exe"'      # der Platzhalter traegt die Form von Windows
+        $h = Read-Health; (Get-V $h 'profile.service').Value | Should -Be 'Running'; (Get-V $h 'profile.version').Value | Should -Be '22.3.0.4000'; (Get-V $h 'vda.wemVersion').Value | Should -Be '2407.1.0.1'
+        ($script:WinFake.Services | Where-Object Name -eq 'ctxProfile').PathName = '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe" /service'
+        (Get-V (Read-Health) 'profile.version').Value | Should -Be '22.3.0.4000'
+    }
+    It 'liest eine gemeinsame Abfrage neu, die im Bereich davor am Zeitlimit endete, und reicht fehlende Rechte weiter' {   # Review Focus 1
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null); $before = [int]$script:WinFake.Calls['cim:Win32_Service']
+        $script:WinFake.DelayOnce['cim:Win32_Service'] = 5000; $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Get-WorkerPerfHealth 3>$null } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-V $h 'size.vmtoolsService').State | Should -Be 'unreadable'; (Get-V $h 'size.vmtoolsService').Reason | Should -Be 'timeout'
+        (Get-V $h 'vda.services').State | Should -Be 'read'; (Get-V $h 'vda.desktopService').Value | Should -Be 'Running'; (Get-V $h 'profile.service').Value | Should -Be 'Running'
+        [int]$script:WinFake.Calls['cim:Win32_Service'] - $before | Should -Be 2                       # ein zweiter Versuch im naechsten Bereich, der die Dienste braucht, danach keiner mehr
+        Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null); $before = [int]$script:WinFake.Calls['cim:Win32_Service']
+        $script:WinFake.CimFail['Win32_Service'] = New-WinStandInDenied 'cim'; $h = Get-WorkerPerfHealth 3>$null
+        foreach ($id in 'size.vmtoolsService', 'vda.services', 'profile.service') { (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'rights' -Because $id }
+        [int]$script:WinFake.Calls['cim:Win32_Service'] - $before | Should -Be 1                       # fehlende Rechte: kein zweiter Versuch
+    }
+    It 'liest Container mit Groesse, Belegung und Besitzer' {
+        $h = Read-Health; $c = (Get-V $h 'profile.containers').Value; @($c).Count | Should -Be 2
+        $m = $c | Where-Object Owner -eq 'mueller'; $m.Location | Should -Be '\\fs01\upm$\mueller.KLINIK\Win2022\UPM_Profile\ProfileContainer_RW.vhdx'
+        $m.Mount | Should -Be 'C:\Users\mueller_UPM_local\UpmTempMount'; $m.SessionId | Should -Be 2; $m.SizeGB | Should -Be 50; $m.AllocatedGB | Should -Be 20; $m.VolumeFreeGB | Should -Be 2; $m.UsedPct | Should -Be 96
+        $g = $c | Where-Object { $_.Location -like '*gast*' }; $g.Owner | Should -Be ''; $g.SessionId | Should -Be -1; $g.UsedPct | Should -Be 40
+        (Get-V $h 'profile.service').Value | Should -Be 'Running'; (Get-V $h 'profile.version').Value | Should -Be '22.3.0.4000'
+        @((Get-V $h 'profile.policyGpo').Value.Name | Sort-Object) | Should -Be @('PathToUserStore', 'ServiceActive'); @((Get-V $h 'profile.policyStudio').Value).Count | Should -Be 0
+        # die Schnappschuesse fragen die Volumes weiter nicht ab
+        Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip Zustand 3>$null); [void](Get-WorkerPerfSnapshot -Kind K)
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'cim:MSFT_Volume'
+        Reset-WinStandIns; $script:WinFake.FailStorage = $true
+        $h = Read-Health; (Get-V $h 'profile.containers').State | Should -Be 'unreadable'; (Get-V $h 'profile.service').State | Should -Be 'read'
+    }
+    It 'meldet eine gescheiterte Sitzungsabfrage und haelt das Zeitlimit auch in der Abfrage der Container ein' {   # Review Focus 1
+        $script:WinFake.SessionsFail = New-Object System.InvalidOperationException 'WTS antwortet nicht'
+        $h = Read-Health; (Get-V $h 'sessions.list').State | Should -Be 'unreadable'; (Get-V $h 'sessions.list').Reason | Should -Be 'error'; $h.Areas['sessions'].Status | Should -Be 'partial'
+        $c = @((Get-V $h 'profile.containers').Value); $c.Count | Should -Be 2                    # keine Sitzungen heisst nicht: keine Container
+        @($c | Where-Object { $_.Owner -ne '' }).Count | Should -Be 0; @($c | Where-Object { $_.SessionId -ne -1 }).Count | Should -Be 0
+        Reset-WinStandIns; $script:WinFake.Delay['cim:MSFT_Volume'] = 5000; $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Read-Health } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-V $h 'profile.containers').State | Should -Be 'unreadable'; (Get-V $h 'profile.containers').Reason | Should -Be 'timeout'; (Get-V $h 'profile.service').State | Should -Be 'read'
+        $h.Areas['profile'].Status | Should -Be 'partial'; $h.Areas['profile'].DurationMs | Should -BeLessThan 3000; $h.Areas['vda'].Status | Should -Be 'read'
+    }
+    It 'gibt Registrierungswerte als Text wieder und haelt Tiefe, Hoechstzahl und ausgelassene Unterschluessel ein' {
+        $base = 'SOFTWARE\Policies\SimTest'
+        $script:WinFake.Registry[$base] = [ordered]@{ Liste = [string[]]@('a', 'b'); Daten = [byte[]]@(1, 2, 3) }
+        $script:WinFake.Registry[$base + '\Aus'] = [ordered]@{ Weg = 'x' }
+        $script:WinFake.Registry[$base + '\Ein'] = [ordered]@{ Zahl = 7 }
+        $script:WinFake.Registry[$base + '\Ein\Aus'] = [ordered]@{ Tief = 'y' }                 # nur oben ausgelassen
+        $t = @(Get-WorkerPerfRegistryTree $base @('Aus'))
+        @($t | ForEach-Object { $_.Key + '|' + $_.Name + '|' + $_.Value }) | Should -Be @('|Liste|a; b', '|Daten|binaer, 3 Byte', 'Ein|Zahl|7', 'Ein\Aus|Tief|y')
+        @(Get-WorkerPerfRegistryTree $base @('Aus') -MaxDepth 1).Count | Should -Be 3; @(Get-WorkerPerfRegistryTree $base -MaxValues 2).Count | Should -Be 2
+        @(Get-WorkerPerfRegistryTree 'SOFTWARE\Policies\Fehlt').Count | Should -Be 0
+        $c = @(ConvertTo-WorkerPerfControllerEntries 'ddc01.klinik.example,ddc02  10.1.1.5' 'policy'); @($c.Entry) | Should -Be @('ddc01.klinik.example', 'ddc02', '10.1.1.5')
+        ConvertTo-WorkerPerfControllerKind '12345' | Should -Be 'short'                             # eine Zahl ist keine Adresse
+    }
+}

@@ -8,7 +8,8 @@
 # Open-WorkerPerfEventReader, Get-WinSessionRaw, Get-WorkerPerfSidAccount and the registry readers of printing). The events come from the logs,
 # providers and ids of the event catalogue (events.json, WorkerPerf.EventConfig.ps1 must be dot-sourced before).
 # The health picture (Get-WorkerPerfHealth) reads only, within a time budget, through further thin calls
-# (Get-WorkerPerfRegistryValues, Get-WorkerPerfPerformanceInfo, Get-WorkerPerfActivePowerScheme, Get-WorkerPerfLogOldestTime).
+# (Get-WorkerPerfRegistryValues, Get-WorkerPerfPerformanceInfo, Get-WorkerPerfActivePowerScheme, Get-WorkerPerfLogOldestTime,
+# Get-WorkerPerfHealthSessions, Get-WorkerPerfFileVersion).
 
 # C# source of the WTS session wrapper (load with Add-Type -TypeDefinition $script:WorkerPerfWtsSource).
 $script:WorkerPerfWtsSource = @'
@@ -28,6 +29,8 @@ namespace WorkerPerf
         public string ClientName;
         public DateTime LogonTime;      // DateTime.MinValue = unknown
         public double IdleSec;          // -1 = unknown
+        public DateTime ConnectTime;    // DateTime.MinValue = unknown
+        public DateTime DisconnectTime; // DateTime.MinValue = unknown
     }
 
     public static class Wts
@@ -102,6 +105,8 @@ namespace WorkerPerf
                     s.ClientName = QueryString(si.SessionId, 10); // WTSClientName
                     s.LogonTime = DateTime.MinValue;
                     s.IdleSec = -1;
+                    s.ConnectTime = DateTime.MinValue;
+                    s.DisconnectTime = DateTime.MinValue;
 
                     IntPtr buf; int bytes;
                     if (WTSQuerySessionInformationW(IntPtr.Zero, si.SessionId, 24, out buf, out bytes)) // WTSSessionInfo
@@ -112,6 +117,8 @@ namespace WorkerPerf
                             {
                                 WTSINFO wi = (WTSINFO)Marshal.PtrToStructure(buf, typeof(WTSINFO));
                                 if (wi.LogonTime > 0) s.LogonTime = DateTime.FromFileTime(wi.LogonTime);
+                                if (wi.ConnectTime > 0) s.ConnectTime = DateTime.FromFileTime(wi.ConnectTime);
+                                if (wi.DisconnectTime > 0) s.DisconnectTime = DateTime.FromFileTime(wi.DisconnectTime);
                                 if (wi.LastInputTime > 0 && wi.CurrentTime >= wi.LastInputTime)
                                     s.IdleSec = (wi.CurrentTime - wi.LastInputTime) / 1e7;
                             }
@@ -512,13 +519,25 @@ $script:WorkerPerfWinStorageTimeoutSec = 10
 $script:WorkerPerfWinHealthAreaBudgetSec = 10
 $script:WorkerPerfWinHealthTotalBudgetSec = 60
 $script:WorkerPerfWinHealthReaders = [ordered]@{
-    size = 'Read-WorkerPerfWinHealthSize'; operation = 'Read-WorkerPerfWinHealthOperation'; events = 'Read-WorkerPerfWinHealthEvents'
+    size = 'Read-WorkerPerfWinHealthSize'; operation = 'Read-WorkerPerfWinHealthOperation'; sessions = 'Read-WorkerPerfWinHealthSessions'
+    vda = 'Read-WorkerPerfWinHealthVda'; profile = 'Read-WorkerPerfWinHealthProfile'; events = 'Read-WorkerPerfWinHealthEvents'
 }
 $script:WorkerPerfWinUninstallKeys = @('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
 $script:WorkerPerfWinPowerPlans = @{
     '381b4222-f694-41f0-9685-ff5bb260df2e' = 'balanced'; '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' = 'highPerformance'
     'a1841308-3541-4fab-bc81-f71556f20b4a' = 'powerSaver'
 }
+# Citrix VDA: the keys of the controller list (the policy first, then the VDA's own key in both registry views), the
+# policy root whose raw values are recorded without the subkeys read elsewhere, and the keys of the WEM agent.
+$script:WorkerPerfWinVdaPolicyKey = 'SOFTWARE\Policies\Citrix\VirtualDesktopAgent'
+$script:WorkerPerfWinVdaKeys = @('SOFTWARE\Citrix\VirtualDesktopAgent', 'SOFTWARE\WOW6432Node\Citrix\VirtualDesktopAgent')
+$script:WorkerPerfWinCitrixPolicyKey = 'SOFTWARE\Policies\Citrix'
+$script:WorkerPerfWinCitrixPolicySkip = @('UserProfileManager', 'UserProfileManagerHDX', 'VirtualDesktopAgent')
+$script:WorkerPerfWinWemPolicyKey = 'SOFTWARE\Policies\Norskale\Agent Host'
+$script:WorkerPerfWinWemAgentKey = 'SYSTEM\CurrentControlSet\Control\Norskale\Agent Host'
+$script:WorkerPerfWinWinlogonKey = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+# HRESULT of a CIM namespace that does not exist: WBEM_E_INVALID_NAMESPACE (0x8004100E)
+$script:WorkerPerfWinInvalidNamespace = -2147217394
 # HRESULTs of denied access: E_ACCESSDENIED (0x80070005) and WBEM_E_ACCESS_DENIED (0x80041003)
 $script:WorkerPerfWinDeniedHResults = @(-2147024891, -2147217405)
 # Native error codes of an operation that timed out (unsigned): WBEM_E_TIMED_OUT (0x80041069), WBEM_E_PROVIDER_TIMED_OUT
@@ -1248,6 +1267,115 @@ function Select-WorkerPerfLatestHotFix([object[]]$HotFixes) {
     return $best
 }
 
+function Get-WorkerPerfServiceExe([string]$PathName) {
+    # The path of the program in Win32_Service.PathName: in quotes the part up to the next quote (a path with spaces),
+    # else the part up to and including the first ".exe" (arguments may follow), without ".exe" the whole text.
+    if ([string]::IsNullOrEmpty($PathName)) { return '' }
+    if ($PathName.StartsWith('"')) {
+        $end = $PathName.IndexOf('"', 1)
+        if ($end -lt 0) { return $PathName.Substring(1) }
+        return $PathName.Substring(1, $end - 1)
+    }
+    $exe = $PathName.IndexOf('.exe', [StringComparison]::OrdinalIgnoreCase)
+    if ($exe -lt 0) { return $PathName }
+    return $PathName.Substring(0, $exe + 4)
+}
+
+function Get-WorkerPerfPathLeaf([string]$Path) {
+    # The last part of a Windows path (the file name), on any platform.
+    if ([string]::IsNullOrEmpty($Path)) { return '' }
+    return $Path.Substring($Path.LastIndexOfAny([char[]]@('\', '/')) + 1)
+}
+
+function ConvertTo-WorkerPerfControllerKind([string]$Entry) {
+    # ip for an IPv4 or IPv6 address, fqdn for a name with a dot, else short. No name resolution.
+    $address = $null
+    if ([System.Net.IPAddress]::TryParse($Entry, [ref]$address) -and ($Entry.Contains(':') -or $Entry -match '^\d{1,3}(\.\d{1,3}){3}$')) { return 'ip' }
+    if ($Entry.Contains('.')) { return 'fqdn' }
+    return 'short'
+}
+
+function ConvertTo-WorkerPerfControllerEntries($Value, [string]$From) {
+    # The entries of ListOfDDCs (split at spaces and commas; a multi-string value is one list) as records of vda.controllers.
+    foreach ($entry in @(((@($Value) | ForEach-Object { [string]$_ }) -join ' ').Split([char[]]@(' ', ',', "`t"), [StringSplitOptions]::RemoveEmptyEntries))) {
+        [ordered]@{ Entry = $entry; Kind = (ConvertTo-WorkerPerfControllerKind $entry); From = $From }
+    }
+}
+
+function Test-WorkerPerfRegistryValueSet($Values, [string]$Name) {
+    # true when a registry value (from Get-WorkerPerfRegistryValues) exists and is not empty; its content is not kept
+    if ($null -eq $Values -or -not $Values.Contains($Name)) { return $false }
+    return (@(@($Values[$Name]) | Where-Object { -not [string]::IsNullOrEmpty(([string]$_).Trim()) }).Count -gt 0)
+}
+
+function ConvertTo-WorkerPerfRegistryText($Value) {
+    # A registry value as text: several strings joined with "; ", binary values as their length only.
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [byte[]]) { return ('binaer, {0} Byte' -f $Value.Length) }
+    if ($Value -is [string]) { return $Value }
+    if ($Value -is [System.Collections.IEnumerable]) { return ((@($Value) | ForEach-Object { [string]$_ }) -join '; ') }
+    return [string]$Value
+}
+
+function ConvertTo-WorkerPerfWinHealthTime($Value) {
+    # A time of health.json from a DateTime; 0 (unknown) for anything else and for DateTime.MinValue.
+    if ($Value -is [datetime]) { return (ConvertTo-WorkerPerfHealthTime $Value) }
+    return [long]0
+}
+
+function ConvertTo-WorkerPerfHealthSession($Session) {
+    # An entry of sessions.list from a session of the WTS wrapper; a time the session object does not carry is unknown (0).
+    $idle = Get-WorkerPerfField $Session 'IdleSec'
+    $idleMinutes = -1
+    if ($null -ne $idle -and [double]$idle -ge 0) { $idleMinutes = [Math]::Round([double]$idle / 60.0, 1) }
+    return [ordered]@{ Id = [int](Get-WorkerPerfField $Session 'SessionId'); State = [string](Get-WorkerPerfField $Session 'State')
+        WinStation = [string](Get-WorkerPerfField $Session 'WinStation'); User = [string](Get-WorkerPerfField $Session 'User')
+        Domain = [string](Get-WorkerPerfField $Session 'Domain'); Client = [string](Get-WorkerPerfField $Session 'ClientName')
+        LogonTime = (ConvertTo-WorkerPerfWinHealthTime (Get-WorkerPerfField $Session 'LogonTime'))
+        ConnectTime = (ConvertTo-WorkerPerfWinHealthTime (Get-WorkerPerfField $Session 'ConnectTime'))
+        DisconnectTime = (ConvertTo-WorkerPerfWinHealthTime (Get-WorkerPerfField $Session 'DisconnectTime')); IdleMinutes = $idleMinutes }
+}
+
+function ConvertTo-WorkerPerfProfileContainer($Disk, [object[]]$Sessions, $Index = $null) {
+    # An entry of profile.containers from a record of Get-WorkerPerfProfileDisks -WithSize. Mount: the first access path
+    # that is no volume GUID path (or the drive letter); the volume figures come from that partition, else from the first
+    # partition that has them. Owner and SessionId from Resolve-WorkerPerfProfileOwner ('' and -1 when unknown).
+    $location = [string](Get-WorkerPerfField $Disk 'Location')
+    $paths = New-Object System.Collections.Generic.List[string]
+    $paths.Add($location)
+    $mount = ''; $chosen = $null; $firstWithSize = $null
+    foreach ($p in @(Get-WorkerPerfField $Disk 'Partitions')) {
+        if ($null -eq $p) { continue }
+        $named = ''
+        foreach ($ap in @(Get-WorkerPerfField $p 'AccessPaths')) {
+            $a = [string]$ap
+            if ([string]::IsNullOrEmpty($a) -or $a.StartsWith('\\?\')) { continue }
+            $paths.Add($a)
+            if (-not $named) { $named = $a.TrimEnd('\') }
+        }
+        if (-not $named) { $named = [string](Get-WorkerPerfField $p 'DriveLetter') }
+        $hasSize = ($null -ne (Get-WorkerPerfField $p 'VolumeSizeBytes'))
+        if ($named -and -not $mount) { $mount = $named; if ($hasSize) { $chosen = $p } }
+        if ($hasSize -and $null -eq $firstWithSize) { $firstWithSize = $p }
+    }
+    if ($null -eq $chosen) { $chosen = $firstWithSize }
+    $volSize = Get-WorkerPerfField $chosen 'VolumeSizeBytes'
+    $volFree = Get-WorkerPerfField $chosen 'VolumeFreeBytes'
+    $usedPct = $null
+    if ($null -ne $volSize -and $null -ne $volFree -and [double]$volSize -gt 0) { $usedPct = [Math]::Round(100.0 * ([double]$volSize - [double]$volFree) / [double]$volSize, 1) }
+    $sessionId = Resolve-WorkerPerfProfileOwner -Paths $paths.ToArray() -Sessions $Sessions -Index $Index
+    $owner = ''
+    if ($null -eq $sessionId) { $sessionId = -1 }
+    else {
+        foreach ($s in @($Sessions)) { if ($null -ne $s -and [int](Get-WorkerPerfField $s 'SessionId') -eq $sessionId) { $owner = [string](Get-WorkerPerfField $s 'User'); break } }
+    }
+    return [ordered]@{ Location = $location; Mount = $mount; Owner = $owner; SessionId = [int]$sessionId
+        SizeGB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $Disk 'SizeBytes') 1073741824 1)
+        AllocatedGB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $Disk 'AllocatedBytes') 1073741824 1)
+        VolumeSizeGB = (ConvertTo-WorkerPerfWinHealthNumber $volSize 1073741824 1); VolumeFreeGB = (ConvertTo-WorkerPerfWinHealthNumber $volFree 1073741824 1)
+        UsedPct = $usedPct }
+}
+
 #endregion
 
 #region ---------- Windows calls (thin; replaced by stand-ins in the tests) --------------------------------------------
@@ -1455,6 +1583,26 @@ function Get-WinSessionRaw {
     }
 }
 
+function Get-WorkerPerfHealthSessions {
+    # The sessions of the WTS wrapper for the health picture. Unlike Get-WinSessionRaw it throws instead of returning
+    # nothing: without the wrapper, when GetSessions fails, and when the type loaded in this process lacks the times
+    # (Add-Type loads a type once per process; a console that ran an older version keeps the old type).
+    if (-not $script:WtsAvailable) { throw (New-Object System.InvalidOperationException 'WTS-Schnittstelle nicht verfuegbar.') }
+    $type = 'WorkerPerf.WtsSession' -as [type]
+    if ($null -eq $type -or $null -eq $type.GetField('DisconnectTime')) {
+        $stale = 'Sitzungsabfrage veraltet: bitte eine neue Konsole starten'
+        Write-WarningOnce 'wts.stale' $stale
+        throw (New-Object System.InvalidOperationException $stale)
+    }
+    [WorkerPerf.Wts]::GetSessions()
+}
+
+function Get-WorkerPerfFileVersion([string]$Path) {
+    # The product version of a file (FileVersionInfo.ProductVersion); $null when the file does not exist.
+    if ([string]::IsNullOrEmpty($Path) -or -not [System.IO.File]::Exists($Path)) { return $null }
+    return [string][System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductVersion
+}
+
 function Get-WinCitrixRaw([object[]]$Sessions) {
     # EUEM round trip (CIM) and ICA session counters. Each part catches its own failure, so that a broken Citrix
     # provider never costs the snapshot its processes and sessions.
@@ -1488,16 +1636,26 @@ function Get-WinCitrixRaw([object[]]$Sessions) {
 
 function Get-WorkerPerfProfileDisks {
     # Profile containers: disks with BusType 15 (file-backed virtual disk) and their partitions, as plain records for
-    # New-WorkerPerfProfileMap.
+    # New-WorkerPerfProfileMap; each record also carries SizeBytes and AllocatedBytes of the disk. With -WithSize each
+    # partition also carries VolumeSizeBytes and VolumeFreeBytes of its volume (MSFT_Volume, joined over the volume GUID
+    # path in AccessPaths; $null without one); without it MSFT_Volume is not queried. TimeoutSec: the time limit of each query.
+    param([switch]$WithSize, [int]$TimeoutSec = $script:WorkerPerfWinStorageTimeoutSec)
     $ns = 'root\Microsoft\Windows\Storage'
-    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $script:WorkerPerfWinStorageTimeoutSec -ErrorAction Stop)
+    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)
     if ($disks.Count -eq 0) { return }
     $byDisk = @{}
-    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec $script:WorkerPerfWinStorageTimeoutSec -ErrorAction Stop)) {
+    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)) {
         if ($null -eq $p) { continue }
         $n = [int](Get-WorkerPerfField $p 'DiskNumber')
         if (-not $byDisk.ContainsKey($n)) { $byDisk[$n] = New-Object System.Collections.Generic.List[object] }
         $byDisk[$n].Add($p)
+    }
+    $volumes = @{}
+    if ($WithSize) {
+        foreach ($v in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Volume -Property Path, Size, SizeRemaining -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)) {
+            $vp = [string](Get-WorkerPerfField $v 'Path')
+            if ($vp) { $volumes[$vp.TrimEnd('\')] = $v }
+        }
     }
     foreach ($d in $disks) {
         $parts = New-Object System.Collections.Generic.List[object]
@@ -1509,17 +1667,22 @@ function Get-WorkerPerfProfileDisks {
                 if ($null -ne $dl -and [int][char]$dl -ne 0) { $letter = ([string][char]$dl) + ':' }
                 $paths = @(@(Get-WorkerPerfField $p 'AccessPaths') | Where-Object { -not [string]::IsNullOrEmpty([string]$_) } | ForEach-Object { [string]$_ })
                 $device = ''
+                $volume = $null
                 foreach ($ap in $paths) {
                     $m = [regex]::Match($ap, '^\\\\\?\\(Volume\{[^}]+\})\\?$')
                     if ($m.Success) {
                         $target = Get-WorkerPerfDosDevice $m.Groups[1].Value
                         if ($target) { $device = [string]$target }
+                        if ($volumes.ContainsKey($ap.TrimEnd('\'))) { $volume = $volumes[$ap.TrimEnd('\')] }
                     }
                 }
-                $parts.Add(@{ DriveLetter = $letter; AccessPaths = [string[]]$paths; DeviceName = $device })
+                $part = @{ DriveLetter = $letter; AccessPaths = [string[]]$paths; DeviceName = $device }
+                if ($WithSize) { $part['VolumeSizeBytes'] = Get-WorkerPerfField $volume 'Size'; $part['VolumeFreeBytes'] = Get-WorkerPerfField $volume 'SizeRemaining' }
+                $parts.Add($part)
             }
         }
-        @{ Location = [string](Get-WorkerPerfField $d 'Location'); Partitions = $parts.ToArray() }
+        @{ Location = [string](Get-WorkerPerfField $d 'Location'); SizeBytes = (Get-WorkerPerfField $d 'Size'); AllocatedBytes = (Get-WorkerPerfField $d 'AllocatedSize')
+            Partitions = $parts.ToArray() }
     }
 }
 
@@ -2292,10 +2455,15 @@ function Get-WorkerPerfWinHealthShared($Ctx, [string]$Key, [scriptblock]$Read) {
     $shResult
 }
 
+function Get-WorkerPerfWinHealthRestSec($Ctx) {
+    # The rest of the area's limit in whole seconds rounded up (at least 1): the time limit of a query, so that a query
+    # that runs into it ends at or after the limit of the area.
+    return [Math]::Max(1, [int][Math]::Ceiling(($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0))
+}
+
 function Get-WorkerPerfWinHealthCim($Ctx, [string]$ClassName, [string]$Namespace = 'root\cimv2', [string]$Filter = '', [string[]]$Property = @()) {
-    # A local CIM query with the rest of the area's limit as its time limit, in whole seconds rounded up (at least 1):
-    # a query that runs into it ends at or after the limit of the area.
-    $hcRest = [Math]::Max(1, [int][Math]::Ceiling(($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0))
+    # A local CIM query with the rest of the area's limit as its time limit (Get-WorkerPerfWinHealthRestSec).
+    $hcRest = Get-WorkerPerfWinHealthRestSec $Ctx
     $hcArgs = @{ ClassName = $ClassName; Namespace = $Namespace; OperationTimeoutSec = $hcRest; ErrorAction = 'Stop' }
     if ($Filter) { $hcArgs['Filter'] = $Filter }
     if (@($Property).Count -gt 0) { $hcArgs['Property'] = [string[]]$Property }
@@ -2349,6 +2517,64 @@ function Get-WorkerPerfWinHealthSystemDrivers($Ctx) {
     # The system drivers the areas read (each reader picks its driver by name).
     Get-WorkerPerfWinHealthShared $Ctx 'systemdrivers' {
         Get-WorkerPerfWinHealthCim $Ctx 'Win32_SystemDriver' -Filter "Name = 'vmmemctl' OR Name = 'mrxsmb10'" -Property Name, State, StartMode
+    }
+}
+
+function Get-WorkerPerfWinHealthSessions($Ctx) {
+    Get-WorkerPerfWinHealthShared $Ctx 'sessions' { Get-WorkerPerfHealthSessions }
+}
+
+function Test-WorkerPerfWinMissingNamespace($Exception) {
+    # true for a CIM query whose namespace does not exist: NativeErrorCode InvalidNamespace (CimException), or the
+    # HRESULT WBEM_E_INVALID_NAMESPACE in the exception or in error_Code of its ErrorData
+    $hcEx = Get-WorkerPerfInnerException $Exception
+    if ($null -eq $hcEx) { return $false }
+    $hcCode = $hcEx.PSObject.Properties['NativeErrorCode']
+    if ($null -ne $hcCode -and [string]$hcCode.Value -eq 'InvalidNamespace') { return $true }
+    if ([int]$hcEx.HResult -eq $script:WorkerPerfWinInvalidNamespace) { return $true }
+    $hcData = $hcEx.PSObject.Properties['ErrorData']
+    if ($null -ne $hcData -and $null -ne $hcData.Value) {
+        $hcProps = $hcData.Value.PSObject.Properties['CimInstanceProperties']
+        if ($null -ne $hcProps -and $null -ne $hcProps.Value) {
+            $hcNative = $hcProps.Value['error_Code']
+            $hcN = 0L
+            if ($null -ne $hcNative -and [long]::TryParse([string]$hcNative.Value, [ref]$hcN)) {
+                if ($hcN -gt [int]::MaxValue) { $hcN -= 4294967296L }
+                if ($hcN -eq $script:WorkerPerfWinInvalidNamespace) { return $true }
+            }
+        }
+    }
+    return $false
+}
+
+function Get-WorkerPerfRegistryTree([string]$SubKey, [string[]]$Without = @(), [int]$MaxValues = 2000, [int]$MaxDepth = 6) {
+    # The values of a key below HKLM and of its subkeys, depth first and at most MaxDepth levels below it, at most
+    # MaxValues values, as records Key (relative to SubKey, '' for the key itself), Name, Value (as text:
+    # ConvertTo-WorkerPerfRegistryText). Subkeys named in Without are passed over at the top level. Nothing without the key.
+    $hcCount = 0
+    $hcStack = New-Object System.Collections.Generic.Stack[object]
+    $hcStack.Push([object[]]@('', 0))
+    while ($hcStack.Count -gt 0 -and $hcCount -lt $MaxValues) {
+        $hcItem = $hcStack.Pop()
+        $hcRel = [string]$hcItem[0]; $hcDepth = [int]$hcItem[1]
+        $hcFull = $SubKey
+        if ($hcRel) { $hcFull = $SubKey + '\' + $hcRel }
+        $hcKey = Get-WorkerPerfRegistryValues $hcFull
+        if ($null -eq $hcKey) { continue }
+        foreach ($hcName in @($hcKey['Values'].Keys)) {
+            if ($hcCount -ge $MaxValues) { break }
+            [ordered]@{ Key = $hcRel; Name = [string]$hcName; Value = (ConvertTo-WorkerPerfRegistryText $hcKey['Values'][$hcName]) }
+            $hcCount++
+        }
+        if ($hcDepth -ge $MaxDepth) { continue }
+        $hcSubs = @($hcKey['SubKeys'])
+        for ($hcI = $hcSubs.Count - 1; $hcI -ge 0; $hcI--) {
+            $hcSub = [string]$hcSubs[$hcI]
+            if ($hcDepth -eq 0 -and @($Without) -contains $hcSub) { continue }
+            $hcChild = $hcSub
+            if ($hcRel) { $hcChild = $hcRel + '\' + $hcSub }
+            $hcStack.Push([object[]]@($hcChild, ($hcDepth + 1)))
+        }
     }
 }
 
@@ -2450,6 +2676,153 @@ function Read-WorkerPerfWinHealthOperation($Ctx) {
                 FreeGB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $disk 'FreeSpace') 1073741824 1)
                 FileSystem = [string](Get-WorkerPerfField $disk 'FileSystem'); System = ($systemDrive -ne '' -and $drive -eq $systemDrive); PageFile = $onDrive }
         }
+    }
+}
+
+function Read-WorkerPerfWinHealthSessions($Ctx) {
+    Set-WorkerPerfWinHealthValue $Ctx 'sessions.list' {
+        foreach ($sess in @(Get-WorkerPerfWinHealthSessions $Ctx)) { if ($null -ne $sess) { ConvertTo-WorkerPerfHealthSession $sess } }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'sessions.limits' {
+        # the limits in milliseconds as minutes (0 = no limit); FromPolicy: the disconnected limit comes from a policy
+        $tsProps = @('TerminalName', 'IdleSessionLimit', 'DisconnectedSessionLimit', 'ActiveSessionLimit', 'BrokenConnectionAction', 'PolicySourceDisconnectedSessionLimit')
+        foreach ($ts in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_TSSessionSetting' 'root\CIMv2\TerminalServices' -Property $tsProps)) {
+            $tsSource = Get-WorkerPerfField $ts 'PolicySourceDisconnectedSessionLimit'
+            $fromPolicy = $null
+            if ($null -ne $tsSource) { $fromPolicy = ([long]$tsSource -eq 1) }
+            [ordered]@{ Terminal = [string](Get-WorkerPerfField $ts 'TerminalName')
+                IdleLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'IdleSessionLimit') 60000 1)
+                DisconnectedLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'DisconnectedSessionLimit') 60000 1)
+                ActiveLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'ActiveSessionLimit') 60000 1)
+                BrokenAction = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'BrokenConnectionAction')); FromPolicy = $fromPolicy }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'sessions.localProfiles' {
+        # Status is a bit field: bit 1 set = temporary profile
+        foreach ($up in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_UserProfile' -Property LocalPath, Loaded, Special, LastUseTime, Status)) {
+            $upStatus = Get-WorkerPerfField $up 'Status'
+            $temporary = $null
+            if ($null -ne $upStatus) { $temporary = (([long]$upStatus -band 1) -ne 0) }
+            [ordered]@{ Path = [string](Get-WorkerPerfField $up 'LocalPath'); Loaded = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $up 'Loaded'))
+                Special = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $up 'Special')); LastUse = (ConvertTo-WorkerPerfWinHealthTime (Get-WorkerPerfField $up 'LastUseTime'))
+                Temporary = $temporary }
+        }
+    }
+}
+
+function Read-WorkerPerfWinHealthVda($Ctx) {
+    # Services are picked by display name or by the path of their program (the short names differ between versions).
+    # Without the WEM agent service every value vda.wem* is not installed and its registry values are not read.
+    $byDisplay = { param([string[]]$Names) @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { $Names -contains [string](Get-WorkerPerfField $_ 'DisplayName') }) }
+    $byPath = { param([scriptblock]$Match) @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { & $Match ([string](Get-WorkerPerfField $_ 'PathName')) }) }
+    $stateOf = { param([object[]]$Found) if ($Found.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { [string](Get-WorkerPerfField $Found[0] 'State') } }
+    $valuesOf = { param([string]$Key) $regKey = Get-WorkerPerfRegistryValues $Key; if ($null -ne $regKey) { $regKey['Values'] } }
+    $anySet = { param([string]$Name) $found = $false
+        foreach ($regPath in @($script:WorkerPerfWinVdaPolicyKey) + @($script:WorkerPerfWinVdaKeys)) { if (Test-WorkerPerfRegistryValueSet (& $valuesOf $regPath) $Name) { $found = $true } }
+        $found }
+    $wemGroups = $script:WorkerPerfHealthWemServices
+    $wemAgent = { @(& $byDisplay $wemGroups[0]) }
+    $wemRegistry = { param([string]$Key, [string]$Name)
+        $wemValues = & $valuesOf $Key
+        if (Test-WorkerPerfRegistryValueSet $wemValues $Name) { $wemValues[$Name] } }
+
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.version' {
+        $entry = @(Get-WorkerPerfWinHealthUninstall $Ctx | Where-Object { $_.DisplayName -like 'Citrix*Virtual Delivery Agent*' })
+        if ($entry.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } elseif ($entry[0].DisplayVersion) { $entry[0].DisplayVersion }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.services' {
+        foreach ($svc in @(& $byPath { param($PathName) (Get-WorkerPerfServiceExe $PathName).IndexOf('\Citrix\', [StringComparison]::OrdinalIgnoreCase) -ge 0 })) {
+            [ordered]@{ Name = [string](Get-WorkerPerfField $svc 'Name'); State = [string](Get-WorkerPerfField $svc 'State'); StartMode = [string](Get-WorkerPerfField $svc 'StartMode') }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.desktopService' { & $stateOf @(& $byDisplay @('Citrix Desktop Service')) }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.controllers' {
+        # the policy first; when its value is missing or empty, the VDA's own key (no name resolution)
+        $polValues = & $valuesOf $script:WorkerPerfWinVdaPolicyKey
+        if (Test-WorkerPerfRegistryValueSet $polValues 'ListOfDDCs') { ConvertTo-WorkerPerfControllerEntries $polValues['ListOfDDCs'] 'policy'; return }
+        foreach ($regPath in $script:WorkerPerfWinVdaKeys) {
+            $regValues = & $valuesOf $regPath
+            if (Test-WorkerPerfRegistryValueSet $regValues 'ListOfDDCs') { ConvertTo-WorkerPerfControllerEntries $regValues['ListOfDDCs'] 'registry'; return }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.listOfSids' { & $anySet 'ListOfSIDs' }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.farmGuid' { & $anySet 'FarmGUID' }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.policyRaw' { Get-WorkerPerfRegistryTree $script:WorkerPerfWinCitrixPolicyKey $script:WorkerPerfWinCitrixPolicySkip }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.persistentDataLocation' {
+        $vdi = $null
+        try { $vdi = @(Get-WorkerPerfWinHealthCim $Ctx 'Citrix_VirtualDesktopInfo' 'root\Citrix\DesktopInformation' -Property PersistentDataLocation) }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch {
+            if (Test-WorkerPerfWinMissingNamespace $_.Exception) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+            throw
+        }
+        if ($vdi.Count -gt 0) { $location = [string](Get-WorkerPerfField $vdi[0] 'PersistentDataLocation'); if ($location) { $location } }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemService' { & $stateOf @(& $wemAgent) }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemServices' {
+        if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        foreach ($group in $wemGroups) {
+            foreach ($svc in @(& $byDisplay $group)) {
+                [ordered]@{ Name = [string](Get-WorkerPerfField $svc 'DisplayName'); State = [string](Get-WorkerPerfField $svc 'State'); StartMode = [string](Get-WorkerPerfField $svc 'StartMode') }
+            }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemVersion' {
+        $agent = @(& $wemAgent)
+        if ($agent.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        $version = Get-WorkerPerfFileVersion (Get-WorkerPerfServiceExe ([string](Get-WorkerPerfField $agent[0] 'PathName')))
+        if ($version) { $version }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemServer' {
+        if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        $server = & $wemRegistry $script:WorkerPerfWinWemPolicyKey 'BrokerSvcName'
+        if ($null -ne $server) { ConvertTo-WorkerPerfRegistryText $server }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemCacheLocation' {
+        # missing or empty: the cache lies in the program folder
+        if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        $cache = & $wemRegistry $script:WorkerPerfWinWemAgentKey 'AgentCacheAlternateLocation'
+        if ($null -ne $cache) { ConvertTo-WorkerPerfRegistryText $cache }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.wemGpNetworkTimeout' {
+        if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        ConvertTo-WorkerPerfWinHealthNumber (& $wemRegistry $script:WorkerPerfWinWinlogonKey 'GpNetworkStartTimeoutPolicyValue')
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.teamsService' {
+        & $stateOf @(& $byPath { param($PathName) $PathName.IndexOf('-g TeamsSvcs', [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.webSocketService' {
+        & $stateOf @(& $byPath { param($PathName) (Get-WorkerPerfPathLeaf (Get-WorkerPerfServiceExe $PathName)) -eq 'WebSocketService.exe' })
+    }
+}
+
+function Read-WorkerPerfWinHealthProfile($Ctx) {
+    # The service is found by its program (UserProfileManager.exe); the containers are read even when the sessions
+    # are not: their owners then stay unknown.
+    $upm = { @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object {
+                (Get-WorkerPerfPathLeaf (Get-WorkerPerfServiceExe ([string](Get-WorkerPerfField $_ 'PathName')))) -eq 'UserProfileManager.exe' }) }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.service' {
+        $svc = @(& $upm)
+        if ($svc.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { [string](Get-WorkerPerfField $svc[0] 'State') }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.version' {
+        $svc = @(& $upm)
+        if ($svc.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        $version = Get-WorkerPerfFileVersion (Get-WorkerPerfServiceExe ([string](Get-WorkerPerfField $svc[0] 'PathName')))
+        if ($version) { $version }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyGpo' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManager') }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyStudio' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManagerHDX') }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.containers' {
+        $disks = @(Get-WorkerPerfProfileDisks -WithSize -TimeoutSec (Get-WorkerPerfWinHealthRestSec $Ctx))
+        $sessions = @()
+        if ($disks.Count -gt 0) {
+            try { $sessions = @(Get-WorkerPerfWinHealthSessions $Ctx) }
+            catch [System.Management.Automation.PipelineStoppedException] { throw }
+            catch { $sessions = @() }
+        }
+        $userIndex = New-WorkerPerfUserIndex $sessions
+        foreach ($disk in $disks) { ConvertTo-WorkerPerfProfileContainer $disk $sessions $userIndex }
     }
 }
 

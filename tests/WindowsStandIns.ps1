@@ -19,7 +19,7 @@ function Reset-WinStandIns {
         FailLogs = @{}; ReadFailOnce = [System.Collections.Generic.List[long]]::new(); ReadFailAlways = @(); Unformattable = @()
         OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
         # Calls: every stand-in counts its call by key (check:/open:/perf:<category>, cim:/cimclass:<class>, winevent:list,
-        # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power), so a test
+        # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power, file:version), so a test
         # can see which Windows calls a source made
         Calls = @{}
         Events = [System.Collections.Generic.List[object]]::new()
@@ -58,8 +58,9 @@ function Reset-WinStandIns {
             'Print Queue' = @{ 'Jobs' = @{ '_Total' = 1.0; 'PRN-TEST-01' = 1.0 }; 'Job Errors' = @{ '_Total' = 4.0; 'PRN-TEST-01' = 4.0 }
                 'Not Ready Errors' = @{ '_Total' = 0.0; 'PRN-TEST-01' = 0.0 } }
         }
-        Sessions = [System.Collections.Generic.List[object]]::new()
-        Disks = [System.Collections.Generic.List[object]]::new()
+        # SessionsFail: exception Get-WorkerPerfHealthSessions throws; Volumes: MSFT_Volume (added with each disk)
+        Sessions = [System.Collections.Generic.List[object]]::new(); SessionsFail = $null
+        Disks = [System.Collections.Generic.List[object]]::new(); Volumes = [System.Collections.Generic.List[object]]::new()
         Devices = @{}
         # health picture: Delay/DelayOnce: call key -> milliseconds the stand-in waits before the call (DelayOnce only
         # for the next call); RegistryFail/CimFail/LogFail: registry key, CIM class or log name -> exception thrown
@@ -75,9 +76,35 @@ function Reset-WinStandIns {
             'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B2}' = [ordered]@{
                 DisplayName = 'Citrix Virtual Apps and Desktops 7 2203 LTSR CU4 - Virtual Delivery Agent'; DisplayVersion = '2203.0.4000.4033' }
             'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{C3}' = [ordered]@{ DisplayName = 'PrinTaurus SmartSpread Client'; DisplayVersion = '6.2.1' }
+            # Citrix VDA: the controller list of the policy goes before the VDA's own; the content of ListOfSIDs is never stored
+            'SOFTWARE\Policies\Citrix' = [ordered]@{}
+            'SOFTWARE\Policies\Citrix\VirtualDesktopAgent' = [ordered]@{ ListOfDDCs = 'ddc01.klinik.example ddc02' }
+            'SOFTWARE\Citrix\VirtualDesktopAgent' = [ordered]@{ ListOfDDCs = '10.1.1.5'; ListOfSIDs = 'S-1-5-21-1-2-3-1001' }
+            'SOFTWARE\Policies\Citrix\ICAPolicies' = [ordered]@{ SimRichtlinie = 1; SimDrucker = '\\prn01\Etage2' }
+            'SOFTWARE\Policies\Citrix\UserProfileManager' = [ordered]@{ PathToUserStore = '\\fs01\upm$\%USERNAME%.%USERDOMAIN%'; ServiceActive = 1 }
+            # WEM agent
+            'SOFTWARE\Policies\Norskale\Agent Host' = [ordered]@{ BrokerSvcName = 'wem01.klinik.example' }
+            'SYSTEM\CurrentControlSet\Control\Norskale\Agent Host' = [ordered]@{ AgentCacheAlternateLocation = 'D:\WEMCache' }
+            'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' = [ordered]@{ GpNetworkStartTimeoutPolicyValue = 120 }
         }
-        # CIM classes besides the fixed ones of Get-CimInstance: class -> objects
+        # product versions of files (Get-WorkerPerfFileVersion): path -> version
+        FileVersions = @{
+            'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe' = '22.3.0.4000'
+            'C:\Program Files (x86)\Citrix\Workspace Environment Management Agent\Citrix.Wem.Agent.Service.exe' = '2407.1.0.1'
+        }
+        # CIM classes besides the fixed ones of Get-CimInstance: class -> objects; Citrix_VirtualDesktopInfo missing here
+        # means its namespace is missing (New-WinStandInMissingNamespace)
         Cim = @{
+            'Win32_TSSessionSetting' = @('RDP-Tcp', 'ICA-CGP') | ForEach-Object {
+                [pscustomobject]@{ TerminalName = $_; IdleSessionLimit = [uint32]0; DisconnectedSessionLimit = [uint32]0; ActiveSessionLimit = [uint32]0
+                    BrokenConnectionAction = [uint32]0; PolicySourceDisconnectedSessionLimit = [uint32]0 } }
+            # Status is a bit field: 9 = temporary and corrupted
+            'Win32_UserProfile' = @(
+                [pscustomobject]@{ LocalPath = 'C:\Users\mueller'; Loaded = $true; Special = $false; LastUseTime = [datetime]::Now; Status = [uint32]0 }
+                [pscustomobject]@{ LocalPath = 'C:\Users\gast'; Loaded = $false; Special = $false; LastUseTime = [datetime]::Now.AddDays(-40); Status = [uint32]0 }
+                [pscustomobject]@{ LocalPath = 'C:\Users\TEMP'; Loaded = $false; Special = $false; LastUseTime = [datetime]::Now.AddDays(-2); Status = [uint32]9 }
+                [pscustomobject]@{ LocalPath = 'C:\Windows\ServiceProfiles\NetworkService'; Loaded = $true; Special = $true; LastUseTime = [datetime]::Now; Status = [uint32]0 })
+            'Citrix_VirtualDesktopInfo' = @([pscustomobject]@{ PersistentDataLocation = 'D:\PersistentData' })
             'Win32_PageFileUsage' = @([pscustomobject]@{ Name = 'C:\pagefile.sys'; AllocatedBaseSize = [uint32]16384; PeakUsage = [uint32]2100; TempPageFile = $false })
             'Win32_NetworkAdapter' = @([pscustomobject]@{ Name = 'vmxnet3 Ethernet Adapter'; ServiceName = 'vmxnet3ndis6'; Speed = [uint64]10000000000; NetEnabled = $true })
             'Win32_SCSIController' = @([pscustomobject]@{ Name = 'VMware PVSCSI Controller'; DriverName = 'pvscsi' })
@@ -93,7 +120,14 @@ function Reset-WinStandIns {
             @('VMTools', 0, 'Running', 'Auto', '', ''), @('WinDefend', 0, 'Running', 'Auto', '', ''), @('Sense', 0, 'Running', 'Auto', '', ''),
             @('AppIDSvc', 0, 'Running', 'Auto', '', ''), @('W32Time', 0, 'Running', 'Auto', '', ''),
             @('BrokerAgent', 0, 'Running', 'Auto', 'Citrix Desktop Service', '"C:\Program Files\Citrix\Virtual Desktop Agent\BrokerAgent.exe"'),
-            @('ctxProfile', 0, 'Running', 'Auto', '', '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe"')
+            @('ctxProfile', 0, 'Running', 'Auto', '', '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe"'),
+            # invented short names: the readers go by display name and program path
+            @('WemAgentSvc', 0, 'Running', 'Auto', 'Citrix WEM Agent Host Service', '"C:\Program Files (x86)\Citrix\Workspace Environment Management Agent\Citrix.Wem.Agent.Service.exe"'),
+            @('WemLogonSvc', 0, 'Running', 'Auto', 'Citrix WEM User Logon Service', '"C:\Program Files (x86)\Citrix\Workspace Environment Management Agent\Citrix.Wem.Agent.LogonService.exe"'),
+            @('CtxTeamsSvc', 0, 'Running', 'Auto', 'Citrix HDX Teams Redirection Service', '"C:\Program Files (x86)\Citrix\System32\CtxSvcHost.exe" -g TeamsSvcs'),
+            @('CtxHdxWebSocketService', 0, 'Running', 'Auto', 'Citrix HDX HTML5 Video Redirection Service', '"C:\Program Files (x86)\Citrix\System32\WebSocketService.exe" /service'),
+            @('CpSvc', 0, 'Running', 'Auto', 'Citrix Print Manager Service', 'C:\Program Files\Citrix\System32\CpSvc.exe'),
+            @('SENS', 0, 'Running', 'Auto', 'System Event Notification Service', ''), @('wuauserv', 0, 'Stopped', 'Manual', 'Windows Update', '')
         ) | ForEach-Object {
             $display = $(if ($_[4]) { $_[4] } else { $_[0] })
             [pscustomobject]@{ Name = $_[0]; DisplayName = $display; State = $_[2]; StartMode = $_[3]; PathName = $_[5]; ProcessId = [uint32]$_[1] }
@@ -113,7 +147,7 @@ function Reset-WinStandIns {
     $script:WinFake.Sessions.Add([pscustomobject]@{ SessionId = 2; State = 'Active'; WinStation = 'ICA-CGP#0'; User = 'mueller'; Domain = 'KLINIK'; ClientName = 'WS-0001'
             LogonTime = [datetime]::Now.AddHours(-1); IdleSec = 4 })
     Add-WinStandInDisk 'mueller' 'C:\Users\mueller_UPM_local\UpmTempMount' 137
-    Add-WinStandInDisk 'gast' 'C:\Users\gast_UPM_local\UpmTempMount' 139
+    Add-WinStandInDisk 'gast' 'C:\Users\gast_UPM_local\UpmTempMount' 139 32212254720
 
     # events as ToXml() gives them (invented values); Application Error 1000 in the classic layout with unnamed data fields
     $defender = 'Microsoft-Windows-Windows Defender'; $dlog = 'Microsoft-Windows-Windows Defender/Operational'
@@ -178,10 +212,13 @@ function New-WinStandInRecord($E) {
     $o
 }
 
-function Add-WinStandInDisk([string]$User, [string]$Mount, [int]$Volume) {
+function Add-WinStandInDisk([string]$User, [string]$Mount, [int]$Volume, [uint64]$FreeBytes = 2147483648) {
+    # a container of 50 GB (20 GB allocated in its file) and its volume with FreeBytes free
     $n = $script:WinFake.Disks.Count + 3
     $guid = '\\?\Volume{{00000000-0000-0000-0000-{0:d12}}}\' -f $Volume
+    $script:WinFake.Volumes.Add([pscustomobject]@{ Path = $guid; Size = [uint64]53687091200; SizeRemaining = $FreeBytes })
     $script:WinFake.Disks.Add([pscustomobject]@{ Number = $n; Location = "\\fs01\upm$\$User.KLINIK\Win2022\UPM_Profile\ProfileContainer_RW.vhdx"
+            Size = [uint64]53687091200; AllocatedSize = [uint64]21474836480
             Partitions = @([pscustomobject]@{ DiskNumber = $n; PartitionNumber = 1; DriveLetter = [char]0; AccessPaths = $null },
                 [pscustomobject]@{ DiskNumber = $n; PartitionNumber = 2; DriveLetter = [char]0; AccessPaths = [string[]]@("$Mount\", $guid) }) })
     $script:WinFake.Devices[$guid.Substring(4).TrimEnd('\')] = "\Device\HarddiskVolume$Volume"
@@ -220,6 +257,11 @@ function New-WinStandInDenied([string]$Kind) {
         'win32' { return (New-Object System.ComponentModel.Win32Exception -ArgumentList 5) }
     }
     throw "Stand-in kennt die Art '$Kind' nicht"
+}
+
+function New-WinStandInMissingNamespace {
+    # a CIM query into a namespace that does not exist, as Get-CimInstance reports it (NativeErrorCode InvalidNamespace)
+    return (New-Object WinStandInCimException -ArgumentList 'Ungueltiger Namespace', 'InvalidNamespace')
 }
 
 function New-WinStandInTimedOut([uint32]$Code) {
@@ -268,6 +310,11 @@ function Get-WorkerPerfWinInstantValue($Sample) { return $Sample.Value }
 function Get-WorkerPerfWinCounterNames($Category) { return [string[]]@($script:WinFake.Perf[$Category.CategoryName].Keys) }
 function Get-WorkerPerfDosDevice([string]$Name) { return $script:WinFake.Devices[$Name] }
 function Get-WinSessionRaw { Add-WinStandInCall 'wts'; return $script:WinFake.Sessions.ToArray() }
+function Get-WorkerPerfHealthSessions {
+    Add-WinStandInCall 'wts'
+    if ($null -ne $script:WinFake.SessionsFail) { throw $script:WinFake.SessionsFail }
+    return $script:WinFake.Sessions.ToArray()
+}
 
 function Get-CimClass {
     [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [int]$OperationTimeoutSec)
@@ -316,13 +363,17 @@ function Get-CimInstance {
         'MSFT_PrinterDriver' { if (-not $script:WinFake.PrintDriverClass) { throw 'Klasse MSFT_PrinterDriver nicht gefunden' }; $script:WinFake.Drivers }
         'MSFT_Disk' { $script:WinFake.DiskQueries++; if ($script:WinFake.FailStorage) { throw 'Zeitlimit der Speicherabfrage' }; $script:WinFake.Disks.ToArray() }
         'MSFT_Partition' { foreach ($d in $script:WinFake.Disks) { $d.Partitions } }
+        'MSFT_Volume' { $script:WinFake.Volumes.ToArray() }
         'Citrix_Euem_RoundTrip' {
             if ($script:WinFake.FailCitrix) { throw 'Citrix-WMI antwortet nicht' }
             [pscustomobject]@{ SessionID = [uint32]2; RoundtripTime = [uint32]40; NetworkLatency = [uint32]20; InstanceId = 'a'; ProcessId = '1' }
         }
         default {
-            # any other class from Cim, without regard to the filter
-            if (-not $script:WinFake.Cim.ContainsKey($ClassName)) { throw "Stand-in kennt $ClassName nicht" }
+            # any other class from Cim, without regard to the filter; without Citrix_VirtualDesktopInfo its namespace is missing
+            if (-not $script:WinFake.Cim.ContainsKey($ClassName)) {
+                if ($ClassName -eq 'Citrix_VirtualDesktopInfo') { throw (New-WinStandInMissingNamespace) }
+                throw "Stand-in kennt $ClassName nicht"
+            }
             $script:WinFake.Cim[$ClassName]
         }
     }
@@ -454,6 +505,12 @@ function Get-WorkerPerfRegistryValues([string]$SubKey) {
     return @{ Values = $values; SubKeys = [string[]]@($subs | Sort-Object) }
 }
 
+function Get-WorkerPerfFileVersion([string]$Path) {
+    Add-WinStandInCall 'file:version'
+    if ($script:WinFake.FileVersions.ContainsKey($Path)) { return [string]$script:WinFake.FileVersions[$Path] }
+    return $null
+}
+
 function Get-WorkerPerfPerformanceInfo { Add-WinStandInCall 'native:perfinfo'; return $script:WinFake.PerformanceInfo.Clone() }
 function Get-WorkerPerfActivePowerScheme { Add-WinStandInCall 'native:power'; return [string]$script:WinFake.PowerScheme }
 
@@ -464,15 +521,18 @@ function Get-WorkerPerfLogOldestTime([string]$LogName) {
     return $null
 }
 
-# Test types: the log mode as Windows gives it (an enumeration), and an exception that reports denied access the way a
-# CimException does (NativeErrorCode AccessDenied); further below an exception that carries a native error code in ErrorData.
+# Test types: the log mode as Windows gives it (an enumeration), and an exception that reports a CIM error the way a
+# CimException does (NativeErrorCode, by default AccessDenied); further below an exception that carries a native error
+# code in ErrorData.
 if (-not ('WinStandInLogMode' -as [type])) {
     Add-Type -TypeDefinition @'
 public enum WinStandInLogMode { Circular = 0, AutoBackup = 1, Retain = 2 }
 public class WinStandInCimException : System.Exception
 {
-    public WinStandInCimException(string message) : base(message) { }
-    public string NativeErrorCode { get { return "AccessDenied"; } }
+    private readonly string code;
+    public WinStandInCimException(string message) : this(message, "AccessDenied") { }
+    public WinStandInCimException(string message, string nativeErrorCode) : base(message) { code = nativeErrorCode; }
+    public string NativeErrorCode { get { return code; } }
 }
 '@
 }
