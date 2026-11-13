@@ -51,11 +51,15 @@ function Get-WorkerPerfGuidanceMember($Object, [string]$Name) {
 }
 
 function Test-WorkerPerfGuidanceText([string]$Path, [string]$Entry, [string]$Item, [string]$Field, [string]$Text) {
-    # Every {name} in a text must be a known placeholder.
-    foreach ($m in [regex]::Matches($Text, '\{([^{}]*)\}')) {
+    # Braces only as a placeholder {name} (letters and digits) with a known name; any other brace is an error.
+    $placeholder = '\{([A-Za-z0-9]+)\}'
+    foreach ($m in [regex]::Matches($Text, $placeholder)) {
         if ($script:WorkerPerfGuidancePlaceholders -cnotcontains $m.Groups[1].Value) {
             Stop-WorkerPerfGuidance $Path $Entry $Item $Field "enthaelt den unbekannten Platzhalter '$($m.Value)'"
         }
+    }
+    if (([regex]::Replace($Text, $placeholder, '')).IndexOfAny([char[]]'{}') -ge 0) {
+        Stop-WorkerPerfGuidance $Path $Entry $Item $Field 'enthaelt eine geschweifte Klammer ohne Platzhalter'
     }
 }
 
@@ -81,7 +85,12 @@ function Test-WorkerPerfGuidanceCondition([string]$Name, $Catalogue, [string[]]$
     switch -CaseSensitive ($kind) {
         'role' { return ($script:WorkerPerfRoleNames -ccontains $rest) }
         'skipped' { return (@($script:WorkerPerfCategories.Keys) -ccontains $rest) }
-        'pattern' { return ($script:WorkerPerfPatternOrder -ccontains $rest) }
+        'pattern' {
+            if ($null -eq (Get-Variable -Name 'WorkerPerfPatternOrder' -Scope Script -ErrorAction SilentlyContinue)) {
+                throw "Bedingung '$Name': die Muster fehlen; WorkerPerf.Events.ps1 muss vor dem Pruefen des Katalogs geladen sein."
+            }
+            return ($script:WorkerPerfPatternOrder -ccontains $rest)
+        }
         'unmeasured' {
             if ($null -eq $Signals) { $Signals = [string[]]@((Read-WorkerPerfThresholds $script:WorkerPerfGuidanceThresholdFile).Keys) }
             return ($rest -ceq 'input.session' -or $Signals -ccontains $rest)
@@ -117,9 +126,9 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
             }
         }
     }
-    # spec 5.7: print recommendations name their source (contacts have no source)
-    $needsSource = $ListName -ne 'contacts' -and ($Situation -eq 'print' -or
-        @($conditions | Where-Object { $_ -ceq 'pattern.printdriver' -or $_.StartsWith('driver.', [StringComparison]::Ordinal) }).Count -gt 0)
+    # spec 5.7: every print element (check, remedy, contact) names its source
+    $needsSource = $Situation -eq 'print' -or
+        @($conditions | Where-Object { $_ -ceq 'pattern.printdriver' -or $_.StartsWith('driver.', [StringComparison]::Ordinal) }).Count -gt 0
     $source = Get-WorkerPerfGuidanceMember $Element 'source'
     if ($null -ne $source) { Assert-WorkerPerfGuidanceString $Path $Situation $item 'source' $source.Value }
     elseif ($needsSource) { Stop-WorkerPerfGuidance $Path $Situation $item 'source' 'fehlt (Pflicht fuer Druckempfehlungen)' }
@@ -166,14 +175,14 @@ function Read-WorkerPerfGuidance([string]$Path) {
 
     $vendors = (Get-WorkerPerfGuidanceMember $cat 'vendors').Value
     if ($vendors -isnot [array]) { Stop-WorkerPerfGuidance $Path 'vendors' '' '' 'ist keine Liste' }
-    $keys = @{}
+    # ordinal, like the condition driver.vendor.<key>
+    $keys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     $vendorList = @($vendors)
     for ($i = 0; $i -lt $vendorList.Count; $i++) {
         $v = $vendorList[$i]; $item = "vendors[$i]"
         if (-not (Test-WorkerPerfGuidanceObject $v)) { Stop-WorkerPerfGuidance $Path 'vendors' $item '' 'ist kein Objekt' }
         Assert-WorkerPerfGuidanceField $Path 'vendors' $item $v 'key'
-        if ($keys.ContainsKey($v.key)) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'key' "ist doppelt ('$($v.key)')" }
-        $keys[$v.key] = $true
+        if (-not $keys.Add($v.key)) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'key' "ist doppelt ('$($v.key)')" }
         $match = Get-WorkerPerfGuidanceMember $v 'match'
         if ($null -eq $match) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'match' 'fehlt' }
         if ($match.Value -isnot [array] -or @($match.Value).Count -eq 0) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'match' 'ist keine Liste mit Mustern' }
