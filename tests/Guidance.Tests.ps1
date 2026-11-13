@@ -1,7 +1,31 @@
 BeforeAll {
     Set-StrictMode -Version 2
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1')
-    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
+    function New-Inc([hashtable]$Over = @{}) {
+        # every key of an incident entry with neutral values (2 minutes from 10 min after the capture start), overwritten by
+        # the given ones; a given event gets every key of an event with neutral values first
+        $inc = @{ id = 1; type = 'umfeld'; chronic = $false; severity = 2; start = [long](1e12 + 600000); end = [long](1e12 + 720000); durSec = 120.0
+            lead = $null; resources = @(); text = ''; focus = $false; nearReported = $false; scanActive = $false; events = @(); signals = @(); affected = @()
+            main = $null; cause = $null; unverified = $false; contributors = @{}; delayProcs = @(); endpoints = @(); ica = @()
+            security = @{ products = @(); totalPct = 0 }; companion = $null; chronicContext = @(); eventIncidents = @(); event = $null }
+        foreach ($k in $Over.Keys) { $inc[$k] = $Over[$k] }
+        if ($null -ne $inc.event) {
+            $ev = @{ kind = ''; key = ''; group = ''; count = 0; eventsTruncated = $false; users = @(); sessions = @(); inSession = $false; sessionUnknown = $false
+                noUserSession = $false; versions = @(); modules = @(); moduleEvents = 0; sameModule = $false; codes = @(); app = ''; service = ''; driver = ''
+                printer = ''; source = ''; before = $false; patterns = @(); unchecked = @(); overlap = @(); companions = @() }
+            foreach ($k in $inc.event.Keys) { $ev[$k] = $inc.event[$k] }
+            $inc.event = $ev
+        }
+        $inc
+    }
+    function New-Ctx {
+        @{ Data = @{ apps = @(@{ i = 0; name = 'EXCEL.EXE'; role = '' }, @{ i = 1; name = 'MsMpEng.exe'; role = 'Sicherheit' }); sessions = @(); sollIst = @()
+                unmeasured = @{ input = $false; worker = @() }; skipped = @()
+                print = @{ drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'HP'; type = 3; isolation = 'none' }); queues = @(@{ name = 'Q1'; maxJobs = 3; jobErrors = 1; notReadyErrors = 0 }) }
+                meta = @{ computer = 'SIM-VDA01'; offsetMin = 60; endReason = 'duration'; start = 1e12; end = 1e12 + 3600000 } }
+            Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = 60 }
+    }
     function New-Catalogue([scriptblock]$Change = {}) {
         # a complete small catalogue: every situation with one check, one remedy and one contact without condition
         $c = @{
@@ -141,5 +165,245 @@ Describe 'Katalog laden und pruefen' {
         }
         $script:WorkerPerfPatternOrder | Should -Be @('resource', 'afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser', 'companion', 'overlap')
         foreach ($n in 'pattern.irgendwas', 'unmeasured.cpu.irgendwas', 'cause', 'role.', 'irgendwas') { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeFalse -Because $n }
+    }
+}
+Describe 'Situation und Bedingungen' {
+    It 'ordnet jede erzeugbare Situation genau einer Kennung zu' -TestCases @(
+        @{ I = @{ type = 'engpass'; lead = 'cpu' }; S = 'cpu' }; @{ I = @{ type = 'engpass'; lead = 'profile' }; S = 'profile' }
+        @{ I = @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }, @{ s = 2 }) }; S = 'delay.many' }; @{ I = @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }) }; S = 'delay.single' }
+        @{ I = @{ type = 'umfeld'; chronic = $true; signals = @(@{ resource = 'network' }) }; S = 'chronic.network' }; @{ I = @{ type = 'engpass'; chronic = $true; lead = 'memory' }; S = 'chronic.resource' }
+        @{ I = @{ type = 'ereignis'; event = @{ kind = 'print' } }; S = 'print' }; @{ I = @{ type = 'umfeld'; signals = @(@{ resource = 'endpoint' }) }; S = 'fallback' }
+    ) { Get-WorkerPerfSituation (New-Inc $I) | Should -Be $S }
+    It 'gibt allem anderen den Auffang-Eintrag' -TestCases @(
+        @{ I = @{ type = 'umfeld'; chronic = $true; signals = @(@{ resource = 'endpoint' }) }; S = 'fallback' }
+        @{ I = @{ type = 'ohne-engpass'; chronic = $true }; S = 'fallback' }; @{ I = @{ type = 'engpass'; lead = $null }; S = 'fallback' }
+        @{ I = @{ type = 'ereignis'; event = @{ kind = 'logon' } }; S = 'fallback' }; @{ I = @{ type = 'ereignis' }; S = 'fallback' }
+        @{ I = @{ type = 'ohne-engpass' }; S = 'delay.single' }; @{ I = @{ type = 'ereignis'; event = @{ kind = 'crash' } }; S = 'crash' }
+        @{ I = @{ type = 'irgendwas' }; S = 'fallback' }
+    ) { Get-WorkerPerfSituation (New-Inc $I) | Should -Be $S }
+    It 'leitet die Bedingungen eines Engpasses ab' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'EXCEL.EXE'; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 }
+            affected = @(@{ s = 1 }, @{ s = 2 }); scanActive = $true; companion = @{ label = 'Microsoft Defender' }; endpoints = @(@{ name = 'DB'; maxMs = 340; failed = $false }) }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('cause.app', 'scan', 'companion.security', 'endpoint.slow', 'affected.many')
+        $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.share | Should -Be '62 %'; $f.Values.baseline | Should -Be '4 %'; $f.Values.security | Should -Be 'Microsoft Defender'
+        $f.Values.ContainsKey('module') | Should -BeFalse
+    }
+    It 'leitet Treiber, Hersteller und Druckwarteschlange eines Druckproblems ab' {
+        $i = New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe'; sessions = @(); before = $false; count = 1
+            patterns = @(@{ id = 'printdriver'; detail = @{ module = 'hpsimgr.dll'; driver = 'Sim PCL 6' } }); modules = @(@{ name = 'hpsimgr.dll'; count = 1 }) }
+            events = @(@{ app = 'spoolsv.exe'; service = ''; kind = 'crash'; log = 'application' }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('pattern.printdriver', 'driver.v3', 'driver.shared', 'driver.vendor.HP', 'spooler.crash', 'queue.stuck')
+        $f.Values.driver | Should -Be 'Sim PCL 6'; $f.Values.module | Should -Be 'hpsimgr.dll'
+    }
+    It 'sagt kein Muster und unbekannte Betroffene' {
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'profileerror'; patterns = @(); sessions = @(1); before = $true } }) -Context (New-Ctx) -Catalogue $Cat).Conditions |
+            Should -Be @('affected.one', 'pattern.none', 'before')
+        $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true; $ctx.Data.sollIst = @(@{ id = 'input.session'; measured = $false })
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'nodata' } }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Be @('cause.nodata', 'unmeasured.input.session', 'affected.unknown')
+    }
+    It 'nennt die Bauart <Type> und die Isolation <Isolation> des Treibers' -TestCases @(
+        @{ Type = 3; Isolation = 'none'; Want = @('driver.v3', 'driver.shared') }; @{ Type = 3; Isolation = 'shared'; Want = @('driver.v3', 'driver.shared') }
+        @{ Type = 4; Isolation = 'isolated'; Want = @('driver.v4', 'driver.isolated') }; @{ Type = 4; Isolation = ''; Want = @('driver.v4') }
+        @{ Type = 0; Isolation = ''; Want = @() }
+    ) {
+        $ctx = New-Ctx; $ctx.Data.print.drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'Acme'; type = $Type; isolation = $Isolation }); $ctx.Data.print.queues = @()
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; driver = 'Sim PCL 6'; key = 'Sim PCL 6' } }) -Context $ctx -Catalogue $Cat
+        @($f.Conditions | Where-Object { $_.StartsWith('driver.') }) | Should -Be $Want
+        $f.Values.driver | Should -Be 'Sim PCL 6'
+    }
+    It 'findet den Treiber ueber event.driver oder event.key und den Hersteller ueber jedes Muster' {
+        $ctx = New-Ctx; $ctx.Data.print.drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'HP'; type = 3; isolation = 'none' },
+            @{ name = 'Sim Universal'; manufacturer = 'Hewlett-Packard'; type = 4; isolation = 'isolated' })
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; key = 'EXCEL.EXE'; driver = 'sim universal' } }) -Context $ctx -Catalogue $Cat
+        @($f.Conditions | Where-Object { $_.StartsWith('driver.') }) | Should -Be @('driver.v4', 'driver.isolated', 'driver.vendor.HP')
+        $f.Values.driver | Should -Be 'Sim Universal'
+        $f.Conditions | Should -Not -Contain 'spooler.crash'; $f.Conditions | Should -Not -Contain 'queue.stuck'
+        # a printdriver pattern naming a driver the list does not hold: the name, but no type, isolation or vendor
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; patterns = @(@{ id = 'printdriver'; detail = @{ module = 'x.dll'; driver = 'Fremd' } }) } }) -Context $ctx -Catalogue $Cat
+        $f.Values.driver | Should -Be 'Fremd'; @($f.Conditions | Where-Object { $_.StartsWith('driver.') }).Count | Should -Be 0
+        # a printdriver pattern without a single driver falls back to event.key
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; patterns = @(@{ id = 'printdriver'; detail = @{ module = 'x.dll'; driver = '' } }) } }) -Context $ctx -Catalogue $Cat
+        $f.Values.driver | Should -Be 'Sim PCL 6'; $f.Conditions | Should -Contain 'driver.v3'
+        # no driver at all
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; key = 'EXCEL.EXE' } }) -Context $ctx -Catalogue $Cat
+        $f.Values.ContainsKey('driver') | Should -BeFalse
+    }
+    It 'erkennt den Ausfall der Druckwarteschlange auch am Dienst und nur bei einem Druckproblem' {
+        $ctx = New-Ctx; $ctx.Data.print.queues = @(@{ name = 'Q1'; maxJobs = 3; jobErrors = 0; notReadyErrors = 0 }, @{ name = 'Q2'; maxJobs = $null; jobErrors = $null; notReadyErrors = $null })
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print' }; events = @(@{ kind = 'service'; service = 'Spooler' }) }) -Context $ctx -Catalogue $Cat
+        $f.Conditions | Should -Contain 'spooler.crash'; $f.Conditions | Should -Not -Contain 'queue.stuck'
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print' }; events = @(@{ kind = 'crash'; app = 'PrintIsolationHost.exe' }) }) -Context $ctx -Catalogue $Cat
+        $f.Conditions | Should -Contain 'spooler.crash'
+        $ctx.Data.print.queues[1].notReadyErrors = 2
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print' } }) -Context $ctx -Catalogue $Cat).Conditions | Should -Contain 'queue.stuck'
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'spoolsv.exe' }; events = @(@{ kind = 'crash'; app = 'spoolsv.exe' }) }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Not -Contain 'spooler.crash'
+    }
+    It 'nennt die Ursache <Kind>' -TestCases @(
+        @{ Kind = 'main'; Want = 'cause.app' }; @{ Kind = 'security'; Want = 'cause.security' }; @{ Kind = 'none'; Want = 'cause.none' }
+        @{ Kind = 'nodata'; Want = 'cause.nodata' }; @{ Kind = 'notmeasured'; Want = 'cause.notmeasured' }
+    ) {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = $Kind } }) -Context (New-Ctx) -Catalogue $Cat
+        @($f.Conditions | Where-Object { $_.StartsWith('cause.') }) | Should -Be @($Want)
+    }
+    It 'nennt bei Schutzsoftware als Ursache den anderen Verbraucher und keine Werte ohne gemessene Prozesse' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'security'; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 }
+                    other = @{ app = 'EXCEL.EXE'; a = 0; user = 'user007'; sharePct = 12.34; baselinePct = 0.5 } }; companion = $null }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('cause.security')
+        $f.Values.security | Should -Be 'Die Schutzsoftware'; $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.user | Should -Be 'user007'
+        $f.Values.share | Should -Be '12 %'; $f.Values.baseline | Should -Be '0,5 %'
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'notmeasured' } }) -Context (New-Ctx) -Catalogue $Cat
+        foreach ($k in 'app', 'user', 'share', 'baseline', 'security') { $f.Values.ContainsKey($k) | Should -BeFalse -Because $k }
+    }
+    It 'nennt die Rolle der Anwendung' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'MsMpEng.exe'; a = 1; user = 'SYSTEM'; sharePct = 30; baselinePct = 2 } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('cause.app', 'role.Sicherheit')
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'msmpeng.EXE'; sessions = @(3) } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('role.Sicherheit', 'affected.one', 'pattern.none')
+        # not in apps (always so with Prozesse skipped), or without a role: no role condition
+        $ctx = New-Ctx; $ctx.Data.apps = @()
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'MsMpEng.exe'; a = 1; user = 'SYSTEM'; sharePct = 30; baselinePct = 2 } }) -Context $ctx -Catalogue $Cat
+        $f.Conditions | Should -Be @('cause.app')
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE' } }) -Context (New-Ctx) -Catalogue $Cat).Conditions | Should -Be @('pattern.none')
+    }
+    It 'nennt Gegenstellen, AppLocker und Defender im Fenster' {
+        $i = New-Inc @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }); endpoints = @(@{ name = 'DB'; maxMs = 49; failed = $false }, @{ name = 'Web'; maxMs = 0; failed = $true })
+            events = @(@{ kind = 'applocker-block'; log = 'applocker' }, @{ kind = 'scan-start'; log = 'defender' }, @{ kind = 'info' }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('endpoint.slow', 'event.applocker', 'event.defender', 'affected.one')
+        $f.Values.endpoint | Should -Be 'Web'
+        $i = New-Inc @{ type = 'ohne-engpass'; endpoints = @(@{ name = 'DB'; maxMs = 49; failed = $false }, @{ name = 'Web'; maxMs = 8; failed = $false }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @()
+        $f.Values.endpoint | Should -Be 'DB'; $f.Values.endpointValue | Should -Be '49 ms'
+    }
+    It 'nennt nicht gemessene Signale, abgeschaltete Kategorien, Dauerzustand und unbestaetigte Verzoegerung in ihrer Reihenfolge' {
+        $ctx = New-Ctx; $ctx.Data.sollIst = @(@{ id = 'cpu.host'; measured = $true }, @{ id = 'disk.latency'; measured = $false }, @{ id = 'input.session'; measured = $false })
+        $ctx.Data.skipped = @(@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() }, @{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ohne-engpass'; unverified = $true; chronic = $true; affected = @(@{ s = 1 }, @{ s = 2 }, @{ s = 4 }) }) -Context $ctx -Catalogue $Cat
+        $f.Conditions | Should -Be @('unmeasured.disk.latency', 'unmeasured.input.session', 'skipped.Laufwerke', 'skipped.Ereignisse', 'affected.many', 'chronic', 'incident.unverified')
+        $f.Values.affected | Should -Be '3'
+        foreach ($n in $f.Conditions) { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeTrue -Because $n }
+    }
+    It 'nennt die Muster eines Ereignisvorfalls und nicht gepruefte Muster' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessions = @(1, 2)
+                    patterns = @(@{ id = 'resource'; detail = @{} }, @{ id = 'overlap'; detail = @{} }); unchecked = @(@{ id = 'printdriver'; category = 'Drucken' }) } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('affected.many', 'pattern.resource', 'pattern.overlap', 'pattern.unchecked')
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessions = @(1); unchecked = @(@{ id = 'overlap'; category = 'Laufwerke' }) } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('affected.one', 'pattern.unchecked')
+    }
+    It 'bestimmt die Betroffenen eines Ereignisvorfalls' -TestCases @(
+        @{ Over = @{ sessions = @(); sessionUnknown = $true }; Want = @('affected.unknown') }
+        @{ Over = @{ sessions = @(); unchecked = @(@{ id = 'users'; category = 'Ereignisse' }) }; Want = @('affected.unknown', 'pattern.unchecked') }
+        @{ Over = @{ sessions = @(); noUserSession = $true }; Want = @() }
+        @{ Over = @{ sessions = @() }; Want = @() }
+        @{ Over = @{ sessions = @(5, 6); sessionUnknown = $true }; Want = @('affected.many') }
+    ) {
+        $evt = @{ kind = 'crash'; patterns = @(@{ id = 'oneuser'; detail = @{} }) }; foreach ($k in $Over.Keys) { $evt[$k] = $Over[$k] }
+        $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = $evt }) -Context $ctx -Catalogue $Cat
+        @($f.Conditions | Where-Object { $_ -ne 'pattern.oneuser' }) | Should -Be $Want
+    }
+    It 'liest Berichtsdaten mit fehlenden Schluesseln und als geordnete Woerterbuecher' {
+        # an older report: no unverified, no event.unchecked, no skipped; events[] without empty keys
+        $i = [ordered]@{ id = 3; type = 'ereignis'; chronic = $false; start = [long](1e12 + 600000); end = [long](1e12 + 600000); signals = @(); affected = @()
+            events = @([ordered]@{ t = 1; kind = 'crash'; s = -1; text = '' }); endpoints = @(); main = $null; cause = $null; companion = $null; scanActive = $false
+            event = [ordered]@{ kind = 'print'; key = 'Sim PCL 6'; count = 2; sessions = [int[]]@(); before = $false; patterns = @(); modules = @(); app = '' } }
+        $ctx = New-Ctx; $ctx.Data.Remove('skipped'); $ctx.Data.print.queues = @()
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context $ctx -Catalogue $Cat
+        $f.Situation | Should -Be 'print'
+        $f.Conditions | Should -Be @('pattern.none', 'driver.v3', 'driver.shared', 'driver.vendor.HP')
+        $f.Values.count | Should -Be '2'; $f.Values.ContainsKey('duration') | Should -BeFalse
+        # a bare performance incident
+        $f = Get-WorkerPerfGuidanceFacts -Incident ([ordered]@{ type = 'ohne-engpass'; start = [long]1e12; end = [long](1e12 + 1000) }) -Context $ctx -Catalogue $Cat
+        $f.Situation | Should -Be 'delay.single'; $f.Conditions | Should -Be @()
+    }
+}
+Describe 'Platzhalterwerte' {
+    It 'nennt Messwert, Soll, Zeiten, Ressource, Server und Datum' {
+        $i = New-Inc @{ type = 'engpass'; lead = 'disk'; affected = @(@{ s = 1 })
+            signals = @(@{ id = 'disk.latency'; label = 'Latenz C:'; resource = 'disk'; peak = 48.25; unit = 'ms'; ideal = 'unter 20 ms'; severity = 2; start = [long](1e12 + 610000); end = [long](1e12 + 700000) }
+                @{ id = 'disk.latency'; label = 'Latenz D:'; resource = 'disk'; peak = 99; unit = 'ms'; ideal = 'unter 20 ms'; severity = 1; start = [long](1e12 + 600000); end = [long](1e12 + 700000) }
+                @{ id = 'cpu.host'; label = 'CPU-Auslastung'; resource = 'cpu'; peak = 99; unit = '%'; ideal = 'unter 75 %'; severity = 2; start = [long](1e12 + 600000); end = [long](1e12 + 700000) }
+                @{ id = 'disk.queue'; label = 'Warteschlange C:'; resource = 'disk'; peak = 7; unit = ''; ideal = 'bis 2'; severity = 2; start = [long](1e12 + 650000); end = [long](1e12 + 700000) }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Situation | Should -Be 'disk'
+        $f.Values.value | Should -Be '48 ms'; $f.Values.target | Should -Be 'unter 20 ms'; $f.Values.resource | Should -Be 'Latenz C:'
+        # 1e12 ms is 2001-09-09 01:46:40 UTC; start 10 min later, one hour offset
+        $f.Values.from | Should -Be '02:56'; $f.Values.to | Should -Be '02:58'; $f.Values.duration | Should -Be '2 Minuten'
+        $f.Values.date | Should -Be '09.09.2001'; $f.Values.server | Should -Be 'SIM-VDA01'; $f.Values.affected | Should -Be '1'
+        foreach ($k in 'user', 'app', 'share', 'baseline', 'security', 'endpoint', 'endpointValue', 'module', 'driver', 'count') { $f.Values.ContainsKey($k) | Should -BeFalse -Because $k }
+        @($f.Values.Keys | Where-Object { $script:WorkerPerfGuidancePlaceholders -cnotcontains $_ }).Count | Should -Be 0
+    }
+    It 'nennt keine Ressource bei <Lead> und den Wert ohne Einheit' -TestCases @(@{ Lead = 'cpu' }, @{ Lead = 'memory' }) {
+        $i = New-Inc @{ type = 'engpass'; lead = $Lead; signals = @(@{ id = 'x'; label = 'Etwas'; resource = $Lead; peak = 3.25; unit = ''; ideal = ''; severity = 2; start = [long]1e12; end = [long]1e12 }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.value | Should -Be '3,3'; $f.Values.ContainsKey('target') | Should -BeFalse; $f.Values.ContainsKey('resource') | Should -BeFalse
+    }
+    It 'nimmt das Eingabesignal einer Verzoegerung und das Netzsignal eines Dauerzustands' {
+        $sig = @(@{ id = 'cpu.host'; label = 'CPU'; resource = 'cpu'; peak = 80; unit = '%'; ideal = 'unter 75 %'; severity = 2; start = [long]1e12; end = [long]1e12 }
+            @{ id = 'input.session'; label = 'Eingabe'; resource = 'input'; peak = 1500; unit = 'ms'; ideal = 'unter 500 ms'; severity = 1; start = [long]1e12; end = [long]1e12 }
+            @{ id = 'ica.rtt'; label = 'ICA'; resource = 'network'; peak = 250; unit = 'ms'; ideal = 'unter 150 ms'; severity = 1; start = [long]1e12; end = [long]1e12 })
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ohne-engpass'; signals = $sig }) -Context (New-Ctx) -Catalogue $Cat).Values.value | Should -Be '1500 ms'
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'umfeld'; chronic = $true; signals = $sig }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Situation | Should -Be 'chronic.network'; $f.Values.value | Should -Be '250 ms'; $f.Values.target | Should -Be 'unter 150 ms'
+        $f.Conditions | Should -Be @('chronic')
+    }
+    It 'schreibt die Dauer <Sec> s als <Want>' -TestCases @(
+        @{ Sec = 45; Want = '45 Sekunden' }; @{ Sec = 1; Want = '1 Sekunde' }; @{ Sec = 2.5; Want = '2,5 Sekunden' }; @{ Sec = 59.6; Want = '1 Minute' }
+        @{ Sec = 120; Want = '2 Minuten' }; @{ Sec = 228; Want = '3,8 Minuten' }; @{ Sec = 90; Want = '1,5 Minuten' }; @{ Sec = 3570; Want = '1 Stunde' }
+        @{ Sec = 5400; Want = '1,5 Stunden' }; @{ Sec = 36000; Want = '10 Stunden' }
+    ) {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ start = [long]1e12; end = [long](1e12 + $Sec * 1000) }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.duration | Should -Be $Want
+    }
+    It 'nennt Modul, Zahl und Betroffene eines Ereignisvorfalls' {
+        $i = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; count = 4; sessions = @(1, 2, 3)
+                modules = @(@{ name = 'a.dll'; count = 1 }, @{ name = 'b.dll'; count = 3 }, @{ name = 'c.dll'; count = 3 }) } }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.module | Should -Be 'b.dll'; $f.Values.count | Should -Be '4'; $f.Values.affected | Should -Be '3'
+        $f.Values.from | Should -Be '02:46'; $f.Values.to | Should -Be '02:46'; $f.Values.ContainsKey('duration') | Should -BeFalse
+        # unknown sessions: no number
+        $i = New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessionUnknown = $true } }
+        (Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat).Values.ContainsKey('affected') | Should -BeFalse
+    }
+}
+Describe 'Situation und Bedingungen der simulierten Stunde' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        # one recorded hour and the report data as the report script builds them (dot-sourced in a child scope, which keeps
+        # $data); the names below are not used by the report script
+        $guideSimRun = Invoke-SimCapture (Join-Path $TestDrive 'sim')
+        $guideSimRoles = New-SimRoleFile (Join-Path $TestDrive 'roles.sim.json')
+        $guideSimReport = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
+        $script:SimData = & { $null = . $guideSimReport -Path $guideSimRun -OutFile (Join-Path $TestDrive 'report.html') -RoleFile $guideSimRoles 6>$null; $data }
+        $script:SimCtx = @{ Data = $SimData; Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = [int]$SimData.meta.offsetMin }
+        $script:SimIncidents = @(@($SimData.incidents) + @($SimData.before.incidents))
+        $script:SimFacts = @{}
+        foreach ($inc in $SimIncidents) { $SimFacts[[int]$inc.id] = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $SimCtx -Catalogue $Cat }
+    }
+    It 'leitet fuer jeden Vorfall eine bekannte Situation und nur bekannte Bedingungen ab' {
+        $SimIncidents.Count | Should -Be 16
+        $SimFacts.Count | Should -Be 16
+        foreach ($id in $SimFacts.Keys) {
+            $f = $SimFacts[$id]
+            $script:WorkerPerfSituations | Should -Contain $f.Situation -Because "Vorfall $id"
+            foreach ($n in $f.Conditions) { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeTrue -Because "Vorfall ${id}: $n" }
+            @($f.Values.Keys | Where-Object { $script:WorkerPerfGuidancePlaceholders -cnotcontains $_ }) | Should -Be @() -Because "Vorfall $id"
+        }
+    }
+    It 'ordnet die Vorfaelle der simulierten Stunde ihren Situationen zu' {
+        $got = @(foreach ($id in 1..16) { '{0}:{1}' -f $id, $SimFacts[$id].Situation })
+        $got | Should -Be @('1:chronic.network', '2:cpu', '3:memory', '4:disk', '5:share', '6:profile', '7:delay.many', '8:delay.single', '9:profileerror',
+            '10:crash', '11:crash', '12:print', '13:crash', '14:crash', '15:crash', '16:crash')
+    }
+    It 'nennt fuer Datentraeger und Druck die Tatsachen der simulierten Stunde' {
+        $SimFacts[4].Conditions | Should -Contain 'scan'; $SimFacts[4].Conditions | Should -Contain 'companion.security'; $SimFacts[4].Values.security | Should -Be 'Microsoft Defender'
+        $SimFacts[12].Conditions | Should -Contain 'pattern.printdriver'; $SimFacts[12].Conditions | Should -Contain 'spooler.crash'
+        $SimFacts[12].Conditions | Should -Contain 'role.Drucken'; $SimFacts[12].Values.driver | Should -Be 'HP Universal Printing PCL 6 (Sim)'
+        $SimFacts[16].Conditions | Should -Contain 'affected.unknown'; $SimFacts[16].Conditions | Should -Contain 'before'
+        foreach ($id in 2..6) { $SimFacts[$id].Conditions | Should -Contain 'cause.app' -Because "Vorfall $id"; $SimFacts[$id].Values.Keys | Should -Contain 'app' }
     }
 }

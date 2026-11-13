@@ -1,7 +1,10 @@
 #Requires -Version 5.1
-# Guidance catalogue (guidance.de.json): loading and checking. Dot-source this file; it only defines variables and
-# functions and runs nothing. It needs WorkerPerf.Common.ps1 (ConvertFrom-WorkerPerfJsonFile, Read-WorkerPerfThresholds,
-# $script:WorkerPerfRoleNames, $script:WorkerPerfCategories) and WorkerPerf.Events.ps1 ($script:WorkerPerfPatternOrder).
+# Guidance catalogue (guidance.de.json): loading and checking, and the situation, conditions and placeholder values of
+# an incident. Dot-source this file; it only defines variables and functions and runs nothing. It needs
+# WorkerPerf.Common.ps1 (ConvertFrom-WorkerPerfJsonFile, Read-WorkerPerfThresholds, Get-WorkerPerfField,
+# $script:WorkerPerfRoleNames, $script:WorkerPerfCategories), WorkerPerf.Events.ps1 ($script:WorkerPerfPatternOrder,
+# Format-WorkerPerfEventDate, Test-WorkerPerfAccountPattern) and WorkerPerf.Findings.ps1 (Format-WorkerPerfTextNumber,
+# Format-WorkerPerfValue).
 
 $script:WorkerPerfSituations = @('cpu', 'memory', 'disk', 'share', 'profile', 'delay.many', 'delay.single', 'chronic.network', 'chronic.resource',
     'crash', 'hang', 'service', 'print', 'profileerror', 'system', 'fallback')
@@ -203,4 +206,287 @@ function Read-WorkerPerfGuidance([string]$Path) {
     $signals = [string[]]@((Read-WorkerPerfThresholds $script:WorkerPerfGuidanceThresholdFile).Keys)
     foreach ($s in $script:WorkerPerfSituations) { Test-WorkerPerfGuidanceSituation $Path $s $situations.$s $cat $signals }
     return $cat
+}
+
+# ---------- situation, conditions and placeholder values of one incident (spec 5.2, 5.4, 5.5) ----------
+
+$script:WorkerPerfGuidanceWorker = @('cpu', 'memory', 'disk', 'share', 'profile')
+$script:WorkerPerfGuidanceEventKinds = @('crash', 'hang', 'service', 'print', 'profileerror', 'system')
+# the lead resources whose signal label names the resource (drive, share, profile container)
+$script:WorkerPerfGuidanceNamedResources = @('disk', 'share', 'profile')
+$script:WorkerPerfGuidanceSpoolerApps = @('spoolsv.exe', 'PrintIsolationHost.exe')
+# unit words of a duration: limit in seconds below which the unit is used, seconds per unit, singular, plural
+$script:WorkerPerfGuidanceDurationUnits = @(
+    @{ Below = 60; Per = 1; One = 'Sekunde'; Many = 'Sekunden' }
+    @{ Below = 3600; Per = 60; One = 'Minute'; Many = 'Minuten' }
+    @{ Below = [double]::PositiveInfinity; Per = 3600; One = 'Stunde'; Many = 'Stunden' })
+
+function Get-WorkerPerfGuidanceList($Object, [string]$Name) {
+    # A list field of report data (hashtable, ordered dictionary or JSON object) as an array; empty when missing or null.
+    $v = Get-WorkerPerfField $Object $Name
+    if ($null -eq $v) { return , @() }
+    return , @($v)
+}
+
+function Test-WorkerPerfGuidanceSame([string]$A, [string]$B) {
+    return [string]::Equals($A, $B, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-WorkerPerfGuidanceRounded([double]$Value) {
+    # the number Format-WorkerPerfTextNumber writes for Value
+    if ([Math]::Abs($Value) -lt 10) { return [Math]::Round($Value, 1, [MidpointRounding]::AwayFromZero) }
+    return [Math]::Round($Value, 0, [MidpointRounding]::AwayFromZero)
+}
+
+function Format-WorkerPerfGuidanceDuration([double]$Seconds) {
+    # '45 Sekunden', '2 Minuten', '3,8 Minuten', '1,5 Stunden': the smallest unit whose written number stays below the next
+    $units = $script:WorkerPerfGuidanceDurationUnits
+    for ($k = 0; $k -lt $units.Count; $k++) {
+        $u = $units[$k]
+        $n = Get-WorkerPerfGuidanceRounded ($Seconds / $u.Per)
+        if ($k -lt $units.Count - 1 -and $n * $u.Per -ge $u.Below) { continue }
+        $word = $u.Many
+        if ($n -eq 1) { $word = $u.One }
+        return ((Format-WorkerPerfTextNumber $n) + ' ' + $word)
+    }
+}
+
+function Format-WorkerPerfGuidanceClock([long]$Ms, [int]$OffsetMinutes) {
+    # 'HH:mm' in the local time of the server
+    $t = [DateTimeOffset]::FromUnixTimeMilliseconds($Ms).UtcDateTime.AddMinutes($OffsetMinutes)
+    return $t.ToString('HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-WorkerPerfGuidanceLeadSignal($Incident) {
+    # The leading signal of a report entry, chosen as Get-WorkerPerfLeadFinding chooses the finding: among the signals of
+    # the lead resource (input for a delay without bottleneck, network and endpoint otherwise), the highest severity, then
+    # the earliest start; all signals when none of them qualifies.
+    $pool = Get-WorkerPerfGuidanceList $Incident 'signals'
+    $lead = [string](Get-WorkerPerfField $Incident 'lead')
+    if ($lead) { $want = @($lead) }
+    elseif ([string](Get-WorkerPerfField $Incident 'type') -eq 'ohne-engpass') { $want = @('input') }
+    else { $want = @('network', 'endpoint') }
+    $sel = @($pool | Where-Object { $want -contains [string](Get-WorkerPerfField $_ 'resource') })
+    if ($sel.Count -gt 0) { $pool = $sel }
+    if ($pool.Count -eq 0) { return $null }
+    return @($pool | Sort-Object -Property @{ Expression = { [int](Get-WorkerPerfField $_ 'severity') }; Descending = $true },
+        @{ Expression = { [long](Get-WorkerPerfField $_ 'start') } })[0]
+}
+
+function Get-WorkerPerfSituation($Incident) {
+    # The situation of an incident of the report data (spec 5.2); what cannot be assigned is 'fallback'.
+    $type = [string](Get-WorkerPerfField $Incident 'type')
+    if ($type -eq 'ereignis') {
+        $kind = [string](Get-WorkerPerfField (Get-WorkerPerfField $Incident 'event') 'kind')
+        if ($script:WorkerPerfGuidanceEventKinds -ccontains $kind) { return $kind }
+        return 'fallback'
+    }
+    if ([bool](Get-WorkerPerfField $Incident 'chronic')) {
+        if ($type -eq 'umfeld' -and @((Get-WorkerPerfGuidanceList $Incident 'signals') | Where-Object { [string](Get-WorkerPerfField $_ 'resource') -eq 'network' }).Count -gt 0) {
+            return 'chronic.network'
+        }
+        if ($type -eq 'engpass') { return 'chronic.resource' }
+        return 'fallback'
+    }
+    if ($type -eq 'engpass') {
+        $lead = [string](Get-WorkerPerfField $Incident 'lead')
+        if ($script:WorkerPerfGuidanceWorker -ccontains $lead) { return $lead }
+        return 'fallback'
+    }
+    if ($type -eq 'ohne-engpass') {
+        if ((Get-WorkerPerfGuidanceList $Incident 'affected').Count -ge 2) { return 'delay.many' }
+        return 'delay.single'
+    }
+    return 'fallback'
+}
+
+function Get-WorkerPerfGuidanceApp($Apps, [string]$Name, $Index) {
+    # The entry of Data.apps by index (main.a) or, without index, by name.
+    foreach ($a in $Apps) {
+        if ($null -ne $Index) { if ([string](Get-WorkerPerfField $a 'i') -eq [string]$Index) { return $a } }
+        elseif ($Name -and (Test-WorkerPerfGuidanceSame ([string](Get-WorkerPerfField $a 'name')) $Name)) { return $a }
+    }
+    return $null
+}
+
+function Get-WorkerPerfGuidanceDriver($Event, $Print) {
+    # The driver involved in an event incident: name and its entry of print.drivers (null when the list does not hold it).
+    # The driver of a printdriver pattern, else the entry named by event.driver or event.key.
+    $drivers = Get-WorkerPerfGuidanceList $Print 'drivers'
+    $names = @()
+    foreach ($p in (Get-WorkerPerfGuidanceList $Event 'patterns')) {
+        if ([string](Get-WorkerPerfField $p 'id') -ne 'printdriver') { continue }
+        $n = [string](Get-WorkerPerfField (Get-WorkerPerfField $p 'detail') 'driver')
+        if ($n) { $names += $n; break }
+    }
+    $fromPattern = $names.Count -gt 0
+    if (-not $fromPattern) { $names = @(@([string](Get-WorkerPerfField $Event 'driver'), [string](Get-WorkerPerfField $Event 'key')) | Where-Object { $_ }) }
+    foreach ($n in $names) {
+        foreach ($d in $drivers) {
+            if (Test-WorkerPerfGuidanceSame ([string](Get-WorkerPerfField $d 'name')) $n) { return @{ Name = [string](Get-WorkerPerfField $d 'name'); Entry = $d } }
+        }
+    }
+    if ($fromPattern) { return @{ Name = $names[0]; Entry = $null } }
+    return $null
+}
+
+function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
+    # Situation, conditions (spec 5.4, in the order of its table) and placeholder values (spec 5.5) of one incident of
+    # the report data. Context: @{ Data; Thresholds; OffsetMinutes }. A value the incident does not have is left out.
+    $data = $Context.Data
+    $offset = [int]$Context.OffsetMinutes
+    $situation = Get-WorkerPerfSituation $Incident
+    $type = [string](Get-WorkerPerfField $Incident 'type')
+    $ev = Get-WorkerPerfField $Incident 'event'
+    $isEvent = $type -eq 'ereignis' -and $null -ne $ev
+    $cause = Get-WorkerPerfField $Incident 'cause'
+    $causeKind = [string](Get-WorkerPerfField $cause 'kind')
+    $main = Get-WorkerPerfField $Incident 'main'
+    $companion = Get-WorkerPerfField $Incident 'companion'
+    $events = Get-WorkerPerfGuidanceList $Incident 'events'
+    $apps = Get-WorkerPerfGuidanceList $data 'apps'
+    $print = Get-WorkerPerfField $data 'print'
+    $c = New-Object System.Collections.Generic.List[string]
+    $v = @{}
+
+    # cause, scan, companion, role
+    $causeCondition = @{ main = 'cause.app'; security = 'cause.security'; none = 'cause.none'; nodata = 'cause.nodata'; notmeasured = 'cause.notmeasured' }
+    if ($causeCondition.ContainsKey($causeKind)) { $c.Add($causeCondition[$causeKind]) }
+    if ([bool](Get-WorkerPerfField $Incident 'scanActive')) { $c.Add('scan') }
+    if ($null -ne $companion) { $c.Add('companion.security') }
+    $app = $null
+    if ($isEvent) {
+        $name = [string](Get-WorkerPerfField $ev 'app')
+        if ($name) { $app = Get-WorkerPerfGuidanceApp $apps $name $null }
+    }
+    elseif ($causeKind -eq 'main' -and $null -ne $main -and $null -ne (Get-WorkerPerfField $main 'a')) { $app = Get-WorkerPerfGuidanceApp $apps '' (Get-WorkerPerfField $main 'a') }
+    $role = [string](Get-WorkerPerfField $app 'role')
+    if ($role) { $c.Add('role.' + $role) }
+
+    # endpoints in the window
+    $endpoints = Get-WorkerPerfGuidanceList $Incident 'endpoints'
+    $warn = $null
+    if ($null -ne $Context.Thresholds -and $Context.Thresholds.Contains('probe.connect')) { $warn = [double]$Context.Thresholds['probe.connect'].warn }
+    $slow = @($endpoints | Where-Object { [bool](Get-WorkerPerfField $_ 'failed') -or ($null -ne $warn -and [double](Get-WorkerPerfField $_ 'maxMs') -ge $warn) })
+    if ($slow.Count -gt 0) { $c.Add('endpoint.slow') }
+
+    # events in the window
+    if (@($events | Where-Object { [string](Get-WorkerPerfField $_ 'kind') -eq 'applocker-block' }).Count -gt 0) { $c.Add('event.applocker') }
+    if (@($events | Where-Object { [string](Get-WorkerPerfField $_ 'log') -eq 'defender' }).Count -gt 0) { $c.Add('event.defender') }
+
+    # unmeasured signals, skipped categories
+    foreach ($row in (Get-WorkerPerfGuidanceList $data 'sollIst')) {
+        $m = Get-WorkerPerfField $row 'measured'
+        if ($null -ne $m -and -not [bool]$m) { $c.Add('unmeasured.' + [string](Get-WorkerPerfField $row 'id')) }
+    }
+    foreach ($s in (Get-WorkerPerfGuidanceList $data 'skipped')) { $c.Add('skipped.' + [string](Get-WorkerPerfField $s 'id')) }
+
+    # affected sessions
+    $unchecked = Get-WorkerPerfGuidanceList $ev 'unchecked'
+    if ($isEvent) {
+        $n = (Get-WorkerPerfGuidanceList $ev 'sessions').Count
+        $unknown = $n -eq 0 -and ([bool](Get-WorkerPerfField $ev 'sessionUnknown') -or
+            @($unchecked | Where-Object { [string](Get-WorkerPerfField $_ 'id') -eq 'users' }).Count -gt 0)
+    }
+    else {
+        $n = (Get-WorkerPerfGuidanceList $Incident 'affected').Count
+        $unknown = $n -eq 0 -and [bool](Get-WorkerPerfField (Get-WorkerPerfField $data 'unmeasured') 'input')
+    }
+    if ($n -ge 2) { $c.Add('affected.many') }
+    elseif ($n -eq 1) { $c.Add('affected.one') }
+    elseif ($unknown) { $c.Add('affected.unknown') }
+    if (-not $unknown) { $v['affected'] = [string]$n }
+
+    if ([bool](Get-WorkerPerfField $Incident 'chronic')) { $c.Add('chronic') }
+    if ([bool](Get-WorkerPerfField $Incident 'unverified')) { $c.Add('incident.unverified') }
+
+    # patterns, driver, spooler and queues of an event incident
+    $driver = $null
+    if ($isEvent) {
+        $patterns = Get-WorkerPerfGuidanceList $ev 'patterns'
+        foreach ($p in $patterns) { $c.Add('pattern.' + [string](Get-WorkerPerfField $p 'id')) }
+        if ($patterns.Count -eq 0 -and $unchecked.Count -eq 0) { $c.Add('pattern.none') }
+        if ($unchecked.Count -gt 0) { $c.Add('pattern.unchecked') }
+        $driver = Get-WorkerPerfGuidanceDriver $ev $print
+        if ($null -ne $driver -and $null -ne $driver.Entry) {
+            $d = $driver.Entry
+            $dt = [string](Get-WorkerPerfField $d 'type')
+            if ($dt -eq '3') { $c.Add('driver.v3') } elseif ($dt -eq '4') { $c.Add('driver.v4') }
+            $iso = [string](Get-WorkerPerfField $d 'isolation')
+            if ($iso -eq 'none' -or $iso -eq 'shared') { $c.Add('driver.shared') } elseif ($iso -eq 'isolated') { $c.Add('driver.isolated') }
+            $maker = [string](Get-WorkerPerfField $d 'manufacturer')
+            if ($maker) {
+                foreach ($vendor in (Get-WorkerPerfGuidanceList $Catalogue 'vendors')) {
+                    $hit = @((Get-WorkerPerfGuidanceList $vendor 'match') | Where-Object { Test-WorkerPerfAccountPattern $maker ([string]$_) }).Count -gt 0
+                    if ($hit) { $c.Add('driver.vendor.' + [string](Get-WorkerPerfField $vendor 'key')) }
+                }
+            }
+        }
+        if ($situation -eq 'print') {
+            $spooler = @($events | Where-Object {
+                    $a = [string](Get-WorkerPerfField $_ 'app')
+                    @($script:WorkerPerfGuidanceSpoolerApps | Where-Object { Test-WorkerPerfGuidanceSame $_ $a }).Count -gt 0 -or
+                    (Test-WorkerPerfGuidanceSame ([string](Get-WorkerPerfField $_ 'service')) 'Spooler') })
+            if ($spooler.Count -gt 0) { $c.Add('spooler.crash') }
+            $stuck = @((Get-WorkerPerfGuidanceList $print 'queues') | Where-Object {
+                    [double](Get-WorkerPerfField $_ 'jobErrors') -gt 0 -or [double](Get-WorkerPerfField $_ 'notReadyErrors') -gt 0 })
+            if ($stuck.Count -gt 0) { $c.Add('queue.stuck') }
+        }
+        if ([bool](Get-WorkerPerfField $ev 'before')) { $c.Add('before') }
+    }
+
+    # values: cause
+    $who = $null
+    if ($causeKind -eq 'main') { $who = $main } elseif ($causeKind -eq 'security') { $who = Get-WorkerPerfField $cause 'other' }
+    if ($null -ne $who) {
+        foreach ($k in 'user', 'app') { $t = [string](Get-WorkerPerfField $who $k); if ($t) { $v[$k] = $t } }
+        $pct = Get-WorkerPerfField $who 'sharePct'; if ($null -ne $pct) { $v['share'] = (Format-WorkerPerfTextNumber ([double]$pct)) + ' %' }
+        $pct = Get-WorkerPerfField $who 'baselinePct'; if ($null -ne $pct) { $v['baseline'] = (Format-WorkerPerfTextNumber ([double]$pct)) + ' %' }
+    }
+    $label = [string](Get-WorkerPerfField (Get-WorkerPerfField $cause 'security') 'label')
+    if (-not $label) { $label = [string](Get-WorkerPerfField $companion 'label') }
+    if ($label) { $v['security'] = $label }
+
+    # values: leading signal
+    $sig = Get-WorkerPerfGuidanceLeadSignal $Incident
+    if ($null -ne $sig) {
+        $peak = Get-WorkerPerfField $sig 'peak'
+        if ($null -ne $peak) { $v['value'] = Format-WorkerPerfValue ([double]$peak) ([string](Get-WorkerPerfField $sig 'unit')) }
+        $t = [string](Get-WorkerPerfField $sig 'ideal'); if ($t) { $v['target'] = $t }
+        if ($script:WorkerPerfGuidanceNamedResources -ccontains [string](Get-WorkerPerfField $Incident 'lead')) {
+            $t = [string](Get-WorkerPerfField $sig 'label'); if ($t) { $v['resource'] = $t }
+        }
+    }
+
+    # values: time
+    $start = Get-WorkerPerfField $Incident 'start'; $end = Get-WorkerPerfField $Incident 'end'
+    if ($null -ne $start) {
+        $v['from'] = Format-WorkerPerfGuidanceClock ([long]$start) $offset
+        $v['date'] = Format-WorkerPerfEventDate ([long]$start) $offset
+    }
+    if ($null -ne $end) { $v['to'] = Format-WorkerPerfGuidanceClock ([long]$end) $offset }
+    if ($null -ne $start -and $null -ne $end -and [long]$end -gt [long]$start) { $v['duration'] = Format-WorkerPerfGuidanceDuration (([long]$end - [long]$start) / 1000.0) }
+
+    # values: slowest endpoint (a failed one first)
+    if ($endpoints.Count -gt 0) {
+        $e = @($endpoints | Sort-Object -Property @{ Expression = { [bool](Get-WorkerPerfField $_ 'failed') }; Descending = $true },
+            @{ Expression = { [double](Get-WorkerPerfField $_ 'maxMs') }; Descending = $true })[0]
+        $t = [string](Get-WorkerPerfField $e 'name')
+        if ($t) {
+            $v['endpoint'] = $t
+            $ms = Get-WorkerPerfField $e 'maxMs'; if ($null -ne $ms) { $v['endpointValue'] = Format-WorkerPerfValue ([double]$ms) 'ms' }
+        }
+    }
+
+    # values: event incident
+    if ($isEvent) {
+        $top = $null
+        foreach ($m in (Get-WorkerPerfGuidanceList $ev 'modules')) { if ($null -eq $top -or [int](Get-WorkerPerfField $m 'count') -gt [int](Get-WorkerPerfField $top 'count')) { $top = $m } }
+        $t = [string](Get-WorkerPerfField $top 'name'); if ($t) { $v['module'] = $t }
+        if ($null -ne $driver -and $driver.Name) { $v['driver'] = $driver.Name }
+        $count = Get-WorkerPerfField $ev 'count'; if ($null -ne $count) { $v['count'] = [string][int]$count }
+    }
+    $t = [string](Get-WorkerPerfField (Get-WorkerPerfField $data 'meta') 'computer'); if ($t) { $v['server'] = $t }
+
+    return @{ Situation = $situation; Conditions = [string[]]$c.ToArray(); Values = $v }
 }
