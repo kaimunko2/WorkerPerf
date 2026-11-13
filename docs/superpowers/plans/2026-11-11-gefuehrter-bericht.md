@@ -49,6 +49,43 @@ Jede Zeile ist durch einen Test in der genannten Task abgesichert (`# Review Foc
 
 ---
 
+## Ergänzungen aus dem Plan Messkategorien (gelten für die genannten Tasks)
+
+Der Plan `docs/superpowers/plans/2026-11-12-messkategorien.md` ist nach diesem Plan geschrieben und vor ihm umgesetzt worden. Die Berichtsdaten tragen seitdem, was bei der Messung weggelassen wurde (`-Skip`). Dieser Abschnitt ergänzt die Tasks; wo er einer Task widerspricht, gilt er. Grundregel aus `docs/superpowers/specs/2026-11-12-messkategorien-design.md`, Abschnitt 5: Nichts aus einer weggelassenen Kategorie zählt als unauffällig, als null oder als „keine"; Texte und Kopiertexte sagen „nicht gemessen" mit dem Grund, bei Mustern „nicht geprüft".
+
+**Neue Berichtsdaten (Stand nach dem Plan Messkategorien):**
+
+- `skipped[] { id, label, text, places[] }`: die weggelassenen Kategorien mit Grund und abhängigen Stellen; leer ohne `-Skip`. Die Namen der Kategorien stehen in `$script:WorkerPerfCategories` (`src/WorkerPerf.Common.ps1`).
+- `incidents[].cause.kind = "notmeasured"`: kein Verursacher ermittelt, weil `Prozesse` weggelassen ist.
+- `incidents[].unverified` (nur bei `ohne-engpass`, boolesch): wahr, wenn `Laufwerke` weggelassen ist. Der Vorfall heißt dann „ohne erkannten Engpass", nie „ohne Engpass".
+- `incidents[].event.unchecked[] { id, category, text }`: Muster, die nicht geprüft werden konnten. Drei Kennungen (`printdriver`, `users`, `overlap`); `overlap` kann mehrfach vorkommen, je Kategorie einmal.
+- `Get-WorkerPerfUncheckedStatements` (`src/WorkerPerf.Events.ps1`) liefert die Aussagen zu `event.unchecked` in ihrer Reihenfolge; zwei oder mehr `overlap`-Einträge ergeben eine gemeinsame Aussage („Zusammentreffen mit Vorfällen der Kategorien Laufwerke, Citrix (nicht gemessen)").
+- `mainApp` ist `null`, wenn `Prozesse` weggelassen ist: derselbe Wert wie ohne konfigurierte Hauptanwendung.
+- `before.status = "off"` steht auch für `-Skip Rueckblick`; `quality.eventReads` und `before.readCounts` sind für eine weggelassene Kategorie leer und sagen nichts über Vollständigkeit.
+- Zahlen, die nur deshalb 0 sind, weil die Kategorie fehlt: `meta.processRows`, `meta.processCount`, `meta.totalCpuSec`, `sessions[].cpuSec`, `.cpuShare`, `.ioMB`, `.procsAvg`, `incidents[].security.totalPct`; `cause.scan` ist ohne `Ereignisse` `false`; der Text der Ursache sagt dann „Ob im Fenster ein Virenscan lief, ist nicht erfasst" (`largest.scan.notmeasured`). Jeder Satz aus diesen Feldern prüft zuerst `skipped`.
+- Der Lader liest die Dateien einer Kategorie nicht, die `Skip` in `meta.json` nennt, auch wenn sie im Ordner liegen. `meta.json` trägt mit `-Skip Prozesse` `IncludeCommandLine: false`.
+- Sätze der heutigen Seite, die der geführte Bericht im Wortlaut übernimmt: die Kopfzeile ohne `Ereignisse` („… Vorfälle aus Ereignissen wurden nicht erfasst (-Skip Ereignisse).", mit und ohne Vorfälle), die Liste „Nicht gemessen (n)" im Zustand ohne Befund (erst die Kategorien aus `skipped`, dann die Signale), der Zusatz zum gemeldeten Benutzer („Abstürze und Hänger sind dabei nicht gezählt: …", mit nur `Prozesse` weggelassen und gemeldeter Zeit „beim Benutzer nicht gezählt"), die Treiberspalte („nein (vor der Messung)", wenn nur der Rückblick gelesen wurde; „–", wenn keine Quelle gelesen wurde) und die „Grenzen der Aussage" (Zeilen zu Laufwerken und kurzlebigen Prozessen nur, wenn die Kategorie gemessen ist).
+
+**Task 1 (Katalog laden und prüfen):** Zu den bekannten Bedingungen und ihrem Test kommen `cause.notmeasured`, `skipped.<Kategorie>` (Name aus `$script:WorkerPerfCategories`), `pattern.unchecked` und `incident.unverified`. Die Liste `hints` kennt den Hinweis `skipped` neben `unmeasured`.
+
+**Task 2 (Situation, Bedingungen, Platzhalterwerte):** Verbraucht zusätzlich `Data.skipped`. Abgeleitet werden `cause.notmeasured` aus `cause.kind`, `incident.unverified` aus `unverified`, `pattern.unchecked` aus nicht leerem `event.unchecked`, `skipped.<id>` je Eintrag. `pattern.none` gilt nur, wenn `event.patterns` und `event.unchecked` beide leer sind. Mit `users` in `event.unchecked` gelten `event.sessionUnknown` und `event.noUserSession` nicht, obwohl beide Felder in den Daten wahr bleiben. Die Bedingung `scan` ist ohne `Ereignisse` unbekannt, nicht falsch. `role.<R>` lässt sich ohne `Prozesse` nicht ableiten. `New-Inc` und `New-Ctx` der Tests erhalten `event.unchecked = @()`, `unverified = $false`, `skipped = @()`.
+
+**Task 4 (Rangfolge, Gruppen, Lagebild):** Das Lagebild erhält den Hinweis `skipped` mit den `label` aus `skipped`. `unmeasured` und `skipped` nennen für Laufwerke, Citrix und Gegenstellen dieselben Signale; `skipped` hat Vorrang, `unmeasured` nennt dann nur, was aus anderem Grund fehlt. Der grüne Zustand und sein Satz sagen ohne `Ereignisse` nicht „keine Vorfälle" ohne den Vorbehalt, dass Vorfälle aus Ereignissen nicht erfasst wurden. Die Kennzahl der Verzögerungen nennt Vorfälle mit `unverified` „ohne erkannten Engpass". Rangfolge: Ein Ereignisvorfall mit `users` in `event.unchecked` oder mit unbekannter Sitzung steht unter den Leistungsvorfällen derselben Stufe.
+
+**Task 5 (Kopiertexte):** Bei `cause.kind = notmeasured` steht im Teil zur Ursache der Satz der Kategorie. Bei Ereignisvorfällen stehen die Texte aus `event.unchecked` als „nicht geprüft", gebildet mit `Get-WorkerPerfUncheckedStatements` (keine eigene Regel „eine Zeile je Kennung": mehrere `overlap`-Einträge ergeben eine gemeinsame Aussage, die alle Kategorien nennt). Titel und Text eines Vorfalls mit `unverified` sagen „ohne erkannten Engpass". Der Satz zum gemeldeten Benutzer nennt, dass Abstürze und Hänger nicht gezählt sind, wenn `Ereignisse` oder `Prozesse` fehlt.
+
+**Task 6 (Inhalt des Katalogs):** Varianten für `cause.notmeasured`, `skipped.*`, `pattern.unchecked` und `incident.unverified` mit den Formulierungen „nicht gemessen" und „nicht geprüft". Empfehlungen, die eine Messung voraussetzen (Virenscan im Fenster, Rollen der Prozesse, beteiligte Druckertreiber), haben eine Variante für den Fall, dass die Messung fehlt.
+
+**Task 7 (Berichtsdaten):** Bevor der geführte Bericht sagt, es sei keine Hauptanwendung konfiguriert, prüft er `skipped[].places` auf `apps`. Die Regel der Treiberspalte „An einem Vorfall beteiligt" liegt heute nur in der Seite; die Berichtsdaten erhalten dafür `print.involvedFrom` mit einem der Werte `capture`, `lookback`, `both`, `none` (Schlüsselwort; in `tests/MaskCensus.json` und der Liste der Schlüsselwortfelder eintragen), damit Ansicht, Kopiertext und Katalogbedingungen dieselbe Regel verwenden: „nein" nur, wenn beide Quellen gelesen wurden.
+
+**Gestaltung und Tasks 8–11 (Seite):** `#skipInfo` steht in der Kopfleiste neben `#maskInfo`. `details#measured` nennt die weggelassenen Kategorien mit ihrem `text`. Vorfallsansicht und Expertenansicht zeigen je Stelle aus `skipped[].places` den Hinweis „○ nicht gemessen" nach der Tabelle in Task 5 des Plans Messkategorien; die Hilfsfunktion der heutigen Seite, die zu einer Stelle den Hinweis liefert, wird übernommen. Die Gruppen „ohne erkannten Engpass" bleiben von „ohne Engpass" getrennt.
+
+**Browserprüfungen (Task 8 und folgende):** `checkSkip` ruft `showExpert` wie die übrigen Prüfungen. Die Tabelle `SKIP_LOCATIONS` in `tests/report-browser.js` enthält die Selektoren der heutigen Seite und wird für die Expertenansicht neu geschrieben. `tests/New-TestReports.ps1` schreibt die Berichte mit weggelassenen Kategorien (`report-skip-*.html`, darunter die ohne Befund, die mit gemeldetem Benutzer und der einer von Hand geänderten Aufzeichnung), die auch die Prüfungen des geführten Berichts öffnen: keiner zeigt einen Skriptfehler.
+
+**Task 12 (README und Demo-Seite):** Der Abschnitt zum geführten Bericht beschreibt, wie er „nicht gemessen" und „nicht geprüft" zeigt.
+
+---
+
 ### Task 1: Katalog laden und prüfen
 
 **Files:**

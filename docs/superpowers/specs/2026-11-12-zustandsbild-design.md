@@ -165,3 +165,12 @@ Der Baustein gilt erst nach einem Schnelllauf auf dem Test-Worker als fertig. Er
 
 - Welche Werte der Citrix-Richtlinien und der Profilverwaltung sich ohne Citrix-Werkzeuge zuverlässig lesen lassen, zeigt der erste echte Lauf.
 - Ob das Ziel „unter einer Minute" auf einem Worker mit vielen Containern und geplanten Aufgaben hält, zeigt der erste echte Lauf.
+
+## Anhang: Der Einhängepunkt `Zustand` (Stand nach dem Plan Messkategorien)
+
+Der Plan Messkategorien hat die Kategorie `Zustand` vorbereitet: Zeile in `$script:WorkerPerfCategories` (`Active = $false`), zwei Texte, und der Collector kennt die Abfrage `$leftOut -notcontains 'Zustand'`. Auflösung von `-Skip`, Startmeldung, Lader, Vermerk in den Quellen und die Seite nehmen eine aktive Kategorie von selbst auf. Der Umsetzungsplan für das Zustandsbild muss darüber hinaus vier Dinge regeln:
+
+1. **Kein CSV-Schreiber.** `health.json` ist keine Datei aus `$script:WorkerPerfHeaders`. Die Regel des Collectors „fehlender Schreiber heißt kein Aufruf" trägt diese Kategorie nicht; sie braucht eine eigene Abfrage.
+2. **Aufzeichnungen von vor dem Zustandsbild.** Sie haben weder `health.json` noch `Zustand` in `Skip`. Der Satz „Aufzeichnungen ohne die neue Angabe gelten als vollständig gemessen" stimmt für sie nicht. Eigene Regel: Fehlt die Datei und nennt `Skip` die Kategorie nicht, heißt das „nicht aufgezeichnet"; der Lader meldet es weder als weggelassen noch als gemessen.
+3. **Tests, die das heutige Verhalten festschreiben und sich mit der Aktivierung ändern:** `tests/Common.Tests.ps1` (`' Zustand '` ergibt keinen Eintrag; die Dateien der Tabelle sind genau die CSV-Dateien außerhalb der Basis), `tests/Skip.Tests.ps1` (`$Names` mit sieben Einträgen, die Startmeldung, der Lauf „Zustand: ohne Wirkung"), `tests/Mask.Tests.ps1` (`abgeschaltet (-Skip Zustand)` muss geleert werden), `New-SkipRuns` in `tests/TestHelpers.ps1` (ein achter Lauf), `checkSkip` und `SKIP_LOCATIONS` in `tests/report-browser.js`.
+4. **Hilfe und README** sagen heute, `Zustand` werde angenommen und habe noch keine Wirkung. Beides ändert sich mit der Aktivierung.
