@@ -523,17 +523,59 @@ Describe 'Katalog in src' {
         $order = @($notes | ForEach-Object { $_.text.Substring(0, 12) })
         [array]::IndexOf($order, 'Der Druckfeh') | Should -BeGreaterThan ([array]::IndexOf($order, 'Speichermang'))
     }
-    It 'stellt bei <S> das Zusammentreffen mit einem Leistungsvorfall hinter die Muster, die mehr sagen' -ForEach @(      # fix round 1, B4
-        @{ S = 'crash' }; @{ S = 'hang' }; @{ S = 'service' }; @{ S = 'print' }; @{ S = 'profileerror' }; @{ S = 'system' }
+    It 'stellt bei <S> das Zusammentreffen mit einem Leistungsvorfall hinter die allgemeinen Schritte und die Muster, die mehr sagen' -ForEach @(      # fix round 1, B4
+        @{ S = 'crash'; First = 'Version der Anwendung und des fehlerhaften Moduls feststellen und mit dem Stand des Herstellers vergleichen' }
+        @{ S = 'hang'; First = 'Betroffene Benutzer fragen, was sie taten, als die Anwendung stehen blieb' }
+        @{ S = 'service'; First = 'Prüfen, ob der Dienst wieder läuft' }
+        @{ S = 'print'; First = 'Prüfen, ob der Dienst „Citrix Print Manager Service“ (CpSvc.exe) läuft' }
+        @{ S = 'profileerror'; First = 'Meldungstext des Profilfehlers lesen: er nennt meist den Grund' }
+        @{ S = 'system'; First = 'Art und Meldungstext des Systemfehlers feststellen' }
     ) {
         $checks = @($Real.situations.$S.checks)
         $when = @($checks | ForEach-Object { if ($_.PSObject.Properties['when']) { @($_.when) -join ',' } else { '' } })
         $at = [array]::IndexOf($when, 'pattern.overlap'); $at | Should -BeGreaterThan -1
-        $checks[$at].text | Should -Match 'auch dessen Anleitung ansehen, beide können dieselbe Ursache haben$'
-        $checks[$at].text | Should -Not -Match 'zuerst'
-        foreach ($p in 'resource', 'afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser') {
-            $k = [array]::IndexOf($when, "pattern.$p")
-            if ($k -ge 0) { $k | Should -BeLessThan $at -Because $p }
+        $note = [string]$checks[$at].text
+        $note | Should -Match 'auch dessen Anleitung ansehen, beide können dieselbe Ursache haben$'
+        $note | Should -Not -Match 'zuerst'
+        function Get-NotePlace($Incident, $Context) {
+            # the checks an incident shows, the place of the note among them, and the checks of the situation that only
+            # name a gap (ruling P3-R36) as this incident words them
+            $facts = Get-WorkerPerfGuidanceFacts -Incident $Incident -Context $Context -Catalogue $script:Real
+            $guide = New-WorkerPerfGuidance -Catalogue $script:Real -Facts $facts -Incident $Incident -Texts $script:Texts
+            $shown = @($guide.checks | ForEach-Object { [string]$_.text })
+            $gaps = @($checks | Where-Object { $_.PSObject.Properties['when'] -and @(@($_.when) | Where-Object { -not (& $GapCondition $_) }).Count -eq 0 } |
+                    ForEach-Object { Format-WorkerPerfGuidanceText ([string]$_.text) $facts.Values } | Where-Object { $_ })
+            @{ Conditions = @($guide.conditions); Values = $facts.Values; Shown = $shown; At = [array]::IndexOf($shown, $note); Gaps = $gaps }
+        }
+        # the coincidence in time is the only pattern and nothing else is known (for print: no crash of the spooler, no
+        # driver, no queue): the general steps lead in the order of the file, the note is the last step and never the first
+        $ctx = New-Ctx; $ctx.Data.print = @{ drivers = @(); queues = @() }
+        $only = @{ kind = $S; app = 'EXCEL.EXE'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3; patterns = @(@{ id = 'overlap'; detail = @{} }) }
+        $place = Get-NotePlace (New-Inc @{ type = 'ereignis'; event = $only }) $ctx
+        $place.Conditions | Should -Be @('affected.one', 'pattern.overlap')
+        $place.Shown[0] | Should -Match ('^' + [regex]::Escape($First))
+        $general = @($checks | Where-Object { -not $_.PSObject.Properties['when'] } | ForEach-Object { [string]$_.text })
+        $general.Count | Should -BeGreaterThan 0
+        $place.Shown | Should -Be @($general + $note)
+        # with patterns that say more and with a pattern that was not checked: every other step precedes the note, only
+        # the notes about a gap follow it
+        $ctx = New-Ctx; $ctx.Data.skipped = @(@{ id = 'Drucken'; label = 'Drucken'; text = ''; places = @() })
+        $more = @{ kind = $S; key = 'Sim PCL 6'; app = 'EXCEL.EXE'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3
+            patterns = @(@{ id = 'resource'; detail = @{} }, @{ id = 'oneuser'; detail = @{} }, @{ id = 'companion'; detail = @{} }, @{ id = 'overlap'; detail = @{} })
+            unchecked = @(@{ id = 'printdriver'; category = 'Drucken' }) }
+        $place = Get-NotePlace (New-Inc @{ type = 'ereignis'; event = $more; events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }) $ctx
+        $place.At | Should -BeGreaterThan 0
+        $place.At | Should -BeLessThan ($place.Shown.Count - 1)
+        for ($k = 0; $k -lt $place.Shown.Count; $k++) {
+            if ($k -eq $place.At) { continue }
+            ($place.Gaps -ccontains $place.Shown[$k]) | Should -Be ($k -gt $place.At) -Because "Schritt $($k + 1): $($place.Shown[$k])"
+        }
+        # the steps of the patterns that say more are among those before the note
+        $stronger = @($checks | Where-Object { $_.PSObject.Properties['when'] -and (@($_.when) -join ',') -in 'pattern.resource', 'pattern.oneuser', 'pattern.companion' })
+        $stronger.Count | Should -BeGreaterThan 0
+        foreach ($el in $stronger) {
+            $k = [array]::IndexOf($place.Shown, (Format-WorkerPerfGuidanceText ([string]$el.text) $place.Values))
+            $k | Should -BeGreaterThan -1 -Because $el.text; $k | Should -BeLessThan $place.At -Because $el.text
         }
     }
     It 'stellt die Schritte zu nicht Gemessenem hinter die allgemeinen und sagt eine Luecke einmal' {             # ruling P3-R36
