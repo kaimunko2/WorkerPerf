@@ -537,7 +537,7 @@ function New-WorkerPerfEventIncidents {
 
 # ---- patterns and plain text ----
 # Add-WorkerPerfEventPatterns compares event incidents with the measurement and with each other (spec 5.3, 5.5);
-# Get-WorkerPerfEventIncidentText needs WorkerPerf.Findings.ps1 (Format-WorkerPerfClock).
+# Get-WorkerPerfEventIncidentText needs WorkerPerf.Findings.ps1 (Format-WorkerPerfClock, Split-WorkerPerfSpanTemplate).
 
 $script:WorkerPerfPatternOrder = @('resource', 'afterhang', 'sharedmodule', 'printdriver', 'securitymodule', 'manyusers', 'oneuser', 'companion', 'overlap')
 # the patterns that need no measurement, for the events before the capture
@@ -1022,13 +1022,9 @@ function Get-WorkerPerfUncheckedStatements([object[]]$Unchecked, $Texts) {
     }
 }
 
-function Get-WorkerPerfEventIncidentText {
-    # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
-    # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
-    # Times are the server's local time of each record: its own offset (OffsetMinutes of the record), else the
-    # capture's (-OffsetMinutes). An incident before the capture (Before) names the date as well; a companion on
-    # another day than the incident's first record names its date too. Model is not needed for the text.
-    # Lists name at most 10 entries; counts are always the full numbers.
+function Get-WorkerPerfEventIncidentTextParts {
+    # The sentence of an event incident in two parts (Head + Detail is the sentence): Head is the time span with its
+    # ': ', Detail the rest (see Get-WorkerPerfEventIncidentText).
     param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
     $inc = $Incident
     $times = { param($n) $(if ([int]$n -eq 1) { $Texts['event.count.one'] } else { $Texts['event.count.many'] -f [int]$n }) }
@@ -1056,9 +1052,12 @@ function Get-WorkerPerfEventIncidentText {
         }
     }
     $sb = New-Object System.Text.StringBuilder
-    # a crash or hang without an application name has a head of its own
-    if (($kind -eq 'crash' -or $kind -eq 'hang') -and $subject.Length -eq 0) { [void]$sb.Append(($Texts["event.$kind.noapp"] -f $clock, (& $times $inc.Count))) }
-    else { [void]$sb.Append(($Texts["event.$kind"] -f $clock, $subject, (& $times $inc.Count))) }
+    # a crash or hang without an application name has a head of its own; the time span of the head is split off
+    if (($kind -eq 'crash' -or $kind -eq 'hang') -and $subject.Length -eq 0) { $key = "event.$kind.noapp"; $values = @($clock, (& $times $inc.Count)) }
+    else { $key = "event.$kind"; $values = @($clock, $subject, (& $times $inc.Count)) }
+    $split = Split-WorkerPerfSpanTemplate ([string]$Texts[$key])
+    $head = $split[0] -f $values
+    [void]$sb.Append(($split[1] -f $values))
 
     # without users: an unknown session is said as such (P1-R32), "Ohne Benutzersitzung" only for session 0; neither with
     # users unchecked (the statement of the unchecked patterns gives the reason)
@@ -1094,7 +1093,28 @@ function Get-WorkerPerfEventIncidentText {
     foreach ($p in $patterns) { [void]$sb.Append((Get-WorkerPerfPatternStatement $p $Texts $OffsetMinutes $withDate $startDay $withResource)) }
     if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@(Get-WorkerPerfUncheckedStatements $unchecked $Texts)) -join ', '))) }
     if ($patterns.Count -eq 0 -and $unchecked.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
-    return $sb.ToString()
+    return @{ Head = $head; Detail = $sb.ToString() }
+}
+
+function Get-WorkerPerfEventIncidentText {
+    # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
+    # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
+    # Times are the server's local time of each record: its own offset (OffsetMinutes of the record), else the
+    # capture's (-OffsetMinutes). An incident before the capture (Before) names the date as well; a companion on
+    # another day than the incident's first record names its date too. Model is not needed for the text.
+    # Lists name at most 10 entries; counts are always the full numbers.
+    param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
+    $parts = Get-WorkerPerfEventIncidentTextParts -Incident $Incident -Model $Model -Texts $Texts -Config $Config -OffsetMinutes $OffsetMinutes
+    return ($parts.Head + $parts.Detail)
+}
+
+function Get-WorkerPerfEventIncidentDetailText {
+    # The sentence of Get-WorkerPerfEventIncidentText without its leading time span: kind with count, users, modules,
+    # error codes, versions, the statements of the patterns and of the patterns left unchecked, or "Kein Muster erkannt".
+    # Part of the sentence word for word (the copy text prints it, ruling P3-R30).
+    param($Incident, $Model, $Texts, $Config, [int]$OffsetMinutes)
+    $parts = Get-WorkerPerfEventIncidentTextParts -Incident $Incident -Model $Model -Texts $Texts -Config $Config -OffsetMinutes $OffsetMinutes
+    return $parts.Detail.Trim()
 }
 
 # ---- lookback and print state ----
@@ -1353,7 +1373,8 @@ function ConvertTo-WorkerPerfEventIncidentOut {
     # An event incident for the report: every key of a performance incident with neutral values (type 'ereignis'), the
     # incident's kept records as events, and the event part (kind, key, counts, users, modules, codes, patterns with
     # their statement and details, overlap, companions). Texts and OffsetMinutes (the capture's) give the statements.
-    param($Incident, [string]$Text, [bool]$Focus, [bool]$Near, $Texts, [int]$OffsetMinutes)
+    # Text: the incident's sentence; CauseText: its part after the time span (Get-WorkerPerfEventIncidentDetailText).
+    param($Incident, [string]$Text, [bool]$Focus, [bool]$Near, $Texts, [int]$OffsetMinutes, [string]$CauseText = '')
     $inc = $Incident
     $kept = @($inc.Events | Where-Object { $null -ne $_ })
     $startOffset = $OffsetMinutes
@@ -1387,7 +1408,7 @@ function ConvertTo-WorkerPerfEventIncidentOut {
     return [ordered]@{
         id = [int]$inc.Id; type = 'ereignis'; chronic = $false; severity = [int]$inc.Severity
         start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $null; resources = [string[]]@()
-        text = $Text; focus = $Focus; nearReported = $Near; scanActive = $false
+        text = $Text; causeText = $CauseText; focus = $Focus; nearReported = $Near; scanActive = $false
         events = @($kept | ForEach-Object { ConvertTo-WorkerPerfEventOut $_ $OffsetMinutes })
         signals = @(); affected = @(); main = $null; cause = $null; contributors = [ordered]@{}
         delayProcs = @(); endpoints = @(); ica = @(); security = [ordered]@{ products = @(); totalPct = $null }

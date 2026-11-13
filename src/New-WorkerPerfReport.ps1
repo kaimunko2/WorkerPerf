@@ -418,7 +418,8 @@ function ConvertTo-EventIncidentEntry($Incident) {
     $near = $false
     if ($null -ne $reportedWallMs) { $near = Test-WorkerPerfIncidentNearWall $Incident $reportedWallMs $eventOffset }
     $text = [string](Get-WorkerPerfEventIncidentText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
-    return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset)
+    $causeText = [string](Get-WorkerPerfEventIncidentDetailText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
+    return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset -CauseText $causeText)
 }
 
 #endregion
@@ -876,6 +877,7 @@ foreach ($inc in $incidents) {
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
             text = [string](Get-WorkerPerfIncidentText -Incident $inc -Model $model -Thresholds $thresholds -Texts $texts -Unmeasured $unmeasured)
+            causeText = [string](Get-WorkerPerfIncidentCauseText -Incident $inc -Model $model -Thresholds $thresholds -Texts $texts -Unmeasured $unmeasured)
             focus = $focus; nearReported = $near; scanActive = [bool]$inc.ScanActive; events = $incEvents.ToArray()
             signals = $signals.ToArray(); affected = $affected.ToArray(); main = $main; cause = $cause; contributors = $contrib
             delayProcs = $delayProcs.ToArray(); endpoints = $endpoints.ToArray(); ica = $ica.ToArray()

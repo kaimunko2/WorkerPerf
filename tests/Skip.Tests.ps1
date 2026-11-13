@@ -246,6 +246,27 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
         @($rp.incidents | Where-Object { $_.text -match 'keine Prozessdaten' }).Count | Should -Be 0
         ($D.Voll.incidents | Where-Object lead -eq 'cpu').cause.kind | Should -Be 'main'
     }
+    It 'nennt im Kopiertext je Vorfall den Teil des Satzes zu Ursache und Umfeld ohne <_>' -ForEach 'Voll', 'Prozesse', 'Gegenstellen', 'Ereignisse' {   # ruling P3-R30
+        # one source for the cause: causeText is part of text word for word, and the copy text prints it whole
+        $k = $_
+        foreach ($f in 'WorkerPerf.EventConfig.ps1', 'WorkerPerf.Events.ps1', 'WorkerPerf.Findings.ps1', 'WorkerPerf.Guidance.ps1') { . (Join-Path $PSScriptRoot "../src/$f") }
+        $cat = @{ vendors = @(); userView = @{}; copy = @{ head = 'WorkerPerf {server}'; measure = 'Messwert: {value}'; cause = 'Verursacher:'; affected = 'Betroffen: {affected}' } }
+        $guide = @{ title = 'Titel'; tech = ''; userView = ''; impact = ''; checks = @(); remedies = @(); contacts = @() }
+        $all = @(@($D[$k].incidents) + @($D[$k].before.incidents) | Where-Object { $null -ne $_ })
+        $all.Count | Should -BeGreaterThan 8
+        foreach ($i in $all) {
+            $c = [string]$i.causeText
+            $c | Should -Not -BeNullOrEmpty -Because "Vorfall $($i.id)"
+            ([string]$i.text).Contains($c) | Should -BeTrue -Because "Vorfall $($i.id): $c"
+            $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $guide -Data $D[$k] -Catalogue $cat -Texts $Texts)
+            $p | Should -Contain "Verursacher: $c" -Because "Vorfall $($i.id)"
+            (Format-WorkerPerfCopyLines $p) -replace "`r`n\s*", ' ' | Should -Match ([regex]::Escape($c)) -Because "Vorfall $($i.id)"
+        }
+        # the backend delay: the endpoint context, or that endpoints were not checked
+        $back = @($D[$k].incidents | Where-Object { $_.type -eq 'ohne-engpass' -and @($_.affected).Count -eq 8 })[0]
+        if ($k -eq 'Gegenstellen') { $back.causeText | Should -BeLike '*Gegenstellen wurden bei dieser Messung nicht geprüft.' }
+        else { $back.causeText | Should -BeLike '*Gegenstelle Oracle-Listener: *' }
+    }
     It 'sagt bei einer Verzoegerung ohne Engpass, was nicht geprueft wurde' {
         $back = $D.Gegenstellen.incidents | Where-Object { $_.type -eq 'ohne-engpass' -and @($_.affected).Count -eq 8 }
         $back.text | Should -BeLike '*(Datenbank, Proxy, Netz). Gegenstellen wurden bei dieser Messung nicht geprüft.'; @($back.endpoints).Count | Should -Be 0

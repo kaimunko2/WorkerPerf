@@ -859,8 +859,19 @@ function Get-WorkerPerfMeasureText([hashtable]$Texts, [string]$Measure, [string]
     return $Texts['measure.' + $Measure]
 }
 
-function Get-WorkerPerfIncidentText {
-    # -Unmeasured: result of Get-WorkerPerfUnmeasured ($null: everything counts as measured)
+function Split-WorkerPerfSpanTemplate([string]$Template) {
+    # A sentence template that opens with its time span ('{0}...{1}: ' or '{0}: ') in two: the span with its ': ' and
+    # the rest. Both are filled with the same arguments, so head + rest is the whole sentence. Without such an opening
+    # the head is empty.
+    $i = $Template.IndexOf('}: ')
+    if (-not $Template.StartsWith('{0}') -or $i -lt 0) { return @('', $Template) }
+    return @($Template.Substring(0, $i + 3), $Template.Substring($i + 3))
+}
+
+function Get-WorkerPerfIncidentTextParts {
+    # The sentence of a performance incident in two parts (Head + Cause is the sentence): Head holds the chronic prefix,
+    # the time span, the opening statement of type and measured value and the affected sessions; Cause what the sentence
+    # says about cause and context. -Unmeasured: result of Get-WorkerPerfUnmeasured ($null: everything counts as measured)
     param($Incident, $Model, $Thresholds, [hashtable]$Texts, $Unmeasured = $null)
     $inv = [System.Globalization.CultureInfo]::InvariantCulture
     $fmt = { param([string]$Key, [object[]]$A) [string]::Format($inv, $Texts[$Key], $A) }
@@ -882,7 +893,7 @@ function Get-WorkerPerfIncidentText {
         $label = [string]$lead.Label
         if ($lead.Resource -eq 'input' -or $lead.Resource -eq 'network') { $label = Get-WorkerPerfThresholdField $Thresholds ([string]$lead.SignalId) 'label' }
     }
-    $text = ''
+    $text = ''; $cause = ''
     $affectedCount = @($Incident.Affected).Count
     $inputMissing = $false; $workerMissing = @()
     $skipped = @(Get-WorkerPerfField $Model 'Skip')   # a model without Skip counts as fully measured
@@ -916,37 +927,37 @@ function Get-WorkerPerfIncidentText {
             $text = & $fmt 'engpass' @($t0, $t1, $Texts['resource.' + [string]$lead.Resource], $label, $peak, $ideal)
         }
         $text += $affectedText
-        $cause = Get-WorkerPerfField $Incident 'Cause'
-        if ($null -ne $cause) {
-            $measure = Get-WorkerPerfMeasureText $Texts ([string]$cause.Measure) ([string]$cause.Scope)
-            $m = $cause.Main
-            if ($cause.Kind -eq 'main') {
+        $ic = Get-WorkerPerfField $Incident 'Cause'
+        if ($null -ne $ic) {
+            $measure = Get-WorkerPerfMeasureText $Texts ([string]$ic.Measure) ([string]$ic.Scope)
+            $m = $ic.Main
+            if ($ic.Kind -eq 'main') {
                 $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
-                if ($null -eq $m.BaselinePct) { $text += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
-                else { $text += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
+                if ($null -eq $m.BaselinePct) { $cause += & $fmt 'main.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
+                else { $cause += & $fmt 'main' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
             }
-            elseif ($cause.Kind -eq 'security') {
-                $text += & $fmt 'largest' @($cause.Security.Label, (Format-WorkerPerfTextNumber $cause.Security.SharePct), $measure)
+            elseif ($ic.Kind -eq 'security') {
+                $cause += & $fmt 'largest' @($ic.Security.Label, (Format-WorkerPerfTextNumber $ic.Security.SharePct), $measure)
                 # without Ereignisse no scan is known: the advice does not presume that none ran
-                if ($cause.Scan) { $text += $Texts['largest.scan'] }
-                elseif ($skipped -contains 'Ereignisse') { $text += $Texts['largest.scan.notmeasured'] }
-                else { $text += $Texts['largest.exclusions'] }
+                if ($ic.Scan) { $cause += $Texts['largest.scan'] }
+                elseif ($skipped -contains 'Ereignisse') { $cause += $Texts['largest.scan.notmeasured'] }
+                else { $cause += $Texts['largest.exclusions'] }
                 if ($null -ne $m) {
                     $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
-                    if ($null -eq $m.BaselinePct) { $text += & $fmt 'largest.other.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
-                    else { $text += & $fmt 'largest.other' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
+                    if ($null -eq $m.BaselinePct) { $cause += & $fmt 'largest.other.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
+                    else { $cause += & $fmt 'largest.other' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure, (Format-WorkerPerfTextNumber $m.BaselinePct)) }
                 }
             }
-            elseif ($cause.Kind -eq 'nodata') { $text += $Texts['main.nodata'] }
-            elseif ($cause.Kind -eq 'notmeasured') { $text += & $fmt 'main.notmeasured' @($Texts['skip.text.Prozesse']) }
-            else { $text += & $fmt 'main.none' @((Format-WorkerPerfTextNumber ([double]$cause.MinSharePct)), $measure) }
+            elseif ($ic.Kind -eq 'nodata') { $cause += $Texts['main.nodata'] }
+            elseif ($ic.Kind -eq 'notmeasured') { $cause += & $fmt 'main.notmeasured' @($Texts['skip.text.Prozesse']) }
+            else { $cause += & $fmt 'main.none' @((Format-WorkerPerfTextNumber ([double]$ic.MinSharePct)), $measure) }
         }
         $c = $Incident.Companion
         if ($null -ne $c) {
             $cr = $Incident.Contributors[[string]$c.Resource]
             $cm = Get-WorkerPerfMeasureText $Texts ([string]$cr.Measure) ([string](Get-WorkerPerfField $cr 'Scope'))
             $who = & $userText ([int]$c.TopIoSessionIndex) ([string]$c.TopIoUser)
-            $text += & $fmt 'companion' @($c.Label, (Format-WorkerPerfTextNumber $c.SharePct), $cm, $c.TopIoApp, $who)
+            $cause += & $fmt 'companion' @($c.Label, (Format-WorkerPerfTextNumber $c.SharePct), $cm, $c.TopIoApp, $who)
         }
     }
     elseif ($Incident.Type -eq 'ohne-engpass' -and $null -ne $lead) {
@@ -955,34 +966,55 @@ function Get-WorkerPerfIncidentText {
         $text = & $fmt $head @($t0, $t1, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
         $text += $affectedText
         $dp = @($Incident.DelayProcesses)
-        if ($skipped -contains 'Prozesse') { $text += & $fmt 'ohne.process.notmeasured' @($Texts['skip.text.Prozesse']) }
+        if ($skipped -contains 'Prozesse') { $cause += & $fmt 'ohne.process.notmeasured' @($Texts['skip.text.Prozesse']) }
         elseif ($dp.Count -gt 0) {
             $who = & $userText ([int]$dp[0].SessionIndex) (Get-WorkerPerfUserName $Model ([int]$dp[0].SessionIndex))
-            $text += & $fmt 'ohne.process' @($dp[0].Name, $who)
+            $cause += & $fmt 'ohne.process' @($dp[0].Name, $who)
         }
         # with an unmeasured worker resource the cause cannot be placed outside the worker
-        if ($workerMissing.Count -gt 0) { $text += & $fmt 'ohne.unmeasured' @(($workerMissing -join ', ')) }
-        else { $text += $Texts['ohne.cause'] }
-        if ($skipped -contains 'Gegenstellen') { $text += ' ' + $Texts['skip.text.Gegenstellen'] }
+        if ($workerMissing.Count -gt 0) { $cause += & $fmt 'ohne.unmeasured' @(($workerMissing -join ', ')) }
+        else { $cause += $Texts['ohne.cause'] }
+        if ($skipped -contains 'Gegenstellen') { $cause += ' ' + $Texts['skip.text.Gegenstellen'] }
         $probeUnit = Get-WorkerPerfThresholdField $Thresholds 'probe.connect' 'unit'
         foreach ($e in @($Incident.Endpoints)) {
-            if ($e.Failed) { $text += & $fmt 'endpoint.context' @($e.Name, $Texts['probe.error']) }
-            elseif ($null -ne $e.MaxMs -and $e.MaxMs -ge 50) { $text += & $fmt 'endpoint.context' @($e.Name, (Format-WorkerPerfValue ([double]$e.MaxMs) $probeUnit)) }
+            if ($e.Failed) { $cause += & $fmt 'endpoint.context' @($e.Name, $Texts['probe.error']) }
+            elseif ($null -ne $e.MaxMs -and $e.MaxMs -ge 50) { $cause += & $fmt 'endpoint.context' @($e.Name, (Format-WorkerPerfValue ([double]$e.MaxMs) $probeUnit)) }
         }
     }
     elseif ($null -ne $lead) {
+        # an incident of the surroundings: its one statement names the endpoint or the session; the head is the time span
         if ($lead.Resource -eq 'endpoint') {
             $pk = $Texts['probe.error']
             if (-not [double]::IsNaN([double]$lead.PeakValue) -and -not [double]::IsInfinity([double]$lead.PeakValue)) { $pk = Format-WorkerPerfValue ([double]$lead.PeakValue) $unit }
-            $text = & $fmt 'umfeld.endpoint' @($t0, $t1, $lead.Instance, $pk)
+            $key = 'umfeld.endpoint'; $values = @($t0, $t1, $lead.Instance, $pk)
         }
         else {
             $who = & $userText ([int]$lead.SessionIndex) (Get-WorkerPerfUserName $Model ([int]$lead.SessionIndex))
-            $text = & $fmt 'umfeld.network' @($t0, $t1, $who, $label, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
+            $key = 'umfeld.network'; $values = @($t0, $t1, $who, $label, (Format-WorkerPerfValue ([double]$lead.PeakValue) $unit), $ideal)
         }
+        $split = Split-WorkerPerfSpanTemplate ([string]$Texts[$key])
+        $text = [string]::Format($inv, $split[0], $values); $cause = [string]::Format($inv, $split[1], $values)
     }
     if ($Incident.Chronic) { $text = $Texts['chronic.prefix'] + $text }
     $ctx = @(@($Incident.ChronicContext) | ForEach-Object { & $ctxItem $_ } | Where-Object { $headLabel -eq '' -or $_ -ne $headLabel })
-    if ($ctx.Count -gt 0) { $text += & $fmt 'chronic.context' @(($ctx -join ', ')) }
-    return $text
+    if ($ctx.Count -gt 0) { $cause += & $fmt 'chronic.context' @(($ctx -join ', ')) }
+    return @{ Head = $text; Cause = $cause }
+}
+
+function Get-WorkerPerfIncidentText {
+    # The sentence of a performance incident (the report's text). -Unmeasured: result of Get-WorkerPerfUnmeasured
+    # ($null: everything counts as measured)
+    param($Incident, $Model, $Thresholds, [hashtable]$Texts, $Unmeasured = $null)
+    $parts = Get-WorkerPerfIncidentTextParts -Incident $Incident -Model $Model -Thresholds $Thresholds -Texts $Texts -Unmeasured $Unmeasured
+    return ($parts.Head + $parts.Cause)
+}
+
+function Get-WorkerPerfIncidentCauseText {
+    # What the sentence of a performance incident says about cause and context (main consumer, security software, scan,
+    # companion, "nicht gemessen" caveats, endpoints, for an incident of the surroundings the statement naming the session
+    # or endpoint, the chronic context): the sentence without time span, opening statement and affected sessions; '' when
+    # it says nothing more. Part of Get-WorkerPerfIncidentText word for word (the copy text prints it, ruling P3-R30).
+    param($Incident, $Model, $Thresholds, [hashtable]$Texts, $Unmeasured = $null)
+    $parts = Get-WorkerPerfIncidentTextParts -Incident $Incident -Model $Model -Thresholds $Thresholds -Texts $Texts -Unmeasured $Unmeasured
+    return $parts.Cause.Trim()
 }

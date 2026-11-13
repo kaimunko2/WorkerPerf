@@ -103,5 +103,7 @@
   "state.red.symbol": "◆", "state.red.word": "kritisch", "state.yellow.symbol": "▲", "state.yellow.word": "auffällig",
   "state.green.symbol": "●", "state.green.word": "normal",
   "group.times": "{0}-mal {1}", "group.by": " durch {0}", "group.of": " von {0}", "group.at": "{0}, {1}",
-  "copy.check": "{0} – {1}; erkennbar an {2}", "copy.remedy": "Wenn {0}: {1}"
+  "copy.check": "{0} – {1}; erkennbar an {2}", "copy.remedy": "Wenn {0}: {1}",
+  "copy.span": "{0}–{1}", "copy.duration": "{0} ({1})", "copy.dated": "{0} {1}", "copy.title": "{0}: {1}", "copy.tech": "{0} ({1})",
+  "copy.before": "Vor der Messung (für diese Zeit liegen keine Messwerte vor):"
 }
