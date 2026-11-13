@@ -1074,8 +1074,10 @@ function Get-WorkerPerfEventIncidentTextParts {
     $moduleEvents = Get-WorkerPerfField $inc 'ModuleEvents'
     if ($null -eq $moduleEvents) { $moduleEvents = $inc.Count }
     if ($modules.Count -eq 1) {
-        if ([int]$modules[0].Count -ge [int]$moduleEvents) { [void]$sb.Append(($Texts['event.module.same'] -f [string]$modules[0].Name)) }
-        else { [void]$sb.Append(($Texts['event.module.some'] -f [string]$modules[0].Name, [int]$modules[0].Count, [int]$moduleEvents)) }
+        # "always the same" is said of a module that more than one record names; a single record just names its module
+        if ([int]$modules[0].Count -lt [int]$moduleEvents) { [void]$sb.Append(($Texts['event.module.some'] -f [string]$modules[0].Name, [int]$modules[0].Count, [int]$moduleEvents)) }
+        elseif ([int]$modules[0].Count -gt 1) { [void]$sb.Append(($Texts['event.module.same'] -f [string]$modules[0].Name)) }
+        else { [void]$sb.Append(($Texts['event.module.one'] -f [string]$modules[0].Name)) }
     }
     elseif ($modules.Count -gt 1) {
         $list = @($modules | ForEach-Object { '{0} ({1})' -f [string]$_.Name, (& $times $_.Count) })

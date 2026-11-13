@@ -283,6 +283,83 @@ Describe 'Ersetzen: Grenzfaelle' {
         $null -eq (Protect-WorkerPerfReportData $null $m) | Should -BeTrue; Protect-WorkerPerfReportData 'anna' $m | Should -Be 'Benutzer 01'
     }
 }
+Describe 'Bezeichnungswort vor dem Ersatznamen' {                                              # fix round 4, C1 (ruling P3-R62)
+    BeforeAll {
+        function New-WordMask([string]$Level = 'Alles', [hashtable]$TextSet = $Texts) {
+            $m = New-WorkerPerfMask -Path (Write-TestRun 'leer9' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }) -Level $Level -Texts $TextSet
+            $kinds = $script:WorkerPerfMaskLevelKinds[$Level]
+            $entries = @(@{ Kind = 'share'; Name = '\\fs01\daten'; Replacement = ($TextSet['mask.share'] -f 1) }, @{ Kind = 'server'; Name = 'fs01'; Replacement = 'Server 01' },
+                @{ Kind = 'server'; Name = 'ps02'; Replacement = 'Druckserver 02' }, @{ Kind = 'user'; Name = 'user014'; Replacement = 'Benutzer 14' },
+                @{ Kind = 'user'; Name = 'user015'; Replacement = 'Benutzer 15' }, @{ Kind = 'sid'; Name = 'S-1-5-21-1-2-3-1108'; Replacement = 'Konto 01' },
+                @{ Kind = 'printer'; Name = 'PRN-EG-01'; Replacement = 'Drucker 01' }, @{ Kind = 'client'; Name = 'WS-0001'; Replacement = 'Client 01' }) | Where-Object { $kinds -contains $_.Kind }
+            Set-WorkerPerfMaskNames -Mask $m -Entries $entries
+            $m
+        }
+    }
+    It 'laesst das Wort einmal stehen, wenn der Ersatzname mit demselben Wort beginnt: <Text>' -TestCases @(
+        @{ Text = 'Freigabe \\fs01\daten'; Want = 'Freigabe 01' }
+        @{ Text = 'Dateiserver-Engpass (Freigabe \\fs01\daten Spitze 82 ms, Soll unter 10 ms).'; Want = 'Dateiserver-Engpass (Freigabe 01 Spitze 82 ms, Soll unter 10 ms).' }
+        @{ Text = 'Benutzer user014'; Want = 'Benutzer 14' }
+        @{ Text = 'Server fs01'; Want = 'Server 01' }
+        @{ Text = 'Messung auf Server fs01 am 13.11.2026'; Want = 'Messung auf Server 01 am 13.11.2026' }
+        @{ Text = 'Benutzer user014, user015'; Want = 'Benutzer 14, Benutzer 15' }
+        @{ Text = 'Konto S-1-5-21-1-2-3-1108 gesperrt'; Want = 'Konto 01 gesperrt' }
+        @{ Text = 'Drucker PRN-EG-01 und Client WS-0001'; Want = 'Drucker 01 und Client 01' }
+        @{ Text = "Server`tfs01"; Want = "Server`t01" }
+    ) {
+        Hide-WorkerPerfReportText $Text (New-WordMask) | Should -BeExactly $Want
+    }
+    It 'laesst stehen, was zwei verschiedene Dinge nennt oder nicht direkt aufeinander folgt: <Text>' -TestCases @(
+        @{ Text = 'Server ps02'; Want = 'Server Druckserver 02' }                       # another kind of server
+        @{ Text = 'Druckserver fs01'; Want = 'Druckserver Server 01' }                  # the word is the end of a longer word
+        @{ Text = 'Datei-Server fs01'; Want = 'Datei-Server Server 01' }                # the second part of a compound
+        @{ Text = 'Server \\fs01\daten'; Want = 'Server Freigabe 01' }                 # a share on a server
+        @{ Text = 'Freigabe fs01'; Want = 'Freigabe Server 01' }
+        @{ Text = 'Benutzer: user014.'; Want = 'Benutzer: Benutzer 14.' }                # a label and its value
+        @{ Text = 'Benutzer (user014)'; Want = 'Benutzer (Benutzer 14)' }
+        @{ Text = "Benutzer`nuser014"; Want = "Benutzer`nBenutzer 14" }                 # two lines
+        @{ Text = 'benutzer user014'; Want = 'benutzer Benutzer 14' }                   # not the word of the alias
+        @{ Text = 'user014 user015'; Want = 'Benutzer 14 Benutzer 15' }
+        @{ Text = 'user014'; Want = 'Benutzer 14' }                                     # the whole text is the name
+        @{ Text = 'Sitzung von user014 auf fs01'; Want = 'Sitzung von Benutzer 14 auf Server 01' }
+    ) {
+        Hide-WorkerPerfReportText $Text (New-WordMask) | Should -BeExactly $Want
+    }
+    It 'nimmt die Woerter aus den Mustern der Ersatznamen, nicht aus einer eigenen Liste' {
+        $m = New-WordMask
+        $m.AliasWords | Should -Be @('Benutzer', 'Client', 'Konto', 'Server', 'Freigabe', 'Domäne', 'Adresse', 'Drucker')
+        @($script:WorkerPerfMaskLevelKinds['Alles'] | ForEach-Object { ($Texts['mask.' + $_] -split ' ')[0] }) | Should -Be $m.AliasWords
+        (New-WordMask 'Personen').AliasWords | Should -Be @('Benutzer', 'Client', 'Konto')
+        # another pattern, another word: the old word is no designation any more
+        $other = @{}; foreach ($k in $Texts.Keys) { $other[$k] = $Texts[$k] }; $other['mask.share'] = 'Netzordner {0:00}'
+        $n = New-WordMask 'Alles' $other
+        $n.AliasWords | Should -Contain 'Netzordner'; $n.AliasWords | Should -Not -Contain 'Freigabe'
+        Hide-WorkerPerfReportText 'Netzordner \\fs01\daten' $n | Should -BeExactly 'Netzordner 01'
+        Hide-WorkerPerfReportText 'Freigabe \\fs01\daten' $n | Should -BeExactly 'Freigabe Netzordner 01'
+        # a pattern without a word before the number gives none
+        $other['mask.share'] = '{0:00}. Freigabe'; (New-WordMask 'Alles' $other).AliasWords | Should -Not -Contain 'Freigabe'
+        # a word that is itself a name of the capture is replaced and so is no designation before the next name
+        $named = New-WordMask
+        Set-WorkerPerfMaskNames -Mask $named -Entries @(@{ Kind = 'user'; Name = 'Server'; Replacement = 'Benutzer 01' }, @{ Kind = 'server'; Name = 'fs01'; Replacement = 'Server 01' },
+            @{ Kind = 'user'; Name = 'user014'; Replacement = 'Benutzer 14' })
+        Hide-WorkerPerfReportText 'Server fs01, Benutzer user014' $named | Should -BeExactly 'Benutzer 01 Server 01, Benutzer 14'
+        # a mask without the words (set by hand) replaces as before
+        $bare = New-WordMask; $bare.Remove('AliasWords'); Set-WorkerPerfMaskNames -Mask $bare -Entries @(@{ Kind = 'user'; Name = 'user014'; Replacement = 'Benutzer 14' })
+        Hide-WorkerPerfReportText 'Benutzer user014' $bare | Should -BeExactly 'Benutzer Benutzer 14'
+    }
+    It 'wendet die Regel auf gebildete Texte an, nie auf Schluessel, und bei Personen nur auf deren Namen' {
+        $m = New-WordMask
+        $d = [ordered]@{ label = 'Freigabe \\fs01\daten'; map = [ordered]@{ 'Benutzer user014' = 'Benutzer user014' }; list = [string[]]@('Server fs01', 'fs01') }
+        $old = $script:WorkerPerfMaskKeyedMaps
+        try { $script:WorkerPerfMaskKeyedMaps = @('map'); $r = Protect-WorkerPerfReportData $d $m } finally { $script:WorkerPerfMaskKeyedMaps = $old }
+        $r.label | Should -BeExactly 'Freigabe 01'; $r.list | Should -Be @('Server 01', 'Server 01')
+        @($r.map.Keys) | Should -Be @('Benutzer Benutzer 14'); $r.map['Benutzer Benutzer 14'] | Should -BeExactly 'Benutzer 14'
+        # the same text as a value after it was a key, and the other way round: neither takes the other's result
+        Hide-WorkerPerfReportText 'Benutzer user014' $m | Should -BeExactly 'Benutzer 14'
+        $p = New-WordMask 'Personen'
+        Hide-WorkerPerfReportText 'Benutzer user014 auf Server fs01, Freigabe \\fs01\daten' $p | Should -BeExactly 'Benutzer 14 auf Server fs01, Freigabe \\fs01\daten'
+    }
+}
 Describe 'Geschuetzte Namen mit Leerraum und Adressen in Zahlenreihen' {
     BeforeAll {
         function New-PhraseMask([object[]]$Entries, [string[]]$Protected = @()) {
@@ -777,6 +854,41 @@ Describe 'Simulierte Stunde, maskiert' {
             ($a.incidents | Where-Object lead -eq 'cpu').text | Should -Match 'Hauptverursacher: EXCEL\.EXE in der Sitzung von Benutzer \d\d '
             @(Get-Filled $Plain.events 'text').Count | Should -BeGreaterThan 0                          # die Aussage darunter ist nicht leer
             @(Get-Filled $a.events 'text').Count | Should -Be 0                                          # Befehlszeilen: siehe den Kanarientest
+        }
+        It 'verdoppelt in keinem Text des maskierten Berichts eine Bezeichnung' {                           # fix round 4, C1 (ruling P3-R62)
+            $a = Get-ReportData $R.Masked; $p = Get-ReportData $R.MaskedP
+            # the words the replacement names start with, from their patterns
+            $words = @('user', 'client', 'sid', 'server', 'share', 'domain', 'address', 'printer' | ForEach-Object { ($Texts['mask.' + $_] -split ' ')[0] })
+            $words | Should -Be @('Benutzer', 'Client', 'Konto', 'Server', 'Freigabe', 'Domäne', 'Adresse', 'Drucker')
+            $doubled = '(?<![\p{L}\p{N}-])(' + ($words -join '|') + ')[ \t\u00A0]+\1 \d\d'
+            'Freigabe Freigabe 01' | Should -MatchExactly $doubled; 'Benutzer Benutzer 14' | Should -MatchExactly $doubled; 'Server Server 01 am' | Should -MatchExactly $doubled
+            'Server Druckserver 02' | Should -Not -MatchExactly $doubled; 'Benutzer: Benutzer 14' | Should -Not -MatchExactly $doubled; 'Freigabe 01, Freigabe 02' | Should -Not -MatchExactly $doubled
+            function Get-Texts($Value, [string]$Path, $List) {
+                # every string of the report data with its path (list levels as [])
+                if ($null -eq $Value -or $Value -is [ValueType]) { return }
+                if ($Value -is [string]) { $List.Add([pscustomobject]@{ Path = $Path; Text = $Value }); return }
+                if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { Get-Texts $x "$Path[]" $List }; return }
+                foreach ($q in $Value.PSObject.Properties) { Get-Texts $q.Value $(if ($Path) { "$Path.$($q.Name)" } else { $q.Name }) $List }
+            }
+            foreach ($data in $a, $p) {
+                $all = New-Object System.Collections.Generic.List[object]; Get-Texts $data '' $all
+                $all.Count | Should -BeGreaterThan 5000
+                @($all | Where-Object { $_.Text -cmatch $doubled } | ForEach-Object { "$($_.Path): $($_.Text.Substring(0, [Math]::Min(90, $_.Text.Length)))" } | Sort-Object -Unique) | Should -Be @()
+            }
+            # the fields that doubled the word: the label of a share (chart legend, target comparison) and the sentence of the share incident
+            @($a.shares.label) | Should -Be @('Freigabe 01', 'Freigabe 02'); @($Plain.shares.label) | Should -Be @('Freigabe \\fs01\daten', 'Freigabe \\fs01\profile$')
+            $share = $a.incidents | Where-Object lead -eq 'share'
+            $share.text | Should -Match 'Dateiserver-Engpass \(Freigabe 01 Spitze '; @($share.signals.label) | Should -Contain 'Freigabe 01'
+            @($a.sollIst | Where-Object { $_.worstInstance -like 'Freigabe*' } | ForEach-Object { $_.worstInstance }) | Should -Be @('Freigabe 01')
+            # the head of a copy text and of the summary: the server once
+            ($a.incidents[0].copy.named -split "\r?\n")[0] | Should -Match '^WorkerPerf: Server 01, \d\d\.\d\d\.\d{4}$'; $a.copyAll.named | Should -Match 'Messung auf Server 01 am '
+            # a label and its value stay: the users of an event incident
+            @($a.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.text -match 'Benutzer: Benutzer \d\d' }).Count | Should -BeGreaterThan 0
+            # level Personen keeps the share's name behind its word
+            @($p.shares.label) | Should -Be @($Plain.shares.label)
+            # the version without names of an unmasked report follows the same rule
+            $plainShare = $Plain.incidents | Where-Object lead -eq 'share'
+            $plainShare.copy.anonymous | Should -Not -MatchExactly $doubled; ($Plain.incidents.copy.anonymous -join "`n") | Should -Not -MatchExactly $doubled; $Plain.copyAll.anonymous | Should -Not -MatchExactly $doubled
         }
         It 'zeigt dieselben Zahlen, Vorfaelle, Muster und Rangfolge' {
             $a = Get-ReportData $R.Masked                                                                # same options as $Plain

@@ -126,6 +126,21 @@ Describe 'Katalog laden und pruefen' {
         @{ Change = { $c.situations.fallback.impact = 'Am {date} fuer {user} langsam.' }; Msg = "Katalog '*': Eintrag 'fallback': Feld 'impact' enthaelt den Platzhalter '{user}', den nicht jeder Vorfall hat." }
         # the fallback meaning starts with fallbackNote: the same rule (ruling P3-R19 extended)
         @{ Change = { $c.fallbackNote = 'Keine Anleitung fuer {app} am {date}.' }; Msg = "Katalog '*': Eintrag 'fallbackNote' enthaelt den Platzhalter '{app}', den nicht jeder Vorfall hat." }
+        # other wordings of the impact (fix round 4, B2): a list of objects, each with a text like impact and at least one known condition
+        @{ Change = { $c.situations.cpu.impactVariants = @{ when = @('scan'); text = 'Anders.' } }; Msg = "Katalog '*': Eintrag 'cpu': Feld 'impactVariants' ist keine Liste." }
+        @{ Change = { $c.situations.cpu.impactVariants = @('Anders.', 'Noch anders.') }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``] ist kein Objekt." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @('scan'); text = 'Anders.' }, @{ when = @('scan') }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[1``]: Feld 'text' fehlt." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @('scan'); text = ' ' }, @{ when = @('scan'); text = 'x' }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'text' ist leer." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @('scan'); text = 5 }, @{ when = @('scan'); text = 'x' }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'text' ist kein Text." }
+        @{ Change = { $c.situations.disk.impactVariants = @(@{ when = @('scan'); text = 'Langsam fuer {user}.' }, @{ when = @('scan'); text = 'x' }) }
+            Msg = "Katalog '*': Eintrag 'disk', impactVariants``[0``]: Feld 'text' enthaelt den Platzhalter '{user}', den nicht jeder Vorfall hat." }
+        @{ Change = { $c.situations.disk.impactVariants = @(@{ when = @('scan'); text = 'Langsam {heute}.' }, @{ when = @('scan'); text = 'x' }) }
+            Msg = "Katalog '*': Eintrag 'disk', impactVariants``[0``]: Feld 'text' enthaelt den unbekannten Platzhalter '{heute}'." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ text = 'Anders.' }, @{ when = @('scan'); text = 'x' }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'when' fehlt." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @(); text = 'Anders.' }, @{ when = @('scan'); text = 'x' }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'when' ist keine Liste mit Bedingungen." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = 'scan'; text = 'Anders.' }, @{ when = @('scan'); text = 'x' }) }; Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'when' ist keine Liste mit Bedingungen." }
+        @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @('scan', 'unmeasured.eingabe'); text = 'Anders.' }, @{ when = @('scan'); text = 'x' }) }
+            Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'when' enthaelt die unbekannte Bedingung 'unmeasured.eingabe'." }
     ) { { Read-WorkerPerfGuidance (New-Catalogue $Change) } | Should -Throw $Msg }
     It 'erlaubt in Bedeutung und Wirkung die Werte, die jeder Vorfall hat' {
         $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.meaning = 'Am {date} von {from} bis {to} ({duration}) auf {server}.'; $c.situations.cpu.impact = '{server}: {duration} langsam.' })
@@ -694,6 +709,41 @@ Describe 'Anleitung zusammenstellen' {
         $g = New-WorkerPerfGuidance -Catalogue $Cat2 -Facts @{ Situation = 'memory'; Conditions = @(); Values = @{ from = '10:00'; to = '10:05' } } -Incident (New-Inc @{ type = 'engpass'; lead = 'memory' }) -Texts $Texts
         $g.fallback | Should -BeFalse; $g.situation | Should -Be 'memory'; $g.meaning | Should -BeExactly 'Von 10:00 bis 10:05.'
     }
+    It 'nimmt fuer die Wirkung die erste andere Fassung, deren Bedingungen alle gelten, sonst die Wirkung selbst' {   # fix round 4, B2 (ruling P3-R65)
+        $cat4 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.terms['Eingabeverzoegerung'] = 'Wartezeit einer Eingabe.'
+                $c.situations.cpu.impact = 'Eingaben reagierten verzoegert.'
+                $c.situations.cpu.impactVariants = @(
+                    @{ when = @('unmeasured.input.session', 'chronic'); text = 'Dauerhaft, nicht gemessen ab {from}.' }
+                    @{ when = @('unmeasured.input.session'); text = 'Eingaben koennen verzoegert reagiert haben; die Eingabeverzoegerung wurde nicht gemessen.' }
+                    @{ when = @('scan'); text = 'Beim Scan auf {server}.' })
+                # a one-element list arrives as a list too
+                $c.situations.disk.impactVariants = @(, @{ when = @('unmeasured.input.session'); text = 'Nicht gemessen.' }) })
+        $cat4.situations.cpu.impact | Should -Be 'Eingaben reagierten verzoegert.'; @($cat4.situations.cpu.impactVariants).Count | Should -Be 3
+        $inc = New-Inc @{ type = 'engpass'; lead = 'cpu' }
+        $vals = @{ from = '10:00'; to = '10:05'; server = 'SIM-VDA01' }
+        $impact = { param([string[]]$Conditions, [string]$Situation = 'cpu', $Values = $vals)
+            (New-WorkerPerfGuidance -Catalogue $cat4 -Facts @{ Situation = $Situation; Conditions = $Conditions; Values = $Values } -Incident $inc -Texts $Texts) }
+        (& $impact @()).impact | Should -BeExactly 'Eingaben reagierten verzoegert.'
+        (& $impact @('cause.app', 'affected.unknown')).impact | Should -BeExactly 'Eingaben reagierten verzoegert.'
+        (& $impact @('cause.app', 'unmeasured.input.session')).impact | Should -BeExactly 'Eingaben koennen verzoegert reagiert haben; die Eingabeverzoegerung wurde nicht gemessen.'
+        # every condition of a variant must hold; the first variant that fits wins
+        (& $impact @('chronic')).impact | Should -BeExactly 'Eingaben reagierten verzoegert.'
+        (& $impact @('chronic', 'unmeasured.input.session', 'scan')).impact | Should -BeExactly 'Dauerhaft, nicht gemessen ab 10:00.'
+        (& $impact @('scan', 'unmeasured.input.session')).impact | Should -BeExactly 'Eingaben koennen verzoegert reagiert haben; die Eingabeverzoegerung wurde nicht gemessen.'
+        (& $impact @('scan')).impact | Should -BeExactly 'Beim Scan auf SIM-VDA01.'
+        # the condition is compared exactly, and a variant whose placeholder has no value gives way to the next one that fits
+        (& $impact @('Unmeasured.Input.Session')).impact | Should -BeExactly 'Eingaben reagierten verzoegert.'
+        (& $impact @('scan') 'cpu' @{ from = '10:00'; to = '10:05' }).impact | Should -BeExactly 'Eingaben reagierten verzoegert.'
+        # the glossary follows the wording shown
+        (& $impact @('unmeasured.input.session')).terms | Should -Contain 'Eingabeverzoegerung'; (& $impact @()).terms | Should -Not -Contain 'Eingabeverzoegerung'
+        # another situation: its own variants, or none
+        (& $impact @('unmeasured.input.session') 'disk').impact | Should -BeExactly 'Nicht gemessen.'; (& $impact @('unmeasured.input.session') 'memory').impact | Should -BeExactly 'Langsam.'
+        # the copy text carries the wording of the guidance
+        $g = & $impact @('unmeasured.input.session')
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $g -Data (New-Ctx).Data -Catalogue $cat4 -Texts $Texts)
+        $p | Should -Contain 'Eingaben koennen verzoegert reagiert haben; die Eingabeverzoegerung wurde nicht gemessen.'; $p | Should -Not -Contain 'Eingaben reagierten verzoegert.'
+    }
     It 'fuellt Titel, Wirkung und Kuerzel und gibt jedem Element alle Felder' {
         $cat3 = Read-WorkerPerfGuidance (New-Catalogue {
                 $c.situations.disk.title = 'Laufwerk langsam'; $c.situations.disk.short = 'DISK'; $c.situations.disk.impact = 'Langsam auf {server}.'
@@ -1058,6 +1108,14 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
         (Get-WorkerPerfLagebild -Incidents $red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
         $script:WorkerPerfLagebildParts | ForEach-Object { $_.Place } | Should -Be @('', '', 'events', 'citrix')
+        # fix round 4, C2: the placeholder of a part's count stands under Value; no key shares its name with a property of the table
+        $script:WorkerPerfLagebildParts | ForEach-Object { $_.Value } | Should -Be @('bottlenecks', 'delays', 'events', 'chronic')
+        foreach ($part in $script:WorkerPerfLagebildParts) {
+            @($part.Keys | Sort-Object) | Should -Be @('Key', 'Place', 'States', 'Value')
+            foreach ($k in $part.Keys) { [hashtable].GetProperty($k) | Should -BeNullOrEmpty -Because "Schluessel $k" }
+            # the value is the placeholder the part's text of the catalogue may hold
+            $script:WorkerPerfGuidanceTextPlaceholders['lagebild.' + $part.Key] | Should -Be @($part.Value)
+        }
         # the summary to copy carries the same sentence
         $l = & $say $red @('Ereignisse'); $ctx = New-Ctx; $ctx.Data.skipped = @(& $skip @('Ereignisse'))
         $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @() -Order @() -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)

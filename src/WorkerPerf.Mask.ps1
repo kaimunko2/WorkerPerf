@@ -101,6 +101,7 @@ namespace WorkerPerf
         private readonly Dictionary<string, bool> designationWords;
         private readonly Dictionary<string, bool> persons;
         private readonly Dictionary<string, bool> addresses;
+        private readonly string[] aliasWords;
         // the report data repeats most of its strings (keys, kinds, users, applications): each is replaced once
         private readonly Dictionary<string, string> done = new Dictionary<string, string>(StringComparer.Ordinal);
         private const int DoneLimit = 200000;
@@ -113,8 +114,9 @@ namespace WorkerPerf
         // shield only names of a person (persons: the names of kind user, client and sid, P2-R13): designationWords, the
         // designations that are one word, keep a person name inside that word; designationPattern, like phrasePattern,
         // keeps a person name inside a designation with white space or a delimiter where it is part of a longer word.
+        // aliasWords: the word a replacement name starts with ("Freigabe" of "Freigabe 01"), from the alias patterns.
         public ReportMasker(string pattern, IDictionary lookup, string[] protectedNames, string other, string phrasePattern, string[] addresses,
-            string[] designationWords, string designationPattern, string[] persons)
+            string[] designationWords, string designationPattern, string[] persons, string[] aliasWords)
         {
             this.designationWords = ToSet(designationWords, true);
             this.persons = ToSet(persons, true);
@@ -136,28 +138,80 @@ namespace WorkerPerf
             this.protectedNames = new Dictionary<string, bool>(StringComparer.Ordinal);
             foreach (string p in protectedNames) { if (!string.IsNullOrEmpty(p)) { this.protectedNames[p.ToLowerInvariant()] = true; } }
             this.other = other ?? string.Empty;
+            // a word that is itself a name of the list is replaced, so it is no designation before another name
+            List<string> words = new List<string>();
+            if (aliasWords != null)
+            {
+                foreach (string w in aliasWords)
+                {
+                    if (!string.IsNullOrEmpty(w) && !words.Contains(w) && !this.lookup.ContainsKey(w.ToLowerInvariant())) { words.Add(w); }
+                }
+            }
+            this.aliasWords = words.ToArray();
         }
 
+        // A composed text (a sentence, a label): the names replaced, and a designation word that stands directly before
+        // a replacement name starting with the same word stands once ("Freigabe \\fs01\daten" becomes "Freigabe 01").
         public string Hide(string text)
+        {
+            return this.Hide(text, true);
+        }
+
+        // A key of the recorded data: the names replaced, nothing else changed.
+        public string HideKey(string text)
+        {
+            return this.Hide(text, false);
+        }
+
+        private string Hide(string text, bool composed)
         {
             if (string.IsNullOrEmpty(text)) { return text; }
             string rep;
-            if (this.done.TryGetValue(text, out rep)) { return rep; }
+            // the cache holds composed texts only (keys are few)
+            if (composed && this.done.TryGetValue(text, out rep)) { return rep; }
             // the whole text is one name (a user, a client): no pattern needed. No protected name equals a name (the
             // caller drops those), so neither the word rule nor a phrase can keep a whole text that is a name.
             List<int> spans = null;
             List<int> named = null;
             if (!this.lookup.TryGetValue(text.ToLowerInvariant(), out rep))
             {
-                rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m, ref spans, ref named); });
+                rep = this.pattern.Replace(text, delegate(Match m) { return this.Evaluate(text, m, composed, ref spans, ref named); });
             }
-            if (this.done.Count < DoneLimit) { this.done[text] = rep; }
+            if (composed && this.done.Count < DoneLimit) { this.done[text] = rep; }
             return rep;
         }
 
+        // The replacement name for a hit at index: without its designation word where the text has the same word, then
+        // blanks, directly before the hit (a word of its own: not the end of a longer word, not after a hyphen). The
+        // word then stands once, as the text wrote it. Another word before the name stays ("Server Druckserver 02"), as
+        // does a word that a colon or a line break separates from the name.
+        private string Once(string text, int index, string rep)
+        {
+            int b = index;
+            while (b > 0 && IsBlank(text[b - 1])) { b--; }
+            if (b == index) { return rep; }
+            for (int i = 0; i < this.aliasWords.Length; i++)
+            {
+                string w = this.aliasWords[i];
+                if (b < w.Length || rep.Length <= w.Length + 1 || !IsBlank(rep[w.Length])) { continue; }
+                if (string.CompareOrdinal(rep, 0, w, 0, w.Length) != 0 || string.CompareOrdinal(text, b - w.Length, w, 0, w.Length) != 0) { continue; }
+                int a = b - w.Length;
+                if (a > 0 && (char.IsLetterOrDigit(text[a - 1]) || text[a - 1] == '-')) { continue; }
+                int k = w.Length;
+                while (k < rep.Length && IsBlank(rep[k])) { k++; }
+                return rep.Substring(k);
+            }
+            return rep;
+        }
+
+        private static bool IsBlank(char c)
+        {
+            return c == ' ' || c == '\t' || c == '\u00A0';
+        }
+
         // spans, named: the occurrences of protected phrases and of designations in text (start, end pairs), found on the
-        // first name hit
-        private string Evaluate(string text, Match m, ref List<int> spans, ref List<int> named)
+        // first name hit; composed: see Hide
+        private string Evaluate(string text, Match m, bool composed, ref List<int> spans, ref List<int> named)
         {
             string rep;
             if (this.serverGroup >= 0)
@@ -171,7 +225,7 @@ namespace WorkerPerf
             }
             if (this.sidGroup >= 0 && m.Groups[this.sidGroup].Success)
             {
-                if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
+                if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return composed ? this.Once(text, m.Index, rep) : rep; }
                 return this.other;
             }
             if (IsProtected(this.protectedNames, text, m.Index, m.Length)) { return m.Value; }
@@ -182,7 +236,7 @@ namespace WorkerPerf
                 if (!IsWholeWord(text, m.Index, m.Length) && InSpan(this.designations, text, m.Index, m.Length, ref named)) { return m.Value; }
             }
             if (this.addresses.Count > 0 && this.addresses.ContainsKey(m.Value.ToLowerInvariant()) && InDottedNumber(text, m.Index, m.Length)) { return m.Value; }
-            if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return rep; }
+            if (this.lookup.TryGetValue(m.Value.ToLowerInvariant(), out rep)) { return composed ? this.Once(text, m.Index, rep) : rep; }
             return m.Value;
         }
 
@@ -362,7 +416,7 @@ namespace WorkerPerf
         {
             string k = key as string;
             if (k == null) { od[key] = value; return; }
-            if (mask) { k = this.Hide(k); }
+            if (mask) { k = this.HideKey(k); }
             if (od.Contains(k))
             {
                 int n = 2;
@@ -556,8 +610,9 @@ function New-WorkerPerfMask {
     # decides the numbers. The numbers do not depend on the level: Personen keeps the numbers of Alles.
     # Returns @{ Level; Entries = @{ Kind; Name; Replacement }[] of the level, in order of first appearance;
     # Protected = string[] of names that must stay (process, service, application, module, driver and manufacturer names);
-    # Designations = string[] of the endpoint designations and role labels; Shadowed = protected names equal to a name of
-    # the level; Lookup = lower-case name -> replacement; Regex = one pattern of all names of the level,
+    # Designations = string[] of the endpoint designations and role labels; AliasWords = string[] of the words the
+    # replacement names of the level start with (from the alias patterns mask.<kind>); Shadowed = protected names equal
+    # to a name of the level; Lookup = lower-case name -> replacement; Regex = one pattern of all names of the level,
     # longer before shorter, whole names only, without regard to case ($null without names) }.
     # -EventConfig: from Read-WorkerPerfEventConfig (NonPersonAccounts, NonPersonDomains); without it the built-in lists.
     param([string]$Path, [ValidateSet('Personen', 'Alles')][string]$Level, [hashtable]$Texts, [string[]]$RoleLabels = @(), $EventConfig = $null)
@@ -670,7 +725,13 @@ function New-WorkerPerfMask {
     }
     $kinds = $script:WorkerPerfMaskLevelKinds[$Level]
     $entries = @($all | Where-Object { $kinds -contains $_.Kind })
-    $mask = @{ Level = $Level; Other = [string]$Texts['mask.other'] }
+    # the word each replacement name of the level starts with, from its alias pattern ("Freigabe" of "Freigabe {0:00}")
+    $aliasWords = New-Object System.Collections.Generic.List[string]
+    foreach ($kind in $kinds) {
+        $m = [regex]::Match([string]$Texts['mask.' + $kind], '^\s*([\p{L}\p{N}][\p{L}\p{N}-]*)[ \t]+\{0')
+        if ($m.Success -and -not $aliasWords.Contains($m.Groups[1].Value)) { $aliasWords.Add($m.Groups[1].Value) }
+    }
+    $mask = @{ Level = $Level; Other = [string]$Texts['mask.other']; AliasWords = [string[]]$aliasWords.ToArray() }
     Set-WorkerPerfMaskNames -Mask $mask -Entries $entries -Protected ([string[]]$st.Protected.ToArray()) -Designations ([string[]]$st.Designations.ToArray())
     return $mask
 }
@@ -690,8 +751,9 @@ function Set-WorkerPerfMaskNames {
     # Sets the names of a mask (made by New-WorkerPerfMask, which calls this at its end): Entries = @{ Kind; Name;
     # Replacement }[]; Protected; Designations; Shadowed; Lookup = lower-case name -> replacement; Regex = one pattern of
     # all names, longer before shorter, whole names only, without regard to case ($null without names); Masker = the
-    # replacer that Hide-WorkerPerfReportText and Protect-WorkerPerfReportData use. Uses Mask.Level and Mask.Other (the
-    # text of mask.other). Changes the mask in place and returns nothing.
+    # replacer that Hide-WorkerPerfReportText and Protect-WorkerPerfReportData use. Uses Mask.Level, Mask.Other (the
+    # text of mask.other) and Mask.AliasWords (the designation words of the alias patterns; none without the key).
+    # Changes the mask in place and returns nothing.
     param($Mask, [object[]]$Entries = @(), [string[]]$Protected = @(), [string[]]$Designations = @())
     if (-not ('WorkerPerf.ReportMasker' -as [type])) { Add-Type -TypeDefinition $script:WorkerPerfMaskSource -Language CSharp }
     $entries = @($Entries | Where-Object { $null -ne $_ })
@@ -737,8 +799,10 @@ function Set-WorkerPerfMaskNames {
     $designationPattern = Get-WorkerPerfMaskPhrasePattern $Mask['Designations']
     $addresses = [string[]]@($entries | Where-Object { [string]$_.Kind -eq 'address' } | ForEach-Object { [string]$_.Name })
     $persons = [string[]]@($entries | Where-Object { $script:WorkerPerfMaskLevelKinds['Personen'] -contains [string]$_.Kind } | ForEach-Object { [string]$_.Name })
+    $aliasWords = [string[]]@()
+    if ($Mask.ContainsKey('AliasWords')) { $aliasWords = [string[]]@($Mask['AliasWords'] | Where-Object { -not [string]::IsNullOrEmpty($_) }) }
     $Mask['Masker'] = New-Object WorkerPerf.ReportMasker ([string]::Join('|', $alternatives.ToArray()), $lookup, [string[]]@($Mask['Protected']), $other, $phrasePattern,
-        $addresses, $designationWords, $designationPattern, $persons)
+        $addresses, $designationWords, $designationPattern, $persons, $aliasWords)
 }
 
 function Get-WorkerPerfMaskVocabularyHits($Mask, [hashtable]$Texts, [string[]]$Units = @()) {
@@ -779,6 +843,10 @@ function Hide-WorkerPerfReportText($Text, $Mask) {
     # whose word (bounded by white space and \ / ( ) [ ] , ; : " ' < > | =) is a protected name stays, as does a hit inside
     # a protected phrase and a hit that is part of a longer word inside a designation. Then an account SID and (level
     # Alles) a UNC server that are not in Lookup become the text of mask.other. $null stays $null.
+    # A masked text never doubles a designation (ruling P3-R62): a replacement name starts with the word of its alias
+    # pattern ("Freigabe 01"), so where the text has the same word directly before the name ("Freigabe \\fs01\daten"),
+    # the word stands once ("Freigabe 01"). This is a rule for composed texts: the free texts of the server never reach a
+    # masked report (Clear-WorkerPerfReportFreeText), and the keys of the data are replaced without it.
     if ($null -eq $Text) { return $null }
     return $Mask.Masker.Hide([string]$Text)
 }

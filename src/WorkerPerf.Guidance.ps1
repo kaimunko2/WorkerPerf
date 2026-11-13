@@ -192,6 +192,34 @@ function Assert-WorkerPerfGuidanceAlwaysValues([string]$Path, [string]$Entry, [s
     }
 }
 
+function Test-WorkerPerfGuidanceImpactVariants([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
+    # impactVariants (optional): other wordings of the impact of a situation, each with the conditions (when, at least
+    # one) under which it replaces impact, so that the sentence does not state as a fact what the capture did not
+    # measure. Like impact, a variant only uses values every incident has.
+    $variants = Get-WorkerPerfGuidanceMember $Entry 'impactVariants'
+    if ($null -eq $variants) { return }
+    if ($variants.Value -isnot [array]) { Stop-WorkerPerfGuidance $Path $Name '' 'impactVariants' 'ist keine Liste' }
+    $list = @($variants.Value)
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $item = "impactVariants[$i]"
+        if (-not (Test-WorkerPerfGuidanceObject $list[$i])) { Stop-WorkerPerfGuidance $Path $Name $item '' 'ist kein Objekt' }
+        Assert-WorkerPerfGuidanceField $Path $Name $item $list[$i] 'text'
+        foreach ($m in [regex]::Matches($list[$i].text, '\{([A-Za-z0-9]+)\}')) {
+            if ($script:WorkerPerfGuidanceAlwaysValues -cnotcontains $m.Groups[1].Value) {
+                Stop-WorkerPerfGuidance $Path $Name $item 'text' "enthaelt den Platzhalter '$($m.Value)', den nicht jeder Vorfall hat"
+            }
+        }
+        $when = Get-WorkerPerfGuidanceMember $list[$i] 'when'
+        if ($null -eq $when) { Stop-WorkerPerfGuidance $Path $Name $item 'when' 'fehlt' }
+        if ($when.Value -isnot [array] -or @($when.Value).Count -eq 0) { Stop-WorkerPerfGuidance $Path $Name $item 'when' 'ist keine Liste mit Bedingungen' }
+        foreach ($n in @($when.Value)) {
+            if ($n -isnot [string] -or -not (Test-WorkerPerfGuidanceCondition $n $Catalogue $Signals $Apps)) {
+                Stop-WorkerPerfGuidance $Path $Name $item 'when' "enthaelt die unbekannte Bedingung '$n'"
+            }
+        }
+    }
+}
+
 function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
     if (-not (Test-WorkerPerfGuidanceObject $Entry)) { Stop-WorkerPerfGuidance $Path $Name '' '' 'ist kein Objekt' }
     foreach ($f in 'title', 'meaning', 'impact', 'short') { Assert-WorkerPerfGuidanceField $Path $Name '' $Entry $f }
@@ -201,6 +229,7 @@ function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, 
         if ($m.Success) { Stop-WorkerPerfGuidance $Path $Name '' $f "darf keinen Platzhalter enthalten ('$($m.Value)')" }
     }
     foreach ($f in 'meaning', 'impact') { Assert-WorkerPerfGuidanceAlwaysValues $Path $Name $f $Entry.$f }
+    Test-WorkerPerfGuidanceImpactVariants $Path $Name $Entry $Catalogue $Signals $Apps
     foreach ($list in $script:WorkerPerfGuidanceItemFields.Keys) {
         $p = Get-WorkerPerfGuidanceMember $Entry $list
         if ($null -eq $p) { Stop-WorkerPerfGuidance $Path $Name '' $list 'fehlt' }
@@ -800,7 +829,8 @@ function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Condit
 function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
     # The guidance of one incident: the catalogue entry of its situation (the fallback entry, marked, when the catalogue
     # has none), filled with the values of the facts (Get-WorkerPerfGuidanceFacts), with only the elements the facts
-    # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts.
+    # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts. The
+    # impact is the situation's impact, or the first of its impactVariants whose conditions all hold.
     $situation = [string](Get-WorkerPerfField $Facts 'Situation')
     $conditions = [string[]](Get-WorkerPerfGuidanceList $Facts 'Conditions')
     # Values: a hashtable or any other dictionary (an ordered one gives the same result)
@@ -819,6 +849,15 @@ function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
     foreach ($f in 'title', 'meaning', 'impact', 'short') {
         $filled[$f] = $null
         $template = Get-WorkerPerfField $entry $f
+        # the impact in the first other wording whose conditions all hold (impactVariants), else as it stands
+        if ($f -eq 'impact') {
+            foreach ($variant in (Get-WorkerPerfGuidanceList $entry 'impactVariants')) {
+                $when = Get-WorkerPerfGuidanceList $variant 'when'
+                if ($when.Count -eq 0 -or @($when | Where-Object { $conditions -cnotcontains [string]$_ }).Count -gt 0) { continue }
+                $other = Get-WorkerPerfField $variant 'text'
+                if ($null -ne $other -and $null -ne (Format-WorkerPerfGuidanceText ([string]$other) $values)) { $template = $other; break }
+            }
+        }
         if ($null -ne $template) { $filled[$f] = Format-WorkerPerfGuidanceText ([string]$template) $values }
         if ($f -ne 'short' -and $null -ne $filled[$f]) { $templates.Add([string]$template) }
     }
@@ -1017,14 +1056,15 @@ function Format-WorkerPerfGuidancePart($Catalogue, [string]$Part, [string]$Key, 
 }
 
 # The parts of the red and the yellow sentence of the Lagebild, in their order: the catalogue text (lagebild.<Key>), the
-# count it names, the place of the report data whose category the count needs (skipped[].places: 'events' as for the key
-# figure of the page; a chronic state of the connection needs the ICA values, 'citrix') and the states whose sentence
-# lists the part (the yellow sentence says in its lead-in that there is no bottleneck).
+# value it names (Value: the placeholder of its count), the place of the report data whose category the count needs
+# (skipped[].places: 'events' as for the key figure of the page; a chronic state of the connection needs the ICA values,
+# 'citrix') and the states whose sentence lists the part (the yellow sentence says in its lead-in that there is no
+# bottleneck).
 $script:WorkerPerfLagebildParts = @(
-    @{ Key = 'partBottlenecks'; Count = 'bottlenecks'; Place = ''; States = @('red') }
-    @{ Key = 'partDelays'; Count = 'delays'; Place = ''; States = @('red', 'yellow') }
-    @{ Key = 'partEvents'; Count = 'events'; Place = 'events'; States = @('red', 'yellow') }
-    @{ Key = 'partChronic'; Count = 'chronic'; Place = 'citrix'; States = @('red', 'yellow') })
+    @{ Key = 'partBottlenecks'; Value = 'bottlenecks'; Place = ''; States = @('red') }
+    @{ Key = 'partDelays'; Value = 'delays'; Place = ''; States = @('red', 'yellow') }
+    @{ Key = 'partEvents'; Value = 'events'; Place = 'events'; States = @('red', 'yellow') }
+    @{ Key = 'partChronic'; Value = 'chronic'; Place = 'citrix'; States = @('red', 'yellow') })
 
 function Get-WorkerPerfLagebild {
     # The situation summary of the capture (spec 3.1): state with symbol and word, sentence (catalogue part lagebild),
@@ -1104,7 +1144,7 @@ function Get-WorkerPerfLagebild {
         $parts = New-Object System.Collections.Generic.List[string]
         foreach ($part in $script:WorkerPerfLagebildParts) {
             if ($part.States -cnotcontains $state) { continue }
-            if ($part.Place -and $notMeasured.Contains($part.Place) -and $v[$part.Count] -eq '0') { $reserve = $true; continue }
+            if ($part.Place -and $notMeasured.Contains($part.Place) -and $v[$part.Value] -eq '0') { $reserve = $true; continue }
             $parts.Add((Format-WorkerPerfGuidancePart $Catalogue 'lagebild' $part.Key $v))
         }
         if ($parts.Count -gt 0) { $v['parts'] = $parts.ToArray() -join (Format-WorkerPerfGuidancePart $Catalogue 'lagebild' 'partSeparator' $v) }

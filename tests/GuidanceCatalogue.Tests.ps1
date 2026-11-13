@@ -514,6 +514,49 @@ Describe 'Katalog in src' {
         # titles tell the situations apart on cards and in groups
         @($WorkerPerfSituations | ForEach-Object { $Real.situations.$_.title } | Sort-Object -Unique).Count | Should -Be $WorkerPerfSituations.Count
     }
+    It 'stellt die Verzoegerung bei <S> nicht als Tatsache hin, wenn die Eingabeverzoegerung nicht gemessen wurde' -ForEach @(      # fix round 4, B2 (ruling P3-R65)
+        @{ S = 'cpu'; I = @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'nodata' } }; Fact = 'reagierten für die betroffenen Benutzer spürbar verzögert' }
+        @{ S = 'disk'; I = @{ type = 'engpass'; lead = 'disk'; cause = @{ kind = 'nodata' } }; Fact = 'dauerten spürbar länger' }
+        @{ S = 'share'; I = @{ type = 'engpass'; lead = 'share'; cause = @{ kind = 'nodata' } }; Fact = 'ließen sich nur verzögert öffnen' }
+        @{ S = 'profile'; I = @{ type = 'engpass'; lead = 'profile'; cause = @{ kind = 'nodata' } }; Fact = 'reagierten träge' }
+        @{ S = 'chronic.resource'; I = @{ type = 'engpass'; lead = 'cpu'; chronic = $true; cause = @{ kind = 'nodata' } }; Fact = 'reagieren für die Benutzer dauerhaft zäher' }
+        @{ S = 'fallback'; I = @{ type = 'umfeld' }; Fact = 'zeigen die betroffenen Sitzungen' }
+    ) {
+        $inc = New-Inc $I
+        # measured: the impact as it stands
+        $g = Get-Guide $inc
+        $g.situation | Should -Be $S; $g.conditions | Should -Not -Contain 'unmeasured.input.session'
+        $g.impact | Should -BeExactly $Real.situations.$S.impact; $g.impact | Should -Match ([regex]::Escape($Fact))
+        # not measured: the row of the target comparison says so, and no session can be named
+        $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true
+        $ctx.Data.sollIst = @(@{ id = 'input.session'; label = 'Eingabeverzögerung je Sitzung'; measured = $false; detail = '' })
+        $g = Get-Guide $inc $ctx
+        $g.conditions | Should -Contain 'unmeasured.input.session'; $g.conditions | Should -Contain 'affected.unknown'
+        $g.impact | Should -Not -Match ([regex]::Escape($Fact))
+        $g.impact | Should -Match '(?i)die Eingabeverzögerung wurde nicht gemessen\.$'
+        if ($S -ne 'fallback') { $g.impact | Should -Match '\b(können|kann)\b' }
+        $g.impact | Should -Not -Match '\b(reagierten|dauerten|ließen|wirkten|mussten)\b'
+        if ($S -ne 'chronic.resource') { $g.userView | Should -Match 'nicht bestimmbar' }
+        $g.terms | Should -Contain 'Eingabeverzögerung'
+        # the copy text carries the same sentence
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $g -Data $ctx.Data -Catalogue $Real -Texts $Texts)
+        $p | Should -Contain $g.impact; $p | Should -Not -Contain $Real.situations.$S.impact
+    }
+    It 'hat fuer jede Wirkung, die eine Verzoegerung als Tatsache nennt, eine Fassung ohne gemessene Eingabeverzoegerung' {      # fix round 4, B2
+        $with = @($WorkerPerfSituations | Where-Object { $Real.situations.$_.PSObject.Properties['impactVariants'] })
+        $with | Should -Be @('cpu', 'disk', 'share', 'profile', 'chronic.resource', 'fallback')
+        foreach ($s in $with) {
+            $variants = @($Real.situations.$s.impactVariants); $variants.Count | Should -Be 1 -Because $s
+            @($variants[0].when) | Should -Contain 'unmeasured.input.session' -Because $s
+            # one sentence, like the impact, with no placeholder
+            ([regex]::Matches($variants[0].text, '[.!?](?=\s|$)')).Count | Should -Be 1 -Because $s; $variants[0].text | Should -Not -Match '[{}]' -Because $s
+            $variants[0].text | Should -Not -BeExactly $Real.situations.$s.impact
+        }
+        # the situations of a measured resource without such a variant word their impact as a likelihood already; a
+        # delay without bottleneck and a slow network path are found by their own measured value
+        $Real.situations.memory.impact | Should -Match '^Anwendungen können träge reagiert haben'
+        foreach ($s in 'memory', 'delay.many', 'delay.single', 'chronic.network') { $Real.situations.$s.PSObject.Properties['impactVariants'] | Should -BeNullOrEmpty -Because $s }
+    }
     It 'spricht beim Dauerzustand von <Lead> ueber diese Ressource und ueber keine andere' -ForEach @(           # ruling P3-R37
         @{ Lead = 'cpu'; Want = 'Prozessor'; Other = 'Arbeitsspeicher der virtuellen Maschine|Dateiserver|Speichersystem|Profilspeicher' }
         @{ Lead = 'memory'; Want = 'Arbeitsspeicher'; Other = 'Prozessor|Dateiserver|Speichersystem|Profilspeicher' }
@@ -1016,6 +1059,7 @@ Describe 'Katalog in src' {
         $all = New-Object System.Collections.Generic.List[string]
         foreach ($e in $Elements) { foreach ($t in $e.Texts) { $all.Add($t) } }
         foreach ($s in $WorkerPerfSituations) { foreach ($f in 'title', 'meaning', 'impact') { $all.Add([string]$Real.situations.$s.$f) } }
+        foreach ($s in $WorkerPerfSituations) { if ($Real.situations.$s.PSObject.Properties['impactVariants']) { foreach ($v in @($Real.situations.$s.impactVariants)) { $all.Add([string]$v.text) } } }
         foreach ($part in 'copy', 'userView', 'lagebild', 'hints') { foreach ($p in $Real.$part.PSObject.Properties) { $all.Add([string]$p.Value) } }
         $all.Add([string]$Real.fallbackNote); foreach ($p in $Real.terms.PSObject.Properties) { $all.Add([string]$p.Value) }
         $all.Count | Should -BeGreaterThan 1000
@@ -1033,7 +1077,8 @@ Describe 'Katalog in src' {
         $places = @($strings | ForEach-Object { $_.Place })
         foreach ($p in 'terms.Master-Image', 'terms.Master-Image (Begriff)', 'copy.head', 'userView.many', 'lagebild.red', 'hints.skipped', 'fallbackNote',
             'situations.cpu.title', 'situations.cpu.short', 'situations.cpu.meaning', 'situations.cpu.impact', 'situations.cpu.checks[0].text', 'situations.cpu.checks[0].where',
-            'situations.cpu.checks[0].sign', 'situations.cpu.remedies[0].text', 'situations.cpu.remedies[0].precondition', 'situations.print.contacts[0].text') { $places | Should -Contain $p }
+            'situations.cpu.checks[0].sign', 'situations.cpu.remedies[0].text', 'situations.cpu.remedies[0].precondition', 'situations.print.contacts[0].text',
+            'situations.cpu.impactVariants[0].text') { $places | Should -Contain $p }
         @($places | Where-Object { $_ -match '\.(when|source)(\[|$)|^(version|vendors)' }) | Should -Be @()
         @($strings | Where-Object { $_.Text -cmatch $WorkerWord } | ForEach-Object { $_.Place }) | Should -Be @()
         # the fixed phrases of spec 5.8 say Server
@@ -1049,6 +1094,10 @@ Describe 'Katalog in src' {
         @($Texts.Keys | Where-Object { $Texts[$_] -cmatch $WorkerWord } | Sort-Object) | Should -Be @()
         $Texts['ohne'] | Should -Match 'ohne Engpass auf dem Server \('; $Texts['ohne.skipped'] | Should -Match 'ohne erkannten Engpass auf dem Server \('
         $Texts['umfeld.network'] | Should -Match 'Betrifft die Sitzung, nicht den Server\.$'; $Texts['ohne.cause'] | Should -Match 'außerhalb des Servers oder in der Anwendung selbst'
+        # the cause of a delay without bottleneck is a likelihood, as the meaning of the incident says (fix round 4, B1; ruling P3-R63)
+        $Texts['ohne.cause'] | Should -BeExactly ' Die Ursache liegt vermutlich außerhalb des Servers oder in der Anwendung selbst (Datenbank, Proxy, Netz).'
+        foreach ($k in @($Texts.Keys | Where-Object { $_ -like 'ohne*' })) { if ($Texts[$k] -match 'Ursache') { $Texts[$k] | Should -Match 'vermutlich|nicht ausgeschlossen' -Because $k } }
+        foreach ($s in 'delay.many', 'delay.single') { $Real.situations.$s.meaning | Should -Match 'vermutlich' -Because $s }
         $Texts['ohne.unmeasured'] | Should -Match '^ Kein Engpass in den gemessenen Ressourcen des Servers\. Nicht gemessen: '
     }
 }
@@ -1118,6 +1167,20 @@ Describe 'Nachweis der Druckempfehlungen' {
         $script:Sourced = @(Get-Elements $script:Real | Where-Object { $_.Source })
         $script:Rows = @(Get-SourceRows $script:SourcesFile)
         $script:Doc = [IO.File]::ReadAllText($script:SourcesFile, [Text.Encoding]::UTF8)
+        function Get-NamedElements([string]$Text) {
+            # the elements a text of the record names by list, first words in quotation marks and situation (Abhilfe „… …“
+            # der Situation `print`): the words as written, and the positions of the elements of that list whose text
+            # starts with them (a placeholder in its declared form ‹…› back to the placeholder). One position: found.
+            $forms = @{}; foreach ($m in [regex]::Matches($script:Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
+            $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
+            foreach ($m in [regex]::Matches(($Text -replace '\s+', ' '), '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`')) {
+                $words = $m.Groups[2].Value; foreach ($f in $forms.Keys) { $words = $words.Replace($f, $forms[$f]) }
+                $list = $lists[$m.Groups[1].Value]; $situation = $m.Groups[3].Value
+                $elements = @($script:Real.situations.$situation.$list); $hits = @()
+                for ($k = 0; $k -lt $elements.Count; $k++) { if (([string]$elements[$k].text).StartsWith($words, [StringComparison]::Ordinal)) { $hits += "$situation.$list[$k]" } }
+                [pscustomobject]@{ Name = $m.Value; Words = $words; Positions = $hits }
+            }
+        }
     }
     It 'fuehrt jedes Element mit Quelle an seiner Stelle unter seinem Dokument' {
         $Sourced.Count | Should -BeGreaterThan 20
@@ -1137,8 +1200,14 @@ Describe 'Nachweis der Druckempfehlungen' {
                 $bySource[$p] | Should -BeExactly "$($row.Vendor): $($row.Title)" -Because $p
                 $seen.ContainsKey($p) | Should -BeFalse -Because "$p steht zweimal im Nachweis"; $seen[$p] = $true
             }
-            # a note speaks only about elements of its own row
-            foreach ($p in $row.Noted) { $row.Positions | Should -Contain $p -Because "Hinweis zu $($row.Title)" }
+            # a note names an element by its first words, never by its position (fix round 4, C4), and speaks only about
+            # elements of its own row
+            $row.Noted | Should -Be @() -Because "Hinweis zu $($row.Title)"
+            foreach ($n in @(Get-NamedElements $row.Line)) {
+                $n.Words | Should -Not -Match '[‹›]' -Because $n.Name
+                $n.Positions.Count | Should -Be 1 -Because "$($n.Name) im Hinweis zu $($row.Title)"
+                $row.Positions | Should -Contain $n.Positions[0] -Because "$($n.Name) im Hinweis zu $($row.Title)"
+            }
             if ($row.Vendor -eq 'WorkerPerf') { continue }
             $row.Line | Should -Match 'https://' -Because $row.Title
             $row.Line | Should -Match '2026-11-13' -Because $row.Title
@@ -1151,10 +1220,18 @@ Describe 'Nachweis der Druckempfehlungen' {
         $Doc | Should -Match '(?m)^## Auf dem Zielsystem zu bestätigen$'
         $at = $Doc.IndexOf("`n## Auf dem Zielsystem zu bestätigen`n")
         $section = $Doc.Substring($at)
-        # every position the list names exists in the catalogue
-        $all = @(Get-Elements $Real | ForEach-Object { $_.Position })
-        $named = @(Get-Positions $section); $named.Count | Should -BeGreaterThan 3
-        foreach ($p in $named) { $all | Should -Contain $p }
+        # the list names its elements by their first words, never by their position (fix round 4, C4); each is found
+        @(Get-Positions $section) | Should -Be @()
+        $named = @(Get-NamedElements $section); $named.Count | Should -Be 6
+        foreach ($n in $named) { $n.Words | Should -Not -Match '[‹›]' -Because $n.Name; $n.Positions.Count | Should -Be 1 -Because $n.Name }
+        # what the list says about them still stands in them
+        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $texts = @($named | ForEach-Object { $byPosition[$_.Positions[0]].Texts -join ' ' })
+        $texts[0] | Should -Match 'DependOnService'
+        $texts[1] | Should -Match 'Isolate print drivers from applications'; $texts[2] | Should -Match 'Execute print drivers in isolated processes'
+        $texts[3] | Should -Match 'Override print driver execution compatibility setting reported by print driver'
+        $texts[4] | Should -Match 'Druckverwaltung'; $texts[5] | Should -Match 'Druckverwaltung'
+        @($named | ForEach-Object { $_.Positions[0] -replace '\[\d+\]$', '' }) | Should -Be @('print.checks', 'crash.checks', 'print.checks', 'print.remedies', 'print.checks', 'print.remedies')
         foreach ($word in 'DependOnService', 'Betriebsbereit', 'PrintDriverIsolationOverrideCompat', 'temporäres Profil') { $section | Should -Match ([regex]::Escape($word)) }
     }
     It 'nennt im Abschnitt Zielumgebung die Elemente mit ihren ersten Worten statt mit ihrer Stelle' {                           # fix round 3, A4
@@ -1236,6 +1313,27 @@ Describe 'Nachweis der Druckempfehlungen' {
         # where a row names the print servers and the measured server, it tells them apart
         $Doc | Should -Match ([regex]::Escape('(Einrichtung der Druckserver, auf dem gemessenen Server nicht sichtbar)'))
         $Doc | Should -Match ([regex]::Escape('(Komponenten der Druckserver, nicht des gemessenen Servers)'))
+    }
+    It 'nennt in den Hinweisen der Tabellen die Elemente mit ihren ersten Worten und erklaert die Form' {                          # fix round 4, C4
+        # the notes of the tables name twenty elements today; the test of the rows checks each against its row
+        $inNotes = @($Rows | ForEach-Object { Get-NamedElements $_.Line })
+        $inNotes.Count | Should -BeGreaterThan 15
+        @($inNotes | Where-Object { $_.Positions.Count -ne 1 } | ForEach-Object { $_.Name }) | Should -Be @()
+        # outside the tables a position stands only where the record explains what a position is
+        $prose = @($Doc -split "`n" | Where-Object { $_ -notmatch '^\|' }) -join "`n"
+        @(Get-Positions $prose | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
+        $Doc | Should -Match 'der Abschnitt „Auf dem Zielsystem zu bestätigen“ und die Hinweise in den\s+Tabellen\s+nennen\s+ein\s+Element\s+nicht\s+mit\s+seiner\s+Stelle'
+        $Doc | Should -Match '‹Treiber› für `\{driver\}`'
+        # the finder finds what it is meant to find, and nothing for words no element starts with
+        $found = @(Get-NamedElements 'siehe Abhilfe „Spool-Ordner von Hand leeren …“ der Situation `print` und Prüfschritt „Gibt es nicht …“ der Situation `cpu`')
+        $found.Count | Should -Be 2; $found[0].Positions.Count | Should -Be 1; $found[0].Positions[0] | Should -Match '^print\.remedies\[\d+\]$'; $found[1].Positions.Count | Should -Be 0
+    }
+    It 'bricht den Fliesstext vor den Tabellen und die Liste am Ende nach hoechstens 120 Zeichen um' {                             # fix round 4, C3
+        $lines = @($Doc -split "`n")
+        $firstTable = [array]::IndexOf($lines, '## Microsoft'); $firstTable | Should -BeGreaterThan 50
+        $last = [array]::IndexOf($lines, '## Auf dem Zielsystem zu bestätigen'); $last | Should -BeGreaterThan $firstTable
+        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) { if (($n -lt $firstTable -or $n -gt $last) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
+        $long | Should -Be @()
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
         @($Sourced | Where-Object { $_.Source -match 'Generic PCL' }) | Should -Be @()

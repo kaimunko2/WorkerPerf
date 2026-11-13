@@ -45,7 +45,7 @@ Describe 'Durchlauf Simulation -> Bericht' {
         $i = Get-Hit 'backend'
         $i.delayProcs[0].name | Should -Be 'nexus.exe'; $i.resources | Should -Be @('endpoint')
         ($i.endpoints | Where-Object name -eq 'Oracle-Listener').maxMs | Should -BeGreaterOrEqual 200
-        $i.text | Should -Match 'außerhalb des Servers'
+        $i.text | Should -Match 'Die Ursache liegt vermutlich außerhalb des Servers'
     }
     It 'bewertet alle zwoelf Messwerte gegen das Soll' {
         $D.sollIst.Count | Should -Be 12; @($D.sollIst | Where-Object measured).Count | Should -Be 12
@@ -121,6 +121,29 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         $i = @($n.incidents | Where-Object { $_.type -eq 'engpass' -and $_.lead -eq 'cpu' }); $i.Count | Should -Be 1
         $i[0].cause.kind | Should -Be 'nodata'; $i[0].main | Should -BeNullOrEmpty; $n.unmeasured.input | Should -BeTrue
         $i[0].text | Should -Match 'CPU-Engpass \(.+\)\. Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar\. Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor\.$'
+    }
+    It 'stellt die Verzoegerung nicht als Tatsache hin, wenn die Eingabeverzoegerung nicht gemessen wurde' {   # fix round 4, B2 (ruling P3-R65)
+        $n = Get-ReportData $R.NoData
+        $n.unmeasured.input | Should -BeTrue
+        $fact = 'Eingaben, Fensterwechsel und Bildaufbau reagierten für die betroffenen Benutzer spürbar verzögert.'
+        $likely = 'Eingaben, Fensterwechsel und Bildaufbau können für die Benutzer verzögert reagiert haben; die Eingabeverzögerung wurde nicht gemessen.'
+        $i = @($n.incidents | Where-Object { $_.type -eq 'engpass' -and $_.lead -eq 'cpu' })[0]
+        $i.guide.conditions | Should -Contain 'unmeasured.input.session'; $i.guide.userView | Should -Be 'Betroffene Sitzungen nicht bestimmbar.'
+        $i.guide.impact | Should -BeExactly $likely
+        # the copy text follows, with and without names
+        foreach ($t in $i.copy.named, $i.copy.anonymous) {
+            $flat = $t -replace '\r?\n\s*', ' '
+            $flat | Should -Match ([regex]::Escape($likely)); $flat | Should -Not -Match 'reagierten für die betroffenen Benutzer'
+        }
+        # the incident of the network path: nothing points to affected sessions that cannot be named
+        $u = @($n.incidents | Where-Object { $_.type -eq 'umfeld' })[0]
+        $u.guide.situation | Should -Be 'fallback'; $u.guide.impact | Should -BeExactly 'Ob Benutzer die Auffälligkeit gespürt haben, ist nicht bestimmbar: Die Eingabeverzögerung wurde nicht gemessen.'
+        # no incident of this report states a delay as a fact in its impact
+        foreach ($x in @($n.incidents)) { $x.guide.impact | Should -Not -Match '\b(reagierten|dauerten|ließen|wirkten dabei)\b' -Because "Vorfall $($x.id)" }
+        # with the input delay measured, the sentence stays as it was
+        $D.unmeasured.input | Should -BeFalse
+        $cpu = Get-Hit 'cpu'; $cpu.guide.conditions | Should -Not -Contain 'unmeasured.input.session'; $cpu.guide.impact | Should -BeExactly $fact
+        ($cpu.copy.named -replace '\r?\n\s*', ' ') | Should -Match ([regex]::Escape($fact))
     }
     It 'schliesst einen Engpass in einer nicht gemessenen Ressource des Servers nicht aus' {   # Abschlussrunde I3
         $disk = $Exp | Where-Object Key -eq 'disk'; $out = Join-Path $TestDrive 'novol.html'

@@ -105,7 +105,7 @@ Describe 'Get-WorkerPerfIncidentText' {
         $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; Add-Detail $m $i
         Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Server (Spitze 300 ms, Soll unter 150 ms). ' +
             'Betroffen: 1 Sitzung. Höchste Verzögerung in EXCEL.EXE (user017). ' +
-            'Die Ursache liegt außerhalb des Servers oder in der Anwendung selbst (Datenbank, Proxy, Netz). Gegenstelle DB: 350 ms.')
+            'Die Ursache liegt vermutlich außerhalb des Servers oder in der Anwendung selbst (Datenbank, Proxy, Netz). Gegenstelle DB: 350 ms.')
     }
     It 'stellt einem Dauerzustand den Hinweis voran und nennt dauerhaft erhoehte Signale' {
         $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97; $i.Chronic = $true
@@ -280,7 +280,7 @@ Describe 'Nicht gemessene Signale im Klartext' {                                
         Get-Text $m $i $u | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Server (Spitze 300 ms, Soll unter 150 ms). ' +
             'Betroffen: 1 Sitzung. Höchste Verzögerung in EXCEL.EXE (user017). ' +
             'Kein Engpass in den gemessenen Ressourcen des Servers. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen. Gegenstelle DB: 350 ms.')
-        Get-Text $m $i @{ Input = $false; Worker = @() } | Should -Match 'Die Ursache liegt außerhalb des Servers'
+        Get-Text $m $i @{ Input = $false; Worker = @() } | Should -Match 'Die Ursache liegt vermutlich außerhalb des Servers'
     }
 }
 Describe 'Belege bei Umfeld und Dauerzustand' {                                     # Abschlussrunde I2

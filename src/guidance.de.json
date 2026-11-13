@@ -123,6 +123,12 @@
       "short": "CPU",
       "meaning": "Ab {from} Uhr lag die Auslastung des Prozessors (CPU) {duration} lang über dem Soll. Alle Sitzungen auf diesem Server teilen sich den Prozessor: Braucht eine Anwendung sehr viel davon, werden auch die anderen langsamer.",
       "impact": "Eingaben, Fensterwechsel und Bildaufbau reagierten für die betroffenen Benutzer spürbar verzögert.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session"],
+          "text": "Eingaben, Fensterwechsel und Bildaufbau können für die Benutzer verzögert reagiert haben; die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "when": ["cause.app"],
@@ -696,6 +702,12 @@
       "short": "Laufwerk",
       "meaning": "Ab {from} Uhr brauchte ein Laufwerk des Servers {duration} lang für Lese- und Schreibzugriffe deutlich länger als das Soll. Jede Anwendung, die in dieser Zeit Dateien öffnete, speicherte oder nachlud, musste warten. Welches Laufwerk betroffen war, steht in den Belegen des Vorfalls.",
       "impact": "Öffnen und Speichern von Dateien und der Start von Anwendungen dauerten spürbar länger.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session"],
+          "text": "Öffnen und Speichern von Dateien und der Start von Anwendungen können spürbar länger gedauert haben; die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "when": ["cause.app"],
@@ -860,6 +872,12 @@
       "short": "Dateiserver",
       "meaning": "Ab {from} Uhr antwortete eine Freigabe {duration} lang deutlich langsamer als das Soll. Die Wartezeit entsteht beim Dateiserver, auf der Netzstrecke dorthin oder durch sehr viele Zugriffe einer Anwendung. Welche Freigabe betroffen war, steht in den Belegen des Vorfalls.",
       "impact": "Dateien auf der Freigabe ließen sich nur verzögert öffnen und speichern; Anwendungen wirkten dabei wie eingefroren.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session"],
+          "text": "Öffnen und Speichern von Dateien auf der Freigabe können verzögert gewesen sein, und Anwendungen können dabei wie eingefroren gewirkt haben; die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "when": ["cause.app"],
@@ -1014,6 +1032,12 @@
       "short": "Profil",
       "meaning": "Ab {from} Uhr antwortete der Profilcontainer eines Benutzers {duration} lang deutlich langsamer als das Soll. Im Profilcontainer liegen die persönlichen Einstellungen und Daten des Benutzers, zum Beispiel Postfachdaten oder der Zwischenspeicher des Browsers; er ist eine Datei auf dem Dateiserver, die in der Sitzung wie ein Laufwerk eingebunden ist. Betroffen ist in der Regel nur die Sitzung dieses Benutzers.",
       "impact": "Anwendungen dieses Benutzers reagierten träge, vor allem beim Start und beim Zugriff auf eigene Daten.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session"],
+          "text": "Anwendungen dieses Benutzers können träge reagiert haben, vor allem beim Start und beim Zugriff auf eigene Daten; die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "when": ["cause.app"],
@@ -1438,6 +1462,12 @@
       "short": "Server",
       "meaning": "Über längere Zeit ({duration}), möglicherweise über die ganze Messung, lag eine Ressource des Servers über ihrem Soll: Prozessor, Arbeitsspeicher, ein Laufwerk, eine Freigabe oder ein Profilcontainer; welche, nennt die Fachbezeichnung unter dem Titel. Das ist keine einzelne Störung, sondern ein Dauerzustand. Bei Prozessor und Arbeitsspeicher fehlt dem Server die Reserve für seine übliche Last; bei Laufwerk, Freigabe und Profilcontainer antwortet der Speicher dahinter (Speichersystem, Dateiserver, Netz) dauerhaft zu langsam; in beiden Fällen kann auch eine Anwendung die Ressource ständig belasten.",
       "impact": "Anwendungen reagieren für die Benutzer dauerhaft zäher als nötig, und jede zusätzliche Last führt schneller zu spürbaren Störungen.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session"],
+          "text": "Anwendungen können für die Benutzer dauerhaft zäher reagieren als nötig, und jede zusätzliche Last führt schneller zu spürbaren Störungen; die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "when": ["cause.app"],
@@ -2659,6 +2689,12 @@
       "short": "Sonstiges",
       "meaning": "Ein Messwert lag über seinem Soll, oder Windows meldete ein Ereignis, das der Bericht keiner der beschriebenen Situationen zuordnet. Was gemessen oder gemeldet wurde, steht in den Belegen des Vorfalls.",
       "impact": "Ob und wie stark Benutzer die Auffälligkeit gespürt haben, zeigen die betroffenen Sitzungen dieses Vorfalls.",
+      "impactVariants": [
+        {
+          "when": ["unmeasured.input.session", "affected.unknown"],
+          "text": "Ob Benutzer die Auffälligkeit gespürt haben, ist nicht bestimmbar: Die Eingabeverzögerung wurde nicht gemessen."
+        }
+      ],
       "checks": [
         {
           "text": "Belege des Vorfalls lesen: welcher Messwert lag über dem Soll, oder welches Ereignis wurde gemeldet",
