@@ -6,6 +6,11 @@ Jedes dieser Elemente nennt im Feld `source` den Hersteller und den Titel des Do
 Bericht zeigt die Quelle beim Element. Diese Datei weist je Hersteller nach, welches Dokument welches Element stützt,
 und nennt die Empfehlungen, die gefunden, aber nicht aufgenommen wurden, mit dem Grund.
 
+Ein Element der Situation `print`, das keine Empfehlung eines Herstellers ist, sondern ein Hinweis des Berichts
+selbst, trägt die Quelle „WorkerPerf: Hinweis zur Auswertung“; der Abschnitt „WorkerPerf“ führt diese Elemente auf.
+Der Abschnitt „Auf dem Zielsystem zu bestätigen“ am Ende nennt die Bezeichnungen von Windows, Citrix und VMware im
+ganzen Katalog, die hier nicht geprüft werden konnten.
+
 Eine Stelle wie `print.remedies[2]` bezeichnet Situation, Liste und Position im Katalog, gezählt ab 0:
 `print.remedies[2]` ist der dritte Abhilfevorschlag der Situation `print`. Stand: Katalog `version` 2026-11-13.
 
@@ -23,9 +28,12 @@ Eine Stelle wie `print.remedies[2]` bezeichnet Situation, Liste und Position im 
 
 Die Empfehlungen sind Vorschläge. Der Bericht zeigt ein Element nur, wenn die Messung seine Bedingung stützt
 (etwa: ein Treiber dieses Herstellers war beteiligt, die Druckwarteschlange ist ausgefallen); ob die Voraussetzung
-eines Vorschlags zutrifft, entscheidet, wer den Bericht liest. Namen von Richtlinien und Einstellungen stehen im
-Katalog englisch, wie die Quelle sie nennt; die deutschen Bezeichnungen der Oberflächen sind nicht aus einer Quelle
-belegt.
+eines Vorschlags zutrifft, entscheidet, wer den Bericht liest. Die Quelle eines Elements stützt, was zu tun ist. Wo
+im Bericht nachzusehen ist, und Vorsichtsmaßnahmen in einer Voraussetzung (Wartungsfenster, Test auf einem Testserver,
+Zustimmung der Verantwortlichen für die Sicherheit, Benutzer informieren) stammen nicht vom Hersteller; die Spalte
+„Hinweis“ sagt es je Dokument. Eine Einschränkung, die eine Seite selbst macht (Betriebssystem, Art des Anschlusses),
+steht im Element. Namen von Richtlinien und Einstellungen stehen im Katalog englisch, wie die Quelle sie nennt; die
+deutschen Bezeichnungen der Oberflächen sind nicht aus einer Quelle belegt.
 
 Wer ein Element des Katalogs ändert, verschiebt oder ergänzt, passt diese Datei an: Der Test
 `tests/GuidanceCatalogue.Tests.ps1` prüft, dass jedes Element mit Quelle hier an seiner Stelle unter seinem Dokument
@@ -37,10 +45,10 @@ Microsoft dokumentiert nichts Eigenes zum Citrix-Universaltreiber, zum Citrix Un
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Policy CSP - ADMX_Printing | <https://learn.microsoft.com/windows/client-management/mdm/policy-csp-admx-printing> | 2026-11-13 | `crash.checks[4]` Richtlinie zur Isolierung der Treiber von Anwendungen<br>`print.checks[3]` Wirkung der Isolierung bei isoliertem Treiber<br>`print.checks[4]` Richtlinie zur Treiberisolierung nicht abgeschaltet<br>`print.remedies[2]` Isolierung per Richtlinie für alle Treiber erzwingen | Die Seite nennt als Betriebssysteme Windows 10 und 11, nicht Windows Server 2022. Die Richtlinien zur Treiberisolierung gelten laut Seite nur für Treiber, die die Druckwarteschlange lädt; „Isolate print drivers from applications“ wirkt nur bei Anwendungen, die die Isolierung unterstützen, und erst nach deren Neustart. Datenwerte der Registrierung nennt die Seite nicht. |
-| Printer driver isolation | <https://learn.microsoft.com/windows-hardware/drivers/print/printer-driver-isolation> | 2026-11-13 | `print.checks[2]` Isolierung des beteiligten Treibers ansehen<br>`print.remedies[1]` fehlerhaften Treiber isoliert betreiben | Dokumentation für Treiberentwickler. Sie sagt, dass sich der Modus in der Druckverwaltung je Treiber einstellen lässt, nennt die Stelle dort aber nicht genauer und spricht nicht von Typ 3 oder Typ 4. |
-| Troubleshooting scenarios for printing | <https://learn.microsoft.com/troubleshoot/windows-server/printing/troubleshoot-printing-scenarios> | 2026-11-13 | `print.checks[1]` Treiber oder Warteschlange als Auslöser feststellen<br>`print.checks[10]` Spool-Ordner und Dienstabhängigkeit nach Absturz<br>`print.checks[14]` hängende Aufträge auf Treiber oder Warteschlange eingrenzen<br>`print.checks[21]` ohne gemessene Treiberliste von Hand eingrenzen<br>`print.checks[22]` bei nicht geprüftem Muster von Hand eingrenzen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.remedies[12]` Treiber aktualisieren oder generischen Treiber verwenden | Microsoft beschreibt die Schritte zu fehlgeschlagenen Aufträgen „auf dem Clientcomputer“. Die Elemente für nicht gemessene Treiber, nicht geprüfte Muster und Vorfälle vor der Messung wenden denselben Schritt (Treiber oder Druckwarteschlange eingrenzen) auf diese Fälle an. |
-| Troubleshoot printing issues caused by Print Spooler service not running | <https://learn.microsoft.com/troubleshoot/windows-server/printing/print-spooler-service-not-running> | 2026-11-13 | `print.checks[5]` Treiber und Druckkomponenten aktuell<br>`print.remedies[11]` Spool-Ordner vom Scan ausnehmen | Die Seite sagt „Create exclusions for the spool folder“; Dateiendungen nennt sie dabei nicht. |
+| Policy CSP - ADMX_Printing | <https://learn.microsoft.com/windows/client-management/mdm/policy-csp-admx-printing> | 2026-11-13 | `crash.checks[3]` Richtlinie zur Isolierung der Treiber von Anwendungen<br>`print.checks[9]` Wirkung der Isolierung bei isoliertem Treiber<br>`print.checks[10]` Richtlinie zur Treiberisolierung nicht abgeschaltet<br>`print.remedies[2]` Isolierung per Richtlinie für alle Treiber erzwingen | Die Seite nennt als Betriebssysteme Windows 10 und 11, nicht Windows Server 2022; jedes der vier Elemente sagt das (die Abhilfe in ihrer Voraussetzung). Die Richtlinien zur Treiberisolierung gelten laut Seite nur für Treiber, die die Druckwarteschlange lädt; „Isolate print drivers from applications“ wirkt nur bei Anwendungen, die die Isolierung unterstützen, und erst nach deren Neustart. Datenwerte der Registrierung nennt die Seite nicht. Die Prozessnamen PrintIsolationHost.exe und spoolsv.exe in `print.checks[9]` stammen aus der Auswertung (Liste der Druckprozesse), nicht von der Seite; die Voraussetzung „auf einem Testserver geprüft“ in `print.remedies[2]` stammt nicht von Microsoft. |
+| Printer driver isolation | <https://learn.microsoft.com/windows-hardware/drivers/print/printer-driver-isolation> | 2026-11-13 | `print.checks[8]` Isolierung des beteiligten Treibers ansehen<br>`print.remedies[0]` fehlerhaften Treiber isoliert betreiben | Dokumentation für Treiberentwickler. Sie sagt, dass sich der Modus in der Druckverwaltung je Treiber einstellen lässt, nennt die Stelle dort aber nicht genauer (siehe „Auf dem Zielsystem zu bestätigen“) und spricht nicht von Typ 3 oder Typ 4. Die Voraussetzung von `print.remedies[0]` folgt dem Satz der Seite: Der Treiber ist in einem eigenen Prozess lauffähig, verursacht häufig Fehler oder verliert Arbeitsspeicher und stört damit andere Treiber im selben Prozess. „Zuerst auf einem Testserver geprüft“ stammt nicht von Microsoft. |
+| Troubleshooting scenarios for printing | <https://learn.microsoft.com/troubleshoot/windows-server/printing/troubleshoot-printing-scenarios> | 2026-11-13 | `print.checks[2]` Treiber oder Warteschlange als Auslöser feststellen<br>`print.checks[15]` Spool-Ordner und Dienstabhängigkeit nach Absturz<br>`print.checks[19]` hängende Aufträge auf Treiber oder Warteschlange eingrenzen<br>`print.remedies[12]` Treiber aktualisieren oder generischen Treiber verwenden | Microsoft beschreibt die Schritte zu fehlgeschlagenen Aufträgen „auf dem Clientcomputer“. Zur Abhängigkeit des Dienstes nennt die Seite als Standard nur RpcSs. Ob ein Windows Server 2022 ohne Druckproblem weitere Einträge hat, ist hier nicht geprüft; `print.checks[15]` verlangt deshalb den Vergleich mit einem solchen Server (siehe „Auf dem Zielsystem zu bestätigen“). |
+| Troubleshoot printing issues caused by Print Spooler service not running | <https://learn.microsoft.com/troubleshoot/windows-server/printing/print-spooler-service-not-running> | 2026-11-13 | `print.checks[11]` Treiber und Druckkomponenten aktuell<br>`print.remedies[11]` Spool-Ordner vom Scan ausnehmen | Die Seite sagt „Create exclusions for the spool folder“; Dateiendungen nennt sie dabei nicht. Als Anlass nennt sie Schutzsoftware, die Dateien blockiert, die der Dienst braucht; `print.remedies[11]` verlangt deshalb eine Meldung der Schutzsoftware. Die Zustimmung der Verantwortlichen für die Sicherheit stammt nicht von Microsoft. |
 
 ### Belegstellen
 
@@ -84,12 +92,12 @@ Die erreichbare Produktdokumentation von Citrix sagt nichts zur Treiberisolierun
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Best practices | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting/best-practices.html> | 2026-11-13 | `crash.remedies[3]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[4]` Universaltreiber als Hauptstrategie, ungenutzte Treiber entfernen<br>`print.remedies[6]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[13]` alte und hängende Aufträge regelmäßig löschen | Aktuelle Fassung der Produktdokumentation. |
-| Troubleshooting | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting.html> | 2026-11-13 | `print.checks[0]` fehlerhaftes Modul dem Treiber zuordnen<br>`print.checks[24]` Citrix Print Manager Service läuft<br>`print.remedies[0]` Treiber entfernen, mit Universaltreiber oder Microsoft-Treiber testen<br>`print.remedies[10]` Druckwarteschlange von Hand leeren | Die Zuordnung des fehlerhaften Moduls zu einem Treiber stammt aus der Messung; die Seite sagt nur, dass das Modul festzustellen ist. Das Leeren der Druckwarteschlange von Hand nennt sie nur für Abstürze der Druckwarteschlange. |
-| Maintain the printing environment | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-maintain-environment.html> | 2026-11-13 | `crash.remedies[2]` Treiber über die Treiberzuordnung ersetzen oder sperren<br>`print.remedies[5]` Treiber über die Treiberzuordnung ersetzen oder sperren | Seite der Version 2503. |
+| Best practices | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting/best-practices.html> | 2026-11-13 | `crash.remedies[3]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[3]` Universaltreiber als Regel, ungenutzte Treiber entfernen<br>`print.remedies[5]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[13]` alte und hängende Aufträge regelmäßig löschen | Aktuelle Fassung der Produktdokumentation. Den Neustart nennt Citrix; das Wartungsfenster dafür in der Voraussetzung von `crash.remedies[3]` und `print.remedies[5]` stammt nicht von Citrix, ebenso wenig das Wartungsfenster für das Entfernen nicht mehr benötigter Treiber in `print.remedies[3]`. |
+| Troubleshooting | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting.html> | 2026-11-13 | `print.checks[0]` Dienst läuft wieder, sonst starten<br>`print.checks[1]` fehlerhaftes Modul dem Treiber zuordnen<br>`print.checks[24]` Citrix Print Manager Service läuft<br>`print.remedies[1]` Treiber entfernen, mit Universaltreiber oder Microsoft-Treiber testen<br>`print.remedies[10]` Spool-Ordner von Hand leeren | Die Zuordnung des fehlerhaften Moduls zu einem Treiber stammt aus der Messung; die Seite sagt nur, dass das Modul festzustellen ist. Den Neustart des Dienstes nennt die Seite als Schritt vor dem Leeren von Hand („If restarting fails …“); wo der Zustand des Dienstes steht, ist ein eigener Hinweis. Das Leeren von Hand nennt sie nur für Abstürze der Druckwarteschlange. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Citrix, ebenso wenig die Voraussetzungen „Benutzer informiert“ (`print.remedies[10]`) und „Wartungsfenster“ (`print.remedies[1]`). |
+| Maintain the printing environment | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-maintain-environment.html> | 2026-11-13 | `crash.remedies[2]` Treiber über die Treiberzuordnung ersetzen oder sperren<br>`print.remedies[4]` Treiber über die Treiberzuordnung ersetzen oder sperren | Seite der Version 2503. |
 | Best practices, security considerations, and default operations | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-best-practices.html> | 2026-11-13 | `crash.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen<br>`print.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen | Seite der Version 2503; sie verwendet noch die Bezeichnung „Terminal Services“. |
-| Drivers policy settings | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/ica-policy-settings/printing-policy-settings/drivers-policy-settings.html> | 2026-11-13 | `print.checks[12]` Richtlinie zur Verwendung des Universaltreibers | Aktuelle Fassung der Produktdokumentation. |
-| Network Printers (on the VDA) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/configuration/network-printers.html> | 2026-11-13 | `print.checks[13]` Herkunft der Drucker (Windows-Druckserver oder Universal Print Server) | Aktuelle Fassung der Produktdokumentation. |
+| Drivers policy settings | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/ica-policy-settings/printing-policy-settings/drivers-policy-settings.html> | 2026-11-13 | `print.checks[17]` Richtlinie zur Verwendung des Universaltreibers | Aktuelle Fassung der Produktdokumentation. |
+| Network Printers (on the VDA) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/configuration/network-printers.html> | 2026-11-13 | `print.checks[18]` Herkunft der Drucker (Windows-Druckserver oder Universal Print Server) | Aktuelle Fassung der Produktdokumentation. |
 
 ### Belegstellen
 
@@ -137,17 +145,16 @@ HP sagt in seinen aktuellen Dokumenten nichts zur Treiberisolierung unter Window
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments | <https://kaas.hpcloud.hp.com/pdf-public/pdf_6290906_en-US-1.pdf> | 2026-11-13 | `print.remedies[3]` HP-Treiber der Version 4.x ersetzen<br>`print.remedies[8]` hostbasierte HP-Treiber nicht auf dem Server<br>`print.remedies[15]` HP Universal Print Driver im Traditional Mode | Technical white paper, Rev. 39, Juni 2023; enthält viel Altbestand (XenApp, 32-Bit-Pfade). Zur Treiberversion 4.x ist nur die Empfehlung zum Ersetzen übernommen. |
-| System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK) | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8951296_en-US-1.pdf> | 2026-11-13 | `print.checks[15]` SNMP-Einstellungen und WSD-Anschluss bei HP<br>`print.checks[17]` Eingrenzung nach HP (zugeordneter Treiber, außerhalb der Sitzung, neue Warteschlange)<br>`print.remedies[7]` Treiberwahl nach Endgerät (Citrix-Universaltreiber oder HP Universal Print Driver)<br>`print.remedies[9]` Reihenfolge beim Entfernen des HP Universal Print Driver<br>`print.contacts[1]` Angaben für den Support von HP | Edition 11, Mai 2026. Die Reihenfolge beim Entfernen beschreibt HP für den HP Universal Print Driver. |
-| HP Universal Print Driver Release Notes | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8592592_en-US-1.pdf> | 2026-11-13 | `crash.checks[5]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen<br>`print.checks[6]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen | Edition 19, Juni 2026 (HP UPD 8.2.0). |
-| HP Smart Universal Printing Driver - User Guide | <https://kaas.hpcloud.hp.com/pdf-public/pdf_1263018_en-US-1.pdf> | 2026-11-13 | `print.checks[18]` HP-Treiber Typ 4 auf verbundenen Rechnern vorab bereitgestellt | Edition 11.0, Februar 2025. |
+| HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments | <https://kaas.hpcloud.hp.com/pdf-public/pdf_6290906_en-US-1.pdf> | 2026-11-13 | `print.remedies[7]` hostbasierte HP-Treiber nicht auf dem Server<br>`print.remedies[15]` HP Universal Print Driver im Traditional Mode | Technical white paper, Rev. 39, Juni 2023; enthält viel Altbestand (XenApp, 32-Bit-Pfade). Dass die Clientdrucker über den Citrix-Universaltreiber bedient werden können, nennt HP als Möglichkeit („might function“, „An alternative is“); `print.remedies[7]` sagt es ebenso. Das Wartungsfenster in dessen Voraussetzung stammt nicht von HP. |
+| System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK) | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8951296_en-US-1.pdf> | 2026-11-13 | `print.checks[20]` SNMP-Einstellungen und WSD-Anschluss beim HP Universal Print Driver<br>`print.checks[22]` Eingrenzung nach HP (zugeordneter Treiber, außerhalb der Sitzung, sauberes Testsystem)<br>`print.remedies[6]` Treiberwahl nach Endgerät (Citrix-Universaltreiber oder HP Universal Print Driver)<br>`print.remedies[8]` Reihenfolge beim Entfernen des HP Universal Print Driver<br>`print.remedies[9]` Dienst neu starten, wenn Windows den Treiber als in Gebrauch meldet<br>`print.contacts[1]` Angaben für den Support von HP | Edition 11, Mai 2026. Die Aussagen zum Status „Offline“ bei falschen SNMP-Einstellungen und zum WSD-Anschluss macht HP für den HP Universal Print Driver; `print.checks[20]` beschränkt sich darauf. Die Reihenfolge beim Entfernen beschreibt HP für den HP Universal Print Driver. Das Wartungsfenster (`print.remedies[8]`, `print.remedies[9]`) und der Hinweis, dass beim Neustart des Dienstes alle Benutzer kurz nicht drucken können und laufende Aufträge verloren gehen können, stammen nicht von HP. |
+| HP Universal Print Driver Release Notes | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8592592_en-US-1.pdf> | 2026-11-13 | `crash.checks[4]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen<br>`print.checks[12]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen | Edition 19, Juni 2026 (HP UPD 8.2.0). |
 
 ### Belegstellen
 
 - **HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments**
   - „Installing the HP UPD in Dynamic Mode on the Citrix server is not supported. This is due to a design limitation in the Windows operating system which limits a print queue to be assigned to one port at a time, so multiple users would compete for the single port bound to the HP UPD queue if installed in Dynamic Mode.“
-  - „Version 4.x.x.x print drivers have an issue unloading hpbmini.dll, which will probably cause a spooler crash when the server has a heavy load of connected users. [...] For HP print driver version 4.x.x.x, HP strongly recommends upgrading to the 60.x.x.x or 61.x.x.x driver versions available on www.hp.com. If one is not available, then use the HP UPD.“
   - „HP does not recommend installing host-based LaserJet drivers on the Citrix server. However, the devices might function by using the Citrix UPD on the Citrix server the HP host-based driver installed on the client.“
+  - „HP does not recommend the use of host-based printers in Citrix environments. [...] An alternative is to use the Citrix UPD to print to a host-based client printer.“
 - **System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)**
   - „Table 5-3 „Comparing HP and Citrix UPD Drivers“: Citrix UPD „Better choice for Windows clients“; HP UPD „Better choice for non-Windows clients or thin clients““
   - „However, if the Microsoft SNMP stack utilized between the Microsoft spooler and printer are incorrectly configured (i.e. SNMP name mismatch or enabled on one side but not the other) the HP UPD printer object may show the status “Offline.”“
@@ -158,13 +165,13 @@ HP sagt in seinen aktuellen Dokumenten nichts zur Treiberisolierung unter Window
   - „Reducing complexity to isolate variables. A simple test is to install the HP UPD driver downloaded from www.hp.com/go/upd using the default installation options onto a clean system.“
 - **HP Universal Print Driver Release Notes**
   - „printing behavior that has been documented as fixed in the HP UPD release notes“
-- **HP Smart Universal Printing Driver - User Guide**
-  - „Version 4 drivers are not downloaded from the print server. You must prestage the driver on the client, or use the Microsoft-enhanced Point and Print driver.“
 
 ### Nicht aufgenommen
 
 | Empfehlung | Grund |
 |---|---|
+| HP-Treiber der Version 4.x.x.x durch die Version 60.x.x.x oder 61.x.x.x ersetzen, sonst durch den HP Universal Print Driver; laut HP bringt die Version 4.x.x.x die Druckwarteschlange unter Last wahrscheinlich zum Absturz (HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments) | Quelle veraltet oder nur für ein anderes Produkt (die Version 4.x.x.x ist eine alte Treibergeneration; gemeint ist die Versionsnummer, nicht die Bauart Typ 4) |
+| Treiber der Bauart Typ 4 werden nicht vom Druckserver heruntergeladen und sind vorab bereitzustellen (HP Smart Universal Printing Driver - User Guide, Edition 11.0, Februar 2025) | setzt eine Änderung voraus, die die Messung nicht stützt (der beteiligte Treiber ist auf dem Server schon installiert; ob er auf anderen Rechnern fehlt, sieht die Messung nicht) |
 | Treiberisolierung mit dem HP Universal Print Driver (FAQ „Microsoft Driver Isolation Mode“) | keine Herstellerquelle gefunden (nur auf nicht erreichbaren Seiten von HP und bei Dritten; gilt zudem nur für Windows 7 und Server 2008 R2) |
 | Umgehung für alte Treiber: hpbmini.dll und hpcdmc32.dll umbenennen und die Registrierung des Treibers ändern | Quelle veraltet oder nur für ein anderes Produkt (32-Bit-Pfade alter Server; aufgenommen ist nur die Empfehlung, die Treiberversion zu ersetzen) |
 | Absturz oder Hängen des Citrix Universal Print Server unter hoher Drucklast mit dem HP Universal Print Driver | Quelle veraltet oder nur für ein anderes Produkt (behoben seit HP UPD 6.2) |
@@ -179,7 +186,7 @@ HP sagt in seinen aktuellen Dokumenten nichts zur Treiberisolierung unter Window
 | HP Smart Universal Printing Driver der Bauart Typ 3: HP führt ihn für Server nur bis Windows Server 2022, neuere Ausgaben gibt es nur als Typ 4 (HP Smart Universal Print Driver Release Notes) | setzt eine Änderung voraus, die die Messung nicht stützt (Hinweis für die Planung; die Messung unterscheidet den HP Smart Universal Printing Driver nicht vom HP Universal Print Driver, der immer Typ 3 ist) |
 | Ältere Leitfäden zum HP Universal Print Driver (5.3) und Whitepaper von 2008 und 2010 | keine Herstellerquelle gefunden (nur bei Dritten oder auf nicht erreichbaren Seiten von HP; durch die gelesenen aktuellen Dokumente ersetzt) |
 
-Nicht erreichbar: h10032.www1.hp.com, h20331.www2.hp.com und h20195.www2.hp.com sowie die Dokumentseiten auf support.hp.com. Alle Dokumente oben stammen von kaas.hpcloud.hp.com.
+Nicht erreichbar: h10032.www1.hp.com, h20331.www2.hp.com und h20195.www2.hp.com sowie die Dokumentseiten auf support.hp.com. Alle Dokumente oben stammen von kaas.hpcloud.hp.com, auch der „HP Smart Universal Printing Driver - User Guide“ (<https://kaas.hpcloud.hp.com/pdf-public/pdf_1263018_en-US-1.pdf>), aus dem nichts übernommen ist.
 
 ## Kyocera
 
@@ -187,9 +194,9 @@ Kyocera veröffentlicht keine Aussage zu einer Citrix-Zertifizierung, zur Treibe
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KX_Driver_Read_Me_pdf.download.pdf> | 2026-11-13 | `crash.remedies[4]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.checks[7]` vollständiger KX-Treiber auf dem Server<br>`print.remedies[16]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.remedies[17]` KX-Treiber erst deinstallieren, dann neu installieren<br>`print.contacts[2]` Helpdesk von Kyocera bei Einsatz des KX-Treibers | Das Dokument trägt kein Datum. |
-| Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KYOCERA_V4_KX_Driver_Datasheet_pdf.download.pdf> | 2026-11-13 | `print.checks[19]` KX-Treiber Typ 3 und Typ 4 vergleichen (Typ 3 beteiligt)<br>`print.checks[20]` KX-Treiber Typ 3 und Typ 4 vergleichen (Typ 4 beteiligt) | Datenblatt von 2019. |
-| Release Notes April 29, 2025 (DVD Contents) | <https://dam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/document/manual/product_086/Readme_EN_202505.pdf> | 2026-11-13 | `print.remedies[18]` Kyocera-Treiber mit KmUninstall.exe entfernen | Die Seite nennt den Weg zum Deinstallationsprogramm, aber keinen weiteren Weg, verbliebene Treiber zu entfernen. |
+| KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KX_Driver_Read_Me_pdf.download.pdf> | 2026-11-13 | `crash.remedies[4]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.checks[13]` vollständiger KX-Treiber auf dem Server<br>`print.remedies[16]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.remedies[17]` KX-Treiber erst deinstallieren, dann neu installieren<br>`print.contacts[2]` Support von Kyocera (Help Desk) bei Einsatz des KX-Treibers | Das Dokument trägt kein Datum. Das Wartungsfenster in der Voraussetzung von `print.remedies[17]` stammt nicht von Kyocera. |
+| Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KYOCERA_V4_KX_Driver_Datasheet_pdf.download.pdf> | 2026-11-13 | `print.remedies[19]` Funktionsumfang vergleichen, bevor von Typ 3 auf Typ 4 gewechselt wird<br>`print.remedies[20]` Funktionsumfang vergleichen, bevor von Typ 4 auf Typ 3 gewechselt wird | Datenblatt von 2019. Es vergleicht den Funktionsumfang; mit einem Druckfehler hat das nichts zu tun. Beide Elemente stehen deshalb als Abhilfe unter der Voraussetzung, dass ein Wechsel der Bauart erwogen wird. |
+| Release Notes April 29, 2025 (DVD Contents) | <https://dam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/document/manual/product_086/Readme_EN_202505.pdf> | 2026-11-13 | `print.remedies[18]` Kyocera-Treiber mit KmUninstall.exe entfernen | Die Seite nennt den Weg zum Deinstallationsprogramm, aber keinen weiteren Weg, verbliebene Treiber zu entfernen. Das Wartungsfenster in der Voraussetzung stammt nicht von Kyocera. |
 
 ### Belegstellen
 
@@ -226,23 +233,20 @@ Nicht erreichbar: www.kyoceradocumentsolutions.com, die Länderseiten für Groß
 
 ## Brother
 
-Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und nichts zu Typ 3 und Typ 4, zur Treiberisolierung oder zum Zusammenspiel mit dem Citrix-Universaltreiber. Alle Elemente dieses Abschnitts hängen an `driver.vendor.Brother`; die Seiten sind überwiegend für Arbeitsplatzrechner geschrieben, die Spalte „Hinweis“ sagt das je Seite.
+Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und nichts zu Typ 3 und Typ 4, zur Treiberisolierung oder zum Zusammenspiel mit dem Citrix-Universaltreiber. Alle Elemente dieses Abschnitts hängen an `driver.vendor.Brother`; die Seiten sind überwiegend für Arbeitsplatzrechner geschrieben, die Spalte „Hinweis“ und das Element selbst sagen das je Seite.
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Citrix® Compatible Device List | <https://support.brother.com/g/b/oscontents.aspx?c=us_ot&lang=en&ossid=40> | 2026-11-13 | `crash.checks[6]` Modell in der Citrix-Liste von Brother nachschlagen<br>`print.checks[8]` Modell in der Citrix-Liste von Brother nachschlagen | Die Liste nennt Modelle mit dem Status „Available“, aber weder ein Citrix-Produkt noch eine Version. |
-| What is a "Generic PCL Driver"? | <https://support.brother.com/g/b/faqend.aspx?c=us&faqid=faq00000324_000&lang=en&prod=hl8050n_all> | 2026-11-13 | `print.checks[9]` Generic-PCL-Treiber von Brother (Stand 2014) | Seite vom 26.08.2014 mit dem Vermerk „Model discontinued. This page is no longer updated.“; sie nennt Citrix MetaFrame, Windows Terminal Server, Windows NT 4.0 und Windows 2000. Im Katalog steht die Empfehlung deshalb nur mit diesem Vorbehalt und als Prüfschritt, nicht als Abhilfe. |
-| "User Intervention Required" when attempting to print | <https://help.brother-usa.com/app/answers/detail/a_id/145904/~/user-intervention-required-when-attempting-to-print> | 2026-11-13 | `print.checks[11]` Dienst auf „Automatisch“ und gestartet | Die Seite nennt Windows XP bis Windows 10, nicht Windows Server. |
-| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[16]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Druckwarteschlange nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte im Netz. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother. |
-| Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[19]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
-| Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[20]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. |
+| Citrix® Compatible Device List | <https://support.brother.com/g/b/oscontents.aspx?c=us_ot&lang=en&ossid=40> | 2026-11-13 | `crash.checks[5]` Modell in der Citrix-Liste von Brother nachschlagen<br>`print.checks[14]` Modell in der Citrix-Liste von Brother nachschlagen | Die Liste nennt Modelle mit dem Status „Available“, aber weder ein Citrix-Produkt noch eine Version. Dass zu einem Modell, das fehlt, keine Aussage von Brother zu Citrix vorliegt, ist eine Feststellung des Katalogs, kein Satz von Brother. |
+| "User Intervention Required" when attempting to print | <https://help.brother-usa.com/app/answers/detail/a_id/145904/~/user-intervention-required-when-attempting-to-print> | 2026-11-13 | `print.checks[16]` Dienst auf „Automatisch“ und startbar | Die Seite nennt Windows XP bis Windows 10, nicht Windows Server; das Element sagt das. |
+| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. |
+| Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[21]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
+| Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[22]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. Das Wartungsfenster in der Voraussetzung stammt nicht von Brother. |
 
 ### Belegstellen
 
 - **Citrix® Compatible Device List**
   - „This information pertains to the compatibility status and operational verification under the environmental conditions set by Brother Industries, Ltd., and does not imply a comprehensive "guarantee of operation."“
-- **What is a "Generic PCL Driver"?**
-  - „For users of Citrix® MetaFrame®, Windows Terminal Server environments and other Windows NT 4.0® and Windows 2000 network shared environments, we recommend the use of our Brother Generic Drivers. These drivers can be used on any Brother monochrome laser printer/multi-function product that supports PCL5e or PCL6.“
 - **"User Intervention Required" when attempting to print**
   - „Make sure that the Startup Type is set to Automatic . [...] If you are unable to start the Print Spooler service, then there is a problem with your computer or a conflict with another driver. Contact your computer manufacturer or System Admin for support.“
 - **I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue.**
@@ -256,6 +260,7 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 
 | Empfehlung | Grund |
 |---|---|
+| „Generic PCL“-Treiber von Brother für Citrix MetaFrame und Windows Terminal Server verwenden (What is a "Generic PCL Driver"?, <https://support.brother.com/g/b/faqend.aspx?c=us&faqid=faq00000324_000&lang=en&prod=hl8050n_all>) | Quelle veraltet oder nur für ein anderes Produkt (Seite vom 26.08.2014 mit dem Vermerk „Model discontinued. This page is no longer updated.“; sie nennt Citrix MetaFrame, Windows NT 4.0 und Windows 2000) |
 | Bei „Receiving Data“ auf der Anzeige des Geräts: Originaltreiber von Brother und Anschlusstyp (WSD) prüfen | Quelle veraltet oder nur für ein anderes Produkt (gilt nur für Tintengeräte der Reihe MFC-J; das Merkmal ist die Anzeige am Gerät, die die Messung nicht erfasst) |
 | Seite „Citrix Presentation Server (Citrix MetaFrame)“ mit dem Generic-PCL-Treiber | Quelle veraltet oder nur für ein anderes Produkt (die Seite ist zurückgezogen) |
 | Entwicklerseiten „Printing in the Citrix Environment“ und „Compatibility with Citrix XenApp 7.6“ | Quelle veraltet oder nur für ein anderes Produkt (mobile Drucker auf XenApp 7.6 und Windows Server 2012 R2) |
@@ -266,3 +271,55 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 | Typ 3 und Typ 4, Treiberisolierung, Zusammenspiel mit dem Citrix-Universaltreiber | keine Herstellerquelle gefunden |
 
 Nicht erreichbar: download.brother.com (unter anderem der „Universal Printer Driver Guide“); die Treiberlisten je Modell für Windows Server 2022 auf support.brother.com ließen sich nicht auslesen. Ob Brother einen Treiber für Windows Server 2022 anbietet, ist deshalb je Modell auf der Download-Seite zu prüfen.
+
+## WorkerPerf
+
+Eigene Hinweise der Auswertung. Diese Elemente der Situation `print` stammen von keinem Hersteller: Sie führen zu
+dem, was der Bericht bei der Ursache des Vorfalls nennt (die Muster), oder sagen, was nicht gemessen oder nicht
+geprüft wurde und wie sich das nachholen lässt. Weil in der Situation `print` jedes Element eine Quelle nennt,
+tragen sie die Quelle „WorkerPerf: Hinweis zur Auswertung“. Keines ist als Empfehlung eines Herstellers formuliert,
+und keines nennt einen Hersteller.
+
+| Titel | Übernommene Elemente | Hinweis |
+|---|---|---|
+| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. |
+
+## Auf dem Zielsystem zu bestätigen
+
+Der Katalog nennt Werkzeuge, Einstellungen und Bezeichnungen von Windows, Citrix und VMware so, wie sie nach bestem
+Wissen auf einem deutschen Windows Server 2022 mit Citrix VDA heißen. Geprüft werden konnte das hier nicht. Die
+folgenden Angaben sind beim Test auf dem Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog
+angepasst.
+
+- **Abhängigkeit des Dienstes „Druckwarteschlange“** (`print.checks[15]`): Microsoft nennt als Standard für den Wert
+  DependOnService nur RpcSs. Ob ein Windows Server 2022 ohne Druckproblem weitere Einträge hat (vermutet wird http),
+  zeigt `sc qc spooler` auf einem solchen Server. Der Prüfschritt nennt deshalb als Merkmal nur einen Eintrag, den
+  ein Server ohne Druckproblem nicht hat.
+- **Drei Gruppenrichtlinien zum Drucken** (`crash.checks[3]`, `print.checks[10]`, `print.remedies[2]`): Der Katalog
+  nennt sie englisch wie die Quelle („Isolate print drivers from applications“, „Execute print drivers in isolated
+  processes“, „Override print driver execution compatibility setting reported by print driver“). Zu bestätigen sind
+  ihre deutschen Anzeigenamen unter Computerkonfiguration > Administrative Vorlagen > Drucker und, dass sie auf
+  Windows Server 2022 gelten (die Seite von Microsoft nennt Windows 10 und 11). Eindeutig sind die Registrierungswerte
+  ApplicationDriverIsolation, PrintDriverIsolationExecutionPolicy und PrintDriverIsolationOverrideCompat.
+- **Treiberisolierung in der Druckverwaltung** (`print.checks[8]`, `print.remedies[0]`): die Stelle (Knoten
+  „Treiber“, Kontextmenü des Treibers) und die Bezeichnung des Befehls und seiner Werte. Der Bericht nennt die Werte
+  „keine“, „gemeinsam“ und „isoliert“.
+- **Ereignisanzeige:** der Kanal „Betriebsbereit“ (englisch „Operational“) unter Anwendungs- und Dienstprotokolle >
+  Microsoft > Windows > Windows Defender; die Pfade zu AppLocker und zu SMBClient (Connectivity); die Protokolle
+  „Anwendung“ und „System“; die Quellen „Application Error“, „Service Control Manager“, „User Profiles Service“ und
+  „Citrix Profile Management“.
+- **Task-Manager und Ressourcenmonitor:** die Registerkarten „Benutzer“ und „Details“, die Spalten „CPU“ und
+  „Arbeitsspeicher“, der Status „Getrennt“; im Ressourcenmonitor die Registerkarten „Datenträger“ und „Netzwerk“,
+  die Bereiche „Prozesse mit Datenträgeraktivität“ und „Prozesse mit Netzwerkaktivität“, die Spalten „Lesen“ und
+  „Schreiben“.
+- **Dienste und Drucker:** in der Dienste-Konsole der Status „Wird ausgeführt“, der Starttyp „Automatisch“ und die
+  Registerkarte „Wiederherstellung“ mit „Keine Aktion durchführen“; in den Druckservereigenschaften die Registerkarte
+  „Treiber“; in den Druckereigenschaften Anschlüsse > Anschluss konfigurieren mit „SNMP-Status aktiviert“; „Programme
+  und Features“.
+- **Profile:** der Wortlaut „temporäres Profil“ in den Meldungen von Windows; der Ordner TEMP unter C:\Users und
+  die Einträge mit der Endung .bak unter ProfileList; der Ordner %SystemRoot%\System32\Logfiles\UserProfileManager
+  mit dem Protokoll der Citrix Profilverwaltung.
+- **Citrix:** die Richtlinien „Universal print driver usage“ und „Printer driver mapping and compatibility“ mit
+  ihren Werten (englisch wie in der Quelle); „Profil zurücksetzen“ in Citrix Director; „CPU Spikes Protection“ in
+  Citrix Workspace Environment Management; der Dienst „Citrix Print Manager Service“ (CpSvc.exe).
+- **VMware:** die CPU-Bereitschaft („Ready“) im Leistungsdiagramm der virtuellen Maschine im vCenter.

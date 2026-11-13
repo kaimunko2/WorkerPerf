@@ -2,33 +2,39 @@
   "version": "2026-11-13",
   "terms": {
     "Engpass": "Eine Ressource des Servers (Prozessor, Arbeitsspeicher, Laufwerk, Freigabe oder Profilcontainer) lag über ihrem Soll, und Benutzer spürten es.",
-    "Eingabeverzögerung": "Die Zeit, die eine Eingabe (Taste, Maus) wartet, bis das Programm sie verarbeitet; die Messgröße dafür, dass sich alles zäh anfühlt.",
+    "Eingabeverzögerung": "Die Zeit, die eine Eingabe (Taste, Maus) wartet, bis die Anwendung sie verarbeitet; die Messgröße dafür, dass sich alles zäh anfühlt.",
     "Dauerzustand": "Ein Messwert, der länger als 15 Minuten über dem Soll liegt: kein einzelnes Ereignis, sondern ein anhaltender Zustand.",
     "Hauptverursacher": "Die Anwendung in einer Sitzung mit dem größten Anteil an der überlasteten Ressource; genannt wird sie ab einem Anteil von 10 %.",
-    "Begleiter": "Schutzsoftware, die in einem Vorfall mindestens 10 % der Last trägt, weil sie die Dateien des eigentlichen Verursachers prüft.",
-    "Scan-Ausschluss": "Ein Ordner, eine Datei oder ein Programm, das die Schutzsoftware nicht prüft.",
-    "Echtzeitprüfung": "Die Schutzsoftware prüft jede Datei in dem Moment, in dem ein Programm sie öffnet oder schreibt.",
-    "Working Set": "Der Teil des Arbeitsspeichers, den ein Programm gerade tatsächlich belegt.",
-    "Commit": "Zugesagter Speicher: Arbeitsspeicher und Auslagerungsdatei, die Windows den Programmen fest zugesagt hat.",
-    "Speicherleck": "Ein Fehler, bei dem ein Programm immer mehr Arbeitsspeicher belegt und ihn nicht wieder freigibt.",
+    "Begleiter": "Schutzsoftware, die in einem Vorfall mindestens 10 % der Last trägt, vermutlich weil sie Dateien untersucht, die eine andere Anwendung gerade liest oder schreibt.",
+    "I/O": "Ein- und Ausgabe (Input/Output): die Lese- und Schreibzugriffe einer Anwendung auf Laufwerke und Netz.",
+    "Scan-Ausschluss": "Ein Ordner, eine Datei oder ein Prozess, den die Schutzsoftware nicht untersucht.",
+    "Echtzeitprüfung": "Die Schutzsoftware untersucht jede Datei in dem Moment, in dem eine Anwendung sie öffnet oder schreibt.",
+    "Working Set": "Der Teil des Arbeitsspeichers, den eine Anwendung gerade tatsächlich belegt.",
+    "Commit": "Zugesagter Speicher: Arbeitsspeicher und Auslagerungsdatei, die Windows den Anwendungen fest zugesagt hat.",
+    "Speicherleck": "Ein Fehler, bei dem eine Anwendung immer mehr Arbeitsspeicher belegt und ihn nicht wieder freigibt.",
     "Latenz": "Antwortzeit: die Zeit zwischen einer Anfrage und ihrer Antwort.",
+    "Netzstrecke": "Der Weg im Netz zwischen zwei Punkten, zum Beispiel zwischen Endgerät und Server oder zwischen Server und Dateiserver.",
     "Profilcontainer": "Eine Datei auf dem Dateiserver, die das Profil eines Benutzers enthält und in seiner Sitzung wie ein Laufwerk eingebunden wird.",
+    "Profilspeicher": "Die Freigabe auf dem Dateiserver, auf der die Profile und Profilcontainer der Benutzer liegen.",
     "Gegenstelle": "Ein Ziel im Netz, das der Server erreichen muss (zum Beispiel Datenbank, Proxy, Dateiserver) und dessen Antwortzeit die Messung prüft.",
     "ICA Round Trip": "Die Zeit von einer Eingabe am Endgerät bis zur sichtbaren Antwort, gemessen von Citrix; sie enthält Netz, Server und Endgerät.",
-    "ICA-Netzwerklatenz": "Der Anteil der Antwortzeit einer Citrix-Sitzung, der auf dem Netzweg zwischen Endgerät und Server entsteht.",
+    "ICA-Netzwerklatenz": "Der Anteil der Antwortzeit einer Citrix-Sitzung, der auf der Netzstrecke zwischen Endgerät und Server entsteht.",
     "VDA": "Virtual Delivery Agent: die Software von Citrix auf dem Server, die die Sitzungen bereitstellt.",
     "Bereitstellungsgruppe": "Eine Gruppe von Servern in Citrix, auf die die Sitzungen der Benutzer verteilt werden.",
     "vCenter": "Die Verwaltungsoberfläche von VMware für virtuelle Maschinen, ihre Hosts und Datenspeicher.",
+    "vCPU": "Ein virtueller Prozessor, den der VMware-Host der virtuellen Maschine zuteilt.",
+    "CPU-Bereitschaft": "Die Zeit, in der die virtuelle Maschine rechnen wollte, der VMware-Host ihr aber keinen Prozessor gab (in vCenter: Ready).",
     "Modul": "Ein Programmteil (meist eine DLL-Datei), den eine Anwendung lädt; bei einem Absturz nennt Windows das Modul, in dem der Fehler auftrat.",
     "Fehlercode": "Die Kennzahl, mit der Windows die Art eines Absturzes angibt, zum Beispiel 0xc0000005 für eine Zugriffsverletzung.",
     "Druckwarteschlange": "Der Windows-Dienst „Druckwarteschlange“ (Spooler) nimmt die Druckaufträge aller Benutzer an und gibt sie an die Drucker weiter; auch die Liste der wartenden Aufträge eines Druckers heißt so.",
-    "Spool-Ordner": "Der Ordner, in dem die Druckwarteschlange Aufträge ablegt, bis sie gedruckt sind (Standard: %systemroot%\\System32\\spool\\PRINTERS).",
-    "Treiberisolierung": "Die Einstellung je Druckertreiber, ob er im Prozess der Druckwarteschlange läuft (keine), sich einen Prozess mit anderen Treibern teilt (gemeinsam) oder allein in einem eigenen Prozess läuft (isoliert).",
+    "Spool-Ordner": "Der Ordner, in dem der Dienst „Druckwarteschlange“ Aufträge ablegt, bis sie gedruckt sind (Standard: %systemroot%\\System32\\spool\\PRINTERS).",
+    "Treiberisolierung": "Die Einstellung je Druckertreiber, ob er im Prozess des Dienstes „Druckwarteschlange“ läuft (keine), sich einen Prozess mit anderen Treibern teilt (gemeinsam) oder allein in einem eigenen Prozess läuft (isoliert).",
     "Bauart": "Windows kennt zwei Bauarten von Druckertreibern: Typ 3 ist die ältere, Typ 4 die mit Windows 8 und Windows Server 2012 eingeführte.",
     "Universaltreiber": "Ein Druckertreiber, der viele Druckermodelle bedient, statt je Modell ein eigener Treiber.",
     "Clientdrucker": "Ein Drucker des Endgeräts, den Citrix beim Anmelden automatisch in der Sitzung anlegt.",
     "Sitzungsdrucker": "Ein Netzwerkdrucker, den eine Citrix-Richtlinie in der Sitzung verbindet.",
     "Hostbasiert": "Bei einem hostbasierten Treiber bereitet der Rechner die Druckseite vollständig auf; der Drucker selbst versteht keine Seitenbeschreibungssprache wie PCL oder PostScript.",
+    "WHQL": "Windows Hardware Quality Labs: das Prüfprogramm von Microsoft, in dem Hersteller ihre Treiber für Windows zertifizieren lassen.",
     "SNMP": "Ein Netzwerkprotokoll, über das Windows den Zustand eines Druckers abfragt.",
     "WSD": "Web Services for Devices: eine Anschlussart, bei der Windows einen Netzwerkdrucker selbst findet und einrichtet."
   },
@@ -57,7 +63,7 @@
   "userView": {
     "many": "Spürbar für {affected} Sitzungen, {duration} lang.",
     "one": "Spürbar für eine Sitzung, {duration} lang.",
-    "none": "Keine Sitzung mit messbarer Eingabeverzögerung; Dauer {duration}.",
+    "none": "Keine Sitzung mit Eingabeverzögerung über dem Soll; Dauer {duration}.",
     "unknown": "Betroffene Sitzungen nicht bestimmbar.",
     "chronic": "Dauerzustand über {duration}, keine einzelne Störung.",
     "eventMany": "{affected} Sitzungen betroffen, {count}-mal aufgetreten.",
@@ -74,10 +80,10 @@
   "hints": {
     "unmeasured": "Nicht gemessen: {signals}. Ein Engpass oder eine Auffälligkeit dort ist nicht ausgeschlossen.",
     "skipped": "Bei dieser Messung weggelassen (-Skip): {skipped}. Was davon abhängt, steht im Bericht als „nicht gemessen“.",
-    "notFinished": "Die Aufzeichnung wurde nicht regulär beendet; das Ende der Messung kann fehlen.",
-    "error": "Die Aufzeichnung endete mit einem Fehler: {message}",
-    "errorNoMessage": "Die Aufzeichnung endete mit einem Fehler; die Meldung liegt nicht vor.",
-    "stopped": "Die Aufzeichnung wurde vorzeitig angehalten, weil der freie Speicherplatz zu knapp wurde oder der Aufzeichnungsordner seine Höchstgröße erreicht hat."
+    "notFinished": "Die Messung wurde nicht regulär beendet; ihr Ende kann fehlen.",
+    "error": "Die Messung endete mit einem Fehler: {message}",
+    "errorNoMessage": "Die Messung endete mit einem Fehler; die Meldung liegt nicht vor.",
+    "stopped": "Die Messung wurde vorzeitig angehalten, weil der freie Speicherplatz zu knapp wurde oder der Aufzeichnungsordner seine Höchstgröße erreicht hat."
   },
   "copy": {
     "head": "WorkerPerf: Server {server}, {date}",
@@ -94,20 +100,20 @@
     "cpu": {
       "title": "Prozessor des Servers ausgelastet",
       "short": "CPU",
-      "meaning": "Ab {from} Uhr war der Prozessor (CPU) des Servers {duration} lang so stark ausgelastet, dass Programme auf Rechenzeit warten mussten. Alle Sitzungen auf diesem Server teilen sich den Prozessor: Braucht ein Programm sehr viel davon, werden auch die anderen langsamer.",
+      "meaning": "Ab {from} Uhr lag die Auslastung des Prozessors (CPU) {duration} lang über dem Soll. Alle Sitzungen auf diesem Server teilen sich den Prozessor: Braucht eine Anwendung sehr viel davon, werden auch die anderen langsamer.",
       "impact": "Eingaben, Fensterwechsel und Bildaufbau reagierten für die betroffenen Benutzer spürbar verzögert.",
       "checks": [
         {
           "when": ["cause.app"],
           "text": "Prüfen, ob {app} in der Sitzung von {user} noch läuft und weiter Rechenzeit verbraucht",
-          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Programme von Diensten: Registerkarte „Details“); Spalte „CPU“",
+          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Prozesse von Diensten: Registerkarte „Details“); Spalte „CPU“",
           "sign": "CPU-Wert der Anwendung dauerhaft hoch, auch ohne Eingaben des Benutzers"
         },
         {
           "when": ["cause.app"],
-          "text": "Klären, was {app} zwischen {from} und {to} Uhr getan hat: den Benutzer fragen oder, bei einem Dienst, dessen Protokoll und Zeitplan ansehen",
+          "text": "Klären, was {app} ab {from} Uhr getan hat: den Benutzer fragen oder, bei einem Dienst, dessen Protokoll und Zeitplan ansehen",
           "where": "Rückfrage beim Benutzer; bei einem Dienst: Ereignisanzeige und Aufgabenplanung zur Uhrzeit des Vorfalls",
-          "sign": "Tätigkeit mit viel Rechenarbeit (Auswertung, Makro, Export, Video), Lauf eines Dienstes nach Zeitplan (Aktualisierung, Sicherung, Inventur) oder Programm, das nicht mehr reagierte"
+          "sign": "Tätigkeit mit viel Rechenarbeit (Auswertung, Makro, Export, Video), Lauf eines Dienstes nach Zeitplan (Aktualisierung, Sicherung, Inventarisierung) oder Anwendung, die nicht mehr reagierte"
         },
         {
           "when": ["cause.app"],
@@ -136,24 +142,30 @@
         {
           "when": ["scan"],
           "text": "Im Zeitraum lief ein Virenscan: prüfen, wie stark er zur Last beitrug und ob sein Zeitplan in die Arbeitszeit fällt",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert"
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware; wurden Prozesse nicht gemessen: Task-Manager während des nächsten Scans); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert; geplanter Scan zu einer Zeit mit angemeldeten Benutzern"
+        },
+        {
+          "when": ["event.defender"],
+          "text": "Im Zeitraum meldete Microsoft Defender ein Ereignis: nachsehen, ob es eine Aktualisierung der Signaturen war, die Prozessor und Laufwerk kurz belastet",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Ereignisse im Zeitraum; Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Ereignisse“",
+          "sign": "Aktualisierung der Signaturen (Ereignis 2000) kurz vor Beginn des Vorfalls"
         },
         {
           "when": ["cause.security"],
-          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum geprüft wurde und ob Scan-Ausschlüsse fehlen",
+          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum untersucht wurde und ob Scan-Ausschlüsse fehlen",
           "where": "Verwaltung der Schutzsoftware: Protokoll und Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“ (größter Anteil außerhalb der Schutzsoftware)",
           "sign": "Echtzeitprüfung ohne Scan-Ausschluss für die Ordner viel genutzter Anwendungen"
         },
         {
           "when": ["companion.security"],
-          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien von {app} bei jedem Zugriff geprüft werden",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“",
-          "sign": "Programm- und Datenordner von {app} ohne Scan-Ausschluss"
+          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
+          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
         },
         {
           "when": ["cause.none"],
-          "text": "Die Last verteilt sich auf viele Sitzungen: Zahl der Sitzungen und ihre Anteile im Zeitraum ansehen",
+          "text": "Kein einzelner Verursacher: Zahl der Sitzungen und ihre Anteile im Zeitraum ansehen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „CPU-Auslastung nach Verursacher“, Reiter „Sitzungen“",
           "sign": "Summe vieler kleiner Anteile über dem Soll, ohne einzelne Sitzung mit hohem Anteil"
         },
@@ -164,6 +176,12 @@
           "sign": "Sitzungszahl deutlich über der der anderen Server"
         },
         {
+          "when": ["cause.none"],
+          "text": "Prüfen, ob sich kurz vor dem Vorfall viele Benutzer zugleich angemeldet oder dieselbe Anwendung gestartet haben",
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Sitzungen“, Reiter „Ereignisse“ (Anmeldungen), Reiter „Sitzungen“",
+          "sign": "Anmeldewelle oder Start derselben Anwendung in vielen Sitzungen kurz vor Beginn des Vorfalls"
+        },
+        {
           "when": ["cause.nodata"],
           "text": "Für den Zeitraum liegen keine Prozessdaten vor: den Verursacher über die Minuten davor und danach eingrenzen",
           "where": "Expertenansicht, Zeitraum um den Vorfall erweitern: Reiter „Prozesse“ und „Anwendungen“; Reiter „Messqualität“ (ausgelassene Schnappschüsse)",
@@ -171,13 +189,13 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm die Rechenzeit verbraucht: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welche Anwendung die Rechenzeit verbraucht: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
           "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“ oder „Details“, nach der Spalte „CPU“ sortiert",
           "sign": "Prozess mit dauerhaft hohem CPU-Wert und Benutzer, in dessen Sitzung er läuft"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
@@ -189,15 +207,15 @@
         },
         {
           "when": ["unmeasured.input.session"],
-          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen, betroffene Sitzungen sind deshalb nicht bestimmbar",
+          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“",
-          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau zwischen {from} und {to} Uhr"
+          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau ab {from} Uhr"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief: Ereignisse wurden bei dieser Messung nicht gemessen, ein Scan im Zeitraum ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn (Ereignis 1000) zwischen {from} und {to} Uhr oder kurz davor"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr"
         },
         {
           "text": "Prüfen, ob der Engpass regelmäßig auftritt",
@@ -213,8 +231,8 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "{app} vom Benutzer schließen lassen; reagiert das Programm nicht mehr, den Prozess nach Rücksprache im Task-Manager beenden",
-          "precondition": "{app} ein Programm eines Benutzers ist und weiter Rechenzeit verbraucht, obwohl er nicht damit arbeitet"
+          "text": "{app} vom Benutzer schließen lassen; reagiert die Anwendung nicht mehr, den Prozess nach Rücksprache im Task-Manager beenden",
+          "precondition": "{app} eine Anwendung eines Benutzers ist und weiter Rechenzeit verbraucht, obwohl er nicht damit arbeitet"
         },
         {
           "when": ["cause.app"],
@@ -233,13 +251,13 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse nach den Empfehlungen von Citrix und Microsoft für Terminalserver und nach den Angaben der Anwendungshersteller ergänzen",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner von {app} einrichten",
-          "precondition": "{security} bei Vorfällen mit {app} wiederholt als Begleiter erscheint, der Hersteller von {app} Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["cause.none"],
@@ -258,21 +276,21 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         }
       ]
     },
     "memory": {
       "title": "Arbeitsspeicher des Servers knapp",
       "short": "RAM",
-      "meaning": "Ab {from} Uhr war der Arbeitsspeicher des Servers {duration} lang fast vollständig belegt. Windows lagert dann Speicherinhalte auf den Datenträger aus und holt sie bei Bedarf zurück; das dauert viel länger als ein Zugriff auf den Arbeitsspeicher. Hält der Mangel an, können Programme abstürzen.",
-      "impact": "Programme reagierten träge, vor allem beim Wechsel zwischen Fenstern und beim Öffnen von Dateien.",
+      "meaning": "Ab {from} Uhr lag die Auslastung des Arbeitsspeichers {duration} lang über dem Soll. Wird der Arbeitsspeicher knapp, lagert Windows Speicherinhalte in die Auslagerungsdatei auf dem Laufwerk aus und holt sie bei Bedarf zurück; das dauert viel länger als ein Zugriff auf den Arbeitsspeicher. Hält der Mangel an, können Anwendungen abstürzen.",
+      "impact": "Anwendungen können träge reagiert haben, vor allem beim Wechsel zwischen Fenstern und beim Öffnen von Dateien.",
       "checks": [
         {
           "when": ["cause.app"],
           "text": "Prüfen, wie viel Arbeitsspeicher {app} in der Sitzung von {user} jetzt belegt und ob der Wert weiter wächst",
-          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Programme von Diensten: Registerkarte „Details“); Spalte „Arbeitsspeicher“",
-          "sign": "Arbeitsspeicher der Anwendung weit über dem der anderen Programme oder von Minute zu Minute steigend"
+          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Prozesse von Diensten: Registerkarte „Details“); Spalte „Arbeitsspeicher“",
+          "sign": "Arbeitsspeicher der Anwendung weit über dem der anderen Anwendungen oder von Minute zu Minute steigend"
         },
         {
           "when": ["cause.app"],
@@ -300,9 +318,15 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Der Bedarf verteilt sich auf viele Sitzungen: Arbeitsspeicher je Sitzung und Zahl der Sitzungen ansehen",
+          "text": "Kein einzelner Verursacher: Arbeitsspeicher je Sitzung und Zahl der Sitzungen ansehen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Arbeitsspeicher nach Verursacher“, Reiter „Sitzungen“",
-          "sign": "Summe vieler ähnlich großer Sitzungen nahe am Arbeitsspeicher des Servers, ohne einzelne Sitzung mit hohem Anteil"
+          "sign": "Summe vieler ähnlich großer Sitzungen über dem Soll, ohne einzelne Sitzung mit hohem Anteil"
+        },
+        {
+          "when": ["cause.none"],
+          "text": "Prüfen, ob der Server mehr Sitzungen trägt als die anderen Server derselben Bereitstellungsgruppe",
+          "where": "Citrix Director oder Citrix Studio: Sitzungen je Server",
+          "sign": "Sitzungszahl deutlich über der der anderen Server"
         },
         {
           "when": ["cause.nodata"],
@@ -312,21 +336,21 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm den Arbeitsspeicher belegt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welche Anwendung den Arbeitsspeicher belegt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
           "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“ oder „Details“, nach der Spalte „Arbeitsspeicher“ sortiert",
           "sign": "Prozess mit dem höchsten Arbeitsspeicher und Benutzer, in dessen Sitzung er läuft"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.input.session"],
-          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen, betroffene Sitzungen sind deshalb nicht bestimmbar",
+          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“",
-          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau zwischen {from} und {to} Uhr"
+          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau ab {from} Uhr"
         },
         {
           "text": "Prüfen, ob getrennte Sitzungen Arbeitsspeicher belegen",
@@ -334,9 +358,14 @@
           "sign": "Sitzung im Status „Getrennt“ mit hohem Arbeitsspeicher"
         },
         {
+          "text": "Prüfen, ob Windows tatsächlich ausgelagert hat",
+          "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Von Datenträger gelesene Seiten“",
+          "sign": "Wert über dem Soll im Zeitraum des Vorfalls: dann hat der Speichermangel Anwendungen gebremst"
+        },
+        {
           "text": "Prüfen, ob auch der zugesagte Speicher knapp war",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Commit-Auslastung“",
-          "sign": "Commit-Auslastung über dem Soll: dann fehlt Speicher auch für neue Programme, und Abstürze drohen"
+          "sign": "Commit-Auslastung über dem Soll: dann fehlt Speicher auch für neue Anwendungen, und Abstürze drohen"
         },
         {
           "text": "Prüfen, ob im selben Zeitraum Anwendungen abgestürzt sind",
@@ -352,7 +381,7 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "{app} schließen und neu starten lassen (ein Programm durch den Benutzer, einen Dienst in einem Wartungsfenster)",
+          "text": "{app} schließen und neu starten lassen (eine Anwendung durch den Benutzer, einen Dienst in einem Wartungsfenster)",
           "precondition": "{app} immer mehr Arbeitsspeicher belegt und ihn nicht wieder freigibt"
         },
         {
@@ -377,15 +406,15 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         }
       ]
     },
     "disk": {
       "title": "Laufwerk des Servers antwortet langsam",
       "short": "Laufwerk",
-      "meaning": "Ab {from} Uhr brauchte ein Laufwerk des Servers {duration} lang für Lese- und Schreibzugriffe deutlich länger als üblich. Jedes Programm, das in dieser Zeit Dateien öffnete, speicherte oder nachlud, musste warten. Welches Laufwerk betroffen war, steht in den Belegen des Vorfalls.",
-      "impact": "Öffnen und Speichern von Dateien und der Start von Programmen dauerten spürbar länger.",
+      "meaning": "Ab {from} Uhr brauchte ein Laufwerk des Servers {duration} lang für Lese- und Schreibzugriffe deutlich länger als das Soll. Jede Anwendung, die in dieser Zeit Dateien öffnete, speicherte oder nachlud, musste warten. Welches Laufwerk betroffen war, steht in den Belegen des Vorfalls.",
+      "impact": "Öffnen und Speichern von Dateien und der Start von Anwendungen dauerten spürbar länger.",
       "checks": [
         {
           "when": ["cause.app"],
@@ -395,7 +424,7 @@
         },
         {
           "when": ["cause.app"],
-          "text": "Klären, was {app} zwischen {from} und {to} Uhr getan hat: den Benutzer fragen oder, bei einem Dienst, dessen Protokoll und Zeitplan ansehen",
+          "text": "Klären, was {app} ab {from} Uhr getan hat: den Benutzer fragen oder, bei einem Dienst, dessen Protokoll und Zeitplan ansehen",
           "where": "Rückfrage beim Benutzer; bei einem Dienst: Ereignisanzeige und Aufgabenplanung zur Uhrzeit des Vorfalls",
           "sign": "Vorgang mit sehr großen oder sehr vielen Dateien (Kopie, Suche, Packen, Sicherung, Export, Aktualisierung)"
         },
@@ -414,26 +443,32 @@
         {
           "when": ["scan"],
           "text": "Im Zeitraum lief ein Virenscan: prüfen, wie stark er zur Last beitrug und ob sein Zeitplan in die Arbeitszeit fällt",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert"
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware; wurden Prozesse nicht gemessen: Task-Manager während des nächsten Scans); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert; geplanter Scan zu einer Zeit mit angemeldeten Benutzern"
+        },
+        {
+          "when": ["event.defender"],
+          "text": "Im Zeitraum meldete Microsoft Defender ein Ereignis: nachsehen, ob es eine Aktualisierung der Signaturen war, die Prozessor und Laufwerk kurz belastet",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Ereignisse im Zeitraum; Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Ereignisse“",
+          "sign": "Aktualisierung der Signaturen (Ereignis 2000) kurz vor Beginn des Vorfalls"
         },
         {
           "when": ["cause.security"],
-          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum geprüft wurde und ob Scan-Ausschlüsse fehlen",
+          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum untersucht wurde und ob Scan-Ausschlüsse fehlen",
           "where": "Verwaltung der Schutzsoftware: Protokoll und Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“ (größter Anteil außerhalb der Schutzsoftware)",
-          "sign": "Echtzeitprüfung ohne Scan-Ausschluss für Ordner mit vielen oder großen Dateien, die Programme ständig lesen und schreiben"
+          "sign": "Echtzeitprüfung ohne Scan-Ausschluss für Ordner mit vielen oder großen Dateien, die Anwendungen ständig lesen und schreiben"
         },
         {
           "when": ["companion.security"],
-          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien von {app} bei jedem Zugriff geprüft werden",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“",
-          "sign": "Programm- und Datenordner von {app} ohne Scan-Ausschluss"
+          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
+          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
         },
         {
           "when": ["cause.none"],
-          "text": "Die Zugriffe verteilen sich auf viele Sitzungen: prüfen, ob viele Benutzer zugleich angemeldet oder dasselbe Programm gestartet haben",
+          "text": "Kein einzelner Verursacher: prüfen, ob sich viele Benutzer zugleich angemeldet oder dieselbe Anwendung gestartet haben",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Sitzungen“, Reiter „Ereignisse“ (Anmeldungen), Reiter „Sitzungen“",
-          "sign": "Anmeldewelle oder Start desselben Programms in vielen Sitzungen kurz vor Beginn des Vorfalls"
+          "sign": "Anmeldewelle oder Start derselben Anwendung in vielen Sitzungen kurz vor Beginn des Vorfalls"
         },
         {
           "when": ["cause.nodata"],
@@ -443,27 +478,27 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm am meisten liest und schreibt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welche Anwendung am meisten liest und schreibt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
           "where": "Ressourcenmonitor auf dem Server (resmon), Registerkarte „Datenträger“, Bereich „Prozesse mit Datenträgeraktivität“",
           "sign": "Prozess mit den höchsten Werten in den Spalten „Lesen“ und „Schreiben“"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.input.session"],
-          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen, betroffene Sitzungen sind deshalb nicht bestimmbar",
+          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“",
-          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau zwischen {from} und {to} Uhr"
+          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau ab {from} Uhr"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief: Ereignisse wurden bei dieser Messung nicht gemessen, ein Scan im Zeitraum ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn (Ereignis 1000) zwischen {from} und {to} Uhr oder kurz davor"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr"
         },
         {
           "text": "Prüfen, ob zur gleichen Zeit der Arbeitsspeicher knapp war: Auslagern belastet das Systemlaufwerk",
@@ -494,13 +529,13 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse nach den Empfehlungen von Citrix und Microsoft für Terminalserver und nach den Angaben der Anwendungshersteller ergänzen",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner von {app} einrichten",
-          "precondition": "{security} bei Vorfällen mit {app} wiederholt als Begleiter erscheint, der Hersteller von {app} Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         }
       ],
       "contacts": [
@@ -510,7 +545,7 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         },
         {
           "when": ["cause.none"],
@@ -521,12 +556,12 @@
     "share": {
       "title": "Dateiserver antwortet langsam",
       "short": "Dateiserver",
-      "meaning": "Ab {from} Uhr antwortete eine Netzwerkfreigabe {duration} lang deutlich langsamer als üblich. Die Wartezeit entsteht beim Dateiserver, auf dem Netzweg dorthin oder durch sehr viele Zugriffe eines Programms. Welche Freigabe betroffen war, steht in den Belegen des Vorfalls.",
-      "impact": "Dateien auf der Freigabe ließen sich nur verzögert öffnen und speichern; Programme wirkten dabei wie eingefroren.",
+      "meaning": "Ab {from} Uhr antwortete eine Freigabe {duration} lang deutlich langsamer als das Soll. Die Wartezeit entsteht beim Dateiserver, auf der Netzstrecke dorthin oder durch sehr viele Zugriffe einer Anwendung. Welche Freigabe betroffen war, steht in den Belegen des Vorfalls.",
+      "impact": "Dateien auf der Freigabe ließen sich nur verzögert öffnen und speichern; Anwendungen wirkten dabei wie eingefroren.",
       "checks": [
         {
           "when": ["cause.app"],
-          "text": "Klären, welche Dateien {app} in der Sitzung von {user} zwischen {from} und {to} Uhr auf der Freigabe geöffnet, gespeichert oder durchsucht hat",
+          "text": "Klären, welche Dateien {app} in der Sitzung von {user} ab {from} Uhr auf der Freigabe geöffnet, gespeichert oder durchsucht hat",
           "where": "Rückfrage beim Benutzer; bei einem Dienst: dessen Protokoll und Zeitplan",
           "sign": "Vorgang mit sehr großen oder sehr vielen Dateien (Kopie, Suche, große Datei direkt von der Freigabe geöffnet)"
         },
@@ -544,31 +579,31 @@
         },
         {
           "when": ["endpoint.slow"],
-          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob sie der betroffene Dateiserver ist oder auf demselben Netzweg liegt",
+          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob sie der betroffene Dateiserver ist oder auf derselben Netzstrecke liegt",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Gegenstellen; Expertenansicht, Diagramm „Antwortzeit der Gegenstellen“",
           "sign": "Antwortzeit der Gegenstelle im selben Zeitraum über dem Soll wie die der Freigabe"
         },
         {
           "when": ["scan"],
           "text": "Im Zeitraum lief ein Virenscan: prüfen, wie stark er zur Last beitrug und ob sein Zeitplan in die Arbeitszeit fällt",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert"
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware; wurden Prozesse nicht gemessen: Task-Manager während des nächsten Scans); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert; geplanter Scan zu einer Zeit mit angemeldeten Benutzern"
         },
         {
           "when": ["cause.security"],
-          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum geprüft wurde und ob Scan-Ausschlüsse fehlen",
+          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum untersucht wurde und ob Scan-Ausschlüsse fehlen",
           "where": "Verwaltung der Schutzsoftware: Protokoll und Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“ (größter Anteil außerhalb der Schutzsoftware)",
           "sign": "Echtzeitprüfung ohne Scan-Ausschluss für Netzlaufwerke und Freigaben"
         },
         {
           "when": ["companion.security"],
-          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien von {app} bei jedem Zugriff geprüft werden",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“",
-          "sign": "Programm- und Datenordner von {app} ohne Scan-Ausschluss"
+          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
+          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
         },
         {
           "when": ["cause.none"],
-          "text": "Die Zugriffe verteilen sich auf viele Sitzungen: prüfen, ob viele Benutzer zugleich auf die Freigabe zugriffen",
+          "text": "Kein einzelner Verursacher: prüfen, ob viele Benutzer zugleich auf die Freigabe zugriffen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Sitzungen“, Diagramm „Freigabe-Antwortzeit“",
           "sign": "Summe vieler Zugriffe ohne einzelne Sitzung mit hohem Anteil"
         },
@@ -580,27 +615,27 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm auf die Freigabe zugreift: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welche Anwendung auf die Freigabe zugreift: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
           "where": "Ressourcenmonitor auf dem Server (resmon), Registerkarte „Netzwerk“, Bereich „Prozesse mit Netzwerkaktivität“",
           "sign": "Prozess mit den höchsten Werten für gesendete und empfangene Daten"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.input.session"],
-          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen, betroffene Sitzungen sind deshalb nicht bestimmbar",
+          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“",
-          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau zwischen {from} und {to} Uhr"
+          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau ab {from} Uhr"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief: Ereignisse wurden bei dieser Messung nicht gemessen, ein Scan im Zeitraum ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn (Ereignis 1000) zwischen {from} und {to} Uhr oder kurz davor"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr"
         },
         {
           "text": "Prüfen, ob andere Server dieselbe Freigabe zur gleichen Zeit ebenfalls langsam erreichten",
@@ -609,7 +644,7 @@
         },
         {
           "text": "Auslastung des Dateiservers zur Zeit des Vorfalls prüfen lassen",
-          "where": "Überwachung des Dateiservers (Prozessor, Datenträger, Sicherung)",
+          "where": "Überwachung des Dateiservers (Prozessor, Laufwerke, Sicherung)",
           "sign": "Lastspitze oder Sicherungslauf auf dem Dateiserver im selben Zeitraum"
         },
         {
@@ -636,13 +671,13 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse nach den Empfehlungen von Citrix und Microsoft für Terminalserver und nach den Angaben der Anwendungshersteller ergänzen",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner von {app} einrichten",
-          "precondition": "{security} bei Vorfällen mit {app} wiederholt als Begleiter erscheint, der Hersteller von {app} Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         }
       ],
       "contacts": [
@@ -652,30 +687,30 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         },
         {
-          "text": "Betreuung von Dateiserver und Netzwerk: mit Uhrzeit, Freigabe und gemessener Antwortzeit"
+          "text": "Betreuung von Dateiserver und Netz: mit Uhrzeit, Freigabe und gemessener Antwortzeit"
         }
       ]
     },
     "profile": {
       "title": "Profil eines Benutzers antwortet langsam",
       "short": "Profil",
-      "meaning": "Ab {from} Uhr antwortete der Profilcontainer eines Benutzers {duration} lang deutlich langsamer als üblich. Im Profilcontainer liegen die persönlichen Einstellungen und Daten des Benutzers, zum Beispiel Postfachdaten oder der Zwischenspeicher des Browsers; er ist eine Datei auf dem Dateiserver, die in der Sitzung wie ein Laufwerk eingebunden ist. Betroffen ist in der Regel nur die Sitzung dieses Benutzers.",
-      "impact": "Programme dieses Benutzers reagierten träge, vor allem beim Start und beim Zugriff auf eigene Daten.",
+      "meaning": "Ab {from} Uhr antwortete der Profilcontainer eines Benutzers {duration} lang deutlich langsamer als das Soll. Im Profilcontainer liegen die persönlichen Einstellungen und Daten des Benutzers, zum Beispiel Postfachdaten oder der Zwischenspeicher des Browsers; er ist eine Datei auf dem Dateiserver, die in der Sitzung wie ein Laufwerk eingebunden ist. Betroffen ist in der Regel nur die Sitzung dieses Benutzers.",
+      "impact": "Anwendungen dieses Benutzers reagierten träge, vor allem beim Start und beim Zugriff auf eigene Daten.",
       "checks": [
         {
           "when": ["cause.app"],
-          "text": "Beim Benutzer {user} nachfragen, was er zwischen {from} und {to} Uhr mit {app} getan hat",
-          "where": "Rückfrage beim Benutzer, telefonisch oder über das Ticket",
+          "text": "Klären, was {app} in der Sitzung von {user} ab {from} Uhr getan hat: den Benutzer fragen oder, bei einem Dienst, dessen Protokoll und Zeitplan ansehen",
+          "where": "Rückfrage beim Benutzer; bei einem Dienst: Ereignisanzeige und Aufgabenplanung zur Uhrzeit des Vorfalls",
           "sign": "Vorgang mit vielen Zugriffen auf eigene Daten (Suche im Postfach, großer Anhang, Abgleich, viele Browser-Fenster)"
         },
         {
           "when": ["cause.app"],
-          "text": "Größe des Profilcontainers von {user} und der Daten von {app} darin prüfen",
-          "where": "Profilspeicher auf dem Dateiserver: Containerdatei des Benutzers; in seiner Sitzung: Ordner des Benutzerprofils",
-          "sign": "Containerdatei oder Datenordner von {app} deutlich größer als bei anderen Benutzern"
+          "text": "Größe der Daten von {app} im betroffenen Profilcontainer prüfen",
+          "where": "In der Sitzung des Benutzers, dem der Profilcontainer gehört (wer es ist, steht in den Belegen): Ordner des Benutzerprofils",
+          "sign": "Datenordner von {app} deutlich größer als bei anderen Benutzern"
         },
         {
           "when": ["cause.app"],
@@ -691,33 +726,33 @@
         },
         {
           "when": ["endpoint.slow"],
-          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob sie der Dateiserver mit dem Profilspeicher ist oder auf demselben Netzweg liegt",
+          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob sie der Dateiserver mit dem Profilspeicher ist oder auf derselben Netzstrecke liegt",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Gegenstellen; Expertenansicht, Diagramm „Antwortzeit der Gegenstellen“",
           "sign": "Antwortzeit der Gegenstelle im selben Zeitraum über dem Soll wie die des Profilcontainers"
         },
         {
           "when": ["scan"],
           "text": "Im Zeitraum lief ein Virenscan: prüfen, wie stark er zur Last beitrug und ob sein Zeitplan in die Arbeitszeit fällt",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert"
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans), Reiter „Anwendungen“ (Anteil der Schutzsoftware; wurden Prozesse nicht gemessen: Task-Manager während des nächsten Scans); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Anteil der Schutzsoftware im Zeitraum deutlich über ihrem sonstigen Wert; geplanter Scan zu einer Zeit mit angemeldeten Benutzern"
         },
         {
           "when": ["cause.security"],
-          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum geprüft wurde und ob Scan-Ausschlüsse fehlen",
+          "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum untersucht wurde und ob Scan-Ausschlüsse fehlen",
           "where": "Verwaltung der Schutzsoftware: Protokoll und Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“ (größter Anteil außerhalb der Schutzsoftware)",
           "sign": "Echtzeitprüfung ohne Scan-Ausschluss für die Containerdateien des Profilspeichers"
         },
         {
           "when": ["companion.security"],
-          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien von {app} bei jedem Zugriff geprüft werden",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“",
-          "sign": "Programm- und Datenordner von {app} ohne Scan-Ausschluss"
+          "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
+          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
         },
         {
           "when": ["cause.none"],
-          "text": "In der Sitzung fällt kein einzelnes Programm auf: prüfen, ob mehrere Programme zugleich auf das Profil zugriffen (Anmeldung, Start vieler Programme)",
+          "text": "Kein einzelner Verursacher in der Sitzung: prüfen, ob mehrere Anwendungen zugleich auf das Profil zugriffen (Anmeldung, Start vieler Anwendungen)",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Sitzungen“, Sitzung des Benutzers; Reiter „Ereignisse“ (Anmeldung)",
-          "sign": "Anmeldung oder Start mehrerer Programme kurz vor Beginn des Vorfalls"
+          "sign": "Anmeldung oder Start mehrerer Anwendungen kurz vor Beginn des Vorfalls"
         },
         {
           "when": ["cause.nodata"],
@@ -727,27 +762,27 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm des Benutzers am meisten liest und schreibt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welche Anwendung des Benutzers am meisten liest und schreibt: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
           "where": "Ressourcenmonitor auf dem Server (resmon), Registerkarte „Datenträger“, Bereich „Prozesse mit Datenträgeraktivität“",
           "sign": "Prozess des Benutzers mit den höchsten Werten in den Spalten „Lesen“ und „Schreiben“"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.input.session"],
-          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen, betroffene Sitzungen sind deshalb nicht bestimmbar",
+          "text": "Bei den Benutzern, die zu der Zeit angemeldet waren, erfragen, wer die Störung gespürt hat: die Eingabeverzögerung je Sitzung wurde nicht gemessen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“",
-          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau zwischen {from} und {to} Uhr"
+          "sign": "Meldung über träge Eingaben oder verzögerten Bildaufbau ab {from} Uhr"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief: Ereignisse wurden bei dieser Messung nicht gemessen, ein Scan im Zeitraum ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational); Verwaltung der Schutzsoftware: geplante Scans",
-          "sign": "Scan-Beginn (Ereignis 1000) zwischen {from} und {to} Uhr oder kurz davor"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational); Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr"
         },
         {
           "text": "Prüfen, ob zur gleichen Zeit auch andere Profilcontainer oder Freigaben desselben Dateiservers langsam waren",
@@ -756,8 +791,13 @@
         },
         {
           "text": "Auslastung des Dateiservers mit dem Profilspeicher zur Zeit des Vorfalls prüfen lassen",
-          "where": "Überwachung des Dateiservers (Prozessor, Datenträger, Sicherung)",
+          "where": "Überwachung des Dateiservers (Prozessor, Laufwerke, Sicherung)",
           "sign": "Lastspitze oder Sicherungslauf auf dem Dateiserver im selben Zeitraum"
+        },
+        {
+          "text": "Größe und freien Platz des Profilcontainers prüfen",
+          "where": "Profilspeicher auf dem Dateiserver: Containerdatei des Benutzers (wer es ist, steht in den Belegen); Einstellungen der Citrix Profilverwaltung zur Größe der Container",
+          "sign": "Containerdatei deutlich größer als bei anderen Benutzern oder nahe an ihrer Höchstgröße"
         },
         {
           "text": "Meldungen der Citrix Profilverwaltung im Zeitraum ansehen",
@@ -774,7 +814,7 @@
         {
           "when": ["cause.app"],
           "text": "Datenmenge von {app} im Profil verkleinern, zum Beispiel den Zwischenspeicher begrenzen oder ältere Daten auslagern",
-          "precondition": "{app} sehr große Datenbestände im Profilcontainer von {user} hält"
+          "precondition": "{app} sehr große Datenbestände im betroffenen Profilcontainer hält"
         },
         {
           "when": ["scan"],
@@ -783,13 +823,13 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse nach den Empfehlungen von Citrix und Microsoft für Terminalserver und nach den Angaben der Anwendungshersteller ergänzen",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner von {app} einrichten",
-          "precondition": "{security} bei Vorfällen mit {app} wiederholt als Begleiter erscheint, der Hersteller von {app} Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         }
       ],
       "contacts": [
@@ -799,30 +839,30 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         },
         {
-          "text": "Betreuung von Dateiserver und Netzwerk: mit Uhrzeit, Benutzer und gemessener Antwortzeit des Profilcontainers"
+          "text": "Betreuung von Dateiserver und Netz: mit Uhrzeit, Benutzer und gemessener Antwortzeit des Profilcontainers"
         }
       ]
     },
     "delay.many": {
       "title": "Mehrere Benutzer warten – kein Engpass am Server erkannt",
       "short": "Anwendung",
-      "meaning": "Ab {from} Uhr reagierten Programme in mehreren Sitzungen {duration} lang verzögert auf Eingaben, ohne dass bei den gemessenen Ressourcen des Servers ein Engpass erkannt wurde. Die Programme warteten in dieser Zeit sehr wahrscheinlich auf etwas außerhalb des Servers, zum Beispiel auf eine Datenbank, einen Proxy, einen Dateiserver oder das Netz, oder sie waren selbst beschäftigt. Dass mehrere Sitzungen zugleich betroffen sind, spricht für eine gemeinsame Ursache.",
+      "meaning": "Ab {from} Uhr reagierten Anwendungen in mehreren Sitzungen {duration} lang verzögert auf Eingaben, ohne dass bei den gemessenen Ressourcen des Servers ein Engpass erkannt wurde. Die Anwendungen warteten in dieser Zeit vermutlich auf etwas außerhalb des Servers, zum Beispiel auf eine Datenbank, einen Proxy, einen Dateiserver oder das Netz, oder sie waren selbst beschäftigt; ein Engpass bei einem nicht gemessenen Wert ist damit nicht ausgeschlossen. Dass mehrere Sitzungen zugleich betroffen sind, spricht für eine gemeinsame Ursache.",
       "impact": "Die betroffenen Benutzer mussten auf ihre Eingaben warten; Masken und Fenster bauten sich verzögert auf.",
       "checks": [
         {
           "when": ["endpoint.slow"],
-          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: bei ihrer Betreuung nachfragen, was dort zwischen {from} und {to} Uhr los war",
-          "where": "Vorfallsansicht, Abschnitt „Belege“: Gegenstellen; Expertenansicht mit dem Zeitraum des Vorfalls, Diagramm „Antwortzeit der Gegenstellen“",
-          "sign": "Störung, Lastspitze oder Wartung bei der Gegenstelle im selben Zeitraum"
+          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: zuerst ihre Antwortzeit vor und nach dem Vorfall vergleichen, dann bei ihrer Betreuung nachfragen, was dort ab {from} Uhr los war",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Gegenstellen; Expertenansicht über die gesamte Messung: Diagramm „Antwortzeit der Gegenstellen“",
+          "sign": "Antwortzeit der Gegenstelle nur im Zeitraum des Vorfalls über dem Soll; Störung, Lastspitze oder Wartung dort im selben Zeitraum"
         },
         {
           "when": ["scan"],
-          "text": "Im Zeitraum lief ein Virenscan: prüfen, ob er Dateien der Anwendung prüfte, in der die Benutzer warteten",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans); Verwaltung der Schutzsoftware: Protokoll der Echtzeitprüfung",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Dateien der Anwendung im Protokoll der Schutzsoftware"
+          "text": "Im Zeitraum lief ein Virenscan: prüfen, ob er den ganzen Vorfall über lief und ob die Verzögerung auch sonst mit dem geplanten Scan zusammenfällt",
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans); Lagebild und Berichte anderer Tage; Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn vor {from} Uhr und Scan-Ende nach {to} Uhr; Verzögerung auch an anderen Tagen zur Zeit des geplanten Scans"
         },
         {
           "when": ["event.applocker"],
@@ -832,21 +872,21 @@
         },
         {
           "when": ["incident.unverified"],
-          "text": "Bei der Betreuung des Dateiservers nachfragen, ob für den Zeitraum eine Störung bekannt ist, und die Messung ohne „-Skip Laufwerke“ wiederholen: die Antwortzeiten der Laufwerke, Profilcontainer und Freigaben wurden nicht gemessen, ein Engpass eines Laufwerks oder des Dateiservers ist deshalb nicht ausgeschlossen",
-          "where": "Betreuung des Dateiservers; Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
-          "sign": "Störung am Dateiserver zwischen {from} und {to} Uhr; Antwortzeiten je Laufwerk, Profilcontainer und Freigabe im Bericht der neuen Messung"
+          "text": "Dateiserver und Laufwerke als Ursache prüfen: ihre Antwortzeiten wurden nicht gemessen, ein Engpass dort ist deshalb nicht ausgeschlossen",
+          "where": "Betreuung des Dateiservers (Störung im Zeitraum des Vorfalls); nächste Messung ohne „-Skip Laufwerke“ (Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server)",
+          "sign": "Störung am Dateiserver im Zeitraum des Vorfalls; Antwortzeit eines Laufwerks, eines Profilcontainers oder einer Freigabe über dem Soll im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.probe.connect"],
-          "text": "Bei der Betreuung der Anwendung, in der die Benutzer warteten, nachfragen, ob Datenbank, Proxy oder Dateiserver zwischen {from} und {to} Uhr langsam antworteten: die Antwortzeit der Gegenstellen wurde nicht gemessen, eine langsame Gegenstelle ist deshalb nicht ausgeschlossen",
+          "text": "Bei der Betreuung der Anwendung nachfragen, ob Datenbank, Proxy oder Dateiserver ab {from} Uhr langsam antworteten: die Antwortzeit der Gegenstellen wurde nicht gemessen, eine langsame Gegenstelle ist deshalb nicht ausgeschlossen",
           "where": "Betreuung der Anwendung und ihrer Gegenstellen",
           "sign": "Störung oder Lastspitze bei einer Gegenstelle im selben Zeitraum"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief oder AppLocker eine Ausführung blockiert hat: Ereignisse wurden bei dieser Messung nicht gemessen, beides ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational) und AppLocker",
-          "sign": "Scan-Beginn (Ereignis 1000) oder Blockierung (Ereignis 8004, 8007) zwischen {from} und {to} Uhr"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational) und AppLocker",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr; Blockierung durch AppLocker (Ereignis 8004, 8007) im Zeitraum des Vorfalls"
         },
         {
           "text": "Feststellen, in welcher Anwendung die Benutzer warteten und ob es bei allen dieselbe war",
@@ -856,7 +896,7 @@
         {
           "text": "Bei der Betreuung dieser Anwendung und ihrer Datenbank nachfragen, ob für den Zeitraum eine Störung, hohe Last oder ein langer Lauf bekannt ist",
           "where": "Betreuung der Anwendung, bei der Fachanwendung auch die Betreuung ihrer Datenbank",
-          "sign": "Sperre, Abfrage mit langer Laufzeit, Sicherung oder Wartung zwischen {from} und {to} Uhr"
+          "sign": "Sperre, Abfrage mit langer Laufzeit, Sicherung oder Wartung ab {from} Uhr"
         },
         {
           "text": "Prüfen, ob Benutzer auf anderen Servern zur gleichen Zeit dieselbe Verzögerung hatten",
@@ -864,8 +904,8 @@
           "sign": "Verzögerung zur gleichen Zeit auf mehreren Servern: Ursache hinter der Anwendung, nicht auf diesem Server"
         },
         {
-          "text": "Netzweg und Proxy prüfen lassen, wenn die Anwendung über einen Proxy oder eine Web-Oberfläche arbeitet",
-          "where": "Überwachung von Proxy und Netzwerk",
+          "text": "Netzstrecke und Proxy prüfen lassen, wenn die Anwendung über einen Proxy oder eine Web-Oberfläche arbeitet",
+          "where": "Überwachung von Proxy und Netz",
           "sign": "Antwortzeit oder Fehlerrate am Proxy im selben Zeitraum über dem üblichen Wert"
         },
         {
@@ -877,7 +917,7 @@
       "remedies": [
         {
           "when": ["unmeasured.probe.connect"],
-          "text": "Gegenstellen der Anwendung (Datenbank, Proxy, Dateiserver) in die Datei endpoints.json neben dem Collector eintragen (Vorlage endpoints.example.json) und die Messung ohne „-Skip Gegenstellen“ wiederholen; ihre Antwortzeit wurde nicht gemessen",
+          "text": "Gegenstellen der Anwendung (Datenbank, Proxy, Dateiserver) in die Datei endpoints.json neben dem Collector eintragen (Vorlage endpoints.example.json) und die Messung ohne „-Skip Gegenstellen“ wiederholen",
           "precondition": "die Ursache hinter der Anwendung vermutet wird"
         }
       ],
@@ -890,27 +930,27 @@
           "text": "Betreuung der Anwendung, in der die Benutzer warteten (bei der Fachanwendung auch die Betreuung ihrer Datenbank): mit Uhrzeit, Dauer und Zahl der betroffenen Sitzungen"
         },
         {
-          "text": "Betreuung von Netzwerk und Proxy, wenn mehrere verschiedene Anwendungen zugleich warteten"
+          "text": "Betreuung von Netz und Proxy, wenn mehrere verschiedene Anwendungen zugleich warteten"
         }
       ]
     },
     "delay.single": {
       "title": "Ein Benutzer wartet – kein Engpass am Server erkannt",
       "short": "Anwendung",
-      "meaning": "Ab {from} Uhr reagierte ein Programm in einer Sitzung {duration} lang verzögert auf Eingaben, ohne dass bei den gemessenen Ressourcen des Servers ein Engpass erkannt wurde. Das Programm war in dieser Zeit selbst beschäftigt oder wartete auf etwas außerhalb des Servers, zum Beispiel auf eine Datenbank, einen Dateiserver oder eine Webseite. Weil nur eine Sitzung betroffen ist, liegt die Ursache eher bei diesem Programm, seinen Daten oder diesem Benutzer als beim Server.",
-      "impact": "Der betroffene Benutzer musste auf seine Eingaben warten; das Programm wirkte wie eingefroren.",
+      "meaning": "Ab {from} Uhr reagierte eine Anwendung in einer Sitzung {duration} lang verzögert auf Eingaben, ohne dass bei den gemessenen Ressourcen des Servers ein Engpass erkannt wurde. Die Anwendung war in dieser Zeit vermutlich selbst beschäftigt oder wartete auf etwas außerhalb des Servers, zum Beispiel auf eine Datenbank, einen Dateiserver oder eine Webseite; ein Engpass bei einem nicht gemessenen Wert ist damit nicht ausgeschlossen. Weil nur eine Sitzung betroffen ist, liegt die Ursache eher bei dieser Anwendung, ihren Daten oder diesem Benutzer als beim Server.",
+      "impact": "Der betroffene Benutzer musste auf seine Eingaben warten; die Anwendung wirkte wie eingefroren.",
       "checks": [
         {
           "when": ["endpoint.slow"],
-          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob das Programm des Benutzers mit ihr arbeitet",
+          "text": "Die Gegenstelle {endpoint} antwortete im Zeitraum langsam oder gar nicht: prüfen, ob die Anwendung des Benutzers mit ihr arbeitet",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Gegenstellen; Expertenansicht mit dem Zeitraum des Vorfalls, Diagramm „Antwortzeit der Gegenstellen“",
-          "sign": "Programm, das auf diese Gegenstelle zugreift (zum Beispiel Datenbank der Fachanwendung, Proxy, Dateiserver)"
+          "sign": "Anwendung, die auf diese Gegenstelle zugreift (zum Beispiel Datenbank der Fachanwendung, Proxy, Dateiserver)"
         },
         {
           "when": ["scan"],
-          "text": "Im Zeitraum lief ein Virenscan: prüfen, ob er Dateien der Anwendung prüfte, in der der Benutzer wartete",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans); Verwaltung der Schutzsoftware: Protokoll der Echtzeitprüfung",
-          "sign": "Scan-Beginn kurz vor {from} Uhr; Dateien der Anwendung im Protokoll der Schutzsoftware"
+          "text": "Im Zeitraum lief ein Virenscan: prüfen, ob er den ganzen Vorfall über lief und ob die Verzögerung auch sonst mit dem geplanten Scan zusammenfällt",
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Reiter „Ereignisse“ (Beginn und Ende des Scans); Lagebild und Berichte anderer Tage; Verwaltung der Schutzsoftware: geplante Scans",
+          "sign": "Scan-Beginn vor {from} Uhr und Scan-Ende nach {to} Uhr; Verzögerung auch an anderen Tagen zur Zeit des geplanten Scans"
         },
         {
           "when": ["event.applocker"],
@@ -920,26 +960,26 @@
         },
         {
           "when": ["incident.unverified"],
-          "text": "Bei der Betreuung des Dateiservers nachfragen, ob für den Zeitraum eine Störung bekannt ist, und die Messung ohne „-Skip Laufwerke“ wiederholen: die Antwortzeiten der Laufwerke, Profilcontainer und Freigaben wurden nicht gemessen, ein Engpass eines Laufwerks oder des Dateiservers ist deshalb nicht ausgeschlossen",
-          "where": "Betreuung des Dateiservers; Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
-          "sign": "Störung am Dateiserver zwischen {from} und {to} Uhr; Antwortzeiten je Laufwerk, Profilcontainer und Freigabe im Bericht der neuen Messung"
+          "text": "Dateiserver und Laufwerke als Ursache prüfen: ihre Antwortzeiten wurden nicht gemessen, ein Engpass dort ist deshalb nicht ausgeschlossen",
+          "where": "Betreuung des Dateiservers (Störung im Zeitraum des Vorfalls); nächste Messung ohne „-Skip Laufwerke“ (Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server)",
+          "sign": "Störung am Dateiserver im Zeitraum des Vorfalls; Antwortzeit eines Laufwerks, eines Profilcontainers oder einer Freigabe über dem Soll im Bericht der neuen Messung"
         },
         {
           "when": ["unmeasured.probe.connect"],
-          "text": "Bei der Betreuung der Anwendung, in der der Benutzer wartete, nachfragen, ob Datenbank, Proxy oder Dateiserver zwischen {from} und {to} Uhr langsam antworteten: die Antwortzeit der Gegenstellen wurde nicht gemessen, eine langsame Gegenstelle ist deshalb nicht ausgeschlossen",
+          "text": "Bei der Betreuung der Anwendung nachfragen, ob Datenbank, Proxy oder Dateiserver ab {from} Uhr langsam antworteten: die Antwortzeit der Gegenstellen wurde nicht gemessen, eine langsame Gegenstelle ist deshalb nicht ausgeschlossen",
           "where": "Betreuung der Anwendung und ihrer Gegenstellen",
           "sign": "Störung oder Lastspitze bei einer Gegenstelle im selben Zeitraum"
         },
         {
           "when": ["skipped.Ereignisse"],
           "text": "In der Ereignisanzeige nachsehen, ob im Zeitraum ein Virenscan lief oder AppLocker eine Ausführung blockiert hat: Ereignisse wurden bei dieser Messung nicht gemessen, beides ist deshalb nicht ausgeschlossen",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender (Operational) und AppLocker",
-          "sign": "Scan-Beginn (Ereignis 1000) oder Blockierung (Ereignis 8004, 8007) zwischen {from} und {to} Uhr"
+          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > Windows Defender > Betriebsbereit (Operational) und AppLocker",
+          "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr; Blockierung durch AppLocker (Ereignis 8004, 8007) im Zeitraum des Vorfalls"
         },
         {
-          "text": "Feststellen, in welchem Programm der Benutzer wartete, und ihn fragen, was er zu der Zeit getan hat",
+          "text": "Feststellen, in welcher Anwendung der Benutzer wartete, und ihn fragen, was er zu der Zeit getan hat",
           "where": "Vorfallsansicht, Abschnitte „Wer war betroffen“ und „Belege“ (Prozesse mit der höchsten Eingabeverzögerung); wurden Prozesse nicht gemessen: Rückfrage beim Benutzer",
-          "sign": "Vorgang, der das Programm beschäftigt: große Datei, Suche, Bericht, Makro, Druck oder Webseite"
+          "sign": "Vorgang, der die Anwendung beschäftigt: große Datei, Suche, Bericht, Makro, Druck oder Webseite"
         },
         {
           "text": "Dauer und Höhe der Verzögerung einordnen: ein einzelner kurzer Ausschlag ist meist ohne Bedeutung",
@@ -947,20 +987,20 @@
           "sign": "Dauer von wenigen Sekunden ohne Wiederholung (unbedeutend) oder Verzögerung über Minuten und wiederholt (weiter prüfen)"
         },
         {
-          "text": "Prüfen, ob dasselbe Programm bei diesem Benutzer öfter hängt",
+          "text": "Prüfen, ob dieselbe Anwendung bei diesem Benutzer öfter hängt",
           "where": "Lagebild dieses Berichts und anderer Tage: Verzögerungen und Vorfälle aus Ereignissen desselben Benutzers",
-          "sign": "Verzögerung, Hänger oder Absturz desselben Programms beim selben Benutzer an mehreren Tagen"
+          "sign": "Verzögerung, Hänger oder Absturz derselben Anwendung beim selben Benutzer an mehreren Tagen"
         }
       ],
       "remedies": [
         {
           "when": ["unmeasured.probe.connect"],
-          "text": "Gegenstellen der Anwendung (Datenbank, Proxy, Dateiserver) in die Datei endpoints.json neben dem Collector eintragen (Vorlage endpoints.example.json) und die Messung ohne „-Skip Gegenstellen“ wiederholen; ihre Antwortzeit wurde nicht gemessen",
+          "text": "Gegenstellen der Anwendung (Datenbank, Proxy, Dateiserver) in die Datei endpoints.json neben dem Collector eintragen (Vorlage endpoints.example.json) und die Messung ohne „-Skip Gegenstellen“ wiederholen",
           "precondition": "die Ursache hinter der Anwendung vermutet wird"
         },
         {
-          "text": "Programm, Erweiterungen und Daten des Benutzers prüfen lassen (Add-ins, sehr große Dateien, beschädigte Einstellungen)",
-          "precondition": "dasselbe Programm bei diesem Benutzer wiederholt hängt, bei anderen Benutzern aber nicht"
+          "text": "Anwendung, Erweiterungen und Daten des Benutzers prüfen lassen (Add-ins, sehr große Dateien, beschädigte Einstellungen)",
+          "precondition": "dieselbe Anwendung bei diesem Benutzer wiederholt hängt, bei anderen Benutzern aber nicht"
         }
       ],
       "contacts": [
@@ -974,16 +1014,16 @@
       ]
     },
     "chronic.network": {
-      "title": "Netzverbindung eines Benutzers dauerhaft langsam",
+      "title": "Netzstrecke eines Benutzers dauerhaft langsam",
       "short": "Netz",
-      "meaning": "Über die ganze Messung oder einen großen Teil davon ({duration}) war die Verbindung zwischen dem Endgerät eines Benutzers und dem Server langsamer als das Soll. Auffällig ist die Strecke zu diesem Benutzer, nicht der Server: Die Zeit geht meist auf dem Weg verloren, zum Beispiel im WLAN, im Heimnetz, im VPN oder auf einer schwachen Leitung. Betroffen ist nur die Sitzung dieses Benutzers; wer es ist, steht in den Belegen.",
+      "meaning": "Über längere Zeit ({duration}), möglicherweise über die ganze Messung, war die Netzstrecke zwischen dem Endgerät eines Benutzers und dem Server langsamer als das Soll. Auffällig ist diese Netzstrecke, nicht der Server: Die Zeit geht meist unterwegs verloren, zum Beispiel im WLAN, im Heimnetz, im VPN oder beim Internetanbieter. Betroffen ist nur die Sitzung dieses Benutzers; wer es ist, steht in den Belegen.",
       "impact": "Für diesen Benutzer erscheinen Eingaben und Bildänderungen verzögert; andere Benutzer merken davon nichts.",
       "checks": [
         {
           "when": ["unmeasured.ica.latency"],
-          "text": "In Citrix Director die Netzwerklatenz der betroffenen Sitzung mit dem ICA Round Trip vergleichen: die ICA-Netzwerklatenz wurde nicht gemessen, und der Round Trip enthält auch die Verarbeitung auf Endgerät und Server; eine Ursache dort ist deshalb nicht ausgeschlossen",
+          "text": "In Citrix Director die Netzwerklatenz der betroffenen Sitzung mit dem ICA Round Trip vergleichen: die ICA-Netzwerklatenz wurde nicht gemessen",
           "where": "Citrix Director, Sitzung des Benutzers (wer es ist, steht in den Belegen)",
-          "sign": "Netzwerklatenz nahe am Round Trip (Ursache im Netz) oder deutlich darunter (Endgerät oder Server)"
+          "sign": "Netzwerklatenz nahe am ICA Round Trip (Ursache im Netz) oder deutlich darunter (Ursache bei Endgerät oder Server, deren Verarbeitung der ICA Round Trip mit enthält)"
         },
         {
           "text": "Feststellen, welcher Benutzer betroffen ist und von wo und wie er arbeitet (Büro, Homeoffice, Außenstelle; WLAN oder Kabel; VPN)",
@@ -993,12 +1033,12 @@
         {
           "text": "Prüfen, ob andere Benutzer vom selben Standort oder über denselben Zugang ebenfalls erhöhte Werte haben",
           "where": "Expertenansicht, Reiter „Sitzungen“: ICA Round Trip je Sitzung; Citrix Director",
-          "sign": "Wert über dem Soll bei mehreren Benutzern desselben Standorts: Ursache in der Anbindung des Standorts, nicht beim einzelnen Benutzer"
+          "sign": "Wert über dem Soll bei mehreren Benutzern desselben Standorts: Ursache in der Netzstrecke des Standorts, nicht beim einzelnen Benutzer"
         },
         {
-          "text": "Verbindung des Benutzers über mehrere Tage ansehen",
+          "text": "Netzstrecke des Benutzers über mehrere Tage ansehen",
           "where": "Citrix Director, Sitzungen des Benutzers: ICA Round Trip im Verlauf",
-          "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Leitung) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
+          "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Netzstrecke) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
         }
       ],
       "remedies": [
@@ -1007,27 +1047,27 @@
           "precondition": "der Benutzer über WLAN arbeitet und der Wert nur bei ihm über dem Soll liegt"
         },
         {
-          "text": "Anbindung des Standorts oder den VPN-Zugang durch die Netzwerkbetreuung prüfen lassen",
+          "text": "Netzstrecke des Standorts oder den VPN-Zugang durch die Betreuung des Netzes prüfen lassen",
           "precondition": "mehrere Benutzer desselben Standorts oder Zugangs betroffen sind"
         }
       ],
       "contacts": [
         {
-          "text": "Netzwerkbetreuung oder Benutzerservice: mit Benutzer, Standort und dem gemessenen Wert aus den Belegen"
+          "text": "Betreuung des Netzes oder der Endgeräte: mit Benutzer, Standort und dem gemessenen Wert aus den Belegen"
         }
       ]
     },
     "chronic.resource": {
-      "title": "Server läuft dauerhaft an seiner Grenze",
+      "title": "Server dauerhaft über dem Soll",
       "short": "Server",
-      "meaning": "Über die ganze Messung oder einen großen Teil davon ({duration}) lag eine Ressource des Servers über ihrem Soll: Prozessor, Arbeitsspeicher, ein Laufwerk, eine Freigabe oder ein Profilcontainer; welche, nennt die Fachbezeichnung unter dem Titel. Das ist keine einzelne Störung, sondern ein Dauerzustand: Dem Server fehlt für seine übliche Last die Reserve, oder ein Programm belastet ihn ständig.",
-      "impact": "Der Server reagiert für die Benutzer dauerhaft zäher als nötig, und jede zusätzliche Last führt schneller zu spürbaren Störungen.",
+      "meaning": "Über längere Zeit ({duration}), möglicherweise über die ganze Messung, lag eine Ressource des Servers über ihrem Soll: Prozessor, Arbeitsspeicher, ein Laufwerk, eine Freigabe oder ein Profilcontainer; welche, nennt die Fachbezeichnung unter dem Titel. Das ist keine einzelne Störung, sondern ein Dauerzustand. Bei Prozessor und Arbeitsspeicher fehlt dem Server die Reserve für seine übliche Last; bei Laufwerk, Freigabe und Profilcontainer antwortet der Speicher dahinter (Speichersystem, Dateiserver, Netz) dauerhaft zu langsam; in beiden Fällen kann auch eine Anwendung die Ressource ständig belasten.",
+      "impact": "Anwendungen reagieren für die Benutzer dauerhaft zäher als nötig, und jede zusätzliche Last führt schneller zu spürbaren Störungen.",
       "checks": [
         {
           "when": ["cause.app"],
-          "text": "Prüfen, warum {app} in der Sitzung von {user} den Server dauerhaft belastet",
-          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Programme von Diensten: Registerkarte „Details“); Expertenansicht, Reiter „Prozesse“: Verlauf der Anwendung",
-          "sign": "Last der Anwendung über Stunden gleich hoch, auch ohne Arbeit des Benutzers"
+          "text": "Prüfen, was {app} in der Sitzung von {user} dauerhaft tut: die Anwendung hat über die ganze Dauer des Zustands den größten Anteil",
+          "where": "Task-Manager auf dem Server: Registerkarte „Benutzer“, Eintrag des Benutzers aufklappen (Prozesse von Diensten: Registerkarte „Details“); Expertenansicht, Reiter „Prozesse“: Verlauf der Anwendung",
+          "sign": "Anteil der Anwendung über die ganze Dauer des Zustands gleich hoch, auch ohne Arbeit des Benutzers"
         },
         {
           "when": ["cause.security"],
@@ -1036,10 +1076,64 @@
           "sign": "Dauerlast der Schutzsoftware ohne laufenden Scan"
         },
         {
-          "when": ["cause.none"],
-          "text": "Die Last verteilt sich auf viele Sitzungen: Auslegung des Servers prüfen",
+          "when": ["cause.none", "lead.cpu"],
+          "text": "Kein einzelner Verursacher: Auslegung des Servers für den Prozessor prüfen (Sitzungen je Server, Prozessoren der virtuellen Maschine)",
           "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“",
-          "sign": "Auslastung über Stunden über dem Soll bei üblicher Zahl von Sitzungen"
+          "sign": "Auslastung über die ganze Dauer des Zustands über dem Soll bei üblicher Zahl von Sitzungen"
+        },
+        {
+          "when": ["cause.none", "lead.memory"],
+          "text": "Kein einzelner Verursacher: Auslegung des Servers für den Arbeitsspeicher prüfen (Sitzungen je Server, Arbeitsspeicher der virtuellen Maschine)",
+          "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“",
+          "sign": "Auslastung über die ganze Dauer des Zustands über dem Soll bei üblicher Zahl von Sitzungen"
+        },
+        {
+          "when": ["lead.cpu"],
+          "text": "Auslastung des Prozessors mit den anderen Servern derselben Bereitstellungsgruppe vergleichen",
+          "where": "Citrix Director; Berichte der anderen Server",
+          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität)"
+        },
+        {
+          "when": ["lead.memory"],
+          "text": "Auslastung des Arbeitsspeichers mit den anderen Servern derselben Bereitstellungsgruppe vergleichen",
+          "where": "Citrix Director; Berichte der anderen Server",
+          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität)"
+        },
+        {
+          "when": ["lead.disk"],
+          "text": "Speichersystem unter der virtuellen Maschine prüfen lassen: {resource} antwortet dauerhaft langsamer als das Soll",
+          "where": "vCenter: Leistungsdiagramme der virtuellen Maschine und des Datenspeichers; Expertenansicht über die gesamte Messung: Diagramm „Datenträger-Antwortzeit“",
+          "sign": "Antwortzeit über die ganze Dauer des Zustands über dem Soll, auch in Zeiten mit wenigen Zugriffen"
+        },
+        {
+          "when": ["lead.disk"],
+          "text": "Prüfen, ob dauerhaftes Auslagern das Laufwerk belastet",
+          "where": "Expertenansicht, Reiter „Soll-Ist“: Zeilen „RAM-Auslastung“ und „Von Datenträger gelesene Seiten“",
+          "sign": "Wert der gelesenen Seiten über die ganze Dauer des Zustands über dem Soll"
+        },
+        {
+          "when": ["lead.share"],
+          "text": "Dateiserver und Netzstrecke dorthin prüfen lassen: {resource} antwortet dauerhaft langsamer als das Soll",
+          "where": "Überwachung des Dateiservers (Prozessor, Laufwerke, Sicherung); Expertenansicht über die gesamte Messung: Diagramm „Freigabe-Antwortzeit“",
+          "sign": "Antwortzeit über die ganze Dauer des Zustands über dem Soll, auch in Zeiten mit wenigen Zugriffen"
+        },
+        {
+          "when": ["lead.share"],
+          "text": "Prüfen, ob andere Server dieselbe Freigabe ebenfalls dauerhaft langsam erreichen",
+          "where": "Berichte anderer Server aus derselben Zeit; Überwachung des Dateiservers",
+          "sign": "Antwortzeit auch auf anderen Servern dauerhaft über dem Soll: Ursache beim Dateiserver oder im Netz, nicht auf diesem Server"
+        },
+        {
+          "when": ["lead.profile"],
+          "text": "Dateiserver mit dem Profilspeicher und die Netzstrecke dorthin prüfen lassen: {resource} antwortet dauerhaft langsamer als das Soll",
+          "where": "Überwachung des Dateiservers (Prozessor, Laufwerke, Sicherung); Expertenansicht über die gesamte Messung: Diagramme „Datenträger-Antwortzeit“ und „Freigabe-Antwortzeit“",
+          "sign": "Antwortzeit über die ganze Dauer des Zustands über dem Soll, auch in Zeiten mit wenigen Zugriffen"
+        },
+        {
+          "when": ["lead.profile"],
+          "text": "Größe dieses Profilcontainers prüfen und seine Antwortzeit mit der anderer Profilcontainer vergleichen",
+          "where": "Profilspeicher auf dem Dateiserver: Containerdateien; Expertenansicht über die gesamte Messung: Diagramm „Datenträger-Antwortzeit“",
+          "sign": "Nur dieser Profilcontainer dauerhaft langsam (Ursache bei seinem Inhalt oder seiner Größe) oder alle (Ursache beim Dateiserver oder im Netz)"
         },
         {
           "when": ["cause.nodata"],
@@ -1049,13 +1143,13 @@
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Sobald die Störung wieder auftritt, sofort nachsehen, welches Programm den Server am stärksten belastet: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
-          "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“ oder „Details“, nach der betroffenen Spalte sortiert",
+          "text": "Jetzt nachsehen, welche Anwendung den betroffenen Messwert am stärksten belastet: der Verursacher wurde nicht gemessen, weil Prozesse bei dieser Messung nicht erfasst wurden",
+          "where": "Task-Manager auf dem Server (Prozessor, Arbeitsspeicher) oder Ressourcenmonitor (resmon: Datenträger, Netzwerk), nach der betroffenen Spalte sortiert",
           "sign": "Prozess mit dauerhaft hohem Wert und Benutzer, in dessen Sitzung er läuft"
         },
         {
           "when": ["cause.notmeasured"],
-          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann: Prozesse wurden nicht gemessen",
+          "text": "Messung zur gleichen Tageszeit ohne „-Skip Prozesse“ wiederholen, damit der Bericht den Verursacher nennen kann",
           "where": "Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
           "sign": "Hauptverursacher mit Anwendung und Benutzer im Bericht der neuen Messung"
         },
@@ -1063,23 +1157,23 @@
           "text": "Verlauf des betroffenen Messwerts über die ganze Messung ansehen",
           "where": "Expertenansicht über die gesamte Messung: Kachel und Diagramm des Messwerts; Reiter „Soll-Ist“: Zeitanteile",
           "sign": "Wert fast durchgehend über dem Soll statt nur in einzelnen Spitzen"
-        },
-        {
-          "text": "Mit den anderen Servern derselben Bereitstellungsgruppe vergleichen",
-          "where": "Citrix Director; Berichte der anderen Server",
-          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung) oder aller Server (zu wenig Kapazität)"
         }
       ],
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "Ursache der Dauerlast von {app} beheben lassen (Aktualisierung, Einstellung, Neustart des Programms)",
+          "text": "Ursache der Dauerlast von {app} beheben lassen (Aktualisierung, Einstellung, Neustart der Anwendung)",
           "precondition": "{app} ohne Zutun des Benutzers ständig Last erzeugt"
         },
         {
-          "when": ["cause.none"],
-          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren und Arbeitsspeicher für die virtuelle Maschine)",
-          "precondition": "die Auslastung ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
+          "when": ["cause.none", "lead.cpu"],
+          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine)",
+          "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
+        },
+        {
+          "when": ["cause.none", "lead.memory"],
+          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Arbeitsspeicher für die virtuelle Maschine)",
+          "precondition": "der Arbeitsspeicher ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
         }
       ],
       "contacts": [
@@ -1089,7 +1183,19 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
+        },
+        {
+          "when": ["lead.disk"],
+          "text": "Betreuung von VMware und Speichersystem: mit Zeitraum, Laufwerk und gemessener Antwortzeit"
+        },
+        {
+          "when": ["lead.share"],
+          "text": "Betreuung von Dateiserver und Netz: mit Zeitraum, Freigabe und gemessener Antwortzeit"
+        },
+        {
+          "when": ["lead.profile"],
+          "text": "Betreuung von Dateiserver und Netz: mit Zeitraum, Benutzer und gemessener Antwortzeit des Profilcontainers"
         }
       ]
     },
@@ -1100,12 +1206,6 @@
       "impact": "Wer mit der Anwendung arbeitete, verlor das offene Fenster und möglicherweise nicht gespeicherte Arbeit.",
       "checks": [
         {
-          "when": ["pattern.overlap"],
-          "text": "Der Absturz fiel in den Zeitraum eines Leistungsvorfalls: zuerst dessen Anleitung abarbeiten",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
-          "sign": "Engpass oder Verzögerung im selben Zeitraum"
-        },
-        {
           "when": ["pattern.resource"],
           "text": "Speichermangel als Ursache prüfen: der Absturz fiel in eine Zeit mit knappem Arbeitsspeicher",
           "where": "Lagebild: Vorfall „Arbeitsspeicher des Servers knapp“ im selben Zeitraum; Expertenansicht, Reiter „Soll-Ist“: RAM- und Commit-Auslastung",
@@ -1113,21 +1213,21 @@
         },
         {
           "when": ["pattern.afterhang"],
-          "text": "Die Anwendung reagierte vor dem Absturz nicht mehr und wurde beendet: die Ursache wie bei einem Hänger suchen (worauf wartete das Programm)",
+          "text": "Die Anwendung reagierte vor dem Absturz nicht mehr und wurde beendet: die Ursache wie bei einem Hänger suchen (worauf wartete die Anwendung)",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Wurde nach Nichtreagieren beendet“; Lagebild: Vorfälle „Anwendung reagierte nicht mehr“",
           "sign": "Hänger derselben Anwendung in derselben Sitzung höchstens zwei Minuten vor dem Absturz"
         },
         {
           "when": ["pattern.sharedmodule"],
-          "text": "Das Modul {module} war bei mehreren Anwendungen die Absturzstelle: feststellen, zu welchem Produkt es gehört (Add-in, Erweiterung, gemeinsame Komponente)",
-          "where": "Vorfallsansicht, Abschnitt „Belege“: fehlerhaftes Modul; auf dem Server: Eigenschaften der Datei, Registerkarte „Details“",
+          "text": "Dasselbe Modul war bei mehreren Anwendungen die Absturzstelle (welches, steht im Abschnitt „Wer oder was hat es verursacht“): feststellen, zu welchem Produkt es gehört (Add-in, Erweiterung, gemeinsame Komponente)",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Modul und betroffene Anwendungen; auf dem Server: Eigenschaften der Datei, Registerkarte „Details“",
           "sign": "Hersteller und Produktname in den Eigenschaften der Datei"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Das fehlerhafte Modul {module} gehört zu einem installierten Druckertreiber: prüfen, ob die Richtlinie „Isolate print drivers from applications“ abgeschaltet ist; sie verringert das Risiko, dass ein Fehler im Druckertreiber die Anwendung beendet",
+          "text": "Ein fehlerhaftes Modul gehört zu einem installierten Druckertreiber (welches, steht im Abschnitt „Wer oder was hat es verursacht“): prüfen, ob die Richtlinie „Isolate print drivers from applications“ abgeschaltet ist",
           "where": "Gruppenrichtlinie: Computerkonfiguration > Administrative Vorlagen > Drucker; Registrierung: HKLM\\Software\\Policies\\Microsoft\\Windows NT\\Printers, Wert ApplicationDriverIsolation; welcher Treiber beteiligt ist: Expertenansicht, Reiter „Drucken“",
-          "sign": "Richtlinie deaktiviert; sie wirkt nur bei Anwendungen, die die Isolierung unterstützen, und erst nach deren Neustart",
+          "sign": "Richtlinie deaktiviert; sie verringert das Risiko, dass ein Fehler im Druckertreiber die Anwendung beendet, wirkt aber nur bei Anwendungen, die die Isolierung unterstützen, und erst nach deren Neustart (Microsoft beschreibt die Richtlinie für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
@@ -1141,12 +1241,12 @@
           "when": ["pattern.printdriver", "driver.vendor.Brother"],
           "text": "Modell des Brother-Geräts in der „Citrix Compatible Device List“ von Brother nachschlagen; die Liste beruht auf eigenen Tests von Brother und ist keine Zusage",
           "where": "Website von Brother (support.brother.com): Citrix Compatible Device List",
-          "sign": "Modell in der Liste mit dem Status „Available“",
+          "sign": "Modell fehlt in der Liste oder hat nicht den Status „Available“: dann liegt von Brother keine Aussage zu Citrix vor",
           "source": "Brother: Citrix® Compatible Device List"
         },
         {
           "when": ["pattern.securitymodule"],
-          "text": "Das fehlerhafte Modul {module} gehört zur Schutzsoftware: deren Meldungen zur Uhrzeit des Absturzes ansehen",
+          "text": "Ein fehlerhaftes Modul gehört zur Schutzsoftware (welches, steht im Abschnitt „Wer oder was hat es verursacht“): deren Meldungen zur Uhrzeit des Absturzes ansehen",
           "where": "Verwaltung der Schutzsoftware: Meldungen und blockierte Vorgänge; Vorfallsansicht, Abschnitt „Belege“",
           "sign": "Meldung der Schutzsoftware zur selben Zeit und zur selben Anwendung, auch über einen blockierten Vorgang"
         },
@@ -1163,8 +1263,14 @@
           "sign": "Absturz nur mit den Daten oder dem Profil dieses Benutzers"
         },
         {
+          "when": ["pattern.overlap"],
+          "text": "Der Absturz fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
+          "sign": "Engpass oder Verzögerung im selben Zeitraum"
+        },
+        {
           "when": ["pattern.companion"],
-          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Absturz meldete Windows einen Datenträgerfehler, einen Verbindungsabbruch zum Dateiserver, einen Profilfehler oder die Schutzsoftware einen Vorgang",
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Absturz gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
         },
@@ -1175,21 +1281,15 @@
           "sign": "Modul oder Fehlercode, der bei jedem Absturz derselbe ist"
         },
         {
-          "when": ["pattern.unchecked"],
-          "text": "Absturz von Hand über Anwendung, Version, fehlerhaftes Modul und Fehlercode eingrenzen: mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie"
-        },
-        {
-          "when": ["skipped.Prozesse"],
-          "text": "Betroffene Benutzer über die Ereignisanzeige oder ihre Meldungen feststellen: Prozesse wurden nicht gemessen, Sitzung und Benutzer des Vorfalls sind deshalb nicht geprüft",
-          "where": "Ereignisanzeige, Protokoll „Anwendung“: Einträge zur Uhrzeit des Vorfalls; Meldungen der Benutzer",
-          "sign": "Benutzername im Ereignis oder Meldung eines Benutzers zur selben Zeit"
+          "when": ["skipped.Prozesse", "affected.unknown", "pattern.unchecked"],
+          "text": "Betroffene Benutzer über ihre Meldungen feststellen: Prozesse wurden nicht gemessen, deshalb ist nicht jeder Absturz einem Benutzer und einer Sitzung zugeordnet",
+          "where": "Meldungen der Benutzer zur Uhrzeit des Vorfalls; Ereignisanzeige, Protokoll „Anwendung“: Einträge zur selben Uhrzeit",
+          "sign": "Meldung eines Benutzers zur selben Zeit; Benutzername, wo das Ereignis ihn nennt"
         },
         {
           "when": ["before"],
-          "text": "Der Absturz liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob das Problem seither wieder aufgetreten ist",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild",
+          "text": "Prüfen, ob der Absturz seit Beginn der Messung wieder aufgetreten ist",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
           "sign": "Absturz derselben Anwendung auch während der Messung"
         },
         {
@@ -1199,13 +1299,19 @@
         },
         {
           "text": "Betroffene Benutzer fragen, was sie unmittelbar vor dem Absturz getan haben",
-          "where": "Vorfallsansicht, Abschnitt „Wer war betroffen“; Rückfrage beim Benutzer, telefonisch oder über das Ticket",
+          "where": "Vorfallsansicht, Abschnitt „Wer war betroffen“; nennt der Bericht keinen Benutzer: Meldungen der Benutzer zur Uhrzeit des Vorfalls; Rückfrage beim Benutzer, telefonisch oder über das Ticket",
           "sign": "Arbeitsschritt, der jedem Absturz vorausgeht (Drucken, Öffnen einer bestimmten Datei, Export)"
         },
         {
           "text": "Prüfen, ob derselbe Absturz an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „Anwendung“",
           "sign": "Absturz derselben Anwendung im selben Modul an mehreren Tagen"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Absturz von Hand über Anwendung, Version, fehlerhaftes Modul und Fehlercode eingrenzen: mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         }
       ],
       "remedies": [
@@ -1216,19 +1322,19 @@
         },
         {
           "when": ["pattern.sharedmodule"],
-          "text": "Produkt, zu dem {module} gehört, aktualisieren oder zum Test abschalten",
+          "text": "Produkt, zu dem das gemeinsame Modul gehört, aktualisieren oder zum Test abschalten",
           "precondition": "das Modul zu einem Add-in oder einer Erweiterung gehört, die sich abschalten lässt"
         },
         {
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen",
-          "precondition": "die Abstürze immer das Modul dieses Treibers nennen und Clientdrucker den Treiber automatisch auf den Server bringen",
+          "precondition": "die Abstürze immer das Modul dieses Treibers nennen und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren)",
-          "precondition": "der Hersteller eine neuere Version des Treibers anbietet",
+          "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
@@ -1239,8 +1345,8 @@
         },
         {
           "when": ["pattern.securitymodule"],
-          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Verantwortlichen klären",
-          "precondition": "das Modul der Schutzsoftware bei jedem dieser Abstürze genannt ist"
+          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Betreuung klären",
+          "precondition": "ein Modul der Schutzsoftware bei jedem dieser Abstürze genannt ist"
         },
         {
           "when": ["pattern.manyusers"],
@@ -1261,7 +1367,7 @@
         },
         {
           "when": ["pattern.securitymodule"],
-          "text": "Verantwortliche für die Schutzsoftware: mit Uhrzeit, Anwendung und dem Modul {module}"
+          "text": "Betreuung der Schutzsoftware: mit Uhrzeit, Anwendung und dem Modul aus den Belegen"
         },
         {
           "text": "Betreuung oder Hersteller der abgestürzten Anwendung (bei der Fachanwendung deren Betreuung): mit Uhrzeit, Version, fehlerhaftem Modul und Fehlercode aus den Belegen"
@@ -1271,26 +1377,14 @@
     "hang": {
       "title": "Anwendung reagierte nicht mehr",
       "short": "Hänger",
-      "meaning": "Eine Anwendung reagierte nicht mehr auf Eingaben („Keine Rückmeldung“) und wurde daraufhin beendet. Meist wartet das Programm in so einem Moment auf etwas, das nicht antwortet: eine Datei auf dem Dateiserver, eine Datenbank, einen Drucker oder ein anderes Programm. Der Bericht fasst Hänger derselben Anwendung zusammen, die zeitlich nah beieinanderliegen.",
+      "meaning": "Eine Anwendung reagierte nicht mehr auf Eingaben („Keine Rückmeldung“) und wurde daraufhin beendet. Oft wartet die Anwendung in so einem Moment auf etwas, das nicht antwortet: eine Datei auf dem Dateiserver, eine Datenbank, einen Drucker oder eine andere Anwendung. Der Bericht fasst Hänger derselben Anwendung zusammen, die zeitlich nah beieinanderliegen.",
       "impact": "Wer mit der Anwendung arbeitete, konnte nicht weiterarbeiten und verlor beim Beenden möglicherweise nicht gespeicherte Arbeit.",
       "checks": [
-        {
-          "when": ["pattern.overlap"],
-          "text": "Der Hänger fiel in den Zeitraum eines Leistungsvorfalls: zuerst dessen Anleitung abarbeiten",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
-          "sign": "Engpass oder Verzögerung im selben Zeitraum"
-        },
         {
           "when": ["pattern.resource"],
           "text": "Speichermangel als Ursache prüfen: der Hänger fiel in eine Zeit mit knappem Arbeitsspeicher",
           "where": "Lagebild: Vorfall „Arbeitsspeicher des Servers knapp“ im selben Zeitraum; Expertenansicht, Reiter „Soll-Ist“: RAM- und Commit-Auslastung",
           "sign": "Arbeitsspeicher-Vorfall kurz vor dem Ereignis oder Fehlercode für eine fehlgeschlagene Speicheranforderung"
-        },
-        {
-          "when": ["pattern.companion"],
-          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Hänger meldete Windows einen Datenträgerfehler, einen Verbindungsabbruch zum Dateiserver, einen Profilfehler oder die Schutzsoftware einen Vorgang",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
         },
         {
           "when": ["pattern.manyusers"],
@@ -1305,26 +1399,32 @@
           "sign": "Hänger nur mit den Daten oder dem Profil dieses Benutzers"
         },
         {
-          "when": ["pattern.unchecked"],
-          "text": "Hänger von Hand eingrenzen (Arbeitsschritt, Uhrzeit, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie"
+          "when": ["pattern.overlap"],
+          "text": "Der Hänger fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
+          "sign": "Engpass oder Verzögerung im selben Zeitraum"
         },
         {
-          "when": ["skipped.Prozesse"],
-          "text": "Betroffene Benutzer über die Ereignisanzeige oder ihre Meldungen feststellen: Prozesse wurden nicht gemessen, Sitzung und Benutzer des Vorfalls sind deshalb nicht geprüft",
-          "where": "Ereignisanzeige, Protokoll „Anwendung“: Einträge zur Uhrzeit des Vorfalls; Meldungen der Benutzer",
-          "sign": "Benutzername im Ereignis oder Meldung eines Benutzers zur selben Zeit"
+          "when": ["pattern.companion"],
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Hänger gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+        },
+        {
+          "when": ["skipped.Prozesse", "affected.unknown", "pattern.unchecked"],
+          "text": "Betroffene Benutzer über ihre Meldungen feststellen: Prozesse wurden nicht gemessen, deshalb ist nicht jeder Hänger einem Benutzer und einer Sitzung zugeordnet",
+          "where": "Meldungen der Benutzer zur Uhrzeit des Vorfalls; Ereignisanzeige, Protokoll „Anwendung“: Einträge zur selben Uhrzeit",
+          "sign": "Meldung eines Benutzers zur selben Zeit; Benutzername, wo das Ereignis ihn nennt"
         },
         {
           "when": ["before"],
-          "text": "Der Hänger liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob das Problem seither wieder aufgetreten ist",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild",
+          "text": "Prüfen, ob der Hänger seit Beginn der Messung wieder aufgetreten ist",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
           "sign": "Hänger derselben Anwendung auch während der Messung"
         },
         {
-          "text": "Betroffene Benutzer fragen, was sie taten, als das Programm stehen blieb",
-          "where": "Vorfallsansicht, Abschnitt „Wer war betroffen“; Rückfrage beim Benutzer, telefonisch oder über das Ticket",
+          "text": "Betroffene Benutzer fragen, was sie taten, als die Anwendung stehen blieb",
+          "where": "Vorfallsansicht, Abschnitt „Wer war betroffen“; nennt der Bericht keinen Benutzer: Meldungen der Benutzer zur Uhrzeit des Vorfalls; Rückfrage beim Benutzer, telefonisch oder über das Ticket",
           "sign": "Arbeitsschritt mit Zugriff auf Netz, Datenbank, Drucker oder eine große Datei, der jedem Hänger vorausgeht"
         },
         {
@@ -1336,6 +1436,12 @@
           "text": "Prüfen, ob derselbe Hänger an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „Anwendung“",
           "sign": "Hänger derselben Anwendung an mehreren Tagen"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Hänger von Hand eingrenzen (Arbeitsschritt, Uhrzeit, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         }
       ],
       "remedies": [
@@ -1368,33 +1474,27 @@
       "impact": "Funktionen, die der Dienst bereitstellt, standen bis zu seinem Neustart nicht zur Verfügung.",
       "checks": [
         {
-          "when": ["pattern.overlap"],
-          "text": "Der Ausfall fiel in den Zeitraum eines Leistungsvorfalls: zuerst dessen Anleitung abarbeiten",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
-          "sign": "Engpass oder Verzögerung im selben Zeitraum"
-        },
-        {
           "when": ["pattern.resource"],
           "text": "Speichermangel als Ursache prüfen: der Ausfall fiel in eine Zeit mit knappem Arbeitsspeicher",
           "where": "Lagebild: Vorfall „Arbeitsspeicher des Servers knapp“ im selben Zeitraum; Expertenansicht, Reiter „Soll-Ist“: RAM- und Commit-Auslastung",
           "sign": "Arbeitsspeicher-Vorfall kurz vor dem Ereignis oder Fehlercode für eine fehlgeschlagene Speicheranforderung"
         },
         {
+          "when": ["pattern.overlap"],
+          "text": "Der Ausfall fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
+          "sign": "Engpass oder Verzögerung im selben Zeitraum"
+        },
+        {
           "when": ["pattern.companion"],
-          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Ausfall meldete Windows einen Datenträgerfehler, einen Verbindungsabbruch zum Dateiserver, einen Profilfehler oder die Schutzsoftware einen Vorgang",
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Ausfall gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
         },
         {
-          "when": ["pattern.unchecked"],
-          "text": "Ausfall von Hand eingrenzen (Meldungstext, Uhrzeit, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie"
-        },
-        {
           "when": ["before"],
-          "text": "Der Ausfall liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob das Problem seither wieder aufgetreten ist",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild",
+          "text": "Prüfen, ob der Dienst seit Beginn der Messung wieder ausgefallen ist",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
           "sign": "Ausfall desselben Dienstes auch während der Messung"
         },
         {
@@ -1416,6 +1516,12 @@
           "text": "Prüfen, ob der Dienst an weiteren Tagen ausgefallen ist",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“",
           "sign": "Ereignis 7031 oder 7034 zum selben Dienst an mehreren Tagen"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Ausfall von Hand eingrenzen (Meldungstext, Uhrzeit, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         }
       ],
       "remedies": [
@@ -1438,13 +1544,20 @@
     "print": {
       "title": "Drucken gestört",
       "short": "Drucken",
-      "meaning": "Windows hat einen Fehler beim Drucken festgehalten: einen Treiberfehler, einen fehlgeschlagenen Druckauftrag oder einen Ausfall der Druckwarteschlange. Die Druckwarteschlange ist ein Dienst für alle Sitzungen des Servers; fällt sie aus, kann bis zu ihrem Neustart niemand auf diesem Server drucken. Was genau gemeldet wurde, steht in den Belegen des Vorfalls.",
-      "impact": "Druckaufträge gingen verloren oder blieben liegen; bei einem Ausfall der Druckwarteschlange konnte zeitweise kein Benutzer des Servers drucken.",
+      "meaning": "Windows hat einen Fehler beim Drucken festgehalten: einen Treiberfehler, einen fehlgeschlagenen Druckauftrag oder einen Ausfall des Dienstes „Druckwarteschlange“. Dieser Dienst nimmt die Druckaufträge aller Sitzungen des Servers an; fällt er aus, kann bis zu seinem Neustart niemand auf diesem Server drucken. Was genau gemeldet wurde, steht in den Belegen des Vorfalls.",
+      "impact": "Druckaufträge können verloren gegangen oder liegen geblieben sein; bei einem Ausfall des Dienstes „Druckwarteschlange“ konnte zeitweise kein Benutzer des Servers drucken.",
       "checks": [
         {
+          "when": ["spooler.crash"],
+          "text": "Prüfen, ob der Dienst „Druckwarteschlange“ wieder läuft, und ihn sonst starten",
+          "where": "Dienste-Konsole (services.msc) auf dem Server",
+          "sign": "Status des Dienstes nicht „Wird ausgeführt“",
+          "source": "Citrix: Troubleshooting"
+        },
+        {
           "when": ["pattern.printdriver"],
-          "text": "Das fehlerhafte Modul {module} gehört zu einem installierten Druckertreiber: feststellen, welcher Treiber beteiligt ist und ob jeder Absturz dieses Modul nennt",
-          "where": "Expertenansicht, Reiter „Drucken“: Treiberliste, Spalte „An einem Vorfall beteiligt“; Vorfallsansicht, Abschnitt „Belege“; Ereignisanzeige, Protokoll „Anwendung“",
+          "text": "Ein fehlerhaftes Modul gehört zu einem installierten Druckertreiber (welches, steht im Abschnitt „Wer oder was hat es verursacht“): feststellen, welcher Treiber beteiligt ist und ob jeder Absturz dieses Modul nennt",
+          "where": "Vorfallsansicht, Abschnitte „Wer oder was hat es verursacht“ und „Belege“; Expertenansicht, Reiter „Drucken“: Treiberliste, Spalte „An einem Vorfall beteiligt“; Ereignisanzeige, Protokoll „Anwendung“",
           "sign": "Eintrag „beteiligt“ bei einem Treiber; dasselbe Modul bei jedem Absturz",
           "source": "Citrix: Troubleshooting"
         },
@@ -1456,30 +1569,65 @@
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
+          "when": ["pattern.resource"],
+          "text": "Speichermangel als Ursache prüfen: der Druckfehler fiel in eine Zeit mit knappem Arbeitsspeicher",
+          "where": "Lagebild: Vorfall „Arbeitsspeicher des Servers knapp“ im selben Zeitraum; Expertenansicht, Reiter „Soll-Ist“: RAM- und Commit-Auslastung",
+          "sign": "Arbeitsspeicher-Vorfall kurz vor dem Ereignis oder Fehlercode für eine fehlgeschlagene Speicheranforderung",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
+          "when": ["pattern.securitymodule"],
+          "text": "Ein fehlerhaftes Modul gehört zur Schutzsoftware (welches, steht im Abschnitt „Wer oder was hat es verursacht“): deren Meldungen zur Uhrzeit des Druckfehlers ansehen",
+          "where": "Verwaltung der Schutzsoftware: Meldungen und blockierte Vorgänge; Vorfallsansicht, Abschnitt „Belege“",
+          "sign": "Meldung der Schutzsoftware zur selben Zeit, auch über einen blockierten Vorgang",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
+          "when": ["pattern.oneuser"],
+          "text": "Nur {user} ist betroffen, und das wiederholt: Drucker, Druckeinstellungen und Profil dieses Benutzers prüfen",
+          "where": "Sitzung des Benutzers: zugeordnete Drucker und Standarddrucker; zum Vergleich derselbe Ausdruck mit einem anderen Benutzer",
+          "sign": "Druckfehler nur bei diesem Benutzer oder nur mit einem seiner Drucker",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
+          "when": ["pattern.overlap"],
+          "text": "Der Druckfehler fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
+          "sign": "Engpass oder Verzögerung im selben Zeitraum",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
+          "when": ["pattern.companion"],
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Druckfehler gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
           "when": ["driver.shared"],
-          "text": "Treiberisolierung von {driver} prüfen: der Treiber läuft im Prozess der Druckwarteschlange oder teilt sich einen Prozess mit anderen Treibern",
-          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“; ändern lässt sich die Einstellung je Treiber in der Druckverwaltung",
-          "sign": "Isolierung „keine“ (Vorgabe für Treiber, deren Installationsdatei die Isolierung nicht als unterstützt angibt) oder „gemeinsam“",
+          "text": "Treiberisolierung von {driver} prüfen: der Treiber läuft im Prozess des Dienstes „Druckwarteschlange“ oder teilt sich einen Prozess mit anderen Treibern",
+          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“; ändern lässt sich die Einstellung je Treiber in der Druckverwaltung (Treiber, Kontextmenü des Treibers)",
+          "sign": "Isolierung „keine“ (Standardeinstellung für Treiber, deren Installationsdatei die Isolierung nicht als unterstützt angibt) oder „gemeinsam“",
           "source": "Microsoft: Printer driver isolation"
         },
         {
           "when": ["driver.isolated", "spooler.crash"],
-          "text": "Einordnen, was abgestürzt ist: der Treiber {driver} läuft isoliert in einem eigenen Prozess, ein Fehler dieses Treibers sollte die Druckwarteschlange selbst deshalb nicht beenden",
+          "text": "Einordnen, was abgestürzt ist: der Treiber {driver} läuft isoliert in einem eigenen Prozess, ein Fehler dieses Treibers sollte den Dienst „Druckwarteschlange“ selbst deshalb nicht beenden",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Name des abgestürzten Prozesses; Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“",
-          "sign": "Absturz nur des Treiberprozesses (die Isolierung hat gewirkt) oder Ausfall der Druckwarteschlange trotz Isolierung",
+          "sign": "Absturz nur des Treiberprozesses (PrintIsolationHost.exe; die Isolierung hat gewirkt) oder Ausfall des Dienstes „Druckwarteschlange“ (spoolsv.exe) trotz Isolierung (Microsoft beschreibt diese Wirkung der Isolierung für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
           "when": ["spooler.crash"],
           "text": "Gruppenrichtlinie zur Treiberisolierung prüfen",
           "where": "Gruppenrichtlinie: Computerkonfiguration > Administrative Vorlagen > Drucker; Registrierung: HKLM\\Software\\Policies\\Microsoft\\Windows NT\\Printers, Wert PrintDriverIsolationExecutionPolicy",
-          "sign": "Richtlinie „Execute print drivers in isolated processes“ deaktiviert: dann laufen alle Treiber im Prozess der Druckwarteschlange, und ein Treiberfehler beendet sie",
+          "sign": "Richtlinie „Execute print drivers in isolated processes“ deaktiviert: dann laufen alle Treiber im Prozess des Dienstes „Druckwarteschlange“, und ein Treiberfehler kann ihn beenden (Microsoft beschreibt die Richtlinie für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
           "when": ["spooler.crash"],
           "text": "Stand der Druckertreiber und Druckkomponenten mit den aktuellen Versionen der Hersteller vergleichen",
-          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Version“; Download-Seiten der Druckerhersteller",
+          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Version“ (wurde Drucken nicht gemessen: Druckverwaltung des Servers, Treiber); Download-Seiten der Druckerhersteller",
           "sign": "Version auf dem Server älter als die aktuelle des Herstellers",
           "source": "Microsoft: Troubleshoot printing issues caused by Print Spooler service not running"
         },
@@ -1501,35 +1649,28 @@
           "when": ["driver.vendor.Brother"],
           "text": "Modell des Brother-Geräts in der „Citrix Compatible Device List“ von Brother nachschlagen; die Liste beruht auf eigenen Tests von Brother und ist keine Zusage",
           "where": "Website von Brother (support.brother.com): Citrix Compatible Device List",
-          "sign": "Modell in der Liste mit dem Status „Available“",
+          "sign": "Modell fehlt in der Liste oder hat nicht den Status „Available“: dann liegt von Brother keine Aussage zu Citrix vor",
           "source": "Brother: Citrix® Compatible Device List"
-        },
-        {
-          "when": ["driver.vendor.Brother"],
-          "text": "Prüfen, welchen Treiber die Druckwarteschlangen der Schwarzweiß-Lasergeräte von Brother verwenden: für Citrix MetaFrame und Windows Terminal Server nannte Brother seine „Generic PCL“-Treiber als Empfehlung (einfacher und mit weniger Datenmenge, aber mit weniger Funktionen); die Seite ist von 2014 und wird nicht mehr gepflegt",
-          "where": "Expertenansicht, Reiter „Drucken“: Treiberliste; Download-Seite des Modells bei Brother (Angebot für Windows Server 2022)",
-          "sign": "Treiber des Modells mit vollem Funktionsumfang statt „Brother PCL5e Driver“",
-          "source": "Brother: What is a \"Generic PCL Driver\"?"
         },
         {
           "when": ["spooler.crash"],
           "text": "Spool-Ordner und Abhängigkeiten des Dienstes „Druckwarteschlange“ prüfen",
-          "where": "Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS (oder der Ordner aus dem Registrierungswert DefaultSpoolDirectory); Registrierung: HKLM\\SYSTEM\\CurrentControlSet\\Services\\Spooler, Wert DependOnService",
-          "sign": "Datei (SHD, SPL), die nach dem Neustart des Dienstes liegen bleibt; Eintrag neben RpcSs im Wert DependOnService",
+          "where": "Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS (oder der Ordner aus dem Registrierungswert DefaultSpoolDirectory); Registrierung: HKLM\\SYSTEM\\CurrentControlSet\\Services\\Spooler, Wert DependOnService (zum Vergleich: derselbe Wert auf einem Server ohne Druckproblem)",
+          "sign": "Datei (SHD, SPL), die nach dem Neustart des Dienstes liegen bleibt; Eintrag im Wert DependOnService, den ein Server ohne Druckproblem nicht hat (Microsoft nennt als Standard nur RpcSs)",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
           "when": ["spooler.crash", "driver.vendor.Brother"],
-          "text": "Prüfen, ob der Dienst „Druckwarteschlange“ auf den Starttyp „Automatisch“ gestellt ist und läuft",
+          "text": "Prüfen, ob der Dienst „Druckwarteschlange“ auf den Starttyp „Automatisch“ gestellt ist und sich starten lässt",
           "where": "Dienste-Konsole (services.msc) auf dem Server",
-          "sign": "Dienst, der sich nicht starten lässt: laut Brother ein Problem des Rechners oder ein Konflikt mit einem anderen Treiber",
+          "sign": "Dienst, der sich nicht starten lässt: laut Brother ein Problem des Rechners oder ein Konflikt mit einem anderen Treiber (die Seite von Brother nennt Windows XP bis 10)",
           "source": "Brother: \"User Intervention Required\" when attempting to print"
         },
         {
           "when": ["pattern.printdriver"],
           "text": "Citrix-Richtlinie „Universal print driver usage“ prüfen: sie bestimmt, ob Clientdrucker mit dem Herstellertreiber oder mit dem Citrix-Universaltreiber angelegt werden",
           "where": "Citrix Studio oder Web Studio: Richtlinien, Einstellungen zum Drucken (Treiber)",
-          "sign": "Einstellung „Use universal printing only if requested driver is unavailable“ (Voreinstellung): der Herstellertreiber hat Vorrang; mit „Use universal printing only“ nur noch Universaltreiber",
+          "sign": "Einstellung „Use universal printing only if requested driver is unavailable“ (Standardeinstellung): der Herstellertreiber hat Vorrang; mit „Use universal printing only“ nur noch Universaltreiber",
           "source": "Citrix: Drivers policy settings"
         },
         {
@@ -1543,120 +1684,93 @@
           "when": ["queue.stuck"],
           "text": "Bei Aufträgen, die hängen bleiben oder fehlschlagen: eingrenzen, an welchem Treiber oder welcher Druckwarteschlange es liegt, und im Spool-Ordner nach alten Dateien suchen",
           "where": "Expertenansicht, Reiter „Drucken“: Druckwarteschlangen mit Auftrags- oder „nicht bereit“-Fehlern; Testdruck aus dem Editor über eine Druckwarteschlange mit anderem Treiber; Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS",
-          "sign": "Fehler nur mit einem bestimmten Treiber oder nur an einer Druckwarteschlange",
+          "sign": "Fehler nur mit einem bestimmten Treiber oder nur an einer Druckwarteschlange; Datei (SHD, SPL) im Spool-Ordner, die älter ist als der letzte Neustart des Dienstes",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
           "when": ["queue.stuck", "driver.vendor.HP"],
-          "text": "Bei Druckwarteschlangen von HP mit Fehlern oder dem Status „Offline“ den Anschluss prüfen: SNMP-Einstellungen und Anschlusstyp",
+          "text": "Bei Druckwarteschlangen mit dem HP Universal Print Driver und dem Status „Offline“ den Anschluss prüfen: SNMP-Einstellungen und Anschlusstyp",
           "where": "Druckereigenschaften > Anschlüsse > Anschluss konfigurieren: „SNMP-Status aktiviert“ und Communityname; SNMP-Einstellungen am Drucker",
-          "sign": "SNMP nur auf einer Seite aktiviert oder Communityname anders als am Drucker; WSD-Anschluss (laut HP nur für Direktverbindungen, nicht für Druckserver, Terminalserver oder Citrix)",
+          "sign": "SNMP nur auf einer Seite aktiviert oder Communityname anders als am Drucker; WSD-Anschluss (für den HP Universal Print Driver laut HP nur für Direktverbindungen, nicht für Druckserver, Terminalserver oder Citrix)",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
           "when": ["queue.stuck", "driver.vendor.Brother"],
-          "text": "In den Druckwarteschlangen der Brother-Geräte nach Aufträgen suchen, die stehen bleiben",
+          "text": "In den Druckwarteschlangen der Brother-Geräte mit Netzwerkanschluss nach Aufträgen suchen, die stehen bleiben",
           "where": "Druckwarteschlange des Druckers auf dem Server",
-          "sign": "Auftrag im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“",
+          "sign": "Auftrag im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ (die Seite von Brother nennt Windows Vista bis 10)",
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },
         {
           "when": ["driver.vendor.HP"],
-          "text": "Für die Eingrenzung nach HP festhalten, welcher Treiber den Clientdruckern zugeordnet ist (Citrix-Universaltreiber, HP Universal Print Driver oder Treiber des Modells) und ob das Problem auch außerhalb einer Sitzung auftritt; zum Vergleich eine neue Druckwarteschlange mit dem aktuellen HP Universal Print Driver in Standardeinstellung testen",
-          "where": "Citrix-Richtlinien zur Treiberzuordnung; Arbeitsplatz oder Testsystem außerhalb einer Citrix-Sitzung",
-          "sign": "Fehler nur in der Sitzung oder nur mit einem bestimmten Treiber; Fehler mit der neuen Druckwarteschlange nicht mehr vorhanden",
+          "text": "Für die Eingrenzung nach HP festhalten, welcher Treiber den Clientdruckern zugeordnet ist und ob das Problem auch außerhalb einer Sitzung auftritt",
+          "where": "Citrix-Richtlinien zur Treiberzuordnung; Arbeitsplatz außerhalb einer Citrix-Sitzung; zum Vergleich ein sauberes Testsystem mit dem aktuellen HP Universal Print Driver in Standardeinstellung",
+          "sign": "Zuordnung zum Citrix-Universaltreiber, zum HP Universal Print Driver oder zum Treiber des Modells; Fehler nur in der Sitzung; Fehler auf dem Testsystem nicht vorhanden",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
-          "when": ["driver.vendor.HP", "driver.v4"],
-          "text": "Der beteiligte HP-Treiber ist ein Treiber der Bauart Typ 4: prüfen, ob derselbe Treiber auf den Rechnern, die sich mit den Druckwarteschlangen verbinden, vorab bereitgestellt ist",
-          "where": "Treiberliste der verbundenen Clients oder Server",
-          "sign": "Treiber dort nicht vorhanden: Typ-4-Treiber werden laut HP nicht vom Druckserver heruntergeladen",
-          "source": "HP: HP Smart Universal Printing Driver - User Guide"
-        },
-        {
-          "when": ["driver.vendor.Kyocera", "driver.v3"],
-          "text": "Vor einem Wechsel vom KX-Treiber der Bauart Typ 3 auf den KX-Treiber Typ 4 den Funktionsumfang vergleichen: laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht",
-          "where": "Datenblatt von Kyocera zum KX-Treiber Typ 4: Vergleichstabelle der Funktionen",
-          "sign": "Funktion, die es nur im Typ-3-Treiber gibt (der Typ-4-Treiber hat zum Beispiel keinen Status Monitor)",
-          "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
-        },
-        {
-          "when": ["driver.vendor.Kyocera", "driver.v4"],
-          "text": "Der beteiligte Kyocera-Treiber ist ein Treiber der Bauart Typ 4 (PCL 6 oder XPS): prüfen, ob den Benutzern eine Funktion fehlt, die es nur im KX-Treiber Typ 3 gibt",
-          "where": "Datenblatt von Kyocera zum KX-Treiber Typ 4: Vergleichstabelle der Funktionen",
-          "sign": "Funktion in der Vergleichstabelle nur beim Typ-3-Treiber (zum Beispiel der Status Monitor)",
-          "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
-        },
-        {
-          "when": ["skipped.Drucken"],
-          "text": "Treiber und Druckwarteschlangen von Hand in der Druckverwaltung prüfen und die nächste Messung ohne „-Skip Drucken“ starten: Treiberliste und Zähler der Druckwarteschlangen wurden nicht gemessen, ob ein Druckertreiber beteiligt war, ist deshalb nicht geprüft",
-          "where": "Druckverwaltung des Servers: Treiber und Druckwarteschlangen; Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
-          "sign": "Treiber, zu dem das fehlerhafte Modul gehört; Druckwarteschlange mit Aufträgen im Fehlerzustand",
-          "source": "Microsoft: Troubleshooting scenarios for printing"
-        },
-        {
-          "when": ["pattern.unchecked"],
-          "text": "Treiber, Druckwarteschlange und zeitgleiche Störungen von Hand eingrenzen: mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie",
-          "source": "Microsoft: Troubleshooting scenarios for printing"
-        },
-        {
           "when": ["before"],
-          "text": "Das Druckproblem liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob es seither wieder auftritt und ob es an einem Treiber oder einer Druckwarteschlange hängt",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild; Expertenansicht, Reiter „Drucken“",
+          "text": "Prüfen, ob das Druckproblem seit Beginn der Messung wieder aufgetreten ist und ob es an einem Treiber oder einer Druckwarteschlange hängt",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“; Expertenansicht, Reiter „Drucken“",
           "sign": "Druckproblem mit demselben Treiber oder Drucker auch während der Messung",
-          "source": "Microsoft: Troubleshooting scenarios for printing"
+          "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
           "text": "Prüfen, ob der Dienst „Citrix Print Manager Service“ (CpSvc.exe) läuft; fällt er aus, werden die Drucker in den Sitzungen nicht angelegt",
           "where": "Dienste-Konsole (services.msc) auf dem Server; Ereignisanzeige, Protokolle „Anwendung“ und „System“",
           "sign": "Dienst beendet oder Fehlereintrag zu CpSvc.exe; Drucker, die in den Sitzungen fehlen",
           "source": "Citrix: Troubleshooting"
+        },
+        {
+          "when": ["skipped.Drucken"],
+          "text": "Treiber und Druckwarteschlangen von Hand prüfen und die nächste Messung ohne „-Skip Drucken“ starten: Treiberliste und Zähler der Druckwarteschlangen wurden nicht gemessen",
+          "where": "Druckverwaltung des Servers: Treiber und Druckwarteschlangen; Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
+          "sign": "Treiber, zu dem das fehlerhafte Modul gehört; Druckwarteschlange mit Aufträgen im Fehlerzustand",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Treiber, Druckwarteschlange und zeitgleiche Störungen von Hand eingrenzen: mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde",
+          "source": "WorkerPerf: Hinweis zur Auswertung"
         }
       ],
       "remedies": [
         {
-          "when": ["spooler.crash", "pattern.printdriver"],
-          "text": "Treiber {driver} entfernen und die betroffenen Drucker zum Test mit dem Citrix-Universaltreiber oder einem generischen Microsoft-Treiber betreiben",
-          "precondition": "die Abstürze der Druckwarteschlange immer das Modul dieses Treibers nennen und der Treiber von einem Druckerhersteller stammt",
-          "source": "Citrix: Troubleshooting"
-        },
-        {
           "when": ["driver.shared", "pattern.printdriver"],
-          "text": "Treiber {driver} in einem eigenen Prozess laufen lassen (Isolierung „isoliert“, einstellbar in der Druckverwaltung)",
-          "precondition": "der Treiber wiederholt Fehler verursacht oder Arbeitsspeicher verliert und damit die Druckwarteschlange oder andere Treiber im selben Prozess stört",
+          "text": "Treiber {driver} in einem eigenen Prozess laufen lassen (Isolierung „isoliert“, je Treiber einstellbar in der Druckverwaltung)",
+          "precondition": "der Treiber in einem eigenen Prozess lauffähig ist (bei Isolierung „keine“ hat sein Hersteller das nicht zugesagt), häufig Fehler verursacht oder Arbeitsspeicher verliert und damit andere Treiber im selben Prozess stört und die Wirkung zuerst auf einem Testserver geprüft ist",
           "source": "Microsoft: Printer driver isolation"
         },
         {
+          "when": ["spooler.crash", "pattern.printdriver"],
+          "text": "Treiber {driver} entfernen und die betroffenen Drucker zum Test mit dem Citrix-Universaltreiber oder einem generischen Microsoft-Treiber betreiben",
+          "precondition": "die Abstürze des Dienstes „Druckwarteschlange“ immer das Modul dieses Treibers nennen, der Treiber von einem Druckerhersteller stammt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
+          "source": "Citrix: Troubleshooting"
+        },
+        {
           "when": ["driver.shared", "spooler.crash"],
-          "text": "Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren; die Druckwarteschlange isoliert dann alle Treiber, die die Isolierung nicht ausdrücklich ablehnen",
-          "precondition": "Treiber mit der Isolierung „keine“ die Druckwarteschlange zum Absturz bringen und die Wirkung auf einem Testserver geprüft ist",
+          "text": "Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren (Registrierungswert PrintDriverIsolationOverrideCompat); der Dienst „Druckwarteschlange“ isoliert dann alle Treiber, die die Isolierung nicht ausdrücklich ablehnen",
+          "precondition": "Treiber mit der Isolierung „keine“ den Dienst „Druckwarteschlange“ zum Absturz bringen, die Wirkung auf einem Testserver geprüft ist und die Richtlinie auf dem Server gilt (Microsoft beschreibt die Richtlinie für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
-          "when": ["spooler.crash", "driver.vendor.HP"],
-          "text": "HP-Treiber der Version 4.x.x.x durch die Version 60.x.x.x oder 61.x.x.x von hp.com ersetzen, sonst durch den HP Universal Print Driver; laut HP bringt die Version 4.x.x.x die Druckwarteschlange bei vielen angemeldeten Benutzern wahrscheinlich zum Absturz",
-          "precondition": "ein HP-Treiber der Version 4.x.x.x installiert ist (Version: Reiter „Drucken“)",
-          "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
-        },
-        {
           "when": ["pattern.printdriver"],
-          "text": "Citrix-Universaltreiber zur Hauptstrategie machen und nicht mehr benötigte Druckertreiber deinstallieren, damit Zahl und Konflikte der Treiber klein bleiben",
-          "precondition": "die Drucker mit dem Universaltreiber die benötigten Funktionen bieten",
+          "text": "Citrix-Universaltreiber als Regel verwenden und nicht mehr benötigte Druckertreiber deinstallieren, damit Zahl und Konflikte der Treiber klein bleiben",
+          "precondition": "die Drucker mit dem Universaltreiber die benötigten Funktionen bieten und die Treiber in einem Wartungsfenster entfernt werden",
           "source": "Citrix: Best practices"
         },
         {
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen",
-          "precondition": "der Universaltreiber nicht für alle Drucker in Frage kommt und Clientdrucker den Treiber automatisch auf den Server bringen",
+          "precondition": "der Universaltreiber nicht für alle Drucker in Frage kommt und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren)",
-          "precondition": "der Hersteller eine neuere Version des Treibers anbietet",
+          "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
@@ -1667,26 +1781,32 @@
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.HP"],
-          "text": "HP-Treiber, die hostbasiert arbeiten, vom Server entfernen und diese Clientdrucker über den Citrix-Universaltreiber bedienen; der hostbasierte Treiber bleibt auf dem Endgerät, auf Citrix-Servern empfiehlt HP ihn nicht",
-          "precondition": "{driver} ein hostbasierter Treiber ist",
+          "text": "Hostbasierte HP-Treiber nicht auf dem Server betreiben; HP empfiehlt sie auf Citrix-Servern nicht, und laut HP können diese Clientdrucker über den Citrix-Universaltreiber bedient werden, während der hostbasierte Treiber auf dem Endgerät bleibt",
+          "precondition": "{driver} ein hostbasierter Treiber ist und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.HP"],
-          "text": "HP Universal Print Driver in der Reihenfolge entfernen, die HP nennt (erst alle Drucker löschen, die ihn verwenden, dann den Treiber in den Druckservereigenschaften auf der Registerkarte „Treiber“ entfernen); meldet Windows, der Treiber sei in Gebrauch, die Druckwarteschlange neu starten",
-          "precondition": "ein HP Universal Print Driver entfernt oder ersetzt werden soll",
+          "text": "HP Universal Print Driver in der Reihenfolge von HP entfernen (erst alle Drucker löschen, die ihn verwenden, dann den Treiber in den Druckservereigenschaften auf der Registerkarte „Treiber“)",
+          "precondition": "ein HP Universal Print Driver entfernt oder ersetzt werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
+          "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
+        },
+        {
+          "when": ["pattern.printdriver", "driver.vendor.HP"],
+          "text": "Dienst „Druckwarteschlange“ anhalten und wieder starten; dabei können alle Benutzer des Servers kurz nicht drucken, und laufende Druckaufträge können verloren gehen",
+          "precondition": "Windows beim Entfernen des HP Universal Print Driver meldet, der Treiber sei in Gebrauch, und ein Wartungsfenster besteht",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
           "when": ["spooler.crash"],
-          "text": "Druckwarteschlange von Hand leeren (Dienst „Druckwarteschlange“ anhalten, die Dateien im Spool-Ordner löschen, Dienst wieder starten); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren",
-          "precondition": "der Neustart des Dienstes nicht hilft oder der Ausfall sich wiederholt",
+          "text": "Spool-Ordner von Hand leeren (Dienst „Druckwarteschlange“ anhalten, die Dateien im Spool-Ordner löschen, Dienst wieder starten); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren",
+          "precondition": "die Benutzer des Servers informiert sind und der Neustart des Dienstes nicht hilft oder der Ausfall sich wiederholt",
           "source": "Citrix: Troubleshooting"
         },
         {
           "when": ["spooler.crash"],
           "text": "Spool-Ordner in der Schutzsoftware vom Scan ausnehmen",
-          "precondition": "die Schutzsoftware Dateien der Druckwarteschlange prüft oder blockiert und die Verantwortlichen für die Sicherheit zustimmen",
+          "precondition": "die Schutzsoftware nachweislich Dateien blockiert, die der Dienst „Druckwarteschlange“ braucht (Meldung der Schutzsoftware zur Uhrzeit des Ausfalls), und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Troubleshoot printing issues caused by Print Spooler service not running"
         },
         {
@@ -1703,8 +1823,8 @@
         },
         {
           "when": ["queue.stuck", "driver.vendor.Brother"],
-          "text": "Druckwarteschlange zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren",
-          "precondition": "Aufträge an Brother-Geräten im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ stehen bleiben",
+          "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren",
+          "precondition": "Aufträge an Brother-Geräten mit Netzwerkanschluss im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ stehen bleiben, sich in der Druckwarteschlange nicht einzeln löschen lassen und die Benutzer des Servers informiert sind (die Seite von Brother nennt Windows Vista bis 10)",
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },
         {
@@ -1722,14 +1842,26 @@
         {
           "when": ["driver.vendor.Kyocera"],
           "text": "KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren, sondern erst die alte Version deinstallieren und dann die neue installieren; die Aktualisierung per Installationsprogramm hat Kyocera in Druckserver-Umgebungen entfernt",
-          "precondition": "ein KX-Treiber auf einem Server mit freigegebenen Druckern erneuert werden soll",
+          "precondition": "ein KX-Treiber auf einem Server mit freigegebenen Druckern erneuert werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
           "when": ["driver.vendor.Kyocera"],
           "text": "Kyocera-Treiber aus einem Web-Paket mit KmUninstall.exe aus dem Ordner \\Program Files\\Kyocera entfernen und danach die Treiberliste kontrollieren; laut Kyocera lassen sich alternative Treiber in manchen Fällen nicht mit dem Deinstallationsprogramm löschen",
-          "precondition": "ein Kyocera-Treiber entfernt werden soll und im Startmenü ein Eintrag zum Deinstallieren fehlt",
+          "precondition": "ein Kyocera-Treiber entfernt werden soll, im Startmenü ein Eintrag zum Deinstallieren fehlt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: Release Notes April 29, 2025 (DVD Contents)"
+        },
+        {
+          "when": ["driver.vendor.Kyocera", "driver.v3"],
+          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 3 auf den KX-Treiber Typ 4 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht und hat zum Beispiel keinen Status Monitor",
+          "precondition": "ein Wechsel auf die Bauart Typ 4 erwogen wird",
+          "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
+        },
+        {
+          "when": ["driver.vendor.Kyocera", "driver.v4"],
+          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 4 (PCL 6 oder XPS) auf den KX-Treiber Typ 3 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht, der Funktionsumfang beider unterscheidet sich",
+          "precondition": "ein Wechsel auf die Bauart Typ 3 erwogen wird",
+          "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
         },
         {
           "when": ["driver.vendor.Brother"],
@@ -1740,7 +1872,7 @@
         {
           "when": ["driver.vendor.Brother"],
           "text": "Brother-Treiber vollständig entfernen (zuerst über „Brother Utilities“ deinstallieren, sonst mit dem „Uninstall Tool“ von Brother; Administratorrechte nötig); die Seite von Brother nennt dafür Windows 7 bis 11",
-          "precondition": "ein Brother-Treiber entfernt oder neu installiert werden soll und Brother das „Uninstall Tool“ für das Betriebssystem des Servers anbietet",
+          "precondition": "ein Brother-Treiber entfernt oder neu installiert werden soll, Brother das „Uninstall Tool“ für das Betriebssystem des Servers anbietet und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Brother: Uninstall the Brother Software and Drivers (Windows)"
         }
       ],
@@ -1752,12 +1884,12 @@
         },
         {
           "when": ["driver.vendor.HP"],
-          "text": "Support von HP: mit der Angabe, welcher Treiber zugeordnet ist, ob das Problem auch außerhalb einer Sitzung auftritt, und mit den Fehlereinträgen der Druckwarteschlange aus der Ereignisanzeige",
+          "text": "Support von HP: mit der Angabe, welcher Treiber zugeordnet ist, ob das Problem auch außerhalb einer Sitzung auftritt, und mit den Fehlereinträgen des Dienstes „Druckwarteschlange“ aus der Ereignisanzeige",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
           "when": ["driver.vendor.Kyocera"],
-          "text": "Helpdesk von Kyocera, wenn der KX-Treiber gebraucht wird oder eine vorhandene Version des KX-Treibers erneuert werden soll",
+          "text": "Support von Kyocera (Help Desk), wenn der KX-Treiber gebraucht wird oder eine vorhandene Version des KX-Treibers erneuert werden soll",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         }
       ]
@@ -1765,21 +1897,9 @@
     "profileerror": {
       "title": "Fehler beim Laden oder Speichern eines Benutzerprofils",
       "short": "Profil",
-      "meaning": "Windows oder die Citrix Profilverwaltung meldete einen Fehler beim Laden oder Entladen eines Benutzerprofils. Der Benutzer arbeitet dann unter Umständen mit einem vorübergehenden Profil: Einstellungen fehlen, und Änderungen gehen beim Abmelden verloren. Was genau gemeldet wurde, steht in den Belegen des Vorfalls.",
-      "impact": "Betroffenen Benutzern fehlten Einstellungen oder Daten ihres Profils, oder ihre Anmeldung dauerte ungewöhnlich lange.",
+      "meaning": "Windows oder die Citrix Profilverwaltung meldete einen Fehler beim Laden oder Speichern eines Benutzerprofils. Der Benutzer arbeitet dann unter Umständen mit einem temporären Profil: Einstellungen fehlen, und Änderungen gehen beim Abmelden verloren. Was genau gemeldet wurde, steht in den Belegen des Vorfalls.",
+      "impact": "Betroffenen Benutzern können Einstellungen oder Daten ihres Profils gefehlt haben, oder ihre Anmeldung kann ungewöhnlich lange gedauert haben.",
       "checks": [
-        {
-          "when": ["pattern.overlap"],
-          "text": "Der Profilfehler fiel in den Zeitraum eines Leistungsvorfalls: zuerst dessen Anleitung abarbeiten",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
-          "sign": "Engpass oder Verzögerung im selben Zeitraum"
-        },
-        {
-          "when": ["pattern.companion"],
-          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Profilfehler meldete Windows einen Datenträgerfehler, einen Verbindungsabbruch zum Dateiserver, einen Profilfehler oder die Schutzsoftware einen Vorgang",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
-        },
         {
           "when": ["pattern.oneuser"],
           "text": "Nur {user} ist betroffen, und das wiederholt: Profilordner und Profilcontainer dieses Benutzers prüfen",
@@ -1787,24 +1907,30 @@
           "sign": "Containerdatei gesperrt, beschädigt oder sehr groß; Änderung der Rechte am Profilordner"
         },
         {
-          "when": ["pattern.unchecked"],
-          "text": "Profilfehler von Hand eingrenzen (Meldungstext, Profilspeicher, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie"
+          "when": ["pattern.overlap"],
+          "text": "Der Profilfehler fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
+          "sign": "Engpass oder Verzögerung im selben Zeitraum"
+        },
+        {
+          "when": ["pattern.companion"],
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Profilfehler gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
         },
         {
           "when": ["before"],
-          "text": "Der Profilfehler liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob das Problem seither wieder aufgetreten ist",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild",
+          "text": "Prüfen, ob der Profilfehler seit Beginn der Messung wieder aufgetreten ist",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
           "sign": "Profilfehler desselben Benutzers auch während der Messung"
         },
         {
           "text": "Meldungstext des Profilfehlers lesen: er nennt meist den Grund",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Ereignisse; Ereignisanzeige, Protokoll „Anwendung“, Quellen „User Profiles Service“ und „Citrix Profile Management“",
-          "sign": "Hinweis auf verweigerten Zugriff, nicht gefundenen Pfad, Datei in Benutzung oder vorübergehendes Profil"
+          "sign": "Hinweis auf verweigerten Zugriff, nicht gefundenen Pfad, Datei in Benutzung oder temporäres Profil"
         },
         {
-          "text": "Prüfen, ob der Benutzer mit einem vorübergehenden Profil angemeldet ist oder war",
+          "text": "Prüfen, ob der Benutzer mit einem temporären Profil angemeldet ist oder war",
           "where": "Auf dem Server: Ordner C:\\Users (Ordner TEMP); Registrierung: HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList (Einträge mit der Endung .bak)",
           "sign": "Ordner TEMP oder Eintrag mit der Endung .bak für diesen Benutzer"
         },
@@ -1822,6 +1948,12 @@
           "text": "Protokoll der Citrix Profilverwaltung zur Anmeldung des Benutzers lesen, sofern die Protokollierung eingeschaltet ist",
           "where": "Auf dem Server: %SystemRoot%\\System32\\Logfiles\\UserProfileManager",
           "sign": "Fehlerzeile zur Uhrzeit der Anmeldung mit Pfad und Fehlercode"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Profilfehler von Hand eingrenzen (Meldungstext, Profilspeicher, andere Störungen zur selben Zeit): mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         }
       ],
       "remedies": [
@@ -1831,7 +1963,7 @@
           "precondition": "der Fehler nur bei diesem Benutzer auftritt und seine Profildateien beschädigt sind"
         },
         {
-          "text": "Sitzung beenden, die das Profil noch geöffnet hält, und den Benutzer neu anmelden lassen",
+          "text": "Sitzung, die das Profil noch geöffnet hält, nach Rücksprache mit dem Benutzer beenden und ihn neu anmelden lassen; nicht gespeicherte Arbeit in dieser Sitzung geht dabei verloren",
           "precondition": "eine zweite oder hängengebliebene Sitzung desselben Benutzers besteht"
         }
       ],
@@ -1848,67 +1980,67 @@
       "title": "Windows meldet einen Systemfehler",
       "short": "System",
       "meaning": "Windows hat im Ereignisprotokoll einen Fehler oder eine Warnung zur Umgebung des Servers festgehalten: einen Datenträger- oder Dateisystemfehler, eine Warnung vor Speichermangel oder einen Verbindungsabbruch zum Dateiserver. Welche Art es war, steht in den Belegen des Vorfalls. Solche Meldungen betreffen den ganzen Server und können die Ursache anderer Vorfälle im selben Zeitraum sein.",
-      "impact": "Je nach Art des Fehlers können Programme hängen, Dateien nicht erreichbar sein oder Anwendungen abstürzen.",
+      "impact": "Je nach Art des Fehlers können Anwendungen hängen oder abstürzen oder Dateien nicht erreichbar sein.",
       "checks": [
         {
           "when": ["pattern.overlap"],
-          "text": "Die Meldung fiel in den Zeitraum eines Leistungsvorfalls: zuerst dessen Anleitung abarbeiten",
+          "text": "Die Meldung fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
           "sign": "Engpass oder Verzögerung im selben Zeitraum"
         },
         {
           "when": ["pattern.companion"],
-          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach der Meldung meldete Windows einen Datenträgerfehler, einen Verbindungsabbruch zum Dateiserver, einen Profilfehler oder die Schutzsoftware einen Vorgang",
+          "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach der Meldung gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
         },
         {
-          "when": ["pattern.unchecked"],
-          "text": "Zeitgleiche Störungen von Hand suchen: mindestens ein Muster wurde nicht geprüft, weil eine Kategorie bei dieser Messung nicht gemessen wurde; welche, steht bei der Ursache",
-          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Zeilen „Nicht geprüft“",
-          "sign": "Hinweis „Nicht geprüft“ mit der fehlenden Kategorie"
-        },
-        {
           "when": ["before"],
-          "text": "Die Meldung liegt vor der Messung, für diese Zeit liegen keine Messwerte vor: prüfen, ob das Problem seither wieder aufgetreten ist",
-          "where": "Lagebild, Bereich „Vor der Messung“; Vorfälle der Messzeit im Lagebild",
+          "text": "Prüfen, ob die Meldung seit Beginn der Messung wieder aufgetreten ist",
+          "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
           "sign": "Meldung derselben Art auch während der Messung"
         },
         {
           "text": "Art und Meldungstext des Systemfehlers feststellen",
-          "where": "Vorfallsansicht, Abschnitt „Belege“: Ereignisse mit Quelle und Kennung; Ereignisanzeige, Protokoll „System“",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Ereignisse mit Quelle und Kennung; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient",
           "sign": "Quelle „disk“ oder „Ntfs“ (Datenträger), „Resource-Exhaustion-Detector“ (Speichermangel) oder „SMBClient“ (Dateiserver)"
         },
         {
-          "text": "Bei einem Datenträger- oder Dateisystemfehler: Zustand des virtuellen Datenträgers und des Speichersystems prüfen lassen",
-          "where": "vCenter: Ereignisse und Alarme der virtuellen Maschine und des Datenspeichers; Ereignisanzeige, Protokoll „System“",
-          "sign": "Meldung der Quellen „disk“ oder „Ntfs“ mehrmals; Alarm am Datenspeicher zur selben Zeit"
+          "text": "Bei einem Datenträger- oder Dateisystemfehler: feststellen, ob das genannte Laufwerk ein Laufwerk des Servers oder ein eingebundener Profilcontainer ist, und den Speicher dahinter prüfen lassen",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Meldungstext; Laufwerk des Servers: vCenter (Ereignisse und Alarme der virtuellen Maschine und des Datenspeichers); Profilcontainer: Dateiserver mit dem Profilspeicher und Netzstrecke dorthin",
+          "sign": "Meldung der Quellen „disk“ oder „Ntfs“ mehrmals; Alarm am Datenspeicher oder Störung am Dateiserver zur selben Zeit"
         },
         {
-          "text": "Bei einer Warnung vor Speichermangel: nachlesen, welche Programme Windows als größte Verbraucher nennt, und mit den Arbeitsspeicher-Vorfällen dieses Berichts vergleichen",
+          "text": "Bei einer Warnung vor Speichermangel: nachlesen, welche Anwendungen Windows als größte Verbraucher nennt, und mit den Arbeitsspeicher-Vorfällen dieses Berichts vergleichen",
           "where": "Meldungstext des Ereignisses 2004; Lagebild: Vorfälle „Arbeitsspeicher des Servers knapp“",
-          "sign": "Programmname im Meldungstext; Arbeitsspeicher-Vorfall zur selben Zeit"
+          "sign": "Name der Anwendung im Meldungstext; Arbeitsspeicher-Vorfall zur selben Zeit"
         },
         {
-          "text": "Bei einem Verbindungsabbruch zum Dateiserver: Netzweg und Dateiserver zur Zeit der Meldung prüfen lassen",
-          "where": "Betreuung von Netzwerk und Dateiserver; Lagebild: Vorfälle „Dateiserver antwortet langsam“ im selben Zeitraum",
+          "text": "Bei einem Verbindungsabbruch zum Dateiserver: Netzstrecke und Dateiserver zur Zeit der Meldung prüfen lassen",
+          "where": "Betreuung von Netz und Dateiserver; Lagebild: Vorfälle „Dateiserver antwortet langsam“ im selben Zeitraum",
           "sign": "Störung, Neustart oder Lastspitze am Dateiserver oder im Netz zur Zeit der Meldung"
         },
         {
           "text": "Prüfen, ob dieselbe Meldung an weiteren Tagen auftrat",
-          "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“",
+          "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient",
           "sign": "Meldung derselben Art an mehreren Tagen (Dauerproblem statt Einzelfall)"
+        },
+        {
+          "when": ["pattern.unchecked"],
+          "text": "Zeitgleiche Störungen von Hand suchen: mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
+          "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
+          "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         }
       ],
       "remedies": [
         {
-          "text": "Dateisystem des betroffenen Laufwerks in einem Wartungsfenster prüfen lassen (chkdsk)",
+          "text": "Dateisystem des betroffenen Laufwerks in einem Wartungsfenster prüfen lassen (chkdsk); bei einem Profilcontainer betrifft die Prüfung die Containerdatei, während der Benutzer abgemeldet ist",
           "precondition": "die Quelle „Ntfs“ eine Beschädigung des Dateisystems meldet"
         }
       ],
       "contacts": [
         {
-          "text": "Betreuung von VMware und Speichersystem bei Datenträgerfehlern; Betreuung von Dateiserver und Netzwerk bei Verbindungsabbrüchen: mit Uhrzeit und Meldungstext"
+          "text": "Betreuung von VMware und Speichersystem bei Datenträgerfehlern; Betreuung von Dateiserver und Netz bei Verbindungsabbrüchen: mit Uhrzeit und Meldungstext"
         }
       ]
     },
@@ -1929,9 +2061,9 @@
           "sign": "Messwert über dem Soll oder Vorfall im selben Zeitraum"
         },
         {
-          "text": "Bei einer auffälligen Netzstrecke oder Gegenstelle: die zuständige Betreuung mit Uhrzeit und Messwert ansprechen",
-          "where": "Betreuung von Netzwerk, Datenbank, Proxy oder Dateiserver, je nach Beleg",
-          "sign": "Störung oder Lastspitze dort im selben Zeitraum"
+          "text": "Bei einer auffälligen Netzstrecke oder Gegenstelle: ihren Messwert im Zeitraum mit dem Rest der Messung vergleichen, dann die zuständige Betreuung mit Uhrzeit und Messwert ansprechen",
+          "where": "Expertenansicht über die gesamte Messung: Diagramm „Antwortzeit der Gegenstellen“; Betreuung von Netz, Datenbank, Proxy oder Dateiserver, je nach Beleg",
+          "sign": "Messwert nur im Zeitraum des Vorfalls über dem Soll; Störung oder Lastspitze dort im selben Zeitraum"
         },
         {
           "text": "Prüfen, ob die Auffälligkeit wiederkehrt",
