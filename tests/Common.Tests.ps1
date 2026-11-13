@@ -93,6 +93,20 @@ Describe 'Resolve-WorkerPerfRole' {
         (Resolve-WorkerPerfRole $Roles 'NexusService.exe' '' 0).Label | Should -Be 'Nexus KIS'
         @(($Roles | Where-Object Label -eq 'Oracle-Client').processes).Count | Should -Be 0
     }
+    It 'ordnet den WEM-Agenten der Rolle Citrix und den Client der Druckerzuordnung der Rolle Drucken zu' {
+        # the target environment sets up the user environment with Citrix WEM and maps printers with PrinTaurus SmartSpread
+        foreach ($p in 'Citrix.Wem.Agent.Service.exe', 'VUEMUIAgent.exe', 'vuemcmdagent.exe', 'VUEMAppCmd.exe', 'AgentCacheUtility.exe') {
+            $hit = Resolve-WorkerPerfRole $Roles $p '' 0
+            $hit.Role | Should -Be 'Citrix' -Because $p; $hit.Label | Should -Be 'Citrix Workspace Environment Management' -Because $p
+        }
+        $hit = Resolve-WorkerPerfRole $Roles 'ptsmartspreadclient.EXE' '' 3
+        $hit.Role | Should -Be 'Drucken'; $hit.Label | Should -Be 'PrinTaurus SmartSpread'
+        # the entries of both roles, in the order of the file (the first match decides)
+        @($Roles | Where-Object role -eq 'Citrix' | ForEach-Object { $_.label }) | Should -Be @('Citrix VDA', 'Citrix Workspace Environment Management')
+        @($Roles | Where-Object role -eq 'Drucken' | ForEach-Object { $_.label }) | Should -Be @('Druckdienst', 'Citrix-Druckverwaltung', 'PrinTaurus SmartSpread')
+        # the processes of the VDA and of the print service keep their entries
+        (Resolve-WorkerPerfRole $Roles 'CtxSvcHost.exe' '' 0).Label | Should -Be 'Citrix VDA'; (Resolve-WorkerPerfRole $Roles 'spoolsv.exe' '' 0).Label | Should -Be 'Druckdienst'
+    }
     It 'nennt den fehlerhaften Rolleneintrag' {
         { Read-WorkerPerfRoles (Write-Json 'r.json' '{"roles":[{"role":"Unsinn","label":"Testprodukt","processes":[],"services":[]}]}') } | Should -Throw '*Testprodukt*'
     }

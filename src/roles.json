@@ -91,6 +91,15 @@
       "note": "ungeprüft"
     },
     {
+      "role": "Drucken",
+      "label": "PrinTaurus SmartSpread",
+      "processes": [
+        "PtSmartSpreadClient.exe"
+      ],
+      "services": [],
+      "note": "Client der Druckerzuordnung von AKI (Dateiname laut Release Notes PrinTaurus 6.2); auf dem Zielsystem ungeprüft"
+    },
+    {
       "role": "Citrix",
       "label": "Citrix VDA",
       "processes": [
@@ -101,6 +110,19 @@
       ],
       "services": [],
       "note": "ungeprüft"
+    },
+    {
+      "role": "Citrix",
+      "label": "Citrix Workspace Environment Management",
+      "processes": [
+        "Citrix.Wem.Agent.Service.exe",
+        "VUEMUIAgent.exe",
+        "VUEMCmdAgent.exe",
+        "VUEMAppCmd.exe",
+        "AgentCacheUtility.exe"
+      ],
+      "services": [],
+      "note": "Prozesse des WEM-Agenten laut Citrix-Dokumentation; die Kurznamen seiner Dienste (Anzeigenamen „Citrix WEM Agent Host Service“ und „Citrix WEM User Logon Service“) nennt sie nicht; auf dem Zielsystem ungeprüft"
     }
   ]
 }
