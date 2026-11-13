@@ -136,12 +136,12 @@ nicht. Der Standard bleibt deshalb der vollständige Lauf.
 | Wert | Kategorie | Kosten | Beim Weglassen fehlt |
 |---|---|---|---|
 | `Prozesse` | Prozess-Schnappschüsse, Eingabeverzögerung je Prozess | am höchsten; wächst mit der Zahl der Prozesse | Verursacher eines Vorfalls, Zuordnung von Abstürzen zu Sitzungen, Rollen |
-| `Laufwerke` | Antwortzeiten je Laufwerk, Profilcontainer und Freigabe | mittel; wächst mit der Zahl der Container | Antwortzeiten je Laufwerk, Container und Freigabe |
+| `Laufwerke` | Antwortzeiten je Laufwerk, Profilcontainer und Freigabe | mittel; wächst mit der Zahl der Container | Antwortzeiten je Laufwerk, Container und Freigabe; ein Engpass eines Laufwerks, einer Freigabe oder eines Profilcontainers fehlt ganz, wenn er keine Eingabeverzögerung verursacht, sonst steht er als „Verzögerung ohne erkannten Engpass" mit der Schwere der Verzögerung da |
 | `Citrix` | ICA-Werte je Sitzung | mittel; wächst mit der Zahl der Sitzungen | ICA-Latenz und Laufzeit je Sitzung |
-| `Ereignisse` | Ereignisse während der Messung | klein je Takt | Abstürze, Hänger, Dienst-, Druck-, Profil- und Dateiserver-Ereignisse im Messzeitraum, Sitzungsereignisse |
+| `Ereignisse` | Ereignisse während der Messung | je regulärem Schnappschuss eine Abfrage je Protokoll; was sie kostet, ist nicht gemessen | Abstürze, Hänger, Dienst-, Druck-, Profil- und Dateiserver-Ereignisse im Messzeitraum, Sitzungsereignisse, die Ereignisse der Schutzsoftware (Virenscan, AppLocker) und mit ihnen der Hinweis, dass während eines Vorfalls ein Virenscan lief |
 | `Rueckblick` | Ereignisse der Tage vor der Messung | einmalig beim Start | der Abschnitt „Vor der Messung" |
-| `Drucken` | Treiberliste, Zähler der Warteschlangen | einmalig, dazu kleine Zähler je Takt | Druckzustand, Treiberbezug bei Druckvorfällen |
-| `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | klein je Takt | Erreichbarkeit und Antwortzeit der Ziele |
+| `Drucken` | Treiberliste, Zähler der Warteschlangen | die Treiberliste einmalig beim Start, die Zähler der Warteschlangen je regulärem Schnappschuss | Druckzustand, Treiberbezug bei Druckvorfällen |
+| `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | ein Verbindungsaufbau je Ziel und regulärem Schnappschuss | Erreichbarkeit und Antwortzeit der Ziele |
 | `Zustand` | das Zustandsbild (geplant) | einmalig beim Start | der Bereich „Zustand des Workers" |
 
 Regeln:
@@ -154,7 +154,8 @@ Regeln:
   `-Skip Rueckblick`. Beide bleiben gültig, auch zusammen mit `-Skip`; was eine der beiden Schreibweisen weglässt,
   bleibt weggelassen (`-EventLookbackDays 7 -Skip Rueckblick` liest keinen Rückblick).
 - **Werte:** Groß- und Kleinschreibung ist egal, doppelte Werte zählen einmal. Ein unbekannter Wert bricht den Start
-  mit einer Meldung ab, die die gültigen Werte nennt.
+  mit einer Meldung ab, die die gültigen Werte nennt; ebenso ein Kategoriename als `-OutputPath`, den ein Leerzeichen
+  statt eines Kommas dorthin bringt (`-Skip Prozesse Rueckblick`; ein Ordner dieses Namens geht als `.\Rueckblick`).
 - **`Zustand`** wird schon angenommen, wirkt aber erst, wenn das Zustandsbild gebaut ist; bis dahin steht er weder in
   `meta.json` noch im Bericht.
 - **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
@@ -165,8 +166,11 @@ Regeln:
 - **Ohne `Prozesse`** lässt sich die Sitzung eines abgestürzten Prozesses nicht ermitteln. Schon ein einzelner Absturz
   oder Hänger bildet dann einen Vorfall, auch von Hintergrunddiensten. Abstürze derselben Anwendung, zwischen denen
   jeweils höchstens 30 Minuten liegen (`eventGroupMinutes` in `thresholds.json`, Standard 30), bilden zusammen einen
-  Vorfall, ebenso ihre Hänger; ein solcher Vorfall trägt „Nicht geprüft: Zuordnung zu Benutzern und Sitzungen". `Prozesse` spart am meisten und macht zugleich die
-  Vorfälle unerklärbar (siehe [Was bei welcher Stufe zu tun ist](#was-bei-welcher-stufe-zu-tun-ist)).
+  Vorfall, ebenso ihre Hänger; ein solcher Vorfall trägt „Nicht geprüft: Zuordnung zu Benutzern und Sitzungen".
+  `Prozesse` spart am meisten und macht zugleich die Vorfälle unerklärbar (siehe
+  [Was bei welcher Stufe zu tun ist](#was-bei-welcher-stufe-zu-tun-ist)). Befehlszeilen (`-IncludeCommandLine`)
+  zeichnet der Collector ohne `Prozesse` nicht auf; er sagt es beim Start, und `meta.json` vermerkt
+  `IncludeCommandLine: false`.
 - **`-Skip Ereignisse`** ist der Schalter, wenn das Lesen der Ereignisprotokolle die regulären Schnappschüsse
   langsam macht (siehe [Welche Last das bedeutet](#welche-last-das-bedeutet), Ereignisabfragen, und die Messdauer je
   Schnappschuss unter „Messqualität").
@@ -477,11 +481,12 @@ Zuerst eine Kurzmessung von 10 Minuten auf dem Test-Worker mit angemeldeten Benu
 Konsole (`-DurationMinutes 10`), danach den Bericht erstellen und den Block „Messqualität" mit der Tabelle oben
 vergleichen. Erst dann eine Messung über mehrere Stunden starten.
 
-Als Erstes dabei die Kosten der Ereignisabfragen ansehen, denn sie sind nicht gemessen und lassen sich noch nicht
-abschalten: vorher die Größe des Anwendungs- und des Systemprotokolls notieren (Ereignisanzeige, Eigenschaften des
-Protokolls); während der Kurzmessung die CPU des `svchost.exe` beobachten, in dem der Dienst `EventLog` läuft
-(Task-Manager, Registerkarte Dienste, „Gehe zu Details"); danach in `snapshots.csv` die Spalte `CollectMs` der
-regulären (`R`) gegen die der verdichteten (`B`) Schnappschüsse vergleichen.
+Als Erstes dabei die Kosten der Ereignisabfragen ansehen, denn sie sind nicht gemessen; sind sie zu teuer, stellt
+`-Skip Ereignisse` sie ab (siehe [Kategorien weglassen](#kategorien-weglassen--skip)): vorher die Größe des
+Anwendungs- und des Systemprotokolls notieren (Ereignisanzeige, Eigenschaften des Protokolls); während der
+Kurzmessung die CPU des `svchost.exe` beobachten, in dem der Dienst `EventLog` läuft (Task-Manager, Registerkarte
+Dienste, „Gehe zu Details"); danach in `snapshots.csv` die Spalte `CollectMs` der regulären (`R`) gegen die der
+verdichteten (`B`) Schnappschüsse vergleichen.
 
 ## Demo-Bericht
 
@@ -563,7 +568,8 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
 - **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
   Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet. Liegt
   die gemeldete Uhrzeit in der Aufzeichnung, aber außerhalb des mit `-From`/`-To` gewählten Zeitraums, sagt der Kopf
-  das und, wenn der Zeitraum Ereignisse der Aufzeichnung auslässt, wie viele.
+  das und, wenn der Zeitraum Ereignisse der Aufzeichnung auslässt, wie viele. Ohne `Ereignisse` oder `Prozesse`
+  sagt der Satz zum Benutzer, dass Abstürze und Hänger nicht gezählt sind, mit dem Grund der Kategorie.
 - **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
   Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
   (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
@@ -599,7 +605,10 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   „einzelne Überschreitungen" dabei; die Zeitanteile und das Maximum zeigen sie weiterhin.
 - Ohne Vorfall sagt der Reiter das ausdrücklich: „Keine Schwelle wurde überschritten." oder, wenn einzelne Werte
   über einer Schwelle lagen, ohne einen Befund zu bilden, „Kein Vorfall. Einzelne Überschreitungen ohne Befund …"
-  mit Messwert und Maximum. Dazu listet er die gemessenen und die nicht gemessenen Werte.
+  mit Messwert und Maximum. Dazu listet er die gemessenen und die nicht gemessenen Werte; unter „Nicht gemessen"
+  stehen zuerst die mit `-Skip` weggelassenen Kategorien. Ohne `Ereignisse` heißt der Kopfsatz „Keine Vorfälle aus
+  den gemessenen Werten; Vorfälle aus Ereignissen wurden nicht erfasst (-Skip Ereignisse)."; mit Vorfällen hängt er
+  den zweiten Teil an die Zählung an.
 - **Nicht gemessen:** Fehlt die Eingabeverzögerung, sagt ein Vorfall „Eingabeverzögerung nicht gemessen; betroffene
   Sitzungen sind nicht bestimmbar." Fehlt der Messwert einer Worker-Ressource, schließt eine „Verzögerung ohne
   Engpass" einen Engpass dort nicht aus und nennt die fehlenden Messwerte.
@@ -616,14 +625,18 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Vorfalls; ohne `Ereignisse` eine Zeile der Zeitleiste, die Sitzungsereignisse, „Ereignisse im Fenster" und die
   Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` den Block „Vor der Messung"; ohne `Drucken` im Block
   „Drucken" Treiber und Warteschlangen. Ob ein Druckertreiber an einem Vorfall beteiligt war, prüft der Bericht an
-  den Vorfällen während und vor der Messung: Fehlt `Ereignisse`, steht statt „nein" ein „–", fehlt `Rueckblick`,
-  heißt es „nein (während der Messung)", jeweils mit dem Grund unter der Tabelle. Nichts davon zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer
-  weggelassenen Kategorie als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten
-  weder als erfüllt noch als verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein
+  den Vorfällen während und vor der Messung: Fehlt `Ereignisse`, heißt es „nein (vor der Messung)", fehlt
+  `Rueckblick`, „nein (während der Messung)", fehlen beide, steht statt „nein" ein „–", jeweils mit dem Grund unter
+  der Tabelle. Unter „Grenzen der Aussage" entfallen die Sätze zu Kategorien, die nicht gemessen wurden. Nichts davon
+  zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer weggelassenen Kategorie
+  als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten weder als erfüllt noch als
+  verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein
   Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst." Ein Muster eines Vorfalls aus
   Ereignissen, das eine weggelassene Kategorie bräuchte, steht als „nicht geprüft: …" (etwa „Bezug zu einem
-  Druckertreiber (Drucken nicht gemessen)") und nie als „Kein Muster erkannt"; ohne `Prozesse` sagt ein Absturz
-  nichts über seine Sitzung, auch nicht „Sitzung nicht ermittelt".
+  Druckertreiber (Drucken nicht gemessen)") und nie als „Kein Muster erkannt"; fehlen mehrere der Kategorien, mit
+  deren Vorfällen ein Absturz zusammentreffen könnte, nennt eine Aussage sie zusammen („Zusammentreffen mit Vorfällen
+  der Kategorien Laufwerke, Citrix, Gegenstellen (nicht gemessen)"). Ohne `Prozesse` sagt ein Absturz nichts über
+  seine Sitzung, auch nicht „Sitzung nicht ermittelt".
 - **Messqualität:** verspätete oder ausgelassene Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des
   Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständig gelesener
   Rückblick, je Ereignisprotokoll nicht aufgezeichnete Ereignisse, übersprungene Datensätze und nicht lesbare
@@ -636,8 +649,8 @@ Die Auswertung bildet aus den Ereignissen eigene Vorfälle:
 
 | Art | entsteht, wenn |
 |---|---|
-| Anwendungsabsturz | eine Anwendung stürzt in einer Benutzersitzung ab; ein einzelner Absturz genügt; in den Tagen vor der Messung auch, wenn die Sitzung nicht ermittelt ist |
-| Anwendungshänger | eine Anwendung reagierte in einer Benutzersitzung nicht und wurde beendet; vor der Messung wie beim Absturz |
+| Anwendungsabsturz | eine Anwendung stürzt in einer Benutzersitzung ab; ein einzelner Absturz genügt, auch wenn die Sitzung nicht ermittelt ist (in der Messzeit und in den Tagen davor); in Sitzung 0 ab dem zweiten Absturz derselben Anwendung |
+| Anwendungshänger | eine Anwendung reagierte in einer Benutzersitzung nicht und wurde beendet; sonst wie beim Absturz |
 | Dienstausfall | ein wichtiger Dienst endete unerwartet (Liste in `events.json`), oder ein beliebiger Dienst mindestens zweimal |
 | Druckproblem | Treiberfehler, fehlgeschlagene Aufträge oder Ausfall der Druckwarteschlange; ein Absturz der Druckwarteschlange zählt hierher |
 | Profilproblem | ein Profil ließ sich nicht laden oder entladen, oder die Profilverwaltung von Citrix meldet einen Fehler |
@@ -650,15 +663,17 @@ der Profilverwaltung"). Sie sind auch kein Begleitereignis („zeitnah") eines V
 
 Zur Sitzung eines Absturzes oder Hängers kennt die Auswertung drei Fälle: Sitzung 0 (die Dienste; der Satz sagt
 „Ohne Benutzersitzung."), eine bekannte Sitzung, und eine unbekannte: das Ereignis nennt weder Sitzung noch Konto,
-und in der Messzeit fand sich kein Prozess mit seiner PID. Dann sagt der Satz „Sitzung nicht ermittelt." In den Tagen
-vor der Messung ist das der Normalfall, wenn die Absturzereignisse kein Konto tragen (das klassische `Application
-Error` 1000 schreibt keines): dort bildet schon ein einzelner Absturz einen Vorfall, je Anwendung zusammengefasst
-wie die anderen, als `▲ auffällig`. **Auf solchen Servern können die Muster „viele Benutzer" und „ein Benutzer" für
-die Tage vor der Messung nicht anschlagen**, weil kein Benutzer bekannt ist.
+und in der Messzeit fand sich kein Prozess mit seiner PID. Dann sagt der Satz „Sitzung nicht ermittelt." Ist die
+Sitzung nicht ermittelt, bildet schon der einzelne Absturz oder Hänger einen Vorfall (`▲ auffällig`), in der
+Messzeit wie in den Tagen davor, je Anwendung zusammengefasst wie die anderen. In der Messzeit geschieht das bei einem
+Prozess, der zwischen zwei Schnappschüssen startete und abstürzte, und ohne `Prozesse` bei jedem. In den Tagen vor
+der Messung ist es der Normalfall, wenn die Absturzereignisse kein Konto tragen (das klassische `Application Error`
+1000 schreibt keines). **Auf solchen Servern können die Muster „viele Benutzer" und „ein Benutzer" für die Tage vor
+der Messung nicht anschlagen**, weil kein Benutzer bekannt ist.
 
-Abstürze und Hänger von Prozessen ohne Benutzersitzung sind in der Messzeit Ereignisse in der Zeitleiste; ab dem
-zweiten Mal derselben Anwendung bilden sie einen Vorfall. Konten, die keine Person sind, gelten dabei nie als Benutzer: System-
-und Dienstkonten wie `SYSTEM`, `DWM-1` oder Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die
+Abstürze und Hänger in Sitzung 0 (ohne Benutzersitzung) bilden erst ab dem zweiten Mal derselben Anwendung einen
+Vorfall, in der Messzeit wie davor; ein einzelner steht in der Messzeit nur als Ereignis in der Zeitleiste. Konten,
+die keine Person sind, gelten dabei nie als Benutzer: System- und Dienstkonten wie `SYSTEM`, `DWM-1` oder Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die
 Konten virtueller Domänen wie `NT SERVICE\MSSQLSERVER` oder `IIS APPPOOL\DefaultAppPool` (`nonPersonDomains`).
 Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst, Treiber oder Drucker, Quelle, betroffenes
 Laufwerk oder Server) gehören zu einem Vorfall, solange zwischen zwei aufeinanderfolgenden höchstens 30 Minuten liegen
@@ -711,7 +726,8 @@ gelten nur die Muster ohne Messwerte (alle außer Speichermangel und zeitgleich)
   Last trägt, weil es die Dateien des eigentlichen Verursachers prüft. Der Bericht nennt dann auch den größten
   I/O-Erzeuger im Fenster; meist hilft ein Scan-Ausschluss. Hat das Schutzprodukt selbst den größten Anteil, heißt
   es **größter Verbraucher**: Lief im Fenster ein Virenscan, rät der Bericht, Zeitplan und Umfang des Scans zu
-  prüfen, sonst die Scan-Ausschlüsse.
+  prüfen, sonst die Scan-Ausschlüsse. Ohne `Ereignisse` ist kein Virenscan bekannt; dann sagt er, dass nicht erfasst
+  ist, ob einer lief, und rät zu beidem.
 - **Normalwert** („sonst … %") ist der Anteil desselben Prozesses, derselben Anwendung oder Sitzung außerhalb
   der Vorfälle (Dauerzustände ausgenommen); ohne solche Messungen steht ein Strich. Ein hoher Anteil mit
   niedrigem Normalwert zeigt einen Ausreißer, ein hoher Anteil mit gleich hohem Normalwert einen gewohnten
@@ -914,8 +930,9 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   erkennt der Collector an ihrer SID; andere SIDs übersetzt Windows, je SID einmal und höchstens 1 s lang, nach
   einer Zeitüberschreitung 10 Minuten lang nicht. Ob die Ereignisse diese SID tragen, zeigt die erste Aufzeichnung.
   Das klassische `Application Error` 1000 und `Application Hang` 1002 tragen nach allem, was bekannt ist, kein Konto;
-  ihre Abstürze vor der Messung heißen dann „Sitzung nicht ermittelt", und die Muster „viele Benutzer" und „ein
-  Benutzer" schlagen für diese Tage nicht an (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
+  ihre Abstürze heißen dann „Sitzung nicht ermittelt" und bilden schon einzeln einen Vorfall: vor der Messung immer,
+  in der Messzeit, wenn kein Schnappschuss den Prozess sah. Die Muster „viele Benutzer" und „ein Benutzer" schlagen
+  für die Tage vor der Messung nicht an (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
 - **Quellen und Ebenen der Datenträgerereignisse:** Unter welchem Quellennamen (`Ntfs` oder
   `Microsoft-Windows-Ntfs`) und auf welchen Ebenen der Server die Ereignisse 98, 55, 153 und 51 schreibt, ist nicht
   geprüft; das Prüfskript las im Systemprotokoll nur die Ebenen 1 bis 3.
