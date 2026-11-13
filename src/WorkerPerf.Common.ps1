@@ -285,6 +285,10 @@ function Read-WorkerPerfRoles([string]$Path) {
         $r.services = @($r.services)
         # file name patterns of the product's modules (as processes: '*' allowed), matched against faulting modules
         $r.modules = @($r.modules)
+        # name patterns of the product's file system filter drivers (as processes: '*' allowed), matched against the
+        # loaded filters of the health picture; only entries of the role Sicherheit are counted
+        Set-WorkerPerfDefault $r 'filters' @()
+        $r.filters = @($r.filters)
         $out.Add($r)
     }
     return $out.ToArray()

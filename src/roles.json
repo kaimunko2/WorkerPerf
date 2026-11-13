@@ -17,6 +17,9 @@
         "MpOav.dll",
         "MpClient.dll"
       ],
+      "filters": [
+        "WdFilter"
+      ],
       "note": ""
     },
     {
@@ -30,6 +33,10 @@
       ],
       "modules": [
         "CyMemDef*.dll"
+      ],
+      "filters": [
+        "CyProtectDrv*",
+        "CyOptics"
       ],
       "note": "Aurora ist das frühere CylancePROTECT; Dienst und Prozess heißen weiter CylanceSvc; Module ungeprüft"
     },

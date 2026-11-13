@@ -38,6 +38,30 @@ BeforeAll {
         . $Change
         $file = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + '.json'); [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $c -Depth 12)); $file
     }
+    $script:ReadMs = ([DateTimeOffset]'2026-01-15T08:00:00+01:00').ToUnixTimeMilliseconds()          # ein Donnerstag
+    $script:Cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json'); $script:Roles = @(Read-WorkerPerfRoles (Join-Path $PSScriptRoot '../src/roles.json'))
+    $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json'); $script:Cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
+    function New-HealthModel([hashtable]$Values = @{}, [hashtable]$With = @{}) {
+        # Model mit einem Zustandsbild: die genannten Werte gelesen (oder als New-WorkerPerfHealthValue uebergeben), alle anderen nicht vorhanden;
+        # Rueckblick und Treiberliste gelesen und leer
+        $areas = [ordered]@{}
+        foreach ($a in $WorkerPerfHealthAreas) {
+            $v = @{}
+            foreach ($id in @($WorkerPerfHealthValues.Keys | Where-Object { $WorkerPerfHealthValues[$_].Area -eq $a })) {
+                if (-not $Values.ContainsKey($id)) { $v[$id] = New-WorkerPerfHealthValue 'absent'; continue }
+                $x = $Values[$id]; $v[$id] = $(if ($x -is [System.Collections.IDictionary] -and $x.Contains('State')) { $x } else { New-WorkerPerfHealthValue 'read' '' $x })
+            }
+            $areas[$a] = Complete-WorkerPerfHealthArea $a $v 1
+        }
+        $m = @{ Health = @{ FormatVersion = 1; ReadAtMs = $ReadMs; OffsetMinutes = 60; DurationMs = 10; Areas = $areas }; HealthState = 'read'; Skip = [string[]]@()
+            Meta = @{ EventLookbackDays = 7; HealthOnly = $false; OffsetMinutes = 60; Computer = 'T1' }; CaptureStartMs = $ReadMs + 5000; EventsBefore = @(); EventsAll = @(); PrintDrivers = @()
+            Recorded = @{ EventsBefore = $true; PrintDrivers = $true }; SourceErrors = @() }
+        foreach ($k in $With.Keys) { $m[$k] = $With[$k] }; $m
+    }
+    function New-Ev([double]$DaysBefore, [string]$Kind, [string]$Group = 'app', [string]$App = '') {
+        @{ TimeMs = $ReadMs - [long]($DaysBefore * 86400000); OffsetMinutes = 60; Kind = $Kind; Group = $Group; App = $App; Service = ''; Log = 'application' } }
+    function New-SourceError([string]$Source) { @{ Source = $Source; Count = 1; FirstMs = $null; FirstMessage = 'Testfehler' } }
+    function Get-Facts([hashtable]$Values = @{}, [hashtable]$With = @{}, $Roles = $script:Roles) { Get-WorkerPerfHealthFacts -Model (New-HealthModel $Values $With) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles }
 }
 Describe 'Katalog des Zustandsbilds laden und pruefen' {
     It 'liest einen vollstaendigen Katalog und kennt jeden Fakt' {
@@ -249,5 +273,165 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.thresholds.diskFreeGB.value = 25 })
         $ch = @(Get-WorkerPerfHealthChangedThresholds $c); $ch.Count | Should -Be 1
         $ch[0].id | Should -Be 'diskFreeGB'; $ch[0].value | Should -Be 25; $ch[0].default | Should -Be 10; $ch[0].unit | Should -Be 'GB'; $ch[0].label | Should -Be 'Freier Platz'
+    }
+}
+Describe 'Fakten des Zustandsbilds' {
+    It 'bildet die abgeleiteten Fakten aus den gelesenen Werten' {
+        $f = Get-Facts @{ 'size.commitTotalMB' = 38000; 'size.commitLimitMB' = 98304; 'size.commitPeakMB' = 61000; 'size.memTotalMB' = 65536; 'size.cpuLogical' = 8
+            'size.pagefiles' = @(@{ Path = 'C:\pagefile.sys'; AllocatedMB = 32768; PeakUsageMB = 5200; Temporary = $false }, @{ Path = 'D:\temp.sys'; AllocatedMB = 1; PeakUsageMB = 1; Temporary = $true })
+            'operation.lastBoot' = $ReadMs - 3 * 86400000; 'operation.lastUpdate' = $ReadMs - 20 * 86400000
+            'operation.volumes' = @(@{ Drive = 'C:'; SizeGB = 100; FreeGB = 38; System = $true; PageFile = $true }, @{ Drive = 'D:'; SizeGB = 200; FreeGB = 5; System = $false; PageFile = $false })
+            'sessions.list' = @(@{ Id = 0; State = 'Disconnected'; User = ''; DisconnectTime = 0 }) + @(2..25 | ForEach-Object { @{ Id = $_; State = 'Active'; User = "user$_"; DisconnectTime = 0 } }) +
+                @(@{ Id = 30; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 26 * 3600000 })
+            'sessions.limits' = @(@{ Terminal = 'RDP-Tcp'; DisconnectedLimitMin = 0; IdleLimitMin = 0 }, @{ Terminal = 'ICA-CGP'; DisconnectedLimitMin = 240; IdleLimitMin = 180 })
+            'size.model' = 'VMware, Inc. VMware7,1'; 'size.vmtoolsVersion' = '11.3.5'; 'size.balloonDriver' = 'Stopped'
+            'size.netAdapters' = @(@{ Name = 'vmxnet3 Ethernet Adapter'; Enabled = $true }, @{ Name = 'Intel(R) 82574L Gigabit Network Connection'; Enabled = $true }, @{ Name = 'Alt'; Enabled = $false })
+            'size.storageControllers' = @(@{ Name = 'LSI Adapter, SAS 3000 series'; Driver = 'LSI_SAS' }, @{ Name = 'VMware PVSCSI Controller'; Driver = 'pvscsi' })
+            'network.rss' = @(@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $false }, @{ Description = 'Intel(R) 82574L'; Enabled = $false })
+            'vda.wemService' = 'Running'; 'print.citrixPrintService' = 'Running'
+            'vda.wemServices' = @(@{ Name = 'Citrix WEM Agent Host Service'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'Citrix WEM User Logon Service'; State = 'Stopped'; StartMode = 'Auto' })
+            'sessions.localProfiles' = @(@{ Path = 'C:\Users\a'; Loaded = $true; Special = $false; Temporary = $false }, @{ Path = 'C:\Users\b'; Loaded = $false; Special = $false; Temporary = $true })
+            'vda.services' = @(@{ Name = 'BrokerAgent'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'SimDienst'; State = 'Stopped'; StartMode = 'Auto' }, @{ Name = 'SimHand'; State = 'Stopped'; StartMode = 'Manual' })
+            'vda.controllers' = @(@{ Entry = 'ddc01.sim.local'; Kind = 'fqdn'; From = 'policy' }, @{ Entry = 'ddc02'; Kind = 'short'; From = 'policy' })
+            'profile.containers' = @(@{ Owner = 'user9'; UsedPct = 96 }, @{ Owner = 'user9'; UsedPct = 40 }, @{ Owner = ''; UsedPct = 10 })
+            'print.queueCount' = 50; 'print.mappingClientVersion' = '6.2.1'
+            'network.dnsServers' = @(@{ Interface = 4; Address = '10.20.0.10' }, @{ Interface = 4; Address = '8.8.8.8' }, @{ Interface = 7; Address = 'fd00:20::10' })
+            'network.smbConnections' = @(@{ Share = '\\fs01\daten'; Dialect = '3.1.1'; Connections = 25 }, @{ Share = '\\alt01\archiv'; Dialect = '2.1'; Connections = 3 }); 'network.timeType' = 'NTP' }
+        $val = { param($id) $f[$id].State | Should -Be 'read' -Because $id; $f[$id].Value }
+        & $val 'size.commitPeakPct' | Should -Be 62.1; & $val 'size.commitNowPct' | Should -Be 38.7; & $val 'size.pagefileCount' | Should -Be 1
+        & $val 'sessions.userCount' | Should -Be 25; & $val 'size.memPerSessionMB' | Should -Be 2621.4; & $val 'size.sessionsPerCpu' | Should -Be 3.1
+        & $val 'operation.uptimeDays' | Should -Be 3; & $val 'operation.updateAgeDays' | Should -Be 20; & $val 'operation.minFreeGB' | Should -Be 38
+        & $val 'sessions.disconnectedCount' | Should -Be 1; & $val 'sessions.disconnectedOldestHours' | Should -Be 26; & $val 'sessions.disconnectLimitMin' | Should -Be 240
+        & $val 'sessions.unloadedProfiles' | Should -Be 1; & $val 'sessions.tempProfiles' | Should -Be 1
+        & $val 'vda.stoppedAutoServices' | Should -Be 1; & $val 'vda.controllerCount' | Should -Be 2; & $val 'vda.controllersNotFqdn' | Should -Be 1
+        & $val 'profile.containerCount' | Should -Be 3; & $val 'profile.containerMaxUsedPct' | Should -Be 96; & $val 'profile.maxContainersPerUser' | Should -Be 2
+        & $val 'print.queuesPerSession' | Should -Be 2; & $val 'print.mappingClientRelease' | Should -Be 602
+        & $val 'network.dnsServersMin' | Should -Be 1; & $val 'network.dnsPublic' | Should -Be 1; & $val 'network.smbOldDialects' | Should -Be 3; & $val 'network.timeFromDomain' | Should -BeFalse
+        & $val 'size.commitOfRamPct' | Should -Be 58; & $val 'size.vmware' | Should -BeTrue; & $val 'size.vmtoolsMajor' | Should -Be 11; & $val 'size.balloonRunning' | Should -BeFalse
+        & $val 'size.otherNetAdapters' | Should -Be 1; & $val 'size.lsiControllers' | Should -Be 1; & $val 'network.rssOff' | Should -Be 1; & $val 'sessions.idleLimitMin' | Should -Be 180
+        & $val 'vda.wemServicesNotReady' | Should -Be 2; & $val 'print.citrixMapping' | Should -BeTrue      # der Anmeldedienst steht, der dritte Dienst fehlt in der Liste
+        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 164                       # gelesene Werte sind selbst Fakten
+    }
+    It 'gibt den Zustand der Eingangswerte weiter und nennt nichts Zaehlbares nicht vorhanden' {
+        $f = Get-Facts @{ 'size.commitLimitMB' = 98304; 'size.commitPeakMB' = (New-WorkerPerfHealthValue 'unreadable' 'rights'); 'profile.containers' = @(); 'sessions.list' = @(); 'size.memTotalMB' = 65536
+            'sessions.limits' = @(@{ Terminal = 'RDP-Tcp'; DisconnectedLimitMin = 0 }); 'vda.version' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }
+        $f['size.commitPeakPct'].State | Should -Be 'unreadable'; $f['size.commitPeakPct'].Reason | Should -Be 'rights'
+        $f['profile.containerMaxUsedPct'].State | Should -Be 'absent'; $f['profile.containerMaxUsedPct'].Reason | Should -Be ''; $f['profile.containerCount'].Value | Should -Be 0
+        $f['size.memPerSessionMB'].State | Should -Be 'absent'; $f['sessions.disconnectedOldestHours'].Value | Should -Be 0; $f['sessions.disconnectLimitMin'].State | Should -Be 'absent'
+        $f['security.citrixExclusionsMissing'].State | Should -Be 'absent'; $f['security.citrixExclusionsMissing'].Reason | Should -Be 'notInstalled'
+        { New-WorkerPerfHealthFact 'unreadable' 'skipped:Drucken' } | Should -Not -Throw; { New-WorkerPerfHealthFact 'unreadable' 'notRecorded' } | Should -Not -Throw
+        { New-WorkerPerfHealthFact 'unreadable' 'skipped:Wetter' } | Should -Throw; { New-WorkerPerfHealthValue 'unreadable' 'notRecorded' } | Should -Throw     # health.json kennt diese Gruende nicht
+        { New-WorkerPerfHealthFact 'absent' 'notInUse' } | Should -Not -Throw; { New-WorkerPerfHealthValue 'absent' 'notInUse' } | Should -Throw
+    }
+    It 'nennt nicht zutreffend, was auf diesem Worker nicht gilt' {   # Review Focus 3
+        $na = { param($f, $id, $reason) $f[$id].State | Should -Be 'absent' -Because $id; $f[$id].Reason | Should -Be $reason -Because $id }
+        $f = Get-Facts @{ 'size.model' = 'Microsoft Corporation Virtual Machine'; 'size.vmtoolsVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled'); 'size.netAdapters' = @(@{ Name = 'Microsoft Hyper-V Network Adapter'; Enabled = $true })
+            'network.rss' = @(@{ Description = 'Microsoft Hyper-V Network Adapter'; Enabled = $false }); 'vda.wemService' = (New-WorkerPerfHealthValue 'absent' 'notInstalled'); 'vda.version' = '2203'
+            'print.citrixPrintService' = 'Stopped'; 'security.defenderExclusionProcesses' = @() }
+        $f['size.vmware'].Value | Should -BeFalse                                                              # keine VMware-VM: die VMware-Pruefungen treffen nicht zu
+        foreach ($id in 'size.vmtoolsMajor', 'size.balloonRunning', 'size.otherNetAdapters', 'size.lsiControllers', 'network.rssOff', 'vda.wemServicesNotReady', 'security.wemExclusionsMissing') { & $na $f $id 'notInstalled' }
+        & $na $f 'print.citrixMapping' 'notInUse'                                                               # der Citrix-Druckdienst laeuft nicht
+        & $na (Get-Facts @{ 'print.citrixPrintService' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }) 'print.citrixMapping' 'notInUse'
+        & $na (Get-Facts @{ 'print.mappingClientVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }) 'print.mappingClientRelease' 'notInstalled'      # kein Client des Zuordnungswerkzeugs
+        (Get-Facts @{ 'print.mappingClientVersion' = '5.9.3' })['print.mappingClientRelease'].Value | Should -Be 509; (Get-Facts @{ 'print.mappingClientVersion' = '6.10' })['print.mappingClientRelease'].Value | Should -Be 610
+        $x = (Get-Facts @{ 'print.mappingClientVersion' = 'unbekannt' })['print.mappingClientRelease']; $x.State | Should -Be 'unreadable'; $x.Reason | Should -Be 'error'
+        (Get-Facts @{ 'print.citrixPrintService' = (New-WorkerPerfHealthValue 'unreadable' 'rights') })['print.citrixMapping'].State | Should -Be 'unreadable'
+        # eine VMware-VM ohne Tools und ohne Ballon-Treiber: gelesen, 0 und nein
+        $v = Get-Facts @{ 'size.model' = 'VMware, Inc. VMware7,1'; 'size.vmtoolsVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled'); 'size.balloonDriver' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }
+        $v['size.vmtoolsMajor'].State | Should -Be 'read'; $v['size.vmtoolsMajor'].Value | Should -Be 0; $v['size.balloonRunning'].Value | Should -BeFalse
+        # WEM: der Ordner des Agenten ist ausgenommen, oder seine Prozesse fehlen in der Liste
+        $w = @{ 'vda.wemService' = 'Running'; 'security.defenderExclusionProcesses' = @(@{ Path = 'C:\Program Files (x86)\Citrix\Workspace Environment Management Agent\VUEMUIAgent.exe' }) }
+        (Get-Facts ($w + @{ 'security.defenderExclusionPaths' = @() }))['security.wemExclusionsMissing'].Value | Should -Be 2
+        (Get-Facts ($w + @{ 'security.defenderExclusionPaths' = @(@{ Path = 'C:\Program Files (x86)\Citrix\Workspace Environment Management Agent' }) }))['security.wemExclusionsMissing'].Value | Should -Be 0
+        (Get-Facts ($w + @{ 'security.defenderExclusionPaths' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }))['security.wemExclusionsMissing'].State | Should -Be 'unreadable'
+    }
+    It 'bildet die Fakten der Anwendungen aus den Zeilen der Proben' {
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue) $TestApps
+        $row = { param($app, $id, $state, $reason, $value, $names) [ordered]@{ App = $app; Id = $id; Kind = 'registryValue'; Read = 'value'; State = $state; Reason = $reason; Value = $value; Names = $names } }
+        $rows = @((& $row 'edge' 'installed' 'read' '' $true $null), (& $row 'edge' 'backgroundMode' 'read' '' 1 $null), (& $row 'edge' 'userDataDir' 'read' '' $null '\\fs01\edge$'),
+            (& $row 'edge' 'sleepingTabs' 'absent' '' $null $null), (& $row 'simapp' 'installed' 'read' '' $false $null), (& $row 'simapp' 'cacheMode' 'absent' 'notInstalled' $null $null))
+        $f = Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = $rows }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles
+        @($f.Keys).Count | Should -Be 206; @($f.Keys)[164] | Should -BeLike 'apps.*'
+        $f['apps.edge.installed'].Value | Should -BeTrue; $f['apps.edge.backgroundMode'].Value | Should -Be 1; $f['apps.edge.userDataDir'].Value | Should -Be '\\fs01\edge$'
+        $f['apps.edge.sleepingTabs'].State | Should -Be 'absent'; $f['apps.edge.sleepingTabs'].Reason | Should -Be ''
+        $f['apps.simapp.installed'].Value | Should -BeFalse; $f['apps.simapp.cacheMode'].State | Should -Be 'absent'; $f['apps.simapp.cacheMode'].Reason | Should -Be 'notInstalled'
+        $f['apps.edge.autoDiscard'].State | Should -Be 'unreadable'; $f['apps.edge.autoDiscard'].Reason | Should -Be 'notRecorded'      # die Aufzeichnung hat fuer diese Probe keine Zeile
+        $f['apps.office.installed'].Reason | Should -Be 'notRecorded'
+        $u = Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles
+        $u['apps.edge.installed'].State | Should -Be 'unreadable'; $u['apps.edge.installed'].Reason | Should -Be 'timeout'
+    }
+    It 'zaehlt Treiber und Ereignisse aus der Aufzeichnung' {
+        $drv = @(@{ Name = 'A'; Manufacturer = 'HP'; Type = 3; Isolation = 'none' }, @{ Name = 'B'; Manufacturer = 'Microsoft'; Type = 4; Isolation = 'shared' }, @{ Name = 'C'; Manufacturer = 'Alt'; Type = 2; Isolation = 'none' },
+            @{ Name = 'D'; Manufacturer = 'Citrix Systems, Inc.'; Type = 3; Isolation = 'shared' })
+        $ev = @((New-Ev 1 'crash' 'app' 'EXCEL.EXE'), (New-Ev 1.1 'crash' 'app' 'EXCEL.EXE'), (New-Ev 2 'crash' 'app' 'spoolsv.exe'), (New-Ev 3 'system' 'storage'), (New-Ev 9 'crash' 'app' 'x.exe'))
+        $f = Get-Facts @{} @{ PrintDrivers = $drv; EventsBefore = $ev }
+        $f['print.driverCount'].Value | Should -Be 4; $f['print.driversInSpooler'].Value | Should -Be 2; $f['print.driversV2'].Value | Should -Be 1
+        $f['print.vendorDrivers'].Value | Should -Be 2; $f['print.citrixDrivers'].Value | Should -Be 1
+        # gezaehlt wird ab CaptureStartMs minus EventLookbackDays: der Absturz von vor neun Tagen zaehlt nicht
+        $f['events.crashDays'].Value | Should -Be 1; $f['events.storageCount'].Value | Should -Be 1; $f['events.fileserverDays'].Value | Should -Be 0; $f['events.lookbackDays'].Value | Should -Be 7
+        $days = @($f['events.perDay'].Value); $days.Count | Should -Be 3; $days[2].Day | Should -Be '2026-01-14'; $days[2].Crash | Should -Be 2; $days[1].Print | Should -Be 1; $days[0].Storage | Should -Be 1
+        (Get-WorkerPerfHealthEventCount -Model (New-HealthModel @{} @{ EventsBefore = $ev }) -EventConfig $Cfg -Kind 'print' -Days 7).Count | Should -Be 1
+        (Get-WorkerPerfHealthEventCount -Model (New-HealthModel @{} @{ EventsBefore = $ev }) -EventConfig $Cfg -Kind 'system.storage' -Days 2).Count | Should -Be 0
+        # die Ereignisse der ganzen Messung zaehlen mit (EventsAll, nicht der Ausschnitt Events); ohne Ereignisse zaehlt nur der Rueckblick
+        $cap = @((New-Ev -0.01 'crash' 'app' 'spoolsv.exe'))
+        $n = Get-WorkerPerfHealthEventCount -Model (New-HealthModel @{} @{ EventsAll = $cap; Events = @() }) -EventConfig $Cfg -Kind 'print' -Days 7; $n.Count | Should -Be 1; $n.Known | Should -BeTrue
+        (Get-WorkerPerfHealthEventCount -Model (New-HealthModel @{} @{ EventsAll = $cap; Skip = [string[]]@('Ereignisse') }) -EventConfig $Cfg -Kind 'print' -Days 7).Count | Should -Be 0
+    }
+    It 'nennt den Grund, wenn Treiberliste oder Rueckblick nicht gelesen wurden' {   # Review Focus 5
+        $s = Get-Facts @{} @{ Skip = [string[]]@('Rueckblick', 'Drucken'); Meta = @{ EventLookbackDays = 0; HealthOnly = $false; OffsetMinutes = 60; Computer = 'T1' } }
+        $s['print.driversInSpooler'].State | Should -Be 'unreadable'; $s['print.driversInSpooler'].Reason | Should -Be 'skipped:Drucken'
+        $s['events.crashDays'].State | Should -Be 'unreadable'; $s['events.crashDays'].Reason | Should -Be 'skipped:Rueckblick'; $s['events.lookbackDays'].Value | Should -Be 0
+        $nr = Get-Facts @{} @{ Recorded = @{ EventsBefore = $false; PrintDrivers = $false } }                       # die Dateien fehlen in der Aufzeichnung
+        $nr['events.crashDays'].Reason | Should -Be 'notRecorded'; $nr['events.perDay'].State | Should -Be 'unreadable'; $nr['print.driverCount'].Reason | Should -Be 'notRecorded'
+        $bad = Get-Facts @{} @{ SourceErrors = @((New-SourceError 'eventsbefore.system'), (New-SourceError 'printdrivers')) }   # das Lesen ist gescheitert
+        $bad['events.crashDays'].State | Should -Be 'unreadable'; $bad['events.crashDays'].Reason | Should -Be 'error'; $bad['print.driversInSpooler'].Reason | Should -Be 'error'
+        $bad['events.lookbackDays'].Value | Should -Be 7
+        $part = Get-Facts @{} @{ EventsBefore = @((New-Ev 1 'crash' 'app' 'EXCEL.EXE')); SourceErrors = @((New-SourceError 'eventsbefore.system')) }
+        $part['events.crashDays'].State | Should -Be 'read'; $part['events.crashDays'].Value | Should -Be 1            # ein Protokoll scheiterte, die anderen wurden gelesen
+        (Get-WorkerPerfHealthEventCount -Model (New-HealthModel @{} @{ Recorded = @{ EventsBefore = $false; PrintDrivers = $true } }) -EventConfig $Cfg -Kind 'print' -Days 7).Known | Should -BeFalse
+        Get-WorkerPerfHealthMissingReason -Model (New-HealthModel) -What 'lookback' | Should -Be ''; Get-WorkerPerfHealthMissingReason -Model (New-HealthModel) -What 'drivers' | Should -Be ''
+    }
+    It 'bildet das Ereignisbild der Protokolle' {
+        $log = { param($name, $mode, $full, $enabled, $oldestDays) @{ Log = $name; Present = $true; Enabled = $enabled; MaxSizeMB = 20; FileSizeMB = 20; Records = 1; Mode = $mode; Full = $full; Oldest = $ReadMs - [long]($oldestDays * 86400000) } }
+        $f = Get-Facts @{ 'events.logs' = @((& $log 'Application' 'Circular' $false $true 3.5), (& $log 'System' 'Retain' $true $true 30), (& $log 'Microsoft-Windows-PrintService/Admin' 'Circular' $false $false 30)
+                @{ Log = 'Microsoft-Windows-SMBClient/Connectivity'; Present = $false }) }
+        $f['events.coverageGapDays'].Value | Should -Be 4; $f['events.retainLogs'].Value | Should -Be 1; $f['events.fullLogs'].Value | Should -Be 1; $f['events.disabledLogs'].Value | Should -Be 1
+        $f['events.reachFrom'].Value | Should -Be ($ReadMs - [long](3.5 * 86400000))                         # ab hier reichen alle eingeschalteten Protokolle
+        # reichen die Protokolle nur bis zum letzten Start? (das abgeschaltete und das fehlende Protokoll zaehlen nicht)
+        $since = { param($bootDays, $oldestDays) (Get-Facts @{ 'operation.lastBoot' = $ReadMs - [long]($bootDays * 86400000)
+                'events.logs' = @((& $log 'Application' 'Circular' $false $true $oldestDays), (& $log 'System' 'Circular' $false $true ($oldestDays - 0.1)), (& $log 'Microsoft-Windows-PrintService/Admin' 'Circular' $false $false 30)) })['events.sinceBootOnly'] }
+        (& $since 2 1.9).Value | Should -BeTrue; (& $since 2 2.003).Value | Should -BeTrue                    # bis zehn Minuten vor dem Start zaehlt als "seit dem Start"
+        (& $since 2 2.5).Value | Should -BeFalse; (& $since 2 30).Value | Should -BeFalse
+        $f['events.sinceBootOnly'].State | Should -Be 'absent'                                                # ohne gelesenen letzten Start
+        (Get-Facts @{ 'operation.lastBoot' = $ReadMs - 86400000; 'events.logs' = @(@{ Log = 'Application'; Present = $true; Enabled = $true; Oldest = 0 }) })['events.sinceBootOnly'].Value | Should -BeFalse   # kein Eintrag
+    }
+    It 'erkennt Schutzprodukte der Rollenliste an Diensten und Filtertreibern' {
+        @(($Roles | Where-Object label -eq 'Microsoft Defender').filters) | Should -Be @('WdFilter'); @(($Roles | Where-Object label -eq 'AppLocker').filters).Count | Should -Be 0
+        $f = Get-Facts @{ 'security.services' = @(@{ Name = 'WinDefend'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'CylanceSvc'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'AppIDSvc'; State = 'Stopped'; StartMode = 'Manual' })
+            'security.filters' = @(@{ Name = 'WdFilter'; Altitude = '328010' }, @{ Name = 'CyProtectDrv64'; Altitude = '388510' }); 'security.mdeOnboarding' = 1; 'vda.version' = '2203'
+            'security.defenderExclusionProcesses' = @(@{ Path = 'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe' }) }
+        $f['security.otherFilterProducts'].Value | Should -Be 1; $f['security.products'].Value | Should -Be 'Microsoft Defender, Arctic Wolf Aurora Endpoint Protection'
+        $f['security.mdeOnboarded'].Value | Should -BeTrue; $f['security.citrixExclusionsMissing'].Value | Should -Be 2
+        (Get-Facts @{})['security.mdeOnboarded'].Value | Should -BeFalse
+    }
+    It 'erkennt Aufgaben, Scans und Updates in der Arbeitszeit des Servers' {
+        $t = { param($path, $on, $hours, $trig, $rep) @{ Path = $path; Enabled = $on; State = 'Ready'; NextRun = $(if ($null -eq $hours) { 0 } else { $ReadMs + [long]($hours * 3600000) }); LastRun = 0; Triggers = $trig; RepeatMinutes = $rep; Action = 'x.exe' } }
+        $tasks = @((& $t '\A' $true 2 'daily' 0), (& $t '\B' $true 18 'daily' 0), (& $t '\C' $false 2 'daily' 0), (& $t '\D' $true 50 'weekly' 0), (& $t '\E' $true $null 'logon, idle' 0), (& $t '\F' $true 18 'time' 15))
+        # A: Donnerstag 10:00; B: Freitag 02:00; C: abgeschaltet; D: Samstag 10:00; E: ohne naechsten Lauf, Anmeldung; F: Freitag 02:00, wiederholt sich alle 15 Minuten
+        $f = Get-Facts @{ 'maintenance.tasks' = $tasks; 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30'; 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 7; 'maintenance.updateHour' = 10 }
+        $f['maintenance.tasksInWorkHours'].Value | Should -Be 2; $f['maintenance.sessionTriggerTasks'].Value | Should -Be 1
+        $f['maintenance.scanInWorkHours'].Value | Should -BeTrue; $f['maintenance.updateInWorkHours'].Value | Should -BeFalse           # Tag 7 ist Samstag
+        (Get-Facts @{ 'maintenance.scanDay' = 8; 'maintenance.scanTime' = '12:30' })['maintenance.scanInWorkHours'].Value | Should -BeFalse
+        (Get-Facts @{})['maintenance.updateInWorkHours'].Value | Should -BeFalse                                                        # keine Richtlinie
+    }
+    It 'nennt ohne gelesenes Zustandsbild jeden gelesenen Wert nicht lesbar und folgt dem Modell des Servers' {
+        foreach ($case in @(@('skipped', 'skipped:Zustand'), @('notRecorded', 'notRecorded'), @('unreadable', 'error'))) {
+            $f = Get-Facts @{} @{ HealthState = $case[0]; Health = $null }
+            $f['size.cpuLogical'].State | Should -Be 'unreadable'; $f['size.cpuLogical'].Reason | Should -Be $case[1]
+            $f['size.commitPeakPct'].Reason | Should -Be $case[1]; $f['events.lookbackDays'].Value | Should -Be 7
+        }
+        Get-WorkerPerfHealthMissingReason -Model (New-HealthModel @{} @{ Meta = @{ OffsetMinutes = 60 } }) -What 'lookback' | Should -Be 'notRecorded'
+        $u = Get-Facts @{ 'size.model' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }
+        foreach ($id in 'size.vmware', 'size.vmtoolsMajor', 'size.balloonRunning', 'size.lsiControllers', 'network.rssOff') { $u[$id].State | Should -Be 'unreadable' -Because $id; $u[$id].Reason | Should -Be 'timeout' -Because $id }
     }
 }
