@@ -119,6 +119,8 @@ Ergänzt am 13.11.2026 nach Angabe des Auftraggebers: Die Worker werden ausschli
 - Die Benutzerumgebung wird mit Citrix Workspace Environment Management (WEM) eingerichtet; die Drucker ordnet PrinTaurus SmartSpread (AKI GmbH) zu, nicht die Citrix-Richtlinien. Der Bereich „Citrix VDA" liest deshalb auch den Zustand des WEM-Agenten, und Prüfungen zur Druckerzuordnung über Citrix-Richtlinien gelten nur, wo diese Zuordnung tatsächlich genutzt wird.
 - Der Katalog bleibt allgemein formuliert („bei nicht persistenten Workern im Master-Image"); er nennt keine Systeme des Auftraggebers.
 
+Sprachregel (Auftraggeber, 13.11.2026): In allen Texten, die der Bericht zeigt oder zum Kopieren anbietet, heißt die gemessene Maschine durchgehend „Server“, nicht „Worker“ (also „Zustand des Servers“). Das gilt für den Katalog des Zustandsbilds, seine Befundsätze, die Beschriftungen der Seite, die Kopiertexte und die Meldungen des Collectors; der Name des Werkzeugs (WorkerPerf), der Name dieses Bausteins in den Entwürfen und Kennungen im Code bleiben.
+
 ## 5. Darstellung
 
 ### 5.1 Geführte Ansicht

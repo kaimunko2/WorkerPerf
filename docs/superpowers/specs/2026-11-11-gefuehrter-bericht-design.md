@@ -172,6 +172,8 @@ Ergänzt am 13.11.2026 auf Wunsch des Auftraggebers: Neben den Quellen der Herst
 
 Die Texte entstehen auf Grundlage der Herstellerempfehlungen von Microsoft und Citrix und der Eigenheiten der Zielumgebung (Citrix-Profilcontainer, Schutzsoftware, AppLocker, Proxy, Fachanwendung mit Datenbank; seit 13.11.2026 festgehalten: ausschließlich über Machine Creation Services bereitgestellte, nicht persistente Shared-Session-Worker, deren Ereignisprotokolle einen Neustart nicht überdauern; die Benutzerumgebung wird mit Citrix Workspace Environment Management eingerichtet, die Drucker ordnet PrinTaurus SmartSpread (AKI GmbH) zu, nicht die Citrix-Richtlinien). Vorschläge, die eine Einstellung ändern, nennen deshalb das Master-Image oder die Richtlinie als Ort der Änderung. Der fertige Katalog wird dem Auftraggeber vor der Übernahme gesondert zur fachlichen Durchsicht vorgelegt. Nach den ersten realen Messungen wird er einmal nachgeschärft.
 
+Sprachregel (Auftraggeber, 13.11.2026): In allen Texten, die der Bericht zeigt oder zum Kopieren anbietet, heißt die gemessene Maschine durchgehend „Server“, nicht „Worker“. Das gilt für die Texte des Katalogs, die Sätze der Auswertung, die Beschriftungen der Seite und die Kopiertexte; der Name des Werkzeugs (WorkerPerf) und Kennungen im Code bleiben.
+
 ## 6. Zusammenfassung zum Kopieren
 
 - **Je Vorfall:** Knopf „Kopieren" auf der Karte und in der Vorfallsansicht.
