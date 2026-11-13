@@ -218,6 +218,7 @@
     "skipped[].id": "keyword",
     "skipped[].label": "composed",
     "skipped[].text": "composed",
-    "skipped[].places[]": "keyword"
+    "skipped[].places[]": "keyword",
+    "unmeasured.worker[]": "composed"
   }
 }

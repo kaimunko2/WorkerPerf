@@ -87,6 +87,24 @@ Describe 'Aufzeichnung mit -Skip' {
         { & $Capture -Simulate -DurationMinutes 60 -Skip Prozesse, Netz -OutputPath $dir 6>$null } | Should -Throw "*'Netz'*Gueltige Werte: Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand.*"
         Test-Path $dir | Should -BeFalse
     }
+    It 'lehnt einen Wert von -Skip ab, der mit Leerzeichen statt Komma an -OutputPath geht, bevor etwas angelegt wird' {   # Abschlussrunde (Important 3)
+        Push-Location $TestDrive
+        try {
+            { & $Capture -Simulate -DurationMinutes 60 -Skip Prozesse Rueckblick 6>$null } | Should -Throw "-OutputPath 'Rueckblick' ist der Name einer Kategorie: die Werte von -Skip mit Komma trennen (-Skip Prozesse,Rueckblick)."
+            { & $Capture -Simulate -DurationMinutes 60 -Skip 'Prozesse,citrix' gegenstellen 6>$null } | Should -Throw "-OutputPath 'gegenstellen' ist der Name einer Kategorie: die Werte von -Skip mit Komma trennen (-Skip Prozesse,citrix,gegenstellen)."
+            foreach ($d in 'Rueckblick', 'gegenstellen') { Test-Path (Join-Path $TestDrive $d) | Should -BeFalse }
+            # ein Pfad mit Trennzeichen ist ein Ordner, kein Wert von -Skip: der Start laeuft weiter (hier bis zur Pruefung der Dauer)
+            { & $Capture -Simulate -DurationMinutes 10 -Skip Prozesse -OutputPath (Join-Path '.' 'Rueckblick') 6>$null } | Should -Throw '-Simulate erfordert -DurationMinutes*'
+            { & $Capture -Simulate -DurationMinutes 10 -OutputPath 'Rueckblick' 6>$null } | Should -Throw '-Simulate erfordert -DurationMinutes*'   # ohne -Skip
+        }
+        finally { Pop-Location }
+    }
+    It 'zeichnet ohne Prozesse keine Befehlszeilen auf und sagt es beim Start' {   # Abschlussrunde (Minor 7)
+        (Get-Meta $Runs.Prozesse).IncludeCommandLine | Should -BeFalse; (Get-Meta $Runs.Voll).IncludeCommandLine | Should -BeFalse
+        $out = Get-Content (Join-Path (Split-Path (Split-Path $Runs.Prozesse -Parent) -Parent) 'Prozesse.console.txt') -Raw
+        $out | Should -Match 'Nicht gemessen \(-Skip\): Prozesse\r?\nBefehlszeilen werden nicht aufgezeichnet: Prozesse ist weggelassen \(-Skip Prozesse\)\.\r?\n'
+        (Get-Content (Join-Path (Split-Path (Split-Path $Runs.Voll -Parent) -Parent) 'Voll.console.txt') -Raw) | Should -Not -Match 'Befehlszeilen'
+    }
     It 'laesst die Aufzeichnung ohne -Skip wie bisher, bis auf das neue Feld Skip' {
         $m = Get-Meta $Runs.Voll; $names = @($m.PSObject.Properties.Name)
         Get-CsvNames $Runs.Voll | Should -Be @($WorkerPerfHeaders.Keys | Sort-Object)
@@ -175,10 +193,40 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         $walk = { param($v, [string]$p)
             if ($null -eq $v -or $v -is [ValueType]) { return }
             if ($v -is [string]) { [void]$paths.Add($p); return }
-            if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { & $walk $x "$p[]" }; return }
+            if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { if ($null -ne $x -and $x -isnot [ValueType]) { & $walk $x "$p[]" } }; return }   # Zahlenreihen ohne Aufruf je Wert
             foreach ($q in $v.PSObject.Properties) { & $walk $q.Value $(if ($p) { "$p.$($q.Name)" } else { $q.Name }) } }
         & $walk @($D.Alle.skipped) 'skipped'
         @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like 'skipped*' } | Sort-Object)
+        # Abschlussrunde (Minor 11): jedes Textfeld der ganzen Berichtsdaten jedes Laufs ist eingeordnet; ohne Laufwerke
+        # fuellen sich Listen, die im vollen Lauf leer sind (unmeasured.worker)
+        $paths.Clear()
+        foreach ($k in @('Voll') + $Names + 'Alle') { & $walk $D[$k] '' }
+        @($paths | Where-Object { $null -eq $census.PSObject.Properties[$_] } | ForEach-Object { "neues Textfeld $_ : in tests/MaskCensus.json einordnen" }) | Should -BeNullOrEmpty
+        $census.'unmeasured.worker[]' | Should -Be 'composed'; @($D.Laufwerke.unmeasured.worker).Count | Should -Be 2; @($D.Voll.unmeasured.worker).Count | Should -Be 0
+    }
+    It 'liest die Dateien einer Kategorie nicht, die Skip nennt, auch wenn die Aufzeichnung sie hat' {   # Abschlussrunde (Minor 6, MK-R20)
+        # eine Kopie des vollen Laufs mit "Skip": "Prozesse" (New-SkipReports, Odd) und mit "Skip": ["Prozesse"]: der Bericht
+        # ist der einer Aufzeichnung mit -Skip Prozesse, soweit die Dateien reichen
+        $dir = Copy-SimRun $Runs.Voll (Join-Path $TestDrive 'odd-list'); $f = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($f, ([IO.File]::ReadAllText($f) -replace '(?s)"Skip":\s*\[\s*\]', '"Skip": ["Prozesse"]'))
+        $out = Join-Path $TestDrive 'odd-list.html'; [void](& $Report -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') 6>$null)
+        $rel = { param($x, $v) [regex]::Replace((ConvertTo-Json -InputObject $v -Depth 30 -Compress), '\b1\d{12}\b', { param($m) [string]([long]$m.Value - [long]$x.meta.start) }) }
+        $noTime = { param($t) $t -replace '\d\d:\d\d(:\d\d)?', 'hh:mm' }
+        $p = $D.Prozesse
+        foreach ($o in @((Get-ReportData $Rep.Odd.Report), (Get-ReportData $out))) {
+            foreach ($n in 'processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv') { Test-Path (Join-Path $Rep.Odd.Run $n) | Should -BeTrue }
+            @($o.skipped.id) | Should -Be @('Prozesse'); @($o.procs).Count | Should -Be 0; $null -eq $o.mainApp | Should -BeTrue
+            foreach ($k in 'procs', 'apps', 'pairs', 'sessions', 'sollIst', 'host', 'unmeasured', 'skipped', 'volumes', 'shares', 'print') { & $rel $o $o.$k | Should -BeExactly (& $rel $p $p.$k) -Because $k }
+            & $rel $o $o.quality.sources | Should -BeExactly (& $rel $p $p.quality.sources)
+            $o.meta.processRows | Should -Be 0; $o.meta.processCount | Should -Be 0
+            # die Vorfaelle der Basis wie mit -Skip Prozesse; die Ereignisvorfaelle zu denselben Zeiten, aber mit den Sitzungen und
+            # Benutzern, die der Collector beim Aufzeichnen in events.csv geschrieben hat (die Datei der Ereignisse gibt sie mit)
+            $base = { param($x) @($x.incidents | Where-Object type -ne 'ereignis' | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.type, ($_.start - $x.meta.start), ($_.end - $x.meta.start), (& $noTime $_.text) }) }
+            & $base $o | Should -Be (& $base $p)
+            $evw = { param($x) @($x.incidents | Where-Object type -eq 'ereignis' | ForEach-Object { '{0}|{1}|{2}' -f $_.event.app, ($_.start - $x.meta.start), ($_.end - $x.meta.start) }) }
+            & $evw $o | Should -Be (& $evw $p)
+            @($o.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.event.app -eq 'chrome.exe' }).event.users | Should -Be @('user008')
+        }
     }
     It 'behaelt Kategorien und Gruende im maskierten Bericht' {
         $m = Get-ReportData $Rep.AlleMasked.Report

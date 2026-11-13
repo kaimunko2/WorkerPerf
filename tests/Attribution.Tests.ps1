@@ -220,6 +220,15 @@ Describe 'Hauptverursacher, Untergrenze und Schutzsoftware als groesster Verbrau
         Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
             'Größter Verbraucher: Microsoft Defender mit 99 % der CPU-Zeit. Scan-Ausschlüsse prüfen.')
     }
+    It 'sagt ohne Ereignisse, dass ein Virenscan nicht erfasst ist, statt nur Scan-Ausschluesse zu raten' {   # Abschlussrunde Messkategorien (Minor 1)
+        $m = New-TestModel; Set-SecurityLoad $m 20000; $m.Skip = @('Ereignisse')
+        foreach ($r in 3, 4, 6, 7) { $m.Rows.CpuMs[$r] = 100 }
+        $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
+        $i.Cause.Kind | Should -Be 'security'; $i.Cause.Scan | Should -BeFalse
+        Get-Text $m $i | Should -Be ('23:13:35–23:14:05: CPU-Engpass (CPU-Auslastung Spitze 97 %, Soll unter 75 %). Betroffen: 1 Sitzung. ' +
+            'Größter Verbraucher: Microsoft Defender mit 99 % der CPU-Zeit. Ob im Fenster ein Virenscan lief, ist nicht erfasst (Ereignisse nicht gemessen); Zeitplan des Scans und Scan-Ausschlüsse prüfen.')
+        $m.Skip = @('Prozesse', 'Rueckblick'); Get-Text $m $i | Should -BeLike '*Microsoft Defender mit 99 % der CPU-Zeit. Scan-Ausschlüsse prüfen.'   # andere Kategorien: wie bisher
+    }
     It 'bleibt beim Hauptverursacher mit Begleiter, solange die Schutzsoftware nicht den groesseren Anteil hat' {
         $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97; Add-Detail $m $i
         $i.Cause.Kind | Should -Be 'main'; $i.Cause.Main.App | Should -Be 'EXCEL.EXE'; $i.Companion.Label | Should -Be 'Microsoft Defender'

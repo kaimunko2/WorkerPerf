@@ -3,6 +3,14 @@
 # Defines functions only. Callers dot-source WorkerPerf.Common.ps1 and WorkerPerf.Events.ps1 as well.
 # The model is a hashtable; its lists are arrays. Get-WorkerPerfSeries emits plain pipeline output: wrap calls in @(...).
 
+# Capture files (full path -> $true) that the loader reads as missing: the files of the categories that the field Skip of
+# the capture's meta.json names (Import-WorkerPerfRun sets them), so a capture whose Skip contradicts its files gives the
+# report of its Skip (MK-R20). The collector never writes such a file.
+$script:WorkerPerfLeftOutFiles = @{}
+function Test-WorkerPerfRunFile([string]$Full) {
+    return ((Test-Path -LiteralPath $Full) -and -not $script:WorkerPerfLeftOutFiles.ContainsKey($Full))
+}
+
 function Open-WorkerPerfCsvReader {
     # Opens one capture file for reading line by line and reads its header line.
     # Returns @{ Col = column name -> index; Need = number of columns of the format; Reader = StreamReader, or $null for a
@@ -19,7 +27,7 @@ function Open-WorkerPerfCsvReader {
         $need = $canon.Length
     }
     $full = Join-Path $Path $FileName
-    if (-not (Test-Path -LiteralPath $full)) { return @{ Col = $col; Need = $need; Reader = $null } }
+    if (-not (Test-WorkerPerfRunFile $full)) { return @{ Col = $col; Need = $need; Reader = $null } }
     $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = $null
     try {
@@ -146,6 +154,12 @@ function Import-WorkerPerfRun {
     foreach ($k in 'EventReadCounts', 'LookbackReadCounts') { $meta[$k] = ConvertTo-WorkerPerfReadCounts (Get-WorkerPerfField $metaJson $k) }
     # the categories -Skip left out (format 3 with -Skip); a capture from before has no field: everything was measured
     $recordedSkip = [string[]]@(Get-WorkerPerfRecordedSkip (Get-WorkerPerfField $metaJson 'Skip'))
+    foreach ($cat in @($script:WorkerPerfCategories.Keys)) {
+        foreach ($f in @($script:WorkerPerfCategories[$cat].Files)) {
+            $full = Join-Path $Path $f
+            if ($recordedSkip -contains $cat) { $script:WorkerPerfLeftOutFiles[$full] = $true } else { $script:WorkerPerfLeftOutFiles.Remove($full) }
+        }
+    }
     # a capture in another format is not read; a missing field is tolerated (hand-written or damaged meta.json)
     if ($null -ne $meta['SchemaVersion']) {
         $ver = 0.0
@@ -175,6 +189,12 @@ function Import-WorkerPerfRun {
             $failed = Get-WorkerPerfField $p.Value 'ReadFailed'; $lbRead = Get-WorkerPerfField $p.Value 'LookbackRead'
             $sources[$p.Name] = @{ Available = ($null -ne $avail -and [bool]$avail); Detail = $d; ReadFailed = ($true -eq $failed); LookbackRead = ($true -eq $lbRead) }
         }
+    }
+    # the sources of a category that Skip names, as the collector notes them (a capture whose Skip contradicts its
+    # files, MK-R20; for a capture of the collector this changes nothing)
+    if ($recordedSkip.Length -gt 0) {
+        Set-WorkerPerfSkippedSources -Sources $sources -Skip $recordedSkip
+        foreach ($id in @($sources.Keys)) { foreach ($k in 'ReadFailed', 'LookbackRead') { if (-not $sources[$id].ContainsKey($k)) { $sources[$id][$k] = $false } } }
     }
 
     # failed source calls of the capture (optional field SourceErrors: source -> Count, FirstTime, FirstMessage); missing = none
@@ -302,6 +322,8 @@ function Import-WorkerPerfRun {
     $preKind = New-Object System.Collections.Generic.List[string]
     foreach ($name in 'ElapsedSec', 'Sessions', 'ActiveSessions', 'Processes', 'RowsWritten', 'CollectMs') { $snapNum[$name] = New-Object System.Collections.Generic.List[double] }
     $badSnaps = [int]$csv.Skipped                 # unreadable rows of snapshots.csv, counted like the ticks
+    # the process counts of a snapshot belong to Prozesse: without it they are empty (also where Skip contradicts the file)
+    $blankSnap = @(); if ($recordedSkip -contains 'Prozesse') { $blankSnap = @('Processes', 'RowsWritten') }
     foreach ($f in $csv.Rows) {
         $p = 0; $t = 0
         if (-not [int]::TryParse($f[[int]$col['P']], [ref]$p)) { $badSnaps++; continue }
@@ -319,7 +341,7 @@ function Import-WorkerPerfRun {
         foreach ($name in $snapNum.Keys) {
             $v = $nan
             $txt = $f[[int]$col[$name]]
-            if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
+            if ($txt.Length -gt 0 -and $blankSnap -notcontains $name -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
             $snapNum[$name].Add($v)
         }
     }
@@ -997,7 +1019,7 @@ function Import-WorkerPerfRun {
     if ($endByP.ContainsKey($seqP[0])) { foreach ($k in $endByP[$seqP[0]]) { & $endProcess $k $seqPos[0] } }
     $full = Join-Path $Path 'processes.csv'
     $reader = $null
-    if (Test-Path -LiteralPath $full) {
+    if (Test-WorkerPerfRunFile $full) {
         $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
         $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
     }

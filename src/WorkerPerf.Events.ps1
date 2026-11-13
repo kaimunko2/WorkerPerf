@@ -1009,6 +1009,19 @@ function Get-WorkerPerfUncheckedText($Entry, $Texts) {
     return $text
 }
 
+function Get-WorkerPerfUncheckedStatements([object[]]$Unchecked, $Texts) {
+    # The statements of the patterns left unchecked, in their order; two or more overlap entries (one per category) make
+    # one statement at the place of the first (MK-R21): "Zusammentreffen mit Vorfaellen der Kategorien A, B (nicht gemessen)".
+    $overlaps = @($Unchecked | Where-Object { [string]$_.Id -eq 'overlap' })
+    $joined = $false
+    foreach ($u in $Unchecked) {
+        if ($overlaps.Count -lt 2 -or [string]$u.Id -ne 'overlap') { Get-WorkerPerfUncheckedText $u $Texts; continue }
+        if ($joined) { continue }
+        $joined = $true
+        $Texts['pattern.unchecked.overlap.many'] -f ((@($overlaps | ForEach-Object { [string]$Texts['skip.label.' + [string]$_.Category] })) -join ', ')
+    }
+}
+
 function Get-WorkerPerfEventIncidentText {
     # One sentence for an event incident: the head of its kind with time span and count, the users, modules, error codes
     # and versions, then the statement of every pattern in their order, or "no pattern" (no cause is named then).
@@ -1079,7 +1092,7 @@ function Get-WorkerPerfEventIncidentText {
     $patterns = @($inc.Patterns)
     $withResource = (@($patterns | Where-Object { $null -ne $_ -and [string]$_.Id -eq 'resource' }).Count -gt 0)
     foreach ($p in $patterns) { [void]$sb.Append((Get-WorkerPerfPatternStatement $p $Texts $OffsetMinutes $withDate $startDay $withResource)) }
-    if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@($unchecked | ForEach-Object { Get-WorkerPerfUncheckedText $_ $Texts })) -join ', '))) }
+    if ($unchecked.Count -gt 0) { [void]$sb.Append(($Texts['pattern.unchecked'] -f ((@(Get-WorkerPerfUncheckedStatements $unchecked $Texts)) -join ', '))) }
     if ($patterns.Count -eq 0 -and $unchecked.Count -eq 0) { [void]$sb.Append($Texts['pattern.none']) }
     return $sb.ToString()
 }

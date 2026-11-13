@@ -13,17 +13,22 @@ function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}, [string]$Co
 }
 function New-SkipRuns([string]$OutDir) {
     # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Alle (alle sieben); Name -> Aufzeichnungsordner.
-    # Die Konsolenausgabe des vollen Laufs steht in <OutDir>/Voll.console.txt (neben den Aufzeichnungen).
+    # Die Konsolenausgabe des vollen Laufs steht in <OutDir>/Voll.console.txt (neben den Aufzeichnungen). Der Lauf
+    # Prozesse hat dazu -IncludeCommandLine (ohne Prozesse ohne Wirkung), seine Konsolenausgabe in <OutDir>/Prozesse.console.txt.
     $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
     [void](New-Item -ItemType Directory -Path $OutDir -Force)
     $runs = [ordered]@{ Voll = (Invoke-SimCapture (Join-Path $OutDir 'Voll') @{} (Join-Path $OutDir 'Voll.console.txt')) }
-    foreach ($n in $names) { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
+    foreach ($n in $names) {
+        if ($n -eq 'Prozesse') { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n); IncludeCommandLine = $true } (Join-Path $OutDir 'Prozesse.console.txt') }
+        else { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
+    }
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs
 }
 function New-SkipReports([string]$OutDir) {
     # Die Aufzeichnungen von New-SkipRuns (unter <OutDir>/skip) mit je einem Bericht <OutDir>/report-skip-<name>.html
-    # (Rollendatei <OutDir>/roles.sim.json), dazu Alle mit -Mask Alles; Name -> @{ Run; Report }, zusaetzlich AlleMasked.
+    # (Rollendatei <OutDir>/roles.sim.json), dazu Alle mit -Mask Alles; Name -> @{ Run; Report }, zusaetzlich AlleMasked,
+    # NoneEreignisse, NoneAlle, FocusEreignisse, FocusProzesse und Odd (siehe unten).
     [void](New-Item -ItemType Directory -Path $OutDir -Force)
     $runs = New-SkipRuns (Join-Path $OutDir 'skip')
     $report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $roles = New-SimRoleFile (Join-Path $OutDir 'roles.sim.json')
@@ -36,6 +41,25 @@ function New-SkipReports([string]$OutDir) {
     $masked = Join-Path $OutDir 'report-skip-alle-masked.html'
     [void](& $report -Path $runs['Alle'] -OutFile $masked -RoleFile $roles -Mask Alles 6>$null)
     $out['AlleMasked'] = @{ Run = $runs['Alle']; Report = $masked }
+    # ohne Befund (Schwellen wie report-none.html): ohne Ereignisse und ohne alle sieben; mit gemeldetem Benutzer user008
+    # (zwei Vorfaelle im vollen Lauf) ohne Ereignisse und ohne Prozesse
+    $none = New-NoFindingThresholdFile (Join-Path $OutDir 'none.skip.json')
+    foreach ($k in 'Ereignisse', 'Alle') {
+        $file = Join-Path $OutDir ('report-skip-none-{0}.html' -f $k.ToLowerInvariant())
+        [void](& $report -Path $runs[$k] -OutFile $file -RoleFile $roles -ThresholdFile $none 6>$null)
+        $out["None$k"] = @{ Run = $runs[$k]; Report = $file }
+    }
+    foreach ($k in 'Ereignisse', 'Prozesse') {
+        $file = Join-Path $OutDir ('report-skip-focus-{0}.html' -f $k.ToLowerInvariant())
+        [void](& $report -Path $runs[$k] -OutFile $file -RoleFile $roles -FocusUser 'user008' 6>$null)
+        $out["Focus$k"] = @{ Run = $runs[$k]; Report = $file }
+    }
+    # eine von Hand geaenderte Aufzeichnung: der volle Lauf mit "Skip": "Prozesse" (die Dateien der Prozesse sind da)
+    $odd = Copy-SimRun $runs['Voll'] (Join-Path $OutDir 'skip-odd'); $mf = Join-Path $odd 'meta.json'
+    [IO.File]::WriteAllText($mf, ([IO.File]::ReadAllText($mf) -replace '(?s)"Skip":\s*\[\s*\]', '"Skip": "Prozesse"'))
+    $file = Join-Path $OutDir 'report-skip-odd.html'
+    [void](& $report -Path $odd -OutFile $file -RoleFile $roles 6>$null)
+    $out['Odd'] = @{ Run = $odd; Report = $file }
     $out
 }
 function Get-ReportData([string]$Html) {

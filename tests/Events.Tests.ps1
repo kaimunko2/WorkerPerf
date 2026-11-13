@@ -1514,7 +1514,12 @@ Describe 'Muster mit weggelassenen Kategorien (Messkategorien Task 4)' {
     It 'nennt das Zusammentreffen mit Vorfaellen weggelassener Kategorien, wenn kein Vorfall zeitgleich ist (Fix-Runde 1)' {
         $i = (Get-SkipInc @(New-Bare2 0) @('Gegenstellen', 'Prozesse', 'Citrix', 'Drucken', 'Laufwerke'))[0]
         Get-Unchecked $i | Should -Be @('printdriver/Drucken', 'users/Prozesse', 'overlap/Laufwerke', 'overlap/Citrix', 'overlap/Gegenstellen')
-        Get-Text $i | Should -Match 'Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Laufwerke \(Laufwerke nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Citrix \(Citrix nicht gemessen\), Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen \(Gegenstellen nicht gemessen\)\.$'
+        # Aussage geaendert (Abschlussrunde, MK-R21): mehrere weggelassene Kategorien des Zusammentreffens bilden eine Aussage
+        Get-Text $i | Should -Match 'Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\), Zusammentreffen mit Vorfällen der Kategorien Laufwerke, Citrix, Gegenstellen \(nicht gemessen\)\.$'
+        $two = (Get-SkipInc @(New-Bare2 0) @('Citrix', 'Gegenstellen'))[0]
+        Get-Text $two | Should -Match ' Nicht geprüft: Zusammentreffen mit Vorfällen der Kategorien Citrix, Gegenstellen \(nicht gemessen\)\.$'
+        $one = (Get-SkipInc @(New-Bare2 0) @('Citrix'))[0]   # eine Kategorie: der Satz wie bisher
+        Get-Text $one | Should -Match ' Nicht geprüft: Zusammentreffen mit einem Vorfall der Kategorie Citrix \(Citrix nicht gemessen\)\.$'
         $o = ConvertTo-WorkerPerfEventIncidentOut -Incident $i -Text 'x' -Focus $false -Near $false -Texts $Texts -OffsetMinutes 0
         @($o.event.unchecked | Where-Object id -eq 'overlap' | ForEach-Object { $_.category + '|' + $_.text }) | Should -Be @('Laufwerke|Zusammentreffen mit einem Vorfall der Kategorie Laufwerke (Laufwerke nicht gemessen)',
             'Citrix|Zusammentreffen mit einem Vorfall der Kategorie Citrix (Citrix nicht gemessen)', 'Gegenstellen|Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen (Gegenstellen nicht gemessen)')

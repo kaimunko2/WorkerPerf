@@ -927,7 +927,10 @@ function Get-WorkerPerfIncidentText {
             }
             elseif ($cause.Kind -eq 'security') {
                 $text += & $fmt 'largest' @($cause.Security.Label, (Format-WorkerPerfTextNumber $cause.Security.SharePct), $measure)
-                if ($cause.Scan) { $text += $Texts['largest.scan'] } else { $text += $Texts['largest.exclusions'] }
+                # without Ereignisse no scan is known: the advice does not presume that none ran
+                if ($cause.Scan) { $text += $Texts['largest.scan'] }
+                elseif ($skipped -contains 'Ereignisse') { $text += $Texts['largest.scan.notmeasured'] }
+                else { $text += $Texts['largest.exclusions'] }
                 if ($null -ne $m) {
                     $who = & $userText ([int]$m.SessionIndex) ([string]$m.User)
                     if ($null -eq $m.BaselinePct) { $text += & $fmt 'largest.other.nobase' @($m.App, $who, (Format-WorkerPerfTextNumber $m.SharePct), $measure) }
