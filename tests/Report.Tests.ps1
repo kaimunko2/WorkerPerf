@@ -495,7 +495,8 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.EventConfig.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1')
         # the catalogue as the report reads it ($Catalogue, not $G: variable names ignore case)
-        $script:Catalogue = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json')
+        $script:AppList = Read-WorkerPerfApps (Join-Path $PSScriptRoot '../src/apps.json')
+        $script:Catalogue = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json') -Apps $AppList
         function Get-ByKey([string]$Key) { $e = $Exp | Where-Object Key -eq $Key; if ($e.Type -eq 'ereignis') { $D.incidents | Where-Object { $_.type -eq 'ereignis' -and [Math]::Abs($_.start - $e.StartMs) -le 20000 } } else { Get-Hit $Key } }
         $script:Situation = @{ homeoffice = 'chronic.network'; cpu = 'cpu'; memory = 'memory'; disk = 'disk'; share = 'share'; profile = 'profile'; backend = 'delay.many'
             hang = 'delay.single'; 'crash.memory' = 'crash'; 'profile.logon' = 'profileerror'; 'crash.manyusers' = 'crash'; 'print.spooler' = 'print' }
@@ -625,7 +626,76 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         @($x.guidance.situations.PSObject.Properties.Name) | Should -Be @($Catalogue.situations.PSObject.Properties.Name)
         ($x.incidents | Where-Object lead -eq 'cpu').copy.named | Should -Match 'Auf Server 01 gemessen: \d+ %'
     }
+    It 'behaelt beide Erklaerungen, wenn zwei Begriffe auf denselben Ersatznamen fallen' {                     # Task 7 re-review, Minor
+        # two names of one server (the host name and its first label) get the same replacement name
+        $file = Join-Path $TestDrive 'g-twice.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
+        $j.terms | Add-Member -NotePropertyName 'ora01.sim.local' -NotePropertyValue 'Erste Erklärung.'
+        $j.terms | Add-Member -NotePropertyName 'ora01' -NotePropertyValue 'Zweite Erklärung von user003.'
+        [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 10))
+        $out = Join-Path $TestDrive 'g-twice.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -GuidanceFile $file -Mask Alles 6>$null)
+        $x = Get-ReportData $out
+        $names = @($x.guidance.terms.PSObject.Properties.Name)
+        $names | Should -Not -Contain 'ora01'; $names | Should -Not -Contain 'ora01.sim.local'
+        @($names | Where-Object { $_ -eq 'Server 02' }).Count | Should -Be 1
+        $x.guidance.terms.'Server 02' | Should -Be 'Erste Erklärung. Zweite Erklärung von Benutzer 03.'
+        # every other term keeps its one explanation
+        @($names).Count | Should -Be (@($Catalogue.terms.PSObject.Properties).Count + 1)
+    }
     It 'nennt die Quellen der Treiberspalte' { $D.print.involvedFrom | Should -Be 'both' }
+    It 'leitet die Standardanwendung des Hauptverursachers ab und traegt die Anwendungsliste in die Berichtsdaten' {      # ruling P3-R42
+        # the CPU bottleneck of the simulated hour is caused by EXCEL.EXE: Microsoft Office in src/apps.json
+        $cpu = Get-ByKey 'cpu'
+        $cpu.main.app | Should -Be 'EXCEL.EXE'; @($cpu.guide.conditions) | Should -Contain 'app.office'
+        @($cpu.guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        # the memory bottleneck is caused by ms-teams.exe; a crash of OUTLOOK.EXE is an event incident of Microsoft Office
+        @((Get-ByKey 'memory').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.teams')
+        @((Get-ByKey 'crash.manyusers').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        # no incident of the hour is caused by another standard application; robocopy.exe (disk) is none
+        @(@($D.incidents) + @($D.before.incidents) | ForEach-Object { $_.guide.conditions } | Where-Object { $_ -like 'app.*' } | Sort-Object -Unique) | Should -Be @('app.office', 'app.teams')
+        @((Get-ByKey 'disk').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @()
+        # the list as read, like the catalogue
+        ($D.appList | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($AppList | ConvertTo-Json -Depth 20 -Compress)
+        @($D.appList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus')
+        # a masked report keeps the keys (identifiers) and the condition
+        foreach ($f in $R.Masked, $R.MaskedP) {
+            $x = Get-ReportData $f
+            @($x.appList.apps | ForEach-Object { $_.key }) | Should -Be @($D.appList.apps | ForEach-Object { $_.key }) -Because $f
+            @(($x.incidents | Where-Object lead -eq 'cpu').guide.conditions) | Should -Contain 'app.office' -Because $f
+        }
+    }
+    It 'nimmt eine eigene Anwendungsliste und bricht bei einer fehlerhaften vor dem Lesen der Aufzeichnung ab' {
+        $report = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $roles = Join-Path $TestDrive 'r/roles.sim.json'
+        # a faulty list: the message names the application and the field; nothing is read, nothing is written
+        $bad = Join-Path $TestDrive 'apps-bad.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/apps.json') -Raw | ConvertFrom-Json
+        $j.apps[2].processes = @(); [IO.File]::WriteAllText($bad, ($j | ConvertTo-Json -Depth 6))
+        { & $report -Path $R.Run -OutFile (Join-Path $TestDrive 'a.html') -RoleFile $roles -AppsFile $bad 6>$null } | Should -Throw "Anwendungsliste '*apps-bad.json': Anwendung 'office': Feld 'processes' ist keine Liste mit Mustern."
+        $said = New-Object System.Collections.Generic.List[string]
+        try { & $report -Path $R.Run -OutFile (Join-Path $TestDrive 'a.html') -RoleFile $roles -AppsFile $bad 6>&1 | ForEach-Object { $said.Add([string]$_) } } catch { }
+        ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'a.html') | Should -BeFalse
+        { & $report -Path $R.Run -OutFile (Join-Path $TestDrive 'a.html') -RoleFile $roles -AppsFile (Join-Path $TestDrive 'apps-fehlt.json') 6>$null } | Should -Throw '*apps-fehlt.json*'
+        # a list of its own: EXCEL.EXE under another key; the catalogue names no application of this list, so it is refused
+        $own = Join-Path $TestDrive 'apps-own.json'
+        [IO.File]::WriteAllText($own, '{ "version": "1", "apps": [ { "key": "tabellen", "label": "Sim Tabellen", "processes": ["excel*.exe"] } ] }')
+        $uses = @(@($Catalogue.situations.PSObject.Properties.Value | ForEach-Object { @($_.checks) + @($_.remedies) + @($_.contacts) }) |
+                Where-Object { $_.PSObject.Properties['when'] -and @($_.when | Where-Object { $_ -like 'app.*' }).Count -gt 0 }).Count -gt 0
+        if ($uses) {
+            { & $report -Path $R.Run -OutFile (Join-Path $TestDrive 'a.html') -RoleFile $roles -AppsFile $own 6>$null } | Should -Throw "*Feld 'when' enthaelt die unbekannte Bedingung 'app.*"
+        }
+        # with a catalogue that names no application the list of its own decides the condition
+        $plain = Join-Path $TestDrive 'g-noapps.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
+        foreach ($s in $j.situations.PSObject.Properties.Value) {
+            foreach ($list in 'checks', 'remedies', 'contacts') {
+                $s.$list = @($s.$list | Where-Object { -not ($_.PSObject.Properties['when'] -and @($_.when | Where-Object { $_ -like 'app.*' }).Count -gt 0) })
+            }
+        }
+        [IO.File]::WriteAllText($plain, ($j | ConvertTo-Json -Depth 10))
+        $out = Join-Path $TestDrive 'a-own.html'
+        [void](& $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain 6>$null)
+        $x = Get-ReportData $out
+        @(($x.incidents | Where-Object lead -eq 'cpu').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.tabellen')
+        @($x.appList.apps | ForEach-Object { $_.label }) | Should -Be @('Sim Tabellen')
+    }
     It 'liefert ohne Befund ein gruenes Lagebild, keine Karten und eine Zusammenfassung' {
         $n = Get-ReportData $R.NoneReported
         $n.noFinding | Should -BeTrue; $n.meta.focus.reportedMs | Should -BeGreaterThan $n.meta.start; $n.meta.focus.reportedMs | Should -BeLessThan $n.meta.end

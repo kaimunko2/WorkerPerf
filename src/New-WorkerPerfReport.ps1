@@ -34,6 +34,11 @@
     Guidance catalogue (situations, checks, remedies, texts of the guided report). Default: guidance.de.json next to
     this script. It is checked before the capture is read; an error names the entry and the field.
 
+.PARAMETER AppsFile
+    Application list (standard applications and the name patterns of their processes; the guidance catalogue has steps
+    for them under the conditions app.<key>). Default: apps.json next to this script. Like the catalogue it is checked
+    before the capture is read; an error names the application and the field.
+
 .PARAMETER FocusUser
     User who reported the problem (User or Domain\User, case-insensitive).
 
@@ -75,6 +80,7 @@ param(
     [string]$ThresholdFile,
     [string]$RoleFile,
     [string]$GuidanceFile,
+    [string]$AppsFile,
     [string]$FocusUser,
     [datetime]$ReportedTime,
     [ValidateRange(10, 2000)][int]$TopProcesses = 150,
@@ -316,6 +322,7 @@ if (-not $OutFile) { $OutFile = Join-Path $Path 'report.html' }
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
 if (-not $GuidanceFile) { $GuidanceFile = Join-Path $PSScriptRoot 'guidance.de.json' }
+if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
 if (-not (Test-Path -LiteralPath $templateFile)) { throw "Vorlage nicht gefunden: $templateFile" }
 $OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
@@ -352,8 +359,10 @@ if ($Mask -eq 'Alles') {
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $roles = @(Read-WorkerPerfRoles $RoleFile)
 $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
-# an error in the catalogue stops before the capture is read
-$guidance = Read-WorkerPerfGuidance $GuidanceFile
+# an error in the application list or in the catalogue stops before the capture is read; the catalogue's conditions
+# app.<key> are the keys of the list
+$appList = Read-WorkerPerfApps $AppsFile
+$guidance = Read-WorkerPerfGuidance $GuidanceFile -Apps $appList
 
 Write-Host 'Lese Aufzeichnung ...'
 $model = Import-WorkerPerfRun -Path $Path -From $From -To $To -Thresholds $thresholds -Roles $roles
@@ -1161,6 +1170,9 @@ $data = [ordered]@{
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
     noFinding = ($incOut.Count -eq 0)
     before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
+    # the application list as read (like thresholds): its keys are identifiers, its labels and process patterns are
+    # masked with the other data
+    appList = (ConvertTo-PlainData $appList)
     # the categories -Skip left out, with their reason and the places of the page that depend on them (last field)
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
 }
@@ -1186,7 +1198,7 @@ if ($Mask) {
 $captureInc = @($data['incidents'])
 $beforeInc = @($data['before']['incidents'])
 $allInc = @($captureInc + $beforeInc)
-$guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts }
+$guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
 foreach ($inc in $allInc) {
     $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
     $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
@@ -1230,13 +1242,15 @@ if ($Mask) {
     # the catalogue is composed text throughout: a key of it named like a keyword field (copy.measure) is no keyword
     $data['guidance'] = ConvertTo-PlainData $guidance $maskObj
     # the keys of terms are display words, not identifiers (ruling P3-R43): masked like the texts, so that guide.terms
-    # (composed text, masked with the data) still finds its explanation; all other keys of the catalogue stay
+    # (composed text, masked with the data) still finds its explanation; all other keys of the catalogue stay. Two keys
+    # that get the same replacement name (two names of one server) keep both explanations, joined in their order.
     $plainTerms = $data['guidance']['terms']
     if ($plainTerms -is [System.Collections.IDictionary]) {
         $maskedTerms = [ordered]@{}
         foreach ($k in @($plainTerms.Keys)) {
             $maskedKey = Hide-WorkerPerfReportText ([string]$k) $maskObj
-            if (-not $maskedTerms.Contains($maskedKey)) { $maskedTerms[$maskedKey] = $plainTerms[$k] }
+            if ($maskedTerms.Contains($maskedKey)) { $maskedTerms[$maskedKey] = [string]$maskedTerms[$maskedKey] + ' ' + [string]$plainTerms[$k] }
+            else { $maskedTerms[$maskedKey] = $plainTerms[$k] }
         }
         $data['guidance']['terms'] = $maskedTerms
     }

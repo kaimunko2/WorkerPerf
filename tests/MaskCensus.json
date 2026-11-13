@@ -275,6 +275,10 @@
     "more[].label": "composed",
     "more[].situation": "keyword",
     "copyAll.named": "composed",
-    "copyAll.anonymous": "composed"
+    "copyAll.anonymous": "composed",
+    "appList.version": "composed",
+    "appList.apps[].key": "keyword",
+    "appList.apps[].label": "composed",
+    "appList.apps[].processes[]": "name"
   }
 }

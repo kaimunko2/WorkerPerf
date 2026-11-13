@@ -1,6 +1,6 @@
 #Requires -Version 5.1
-# Guidance catalogue (guidance.de.json): loading and checking; the situation, conditions and placeholder values of an
-# incident and its guidance; the ranking of the incidents, the groups after the cards and the situation summary
+# Guidance catalogue (guidance.de.json) and application list (apps.json): loading and checking; the situation, conditions
+# and placeholder values of an incident and its guidance; the ranking of the incidents, the groups after the cards and the situation summary
 # (Lagebild) of the capture; the plain-text summaries to copy. Dot-source this file; it only defines variables and
 # functions and runs nothing. It needs WorkerPerf.Common.ps1 (ConvertFrom-WorkerPerfJsonFile, Read-WorkerPerfThresholds,
 # Get-WorkerPerfField, Test-WorkerPerfSkipDetail, $script:WorkerPerfRoleNames, $script:WorkerPerfCategories),
@@ -105,14 +105,16 @@ function Assert-WorkerPerfGuidanceField([string]$Path, [string]$Entry, [string]$
     Assert-WorkerPerfGuidanceString $Path $Entry $Item $Field $p.Value
 }
 
-function Test-WorkerPerfGuidanceCondition([string]$Name, $Catalogue, [string[]]$Signals = $null) {
+function Test-WorkerPerfGuidanceCondition([string]$Name, $Catalogue, [string[]]$Signals = $null, $Apps = $null) {
     # Whether a condition name is known (spec 5.4). Signals: the ids of thresholds.json; read from there when not given.
+    # Apps: the application list (Read-WorkerPerfApps); without it no app.<key> is known.
     if ($script:WorkerPerfGuidanceConditions -ccontains $Name) { return $true }
     $dot = $Name.IndexOf('.')
     if ($dot -lt 1 -or $dot -eq $Name.Length - 1) { return $false }
     $kind = $Name.Substring(0, $dot); $rest = $Name.Substring($dot + 1)
     switch -CaseSensitive ($kind) {
         'role' { return ($script:WorkerPerfRoleNames -ccontains $rest) }
+        'app' { return (@(Get-WorkerPerfGuidanceAppKeys $Apps) -ccontains $rest) }
         'skipped' { return (@($script:WorkerPerfCategories.Keys) -ccontains $rest) }
         'pattern' {
             if ($null -eq (Get-Variable -Name 'WorkerPerfPatternOrder' -Scope Script -ErrorAction SilentlyContinue)) {
@@ -139,7 +141,7 @@ function Test-WorkerPerfGuidanceCondition([string]$Name, $Catalogue, [string[]]$
     return $false
 }
 
-function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]$ListName, [int]$Index, $Element, $Catalogue, [string[]]$Signals) {
+function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]$ListName, [int]$Index, $Element, $Catalogue, [string[]]$Signals, $Apps = $null) {
     # One check, remedy or contact; returns whether it has a condition.
     $item = "$ListName[$Index]"
     if (-not (Test-WorkerPerfGuidanceObject $Element)) { Stop-WorkerPerfGuidance $Path $Situation $item '' 'ist kein Objekt' }
@@ -150,17 +152,22 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
         if ($when.Value -isnot [array]) { Stop-WorkerPerfGuidance $Path $Situation $item 'when' 'ist keine Liste' }
         $conditions = @($when.Value)
         foreach ($n in $conditions) {
-            if ($n -isnot [string] -or -not (Test-WorkerPerfGuidanceCondition $n $Catalogue $Signals)) {
+            # a catalogue that names an application needs the application list
+            if ($n -is [string] -and $null -eq $Apps -and $n.StartsWith('app.', [StringComparison]::Ordinal)) {
+                Stop-WorkerPerfGuidance $Path $Situation $item 'when' "enthaelt die Bedingung '$n', aber es ist keine Anwendungsliste angegeben (apps.json)"
+            }
+            if ($n -isnot [string] -or -not (Test-WorkerPerfGuidanceCondition $n $Catalogue $Signals $Apps)) {
                 Stop-WorkerPerfGuidance $Path $Situation $item 'when' "enthaelt die unbekannte Bedingung '$n'"
             }
         }
     }
-    # spec 5.7: every print element (check, remedy, contact) names its source
-    $needsSource = $Situation -eq 'print' -or
-        @($conditions | Where-Object { $_ -ceq 'pattern.printdriver' -or $_.StartsWith('driver.', [StringComparison]::Ordinal) }).Count -gt 0
+    # spec 5.7: every print element (check, remedy, contact) names its source, and so does every element for a driver
+    # or for a standard application
+    $needsSource = $Situation -eq 'print' -or @($conditions | Where-Object { $_ -ceq 'pattern.printdriver' -or
+            $_.StartsWith('driver.', [StringComparison]::Ordinal) -or $_.StartsWith('app.', [StringComparison]::Ordinal) }).Count -gt 0
     $source = Get-WorkerPerfGuidanceMember $Element 'source'
     if ($null -ne $source) { Assert-WorkerPerfGuidanceString $Path $Situation $item 'source' $source.Value }
-    elseif ($needsSource) { Stop-WorkerPerfGuidance $Path $Situation $item 'source' 'fehlt (Pflicht fuer Druckempfehlungen)' }
+    elseif ($needsSource) { Stop-WorkerPerfGuidance $Path $Situation $item 'source' 'fehlt (Pflicht fuer Druckempfehlungen und fuer Elemente zu einer Standardanwendung)' }
     return ($conditions.Count -gt 0)
 }
 
@@ -173,7 +180,7 @@ function Assert-WorkerPerfGuidanceAlwaysValues([string]$Path, [string]$Entry, [s
     }
 }
 
-function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals) {
+function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
     if (-not (Test-WorkerPerfGuidanceObject $Entry)) { Stop-WorkerPerfGuidance $Path $Name '' '' 'ist kein Objekt' }
     foreach ($f in 'title', 'meaning', 'impact', 'short') { Assert-WorkerPerfGuidanceField $Path $Name '' $Entry $f }
     # title and short are constant; meaning and impact only use values every incident has
@@ -189,7 +196,7 @@ function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, 
         $elements = @($p.Value)
         $general = 0
         for ($i = 0; $i -lt $elements.Count; $i++) {
-            if (-not (Test-WorkerPerfGuidanceItem $Path $Name $list $i $elements[$i] $Catalogue $Signals)) { $general++ }
+            if (-not (Test-WorkerPerfGuidanceItem $Path $Name $list $i $elements[$i] $Catalogue $Signals $Apps)) { $general++ }
         }
         if ($list -eq 'checks' -and $general -eq 0) { Stop-WorkerPerfGuidance $Path $Name '' 'checks' 'braucht mindestens einen Pruefschritt ohne Bedingung' }
     }
@@ -203,9 +210,11 @@ function Test-WorkerPerfGuidanceWildcard([string]$Pattern) {
     catch { return $false }
 }
 
-function Read-WorkerPerfGuidance([string]$Path) {
+function Read-WorkerPerfGuidance([string]$Path, $Apps = $null) {
     # Reads the guidance catalogue and checks structure, required fields, conditions and placeholders (spec 5.6).
-    # Returns the catalogue as read; the first error stops with a message that names entry and field.
+    # Returns the catalogue as read; the first error stops with a message that names entry and field. Apps: the
+    # application list (Read-WorkerPerfApps), whose keys are the conditions app.<key>; a catalogue that uses such a
+    # condition is refused without it.
     $cat = ConvertFrom-WorkerPerfJsonFile $Path
     if (-not (Test-WorkerPerfGuidanceObject $cat)) { throw "Katalog '$Path' ist kein JSON-Objekt." }
     foreach ($part in $script:WorkerPerfGuidanceParts) {
@@ -265,8 +274,86 @@ function Read-WorkerPerfGuidance([string]$Path) {
     }
     # the signal ids once per call
     $signals = [string[]]@((Read-WorkerPerfThresholds $script:WorkerPerfGuidanceThresholdFile).Keys)
-    foreach ($s in $script:WorkerPerfSituations) { Test-WorkerPerfGuidanceSituation $Path $s $situations.$s $cat $signals }
+    foreach ($s in $script:WorkerPerfSituations) { Test-WorkerPerfGuidanceSituation $Path $s $situations.$s $cat $signals $Apps }
     return $cat
+}
+
+# ---------- the application list (apps.json): standard applications and the name patterns of their processes ----------
+
+function Stop-WorkerPerfApps([string]$Path, [string]$App, [string]$Field, [string]$Reason) {
+    # Anwendungsliste '<Pfad>': Anwendung <Anwendung>: Feld '<Feld>' <Grund>.  (application and field are optional)
+    $at = "Anwendungsliste '$Path'"
+    if ($App) { $at += ": Anwendung $App" }
+    if ($Field) { throw "${at}: Feld '$Field' $Reason." }
+    throw "$at $Reason."
+}
+
+function Read-WorkerPerfApps([string]$Path) {
+    # Reads the application list and checks it: version; apps, each with key (letters and digits, once), label and
+    # processes (name patterns with wildcards, at least one, each in one application only, compared without regard to
+    # case). Further properties of an application are left as they are. Returns the list as read; the first error
+    # stops with a message that names application and field.
+    $list = ConvertFrom-WorkerPerfJsonFile $Path
+    if (-not (Test-WorkerPerfGuidanceObject $list)) { Stop-WorkerPerfApps $Path '' '' 'ist kein JSON-Objekt' }
+    $version = Get-WorkerPerfGuidanceMember $list 'version'
+    if ($null -eq $version) { Stop-WorkerPerfApps $Path '' 'version' 'fehlt' }
+    if ($version.Value -isnot [string]) { Stop-WorkerPerfApps $Path '' 'version' 'ist kein Text' }
+    if ([string]::IsNullOrWhiteSpace($version.Value)) { Stop-WorkerPerfApps $Path '' 'version' 'ist leer' }
+    $apps = Get-WorkerPerfGuidanceMember $list 'apps'
+    if ($null -eq $apps) { Stop-WorkerPerfApps $Path '' 'apps' 'fehlt' }
+    if ($apps.Value -isnot [array]) { Stop-WorkerPerfApps $Path '' 'apps' 'ist keine Liste' }
+    # ordinal, like the condition app.<key>
+    $keys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    # pattern (lower case) -> key of the application that has it
+    $owners = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
+    $entries = @($apps.Value)
+    for ($i = 0; $i -lt $entries.Count; $i++) {
+        $app = $entries[$i]; $name = "apps[$i]"
+        if (-not (Test-WorkerPerfGuidanceObject $app)) { Stop-WorkerPerfApps $Path $name '' 'ist kein Objekt' }
+        $key = Get-WorkerPerfGuidanceMember $app 'key'
+        if ($null -eq $key) { Stop-WorkerPerfApps $Path $name 'key' 'fehlt' }
+        if ($key.Value -isnot [string]) { Stop-WorkerPerfApps $Path $name 'key' 'ist kein Text' }
+        $name = "'" + $key.Value + "'"
+        if ($key.Value -cnotmatch '^[A-Za-z0-9]+$') { Stop-WorkerPerfApps $Path $name 'key' 'darf nur Buchstaben und Ziffern enthalten' }
+        if (-not $keys.Add($key.Value)) { Stop-WorkerPerfApps $Path $name 'key' 'ist doppelt' }
+        $label = Get-WorkerPerfGuidanceMember $app 'label'
+        if ($null -eq $label) { Stop-WorkerPerfApps $Path $name 'label' 'fehlt' }
+        if ($label.Value -isnot [string]) { Stop-WorkerPerfApps $Path $name 'label' 'ist kein Text' }
+        if ([string]::IsNullOrWhiteSpace($label.Value)) { Stop-WorkerPerfApps $Path $name 'label' 'ist leer' }
+        $processes = Get-WorkerPerfGuidanceMember $app 'processes'
+        if ($null -eq $processes) { Stop-WorkerPerfApps $Path $name 'processes' 'fehlt' }
+        if ($processes.Value -isnot [array] -or @($processes.Value).Count -eq 0) { Stop-WorkerPerfApps $Path $name 'processes' 'ist keine Liste mit Mustern' }
+        foreach ($p in @($processes.Value)) {
+            if ($p -isnot [string] -or [string]::IsNullOrWhiteSpace($p)) { Stop-WorkerPerfApps $Path $name 'processes' 'enthaelt ein leeres Muster' }
+            if (-not (Test-WorkerPerfGuidanceWildcard $p)) { Stop-WorkerPerfApps $Path $name 'processes' "enthaelt das ungueltige Muster '$p'" }
+            $lower = $p.ToLowerInvariant()
+            if ($owners.ContainsKey($lower)) { Stop-WorkerPerfApps $Path $name 'processes' "enthaelt das Muster '$p', das schon bei der Anwendung '$($owners[$lower])' steht" }
+            $owners[$lower] = $key.Value
+        }
+    }
+    return $list
+}
+
+function Get-WorkerPerfGuidanceAppKeys($Apps) {
+    # The keys of the application list (Read-WorkerPerfApps, or the same content as dictionaries), in its order. Plain
+    # pipeline output (the caller writes @(...)).
+    foreach ($app in (Get-WorkerPerfGuidanceList $Apps 'apps')) {
+        $key = [string](Get-WorkerPerfField $app 'key')
+        if ($key) { $key }
+    }
+}
+
+function Get-WorkerPerfGuidanceAppMatches($Apps, [string]$Process) {
+    # The keys of the applications of the list with a pattern that matches a process name (wildcards, without regard to
+    # case; of a path only the file name), in the order of the list. Plain pipeline output (the caller writes @(...)).
+    if (-not $Process) { return }
+    $leaf = $Process.Substring($Process.LastIndexOfAny([char[]]@('\', '/')) + 1)
+    if (-not $leaf) { return }
+    foreach ($app in (Get-WorkerPerfGuidanceList $Apps 'apps')) {
+        $key = [string](Get-WorkerPerfField $app 'key')
+        if (-not $key) { continue }
+        if (@((Get-WorkerPerfGuidanceList $app 'processes') | Where-Object { Test-WorkerPerfAccountPattern $leaf ([string]$_) }).Count -gt 0) { $key }
+    }
 }
 
 # ---------- situation, conditions and placeholder values of one incident (spec 5.2, 5.4, 5.5) ----------
@@ -387,8 +474,8 @@ function Get-WorkerPerfGuidanceDriver($Event, $Print) {
 
 function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     # Situation, conditions (spec 5.4, in the order of its table) and placeholder values (spec 5.5) of one incident of
-    # the report data. Context: @{ Data; Thresholds; OffsetMinutes; Texts } (Texts from Read-WorkerPerfTexts). A value
-    # the incident does not have is left out.
+    # the report data. Context: @{ Data; Thresholds; OffsetMinutes; Texts; Apps } (Texts from Read-WorkerPerfTexts, Apps
+    # from Read-WorkerPerfApps; without Apps no condition app.<key> holds). A value the incident does not have is left out.
     $data = Get-WorkerPerfField $Context 'Data'
     $offset = [int](Get-WorkerPerfField $Context 'OffsetMinutes')
     $thresholds = Get-WorkerPerfField $Context 'Thresholds'
@@ -420,6 +507,11 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     elseif ($causeKind -eq 'main' -and $null -ne $main -and $null -ne (Get-WorkerPerfField $main 'a')) { $app = Get-WorkerPerfGuidanceApp $apps '' (Get-WorkerPerfField $main 'a') }
     $role = [string](Get-WorkerPerfField $app 'role')
     if ($role) { $c.Add('role.' + $role) }
+    # the standard application (apps.json) of the process that is the main cause, or of the event's application
+    $process = ''
+    if ($isEvent) { $process = [string](Get-WorkerPerfField $ev 'app') }
+    elseif ($causeKind -eq 'main') { $process = [string](Get-WorkerPerfField $main 'app') }
+    foreach ($key in @(Get-WorkerPerfGuidanceAppMatches (Get-WorkerPerfField $Context 'Apps') $process)) { $c.Add('app.' + $key) }
 
     # endpoints in the window
     $endpoints = Get-WorkerPerfGuidanceList $Incident 'endpoints'

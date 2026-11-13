@@ -1,0 +1,30 @@
+{
+  "version": "2026-11-13",
+  "apps": [
+    {
+      "key": "edge",
+      "label": "Microsoft Edge",
+      "processes": ["msedge.exe"]
+    },
+    {
+      "key": "webview2",
+      "label": "Microsoft Edge WebView2 Runtime",
+      "processes": ["msedgewebview2.exe"]
+    },
+    {
+      "key": "office",
+      "label": "Microsoft Office",
+      "processes": ["WINWORD.EXE", "EXCEL.EXE", "OUTLOOK.EXE", "POWERPNT.EXE", "ONENOTE.EXE", "MSACCESS.EXE"]
+    },
+    {
+      "key": "teams",
+      "label": "Microsoft Teams",
+      "processes": ["ms-teams.exe"]
+    },
+    {
+      "key": "printaurus",
+      "label": "PrinTaurus SmartSpread Client",
+      "processes": ["PtSmartSpreadClient.exe"]
+    }
+  ]
+}

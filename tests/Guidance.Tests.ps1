@@ -216,6 +216,128 @@ Describe 'Katalog laden und pruefen' {
         foreach ($n in 'pattern.irgendwas', 'unmeasured.cpu.irgendwas', 'cause', 'role.', 'irgendwas') { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeFalse -Because $n }
     }
 }
+Describe 'Anwendungsliste und Anwendungsbedingung' {                                                    # ruling P3-R42 (revised)
+    BeforeAll {
+        function New-AppsFile([scriptblock]$Change = {}) {
+            # a small application list: two applications, one with a wildcard pattern
+            $a = @{ version = '2026-11-13'; apps = @(@{ key = 'edge'; label = 'Sim Browser'; processes = @('simedge.exe') }
+                    @{ key = 'office'; label = 'Sim Office'; processes = @('EXCEL.EXE', 'WINWORD*.EXE') }) }
+            . $Change
+            $file = Join-Path $TestDrive ('apps-' + [guid]::NewGuid().ToString('N') + '.json')
+            [IO.File]::WriteAllText($file, ($a | ConvertTo-Json -Depth 6), [Text.Encoding]::UTF8)
+            $file
+        }
+        $script:Apps = Read-WorkerPerfApps (New-AppsFile)
+        $script:AppCheck = { param($when, $source) $el = @{ text = 't'; where = 'w'; sign = 's'; when = $when }; if ($source) { $el.source = $source }; $el }
+    }
+    It 'liest eine Anwendungsliste und laesst weitere Felder einer Anwendung stehen' {
+        $list = Read-WorkerPerfApps (New-AppsFile { $a.apps[0].installed = @{ kind = 'file'; path = 'C:\Sim\simedge.exe' }; $a.apps[0].probes = @(@{ id = 'p1' }) })
+        $list.version | Should -Be '2026-11-13'
+        @($list.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'office')
+        $list.apps[1].label | Should -Be 'Sim Office'; @($list.apps[1].processes) | Should -Be @('EXCEL.EXE', 'WINWORD*.EXE')
+        $list.apps[0].installed.kind | Should -Be 'file'; @($list.apps[0].probes).Count | Should -Be 1
+        # a list without applications is a list
+        @((Read-WorkerPerfApps (New-AppsFile { $a.apps = @() })).apps).Count | Should -Be 0
+    }
+    It 'nennt Anwendung und Feld eines Fehlers der Anwendungsliste' -TestCases @(
+        @{ Change = { $a.Remove('version') }; Msg = "Anwendungsliste '*': Feld 'version' fehlt." }
+        @{ Change = { $a.version = ' ' }; Msg = "Anwendungsliste '*': Feld 'version' ist leer." }
+        @{ Change = { $a.version = 7 }; Msg = "Anwendungsliste '*': Feld 'version' ist kein Text." }
+        @{ Change = { $a.Remove('apps') }; Msg = "Anwendungsliste '*': Feld 'apps' fehlt." }
+        @{ Change = { $a.apps = 'edge' }; Msg = "Anwendungsliste '*': Feld 'apps' ist keine Liste." }
+        @{ Change = { $a.apps = @('edge', 'office') }; Msg = "Anwendungsliste '*': Anwendung apps``[0``] ist kein Objekt." }
+        @{ Change = { $a.apps[1].Remove('key') }; Msg = "Anwendungsliste '*': Anwendung apps``[1``]: Feld 'key' fehlt." }
+        @{ Change = { $a.apps[0].key = 'sim edge' }; Msg = "Anwendungsliste '*': Anwendung 'sim edge': Feld 'key' darf nur Buchstaben und Ziffern enthalten." }
+        @{ Change = { $a.apps[0].key = 'web.view' }; Msg = "Anwendungsliste '*': Anwendung 'web.view': Feld 'key' darf nur Buchstaben und Ziffern enthalten." }
+        @{ Change = { $a.apps[1].key = 'edge' }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'key' ist doppelt." }
+        @{ Change = { $a.apps[0].Remove('label') }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'label' fehlt." }
+        @{ Change = { $a.apps[1].label = '' }; Msg = "Anwendungsliste '*': Anwendung 'office': Feld 'label' ist leer." }
+        @{ Change = { $a.apps[0].Remove('processes') }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'processes' fehlt." }
+        @{ Change = { $a.apps[0].processes = @() }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'processes' ist keine Liste mit Mustern." }
+        @{ Change = { $a.apps[0].processes = 'simedge.exe' }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'processes' ist keine Liste mit Mustern." }
+        @{ Change = { $a.apps[1].processes = @('EXCEL.EXE', ' ') }; Msg = "Anwendungsliste '*': Anwendung 'office': Feld 'processes' enthaelt ein leeres Muster." }
+        @{ Change = { $a.apps[0].processes = @('sim[') }; Msg = "Anwendungsliste '*': Anwendung 'edge': Feld 'processes' enthaelt das ungueltige Muster 'sim``['." }
+        # a process pattern in one application only, whatever its case
+        @{ Change = { $a.apps[1].processes = @('EXCEL.EXE', 'SIMEDGE.exe') }; Msg = "Anwendungsliste '*': Anwendung 'office': Feld 'processes' enthaelt das Muster 'SIMEDGE.exe', das schon bei der Anwendung 'edge' steht." }
+        @{ Change = { $a.apps[1].processes = @('EXCEL.EXE', 'excel.exe') }; Msg = "Anwendungsliste '*': Anwendung 'office': Feld 'processes' enthaelt das Muster 'excel.exe', das schon bei der Anwendung 'office' steht." }
+    ) { { Read-WorkerPerfApps (New-AppsFile $Change) } | Should -Throw $Msg }
+    It 'nennt die Datei, wenn sie fehlt oder kein Objekt ist' {
+        { Read-WorkerPerfApps (Join-Path $TestDrive 'fehlt.json') } | Should -Throw "*fehlt.json*"
+        $file = Join-Path $TestDrive 'apps-list.json'; [IO.File]::WriteAllText($file, '[1, 2]')
+        { Read-WorkerPerfApps $file } | Should -Throw ([WildcardPattern]::Escape("Anwendungsliste '$file' ist kein JSON-Objekt."))
+    }
+    It 'fuehrt in src die Standardanwendungen der Zielumgebung' {
+        $real = Read-WorkerPerfApps (Join-Path $PSScriptRoot '../src/apps.json')
+        @($real.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus')
+        @(($real.apps | Where-Object key -eq 'office').processes) | Should -Contain 'EXCEL.EXE'
+        @(($real.apps | Where-Object key -eq 'edge').processes) | Should -Be @('msedge.exe')
+        @(($real.apps | Where-Object key -eq 'webview2').processes) | Should -Be @('msedgewebview2.exe')
+        @(($real.apps | Where-Object key -eq 'teams').processes) | Should -Contain 'ms-teams.exe'
+        @(($real.apps | Where-Object key -eq 'printaurus').processes) | Should -Be @('PtSmartSpreadClient.exe')
+        foreach ($app in $real.apps) { $app.label | Should -Not -BeNullOrEmpty -Because $app.key }
+    }
+    It 'kennt eine Anwendungsbedingung nur mit einer Anwendungsliste, die den Schluessel hat' {
+        foreach ($n in 'app.edge', 'app.office') { Test-WorkerPerfGuidanceCondition $n $Cat $null $Apps | Should -BeTrue -Because $n }
+        foreach ($n in 'app.teams', 'app.Edge', 'app.', 'app', 'app.edge.x') { Test-WorkerPerfGuidanceCondition $n $Cat $null $Apps | Should -BeFalse -Because $n }
+        # without a list no application is known
+        Test-WorkerPerfGuidanceCondition 'app.edge' $Cat | Should -BeFalse
+        Test-WorkerPerfGuidanceCondition 'app.edge' $Cat $null (Read-WorkerPerfApps (New-AppsFile { $a.apps = @() })) | Should -BeFalse
+    }
+    It 'nimmt einen Katalog mit einer Anwendungsbedingung nur mit der Anwendungsliste an' {
+        $file = New-Catalogue { $c.situations.cpu.checks += (& $AppCheck @('cause.app', 'app.edge') 'Hersteller: Titel') }
+        @((Read-WorkerPerfGuidance $file -Apps $Apps).situations.cpu.checks).Count | Should -Be 2
+        { Read-WorkerPerfGuidance $file } | Should -Throw "Katalog '*': Eintrag 'cpu', checks``[1``]: Feld 'when' enthaelt die Bedingung 'app.edge', aber es ist keine Anwendungsliste angegeben (apps.json)."
+        # a key the list does not have is an unknown condition
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.remedies += @{ text = 't'; precondition = 'p'; when = @('app.teams'); source = 'Hersteller: Titel' } }) -Apps $Apps } |
+            Should -Throw "*Eintrag 'cpu', remedies``[1``]: Feld 'when' enthaelt die unbekannte Bedingung 'app.teams'."
+        # a catalogue without such a condition needs no list
+        (Read-WorkerPerfGuidance (New-Catalogue)).situations.cpu.short | Should -Be 'CPU'
+    }
+    It 'verlangt die Quelle fuer jedes Element mit einer Anwendungsbedingung' {
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks += (& $AppCheck @('cause.app', 'app.office') $null) }) -Apps $Apps } |
+            Should -Throw "*Eintrag 'cpu', checks``[1``]: Feld 'source' fehlt*"
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.crash.contacts += @{ text = 'Betreuung'; when = @('app.edge') } }) -Apps $Apps } |
+            Should -Throw "*Eintrag 'crash', contacts``[1``]: Feld 'source' fehlt*"
+    }
+    It 'nennt die Standardanwendung des Verursachers direkt nach der Rolle' {
+        $list = Read-WorkerPerfApps (New-AppsFile { $a.apps += @{ key = 'schutz'; label = 'Sim Schutz'; processes = @('MsMp*.exe') } })
+        $ctx = New-Ctx; $ctx.Apps = $list
+        $engpass = { param($main) New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = $main; affected = @(@{ s = 1 }, @{ s = 2 }); scanActive = $true
+                companion = @{ label = 'Microsoft Defender' }; endpoints = @(@{ name = 'DB'; maxMs = 340; failed = $false }) } }
+        # the main cause of a performance incident, without regard to case
+        (Get-WorkerPerfGuidanceFacts -Incident (& $engpass @{ app = 'excel.exe'; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Be @('cause.app', 'scan', 'companion.security', 'app.office', 'endpoint.slow', 'affected.many', 'lead.cpu')
+        (Get-WorkerPerfGuidanceFacts -Incident (& $engpass @{ app = 'WINWORD64.EXE'; a = 7; user = 'user003'; sharePct = 62; baselinePct = 4 }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Contain 'app.office'
+        # after the role
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'MsMpEng.exe'; a = 1; user = 'SYSTEM'; sharePct = 30; baselinePct = 2 } }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Be @('cause.app', 'role.Sicherheit', 'app.schutz', 'lead.cpu')
+        # the application of an event incident, also when the record names a path
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'msmpeng.EXE'; sessions = @(3) } }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Be @('role.Sicherheit', 'app.schutz', 'affected.one', 'pattern.none')
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'hang'; app = 'C:\Sim\simedge.exe' } }) -Context $ctx -Catalogue $Cat).Conditions |
+            Should -Be @('app.edge', 'pattern.none')
+        # another application, no application, a cause that is no named application: no condition
+        foreach ($inc in @(
+                (& $engpass @{ app = 'nexus.exe'; a = 5; user = 'user003'; sharePct = 62; baselinePct = 4 })
+                (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'none' }; main = @{ app = 'EXCEL.EXE'; a = 0; user = 'user003'; sharePct = 6; baselinePct = 4 } })
+                (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'security'; other = @{ app = 'EXCEL.EXE'; user = 'user003' } } })
+                (New-Inc @{ type = 'ereignis'; event = @{ kind = 'service'; service = 'SimSvc' } })
+                (New-Inc @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }) }))) {
+            @((Get-WorkerPerfGuidanceFacts -Incident $inc -Context $ctx -Catalogue $Cat).Conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @()
+        }
+        # without a list in the context no application condition holds
+        @((Get-WorkerPerfGuidanceFacts -Incident (& $engpass @{ app = 'EXCEL.EXE'; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 }) -Context (New-Ctx) -Catalogue $Cat).Conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @()
+    }
+    It 'zeigt ein Element mit Anwendungsbedingung nur bei dieser Anwendung' {
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks += (& $AppCheck @('cause.app', 'app.office') 'Hersteller: Titel') }) -Apps $Apps
+        $ctx = New-Ctx; $ctx.Apps = $Apps
+        $shown = { param($app) $i = New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = $app; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 } }
+            @((New-WorkerPerfGuidance -Catalogue $cat -Facts (Get-WorkerPerfGuidanceFacts -Incident $i -Context $ctx -Catalogue $cat) -Incident $i -Texts $Texts).checks | ForEach-Object { $_.text }) }
+        & $shown 'EXCEL.EXE' | Should -Be @('t', 'Pruefen')
+        & $shown 'simedge.exe' | Should -Be @('Pruefen')
+    }
+}
 Describe 'Situation und Bedingungen' {
     It 'ordnet jede erzeugbare Situation genau einer Kennung zu' -TestCases @(
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; S = 'cpu' }; @{ I = @{ type = 'engpass'; lead = 'profile' }; S = 'profile' }
