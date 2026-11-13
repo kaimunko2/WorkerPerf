@@ -492,6 +492,8 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
     BeforeAll {
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.EventConfig.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1')
         # the catalogue as the report reads it ($Catalogue, not $G: variable names ignore case)
         $script:Catalogue = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json')
         function Get-ByKey([string]$Key) { $e = $Exp | Where-Object Key -eq $Key; if ($e.Type -eq 'ereignis') { $D.incidents | Where-Object { $_.type -eq 'ereignis' -and [Math]::Abs($_.start - $e.StartMs) -le 20000 } } else { Get-Hit $Key } }
@@ -502,6 +504,28 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
             # every copy text of a report: per incident (capture and lookback) both versions, and the summary
             foreach ($i in @($Data.incidents) + @($Data.before.incidents)) { if ($null -ne $i) { $i.copy.named; $i.copy.anonymous } }
             $Data.copyAll.named; $Data.copyAll.anonymous
+        }
+        function Get-NameEntries([string]$Level) {
+            # the names of the capture a report of this level replaces, read from the capture's files as the report does
+            $t = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+            $labels = @(@(Read-WorkerPerfRoles (Join-Path $TestDrive 'r/roles.sim.json')) | ForEach-Object { [string]$_.label })
+            @((New-WorkerPerfMask -Path $R.Run -Level $Level -Texts $t -RoleLabels $labels -EventConfig (Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json'))).Entries)
+        }
+        function Get-AllStrings($Value, $List) {
+            if ($null -eq $Value) { return }
+            if ($Value -is [string]) { $List.Add($Value); return }
+            if ($Value -is [ValueType]) { return }
+            if ($Value -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $Value.PSObject.Properties) { $List.Add($p.Name); Get-AllStrings $p.Value $List }; return }
+            if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { Get-AllStrings $x $List } }
+        }
+        function Get-NamesLeft($Strings, $Entries) {
+            # the names found in the strings, without regard to case, also with every white space removed on both sides
+            # (a name split by a line break or a space)
+            $flat = ($Strings -join "`n"); $squeezed = $flat -replace '\s', ''
+            foreach ($e in $Entries) {
+                $n = [string]$e.Name
+                if ($flat.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $squeezed.IndexOf(($n -replace '\s', ''), [StringComparison]::OrdinalIgnoreCase) -ge 0) { '{0}:{1}' -f $e.Kind, $n }
+            }
         }
     }
     It 'bestimmt Kennung, Titel, Wirkung und ersten Schritt jedes Vorfalls' {
@@ -539,7 +563,6 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
             $c = (Get-ByKey $k).copy
             @($c.named -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0 -Because $k
             ($c.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape((Get-ByKey $k).guide.title)) -Because $k
-            foreach ($n in @(2..26 | ForEach-Object { 'user{0:d3}' -f ($_ - 1) }) + 'WS-\d{4}', 'SIM-VDA01', 'fs01', 'CONTOSO') { $c.anonymous | Should -Not -Match $n -Because $k }
         }
         (Get-ByKey 'cpu').copy.anonymous | Should -Match 'EXCEL\.EXE'                                 # Anwendungsnamen bleiben
         $D.copyAll.named | Should -Match 'SIM-VDA01'; @($D.copyAll.named -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
@@ -556,11 +579,29 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
             $x = Get-ReportData $f
             foreach ($i in @($x.incidents) + @($x.before.incidents)) { $i.copy.anonymous | Should -BeNullOrEmpty }
             $named = @(Get-CopyTexts $x | Where-Object { $null -ne $_ }); $named.Count | Should -Be (12 + 4 + 1)
-            foreach ($t in $named) { Get-LongLines $t | Should -BeNullOrEmpty -Because $f; $t | Should -Not -Match 'user0\d\d|WS-\d{4}' }
+            foreach ($t in $named) { Get-LongLines $t | Should -BeNullOrEmpty -Because $f }
             ($x.incidents | Where-Object lead -eq 'cpu').copy.named | Should -Match 'Benutzer \d\d'
             @($x.order) | Should -Be @($D.order); $x.lagebild.state | Should -Be $D.lagebild.state
         }
         (Get-ReportData $R.MaskedP).copyAll.named | Should -Match 'SIM-VDA01'                         # Server ersetzt erst Alles
+    }
+    It 'laesst in Anleitung, Kopiertexten, Lagebild und Gruppen keinen Namen der Aufzeichnung stehen' {          # Review Task 7, Minor 3
+        # every kind of name the simulated hour has, taken from its files: the persons' names at Personen, all at Alles
+        $alles = Get-NameEntries 'Alles'; $personen = Get-NameEntries 'Personen'
+        foreach ($kind in 'user', 'client', 'server', 'share', 'domain', 'printer') { @($alles | Where-Object Kind -eq $kind).Count | Should -BeGreaterThan 0 -Because $kind }
+        @($personen | Where-Object { 'user', 'client', 'sid' -notcontains $_.Kind }).Count | Should -Be 0
+        foreach ($case in @(@{ File = $R.MaskedP; Names = $personen }, @{ File = $R.Masked; Names = $alles })) {
+            $x = Get-ReportData $case.File; $strings = New-Object System.Collections.Generic.List[string]
+            foreach ($i in @($x.incidents) + @($x.before.incidents)) { Get-AllStrings $i.guide $strings; Get-AllStrings $i.copy $strings }
+            Get-AllStrings $x.copyAll $strings; Get-AllStrings $x.lagebild $strings; Get-AllStrings $x.more $strings
+            $strings.Count | Should -BeGreaterThan 100
+            @(Get-NamesLeft $strings $case.Names) | Should -BeNullOrEmpty -Because $case.File
+        }
+        # the versions without names of an unmasked report: no name of any kind
+        $strings = New-Object System.Collections.Generic.List[string]
+        foreach ($i in @($D.incidents) + @($D.before.incidents)) { $strings.Add($i.copy.anonymous) }
+        $strings.Add($D.copyAll.anonymous)
+        @(Get-NamesLeft $strings $alles) | Should -BeNullOrEmpty
     }
     It 'traegt den Katalog wie gelesen in die Berichtsdaten' {
         ($D.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($Catalogue | ConvertTo-Json -Depth 20 -Compress)
@@ -568,12 +609,20 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
     It 'maskiert den Katalog als einen gebildeten Text, auch unter Schluesseln wie Schluesselwortfelder' {   # P3-R10
         $file = Join-Path $TestDrive 'g-named.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
         $j.copy.measure = 'Auf SIM-VDA01 gemessen: {value} (Soll: {target})'; $j.terms | Add-Member -NotePropertyName 'SIM-VDA01' -NotePropertyValue 'Server von user003'
+        # a text of a situation that uses the term: the incident lists it in guide.terms
+        $j.situations.cpu.impact = 'Auf SIM-VDA01: ' + $j.situations.cpu.impact
         [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 10))
         $out = Join-Path $TestDrive 'g-named.html'
         [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -GuidanceFile $file -Mask Alles 6>$null)
         $x = Get-ReportData $out
         $x.guidance.copy.measure | Should -Be 'Auf Server 01 gemessen: {value} (Soll: {target})'
-        $x.guidance.terms.'SIM-VDA01' | Should -Be 'Server von Benutzer 03'                                  # Schluessel bleiben, wie im ganzen Bericht
+        # the keys of terms are display words, masked like their texts (P3-R43); every term an incident lists is explained
+        @($x.guidance.terms.PSObject.Properties.Name) | Should -Not -Contain 'SIM-VDA01'; $x.guidance.terms.'Server 01' | Should -Be 'Server von Benutzer 03'
+        @(($x.incidents | Where-Object lead -eq 'cpu').guide.terms) | Should -Contain 'Server 01'
+        $keys = [string[]]@($x.guidance.terms.PSObject.Properties.Name)
+        foreach ($i in @($x.incidents) + @($x.before.incidents)) { foreach ($t in @($i.guide.terms)) { $keys -ccontains $t | Should -BeTrue -Because "$($i.id): $t" } }
+        # all other keys of the catalogue are identifiers and stay
+        @($x.guidance.situations.PSObject.Properties.Name) | Should -Be @($Catalogue.situations.PSObject.Properties.Name)
         ($x.incidents | Where-Object lead -eq 'cpu').copy.named | Should -Match 'Auf Server 01 gemessen: \d+ %'
     }
     It 'nennt die Quellen der Treiberspalte' { $D.print.involvedFrom | Should -Be 'both' }

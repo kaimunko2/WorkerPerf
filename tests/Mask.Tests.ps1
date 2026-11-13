@@ -885,6 +885,8 @@ Describe 'Simulierte Stunde, maskiert' {
             # the end message reaches the situation summary and the summary to copy of an unmasked report (P3-R9)
             $pd = Get-ReportData (Join-Path $TestDrive 'canary-plain.html')
             @($pd.lagebild.hints) -join ' ' | Should -Match 'CANARYEND'; $pd.copyAll.named | Should -Match 'CANARYEND'
+            # the versions without names never quote free text of the server (P3-R44)
+            foreach ($c in @($pd.copyAll.anonymous) + @(@($pd.incidents) + @($pd.before.incidents) | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY' }
             foreach ($level in 'Personen', 'Alles') {
                 $file = New-Masked "canary-$level" @{ Mask = $level; ReportedTime = $at; FocusUser = 'user003' } -Run $canary
                 [IO.File]::ReadAllText($file) | Should -Not -Match 'CANARY' -Because $level
@@ -900,6 +902,33 @@ Describe 'Simulierte Stunde, maskiert' {
             $text = & { & $Report -Path $copy -OutFile (Join-Path $TestDrive 'vocab.html') -Mask Personen } *>&1 | Out-String
             $text | Should -Match 'Hinweis: 1 Name gleicht einem Wort des Berichts \(Benutzer 02\); Saetze mit diesem Wort'
             $text | Should -Not -Match '(?i)\bsoll\b'
+        }
+        It 'nennt die Meldung einer mit Fehler beendeten Aufzeichnung nur in der Fassung mit Namen' {                 # P3-R44
+            $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'endmsg')
+            $meta = Join-Path $copy 'meta.json'; $m = [IO.File]::ReadAllText($meta)
+            $m = $m.Replace('"EndReason": "duration"', '"EndReason": "error"').Replace('"EndMessage": null', '"EndMessage": "Zugriff CANARYMSG verweigert: KLINIK\\schmidt.anna auf SIM-VDA01"')
+            [IO.File]::WriteAllText($meta, $m); $m | Should -Match 'CANARYMSG'
+            $x = Get-ReportData (New-Masked 'endmsg' -Run $copy)
+            $flat = { param([string]$t) ($t -replace '\s+', ' ') }
+            & $flat $x.copyAll.named | Should -Match 'CANARYMSG verweigert: KLINIK\\schmidt\.anna'
+            $anonymous = & $flat $x.copyAll.anonymous
+            foreach ($t in 'CANARYMSG', 'schmidt', 'KLINIK', 'SIM-VDA01') { $anonymous | Should -Not -Match $t }
+            # the hint without the message, as a masked report has it; the rest of the summary as before
+            $anonymous | Should -Match ([regex]::Escape((& $flat $x.guidance.hints.errorNoMessage)))
+            $anonymous | Should -Match 'Server 01'
+            foreach ($i in @($x.incidents) + @($x.before.incidents)) { $i.copy.anonymous | Should -Not -Match 'CANARYMSG|schmidt' }
+            @($x.lagebild.hints) -join ' ' | Should -Match 'CANARYMSG'
+        }
+        It 'nennt auf der Konsole auch Namen, die einem Wort des Katalogs gleichen' {                                 # Review Task 7, Important 2
+            # a user named like a word of the catalogue's texts that neither texts.de.json nor a unit has
+            $word = 'Treiber'; $rx = '(?i)(?<![\p{L}\p{N}])' + $word + '(?![\p{L}\p{N}])'
+            [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/guidance.de.json')) | Should -Match $rx
+            [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/texts.de.json')) | Should -Not -Match $rx
+            $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'vocab-catalogue')
+            $file = Join-Path $copy 'sessions.csv'; [IO.File]::WriteAllText($file, ([IO.File]::ReadAllText($file) -replace ',user002,', ",$word,"))
+            $text = & { & $Report -Path $copy -OutFile (Join-Path $TestDrive 'vocab-catalogue.html') -Mask Personen } *>&1 | Out-String
+            $text | Should -Match 'Hinweis: 1 Name gleicht einem Wort des Berichts \(Benutzer 02\); Saetze mit diesem Wort'
+            $text | Should -Not -Match $rx
         }
         It 'bleibt ohne -Mask bytegleich zum Bericht ohne Maskierungscode, bis auf die Fassungen ohne Namen' {   # Aussage geaendert (P3-R8)
             # without -Mask the report uses the masking code only for the copy texts without names: one mask of level Alles

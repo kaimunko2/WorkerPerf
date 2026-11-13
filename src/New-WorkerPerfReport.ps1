@@ -286,6 +286,16 @@ function ConvertTo-PlainData($Value, $Mask = $null) {
     return $Value
 }
 
+function Get-PlainDataStrings($Value) {
+    # Every string value of a JSON object as read (custom objects, dictionaries, lists), in order; keys are left out.
+    if ($null -eq $Value) { return }
+    if ($Value -is [string]) { $Value; return }
+    if ($Value -is [ValueType]) { return }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $Value.PSObject.Properties) { Get-PlainDataStrings $p.Value }; return }
+    if ($Value -is [System.Collections.IDictionary]) { foreach ($k in $Value.Keys) { Get-PlainDataStrings $Value[$k] }; return }
+    if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { Get-PlainDataStrings $x } }
+}
+
 function Get-TopIndices([double[]]$Keys, [int[]]$Items, [int]$Count) {
     # The $Count items with the largest keys.
     $k = [double[]]$Keys.Clone(); $it = [int[]]$Items.Clone()
@@ -1219,14 +1229,34 @@ if ($Mask) {
     $data = Protect-WorkerPerfReportData $data $maskObj
     # the catalogue is composed text throughout: a key of it named like a keyword field (copy.measure) is no keyword
     $data['guidance'] = ConvertTo-PlainData $guidance $maskObj
+    # the keys of terms are display words, not identifiers (ruling P3-R43): masked like the texts, so that guide.terms
+    # (composed text, masked with the data) still finds its explanation; all other keys of the catalogue stay
+    $plainTerms = $data['guidance']['terms']
+    if ($plainTerms -is [System.Collections.IDictionary]) {
+        $maskedTerms = [ordered]@{}
+        foreach ($k in @($plainTerms.Keys)) {
+            $maskedKey = Hide-WorkerPerfReportText ([string]$k) $maskObj
+            if (-not $maskedTerms.Contains($maskedKey)) { $maskedTerms[$maskedKey] = $plainTerms[$k] }
+        }
+        $data['guidance']['terms'] = $maskedTerms
+    }
     foreach ($inc in @($data['incidents']) + @($data['before']['incidents'])) {
         $inc['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($inc['copy']['named']))
     }
     $data['copyAll']['named'] = Format-WorkerPerfCopyLines ([string[]]@($data['copyAll']['named']))
     $data['meta']['mask'] = $Mask
     # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
-    # replacement, never by the real name
-    $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $texts -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
+    # replacement, never by the real name. The report's words are those of texts.de.json and every text of the catalogue
+    # as read, with the keys of its terms (they are masked too).
+    $vocabulary = @{}
+    foreach ($k in $texts.Keys) { $vocabulary[$k] = $texts[$k] }
+    $catalogueWords = New-Object System.Collections.Generic.List[string]
+    foreach ($t in @(Get-PlainDataStrings $guidance)) { $catalogueWords.Add([string]$t) }
+    $catalogueTerms = Get-WorkerPerfField $guidance 'terms'
+    if ($catalogueTerms -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $catalogueTerms.PSObject.Properties) { $catalogueWords.Add([string]$p.Name) } }
+    elseif ($catalogueTerms -is [System.Collections.IDictionary]) { foreach ($k in $catalogueTerms.Keys) { $catalogueWords.Add([string]$k) } }
+    for ($w = 0; $w -lt $catalogueWords.Count; $w++) { $vocabulary['guidance#' + $w] = $catalogueWords[$w] }
+    $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $vocabulary -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
 }
 else {
     $data['guidance'] = ConvertTo-PlainData $guidance
@@ -1237,8 +1267,21 @@ else {
         $allInc[$n]['copy'] = [ordered]@{ named = Format-WorkerPerfCopyLines $p
             anonymous = Format-WorkerPerfCopyLines ([string[]]@($p | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
     }
+    # the summary without names never quotes free text of the server (ruling P3-R44): with an end message, its Lagebild
+    # is built again without it (the hint without a message, as in a masked report). No other copied field of the
+    # server reaches a copy text.
+    $anonymousSummary = $summaryParagraphs
+    $keptEndMessage = $data['meta']['endMessage']
+    if (-not [string]::IsNullOrEmpty([string]$keptEndMessage)) {
+        $data['meta']['endMessage'] = $null
+        try {
+            $anonymousLagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue $guidance -Texts $texts
+            $anonymousSummary = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $anonymousLagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+        }
+        finally { $data['meta']['endMessage'] = $keptEndMessage }
+    }
     $data['copyAll'] = [ordered]@{ named = Format-WorkerPerfCopyLines $summaryParagraphs
-        anonymous = Format-WorkerPerfCopyLines ([string[]]@($summaryParagraphs | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
+        anonymous = Format-WorkerPerfCopyLines ([string[]]@($anonymousSummary | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
 }
 
 Write-Host 'Schreibe Bericht ...'
