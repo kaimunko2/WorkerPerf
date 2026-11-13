@@ -16,11 +16,17 @@ $script:WorkerPerfSituations = @('cpu', 'memory', 'disk', 'share', 'profile', 'd
 $script:WorkerPerfGuidancePlaceholders = @('user', 'app', 'share', 'baseline', 'value', 'target', 'from', 'to', 'duration', 'affected', 'resource',
     'endpoint', 'endpointValue', 'security', 'module', 'driver', 'count', 'server', 'date', 'signals', 'message', 'bottlenecks', 'delays',
     'events', 'chronic', 'minutes', 'incidents', 'skipped')
-# conditions without a variable part (spec 5.4 and the additions of the measurement categories)
+# conditions without a variable part (spec 5.4 and the additions of the measurement categories); lead.<resource> names the
+# lead resource of a bottleneck, so that the one entry for a chronic state can speak about the resource it is
 $script:WorkerPerfGuidanceConditions = @('cause.app', 'cause.security', 'cause.none', 'cause.nodata', 'cause.notmeasured', 'scan',
     'companion.security', 'endpoint.slow', 'event.applocker', 'event.defender', 'affected.many', 'affected.one', 'affected.unknown', 'chronic',
+    'lead.cpu', 'lead.memory', 'lead.disk', 'lead.share', 'lead.profile',
     'pattern.none', 'pattern.unchecked', 'driver.v3', 'driver.v4', 'driver.shared', 'driver.isolated', 'spooler.crash', 'queue.stuck', 'before',
     'incident.unverified')
+# conditions that only name a gap, something the capture did not measure or the report did not check: these names and
+# every unmeasured.<signal> and skipped.<category>
+$script:WorkerPerfGuidanceGapConditions = @('cause.notmeasured', 'pattern.unchecked', 'incident.unverified')
+$script:WorkerPerfGuidanceGapPrefixes = @('unmeasured.', 'skipped.')
 # catalogue parts and the keys each text part must have, in the order they are checked
 $script:WorkerPerfGuidanceParts = @('version', 'terms', 'vendors', 'userView', 'lagebild', 'hints', 'copy', 'fallbackNote', 'situations')
 $script:WorkerPerfGuidancePartKeys = [ordered]@{
@@ -450,6 +456,9 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     if (-not $unknown -and -not $lookbackNoSessions) { $v['affected'] = [string]$n }
 
     if ([bool](Get-WorkerPerfField $Incident 'chronic')) { $c.Add('chronic') }
+    # the lead resource of a bottleneck, chronic or not (the chronic state of every resource shares one situation)
+    $leadResource = [string](Get-WorkerPerfField $Incident 'lead')
+    if ($type -eq 'engpass' -and $script:WorkerPerfGuidanceWorker -ccontains $leadResource) { $c.Add('lead.' + $leadResource) }
     if ([bool](Get-WorkerPerfField $Incident 'unverified')) { $c.Add('incident.unverified') }
 
     # patterns, driver, spooler and queues of an event incident
@@ -584,13 +593,23 @@ function Format-WorkerPerfGuidanceText([string]$Template, [System.Collections.ID
     return $text
 }
 
+function Test-WorkerPerfGuidanceGapCondition([string]$Name) {
+    # Whether a condition only names a gap: a signal that was not measured, a category left out, a cause that was not
+    # measured, a pattern that was not checked, a delay whose bottleneck check was incomplete.
+    if ($script:WorkerPerfGuidanceGapConditions -ccontains $Name) { return $true }
+    foreach ($prefix in $script:WorkerPerfGuidanceGapPrefixes) { if ($Name.StartsWith($prefix, [StringComparison]::Ordinal)) { return $true } }
+    return $false
+}
+
 function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
-    # text can be filled. Elements with a condition first, otherwise the order of the file. Plain pipeline output (the
-    # caller writes @(...)). Templates (a List[string]) receives the templates of the texts of the elements emitted
-    # (not their sources), for the glossary.
+    # text can be filled. Three groups, the order of the file within each: first the elements with a condition that
+    # says more than a gap, then the general ones, last those whose conditions all name a gap (what is unknown is not
+    # the first thing to do). Plain pipeline output (the caller writes @(...)). Templates (a List[string]) receives the
+    # templates of the texts of the elements emitted (not their sources), for the glossary.
     $withCondition = New-Object System.Collections.Generic.List[object]
     $general = New-Object System.Collections.Generic.List[object]
+    $gaps = New-Object System.Collections.Generic.List[object]
     $fields = $script:WorkerPerfGuidanceOutputFields[$ListName]
     foreach ($el in (Get-WorkerPerfGuidanceList $Entry $ListName)) {
         $when = Get-WorkerPerfGuidanceList $el 'when'
@@ -610,10 +629,13 @@ function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Condi
         }
         if (-not $complete) { continue }
         if ($null -ne $Templates) { foreach ($t in $used) { $Templates.Add($t) } }
-        if ($when.Count -gt 0) { $withCondition.Add($item) } else { $general.Add($item) }
+        if ($when.Count -eq 0) { $general.Add($item) }
+        elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceGapCondition ([string]$_)) }).Count -eq 0) { $gaps.Add($item) }
+        else { $withCondition.Add($item) }
     }
     foreach ($item in $withCondition) { $item }
     foreach ($item in $general) { $item }
+    foreach ($item in $gaps) { $item }
 }
 
 function Get-WorkerPerfGuidanceTech($Incident, $Texts) {

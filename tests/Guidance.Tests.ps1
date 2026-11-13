@@ -198,9 +198,12 @@ Describe 'Katalog laden und pruefen' {
         foreach ($n in 'cause.app', 'cause.security', 'cause.none', 'cause.nodata', 'scan', 'companion.security', 'role.Sicherheit', 'role.Drucken', 'endpoint.slow', 'event.applocker',
             'event.defender', 'unmeasured.disk.latency', 'unmeasured.input.session', 'affected.many', 'affected.one', 'affected.unknown', 'chronic', 'pattern.resource', 'pattern.overlap',
             'pattern.none', 'driver.v3', 'driver.v4', 'driver.shared', 'driver.isolated', 'driver.vendor.HP', 'spooler.crash', 'queue.stuck', 'before',
-            'cause.notmeasured', 'skipped.Prozesse', 'skipped.Ereignisse', 'pattern.unchecked', 'incident.unverified') {
+            'cause.notmeasured', 'skipped.Prozesse', 'skipped.Ereignisse', 'pattern.unchecked', 'incident.unverified',
+            'lead.cpu', 'lead.memory', 'lead.disk', 'lead.share', 'lead.profile') {
             Test-WorkerPerfGuidanceCondition $n (Read-WorkerPerfGuidance (New-Catalogue)) | Should -BeTrue -Because $n
         }
+        # only the five resources of the worker lead a bottleneck (ruling P3-R37)
+        foreach ($n in 'lead.network', 'lead.input', 'lead.endpoint', 'lead.', 'lead', 'lead.CPU') { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeFalse -Because $n }
         Test-WorkerPerfGuidanceCondition 'driver.vendor.Acme' (Read-WorkerPerfGuidance (New-Catalogue)) | Should -BeFalse
         Test-WorkerPerfGuidanceCondition 'role.Chef' (Read-WorkerPerfGuidance (New-Catalogue)) | Should -BeFalse
         Test-WorkerPerfGuidanceCondition 'skipped.Netz' $Cat | Should -BeFalse
@@ -235,7 +238,7 @@ Describe 'Situation und Bedingungen' {
     It 'leitet die Bedingungen eines Engpasses ab' {
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'EXCEL.EXE'; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 }
             affected = @(@{ s = 1 }, @{ s = 2 }); scanActive = $true; companion = @{ label = 'Microsoft Defender' }; endpoints = @(@{ name = 'DB'; maxMs = 340; failed = $false }) }) -Context (New-Ctx) -Catalogue $Cat
-        $f.Conditions | Should -Be @('cause.app', 'scan', 'companion.security', 'endpoint.slow', 'affected.many')
+        $f.Conditions | Should -Be @('cause.app', 'scan', 'companion.security', 'endpoint.slow', 'affected.many', 'lead.cpu')
         $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.share | Should -Be '62 %'; $f.Values.baseline | Should -Be '4 %'; $f.Values.security | Should -Be 'Microsoft Defender'
         $f.Values.ContainsKey('module') | Should -BeFalse
     }
@@ -252,7 +255,7 @@ Describe 'Situation und Bedingungen' {
             Should -Be @('affected.one', 'pattern.none', 'before')
         $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true; $ctx.Data.sollIst = @(@{ id = 'input.session'; measured = $false })
         (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'nodata' } }) -Context $ctx -Catalogue $Cat).Conditions |
-            Should -Be @('cause.nodata', 'unmeasured.input.session', 'affected.unknown')
+            Should -Be @('cause.nodata', 'unmeasured.input.session', 'affected.unknown', 'lead.cpu')
     }
     It 'nennt die Bauart <Type> und die Isolation <Isolation> des Treibers' -TestCases @(
         @{ Type = 3; Isolation = 'none'; Want = @('driver.v3', 'driver.shared') }; @{ Type = 3; Isolation = 'shared'; Want = @('driver.v3', 'driver.shared') }
@@ -302,7 +305,7 @@ Describe 'Situation und Bedingungen' {
     It 'nennt bei Schutzsoftware als Ursache den anderen Verbraucher und keine Werte ohne gemessene Prozesse' {
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'security'; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 }
                     other = @{ app = 'EXCEL.EXE'; a = 0; user = 'user007'; sharePct = 12.34; baselinePct = 0.5 } }; companion = $null }) -Context (New-Ctx) -Catalogue $Cat
-        $f.Conditions | Should -Be @('cause.security')
+        $f.Conditions | Should -Be @('cause.security', 'lead.cpu')
         $f.Values.security | Should -Be 'Die Schutzsoftware'; $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.user | Should -Be 'user007'
         $f.Values.share | Should -Be '12 %'; $f.Values.baseline | Should -Be '0,5 %'
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'notmeasured' } }) -Context (New-Ctx) -Catalogue $Cat
@@ -310,13 +313,13 @@ Describe 'Situation und Bedingungen' {
     }
     It 'nennt die Rolle der Anwendung' {
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'MsMpEng.exe'; a = 1; user = 'SYSTEM'; sharePct = 30; baselinePct = 2 } }) -Context (New-Ctx) -Catalogue $Cat
-        $f.Conditions | Should -Be @('cause.app', 'role.Sicherheit')
+        $f.Conditions | Should -Be @('cause.app', 'role.Sicherheit', 'lead.cpu')
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'msmpeng.EXE'; sessions = @(3) } }) -Context (New-Ctx) -Catalogue $Cat
         $f.Conditions | Should -Be @('role.Sicherheit', 'affected.one', 'pattern.none')
         # not in apps (always so with Prozesse skipped), or without a role: no role condition
         $ctx = New-Ctx; $ctx.Data.apps = @()
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'MsMpEng.exe'; a = 1; user = 'SYSTEM'; sharePct = 30; baselinePct = 2 } }) -Context $ctx -Catalogue $Cat
-        $f.Conditions | Should -Be @('cause.app')
+        $f.Conditions | Should -Be @('cause.app', 'lead.cpu')
         (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE' } }) -Context (New-Ctx) -Catalogue $Cat).Conditions | Should -Be @('pattern.none')
     }
     It 'nennt Gegenstellen, AppLocker und Defender im Fenster' {
@@ -353,6 +356,23 @@ Describe 'Situation und Bedingungen' {
         $f.Conditions | Should -Be @('unmeasured.disk.latency', 'unmeasured.input.session', 'skipped.Laufwerke', 'skipped.Ereignisse', 'affected.many', 'chronic', 'incident.unverified')
         $f.Values.affected | Should -Be '3'
         foreach ($n in $f.Conditions) { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeTrue -Because $n }
+    }
+    It 'nennt die fuehrende Ressource <Lead> eines Engpasses direkt nach dem Dauerzustand' -TestCases @(      # ruling P3-R37
+        @{ Lead = 'cpu' }; @{ Lead = 'memory' }; @{ Lead = 'disk' }; @{ Lead = 'share' }; @{ Lead = 'profile' }
+    ) {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = $Lead; affected = @(@{ s = 1 }) }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Situation | Should -Be $Lead; $f.Conditions | Should -Be @('affected.one', "lead.$Lead")
+        # a chronic state of that resource: after 'chronic', before 'incident.unverified'
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = $Lead; chronic = $true; unverified = $true; cause = @{ kind = 'none' } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Situation | Should -Be 'chronic.resource'; $f.Conditions | Should -Be @('cause.none', 'chronic', "lead.$Lead", 'incident.unverified')
+        foreach ($n in $f.Conditions) { Test-WorkerPerfGuidanceCondition $n $Cat | Should -BeTrue -Because $n }
+    }
+    It 'nennt keine fuehrende Ressource ausserhalb eines Engpasses und fuer keine andere Ressource' {         # ruling P3-R37
+        foreach ($i in @{ type = 'ohne-engpass'; lead = 'cpu' }, @{ type = 'umfeld'; lead = 'disk'; chronic = $true }, @{ type = 'ereignis'; lead = 'memory'; event = @{ kind = 'crash' } },
+            @{ type = 'engpass'; lead = $null }, @{ type = 'engpass'; lead = 'network' }, @{ type = 'engpass'; lead = 'input'; chronic = $true }, @{ type = 'engpass'; lead = 'CPU' }) {
+            $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc $i) -Context (New-Ctx) -Catalogue $Cat
+            @($f.Conditions | Where-Object { $_ -like 'lead.*' }) | Should -Be @() -Because ($i.type + ' ' + $i.lead)
+        }
     }
     It 'nennt die Muster eines Ereignisvorfalls und nicht gepruefte Muster' {
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessions = @(1, 2)
@@ -567,6 +587,44 @@ Describe 'Anleitung zusammenstellen' {
         $g = New-WorkerPerfGuidance -Catalogue $cat5 -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{ endpoint = 'DB'; driver = 'Sim PCL 6' } } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
         @($g.checks.text) | Should -Be @('Erst allgemein', 'Dann allgemein', 'Ort fehlt', 'Quelle fehlt')
         $g.checks[2].where | Should -Be 'Bei DB'; $g.checks[3].source | Should -Be 'Hersteller Sim PCL 6'
+    }
+    It 'stellt Elemente, deren Bedingungen nur eine Luecke nennen, hinter die allgemeinen' {            # ruling P3-R36
+        $cat8 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.situations.cpu.checks = @(
+                    @{ text = 'Luecke Prozesse'; where = 'w'; sign = 's'; when = @('skipped.Prozesse') }
+                    @{ text = 'Allgemein 1'; where = 'w'; sign = 's' }
+                    @{ text = 'Luecke Ursache'; where = 'w'; sign = 's'; when = @('cause.notmeasured') }
+                    @{ text = 'Bedingt 1'; where = 'w'; sign = 's'; when = @('cause.app') }
+                    @{ text = 'Luecke Signal und Muster'; where = 'w'; sign = 's'; when = @('unmeasured.input.session', 'pattern.unchecked') }
+                    @{ text = 'Bedingt mit Luecke'; where = 'w'; sign = 's'; when = @('skipped.Prozesse', 'affected.unknown') }
+                    @{ text = 'Allgemein 2'; where = 'w'; sign = 's' }
+                    @{ text = 'Luecke unbestaetigt'; where = 'w'; sign = 's'; when = @('incident.unverified') }
+                    @{ text = 'Bedingt 2'; where = 'w'; sign = 's'; when = @('scan', 'cause.app') })
+                $c.situations.cpu.remedies = @(@{ text = 'Luecke'; precondition = 'p'; when = @('unmeasured.probe.connect') }, @{ text = 'Allgemein'; precondition = 'p' },
+                    @{ text = 'Bedingt'; precondition = 'p'; when = @('endpoint.slow') })
+                $c.situations.cpu.contacts = @(@{ text = 'Luecke'; when = @('skipped.Gegenstellen') }, @{ text = 'Allgemein' }, @{ text = 'Bedingt'; when = @('lead.cpu') }) })
+        $all = @('cause.app', 'cause.notmeasured', 'scan', 'endpoint.slow', 'unmeasured.input.session', 'unmeasured.probe.connect', 'skipped.Prozesse', 'skipped.Gegenstellen',
+            'affected.unknown', 'lead.cpu', 'incident.unverified', 'pattern.unchecked')
+        $g = New-WorkerPerfGuidance -Catalogue $cat8 -Facts @{ Situation = 'cpu'; Conditions = $all; Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        # three groups, file order within each: a condition that names more than a gap, then no condition, then gaps only
+        @($g.checks.text) | Should -Be @('Bedingt 1', 'Bedingt mit Luecke', 'Bedingt 2', 'Allgemein 1', 'Allgemein 2',
+            'Luecke Prozesse', 'Luecke Ursache', 'Luecke Signal und Muster', 'Luecke unbestaetigt')
+        @($g.remedies.text) | Should -Be @('Bedingt', 'Allgemein', 'Luecke')
+        @($g.contacts.text) | Should -Be @('Bedingt', 'Allgemein', 'Luecke')
+        @(Get-WorkerPerfGuidanceItems $cat8.situations.cpu 'remedies' $all @{} | ForEach-Object { $_.text }) | Should -Be @('Bedingt', 'Allgemein', 'Luecke')
+        # only the gaps: the general elements lead
+        $g = New-WorkerPerfGuidance -Catalogue $cat8 -Facts @{ Situation = 'cpu'; Conditions = @('skipped.Prozesse', 'incident.unverified'); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        @($g.checks.text) | Should -Be @('Allgemein 1', 'Allgemein 2', 'Luecke Prozesse', 'Luecke unbestaetigt')
+    }
+    It 'zaehlt genau die Bedingungen <Name> als Luecke' -TestCases @(                                    # ruling P3-R36
+        @{ Name = 'unmeasured.cpu.steal'; Gap = $true }; @{ Name = 'unmeasured.input.session'; Gap = $true }; @{ Name = 'skipped.Drucken'; Gap = $true }
+        @{ Name = 'cause.notmeasured'; Gap = $true }; @{ Name = 'pattern.unchecked'; Gap = $true }; @{ Name = 'incident.unverified'; Gap = $true }
+        @{ Name = 'cause.nodata'; Gap = $false }; @{ Name = 'cause.none'; Gap = $false }; @{ Name = 'affected.unknown'; Gap = $false }; @{ Name = 'pattern.none'; Gap = $false }
+        @{ Name = 'before'; Gap = $false }; @{ Name = 'lead.disk'; Gap = $false }; @{ Name = 'scan'; Gap = $false }
+    ) {
+        $cat9 = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks = @(@{ text = 'Bedingt'; where = 'w'; sign = 's'; when = @($Name) }, @{ text = 'Allgemein'; where = 'w'; sign = 's' }) })
+        $g = New-WorkerPerfGuidance -Catalogue $cat9 -Facts @{ Situation = 'cpu'; Conditions = @($Name); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        @($g.checks.text) | Should -Be $(if ($Gap) { @('Allgemein', 'Bedingt') } else { @('Bedingt', 'Allgemein') })
     }
     It 'gibt die Elemente als schlichte Pipeline-Ausgabe und haelt die Listen der Anleitung als Feld' {
         $one = @(Get-WorkerPerfGuidanceItems $Cat2.situations.cpu 'checks' @() @{})
@@ -1074,6 +1132,9 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $SimFacts[12].Conditions | Should -Contain 'role.Drucken'; $SimFacts[12].Values.driver | Should -Be 'HP Universal Printing PCL 6 (Sim)'
         $SimFacts[16].Conditions | Should -Contain 'affected.unknown'; $SimFacts[16].Conditions | Should -Contain 'before'
         foreach ($id in 2..6) { $SimFacts[$id].Conditions | Should -Contain 'cause.app' -Because "Vorfall $id"; $SimFacts[$id].Values.Keys | Should -Contain 'app' }
+        # the bottlenecks name their resource, nothing else does (ruling P3-R37)
+        foreach ($id in 2..6) { @($SimFacts[$id].Conditions | Where-Object { $_ -like 'lead.*' }) | Should -Be @('lead.' + $SimFacts[$id].Situation) -Because "Vorfall $id" }
+        foreach ($id in @(1) + 7..16) { @($SimFacts[$id].Conditions | Where-Object { $_ -like 'lead.*' }) | Should -Be @() -Because "Vorfall $id" }
         # lookback crashes: the application and their one user, no number of affected sessions (P3-R16, P3-R17)
         foreach ($id in 13..15) { $SimFacts[$id].Values.ContainsKey('affected') | Should -BeFalse -Because "Vorfall $id"; $SimFacts[$id].Values.Keys | Should -Contain 'app' -Because "Vorfall $id" }
     }
