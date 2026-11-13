@@ -105,6 +105,7 @@ Ergänzt am 13.11.2026 nach Angabe des Auftraggebers: Die Worker werden ausschli
 - Empfehlungen, die für nicht persistente, über MCS bereitgestellte Multi-Session-Worker gelten, werden ohne weitere Voraussetzung aufgenommen. Empfehlungen, die nur für Provisioning Services, für persistente Maschinen oder für Single-Session-Desktops gelten, werden nicht aufgenommen.
 - Vorschläge zum Vorgehen nennen das Master-Image oder die Richtlinie als Ort der Änderung. Eine Änderung am einzelnen Worker geht beim nächsten Neustart verloren.
 - Was auf einem nicht persistenten Worker nur bis zum letzten Start zurückreicht (Ereignisprotokolle und damit das Ereignisbild, lokale Profile, Dateien auf dem Systemlaufwerk), wird so eingeordnet: Die Prüfung nennt den letzten Start als Grenze ihrer Aussage. Der Stand der Updates ist der Stand des Abbilds.
+- Die Benutzerumgebung wird mit Citrix Workspace Environment Management (WEM) eingerichtet; die Drucker ordnet ein eigenes Zuordnungswerkzeug eines Drittanbieters zu, nicht die Citrix-Richtlinien. Der Bereich „Citrix VDA" liest deshalb auch den Zustand des WEM-Agenten, und Prüfungen zur Druckerzuordnung über Citrix-Richtlinien gelten nur, wo diese Zuordnung tatsächlich genutzt wird.
 - Der Katalog bleibt allgemein formuliert („bei nicht persistenten Workern im Master-Image"); er nennt keine Systeme des Auftraggebers.
 
 ## 5. Darstellung
