@@ -455,6 +455,62 @@ Describe 'Anwendungsliste in src' {
         @($Apps.Keys | Where-Object { $Apps[$_].installed } | Sort-Object) | Should -Be @('edge', 'office', 'teams')      # die weiteren Anwendungen der Datei liest das Zustandsbild nicht
         (Get-Content $AppFile -Raw) | Should -Not -Match 'HKCU|HKEY_CURRENT_USER|HKEY_USERS'                    # nichts je Benutzer
     }
+    It 'stimmt in jeder Probe der drei Anwendungen mit den Tabellen des Plans ueberein' {
+        # Expected table typed from the plan's tables "Proben der ausgelieferten Anwendungsliste", not copied from src/apps.json.
+        # Columns: id|kind|path|name|read as the reader resolves it|names|documented. Order is the order of the plan.
+        $want = @{}
+        $want['edge'] = @'
+installed|file|C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe|||||
+version|file|C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe||version|False|True
+webview2Version|registryValue|HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}|pv|value|False|True
+updateDefault|registryValue|HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|UpdateDefault|value|False|True
+updateStable|registryValue|HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}|value|False|True
+updateWebView2|registryValue|HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|Update{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}|value|False|True
+updateCheckMinutes|registryValue|HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|AutoUpdateCheckPeriodMinutes|value|False|True
+startupBoost|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|StartupBoostEnabled|value|False|True
+backgroundMode|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|BackgroundModeEnabled|value|False|True
+sleepingTabs|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|SleepingTabsEnabled|value|False|True
+autoDiscard|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|AutoDiscardSleepingTabsEnabled|value|False|True
+roamingProfile|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|RoamingProfileSupportEnabled|value|False|True
+userDataDir|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|UserDataDir|value|True|True
+diskCacheDir|registryValue|HKLM\SOFTWARE\Policies\Microsoft\Edge|DiskCacheDir|value|True|True
+forcedExtensions|registryKey|HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist||valueCount|False|True
+updateService|service||edgeupdate|startMode|False|False
+'@
+        $want['office'] = @'
+installed|registryKey|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|||||
+updateChannel|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdateChannel|value|False|True
+updateUrl|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdateUrl|value|True|True
+policyUpdatePath|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|UpdatePath|value|True|True
+policyUpdateBranch|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|UpdateBranch|value|False|True
+hideUpdateNotifications|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|hideupdatenotifications|value|False|True
+hideEnableDisableUpdates|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|hideenabledisableupdates|value|False|True
+updateTask|scheduledTask|\Microsoft\Office\Office Automatic Updates 2.0||enabled|False|True
+perUserCatalog|registryValue|HKLM\SOFTWARE\Microsoft\Windows Search|EnablePerUserCatalog|value|False|True
+outlookAddins|registryKey|HKLM\SOFTWARE\Microsoft\Office\Outlook\Addins||subKeyCount|False|True
+outlookAddinsWow|registryKey|HKLM\SOFTWARE\WOW6432Node\Microsoft\Office\Outlook\Addins||subKeyCount|False|True
+version|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|VersionToReport|value|False|False
+platform|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|Platform|value|False|False
+updatesEnabled|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdatesEnabled|value|False|False
+'@
+        $want['teams'] = @'
+installed|file|C:\Program Files\WindowsApps\MSTeams_*_x64__8wekyb3d8bbwe\ms-teams.exe|||||
+version|file|C:\Program Files\WindowsApps\MSTeams_*_x64__8wekyb3d8bbwe\ms-teams.exe||version|False|True
+disableAutoUpdate|registryValue|HKLM\SOFTWARE\Microsoft\Teams|disableAutoUpdate|value|False|True
+disableFallback|registryValue|HKLM\SOFTWARE\Microsoft\Teams|DisableFallback|value|False|True
+maxFps|registryValue|HKLM\SOFTWARE\Microsoft\Teams\VMSS|MaxFPS|value|False|True
+meetingAddin|file|C:\Program Files (x86)\Microsoft\TeamsMeetingAdd-in||exists|False|True
+classicTeams|file|C:\Program Files (x86)\Microsoft\Teams\current\Teams.exe||exists|False|True
+webview2Version|registryValue|HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}|pv|value|False|True
+'@
+        foreach ($k in 'edge', 'office', 'teams') {
+            $got = @(); $inst = $Apps[$k].installed
+            $got += "installed|$($inst.kind)|$($inst.path)|||||"
+            foreach ($x in $Apps[$k].probes) { $got += "$($x.id)|$($x.kind)|$($x.path)|$($x.name)|$($x.read)|$($x.names)|$($x.documented)" }
+            $got | Should -Be @($want[$k] -split "\r?\n" | Where-Object { $_ }) -Because $k
+        }
+        $Apps.edge.probes[6].label | Should -Be 'Startboost'
+    }
     It 'liefert den Tests eine Liste mit einer vierten, erfundenen Anwendung' {
         $t = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive)); $t[-1].key | Should -Be 'simapp'; $t[-1].label | Should -Be 'Sim-Fachanwendung'
         @($t[-1].probes.id) | Should -Be @('version', 'cacheMode', 'dataPath'); $t[-1].probes[2].names | Should -BeTrue; $t.Count | Should -Be (@(Read-WorkerPerfHealthApps $AppFile).Count + 1)

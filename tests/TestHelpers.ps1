@@ -151,7 +151,7 @@ function New-TestAppFile([string]$Dir) {
         key = 'simapp'; label = 'Sim-Fachanwendung'; processes = @('simapp.exe')
         installed = [ordered]@{ kind = 'file'; path = 'C:\Program Files\SimApp\simapp.exe' }
         probes = @(
-            [ordered]@{ id = 'version'; label = 'Version der Sim-Fachanwendung'; kind = 'file'; path = 'C:\Program Files\SimApp\simapp.exe'; read = 'version' }
+            [ordered]@{ id = 'version'; label = 'Version der Sim-Fachanwendung'; kind = 'file'; path = 'C:\Program Files\SimApp\simapp.exe' }
             [ordered]@{ id = 'cacheMode'; label = 'Cache-Betriebsart'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimApp'; name = 'CacheMode'; names = $false }
             [ordered]@{ id = 'dataPath'; label = 'Datenordner der Sim-Fachanwendung'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimApp'; name = 'DataPath'; names = $true }
         )
