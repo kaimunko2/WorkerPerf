@@ -14,7 +14,7 @@
     {
       "key": "office",
       "label": "Microsoft Office",
-      "processes": ["WINWORD.EXE", "EXCEL.EXE", "OUTLOOK.EXE", "POWERPNT.EXE", "ONENOTE.EXE", "MSACCESS.EXE"]
+      "processes": ["WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE", "ONENOTE.EXE", "MSACCESS.EXE"]
     },
     {
       "key": "teams",
@@ -25,6 +25,11 @@
       "key": "printaurus",
       "label": "PrinTaurus SmartSpread Client",
       "processes": ["PtSmartSpreadClient.exe"]
+    },
+    {
+      "key": "outlook",
+      "label": "Microsoft Outlook",
+      "processes": ["OUTLOOK.EXE"]
     }
   ]
 }

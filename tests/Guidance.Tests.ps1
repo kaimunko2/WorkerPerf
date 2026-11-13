@@ -299,8 +299,11 @@ Describe 'Anwendungsliste und Anwendungsbedingung' {                            
     }
     It 'fuehrt in src die Standardanwendungen der Zielumgebung' {
         $real = Read-WorkerPerfApps (Join-Path $PSScriptRoot '../src/apps.json')
-        @($real.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus')
+        # Aussage angepasst (fix round 3 of Task 6, ruling P3-R57): Outlook is an application of its own, last in the list
+        @($real.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus', 'outlook')
         @(($real.apps | Where-Object key -eq 'office').processes) | Should -Contain 'EXCEL.EXE'
+        @(($real.apps | Where-Object key -eq 'office').processes) | Should -Not -Contain 'OUTLOOK.EXE'
+        @(($real.apps | Where-Object key -eq 'outlook').processes) | Should -Be @('OUTLOOK.EXE')
         @(($real.apps | Where-Object key -eq 'edge').processes) | Should -Be @('msedge.exe')
         @(($real.apps | Where-Object key -eq 'webview2').processes) | Should -Be @('msedgewebview2.exe')
         @(($real.apps | Where-Object key -eq 'teams').processes) | Should -Contain 'ms-teams.exe'

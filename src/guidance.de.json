@@ -45,7 +45,7 @@
     "Add-in": "Zusatzmodul, das eine Office-Anwendung beim Start lädt.",
     "OST-Datei": "Lokale Kopie des Postfachs, die Outlook im Cache-Modus anlegt; sie liegt im Profil des Benutzers.",
     "Energiesparplan": "Einstellung von Windows, die bestimmt, wie stark der Prozessor zum Stromsparen gedrosselt wird.",
-    "PrinTaurus": "PrinTaurus SmartSpread der AKI GmbH ordnet den Benutzern ihre Drucker nach Regeln zu; in der Sitzung läuft dafür der SmartSpread Client."
+    "PrinTaurus": "Drucklösung der AKI GmbH, mit der in dieser Umgebung die Drucker zugeordnet werden; ihr SmartSpread Client ist auf dem Server installiert."
   },
   "vendors": [
     {
@@ -179,6 +179,13 @@
         },
         {
           "when": ["cause.app", "app.office"],
+          "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
+          "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
+          "sign": "Ausbleiben der Störung ohne Add-ins (Microsoft beschreibt das für Microsoft 365 Apps unter Windows 10)",
+          "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
+        },
+        {
+          "when": ["cause.app", "app.outlook"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
           "sign": "Ausbleiben der Störung ohne Add-ins (Microsoft beschreibt das für Microsoft 365 Apps unter Windows 10)",
@@ -394,6 +401,12 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "when": ["cause.app", "app.outlook"],
+          "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
+          "precondition": "die Störung ohne Add-ins ausbleibt und die Benutzer nach Rücksprache auf die Add-ins verzichten können",
+          "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
+        },
+        {
           "when": ["cause.app", "app.teams"],
           "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
@@ -494,6 +507,13 @@
         },
         {
           "when": ["cause.app", "app.office"],
+          "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
+          "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
+          "sign": "Ausbleiben der Störung ohne Add-ins (Microsoft beschreibt das für Microsoft 365 Apps unter Windows 10)",
+          "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
+        },
+        {
+          "when": ["cause.app", "app.outlook"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
           "sign": "Ausbleiben der Störung ohne Add-ins (Microsoft beschreibt das für Microsoft 365 Apps unter Windows 10)",
@@ -696,8 +716,8 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
-          "when": ["cause.app", "app.office"],
-          "text": "Bei Outlook: einordnen, ob die Last vom Cache-Modus kommt; laut Microsoft braucht der Cache-Modus auf Servern mit mehreren Benutzern zusätzlichen Speicherplatz und zusätzliche Datenträger-I/O",
+          "when": ["cause.app", "app.outlook"],
+          "text": "Einordnen, ob die Last vom Cache-Modus von Outlook kommt; laut Microsoft braucht der Cache-Modus auf Servern mit mehreren Benutzern zusätzlichen Speicherplatz und zusätzliche Datenträger-I/O",
           "where": "Rückfrage beim Benutzer; Outlook: Kontoeinstellungen des Postfachs (Exchange-Cache-Modus)",
           "sign": "Abgleich oder Neuaufbau der lokalen Postfachkopie im Zeitraum, zum Beispiel bei einem großen Postfach oder der ersten Anmeldung mit diesem Profil (Microsoft beschreibt das für Outlook 2016)",
           "source": "Microsoft: Plan and configure Cached Exchange Mode in Outlook 2016 for Windows"
@@ -854,8 +874,8 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
-          "when": ["cause.app", "app.office"],
-          "text": "Bei Outlook: prüfen, ob PST- oder OST-Dateien direkt auf einer Freigabe liegen; Microsoft unterstützt das auf Servern mit mehreren Sitzungen nur mit schneller Verbindung und einem Outlook je Datei und hilft bei langsamer Leistung durch solche Dateien nicht",
+          "when": ["cause.app", "app.outlook"],
+          "text": "Prüfen, ob PST- oder OST-Dateien von Outlook direkt auf einer Freigabe liegen; Microsoft unterstützt das auf Servern mit mehreren Sitzungen nur mit schneller Verbindung und einem Outlook je Datei und hilft bei langsamer Leistung durch solche Dateien nicht",
           "where": "In der Sitzung des Benutzers: Outlook, Kontoeinstellungen > Datendateien",
           "sign": "Datendatei mit einem Pfad auf einer Freigabe statt im Profil des Benutzers",
           "source": "Microsoft: Limits to using personal folders files over LAN and WAN links"
@@ -1014,8 +1034,8 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
-          "when": ["cause.app", "app.office"],
-          "text": "Bei Outlook: Größe der OST-Datei und Zahl der Elemente je Ordner prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
+          "when": ["cause.app", "app.outlook"],
+          "text": "Größe der OST-Datei von Outlook und Zahl der Elemente je Ordner prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
           "where": "Profil des Benutzers, dem der Profilcontainer gehört: Outlook-Datendatei (OST); Outlook: Ordnergrößen",
           "sign": "OST-Datei über 10 GB oder Ordner mit annähernd 100 000 Nachrichten oder 10 000 Kalendereinträgen",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
@@ -1140,7 +1160,7 @@
           "precondition": "{app} sehr große Datenbestände im betroffenen Profilcontainer hält"
         },
         {
-          "when": ["cause.app", "app.office"],
+          "when": ["cause.app", "app.outlook"],
           "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Worker)",
           "precondition": "die OST-Datei im betroffenen Profilcontainer größer als 10 GB ist",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
@@ -1725,6 +1745,20 @@
           "source": "Microsoft: Overview of Office LTSC 2024"
         },
         {
+          "when": ["app.outlook"],
+          "text": "Add-ins von {app} als Ursache prüfen: zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten, wie Microsoft es für Leistungsprobleme rät",
+          "where": "In der Sitzung eines betroffenen Benutzers: Liste der Add-ins der Anwendung; Vorfallsansicht, Abschnitt „Belege“: fehlerhaftes Modul",
+          "sign": "Ausbleiben des Absturzes ohne Add-ins oder fehlerhaftes Modul eines Add-ins (Microsoft beschreibt den Test für Microsoft 365 Apps unter Windows 10)",
+          "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
+        },
+        {
+          "when": ["app.outlook"],
+          "text": "Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist: Microsoft empfiehlt für Office LTSC 2024 die 64-Bit-Version auf Geräten mit mindestens 4 GB Arbeitsspeicher, sofern Add-ins und andere Anwendungen damit verträglich sind",
+          "where": "Office-Anwendung: Informationen zur Version (Angabe 32 Bit oder 64 Bit)",
+          "sign": "32-Bit-Version auf einem Server mit mindestens 4 GB Arbeitsspeicher",
+          "source": "Microsoft: Overview of Office LTSC 2024"
+        },
+        {
           "when": ["app.teams"],
           "text": "Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift: laut Microsoft kann solche Software Teams verlangsamen und unerwartet beenden",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse und Meldungen zur Zeit des Vorfalls; Vorfallsansicht, Abschnitt „Belege“",
@@ -1805,6 +1839,12 @@
         },
         {
           "when": ["app.office"],
+          "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
+          "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
+          "source": "Microsoft: Update Office LTSC 2024"
+        },
+        {
+          "when": ["app.outlook"],
           "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
           "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Update Office LTSC 2024"
@@ -1932,22 +1972,22 @@
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
-          "when": ["app.office"],
-          "text": "Bei Outlook: nachsehen, ob Office ein Add-in wegen langsamer Ausführung abgeschaltet hat und wie lange die Add-ins zum Laden brauchen",
+          "when": ["app.outlook"],
+          "text": "Nachsehen, ob Office ein Add-in von Outlook wegen langsamer Ausführung abgeschaltet hat und wie lange die Add-ins zum Laden brauchen",
           "where": "Ereignisanzeige, Protokoll „Anwendung“, Quelle „Outlook“: Ereignisse 45 (Ladezeiten der Add-ins) und 59 (abgeschaltetes Add-in)",
           "sign": "Ereignis 59 mit dem Namen eines Add-ins; schaltet ein Benutzer es wieder ein, riskiert er laut Microsoft weitere Leistungsprobleme",
           "source": "Microsoft: Add-ins are user re-enabled after being disabled by Office programs"
         },
         {
-          "when": ["app.office"],
-          "text": "Bei Outlook: Größe der OST-Datei der betroffenen Benutzer prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
+          "when": ["app.outlook"],
+          "text": "Größe der OST-Datei von Outlook bei den betroffenen Benutzern prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
           "where": "Profil des Benutzers: Outlook-Datendatei (OST)",
           "sign": "OST-Datei über 10 GB",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
         },
         {
-          "when": ["app.office"],
-          "text": "Bei Outlook: prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist und ob die Schutzsoftware ein Add-in oder eine Integration in Outlook mitbringt; beides nennt Microsoft als Ursache dafür, dass Outlook nicht mehr reagiert",
+          "when": ["app.outlook"],
+          "text": "Prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist und ob die Schutzsoftware ein Add-in oder eine Integration in Outlook mitbringt; beides nennt Microsoft als Ursache dafür, dass Outlook nicht mehr reagiert",
           "where": "Einstellungen der Ordnerumleitung (Gruppenrichtlinie oder Workspace Environment Management); Outlook: Liste der Add-ins",
           "sign": "Pfad von AppData auf einer Freigabe; Add-in der Schutzsoftware in Outlook",
           "source": "Microsoft: Outlook not responding error or Outlook freezes when you open a file or send mail"

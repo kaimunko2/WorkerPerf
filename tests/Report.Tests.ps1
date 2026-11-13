@@ -705,15 +705,21 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $cpu = Get-ByKey 'cpu'
         $cpu.main.app | Should -Be 'EXCEL.EXE'; @($cpu.guide.conditions) | Should -Contain 'app.office'
         @($cpu.guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
-        # the memory bottleneck is caused by ms-teams.exe; a crash of OUTLOOK.EXE is an event incident of Microsoft Office
+        # the memory bottleneck is caused by ms-teams.exe; a crash of OUTLOOK.EXE is an event incident of Microsoft Outlook, which
+        # has its own key (Aussage angepasst, fix round 3 of Task 6, ruling P3-R57: before, Outlook was a process of 'office')
         @((Get-ByKey 'memory').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.teams')
-        @((Get-ByKey 'crash.manyusers').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        @((Get-ByKey 'crash.manyusers').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        @((Get-ByKey 'profile').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        # the steps for Outlook alone stand in the guidance of the profile bottleneck, the steps for every Office program in the crash's
+        @((Get-ByKey 'profile').guide.checks | Where-Object { $_.text -match 'OST-Datei von Outlook' }).Count | Should -Be 1
+        @((Get-ByKey 'crash.manyusers').guide.checks | Where-Object { $_.text -match 'Add-ins von OUTLOOK\.EXE' }).Count | Should -Be 1
+        @((Get-ByKey 'cpu').guide.checks + (Get-ByKey 'cpu').guide.remedies | Where-Object { ($_.text + $_.where + $_.sign) -match 'Outlook' }) | Should -Be @()
         # no incident of the hour is caused by another standard application; robocopy.exe (disk) is none
-        @(@($D.incidents) + @($D.before.incidents) | ForEach-Object { $_.guide.conditions } | Where-Object { $_ -like 'app.*' } | Sort-Object -Unique) | Should -Be @('app.office', 'app.teams')
+        @(@($D.incidents) + @($D.before.incidents) | ForEach-Object { $_.guide.conditions } | Where-Object { $_ -like 'app.*' } | Sort-Object -Unique) | Should -Be @('app.office', 'app.outlook', 'app.teams')
         @((Get-ByKey 'disk').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @()
         # the list as read, like the catalogue
         ($D.appList | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($AppList | ConvertTo-Json -Depth 20 -Compress)
-        @($D.appList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus')
+        @($D.appList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus', 'outlook')
         # a masked report keeps the keys (identifiers) and the condition
         foreach ($f in $R.Masked, $R.MaskedP) {
             $x = Get-ReportData $f

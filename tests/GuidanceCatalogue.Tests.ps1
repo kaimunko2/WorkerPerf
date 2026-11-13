@@ -776,8 +776,10 @@ Describe 'Katalog in src' {
         @{ S = 'cpu'; App = 'EXCEL.EXE'; Key = 'office'; Want = 'Add-ins von EXCEL\.EXE' }; @{ S = 'memory'; App = 'WINWORD.EXE'; Key = 'office'; Want = 'Add-ins von WINWORD\.EXE' }
         @{ S = 'cpu'; App = 'ms-teams.exe'; Key = 'teams'; Want = 'Medienoptimierung' }; @{ S = 'memory'; App = 'ms-teams.exe'; Key = 'teams'; Want = 'Medienoptimierung' }
         @{ S = 'cpu'; App = 'msedgewebview2.exe'; Key = 'webview2'; Want = 'welche Anwendung msedgewebview2\.exe nutzt' }
-        @{ S = 'profile'; App = 'OUTLOOK.EXE'; Key = 'office'; Want = 'OST-Datei' }; @{ S = 'share'; App = 'OUTLOOK.EXE'; Key = 'office'; Want = 'PST- oder OST-Dateien' }
-        @{ S = 'disk'; App = 'OUTLOOK.EXE'; Key = 'office'; Want = 'Cache-Modus' }
+        # Aussage angepasst (fix round 3, B1): Outlook has its own key; the steps for every Office program stand under it a second time
+        @{ S = 'profile'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'OST-Datei' }; @{ S = 'share'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'PST- oder OST-Dateien' }
+        @{ S = 'disk'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Cache-Modus' }
+        @{ S = 'cpu'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Add-ins von OUTLOOK\.EXE' }; @{ S = 'memory'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Add-ins von OUTLOOK\.EXE' }
     ) {
         $g = Get-Guide (New-Engpass $S @{ main = @{ app = $App; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } })
         $g.conditions | Should -Contain "app.$Key"
@@ -793,9 +795,10 @@ Describe 'Katalog in src' {
         # the steps of the application stand together, directly behind the steps for every named cause
         $general = @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and (@($_.when) -join ',') -eq 'cause.app' -and -not $_.PSObject.Properties['source'] }).Count
         ($at | Measure-Object -Minimum).Minimum | Should -Be $general
-        # no step of another standard application
+        # no step of another standard application (a step for every Office program stands word for word under Outlook too)
+        $ownTexts = @($own | ForEach-Object { [string]$_.text })
         foreach ($other in @($AppList.apps | ForEach-Object { $_.key } | Where-Object { $_ -ne $Key })) {
-            foreach ($el in @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and @($_.when) -contains "app.$other" })) {
+            foreach ($el in @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and @($_.when) -contains "app.$other" -and $ownTexts -cnotcontains [string]$_.text })) {
                 $shown | Should -Not -Contain (Format-WorkerPerfGuidanceText ([string]$el.text) @{ app = $App; user = 'user003'; from = '02:56'; to = '02:58' })
             }
         }
@@ -826,7 +829,7 @@ Describe 'Katalog in src' {
         }
         # every standard application has steps; the four of the customer in the situations of the processor and the memory
         foreach ($k in $keys) { @($appElements | Where-Object { $_.When -contains "app.$k" }).Count | Should -BeGreaterThan 0 -Because $k }
-        foreach ($k in 'edge', 'office', 'teams', 'webview2') {
+        foreach ($k in 'edge', 'office', 'teams', 'webview2', 'outlook') {
             foreach ($s in 'cpu', 'memory') { @($appElements | Where-Object { $_.Situation -eq $s -and $_.When -contains "app.$k" }).Count | Should -BeGreaterThan 0 -Because "$s $k" }
         }
         # a step of a performance incident for an application belongs to a named cause
@@ -916,6 +919,80 @@ Describe 'Katalog in src' {
         @($Elements | Where-Object { ($_.Texts -join ' ') -match 'Receive Side Scaling|RSS' }) | Should -Be @()
         # nothing that only holds for Provisioning Services
         @($Elements | Where-Object { ($_.Texts -join ' ') -match 'Provisioning|PVS|Schreibcache' }) | Should -Be @()
+    }
+    It 'zeigt die Schritte zu Outlook nur bei Outlook und dort vor den allgemeinen, bei <App> (<S>) keinen' -ForEach @(      # fix round 3, B1 (ruling P3-R57)
+        @(foreach ($a in 'WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'ONENOTE.EXE', 'MSACCESS.EXE') { foreach ($s in 'hang', 'crash', 'cpu', 'memory', 'disk', 'share', 'profile') { @{ App = $a; S = $s } } })
+    ) {
+        if ($S -in 'hang', 'crash') { $inc = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = $S; app = $App; users = @('user003'); sessions = @(3) } } }
+        else { $inc = New-Engpass $S @{ main = @{ app = $App; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } } }
+        $g = Get-Guide $inc
+        @($g.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        @(Get-GuideTexts $g | Where-Object { $_ -match 'Outlook|OST-|PST-|Cache-Modus' }) | Should -Be @()
+    }
+    It 'haengt die Schritte, die nur fuer Outlook gelten, an die Anwendung Outlook und zeigt ihr auch die Schritte fuer jedes Office-Programm' {      # fix round 3, B1 (ruling P3-R57)
+        # the application list: Outlook last, its process in no other application; the order of the five before it unchanged
+        @($AppList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus', 'outlook')
+        $outlook = @($AppList.apps | Where-Object { $_.key -eq 'outlook' })[0]
+        $outlook.label | Should -BeExactly 'Microsoft Outlook'; @($outlook.processes) | Should -Be @('OUTLOOK.EXE')
+        @(($AppList.apps | Where-Object { $_.key -eq 'office' }).processes) | Should -Be @('WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'ONENOTE.EXE', 'MSACCESS.EXE')
+        @(Get-WorkerPerfGuidanceAppMatches $AppList 'outlook.exe') | Should -Be @('outlook'); @(Get-WorkerPerfGuidanceAppMatches $AppList 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE') | Should -Be @('office')
+        $office = @($Elements | Where-Object { $_.When -contains 'app.office' }); $own = @($Elements | Where-Object { $_.When -contains 'app.outlook' })
+        # no element starts with the prefix any more; none for every Office program names Outlook or its files
+        @($Elements | Where-Object { $_.Texts[0] -match '^Bei Outlook' }) | Should -Be @()
+        foreach ($e in $office) { ($e.Texts -join ' ') | Should -Not -Match 'Outlook|OST|PST|Postfach' -Because $e.Position }
+        # the steps for Outlook alone: each names Outlook or its data file, none stands under another application
+        $only = @($own | Where-Object { $t = $_.Texts[0]; @($office | Where-Object { $_.Texts[0] -ceq $t }).Count -eq 0 })
+        @($only | ForEach-Object { $_.Situation + '.' + $_.List } | Sort-Object) | Should -Be @('disk.checks', 'hang.checks', 'hang.checks', 'hang.checks', 'profile.checks', 'profile.remedies', 'share.checks')
+        foreach ($e in $only) { ($e.Texts -join ' ') | Should -Match 'Outlook' -Because $e.Position; $e.Source | Should -BeLike 'Microsoft: *' -Because $e.Position }
+        # Outlook is an Office program: every step for every Office program stands a second time, word for word and with
+        # its source, under Outlook, in the same list after the Office steps, and after the steps for Outlook alone
+        $office.Count | Should -Be 6
+        foreach ($e in $office) {
+            $twin = @($own | Where-Object { $_.Situation -eq $e.Situation -and $_.List -eq $e.List -and ($_.Texts -join '|') -ceq ($e.Texts -join '|') })
+            $twin.Count | Should -Be 1 -Because $e.Position
+            $twin[0].Source | Should -BeExactly $e.Source -Because $e.Position
+            (@($twin[0].When) -join ',') | Should -Be ((@($e.When) -join ',').Replace('app.office', 'app.outlook')) -Because $e.Position
+            $index = { param($x) [int]($x.Position -replace '^.*\[(\d+)\]$', '$1') }
+            (& $index $twin[0]) | Should -BeGreaterThan (& $index $e) -Because $e.Position
+            foreach ($o in @($only | Where-Object { $_.Situation -eq $e.Situation -and $_.List -eq $e.List })) { (& $index $o) | Should -BeLessThan (& $index $twin[0]) -Because $o.Position }
+        }
+        ($own.Count - $only.Count) | Should -Be $office.Count
+        # a hang of Outlook: its three steps, before every general step of the situation
+        $g = Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'hang'; app = 'OUTLOOK.EXE'; users = @('user003'); sessions = @(3) } })
+        @($g.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        $shown = @($g.checks | ForEach-Object { $_.text })
+        $general = @($Real.situations.hang.checks | Where-Object { -not $_.PSObject.Properties['when'] -or @($_.when).Count -eq 0 } | ForEach-Object { [string]$_.text })
+        $firstGeneral = @($shown | ForEach-Object { [array]::IndexOf($general, $_) -ge 0 }).IndexOf($true); $firstGeneral | Should -BeGreaterThan 2
+        $steps = @($only | Where-Object { $_.Situation -eq 'hang' })
+        foreach ($e in $steps) { $at = [array]::IndexOf($shown, $e.Texts[0]); $at | Should -BeGreaterThan -1 -Because $e.Position; $at | Should -BeLessThan $firstGeneral -Because $e.Position }
+        @($g.checks | Where-Object { $_.text -match 'Add-in von Outlook wegen langsamer Ausführung' }).Count | Should -Be 1
+        @($g.checks | Where-Object { $_.text -match '^Größe der OST-Datei von Outlook' }).Count | Should -Be 1
+        @($g.checks | Where-Object { $_.text -match '^Prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist' }).Count | Should -Be 1
+        # a crash and a processor bottleneck of Outlook show what Word shows
+        foreach ($kind in 'crash', 'cpu', 'memory') {
+            $make = { param($app) if ($kind -eq 'crash') { New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = $app; users = @('user003'); sessions = @(3) } } }
+                else { New-Engpass $kind @{ main = @{ app = $app; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } } } }
+            $word = Get-Guide (& $make 'WINWORD.EXE'); $mail = Get-Guide (& $make 'OUTLOOK.EXE')
+            foreach ($list in 'checks', 'remedies') {
+                @($mail.$list | ForEach-Object { $_.text }) | Should -Be @($word.$list | ForEach-Object { $_.text.Replace('WINWORD.EXE', 'OUTLOOK.EXE') }) -Because "$kind $list"
+            }
+            @($mail.checks | Where-Object { $_.text -match 'Add-ins von OUTLOOK\.EXE' }).Count | Should -Be 1 -Because $kind
+        }
+    }
+    It 'sagt im Glossar zum Zuordnungswerkzeug der Drucker nur, was belegt ist' {                                   # fix round 3, B2
+        $term = [string]$Real.terms.PrinTaurus
+        $term | Should -BeExactly 'Drucklösung der AKI GmbH, mit der in dieser Umgebung die Drucker zugeordnet werden; ihr SmartSpread Client ist auf dem Server installiert.'
+        # nothing on rules of the mapping, nothing on how often or where the client runs
+        $term | Should -Not -Match 'Regel|Sitzung|läuft|je Benutzer|Anmeldung'
+        # the record of sources names the statement as the customer's, in the target environment and in the vendor's section
+        $doc = [IO.File]::ReadAllText($SourcesFile, [Text.Encoding]::UTF8)
+        foreach ($h in 'Zielumgebung', 'AKI') {
+            $at = $doc.IndexOf("`n## $h`n"); $next = $doc.IndexOf("`n## ", $at + 4)
+            $section = $doc.Substring($at, $next - $at)
+            $section | Should -Match 'Angabe des Auftraggebers vom 13\.11\.2026' -Because $h
+            $section | Should -Match 'Drucklösung' -Because $h
+            $section | Should -Not -Match 'läuft dafür|nach Regeln zu' -Because $h
+        }
     }
     It 'stellt kein Bezeichnungswort direkt vor seinen Platzhalter' {                                             # ruling P3-R45
         # the replacement name of a masked report starts with the word: "Server Server 01"
@@ -1037,6 +1114,72 @@ Describe 'Nachweis der Druckempfehlungen' {
         $named = @(Get-Positions $section); $named.Count | Should -BeGreaterThan 3
         foreach ($p in $named) { $all | Should -Contain $p }
         foreach ($word in 'DependOnService', 'Betriebsbereit', 'PrintDriverIsolationOverrideCompat', 'temporäres Profil') { $section | Should -Match ([regex]::Escape($word)) }
+    }
+    It 'nennt im Abschnitt Zielumgebung die Elemente mit ihren ersten Worten statt mit ihrer Stelle' {                           # fix round 3, A4
+        $at = $Doc.IndexOf("`n## Zielumgebung`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
+        $section = $Doc.Substring($at, $next - $at) -replace '\s+', ' '
+        # one position only: the example that explains what a position is
+        @(Get-Positions $section | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
+        $forms = @{}; foreach ($m in [regex]::Matches($Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
+        $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
+        $named = @([regex]::Matches($section, '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`'))
+        @($named | ForEach-Object { $_.Groups[3].Value + ': ' + $_.Groups[2].Value }) | Should -Be @('crash: Ausnahme oder korrigierte Version der Schutzsoftware', 'print: Spool-Ordner von Hand leeren',
+            'print: Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt', 'cpu: ‹Anwendung› vom Benutzer schließen lassen', 'memory: ‹Anwendung› schließen und neu starten lassen')
+        foreach ($m in $named) {
+            # the words as the catalogue writes them: a placeholder in its declared form back to the placeholder
+            $words = $m.Groups[2].Value; foreach ($f in $forms.Keys) { $words = $words.Replace($f, $forms[$f]) }
+            $words | Should -Not -Match '[‹›]'
+            $hit = @($Real.situations.($m.Groups[3].Value).($lists[$m.Groups[1].Value]) | Where-Object { ([string]$_.text).StartsWith($words, [StringComparison]::Ordinal) })
+            $hit.Count | Should -Be 1 -Because $m.Value
+        }
+        # what the section says about these elements still stands in them
+        $find = { param($s, $start) @($Real.situations.$s.remedies | Where-Object { ([string]$_.text).StartsWith($start, [StringComparison]::Ordinal) })[0] }
+        (& $find 'crash' 'Ausnahme oder korrigierte Version der Schutzsoftware').text | Should -Match 'korrigierte Version bei nicht persistenten Workern im Master-Image'
+        foreach ($start in 'Spool-Ordner von Hand leeren', 'Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt') { (& $find 'print' $start).text | Should -Match 'setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' }
+        (& $find 'cpu' '{app} vom Benutzer schließen lassen').text | Should -Match 'das wirkt nur, bis die Anwendung wieder startet'
+        (& $find 'memory' '{app} schließen und neu starten lassen').text | Should -Match 'nur frei, bis \{app\} ihn wieder belegt$'
+    }
+    It 'zeigt einen Platzhalter des Katalogs im Nachweis in Winkeln mit seinem erklaerten Namen, nie als Satzteil' {              # fix round 3, A5
+        # the forms the record declares
+        $forms = @{}; foreach ($m in [regex]::Matches($Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms[$m.Groups[2].Value] = '‹' + $m.Groups[1].Value + '›' }
+        $forms['app'] | Should -BeExactly '‹Anwendung›'; $forms['user'] | Should -BeExactly '‹Benutzer›'
+        # every such form in the record is a declared one; no brace stands outside the declaration
+        foreach ($m in [regex]::Matches($Doc, '‹[^›]*›')) { $forms.Values | Should -Contain $m.Value }
+        @([regex]::Matches($Doc, '\{\w+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique) | Should -Be @($forms.Keys | ForEach-Object { '{' + $_ + '}' } | Sort-Object)
+        @([regex]::Matches($Doc, '`\{\w+\}`')).Count | Should -Be @([regex]::Matches($Doc, '\{\w+\}')).Count
+        # the tables of the printer vendors carry summaries written by hand: no brace, no other form
+        foreach ($row in $Rows) { $row.Line | Should -Not -Match '[{}]' -Because $row.Title }
+        # the sections of the sources added later (AKI to BIS-F) carry the first words of each element's text: up to the
+        # first colon, semicolon or opening bracket after the twentieth character, at most 110 characters, and every
+        # placeholder in its declared form
+        $label = { param([string]$Text)
+            $cut = $Text.Length
+            foreach ($sep in ': ', '; ', ' (') { $k = $Text.IndexOf($sep, [StringComparison]::Ordinal); if ($k -gt 20 -and $k -lt $cut) { $cut = $k } }
+            $t = [regex]::Replace($Text.Substring(0, $cut), '\{(\w+)\}', { param($m) if ($forms.ContainsKey($m.Groups[1].Value)) { $forms[$m.Groups[1].Value] } else { $m.Value } }).Replace('|', '/')
+            if ($t.Length -gt 110) { $t = $t.Substring(0, 107).TrimEnd() + ' …' }
+            $t }
+        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $from = $Doc.IndexOf("`n## AKI`n"); $to = $Doc.IndexOf("`n## Ausnahmen: Praxisquelle vor Hersteller`n"); $from | Should -BeGreaterThan 0; $to | Should -BeGreaterThan $from
+        $labels = 0; $withForm = New-Object System.Collections.Generic.List[string]
+        foreach ($line in @($Doc.Substring($from, $to - $from) -split "`n" | Where-Object { $_ -match '^\| ' })) {
+            $cells = @($line -split ' \| ')
+            if ($cells.Count -lt 5 -or $cells[3] -notmatch '^`') { continue }
+            foreach ($entry in @($cells[3] -split '<br>')) {
+                $m = [regex]::Match($entry, '^`([a-z.]+\.(?:checks|remedies|contacts)\[\d+\])` (.+)$'); $m.Success | Should -BeTrue -Because $entry
+                $e = $byPosition[$m.Groups[1].Value]; $e | Should -Not -BeNullOrEmpty -Because $entry
+                $want = & $label $e.Texts[0]
+                $want | Should -Not -Match '[{}]' -Because "$($e.Position): ein Platzhalter hat im Nachweis keine erklaerte Form"
+                # a step for every Office program that stands a second time for Outlook says so
+                if ($e.When -contains 'app.outlook' -and @($Sourced | Where-Object { $_.When -contains 'app.office' -and $_.Texts[0] -ceq $e.Texts[0] }).Count -gt 0) { $want += ' (für Outlook)' }
+                $m.Groups[2].Value | Should -BeExactly $want -Because $e.Position
+                $labels++; if ($want -match '‹') { $withForm.Add($e.Position) }
+            }
+        }
+        $labels | Should -BeGreaterThan 80
+        # the labels with a placeholder today: the steps that name the application or the user in their first words
+        $withForm.Count | Should -BeGreaterThan 9
+        foreach ($p in 'cpu.checks[6]', 'cpu.checks[7]', 'cpu.checks[8]', 'memory.checks[5]') { $withForm | Should -Contain $p }
+        $Doc | Should -Match 'Add-ins von ‹Anwendung› prüfen'; $Doc | Should -Match 'in der Sitzung von ‹Benutzer› mit Medienoptimierung lief'
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
         @($Sourced | Where-Object { $_.Source -match 'Generic PCL' }) | Should -Be @()
