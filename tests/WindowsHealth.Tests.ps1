@@ -107,4 +107,42 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         $script:WinFake.LogFail['System'] = New-Object System.UnauthorizedAccessException 'Zugriff verweigert'
         $h = Read-Health; (Get-V $h 'events.logs').State | Should -Be 'unreadable'; (Get-V $h 'events.logs').Reason | Should -Be 'rights'; $h.Areas['events'].Status | Should -Be 'failed'
     }
+    It 'ordnet eine Abfrage, die an ihrem Zeitlimit endet, als Zeitlimit ein und liest sie im naechsten Bereich noch einmal' {   # Fix 1
+        # Zeit vor der Abfrage: der Rest des Limits von 2,5 s ist keine ganze Zahl von Sekunden
+        $script:WinFake.DelayOnce['native:perfinfo'] = 600; $script:WinFake.DelayOnce['cim:Win32_PageFileUsage'] = 30000; $script:WorkerPerfWinHealthAreaBudgetSec = 2.5
+        try { $h = Read-Health } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-V $h 'size.pagefiles').State | Should -Be 'unreadable'; (Get-V $h 'size.pagefiles').Reason | Should -Be 'timeout'
+        (Get-V $h 'size.storageControllers').Reason | Should -Be 'timeout'                    # die Abfrage endet erst am Limit des Bereichs
+        $script:WinFake.Calls['cim:Win32_PageFileUsage'] | Should -Be 2                         # der Bereich operation liest noch einmal
+        $c = (Get-V $h 'operation.volumes').Value | Where-Object Drive -eq 'C:'; $c.PageFile | Should -BeTrue
+    }
+    It 'erkennt ein Zeitlimit und verweigerten Zugriff an der Ausnahme selbst' {   # Fix 1, Fix 4
+        $ctx = @{ Area = 'size'; State = $null; Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 10000; Shared = @{}; Values = [ordered]@{} }
+        Get-WorkerPerfWinHealthFailReason $ctx (New-Object System.TimeoutException 'Zeitlimit') | Should -Be 'timeout'
+        Get-WorkerPerfWinHealthFailReason $ctx (New-WinStandInTimedOut 2150858793) | Should -Be 'timeout'       # ERROR_WSMAN_OPERATION_TIMEDOUT
+        Get-WorkerPerfWinHealthFailReason $ctx (New-WinStandInTimedOut 2147749993) | Should -Be 'timeout'       # WBEM_E_TIMED_OUT
+        Get-WorkerPerfWinHealthFailReason $ctx (New-WinStandInTimedOut 2147749889) | Should -Be 'error'         # WBEM_E_FAILED
+        $wrapped = New-Object System.Management.Automation.MethodInvocationException 'Aufruf', (New-Object System.TimeoutException 'Zeitlimit')
+        Get-WorkerPerfWinHealthFailReason $ctx $wrapped | Should -Be 'timeout'
+        Get-WorkerPerfWinHealthFailReason $ctx (New-Object System.Runtime.InteropServices.COMException 'verweigert', -2147024891) | Should -Be 'rights'   # 0x80070005
+        Get-WorkerPerfWinHealthFailReason $ctx (New-Object System.Runtime.InteropServices.COMException 'verweigert', -2147217405) | Should -Be 'rights'   # 0x80041003
+        Get-WorkerPerfWinHealthFailReason $ctx (New-Object System.Runtime.InteropServices.COMException 'kaputt', -2147217407) | Should -Be 'error'       # 0x80041001
+    }
+    It 'liest die Programmliste, auch wenn ein Eintrag nicht lesbar ist' {   # Fix 2
+        $script:WinFake.RegistryFail['SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B2}'] = New-Object System.UnauthorizedAccessException 'Zugriff verweigert'
+        $h = Read-Health
+        (Get-V $h 'size.vmtoolsVersion').State | Should -Be 'read'; (Get-V $h 'size.vmtoolsVersion').Value | Should -Be '12.3.5.22544099'
+    }
+    It 'beendet das Lesen der Programmliste am Zeitlimit, und der naechste Bereich liest sie noch einmal' {   # Fix 2
+        $root = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+        foreach ($k in '{A1}', '{B2}', '{C3}') { $script:WinFake.Delay['registry:' + $root + '\' + $k] = 600 }
+        $ctx = @{ Area = 'size'; State = $null; Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 1000; Shared = @{}; Values = [ordered]@{} }
+        { Get-WorkerPerfWinHealthUninstall $ctx } | Should -Throw
+        $ctx.Shared['uninstall'].Reason | Should -Be 'timeout'
+        $script:WinFake.Calls.Keys | Should -Not -Contain ('registry:' + $root + '\{C3}')     # nach dem Limit kein Eintrag mehr
+        $script:WinFake.Delay.Clear()
+        $ctx2 = @{ Area = 'operation'; State = $null; Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 10000; Shared = $ctx.Shared; Values = [ordered]@{} }
+        $list = @(Get-WorkerPerfWinHealthUninstall $ctx2); $list.Count | Should -Be 3
+        $script:WinFake.Calls['registry:' + $root + '\{A1}'] | Should -Be 2
+    }
 }

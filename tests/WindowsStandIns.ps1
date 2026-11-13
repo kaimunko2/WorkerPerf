@@ -222,6 +222,13 @@ function New-WinStandInDenied([string]$Kind) {
     throw "Stand-in kennt die Art '$Kind' nicht"
 }
 
+function New-WinStandInTimedOut([uint32]$Code) {
+    # a failed CIM call as Get-CimInstance reports it: the native error code in error_Code of ErrorData
+    $ex = New-Object WinStandInCimErrorException 'Abfrage gescheitert'
+    $ex.ErrorData = [pscustomobject]@{ CimInstanceProperties = @{ error_Code = [pscustomobject]@{ Name = 'error_Code'; Value = $Code } } }
+    return $ex
+}
+
 function Test-WorkerPerfElevated { return $true }
 
 function Test-WorkerPerfWinCounter([string]$Category, [string]$Counter) {
@@ -458,7 +465,7 @@ function Get-WorkerPerfLogOldestTime([string]$LogName) {
 }
 
 # Test types: the log mode as Windows gives it (an enumeration), and an exception that reports denied access the way a
-# CimException does (NativeErrorCode AccessDenied).
+# CimException does (NativeErrorCode AccessDenied); further below an exception that carries a native error code in ErrorData.
 if (-not ('WinStandInLogMode' -as [type])) {
     Add-Type -TypeDefinition @'
 public enum WinStandInLogMode { Circular = 0, AutoBackup = 1, Retain = 2 }
@@ -466,6 +473,15 @@ public class WinStandInCimException : System.Exception
 {
     public WinStandInCimException(string message) : base(message) { }
     public string NativeErrorCode { get { return "AccessDenied"; } }
+}
+'@
+}
+if (-not ('WinStandInCimErrorException' -as [type])) {
+    Add-Type -TypeDefinition @'
+public class WinStandInCimErrorException : System.Exception
+{
+    public WinStandInCimErrorException(string message) : base(message) { }
+    public object ErrorData { get; set; }
 }
 '@
 }

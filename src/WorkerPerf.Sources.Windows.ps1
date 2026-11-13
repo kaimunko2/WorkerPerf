@@ -521,6 +521,9 @@ $script:WorkerPerfWinPowerPlans = @{
 }
 # HRESULTs of denied access: E_ACCESSDENIED (0x80070005) and WBEM_E_ACCESS_DENIED (0x80041003)
 $script:WorkerPerfWinDeniedHResults = @(-2147024891, -2147217405)
+# Native error codes of an operation that timed out (unsigned): WBEM_E_TIMED_OUT (0x80041069), WBEM_E_PROVIDER_TIMED_OUT
+# (0x80041088), ERROR_WSMAN_OPERATION_TIMEDOUT (0x80338029) and HRESULT_FROM_WIN32(ERROR_TIMEOUT) (0x800705B4)
+$script:WorkerPerfWinTimeoutCodes = @(2147749993, 2147750024, 2150858793, 2147943860)
 # The error of compiling WorkerPerf.HealthNative, once it failed (the values that need it are then unreadable).
 $script:WorkerPerfHealthTypeError = $null
 
@@ -1907,22 +1910,25 @@ function ConvertTo-WorkerPerfWinEventRecord($Config, [string]$LogId, $Event) {
     return $rec
 }
 
-function Get-WorkerPerfErrorClass($Exception) {
-    # The class of a failure: the type name of the exception, without the wrappers PowerShell puts around a method
-    # that threw (MethodInvocationException, and a plain RuntimeException around a script method's exception).
+function Get-WorkerPerfInnerException($Exception) {
+    # The exception without the wrappers PowerShell puts around a method that threw (MethodInvocationException, and a
+    # plain RuntimeException around a script method's exception).
     $ex = $Exception
     $guard = 0
     while ($null -ne $ex -and $null -ne $ex.InnerException -and $guard -lt 5 -and
         ($ex -is [System.Management.Automation.MethodException] -or $ex.GetType() -eq [System.Management.Automation.RuntimeException])) { $ex = $ex.InnerException; $guard++ }
+    return $ex
+}
+
+function Get-WorkerPerfErrorClass($Exception) {
+    # The class of a failure: the type name of the exception, without the wrappers (Get-WorkerPerfInnerException).
+    $ex = Get-WorkerPerfInnerException $Exception
     if ($null -eq $ex) { return 'Exception' }
     return $ex.GetType().Name
 }
 
 function Get-WorkerPerfErrorText($Exception) {
-    $ex = $Exception
-    $guard = 0
-    while ($null -ne $ex -and $null -ne $ex.InnerException -and $guard -lt 5 -and
-        ($ex -is [System.Management.Automation.MethodException] -or $ex.GetType() -eq [System.Management.Automation.RuntimeException])) { $ex = $ex.InnerException; $guard++ }
+    $ex = Get-WorkerPerfInnerException $Exception
     if ($null -eq $ex) { return '' }
     return [string]$ex.Message
 }
@@ -2193,9 +2199,19 @@ function Test-WorkerPerfWinHealthTimeUp($Ctx) {
     return ($Ctx.Clock.Elapsed.TotalMilliseconds -ge $Ctx.BudgetMs)
 }
 
+function Test-WorkerPerfWinTimeoutCode($Code) {
+    # true for a native error code (signed or unsigned 32 bits) of an operation that timed out
+    if ($null -eq $Code) { return $false }
+    $n = 0L
+    if (-not [long]::TryParse([string]$Code, [ref]$n)) { return $false }
+    if ($n -lt 0) { $n += 4294967296L }
+    return ($script:WorkerPerfWinTimeoutCodes -contains $n)
+}
+
 function Get-WorkerPerfWinHealthFailReason($Ctx, $ErrorRecord) {
-    # rights, timeout or error for a failed read: rights for denied access in each form Windows reports it, else
-    # timeout when the limit of the area is reached, else error. A failure that Get-WorkerPerfWinHealthShared passes on
+    # rights, timeout or error for a failed read: rights for denied access in each form Windows reports it, timeout
+    # for an operation that timed out (a TimeoutException, or a native error code of a timeout in the HRESULT or in
+    # error_Code of the ErrorData of a CimException) or when the limit of the area is reached, else error. A failure that Get-WorkerPerfWinHealthShared passes on
     # keeps the reason it got where it fell.
     $frEx = $ErrorRecord
     if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) { $frEx = $ErrorRecord.Exception }
@@ -2204,10 +2220,7 @@ function Get-WorkerPerfWinHealthFailReason($Ctx, $ErrorRecord) {
             if ($null -ne $frEntry -and $null -ne $frEntry.Exception -and [object]::ReferenceEquals($frEntry.Exception, $frEx)) { return $frEntry.Reason }
         }
     }
-    # without the wrappers PowerShell puts around a method that threw (as Get-WorkerPerfErrorClass)
-    $frGuard = 0
-    while ($null -ne $frEx -and $null -ne $frEx.InnerException -and $frGuard -lt 5 -and
-        ($frEx -is [System.Management.Automation.MethodException] -or $frEx.GetType() -eq [System.Management.Automation.RuntimeException])) { $frEx = $frEx.InnerException; $frGuard++ }
+    $frEx = Get-WorkerPerfInnerException $frEx
     if ($null -ne $frEx) {
         if ($frEx -is [System.UnauthorizedAccessException] -or $frEx -is [System.Security.SecurityException]) { return 'rights' }
         if ($script:WorkerPerfWinDeniedHResults -contains [int]$frEx.HResult) { return 'rights' }
@@ -2215,6 +2228,16 @@ function Get-WorkerPerfWinHealthFailReason($Ctx, $ErrorRecord) {
         # a CimException reports denied access in NativeErrorCode
         $frCode = $frEx.PSObject.Properties['NativeErrorCode']
         if ($null -ne $frCode -and [string]$frCode.Value -eq 'AccessDenied') { return 'rights' }
+        if ($frEx -is [System.TimeoutException]) { return 'timeout' }
+        if (Test-WorkerPerfWinTimeoutCode $frEx.HResult) { return 'timeout' }
+        $frData = $frEx.PSObject.Properties['ErrorData']
+        if ($null -ne $frData -and $null -ne $frData.Value) {
+            $frProps = $frData.Value.PSObject.Properties['CimInstanceProperties']
+            if ($null -ne $frProps -and $null -ne $frProps.Value) {
+                $frNative = $frProps.Value['error_Code']
+                if ($null -ne $frNative -and (Test-WorkerPerfWinTimeoutCode $frNative.Value)) { return 'timeout' }
+            }
+        }
     }
     if (Test-WorkerPerfWinHealthTimeUp $Ctx) { return 'timeout' }
     return 'error'
@@ -2270,8 +2293,9 @@ function Get-WorkerPerfWinHealthShared($Ctx, [string]$Key, [scriptblock]$Read) {
 }
 
 function Get-WorkerPerfWinHealthCim($Ctx, [string]$ClassName, [string]$Namespace = 'root\cimv2', [string]$Filter = '', [string[]]$Property = @()) {
-    # A local CIM query with the rest of the area's limit as its time limit (whole seconds, at least 1).
-    $hcRest = [Math]::Max(1, [int][Math]::Floor(($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0))
+    # A local CIM query with the rest of the area's limit as its time limit, in whole seconds rounded up (at least 1):
+    # a query that runs into it ends at or after the limit of the area.
+    $hcRest = [Math]::Max(1, [int][Math]::Ceiling(($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0))
     $hcArgs = @{ ClassName = $ClassName; Namespace = $Namespace; OperationTimeoutSec = $hcRest; ErrorAction = 'Stop' }
     if ($Filter) { $hcArgs['Filter'] = $Filter }
     if (@($Property).Count -gt 0) { $hcArgs['Property'] = [string[]]$Property }
@@ -2297,13 +2321,18 @@ function Get-WorkerPerfWinHealthServices($Ctx) {
 }
 
 function Get-WorkerPerfWinHealthUninstall($Ctx) {
-    # The entries of both uninstall keys: Key, DisplayName, DisplayVersion.
+    # The entries of both uninstall keys: Key, DisplayName, DisplayVersion. An entry that cannot be read is left out;
+    # when the limit of the area is reached, the read ends as a timeout (the next area may read again).
     Get-WorkerPerfWinHealthShared $Ctx 'uninstall' {
         foreach ($hcRoot in $script:WorkerPerfWinUninstallKeys) {
             $hcKey = Get-WorkerPerfRegistryValues $hcRoot
             if ($null -eq $hcKey) { continue }
             foreach ($hcSub in @($hcKey['SubKeys'])) {
-                $hcEntry = Get-WorkerPerfRegistryValues ($hcRoot + '\' + $hcSub)
+                if (Test-WorkerPerfWinHealthTimeUp $Ctx) { throw (New-Object System.TimeoutException 'Zeitlimit des Bereichs erreicht.') }
+                $hcEntry = $null
+                try { $hcEntry = Get-WorkerPerfRegistryValues ($hcRoot + '\' + $hcSub) }
+                catch [System.Management.Automation.PipelineStoppedException] { throw }
+                catch { continue }
                 if ($null -eq $hcEntry) { continue }
                 $hcValues = $hcEntry['Values']
                 [pscustomobject]@{ Key = [string]$hcSub; DisplayName = [string]$hcValues['DisplayName']; DisplayVersion = [string]$hcValues['DisplayVersion'] }
