@@ -590,7 +590,7 @@ $script:WorkerPerfWinHealthReaders = [ordered]@{
     size = 'Read-WorkerPerfWinHealthSize'; operation = 'Read-WorkerPerfWinHealthOperation'; sessions = 'Read-WorkerPerfWinHealthSessions'
     vda = 'Read-WorkerPerfWinHealthVda'; profile = 'Read-WorkerPerfWinHealthProfile'; print = 'Read-WorkerPerfWinHealthPrint'
     security = 'Read-WorkerPerfWinHealthSecurity'; network = 'Read-WorkerPerfWinHealthNetwork'; events = 'Read-WorkerPerfWinHealthEvents'
-    maintenance = 'Read-WorkerPerfWinHealthMaintenance'
+    maintenance = 'Read-WorkerPerfWinHealthMaintenance'; apps = 'Read-WorkerPerfWinHealthApps'
 }
 $script:WorkerPerfWinUninstallKeys = @('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
 $script:WorkerPerfWinPowerPlans = @{
@@ -1573,6 +1573,54 @@ function ConvertFrom-WorkerPerfFilterBuffer([byte[]]$Buffer) {
     }
 }
 
+function ConvertTo-WorkerPerfHklmSubKey([string]$Path) {
+    # The key below HKLM of a registry path of the application list ('HKLM\<key>', any letter case).
+    if (-not $Path.StartsWith('HKLM\', [StringComparison]::OrdinalIgnoreCase) -or $Path.Length -le 5) {
+        throw (New-Object System.IO.InvalidDataException "Registrierungspfad '$Path' liegt nicht unter HKLM.")
+    }
+    return $Path.Substring(5)
+}
+
+function Select-WorkerPerfProbeMatch([string[]]$Names, [string]$Pattern) {
+    # Of the folder names that match a pattern with one '*' (only '*' is a wildcard; any letter case), the one whose
+    # part in place of the '*' is the highest version (compared as [version]); when one of these parts is no version,
+    # the last by name (ordinal, any letter case). $null without a match.
+    $cut = $Pattern.IndexOf('*')
+    if ($cut -lt 0) { throw (New-Object System.ArgumentException "Muster '$Pattern' enthaelt kein '*'.") }
+    $regex = New-Object System.Text.RegularExpressions.Regex (('^' + [regex]::Escape($Pattern.Substring(0, $cut)) + '(.*)' + [regex]::Escape($Pattern.Substring($cut + 1)) + '$'),
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $found = New-Object System.Collections.Generic.List[string]
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @($Names)) {
+        if ([string]::IsNullOrEmpty($name)) { continue }
+        $m = $regex.Match($name)
+        if ($m.Success) { $found.Add($name); $parts.Add($m.Groups[1].Value) }
+    }
+    if ($found.Count -eq 0) { return $null }
+    $best = -1
+    $bestVersion = $null
+    for ($i = 0; $i -lt $found.Count; $i++) {
+        $version = $null
+        if (-not [version]::TryParse($parts[$i], [ref]$version)) { $best = -1; break }
+        if ($null -eq $bestVersion -or $version -gt $bestVersion) { $best = $i; $bestVersion = $version }
+    }
+    if ($best -ge 0) { return $found[$best] }
+    $sorted = $found.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::OrdinalIgnoreCase)
+    return $sorted[$sorted.Length - 1]
+}
+
+function Test-WorkerPerfTaskNotFound($Exception) {
+    # true when the Task Scheduler reports a missing task or folder: HRESULT 0x80070002 (file not found) or 0x80070003
+    # (path not found), also inside the exceptions PowerShell wraps around a method call
+    $ex = $Exception
+    for ($depth = 0; $null -ne $ex -and $depth -lt 6; $depth++) {
+        if ($ex.HResult -eq -2147024894 -or $ex.HResult -eq -2147024893) { return $true }
+        $ex = $ex.InnerException
+    }
+    return $false
+}
+
 #endregion
 
 #region ---------- Windows calls (thin; replaced by stand-ins in the tests) --------------------------------------------
@@ -1801,6 +1849,59 @@ function Get-WorkerPerfFileVersion([string]$Path) {
     return [string][System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductVersion
 }
 
+function Get-WorkerPerfRegistryKeyInfo([string]$SubKey) {
+    # The number of values and of subkeys of a key below HKLM, read only and without reading a value; $null when the key
+    # is missing. The path is taken literally (OpenSubKey knows no wildcard).
+    $key = Open-WorkerPerfRegistryKey $SubKey
+    if ($null -eq $key) { return $null }
+    try { return @{ ValueCount = [int]$key.ValueCount; SubKeyCount = [int]$key.SubKeyCount } }
+    finally { $key.Close() }
+}
+
+function Get-WorkerPerfPathKind([string]$Path) {
+    # 'file' or 'folder' for a local path that exists, '' for one that does not.
+    if ([System.IO.File]::Exists($Path)) { return 'file' }
+    if ([System.IO.Directory]::Exists($Path)) { return 'folder' }
+    return ''
+}
+
+function Get-WorkerPerfDirectoryMatches([string]$Folder, [string]$Pattern) {
+    # The names of the subfolders of a local folder that match a pattern (Directory.GetDirectories, this level only);
+    # none when the folder does not exist. Plain pipeline output.
+    if (-not [System.IO.Directory]::Exists($Folder)) { return }
+    foreach ($dir in [System.IO.Directory]::GetDirectories($Folder, $Pattern)) { [System.IO.Path]::GetFileName($dir) }
+}
+
+function Get-WorkerPerfTaskInfo([string]$Path) {
+    # One task of the Task Scheduler by its full path through the local object Schedule.Service (Connect without a
+    # server name, GetFolder, GetTask): Enabled, LastRun and NextRun as the Task Scheduler gives them; $null when the
+    # folder or the task does not exist (Test-WorkerPerfTaskNotFound). Every COM object is released.
+    $cut = $Path.LastIndexOf('\')
+    $folderPath = '\'
+    if ($cut -gt 0) { $folderPath = $Path.Substring(0, $cut) }
+    $name = $Path.Substring($cut + 1)
+    $service = New-Object -ComObject 'Schedule.Service'
+    $folder = $null
+    $task = $null
+    try {
+        $service.Connect()
+        try {
+            $folder = $service.GetFolder($folderPath)
+            $task = $folder.GetTask($name)
+        }
+        catch {
+            if (Test-WorkerPerfTaskNotFound $_.Exception) { return $null }
+            throw
+        }
+        return @{ Enabled = $task.Enabled; LastRun = $task.LastRunTime; NextRun = $task.NextRunTime }
+    }
+    finally {
+        Close-WorkerPerfComObject $task
+        Close-WorkerPerfComObject $folder
+        Close-WorkerPerfComObject $service
+    }
+}
+
 function Get-WorkerPerfFilterRaw {
     # The loaded file system filters (FilterFindFirst/FilterFindNext of fltlib.dll through WorkerPerf.HealthNative), one
     # record Name, Altitude, Instances, Legacy per filter. A console that compiled an older WorkerPerf.HealthNative keeps it
@@ -1900,8 +2001,13 @@ function Get-WorkerPerfTaskWalk($Root, [double]$DeadlineSec = 0) {
             try {
                 $inMicrosoft = Test-WorkerPerfMicrosoftTaskFolder ([string]$folder.Path)
                 $collection = $folder.GetTasks(1)
+                $items = @()
+                $next = 0
                 try {
-                    foreach ($task in @($collection)) {
+                    $items = @($collection)
+                    while ($next -lt $items.Count) {
+                        $task = $items[$next]
+                        $next++
                         if ($null -eq $task) { continue }
                         try {
                             & $timeUp
@@ -1915,7 +2021,11 @@ function Get-WorkerPerfTaskWalk($Root, [double]$DeadlineSec = 0) {
                         finally { Close-WorkerPerfComObject $task }
                     }
                 }
-                finally { Close-WorkerPerfComObject $collection }
+                finally {
+                    # a timeout in the middle of the folder: the tasks not yet visited are released as well
+                    for ($rest = $next; $rest -lt $items.Count; $rest++) { Close-WorkerPerfComObject $items[$rest] }
+                    Close-WorkerPerfComObject $collection
+                }
                 $subFolders = $folder.GetFolders(0)
                 try { foreach ($sub in @($subFolders)) { if ($null -ne $sub) { $pending.Push($sub) } } } finally { Close-WorkerPerfComObject $subFolders }
             }
@@ -3515,6 +3625,81 @@ function Read-WorkerPerfWinHealthMaintenance($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateNoRebootWithUsers' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'NoAutoRebootWithLoggedOnUsers' }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.searchService' { Get-WorkerPerfWinHealthServiceField $Ctx 'WSearch' 'State' }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateService' { Get-WorkerPerfWinHealthServiceField $Ctx 'wuauserv' 'StartMode' }
+}
+
+function Get-WorkerPerfFileProbe([string]$Path) {
+    # One file or folder of a probe of kind file: @{ Version } (the product version of a file, '' for a folder or a file
+    # without one), $null when nothing is there. A '*' in one folder name is resolved by listing the folder before it
+    # (Get-WorkerPerfDirectoryMatches); of the matches under which the rest of the path exists, the one with the highest
+    # version counts (Select-WorkerPerfProbeMatch).
+    $parts = $Path.Split('\')
+    $star = -1
+    for ($i = 0; $i -lt $parts.Count; $i++) { if ($parts[$i].Contains('*')) { $star = $i; break } }
+    $target = $Path
+    $kind = ''
+    if ($star -lt 0) { $kind = Get-WorkerPerfPathKind $target }
+    else {
+        if ($star -eq 0 -or $star -eq $parts.Count - 1) { throw (New-Object System.IO.InvalidDataException "Pfad '$Path': ein '*' steht nur in einem Ordnernamen.") }
+        $folder = $parts[0..($star - 1)] -join '\'
+        if ($star -eq 1) { $folder += '\' }
+        $rest = $parts[($star + 1)..($parts.Count - 1)] -join '\'
+        $kinds = @{}
+        foreach ($name in @(Get-WorkerPerfDirectoryMatches $folder $parts[$star])) {
+            $found = Get-WorkerPerfPathKind ($folder.TrimEnd('\') + '\' + $name + '\' + $rest)
+            if ($found) { $kinds[[string]$name] = $found }
+        }
+        $chosen = Select-WorkerPerfProbeMatch ([string[]]@($kinds.Keys)) $parts[$star]
+        if ($null -eq $chosen) { return $null }
+        $target = $folder.TrimEnd('\') + '\' + $chosen + '\' + $rest
+        $kind = $kinds[$chosen]
+    }
+    if ($kind -eq 'file') { return @{ Version = [string](Get-WorkerPerfFileVersion $target) } }
+    if ($kind -eq 'folder') { return @{ Version = '' } }
+    return $null
+}
+
+function Read-WorkerPerfWinHealthApps($Ctx) {
+    # The probes of the application list (Get-WorkerPerfAppRows) through five readers, one per reading kind. Each
+    # reader gives $null when the thing is not there, else a table with the fields of its kind. A key, a task and a
+    # file are read once per call of Get-WorkerPerfHealth however many probes name them; the services come from the
+    # shared query. The rows check the area's limit before each probe. The scriptblocks run inside
+    # Get-WorkerPerfAppRows and name their variables with the prefix ap, so that they hide none of its variables.
+    $apShared = { param([string]$apKey, [scriptblock]$apRead)
+        $apFound = @(Get-WorkerPerfWinHealthShared $Ctx $apKey $apRead | Where-Object { $null -ne $_ })
+        if ($apFound.Count -gt 0) { $apFound[0] } }
+    $apReaders = @{
+        registryValue = { param([string]$apPath, [string]$apName)
+            $apSubKey = ConvertTo-WorkerPerfHklmSubKey $apPath
+            $apEntry = & $apShared ('registry:' + $apSubKey) { Get-WorkerPerfRegistryValues $apSubKey }
+            if ($null -eq $apEntry) { return }
+            $apValues = $apEntry['Values']
+            foreach ($apValueName in @($apValues.Keys)) {
+                if ([string]::Equals([string]$apValueName, $apName, [StringComparison]::OrdinalIgnoreCase)) { return @{ Value = $apValues[$apValueName] } }
+            } }
+        registryKey = { param([string]$apPath)
+            $apSubKey = ConvertTo-WorkerPerfHklmSubKey $apPath
+            & $apShared ('registrykey:' + $apSubKey) { Get-WorkerPerfRegistryKeyInfo $apSubKey } }
+        service = { param([string]$apName, [string]$apDisplay)
+            $apField = 'Name'; $apWanted = $apName
+            if (-not $apName) { $apField = 'DisplayName'; $apWanted = $apDisplay }
+            foreach ($apService in @(Get-WorkerPerfWinHealthServices $Ctx)) {
+                if ([string]::Equals([string](Get-WorkerPerfField $apService $apField), $apWanted, [StringComparison]::OrdinalIgnoreCase)) {
+                    return @{ State = [string](Get-WorkerPerfField $apService 'State'); StartMode = [string](Get-WorkerPerfField $apService 'StartMode') }
+                }
+            } }
+        scheduledTask = { param([string]$apPath)
+            $apTask = & $apShared ('task:' + $apPath) { Get-WorkerPerfTaskInfo $apPath }
+            if ($null -eq $apTask) { return }
+            # the Task Scheduler's "no run" (1899-12-30) becomes MinValue; a missing time as well
+            $apTime = { param($apAt) if ($apAt -is [datetime]) { ConvertTo-WorkerPerfTaskTime $apAt } else { [datetime]::MinValue } }
+            @{ Enabled = (Get-WorkerPerfField $apTask 'Enabled'); LastRun = (& $apTime (Get-WorkerPerfField $apTask 'LastRun'))
+                NextRun = (& $apTime (Get-WorkerPerfField $apTask 'NextRun')) } }
+        file = { param([string]$apPath) & $apShared ('file:' + $apPath) { Get-WorkerPerfFileProbe $apPath } }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'apps.probes' {
+        Get-WorkerPerfAppRows -Apps @($Ctx.State.Apps) -Read $apReaders -FailReason { param($apError) Get-WorkerPerfWinHealthFailReason $Ctx $apError } `
+            -Expired { Test-WorkerPerfWinHealthTimeUp $Ctx }
+    }
 }
 
 function Get-WorkerPerfHealth {

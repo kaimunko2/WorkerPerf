@@ -20,7 +20,7 @@ function Reset-WinStandIns {
         OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
         # Calls: every stand-in counts its call by key (check:/open:/perf:<category>, cim:/cimclass:<class>, winevent:list,
         # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power, native:filters,
-        # com:tasks, file:version), so a test
+        # com:tasks, file:version, registrykey:<key>, file:probe, file:dirs, com:task), so a test
         # can see which Windows calls a source made
         Calls = @{}
         Events = [System.Collections.Generic.List[object]]::new()
@@ -99,6 +99,19 @@ function Reset-WinStandIns {
             'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Exe\{00000000-0000-0000-0000-00000000e003}' = [ordered]@{ Value = '<SimRegel/>' }
             'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Dll' = [ordered]@{ EnforcementMode = 1 }
             'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Dll\{00000000-0000-0000-0000-00000000d001}' = [ordered]@{ Value = '<SimRegel/>' }
+            # applications of src/apps.json (invented values; the forced extensions may carry addresses, only their number is read)
+            'SOFTWARE\Microsoft\Office\ClickToRun\Configuration' = [ordered]@{ UpdateChannel = 'http://officecdn.microsoft.com/pr/00000000-0000-0000-0000-000000000000'
+                UpdateUrl = '\\fs01\office$\updates'; VersionToReport = '16.0.17932.20162'; Platform = 'x64'; UpdatesEnabled = 'False' }
+            'SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate' = [ordered]@{ hideenabledisableupdates = 1 }
+            'SOFTWARE\Policies\Microsoft\Edge' = [ordered]@{ StartupBoostEnabled = 0; SleepingTabsEnabled = 0; UserDataDir = '\\fs01\edge$\daten' }
+            'SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist' = [ordered]@{ '1' = 'abcdefghijklmnopabcdefghijklmnop'
+                '2' = 'ponmlkjihgfedcbaponmlkjihgfedcba;https://intern.klinik.example/ext' }
+            'SOFTWARE\Policies\Microsoft\EdgeUpdate' = [ordered]@{ UpdateDefault = 0 }
+            'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' = [ordered]@{ pv = '130.0.2849.80' }
+            'SOFTWARE\Microsoft\Teams' = [ordered]@{ disableAutoUpdate = 1 }
+            'SOFTWARE\Microsoft\Office\Outlook\Addins' = [ordered]@{}
+            'SOFTWARE\Microsoft\Office\Outlook\Addins\Sim.Addin1' = [ordered]@{}
+            'SOFTWARE\Microsoft\Office\Outlook\Addins\Sim.Addin2' = [ordered]@{}
         }
         # loaded file system filters (Get-WorkerPerfFilterRaw); FiltersFail: exception the filter query throws
         Filters = @(@('WdFilter', '328010', 4), @('upmjit', '182400', 2), @('FileInfo', '45000', 5)) | ForEach-Object {
@@ -111,10 +124,21 @@ function Reset-WinStandIns {
                     TriggerTypes = [int[]]@(2); RepeatMinutes = 0; Action = 'C:\Tools\inventar.exe' }
                 @{ Path = '\Sim\Anmeldeskript'; Enabled = $true; State = 'Ready'; NextRun = [datetime]'1899-12-30'; LastRun = [datetime]'1899-12-30'
                     TriggerTypes = [int[]]@(9); RepeatMinutes = 0; Action = 'C:\Tools\logon.cmd' }) }
-        # product versions of files (Get-WorkerPerfFileVersion): path -> version
+        # files (Get-WorkerPerfFileVersion, Get-WorkerPerfPathKind, Get-WorkerPerfDirectoryMatches): path -> product version
+        # ('' for none); every path above a key is a folder. Two folders of the new Teams: the higher version counts.
         FileVersions = @{
             'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe' = '22.3.0.4000'
             'C:\Program Files (x86)\Citrix\Workspace Environment Management Agent\Citrix.Wem.Agent.Service.exe' = '2407.1.0.1'
+            'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' = '130.0.2849.80'
+            'C:\Program Files\WindowsApps\MSTeams_24193.1805.3040.8975_x64__8wekyb3d8bbwe\ms-teams.exe' = '24193.1805.3040.8975'
+            'C:\Program Files\WindowsApps\MSTeams_24277.3502.3161.3007_x64__8wekyb3d8bbwe\ms-teams.exe' = '24277.3502.3161.3007'
+            'C:\Program Files (x86)\Microsoft\TeamsMeetingAdd-in' = ''
+        }
+        # FileProbeFail: path pattern (-like) -> exception the file stand-ins throw for a matching path
+        FileProbeFail = @{}
+        # single tasks of the Task Scheduler by full path (Get-WorkerPerfTaskInfo)
+        TaskByPath = @{
+            '\Microsoft\Office\Office Automatic Updates 2.0' = @{ Enabled = $true; LastRun = [datetime]::Now.AddDays(-1); NextRun = [datetime]::Today.AddDays(1).AddHours(3) }
         }
         # CIM classes besides the fixed ones of Get-CimInstance: class -> objects; Citrix_VirtualDesktopInfo missing here
         # means its namespace is missing (New-WinStandInMissingNamespace)
@@ -177,7 +201,8 @@ function Reset-WinStandIns {
             @('CtxTeamsSvc', 0, 'Running', 'Auto', 'Citrix HDX Teams Redirection Service', '"C:\Program Files (x86)\Citrix\System32\CtxSvcHost.exe" -g TeamsSvcs'),
             @('CtxHdxWebSocketService', 0, 'Running', 'Auto', 'Citrix HDX HTML5 Video Redirection Service', '"C:\Program Files (x86)\Citrix\System32\WebSocketService.exe" /service'),
             @('CpSvc', 0, 'Running', 'Auto', 'Citrix Print Manager Service', 'C:\Program Files\Citrix\System32\CpSvc.exe'),
-            @('SENS', 0, 'Running', 'Auto', 'System Event Notification Service', ''), @('wuauserv', 0, 'Stopped', 'Manual', 'Windows Update', '')
+            @('SENS', 0, 'Running', 'Auto', 'System Event Notification Service', ''), @('wuauserv', 0, 'Stopped', 'Manual', 'Windows Update', ''),
+            @('edgeupdate', 0, 'Stopped', 'Manual', 'Microsoft Edge Update Service (edgeupdate)', '')
         ) | ForEach-Object {
             $display = $(if ($_[4]) { $_[4] } else { $_[0] })
             [pscustomobject]@{ Name = $_[0]; DisplayName = $display; State = $_[2]; StartMode = $_[3]; PathName = $_[5]; ProcessId = [uint32]$_[1] }
@@ -553,6 +578,13 @@ function Get-WorkerPerfRegistryValues([string]$SubKey) {
     Add-WinStandInCall ('registry:' + $SubKey)
     if ($script:WinFake.RegistryFail.ContainsKey($SubKey)) { throw $script:WinFake.RegistryFail[$SubKey] }
     if (-not $script:WinFake.Registry.ContainsKey($SubKey)) { return $null }
+    $values = [ordered]@{}
+    foreach ($n in @($script:WinFake.Registry[$SubKey].Keys)) { $values[$n] = $script:WinFake.Registry[$SubKey][$n] }
+    return @{ Values = $values; SubKeys = [string[]]@(Get-WinStandInSubKeys $SubKey) }
+}
+
+function Get-WinStandInSubKeys([string]$SubKey) {
+    # the names of the keys of Registry directly below a key, sorted
     $prefix = $SubKey.TrimEnd('\') + '\'
     $subs = @(foreach ($k in @($script:WinFake.Registry.Keys)) {
             if (([string]$k).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
@@ -560,14 +592,60 @@ function Get-WorkerPerfRegistryValues([string]$SubKey) {
                 if ($rest.Length -gt 0 -and -not $rest.Contains('\')) { $rest }
             }
         })
-    $values = [ordered]@{}
-    foreach ($n in @($script:WinFake.Registry[$SubKey].Keys)) { $values[$n] = $script:WinFake.Registry[$SubKey][$n] }
-    return @{ Values = $values; SubKeys = [string[]]@($subs | Sort-Object) }
+    $subs | Sort-Object
+}
+
+function Get-WorkerPerfRegistryKeyInfo([string]$SubKey) {
+    # the number of values and of subkeys of a key, as the thin call counts them without reading a value
+    Add-WinStandInCall ('registrykey:' + $SubKey)
+    if ($script:WinFake.RegistryFail.ContainsKey($SubKey)) { throw $script:WinFake.RegistryFail[$SubKey] }
+    if (-not $script:WinFake.Registry.ContainsKey($SubKey)) { return $null }
+    return @{ ValueCount = [int]$script:WinFake.Registry[$SubKey].Count; SubKeyCount = [int]@(Get-WinStandInSubKeys $SubKey).Count }
 }
 
 function Get-WorkerPerfFileVersion([string]$Path) {
     Add-WinStandInCall 'file:version'
     if ($script:WinFake.FileVersions.ContainsKey($Path)) { return [string]$script:WinFake.FileVersions[$Path] }
+    return $null
+}
+
+function Assert-WinStandInFileAccess([string]$Path) {
+    # throws the exception of the first FileProbeFail pattern the path matches
+    foreach ($pattern in @($script:WinFake.FileProbeFail.Keys)) { if ($Path -like $pattern) { throw $script:WinFake.FileProbeFail[$pattern] } }
+}
+
+function Get-WorkerPerfPathKind([string]$Path) {
+    # 'file' for a key of FileVersions, 'folder' for a path above one, '' for anything else
+    Add-WinStandInCall 'file:probe'
+    Assert-WinStandInFileAccess $Path
+    if ($script:WinFake.FileVersions.ContainsKey($Path)) { return 'file' }
+    $prefix = $Path.TrimEnd('\') + '\'
+    foreach ($k in @($script:WinFake.FileVersions.Keys)) { if (([string]$k).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return 'folder' } }
+    return ''
+}
+
+function Get-WorkerPerfDirectoryMatches([string]$Folder, [string]$Pattern) {
+    # the folder names directly below Folder (as the paths of FileVersions give them) that match Pattern, once each, in
+    # descending order of their names (the order of a real listing is not defined)
+    Add-WinStandInCall 'file:dirs'
+    Assert-WinStandInFileAccess $Folder
+    $prefix = $Folder.TrimEnd('\') + '\'
+    $names = @{}
+    foreach ($k in @($script:WinFake.FileVersions.Keys)) {
+        if (-not ([string]$k).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $rest = ([string]$k).Substring($prefix.Length)
+        $cut = $rest.IndexOf('\')
+        if ($cut -le 0) { continue }
+        $name = $rest.Substring(0, $cut)
+        if ($name -like $Pattern) { $names[$name] = $true }
+    }
+    @($names.Keys) | Sort-Object -Descending
+}
+
+function Get-WorkerPerfTaskInfo([string]$Path) {
+    # one task by its full path from TaskByPath; $null when it is not there
+    Add-WinStandInCall 'com:task'
+    if ($script:WinFake.TaskByPath.ContainsKey($Path)) { return $script:WinFake.TaskByPath[$Path].Clone() }
     return $null
 }
 

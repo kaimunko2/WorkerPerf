@@ -400,7 +400,7 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         $before = $script:WinFake.Calls.Clone(); $h = Get-WorkerPerfHealth
         foreach ($k in 'cim:Win32_Service', 'cim:Win32_SystemDriver', 'wts', 'cim:MSFT_MpPreference', 'cim:MSFT_MpComputerStatus', 'com:tasks', 'native:filters') { [int]$script:WinFake.Calls[$k] - [int]$before[$k] | Should -Be 1 -Because $k }
         [int]$script:WinFake.Calls['registry:print'] - [int]$before['registry:print'] | Should -Be 0
-        @($h.Areas.Keys | Where-Object { $h.Areas[$_].Status -ne 'read' }) | Should -Be @('apps'); $h.DurationMs | Should -BeLessThan 60000      # apps hat bis Task 7 keinen Leser
+        @($h.Areas.Keys | Where-Object { $h.Areas[$_].Status -ne 'read' }) | Should -BeNullOrEmpty; $h.DurationMs | Should -BeLessThan 60000
         ($h.Areas.Values | ForEach-Object { $_.DurationMs } | Measure-Object -Sum).Sum | Should -BeLessOrEqual ($h.DurationMs + 1)
     }
     It 'haelt das Zeitlimit auch bei einem langsamen Aufruf ohne eigenes Zeitlimit ein' {   # Review Focus 1
@@ -560,7 +560,7 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         Reset-WinStandIns; $script:WinFake.CimFail['MSFT_DNSClientServerAddress'] = New-WinStandInDenied 'cim'
         $v = Get-V (Read-Health) 'network.dnsServers'; $v.State | Should -Be 'unreadable'; $v.Reason | Should -Be 'rights'; $script:WinFake.Calls.Keys | Should -Not -Contain 'cim:Win32_NetworkAdapterConfiguration'
         Test-WorkerPerfDnsPlaceholder 'fec0:0:0:ffff::3' | Should -BeTrue; Test-WorkerPerfDnsPlaceholder 'FEC0:0:0:FFFF:0:0:0:1' | Should -BeTrue
-Test-WorkerPerfDnsPlaceholder 'FEC0::FFFF:0:0:2' | Should -BeFalse; Test-WorkerPerfDnsPlaceholder 'fec0:0:0:ffff::4' | Should -BeFalse
+        Test-WorkerPerfDnsPlaceholder 'FEC0::FFFF:0:0:2' | Should -BeFalse; Test-WorkerPerfDnsPlaceholder 'fec0:0:0:ffff::4' | Should -BeFalse
         Test-WorkerPerfDnsPlaceholder '10.1.0.10' | Should -BeFalse; Test-WorkerPerfDnsPlaceholder 'kein Server' | Should -BeFalse
     }
     It 'enthaelt keinen Aufruf, der etwas aendert, startet oder einen anderen Rechner anspricht' {
@@ -570,5 +570,166 @@ Test-WorkerPerfDnsPlaceholder 'FEC0::FFFF:0:0:2' | Should -BeFalse; Test-WorkerP
         # nichts wird geschrieben, geloescht, angehalten oder ausgefuehrt (Entwurf 3.4)
         foreach ($bad in 'CreateSubKey', 'SetValue', 'DeleteValue', 'DeleteSubKey', 'OpenSubKey\([^)]*\$true', 'Set-ItemProperty', 'New-ItemProperty', 'Remove-ItemProperty', 'Remove-Item\b',
             'Stop-Service', 'Set-Service', 'Stop-Process', '\.Run\(') { $src | Should -Not -Match $bad -Because $bad }
+    }
+}
+Describe 'Zustandsbild unter Windows: Anwendungen' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        $script:Apps = @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json')); $script:TestApps = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive))
+        function Get-Row($H, [string]$App, [string]$Id) { (Get-V $H 'apps.probes').Value | Where-Object { $_.App -eq $App -and $_.Id -eq $Id } }
+    }
+    BeforeEach { Reset-WinStandIns }
+    It 'liest die Proben der ausgelieferten Anwendungsliste' {
+        $h = Read-Health @() $Apps; $h.Areas['apps'].Status | Should -Be 'read'; @((Get-V $h 'apps.probes').Value).Count | Should -Be 38
+        foreach ($k in 'edge', 'office', 'teams') { (Get-Row $h $k 'installed').Value | Should -BeTrue -Because $k }
+        (Get-Row $h 'edge' 'version').Value | Should -Be '130.0.2849.80'; (Get-Row $h 'edge' 'webview2Version').Value | Should -Be '130.0.2849.80'
+        (Get-Row $h 'edge' 'updateDefault').Value | Should -Be 0; (Get-Row $h 'edge' 'sleepingTabs').Value | Should -Be 0; (Get-Row $h 'edge' 'backgroundMode').State | Should -Be 'absent'
+        (Get-Row $h 'edge' 'backgroundMode').Reason | Should -Be ''                                            # nicht gesetzt ist nicht "nicht lesbar"
+        (Get-Row $h 'edge' 'userDataDir').Names | Should -Be '\\fs01\edge$\daten'; (Get-Row $h 'edge' 'userDataDir').Value | Should -BeNullOrEmpty
+        (Get-Row $h 'edge' 'forcedExtensions').Value | Should -Be 2; (Get-Row $h 'edge' 'updateService').Value | Should -Be 'Manual'
+        ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'intern\.klinik\.example'                          # von den Erweiterungen nur die Zahl
+        (Get-Row $h 'office' 'updateTask').Value | Should -BeTrue; (Get-Row $h 'office' 'hideEnableDisableUpdates').Value | Should -Be 1; (Get-Row $h 'office' 'hideUpdateNotifications').State | Should -Be 'absent'
+        (Get-Row $h 'office' 'outlookAddins').Value | Should -Be 2; (Get-Row $h 'office' 'outlookAddinsWow').State | Should -Be 'absent'; (Get-Row $h 'office' 'platform').Value | Should -Be 'x64'
+        (Get-Row $h 'office' 'updateUrl').Names | Should -Be '\\fs01\office$\updates'
+        (Get-Row $h 'teams' 'version').Value | Should -Be '24277.3502.3161.3007'                                 # zwei Ordner: die hoechste Version
+        (Get-Row $h 'teams' 'disableAutoUpdate').Value | Should -Be 1; (Get-Row $h 'teams' 'disableFallback').State | Should -Be 'absent'
+        (Get-Row $h 'teams' 'meetingAddin').Value | Should -BeTrue; (Get-Row $h 'teams' 'classicTeams').Value | Should -BeFalse
+        [int]$script:WinFake.Calls['registry:SOFTWARE\Policies\Microsoft\Edge'] | Should -Be 1                   # sieben Proben, ein Lesen des Schluessels
+    }
+    It 'liest eine nicht installierte Anwendung nicht und nennt sie nicht installiert' {   # Review Focus 3
+        foreach ($k in @($script:WinFake.FileVersions.Keys | Where-Object { $_ -like '*MSTeams_*' })) { $script:WinFake.FileVersions.Remove($k) }
+        $h = Read-Health @() $Apps
+        (Get-Row $h 'teams' 'installed').State | Should -Be 'read'; (Get-Row $h 'teams' 'installed').Value | Should -BeFalse
+        foreach ($id in 'version', 'disableAutoUpdate', 'disableFallback', 'maxFps', 'meetingAddin', 'classicTeams', 'webview2Version') {
+            (Get-Row $h 'teams' $id).State | Should -Be 'absent' -Because $id; (Get-Row $h 'teams' $id).Reason | Should -Be 'notInstalled' -Because $id }
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\Microsoft\Teams'
+        (Get-Row $h 'edge' 'installed').Value | Should -BeTrue; $h.Areas['apps'].Status | Should -Be 'read'
+        @((Get-V (Read-Health) 'apps.probes').Value).Count | Should -Be 0                                       # ohne Anwendungsliste: gelesen und leer
+    }
+    It 'liest eine vierte Anwendung, die nur in einer Testdatei beschrieben ist, ohne Aenderung am Code' {
+        $h = Read-Health @() $TestApps; (Get-Row $h 'simapp' 'installed').Value | Should -BeFalse; (Get-Row $h 'simapp' 'cacheMode').Reason | Should -Be 'notInstalled'
+        $script:WinFake.FileVersions['C:\Program Files\SimApp\simapp.exe'] = '4.2.0'
+        $script:WinFake.Registry['SOFTWARE\SimApp'] = [ordered]@{ CacheMode = 2; DataPath = '\\fs01\simapp$\daten' }
+        $h = Read-Health @() $TestApps; @((Get-V $h 'apps.probes').Value).Count | Should -Be 42
+        (Get-Row $h 'simapp' 'installed').Value | Should -BeTrue; (Get-Row $h 'simapp' 'version').Value | Should -Be '4.2.0'; (Get-Row $h 'simapp' 'cacheMode').Value | Should -Be 2
+        (Get-Row $h 'simapp' 'dataPath').Names | Should -Be '\\fs01\simapp$\daten'; (Get-Row $h 'simapp' 'dataPath').Value | Should -BeNullOrEmpty
+        (Get-Content (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1') -Raw) | Should -Not -Match 'msedge|MSTeams|ClickToRun|SimApp'      # der Leser kennt keine Anwendung
+    }
+    It 'laesst die anderen Proben stehen, wenn eine scheitert, und haelt das Zeitlimit ein' {   # Review Focus 1
+        $script:WinFake.RegistryFail['SOFTWARE\Policies\Microsoft\Edge'] = New-Object System.Security.SecurityException 'kein Zugriff'
+        $h = Read-Health @() $Apps
+        (Get-Row $h 'edge' 'sleepingTabs').State | Should -Be 'unreadable'; (Get-Row $h 'edge' 'sleepingTabs').Reason | Should -Be 'rights'
+        (Get-Row $h 'edge' 'updateDefault').State | Should -Be 'read'; (Get-Row $h 'office' 'updateTask').State | Should -Be 'read'; $h.Areas['apps'].Status | Should -Be 'read'
+        Reset-WinStandIns; $script:WinFake.FileProbeFail['*msedge.exe'] = New-Object System.UnauthorizedAccessException 'Zugriff verweigert'
+        $h = Read-Health @() $Apps; @((Get-V $h 'apps.probes').Value | Where-Object { $_.App -eq 'edge' -and ($_.State -ne 'unreadable' -or $_.Reason -ne 'rights') }).Count | Should -Be 0
+        (Get-Row $h 'office' 'installed').Value | Should -BeTrue                                               # die Installation einer Anwendung nicht lesbar: die anderen bleiben
+        Reset-WinStandIns; $script:WinFake.Delay['registry:SOFTWARE\Policies\Microsoft\EdgeUpdate'] = 1500; $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Read-Health @() $Apps } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-Row $h 'edge' 'version').State | Should -Be 'read'; (Get-Row $h 'edge' 'updateDefault').State | Should -Be 'read'       # der Aufruf lief schon
+        (Get-Row $h 'edge' 'startupBoost').Reason | Should -Be 'timeout'; (Get-Row $h 'teams' 'installed').Reason | Should -Be 'timeout'
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\Microsoft\Teams'; $h.Areas['events'].Status | Should -Be 'read'
+    }
+    It 'waehlt unter mehreren Ordnern den mit der hoechsten Version und liest Datei und Ordner' {   # Zusatz c
+        $pat = 'SimApp_*_x64'
+        Select-WorkerPerfProbeMatch @('SimApp_9.0.0.0_x64', 'SimApp_10.0.0.0_x64') $pat | Should -Be 'SimApp_10.0.0.0_x64'        # als Text kaeme 9 nach 10
+        Select-WorkerPerfProbeMatch @('SimApp_10.0.0.0_x64', 'SimApp_9.0.0.0_x64') $pat | Should -Be 'SimApp_10.0.0.0_x64'
+        Select-WorkerPerfProbeMatch @('simapp_1.2_X64') $pat | Should -Be 'simapp_1.2_X64'                                         # ein Treffer, ohne Ruecksicht auf Gross- und Kleinschreibung
+        Select-WorkerPerfProbeMatch @() $pat | Should -BeNullOrEmpty                                                                # kein Treffer
+        Select-WorkerPerfProbeMatch @('SimApp_2.0_x64', 'SimApp_neu_x64', 'SimApp_10.0_x64') $pat | Should -Be 'SimApp_neu_x64'    # eine ist keine Version: der letzte nach dem Namen
+        Select-WorkerPerfProbeMatch @('SimApp_10.0_x64', 'SimApp__x64', 'SimApp_2.0_x64') $pat | Should -Be 'SimApp__x64'
+        Select-WorkerPerfProbeMatch @('Andere_10.0_x64', 'SimApp_9.0_x64.alt', 'SimApp_9.0_x64') $pat | Should -Be 'SimApp_9.0_x64'   # nur Namen, die zum Muster passen
+        $base = 'C:\Program Files\SimApps'
+        $script:WinFake.FileVersions = @{ "$base\SimApp_9.0.0.0_x64\sim.exe" = '9.0.0.0'; "$base\SimApp_10.0.0.0_x64\sim.exe" = '10.0.0.1'
+            "$base\SimApp_11.0.0.0_x64\liesmich.txt" = ''; "$base\SimOhne\leer.dat" = '' }
+        (Get-WorkerPerfFileProbe "$base\SimApp_*_x64\sim.exe").Version | Should -Be '10.0.0.1'                     # der Ordner 11 ohne die Datei zaehlt nicht
+        [int]$script:WinFake.Calls['file:dirs'] | Should -Be 1
+        (Get-WorkerPerfFileProbe "$base\SimApp_*_x64\liesmich.txt").Version | Should -Be ''                          # eine Datei ohne Versionsangabe
+        (Get-WorkerPerfFileProbe "$base\Sim*\leer.dat").Version | Should -Be ''
+        Get-WorkerPerfFileProbe "$base\SimApp_*_x64\fehlt.exe" | Should -BeNullOrEmpty
+        Get-WorkerPerfFileProbe 'C:\Fehlt_*\sim.exe' | Should -BeNullOrEmpty
+        (Get-WorkerPerfFileProbe "$base\SimApp_10.0.0.0_x64").Version | Should -Be ''                                # ein Ordner
+        (Get-WorkerPerfFileProbe "$base\SimApp_9.0.0.0_x64\sim.exe").Version | Should -Be '9.0.0.0'
+        Get-WorkerPerfFileProbe "$base\Fehlt\sim.exe" | Should -BeNullOrEmpty
+    }
+    It 'liest jede Angabe der fuenf Lesearten und nimmt ein fehlerhaftes Ergebnis nicht als Wert' {
+        $file = Join-Path $TestDrive 'apps.lesearten.json'
+        $tool = [ordered]@{ key = 'simtool'; label = 'Sim-Werkzeug'; processes = @('simtool.exe'); installed = [ordered]@{ kind = 'service'; displayName = 'sim werkzeugdienst' }
+            probes = @(
+                [ordered]@{ id = 'state'; kind = 'service'; displayName = 'SIM WERKZEUGDIENST' }
+                [ordered]@{ id = 'byName'; kind = 'service'; name = 'SIMTOOLSVC'; read = 'startMode' }
+                [ordered]@{ id = 'taskExists'; kind = 'scheduledTask'; path = '\Sim\Werkzeug'; read = 'exists' }
+                [ordered]@{ id = 'taskEnabled'; kind = 'scheduledTask'; path = '\Sim\Werkzeug' }
+                [ordered]@{ id = 'lastRun'; kind = 'scheduledTask'; path = '\Sim\Werkzeug'; read = 'lastRun' }
+                [ordered]@{ id = 'nextRun'; kind = 'scheduledTask'; path = '\Sim\Werkzeug'; read = 'nextRun' }
+                [ordered]@{ id = 'otherTask'; kind = 'scheduledTask'; path = '\Sim\Fehlt'; read = 'exists' }
+                [ordered]@{ id = 'otherTaskRun'; kind = 'scheduledTask'; path = '\Sim\Fehlt'; read = 'lastRun' }
+                [ordered]@{ id = 'keyExists'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\SimTool' }
+                [ordered]@{ id = 'valueCount'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\SimTool'; read = 'valueCount' }
+                [ordered]@{ id = 'subKeyCount'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\SimTool'; read = 'subKeyCount' }
+                [ordered]@{ id = 'missingKey'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\SimTool\Fehlt'; read = 'exists' }
+                [ordered]@{ id = 'missingKeyCount'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\SimTool\Fehlt'; read = 'valueCount' }
+                [ordered]@{ id = 'mode'; kind = 'registryValue'; path = 'HKLM\software\simtool'; name = 'MODUS'; names = $false }
+                [ordered]@{ id = 'servers'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimTool'; name = 'Server'; names = $false }
+                [ordered]@{ id = 'blob'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimTool'; name = 'Blob'; names = $false }
+                [ordered]@{ id = 'pathText'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimTool'; name = 'Pfad'; names = $true }) }
+        [IO.File]::WriteAllText($file, ([ordered]@{ version = 'test'; apps = @($tool) } | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+        $toolApps = @(Read-WorkerPerfHealthApps $file)
+        $script:WinFake.Services = @($script:WinFake.Services) + [pscustomobject]@{ Name = 'SimToolSvc'; DisplayName = 'Sim Werkzeugdienst'; State = 'Running'; StartMode = 'Auto'
+            PathName = ''; ProcessId = [uint32]0 }
+        $script:WinFake.Registry['SOFTWARE\SimTool'] = [ordered]@{ Modus = 3; Server = [string[]]@('a01', 'a02'); Blob = [byte[]]@(1, 2, 3); Pfad = '%ProgramData%\SimTool' }
+        $script:WinFake.Registry['SOFTWARE\SimTool\Unter'] = [ordered]@{}
+        $next = [datetime]::Today.AddDays(1).AddHours(3)
+        $script:WinFake.TaskByPath['\Sim\Werkzeug'] = @{ Enabled = $false; LastRun = [datetime]'1899-12-30'; NextRun = $next }
+        $h = Read-Health @() $toolApps
+        $vals = @{}; foreach ($row in @((Get-V $h 'apps.probes').Value)) { $row.State | Should -Be $(if ($row.Id -in 'otherTaskRun', 'missingKeyCount') { 'absent' } else { 'read' }) -Because $row.Id; $vals[$row.Id] = $row }
+        $vals['installed'].Value | Should -BeTrue; $vals['state'].Value | Should -Be 'Running'; $vals['byName'].Value | Should -Be 'Auto'
+        $vals['taskExists'].Value | Should -BeTrue; $vals['taskEnabled'].Value | Should -BeFalse; $vals['lastRun'].Value | Should -Be 0     # kein Lauf (30.12.1899)
+        $vals['nextRun'].Value | Should -Be (ConvertTo-WorkerPerfHealthTime $next); $vals['otherTask'].Value | Should -BeFalse; $vals['otherTaskRun'].Reason | Should -Be ''
+        $vals['keyExists'].Value | Should -BeTrue; $vals['valueCount'].Value | Should -Be 4; $vals['subKeyCount'].Value | Should -Be 1
+        $vals['missingKey'].Value | Should -BeFalse; $vals['missingKeyCount'].Reason | Should -Be ''
+        $vals['mode'].Value | Should -Be 3; $vals['servers'].Value | Should -Be 'a01; a02'; $vals['blob'].Value | Should -Be 'binaer, 3 Byte'
+        $vals['pathText'].Names | Should -Be '%ProgramData%\SimTool'                                                  # wie geschrieben, nicht erweitert
+        [int]$script:WinFake.Calls['registry:SOFTWARE\SimTool'] | Should -Be 1; [int]$script:WinFake.Calls['registrykey:SOFTWARE\SimTool'] | Should -Be 1
+        [int]$script:WinFake.Calls['com:task'] | Should -Be 2; $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\SimTool\Fehlt'
+        $script:WinFake.TaskByPath['\Sim\Werkzeug'] = @{ Enabled = 'ja'; LastRun = [datetime]'1899-12-30'; NextRun = $next }   # kein Wahrheitswert
+        $h = Read-Health @() $toolApps
+        $row = (Get-V $h 'apps.probes').Value | Where-Object Id -eq 'taskEnabled'; $row.State | Should -Be 'unreadable'; $row.Reason | Should -Be 'error'
+        ((Get-V $h 'apps.probes').Value | Where-Object Id -eq 'nextRun').State | Should -Be 'read'
+    }
+    It 'zaehlt Werte und Unterschluessel eines Schluessels, ohne die Werte zu lesen' {   # Zusatz d
+        $h = Read-Health @() $Apps
+        [int]$script:WinFake.Calls['registrykey:SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist'] | Should -Be 1
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist'
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1'), [ref]$null, [ref]$null)
+        $body = { param([string]$Name) ($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $Name }, $true) | Select-Object -First 1).Body.Extent.Text }
+        $keyInfo = & $body 'Get-WorkerPerfRegistryKeyInfo'
+        $keyInfo | Should -Match '\.ValueCount'; $keyInfo | Should -Match '\.SubKeyCount'; $keyInfo | Should -Not -Match 'GetValue'; $keyInfo | Should -Match 'Open-WorkerPerfRegistryKey'
+        & $body 'Open-WorkerPerfRegistryKey' | Should -Match 'OpenSubKey\(\$SubKey, \$false\)'                             # wortgetreuer Pfad, nur lesend
+        & $body 'Get-WorkerPerfDirectoryMatches' | Should -Match 'GetDirectories'
+        & $body 'Get-WorkerPerfTaskInfo' | Should -Match 'Connect\(\)'                                                   # ohne Servernamen
+    }
+    It 'erkennt eine fehlende Aufgabe oder einen fehlenden Ordner der Aufgabenplanung am HRESULT' {
+        foreach ($code in -2147024894, -2147024893) {
+            $com = New-Object System.Runtime.InteropServices.COMException -ArgumentList 'Sim', $code
+            Test-WorkerPerfTaskNotFound $com | Should -BeTrue
+            Test-WorkerPerfTaskNotFound (New-Object System.Management.Automation.MethodInvocationException -ArgumentList 'Sim', $com) | Should -BeTrue
+        }
+        Test-WorkerPerfTaskNotFound (New-Object System.IO.FileNotFoundException 'Sim') | Should -BeTrue
+        Test-WorkerPerfTaskNotFound (New-Object System.Runtime.InteropServices.COMException -ArgumentList 'Sim', -2147024891) | Should -BeFalse   # verweigert
+        Test-WorkerPerfTaskNotFound $null | Should -BeFalse
+    }
+    It 'gibt am Zeitlimit auch die Aufgaben eines Ordners frei, die der Gang noch nicht besucht hat' {   # Zusatz e
+        $released = [System.Collections.Generic.List[object]]::new()
+        function Close-WorkerPerfComObject($Object) { if ($null -ne $Object) { $released.Add($Object) } }
+        $task = { param([string]$Path, [int]$SleepMs)
+            [pscustomobject]@{ Enabled = $true; State = 3; NextRunTime = [datetime]'1899-12-30'; LastRunTime = [datetime]'1899-12-30'; Definition = $null; Sim = $Path; SleepMs = $SleepMs } |
+                Add-Member -PassThru ScriptProperty Path { Start-Sleep -Milliseconds $this.SleepMs; $this.Sim } }
+        $tasks = @((& $task '\SimLangsam' 200), (& $task '\SimZwei' 0), (& $task '\SimDrei' 0))
+        $root = [pscustomobject]@{ Path = '\'; Tasks = $tasks } | Add-Member -PassThru ScriptMethod GetTasks { param($Flags) $this.Tasks } |
+            Add-Member -PassThru ScriptMethod GetFolders { param($Flags) @() }
+        $caught = $null
+        try { [void](Get-WorkerPerfTaskWalk $root 0.1) } catch { $caught = $_.Exception }
+        $caught | Should -BeOfType [System.TimeoutException]
+        foreach ($t in @($tasks) + @($root)) { @($released | Where-Object { [object]::ReferenceEquals($_, $t) }).Count | Should -Be 1 -Because $t.Path }
     }
 }
