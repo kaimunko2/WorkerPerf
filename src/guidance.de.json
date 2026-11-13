@@ -331,7 +331,7 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "{app} vom Benutzer schließen lassen; reagiert die Anwendung nicht mehr, den Prozess nach Rücksprache im Task-Manager beenden",
+          "text": "{app} vom Benutzer schließen lassen; reagiert die Anwendung nicht mehr, den Prozess nach Rücksprache im Task-Manager beenden; das wirkt nur, bis die Anwendung wieder startet; startet sie von selbst, läuft sie nach der nächsten Anmeldung oder dem nächsten Neustart des Servers wieder",
           "precondition": "{app} eine Anwendung eines Benutzers ist und weiter Rechenzeit verbraucht, obwohl er nicht damit arbeitet"
         },
         {
@@ -599,7 +599,7 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "{app} schließen und neu starten lassen (eine Anwendung durch den Benutzer, einen Dienst in einem Wartungsfenster)",
+          "text": "{app} schließen und neu starten lassen (eine Anwendung durch den Benutzer, einen Dienst in einem Wartungsfenster); das gibt den Arbeitsspeicher wie ein Neustart des Servers nur frei, bis {app} ihn wieder belegt",
           "precondition": "{app} immer mehr Arbeitsspeicher belegt und ihn nicht wieder freigibt"
         },
         {
@@ -1772,7 +1772,7 @@
         },
         {
           "when": ["pattern.securitymodule"],
-          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Betreuung klären",
+          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Betreuung klären (eine korrigierte Version bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen; eine Ausnahme in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst ebenfalls im Master-Image)",
           "precondition": "ein Modul der Schutzsoftware bei jedem dieser Abstürze genannt ist"
         },
         {
@@ -2359,7 +2359,7 @@
         },
         {
           "when": ["queue.stuck", "driver.vendor.Brother"],
-          "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren",
+          "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Workern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
           "precondition": "Aufträge an Brother-Geräten mit Netzwerkanschluss im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ stehen bleiben, sich in der Druckwarteschlange nicht einzeln löschen lassen und die Benutzer des Servers informiert sind (die Seite von Brother nennt Windows Vista bis 10)",
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },

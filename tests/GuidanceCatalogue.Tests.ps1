@@ -657,7 +657,7 @@ Describe 'Katalog in src' {
     }
     It 'nennt bei jeder Abhilfe, die Treiber, Richtlinie, Registrierung oder Scan-Ausschluss aendert, den Ort der Aenderung auf nicht persistenten Workern' {      # fix round 2, B1 (spec 5.8)
         $remedies = @($Elements | Where-Object { $_.List -eq 'remedies' })
-        $changing = @($remedies | Where-Object { $_.Texts[0] -match 'Treiber|Richtlinie|Registrierung|Ausschl|ausnehmen' })
+        $changing = @($remedies | Where-Object { $_.Texts[0] -match 'Treiber|Richtlinie|Registrierung|Ausschl|ausnehmen|Ausnahme' })
         $changing.Count | Should -BeGreaterThan 40
         foreach ($e in $changing) { ($e.Texts[0].Contains($InImage) -or $e.Texts[0].Contains($ByPolicy)) | Should -BeTrue -Because "$($e.Position): $($e.Texts[0])" }
         # the master image for what is installed or set on the worker; a policy needs none
@@ -667,14 +667,24 @@ Describe 'Katalog in src' {
             $e.Texts[0] | Should -Match ([regex]::Escape($InImage)) -Because $e.Position
         }
         # the same for a schedule or an exclusion of the protection software and for what is installed anew
-        foreach ($e in @($remedies | Where-Object { $_.Texts[0] -match '^Zeitplan der Scans|^Scan-Ausschl|auf den aktuellen Stand bringen|korrigierte Version von' })) {
+        foreach ($e in @($remedies | Where-Object { $_.Texts[0] -match '^Zeitplan der Scans|^Scan-Ausschl|auf den aktuellen Stand bringen|korrigierte Version (von|der)' })) {
             $e.Texts[0] | Should -Match ([regex]::Escape($InImage)) -Because $e.Position
         }
         # what a restart of such a worker undoes says so
         $undone = @($remedies | Where-Object { $_.Texts[0] -match '^Treiber \{driver\} entfernen|in der Reihenfolge von HP entfernen|mit KmUninstall\.exe|Brother-Treiber vollständig entfernen' })
         $undone.Count | Should -Be 4
         foreach ($e in $undone) { $e.Texts[0] | Should -Match 'am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image' -Because $e.Position }
-        @($remedies | Where-Object { $_.Texts[0] -match '^Spool-Ordner von Hand leeren' })[0].Texts[0] | Should -Match 'setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück'
+        # every element that empties the spool folder, in whatever words (follow-up of fix round 2: also Brother's reset)
+        $emptied = @($Elements | Where-Object { ($_.Texts -join ' ') -match '(Spool-Ordner|PRINTERS)[^;]*(löschen|leeren)|(löschen|leeren)[^;]*(Spool-Ordner|PRINTERS)' })
+        @($emptied | ForEach-Object { $_.Position }) | Should -Be @('print.remedies[10]', 'print.remedies[14]')
+        foreach ($e in $emptied) { $e.Texts[0] | Should -Match 'bei nicht persistenten Workern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' -Because $e.Position }
+        # ending a process or restarting an application lasts until it starts or fills the memory again, as a restart does
+        $ended = @($remedies | Where-Object { $_.Texts[0] -match 'Prozess\b[^;]*\bbeenden' })
+        @($ended | ForEach-Object { $_.Position }) | Should -Be @('cpu.remedies[0]')
+        foreach ($e in $ended) { $e.Texts[0] | Should -Match 'das wirkt nur, bis die Anwendung wieder startet; startet sie von selbst, läuft sie nach der nächsten Anmeldung oder dem nächsten Neustart des Servers wieder$' -Because $e.Position }
+        $restarted = @($remedies | Where-Object { $_.Texts[0] -match 'schließen und neu starten' })
+        @($restarted | ForEach-Object { $_.Position }) | Should -Be @('memory.remedies[0]')
+        foreach ($e in $restarted) { $e.Texts[0] | Should -Match 'wie ein Neustart des Servers nur frei, bis \{app\} ihn wieder belegt$' -Because $e.Position }
         # the terms explain both words, and a guidance with such a remedy lists them
         foreach ($n in 'Master-Image', 'Nicht persistent') { @($Real.terms.PSObject.Properties.Name) | Should -Contain $n }
         $g = Get-Guide (New-Engpass 'cpu' @{ cause = @{ kind = 'security'; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 } }; main = $null })

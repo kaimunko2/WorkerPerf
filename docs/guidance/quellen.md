@@ -25,10 +25,15 @@ Drucker ordnet PrinTaurus SmartSpread zu, nicht die Citrix-Richtlinien. Daraus f
 - Ein Vorschlag, der eine Einstellung ändert (Treiber, Richtlinie, Registrierung, Scan-Ausschluss, Dienst,
   installierte Software), nennt den Ort der Änderung mit einer von zwei festen Wendungen:
   „bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen“ oder, wo die Änderung selbst
-  eine Richtlinie ist, „eine Richtlinie wirkt auch auf nicht persistente Worker“. Einen Scan-Ausschluss oder einen
-  Zeitplan der Schutzsoftware setzt ihre zentrale Verwaltung oder eine Richtlinie, sonst das Master-Image. Ein
-  Schritt, dessen Wirkung ein Neustart des Workers aufhebt (einen Treiber am Worker entfernen), sagt
-  „am Worker selbst nur bis zum Neustart wirksam“. Diese Zusätze stammen nicht vom Hersteller des jeweiligen Elements.
+  eine Richtlinie ist, „eine Richtlinie wirkt auch auf nicht persistente Worker“. Einen Scan-Ausschluss, eine Ausnahme
+  oder einen Zeitplan der Schutzsoftware setzt ihre zentrale Verwaltung oder eine Richtlinie, sonst das Master-Image;
+  eine korrigierte Version der Schutzsoftware gehört ins Master-Image (`crash.remedies[5]`). Ein Schritt, dessen
+  Wirkung ein Neustart des Workers aufhebt (einen Treiber am Worker entfernen), sagt „am Worker selbst nur bis zum
+  Neustart wirksam“. Wer den Spool-Ordner leert, liest, dass auch ein Neustart ihn auf den Stand des Master-Image
+  zurücksetzt (`print.remedies[10]`, `print.remedies[14]`). Wer einen Prozess beendet oder eine Anwendung neu starten
+  lässt, liest, dass das nur wirkt, bis die Anwendung wieder startet (von selbst nach der nächsten Anmeldung oder dem
+  nächsten Neustart des Servers) oder den Arbeitsspeicher wieder belegt (`cpu.remedies[0]`, `memory.remedies[0]`).
+  Diese Zusätze stammen nicht vom Hersteller des jeweiligen Elements.
 - Die Schritte zu einem Vorfall aus der Zeit vor der Messung sagen, dass die Ereignisprotokolle auf solchen Workern
   nur bis zum letzten Neustart zurückreichen.
 - Schritte zur Zuordnung der Drucker setzen keine Citrix-Richtlinien voraus; wo ein Schritt von ihnen abhängt, sagt er
@@ -271,7 +276,7 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 |---|---|---|---|---|
 | Citrix® Compatible Device List | <https://support.brother.com/g/b/oscontents.aspx?c=us_ot&lang=en&ossid=40> | 2026-11-13 | `crash.checks[5]` Modell in der Citrix-Liste von Brother nachschlagen<br>`print.checks[14]` Modell in der Citrix-Liste von Brother nachschlagen | Die Liste nennt Modelle mit dem Status „Available“, aber weder ein Citrix-Produkt noch eine Version. Dass zu einem Modell, das fehlt, keine Aussage von Brother zu Citrix vorliegt, ist eine Feststellung des Katalogs, kein Satz von Brother. |
 | "User Intervention Required" when attempting to print | <https://help.brother-usa.com/app/answers/detail/a_id/145904/~/user-intervention-required-when-attempting-to-print> | 2026-11-13 | `print.checks[16]` Dienst auf „Automatisch“ und startbar | Die Seite nennt Windows XP bis Windows 10, nicht Windows Server; das Element sagt das. |
-| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. |
+| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. Der Zusatz zum Neustart nicht persistenter Worker stammt ebenfalls nicht von Brother (siehe „Zielumgebung“). |
 | Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[21]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
 | Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[22]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. Das Wartungsfenster in der Voraussetzung stammt nicht von Brother. |
 
