@@ -327,7 +327,7 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
   </section>
 
   <section id="tab-sessions" role="tabpanel" hidden>
-    <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …" aria-label="Sitzungen filtern"><span class="note">Zeile anklicken oder mit Eingabetaste öffnen. CPU-Werte in % der gesamten Host-Kapazität; Eingabeverzögerung über Takte mit Verzögerung.</span></div>
+    <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …" aria-label="Sitzungen filtern"><span class="note">Zeile anklicken oder mit Eingabetaste öffnen. <span id="sessCpuNote">CPU-Werte in % der gesamten Host-Kapazität; </span>Eingabeverzögerung über Takte mit Verzögerung.</span></div>
     <div class="tablewrap"><table id="tSessions"></table></div>
     <div class="detail" id="dSessions"></div>
   </section>
@@ -978,6 +978,7 @@ if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cSig("rttMax", "IC
 // the resources of a session are sums over its processes: without process data their 0 is no measured value
 const SESS_RES = ["cpuShare", "cpuSec", "cpuAvg", "cpuP95", "cpuMax", "wsAvg", "wsMax", "privMax", "ioMB", "procsAvg"];
 if (notMeasured("sessions.resources")) {
+  document.getElementById("sessCpuNote").hidden = true;
   for (const c of sessCols) if (SESS_RES.includes(c.key)) Object.assign(c, { fmt: () => "–", bar: false, sortVal: () => null });
   document.querySelector("#tab-sessions > .tablewrap").insertAdjacentHTML("beforebegin", notMeasured("sessions.resources"));
 }
@@ -1418,7 +1419,7 @@ function mainHtml(inc) {
     }
     if (c.kind === "nodata") return '<div class="mainline">Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.</div>';
     // processes left out with -Skip: the sentence of the category, as in the incident's text
-    if (c.kind === "notmeasured") return `<div class="mainline">Kein Hauptverursacher ermittelt: ${esc((SKIPPED.find((s) => s.id === "Prozesse") || {}).text || "")}</div>`;
+    if (c.kind === "notmeasured") return `<div class="mainline">Kein Hauptverursacher ermittelt: ${esc((SKIP_AT.get("incidents.contributors") || {}).text || "")}</div>`;
     return `<div class="mainline">Kein einzelner Hauptverursacher: kein Prozess erreicht ${pct(c.minSharePct)} ${measure}.</div>`;
   }
   if (inc.type === "ohne-engpass") {
@@ -1591,7 +1592,7 @@ function renderDetail(inc, host) {
     <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>
       <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button></h4>
     <div class="sigcharts">${charts.map((c, k) => `<div class="card chartbox"><h3>${esc(c.title)}</h3><div class="sc${k}"></div></div>`).join("")}</div>
-    ${skipContrib ? `<h4>Verursacher</h4><div class="contributors">${skipContrib}</div>` : contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
+    ${skipContrib ? "" : contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
     <div class="evidence">${evid.join("")}</div>
     <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>`;
   charts.forEach((c, k) => chart(host.querySelector(".sc" + k), {
@@ -1733,8 +1734,15 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
     return { k, name, rows, cpuMax: vals("cpuMax").length ? Math.max(...vals("cpuMax")) : null, wsStartMB: rows[0].wsStartMB, wsEndMB: rows[rows.length - 1].wsEndMB,
       wsMaxMB: vals("wsMaxMB").length ? Math.max(...vals("wsMaxMB")) : null };
   });
+  // "An einem Vorfall beteiligt" draws on the incidents from events of the capture and of the days before it: "beteiligt"
+  // stays a finding, but "nein" needs both; without one of them the column says what it is based on (with the hint)
+  const evSkip = notMeasured("events"), lbSkip = notMeasured("before");
+  const involvedNote = !(evSkip || lbSkip) ? "" : `<div class="note" style="margin-top:4px">„An einem Vorfall beteiligt“: ${evSkip && lbSkip ? "nicht geprüft."
+    : evSkip ? "nur aus den Vorfällen vor der Messung; ob ein Treiber an einem Vorfall während der Messung beteiligt war, ist nicht geprüft."
+    : "nur aus den Vorfällen während der Messung; die Tage vor der Messung sind nicht geprüft."}</div>` + evSkip + lbSkip;
+  const involvedNo = evSkip ? "–" : lbSkip ? 'nein <span class="note">(während der Messung)</span>' : "nein";
   el.innerHTML = `<div class="cardhead"><h3>Drucken</h3></div>
-    <h4>Druckertreiber${notMeasured("print.drivers") ? "" : ` (${PRINT.drivers.length})`}</h4>${notMeasured("print.drivers") || (PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' : '<div class="note">Keine Treiberliste aufgezeichnet.</div>')}
+    <h4>Druckertreiber${notMeasured("print.drivers") ? "" : ` (${PRINT.drivers.length})`}</h4>${notMeasured("print.drivers") || (PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' + involvedNote : '<div class="note">Keine Treiberliste aufgezeichnet.</div>')}
     <h4>Druckwarteschlangen${notMeasured("print.queues") ? "" : ` (${PRINT.queues.length})`}</h4>${notMeasured("print.queues") || (PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>')}
     <h4>Prozesse der Rolle Drucken</h4>${notMeasured("print.processes") ? notMeasured("print.processes") : procRows.length ? `<div class="tablewrap small"><table id="tPrintProcs"></table></div><div class="note" style="margin-top:4px">Arbeitsspeicher (Working Set) über die Messung, ohne Bewertung. Wurde ein Prozess neu gestartet, gilt der Anfang für den ersten und das Ende für den letzten Prozess.</div>` : '<div class="note">Keine Prozesse der Rolle Drucken in der Messung.</div>'}`;
   if (PRINT.drivers.length) table("tPrintDrivers", [
@@ -1743,7 +1751,7 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
     { key: "version", head: "Version", fmt: (v) => esc(v || "–") },
     { key: "type", head: "Bauart", fmt: (v) => v ? "Typ " + esc(v) : "–" },
     { key: "isolation", head: "Isolierung", fmt: (v) => esc(ISOLATION_WORD[v] || v || "–") },
-    { key: "involved", head: "An einem Vorfall beteiligt", cls: "wrap", fmt: (v, r) => v ? "<b>beteiligt</b>" : r.possiblyInvolved ? "möglicherweise beteiligt <span class=\"note\">(einer von mehreren Treibern mit dem fehlerhaften Modul)</span>" : "nein",
+    { key: "involved", head: "An einem Vorfall beteiligt", cls: "wrap", fmt: (v, r) => v ? "<b>beteiligt</b>" : r.possiblyInvolved ? "möglicherweise beteiligt <span class=\"note\">(einer von mehreren Treibern mit dem fehlerhaften Modul)</span>" : involvedNo,
       sortVal: (r) => r.involved ? 2 : r.possiblyInvolved ? 1 : 0 },
     { key: "files", head: "Treiberdateien", cls: "wrap", fmt: (v) => esc((v || []).join(", ") || "–"), sortVal: (r) => (r.files || []).join(", ") }
   ], PRINT.drivers.map((d, k) => Object.assign({ k }, d)), { sort: null, id: (r) => r.k, text: () => "" });

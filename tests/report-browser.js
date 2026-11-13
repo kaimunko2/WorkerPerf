@@ -275,12 +275,14 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   // lookback: both counts labelled, per-day bars with their number, lookback incidents with their date
   const before = await page.locator('#before').innerText();
   ok(before.includes('Ereignisse aus diesen Tagen') && before.includes('davon mit Vorfallsart'), 'beide Zahlen des Rueckblicks benannt');
-  ok((await page.locator('#before .day').first().innerText()).includes('07.11.2026') && (await page.locator('#before .day').first().innerText()).includes('2'), 'Balken mit Datum und Zahl');
+  // the simulated lookback lies before the day of the run: its dates come from the data, not a fixed calendar day
+  const d0 = D.before.perDay[0], d0Text = d0.day.split('-').reverse().join('.'), bar0 = await page.locator('#before .day').first().innerText();
+  ok(bar0.includes(d0Text) && bar0.includes(String(d0.count)), 'Balken mit Datum und Zahl: ' + bar0);
   const nexus = D.before.incidents.find((i) => i.event.app === 'nexus.exe');
   const be = page.locator(`#before .incident[data-id="${nexus.id}"]`);
   await be.locator('.text').click();
   ok((await be.locator('.detail .patterns').innerText()).includes('spricht für Profil oder Daten dieses Benutzers'), 'Muster im Rueckblick');
-  ok((await be.locator('.detail .evlist').innerText()).includes('09.11.2026'), 'Rueckblick-Ereignisse mit Datum');
+  ok((await be.locator('.detail .evlist').innerText()).includes(ddmmyyyy(nexus.events[0].t, nexus.events[0].offsetMin)), 'Rueckblick-Ereignisse mit Datum');
   ok(await be.locator('.detail .zoomto').count() === 0, 'kein Zoom fuer die Zeit vor der Messung');
   // C1: a lookback crash without session and account says so, never "ohne Benutzersitzung"
   const nosess = D.before.incidents.find((i) => i.event.app === 'simscan.exe');
@@ -623,6 +625,35 @@ async function checkFinalWave(browser, dir, scheme) {               // Abschluss
   await p.page.close();
 }
 
+// locations of each place of the brief's table: [tab to show, selector of the hint there]; incidents are opened before
+const SKIP_LOCATIONS = (() => {
+  const at = (p) => `.notmeasured[data-place="${p}"]`, inc = (p) => `#incidents .incident.open .evidence ${at(p)}`;
+  return {
+    procs: [['procs', `#tab-procs > ${at('procs')}`], ['overview', `#chCpuStack ${at('procs')}`], ['overview', `#chMemStack ${at('procs')}`],
+      ['findings', `footer ${at('procs')}`], ['findings', `#quality ${at('procs')}`]],
+    apps: [['apps', `#tab-apps > ${at('apps')}`], ['overview', `#cardMainApp #chMainApp ${at('apps')}`]],
+    'sessions.resources': [['sessions', `#tab-sessions > ${at('sessions.resources')}`], ['sessions', `#dSessions .chart-cpu ${at('sessions.resources')}`],
+      ['sessions', `#dSessions .chart-ws ${at('sessions.resources')}`], ['sessions', `#dSessions .chart-io ${at('sessions.resources')}`],
+      ['sessions', `#dSessions > ${at('sessions.resources')} >> nth=0`], ['sessions', `#dSessions > ${at('sessions.resources')} >> nth=1`]],
+    'incidents.contributors': [['findings', inc('incidents.contributors')]],
+    'incidents.delayProcs': [['findings', inc('incidents.delayProcs')]],
+    'print.processes': [['findings', `#print ${at('print.processes')}`]],
+    'print.drivers': [['findings', `#print ${at('print.drivers')}`]],
+    'print.queues': [['findings', `#print ${at('print.queues')}`]],
+    volumes: [['overview', `#chVolumes ${at('volumes')}`]],
+    shares: [['overview', `#chShares ${at('shares')}`]],
+    probes: [['overview', `#chProbes ${at('probes')}`]],
+    'sessions.profile': [['sessions', `#dSessions .chart-profile ${at('sessions.profile')}`]],
+    'sessions.rtt': [['sessions', `#dSessions .chart-rtt ${at('sessions.rtt')}`]],
+    citrix: [['sessions', `#dSessions > ${at('citrix')}`]],
+    'sessions.events': [['sessions', `#dSessions .sess-events ${at('sessions.events')}`]],
+    'incidents.ica': [['findings', inc('incidents.ica')]],
+    'incidents.endpoints': [['findings', inc('incidents.endpoints')]],
+    'incidents.events': [['findings', inc('incidents.events')]],
+    events: [['findings', `#timeline .tl-row[data-group="skipped"] ${at('events')}`], ['findings', `#quality ${at('events')}`]],
+    before: [['findings', `#before ${at('before')}`]]
+  };
+})();
 async function checkSkip(browser, dir, scheme) {   // Messkategorien
   const full = await open(browser, path.join(dir, 'report.html'), scheme);
   ok(await full.page.locator('#skipInfo').count() === 0 && await full.page.locator('.notmeasured').count() === 0, 'ohne -Skip kein Hinweis und keine Stelle "nicht gemessen"');
@@ -639,6 +670,12 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
       ok(all.includes(s.text + ' (-Skip ' + s.id + ')'), n + ': Grund von ' + s.id + ' steht auf der Seite');
       for (const p of s.places) ok(await page.locator(`.notmeasured[data-place="${p}"]`).count() > 0, n + ': Stelle ' + p + ' sagt "nicht gemessen"');
     }
+    // every location of a place in the brief's table shows its hint, visibly, on the tab where it stands
+    for (const s of D.skipped) for (const p of s.places) for (const [tab, sel] of SKIP_LOCATIONS[p]) {
+      await page.click(`nav button[data-tab=${tab}]`);
+      ok(await page.locator(sel).first().isVisible(), n + ': Stelle ' + p + ' sichtbar an ' + sel);
+    }
+    await page.click('nav button[data-tab=findings]');
     // an input delay that could not be checked for a bottleneck (without Laufwerke) is never called "ohne Engpass"
     if (n === 'laufwerke' || n === 'alle') {
       ok(D.incidents.some((i) => i.type === 'ohne-engpass' && i.unverified), n + ': Daten mit ungeprueftem Vorfall ohne erkannten Engpass');
@@ -684,7 +721,22 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
   await r.page.close();
   const e = await open(browser, path.join(dir, 'report-skip-ereignisse.html'), scheme);
   ok(e.D.quality.eventReads.length === 0 && await e.page.locator('#quality .notmeasured[data-place="events"]').count() === 1, 'Messqualitaet: Ereignisprotokolle nicht gemessen');
+  // driver involvement draws on the incidents from events: without the events of the capture never "nein"
+  const cellsOf = async (page) => (await page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  let drv = await cellsOf(e.page);
+  ok(drv.length === 3 && drv.every((t) => t === '–') && await e.page.locator('#print .notmeasured[data-place="events"]').isVisible(), 'Ereignisse: Treiber ohne "nein", mit Grund: ' + drv.join(' / '));
   await e.page.close();
+  const a = await open(browser, path.join(dir, 'report-skip-alle.html'), scheme);
+  ok(await a.page.locator('#tPrintDrivers').count() === 0 && !(await a.page.locator('#print').innerText()).match(/\bnein\b/), 'alle: keine Treibertabelle, kein "nein"');
+  await a.page.close();
+  const rb = await open(browser, path.join(dir, 'report-skip-rueckblick.html'), scheme);
+  drv = await cellsOf(rb.page);
+  ok(drv.filter((t) => t === 'beteiligt').length === 1 && drv.filter((t) => t === 'nein (während der Messung)').length === 2 && await rb.page.locator('#print .notmeasured[data-place="before"]').isVisible(), 'Rueckblick: "nein" nur fuer die Messung: ' + drv.join(' / '));
+  await rb.page.close();
+  const f = await open(browser, path.join(dir, 'report.html'), scheme);
+  drv = await cellsOf(f.page);
+  ok(drv.join('|') === f.D.print.drivers.map((x) => x.involved ? 'beteiligt' : 'nein').join('|') && await f.page.locator('#print .note', { hasText: 'An einem Vorfall beteiligt' }).count() === 0, 'voller Lauf: Spalte unveraendert: ' + drv.join(' / '));
+  await f.page.close();
 }
 
 (async () => {

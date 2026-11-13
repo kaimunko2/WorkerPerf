@@ -162,9 +162,10 @@ Regeln:
 - **Kombinationen:** Der Collector lehnt keine ab; der Bericht benennt, was fehlt. `Rueckblick` und `Ereignisse` sind
   unabhängig voneinander. Ohne `Ereignisse` gibt es während der Messung keine Sitzungsereignisse (Anmelden, Trennen);
   die Sitzungsliste der Basis bleibt. Ohne `Drucken` bleiben Druckereignisse sichtbar, der Bezug zu Treibern fehlt.
-- **Ohne `Prozesse`** lässt sich die Sitzung eines abgestürzten Prozesses nicht ermitteln. Jeder einzelne Absturz oder
-  Hänger bildet dann einen Vorfall, auch von Hintergrunddiensten, höchstens einer je Anwendung in 30 Minuten, und
-  trägt „Nicht geprüft: Zuordnung zu Benutzern und Sitzungen". `Prozesse` spart am meisten und macht zugleich die
+- **Ohne `Prozesse`** lässt sich die Sitzung eines abgestürzten Prozesses nicht ermitteln. Schon ein einzelner Absturz
+  oder Hänger bildet dann einen Vorfall, auch von Hintergrunddiensten. Abstürze derselben Anwendung, zwischen denen
+  jeweils höchstens 30 Minuten liegen (`eventGroupMinutes` in `thresholds.json`, Standard 30), bilden zusammen einen
+  Vorfall, ebenso ihre Hänger; ein solcher Vorfall trägt „Nicht geprüft: Zuordnung zu Benutzern und Sitzungen". `Prozesse` spart am meisten und macht zugleich die
   Vorfälle unerklärbar (siehe [Was bei welcher Stufe zu tun ist](#was-bei-welcher-stufe-zu-tun-ist)).
 - **`-Skip Ereignisse`** ist der Schalter, wenn das Lesen der Ereignisprotokolle die regulären Schnappschüsse
   langsam macht (siehe [Welche Last das bedeutet](#welche-last-das-bedeutet), Ereignisabfragen, und die Messdauer je
@@ -606,12 +607,17 @@ Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten
   Prozesse, Rückblick"). An jeder Stelle, die von einer weggelassenen Kategorie abhängt, steht
   „○ nicht gemessen – <Grund> (-Skip <Kategorie>)" statt einer leeren Tabelle, eines leeren Diagramms oder „keine":
   ohne `Prozesse` die Reiter Anwendungen und Prozesse, die gestapelten Diagramme, die Hauptanwendung, die
-  Ressourcen der Sitzungen (in der Tabelle „–"), Verursacher, Schutzprodukte und die Prozesse mit der höchsten
-  Eingabeverzögerung eines Vorfalls, die Prozesse der Rolle Drucken und im Fuß die Prozesszahlen und der Anteil von
-  WorkerPerf; ohne `Laufwerke`, `Citrix` und `Gegenstellen` die Diagramme, die Sitzungsansicht und die Belege der
-  Vorfälle; ohne `Ereignisse` eine Zeile der Zeitleiste, die Sitzungsereignisse, „Ereignisse im Fenster" und die
-  Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` und `Drucken` die Blöcke „Vor der Messung" und
-  „Drucken". Nichts davon zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer
+  Ressourcen der Sitzungen (in der Tabelle „–", in der Sitzungsansicht CPU, Arbeitsspeicher, I/O, Anwendungen und
+  Prozesse), in einem Vorfall die Schutzprodukte und die Prozesse mit der höchsten Eingabeverzögerung (den
+  Verursacher nennt der Satz), die Prozesse der Rolle Drucken und im Fuß die Prozesszahlen und der Anteil von
+  WorkerPerf; ohne `Laufwerke` die Diagramme der Laufwerke und der Freigaben und in der Sitzungsansicht die
+  Antwortzeit des Profilcontainers; ohne `Citrix` in der Sitzungsansicht ICA Round Trip und die Citrix-Messwerte und
+  in einem Vorfall den ICA Round Trip; ohne `Gegenstellen` das Diagramm der Gegenstellen und die Gegenstellen eines
+  Vorfalls; ohne `Ereignisse` eine Zeile der Zeitleiste, die Sitzungsereignisse, „Ereignisse im Fenster" und die
+  Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` den Block „Vor der Messung"; ohne `Drucken` im Block
+  „Drucken" Treiber und Warteschlangen. Ob ein Druckertreiber an einem Vorfall beteiligt war, prüft der Bericht an
+  den Vorfällen während und vor der Messung: Fehlt `Ereignisse`, steht statt „nein" ein „–", fehlt `Rueckblick`,
+  heißt es „nein (während der Messung)", jeweils mit dem Grund unter der Tabelle. Nichts davon zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer
   weggelassenen Kategorie als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten
   weder als erfüllt noch als verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein
   Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst." Ein Muster eines Vorfalls aus
