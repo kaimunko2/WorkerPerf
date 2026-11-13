@@ -391,8 +391,8 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
             $skipped = ($k -eq 'Laufwerke' -or $k -eq 'Alle')
             foreach ($i in $oe) {
                 $i.unverified | Should -Be $skipped -Because "$k $($i.text)"
-                if ($skipped) { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne erkannten Engpass auf dem Worker \(Spitze ' }
-                else { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne Engpass auf dem Worker \(Spitze ' }
+                if ($skipped) { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne erkannten Engpass auf dem Server \(Spitze ' }
+                else { $i.text | Should -Match '^\d\d:\d\d:\d\d–\d\d:\d\d:\d\d: Eingabeverzögerung ohne Engpass auf dem Server \(Spitze ' }
             }
             @($D[$k].incidents | Where-Object { $_.type -ne 'ohne-engpass' -and $null -ne $_.PSObject.Properties['unverified'] }).Count | Should -Be 0 -Because $k
         }

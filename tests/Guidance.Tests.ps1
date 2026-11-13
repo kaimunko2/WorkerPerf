@@ -1285,9 +1285,9 @@ Describe 'Kopiertexte' {
         { Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $small -Texts $Texts } | Should -Throw "Catalogue value 'copy.maxChecks' is no whole number from 1 on."
     }
     It 'nimmt den Verursacher aus dem Teil des Vorfallssatzes und laesst die Zeile ohne ihn weg' {     # ruling P3-R30
-        $i = New-Inc @{ type = 'ohne-engpass'; start = 1e12; end = 1e12 + 60000; causeText = ' Die Ursache liegt außerhalb des Workers. Gegenstelle Oracle-Listener: 348 ms. ' }
+        $i = New-Inc @{ type = 'ohne-engpass'; start = 1e12; end = 1e12 + 60000; causeText = ' Die Ursache liegt außerhalb des Servers. Gegenstelle Oracle-Listener: 348 ms. ' }
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
-        $p | Should -Contain 'Verursacher: Die Ursache liegt außerhalb des Workers. Gegenstelle Oracle-Listener: 348 ms.'
+        $p | Should -Contain 'Verursacher: Die Ursache liegt außerhalb des Servers. Gegenstelle Oracle-Listener: 348 ms.'
         $i.causeText = ''
         @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts | Where-Object { $_ -like 'Verursacher*' }).Count | Should -Be 0
         # the second wording of the cause is gone: the copy text has no function of its own for it

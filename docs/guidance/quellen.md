@@ -16,22 +16,22 @@ nach Entscheidung des Auftraggebers eine Quelle der Praxis vor dem Hersteller gi
 
 ## Zielumgebung
 
-Der Katalog ist für eine Umgebung geschrieben, die sich allgemein so beschreiben lässt: Worker mit mehreren Sitzungen
+Der Katalog ist für eine Umgebung geschrieben, die sich allgemein so beschreiben lässt: Server mit mehreren Sitzungen
 (Windows Server 2022, Citrix VDA), ausschließlich über Machine Creation Services bereitgestellt und nicht persistent.
-Ein solcher Worker entsteht bei jedem Neustart neu aus dem Master-Image; was auf ihm selbst geändert wurde, ist danach
+Ein solcher Server entsteht bei jedem Neustart neu aus dem Master-Image; was auf ihm selbst geändert wurde, ist danach
 verloren, auch seine Ereignisprotokolle. Die Benutzerumgebung richtet Citrix Workspace Environment Management ein. Die
-Drucker ordnen nicht die Citrix-Richtlinien zu, sondern PrinTaurus, die Drucklösung der AKI GmbH; auf dem Worker ist
+Drucker ordnen nicht die Citrix-Richtlinien zu, sondern PrinTaurus, die Drucklösung der AKI GmbH; auf dem Server ist
 dafür der PrinTaurus SmartSpread Client installiert. Beides ist eine Angabe des Auftraggebers vom 13.11.2026, keine
 Aussage einer gelesenen Seite. Daraus folgen drei Regeln des Katalogs:
 
 - Ein Vorschlag, der eine Einstellung ändert (Treiber, Richtlinie, Registrierung, Scan-Ausschluss, Dienst,
   installierte Software), nennt den Ort der Änderung mit einer von zwei festen Wendungen:
-  „bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen“ oder, wo die Änderung selbst
-  eine Richtlinie ist, „eine Richtlinie wirkt auch auf nicht persistente Worker“. Einen Scan-Ausschluss, eine Ausnahme
+  „bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen“ oder, wo die Änderung selbst
+  eine Richtlinie ist, „eine Richtlinie wirkt auch auf nicht persistente Server“. Einen Scan-Ausschluss, eine Ausnahme
   oder einen Zeitplan der Schutzsoftware setzt ihre zentrale Verwaltung oder eine Richtlinie, sonst das Master-Image;
   eine korrigierte Version der Schutzsoftware gehört ins Master-Image (Abhilfe „Ausnahme oder korrigierte Version der
-  Schutzsoftware …“ der Situation `crash`). Ein Schritt, dessen Wirkung ein Neustart des Workers aufhebt (einen
-  Treiber am Worker entfernen), sagt „am Worker selbst nur bis zum Neustart wirksam“. Wer den Spool-Ordner leert,
+  Schutzsoftware …“ der Situation `crash`). Ein Schritt, dessen Wirkung ein Neustart des Servers aufhebt (einen
+  Treiber am Server entfernen), sagt „am Server selbst nur bis zum Neustart wirksam“. Wer den Spool-Ordner leert,
   liest, dass auch ein Neustart ihn auf den Stand des Master-Image zurücksetzt (Abhilfe „Spool-Ordner von Hand
   leeren …“ der Situation `print`, Abhilfe „Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt …“
   der Situation `print`). Wer einen Prozess beendet oder eine Anwendung neu starten lässt, liest, dass das nur wirkt,
@@ -39,7 +39,7 @@ Aussage einer gelesenen Seite. Daraus folgen drei Regeln des Katalogs:
   oder den Arbeitsspeicher wieder belegt (Abhilfe „‹Anwendung› vom Benutzer schließen lassen …“ der Situation `cpu`,
   Abhilfe „‹Anwendung› schließen und neu starten lassen …“ der Situation `memory`). Diese Zusätze stammen nicht vom
   Hersteller des jeweiligen Elements.
-- Die Schritte zu einem Vorfall aus der Zeit vor der Messung sagen, dass die Ereignisprotokolle auf solchen Workern
+- Die Schritte zu einem Vorfall aus der Zeit vor der Messung sagen, dass die Ereignisprotokolle auf solchen Servern
   nur bis zum letzten Neustart zurückreichen.
 - Schritte zur Zuordnung der Drucker setzen keine Citrix-Richtlinien voraus; wo ein Schritt von ihnen abhängt, sagt er
   es („Wenn die Drucker über Citrix-Richtlinien zugeordnet werden: …“ oder in der Voraussetzung).
@@ -289,7 +289,7 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 |---|---|---|---|---|
 | Citrix® Compatible Device List | <https://support.brother.com/g/b/oscontents.aspx?c=us_ot&lang=en&ossid=40> | 2026-11-13 | `crash.checks[5]` Modell in der Citrix-Liste von Brother nachschlagen<br>`print.checks[14]` Modell in der Citrix-Liste von Brother nachschlagen | Die Liste nennt Modelle mit dem Status „Available“, aber weder ein Citrix-Produkt noch eine Version. Dass zu einem Modell, das fehlt, keine Aussage von Brother zu Citrix vorliegt, ist eine Feststellung des Katalogs, kein Satz von Brother. |
 | "User Intervention Required" when attempting to print | <https://help.brother-usa.com/app/answers/detail/a_id/145904/~/user-intervention-required-when-attempting-to-print> | 2026-11-13 | `print.checks[16]` Dienst auf „Automatisch“ und startbar | Die Seite nennt Windows XP bis Windows 10, nicht Windows Server; das Element sagt das. |
-| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. Der Zusatz zum Neustart nicht persistenter Worker stammt ebenfalls nicht von Brother (siehe „Zielumgebung“). |
+| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. Der Zusatz zum Neustart nicht persistenter Server stammt ebenfalls nicht von Brother (siehe „Zielumgebung“). |
 | Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[21]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
 | Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[22]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. Das Wartungsfenster in der Voraussetzung stammt nicht von Brother. |
 
@@ -324,7 +324,7 @@ Nicht erreichbar: download.brother.com (unter anderem der „Universal Printer D
 
 ## AKI
 
-Die AKI GmbH ist der Hersteller der Drucklösung PrinTaurus. Dass die Zielumgebung mit ihr die Drucker zuordnet und dass ihr PrinTaurus SmartSpread Client auf dem Worker installiert ist, ist eine Angabe des Auftraggebers vom 13.11.2026, keine Aussage einer gelesenen Seite. Nach welchen Regeln PrinTaurus die Drucker zuordnet und wie der Client in den Sitzungen läuft, sagt keine gelesene Seite; der Katalog und sein Glossar sagen dazu nichts. Die Website des Herstellers enthält kein öffentliches Handbuch; technische Aussagen stehen nur in den Release Notes 6.2 und 6.4. Elemente zu einem Absturz oder Hänger des Clients hängen an der Bedingung `app.printaurus`; die übrigen stehen als allgemeine Elemente in der Situation `print` und nennen in ihrer Voraussetzung die Version, für die die Release Notes die Aussage machen. In `vendors` steht AKI nicht: die Liste ist für Hersteller von Druckertreibern.
+Die AKI GmbH ist der Hersteller der Drucklösung PrinTaurus. Dass die Zielumgebung mit ihr die Drucker zuordnet und dass ihr PrinTaurus SmartSpread Client auf dem Server installiert ist, ist eine Angabe des Auftraggebers vom 13.11.2026, keine Aussage einer gelesenen Seite. Nach welchen Regeln PrinTaurus die Drucker zuordnet und wie der Client in den Sitzungen läuft, sagt keine gelesene Seite; der Katalog und sein Glossar sagen dazu nichts. Die Website des Herstellers enthält kein öffentliches Handbuch; technische Aussagen stehen nur in den Release Notes 6.2 und 6.4. Elemente zu einem Absturz oder Hänger des Clients hängen an der Bedingung `app.printaurus`; die übrigen stehen als allgemeine Elemente in der Situation `print` und nennen in ihrer Voraussetzung die Version, für die die Release Notes die Aussage machen. In `vendors` steht AKI nicht: die Liste ist für Hersteller von Druckertreibern.
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
@@ -347,20 +347,20 @@ Die AKI GmbH ist der Hersteller der Drucklösung PrinTaurus. Dass die Zielumgebu
 
 | Empfehlung | Grund |
 |---|---|
-| Wie und wann der Client die Drucker zuordnet (Anmeldung, Wiederverbindung, Regeln), Treiber auf dem Worker, Hinweise zu Master-Image und nicht persistenten Workern, Dauer und Protokoll der Zuordnung, Verhältnis zu den Druckrichtlinien von Citrix | keine Herstellerquelle gefunden (die Installationsanleitung ist nicht veröffentlicht; der allgemeine Schritt zur Zuordnung ist ein eigener Hinweis, siehe Abschnitt WorkerPerf) |
-| Aliasnamen für Verbunde: Hochverfügbarkeit entfällt, Wartungsmodus abgeschaltet (Release Notes 6.4) | setzt eine Änderung voraus, die die Messung nicht stützt (Einrichtung der Druckserver, auf dem Worker nicht sichtbar) |
+| Wie und wann der Client die Drucker zuordnet (Anmeldung, Wiederverbindung, Regeln), Treiber auf dem gemessenen Server, Hinweise zu Master-Image und nicht persistenten Servern, Dauer und Protokoll der Zuordnung, Verhältnis zu den Druckrichtlinien von Citrix | keine Herstellerquelle gefunden (die Installationsanleitung ist nicht veröffentlicht; der allgemeine Schritt zur Zuordnung ist ein eigener Hinweis, siehe Abschnitt WorkerPerf) |
+| Aliasnamen für Verbunde: Hochverfügbarkeit entfällt, Wartungsmodus abgeschaltet (Release Notes 6.4) | setzt eine Änderung voraus, die die Messung nicht stützt (Einrichtung der Druckserver, auf dem gemessenen Server nicht sichtbar) |
 | Hochverfügbarkeit der Drucker-Mappings über Master- und Backup-Server (Produktseite) | setzt eine Änderung voraus, die die Messung nicht stützt (die Seite spricht von Client-PCs und nennt weder SmartSpread noch Terminalserver) |
-| Verzögerungen beim Speichern vieler IPP-Anschlüsse, CleanJob, TLS-Einstellungen, SAP-Anbindung und weitere Server-Komponenten | Quelle veraltet oder nur für ein anderes Produkt (Komponenten der Druckserver, nicht des Workers) |
+| Verzögerungen beim Speichern vieler IPP-Anschlüsse, CleanJob, TLS-Einstellungen, SAP-Anbindung und weitere Komponenten der Druckserver | Quelle veraltet oder nur für ein anderes Produkt (Komponenten der Druckserver, nicht des gemessenen Servers) |
 
 Nicht erreichbar: die Seiten „FAQ“ und „Service & Support“ des Herstellers (HTTP 404), www.printaurus.com und die bei Kyocera liegende Broschüre zur Hochverfügbarkeit. Von dort ist nichts übernommen.
 
 ## Citrix – Workspace Environment Management
 
-In der Zielumgebung richtet Citrix Workspace Environment Management (WEM) die Benutzerumgebung ein. Die Elemente nennen WEM als möglichen Beteiligten an einem Prozessor- oder Arbeitsspeicher-Engpass: Der CPU-Spitzenschutz senkt die Priorität eines Prozesses, die Speicheroptimierung gibt Arbeitsspeicher untätiger Prozesse frei. Die wirksamen Einstellungen von WEM sind auf dem Worker nicht dokumentiert lesbar; die Schritte verweisen deshalb auf das Ereignisprotokoll des Agenten und auf die WEM-Konsole.
+In der Zielumgebung richtet Citrix Workspace Environment Management (WEM) die Benutzerumgebung ein. Die Elemente nennen WEM als möglichen Beteiligten an einem Prozessor- oder Arbeitsspeicher-Engpass: Der CPU-Spitzenschutz senkt die Priorität eines Prozesses, die Speicheroptimierung gibt Arbeitsspeicher untätiger Prozesse frei. Die wirksamen Einstellungen von WEM sind auf dem Server nicht dokumentiert lesbar; die Schritte verweisen deshalb auf das Ereignisprotokoll des Agenten und auf die WEM-Konsole.
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| CPU Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/cpu-management.html> | 2026-11-13 | `cpu.remedies[2]` CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen | Citrix sagt, der Schutz sei nicht dafür gedacht, die Gesamtlast zu senken, und rät, die Messzeit so zu wählen, dass andere Benutzer desselben Servers nicht leiden. Eine Regel, wann ein Prozess auszunehmen ist, nennt die Seite nicht. Die Einstellung liegt in der WEM-Konsole, nicht auf dem Worker; ein Zusatz zum Master-Image entfällt deshalb. |
+| CPU Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/cpu-management.html> | 2026-11-13 | `cpu.remedies[2]` CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen | Citrix sagt, der Schutz sei nicht dafür gedacht, die Gesamtlast zu senken, und rät, die Messzeit so zu wählen, dass andere Benutzer desselben Servers nicht leiden. Eine Regel, wann ein Prozess auszunehmen ist, nennt die Seite nicht. Die Einstellung liegt in der WEM-Konsole, nicht auf dem Server; ein Zusatz zum Master-Image entfällt deshalb. |
 | Memory Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/memory-management.html> | 2026-11-13 | `memory.remedies[5]` Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen | Standard der Leerlaufgrenze laut Seite 1 %. Dass Anwendungen nach einer Pause träge reagieren, steht nicht auf der Seite: Es ist die Voraussetzung, unter der der Katalog den Schritt vorschlägt. |
 | Agent event logs (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/agent-event-logs.html> | 2026-11-13 | `cpu.checks[13]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob der CPU-Spitzenschutz von Citrix Workspace Environment M …<br>`memory.checks[11]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob die Speicheroptimierung von Citrix Workspace Environment … | Die Seite nennt die Ereignisse 7001 und 7002 (CPU-Spitzenschutz) und 8001 bis 8003 (Speicheroptimierung). Die Bezeichnung des Protokolls „WEM Agent Service“ stammt von den Seiten „CPU Management“ und „System optimization“; den genauen Namen des Protokolls dokumentiert Citrix nicht (siehe „Auf dem Zielsystem zu bestätigen“). Was die Speicheroptimierung mit dem Arbeitsspeicher untätiger Prozesse tut, steht auf der Seite „Memory Management“. |
 
@@ -376,8 +376,8 @@ In der Zielumgebung richtet Citrix Workspace Environment Management (WEM) die Be
 
 | Empfehlung | Grund |
 |---|---|
-| Agent-Cache an einem beständigen Ort, benötigte Dienste auf „Automatisch“, Agent nicht per Skript starten oder anhalten, Einstellungen der Anmeldung (SyncForegroundPolicy, GpNetworkStartTimeoutPolicyValue), VUEMAppCmd, Cache-Aktualisierung | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
-| Virenschutz vom CPU-Spitzenschutz ausnehmen und ihm niedrige I/O-Priorität geben | setzt eine Änderung voraus, die die Messung nicht stützt (die Einstellungen von WEM sind auf dem Worker nicht lesbar) |
+| Agent-Cache an einem beständigen Ort, benötigte Dienste auf „Automatisch“, Agent nicht per Skript starten oder anhalten, Einstellungen der Anmeldung (SyncForegroundPolicy, GpNetworkStartTimeoutPolicyValue), VUEMAppCmd, Cache-Aktualisierung | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Virenschutz vom CPU-Spitzenschutz ausnehmen und ihm niedrige I/O-Priorität geben | setzt eine Änderung voraus, die die Messung nicht stützt (die Einstellungen von WEM sind auf dem Server nicht lesbar) |
 | CPU-Begrenzung (Clamping) nur für Ausnahmen, Optimierung getrennter Sitzungen, Citrix Optimizer bei jedem Neustart, schnelles Abmelden, asynchrone Verarbeitung von Druckern und Laufwerken | setzt eine Änderung voraus, die die Messung nicht stützt (Erklärungen ohne Merkmal, das die Messung zeigt) |
 | Intelligente CPU-Optimierung startet Prozesse mit hoher Priorität (CTX233218) | Quelle veraltet oder nur für ein anderes Produkt (Artikel ohne Datum mit der Wortwahl der alten Konsole; die aktuelle Seite sagt das nicht) |
 | „Launch agent on reconnection“ eingeschaltet lassen | keine Herstellerquelle gefunden (das Zitat steht auf der Seite unter einer anderen Einstellung) |
@@ -436,7 +436,7 @@ Microsoft Edge ist in der Zielumgebung der einzige Browser; die WebView2-Runtime
 | Empfehlung | Grund |
 |---|---|
 | 2 bis 4 Prozessorkerne je Benutzer für Edge auf VDI | setzt eine Änderung voraus, die die Messung nicht stützt (die Angabe gilt für VDI allgemein und ist auf Servern mit mehreren Sitzungen kaum erreichbar; die Angabe zum Arbeitsspeicher ist aufgenommen) |
-| Automatische Updates auf nicht persistenten Maschinen abschalten, Prüfabstand des Updaters, Erststart-Erlebnis ausblenden, Startup boost, On-Premises-Sync, Ordner für Cache und Benutzerdaten nicht auf die Wurzel eines Laufwerks | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Automatische Updates auf nicht persistenten Maschinen abschalten, Prüfabstand des Updaters, Erststart-Erlebnis ausblenden, Startup boost, On-Premises-Sync, Ordner für Cache und Benutzerdaten nicht auf die Wurzel eines Laufwerks | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
 | Eigene Cachegröße (DiskCacheSize) entfernen | setzt eine Änderung voraus, die die Messung nicht stützt |
 | msedge.exe nicht vom Citrix-Hooking ausnehmen (CTX695046) | widerspricht einer anderen Herstellerquelle (Microsoft nennt für ältere Versionen von Citrix das Abschalten der Hooks als Umgehung; der Artikel von Citrix behandelt nur Virtual Loopback) |
 | Citrix-Richtlinien, die das Darstellen sehr großer HTML-Tabellen bremsen | setzt eine Änderung voraus, die die Messung nicht stützt (eine Verzögerung ohne Engpass nennt keine Anwendung als Verursacher; die Bedingung `app.edge` gilt dort nicht) |
@@ -503,9 +503,9 @@ In der Zielumgebung ist Office LTSC 2024 installiert. Die Elemente hängen an zw
 
 | Empfehlung | Grund |
 |---|---|
-| Lizenzierung, Update-Kanal, Rearm vor dem Erstellen des Abbilds, Updates nur über das Master-Image | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Lizenzierung, Update-Kanal, Rearm vor dem Erstellen des Abbilds, Updates nur über das Master-Image | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
 | Outlook-Suche: Suchindex, Windows-Suchdienst, EnablePerUserCatalog, Standard-Suchbereich | setzt eine Änderung voraus, die die Messung nicht stützt (Verursacher wäre der Suchdienst, keine Office-Anwendung; die Seiten von Citrix nennen Outlook LTSC 2024 nicht, die Seite von Microsoft zu RDSH und VDI ist für Office 2016 geschrieben) |
-| Outlook im Cache-Modus mit Profilcontainer als Leistungsgewinn | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (die Quelle nennt FSLogix) |
+| Outlook im Cache-Modus mit Profilcontainer als Leistungsgewinn | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (die Quelle nennt FSLogix) |
 | Zeiten, ab denen Start und Öffnen bedenklich sind (Outlook über 20 Sekunden, Word, Excel und PowerPoint über 10 Sekunden) | setzt eine Änderung voraus, die die Messung nicht stützt (die Messung erfasst keine Startdauer; eine Verzögerung ohne Engpass nennt keine Anwendung als Verursacher) |
 
 ## Microsoft – Teams
@@ -534,7 +534,7 @@ In der Zielumgebung läuft der neue Teams-Client mit Medienoptimierung: Audio, V
 
 | Empfehlung | Grund |
 |---|---|
-| Unterstützte Versionen des VDA, Freigabeliste der virtuellen Kanäle, Dienste der Teams-Umleitung, Proxy-Ausnahme, Bereitstellung im Master-Image, Auto-Update, Besprechungs-Add-in, Autostart | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Unterstützte Versionen des VDA, Freigabeliste der virtuellen Kanäle, Dienste der Teams-Umleitung, Proxy-Ausnahme, Bereitstellung im Master-Image, Auto-Update, Besprechungs-Add-in, Autostart | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
 | Ausschlussliste von Microsoft für die Zwischenspeicher von Teams | widerspricht einer anderen Herstellerquelle (für den Profilcontainer von Citrix rät Citrix, ihr ohne lokale Zwischenspeicherung nicht zu folgen; die Aussage von Citrix ist aufgenommen) |
 | AppLocker: Herausgeberregeln für Teams | Quelle veraltet oder nur für ein anderes Produkt (Seite von 2024 für das klassische Teams) |
 | Windows-Updates gegen Fehler bei der Registrierung von Teams | Quelle veraltet oder nur für ein anderes Produkt (der Abschnitt gilt für FSLogix) |
@@ -570,8 +570,8 @@ Die Anleitungen von Carl Stalhood (carlstalhood.com) sind eine Quelle aus der Pr
 
 | Empfehlung | Grund |
 |---|---|
-| Virtuelle Hardware unter vSphere, Updates und Neustarts, Lizenzierung der Remotedesktopdienste, Zeitgrenzen des VDA, WEM-Agent auf den lastverteilten Namen, Protokoll der Profilverwaltung, maschinenweite Installation von Teams und OneDrive, Selbstaktualisierer abschalten | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
-| Schreibcache und Auslagerungsdatei bei Citrix Provisioning, Ereignisprotokolle auf beständigem Laufwerk bei Provisioning | gilt nur für Citrix Provisioning; die Worker der Zielumgebung werden über Machine Creation Services bereitgestellt |
+| Virtuelle Hardware unter vSphere, Updates und Neustarts, Lizenzierung der Remotedesktopdienste, Zeitgrenzen des VDA, WEM-Agent auf den lastverteilten Namen, Protokoll der Profilverwaltung, maschinenweite Installation von Teams und OneDrive, Selbstaktualisierer abschalten | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Schreibcache und Auslagerungsdatei bei Citrix Provisioning, Ereignisprotokolle auf beständigem Laufwerk bei Provisioning | gilt nur für Citrix Provisioning; die Server der Zielumgebung werden über Machine Creation Services bereitgestellt |
 | AppData nicht auf eine Freigabe umleiten | der Hersteller sagt es für Outlook selbst (Microsoft, aufgenommen unter Office); für andere Anwendungen stützt die Messung es nicht |
 | Netzwerkschutz von Microsoft Defender abschalten | setzt eine Änderung voraus, die die Messung nicht stützt (Schutzfunktion; die Messung erfasst keine unterbrochenen Sitzungen) |
 | Drucken: keine direkten Verbindungen zu Druckservern, Citrix Universal Print Server | setzt eine Änderung voraus, die die Messung nicht stützt (in der Zielumgebung ordnet PrinTaurus SmartSpread die Drucker zu) |
@@ -595,7 +595,7 @@ Das Base Image Script Framework (BIS-F) ist eine Sammlung von Skripten, die ein 
 | Empfehlung | Grund |
 |---|---|
 | Receive Side Scaling abschalten | widerspricht einer anderen Herstellerquelle (bei Microsoft ist es standardmäßig eingeschaltet; hier gilt nach Entscheidung des Auftraggebers der Hersteller, und BIS-F widerspricht sich in Skript und Versionshinweisen selbst) |
-| Ereignisprotokolle und Spool-Ordner auf einen beständigen Cache-Datenträger legen | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; setzt einen beständigen Datenträger voraus, den die Zielumgebung nicht hat) |
+| Ereignisprotokolle und Spool-Ordner auf einen beständigen Cache-Datenträger legen | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; setzt einen beständigen Datenträger voraus, den die Zielumgebung nicht hat) |
 | Windows-Update-Dienst im Abbild abschalten, Netzwerkeinstellungen (Task-Offload, UDP, ARP), Auslagerungsdatei fest einstellen, Leistungsindikatoren neu aufbauen, .NET vorkompilieren, Citrix Optimizer, Reihenfolge der Dienste beim Start | beschreibt einen Zustand des Master-Image, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; die Quelle ist für Windows Server 2022 sichtbar älter) |
 | Einstellungen für Citrix Provisioning (Schreibcache) | gilt nur für Citrix Provisioning |
 
@@ -618,7 +618,7 @@ und keines nennt einen Hersteller.
 
 | Titel | Übernommene Elemente | Hinweis |
 |---|---|---|
-| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen<br>`print.checks[27]` Zuordnung der Drucker durch ein Zuordnungswerkzeug bei Anmeldung und Wiederverbindung<br>`print.checks[29]` Vorfall vor der Messung: Reichweite des Rückblicks auf nicht persistenten Workern | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. Der Schritt zur Zuordnung der Drucker nennt kein Produkt: Wie PrinTaurus SmartSpread zuordnet, dokumentiert sein Hersteller nicht öffentlich (siehe Abschnitt AKI). |
+| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen<br>`print.checks[27]` Zuordnung der Drucker durch ein Zuordnungswerkzeug bei Anmeldung und Wiederverbindung<br>`print.checks[29]` Vorfall vor der Messung: Reichweite des Rückblicks auf nicht persistenten Servern | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. Der Schritt zur Zuordnung der Drucker nennt kein Produkt: Wie PrinTaurus SmartSpread zuordnet, dokumentiert sein Hersteller nicht öffentlich (siehe Abschnitt AKI). |
 
 ## Auf dem Zielsystem zu bestätigen
 

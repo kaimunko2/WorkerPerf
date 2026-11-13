@@ -12,9 +12,9 @@ BeforeAll {
     # practice, which carry their mark in the source (spec 5.7)
     $script:SourceVendors = $script:PrintVendors + 'AKI'
     $script:PracticeSource = '^(Carl Stalhood|BIS-F) \(Empfehlung aus der Praxis\)$'
-    # where a change is made on non-persistent workers (spec 5.8): in the master image, or by a policy
-    $script:InImage = 'bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen'
-    $script:ByPolicy = 'eine Richtlinie wirkt auch auf nicht persistente Worker'
+    # where a change is made on non-persistent servers (spec 5.8): in the master image, or by a policy
+    $script:InImage = 'bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen'
+    $script:ByPolicy = 'eine Richtlinie wirkt auch auf nicht persistente Server'
     # the source of a print element that is the report's own guidance, not a vendor's recommendation (ruling P3-R35)
     $script:OwnSource = 'WorkerPerf: Hinweis zur Auswertung'
     # conditions that only name a gap (ruling P3-R36)
@@ -81,6 +81,23 @@ BeforeAll {
                     [pscustomobject]@{ Situation = $s; List = $list; Position = "$s.$list[$k]"; When = $when; Source = $source; Texts = $texts }
                 }
             }
+        }
+    }
+    # the measured machine is "Server" in every text the report shows or offers to copy (wording rule of the customer,
+    # ruling P3-R66): the word Worker at the start of a word, also as the first part of a compound; the tool's name stays
+    $script:WorkerWord = '(?<![\p{L}\p{N}])Worker(?!Perf)'
+    function Get-CatalogueStrings($Node, [string]$Place) {
+        # every text of the catalogue file with its place ('situations.cpu.remedies[6].text'); the keys of terms are
+        # display words and count as texts. Not texts: version, vendors (keys and patterns), the conditions (when), and
+        # source, which quotes the title of a document literally
+        if ($Node -is [string]) { [pscustomobject]@{ Place = $Place; Text = $Node }; return }
+        if ($Node -is [array]) { for ($k = 0; $k -lt $Node.Count; $k++) { Get-CatalogueStrings $Node[$k] "$Place[$k]" }; return }
+        if ($Node -isnot [pscustomobject]) { return }
+        foreach ($p in $Node.PSObject.Properties) {
+            if ($p.Name -in 'when', 'source' -or ($Place -eq '' -and $p.Name -in 'version', 'vendors')) { continue }
+            $at = $p.Name; if ($Place) { $at = "$Place.$($p.Name)" }
+            if ($Place -eq 'terms') { [pscustomobject]@{ Place = "$at (Begriff)"; Text = $p.Name } }
+            Get-CatalogueStrings $p.Value $at
         }
     }
     function Get-Placeholders([string]$Text) { @([regex]::Matches($Text, '\{([A-Za-z0-9]+)\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) }
@@ -720,7 +737,7 @@ Describe 'Katalog in src' {
         }
         $times | Should -BeGreaterThan 15
     }
-    It 'nennt bei jeder Abhilfe, die Treiber, Richtlinie, Registrierung oder Scan-Ausschluss aendert, den Ort der Aenderung auf nicht persistenten Workern' {      # fix round 2, B1 (spec 5.8)
+    It 'nennt bei jeder Abhilfe, die Treiber, Richtlinie, Registrierung oder Scan-Ausschluss aendert, den Ort der Aenderung auf nicht persistenten Servern' {      # fix round 2, B1 (spec 5.8)
         $remedies = @($Elements | Where-Object { $_.List -eq 'remedies' })
         $changing = @($remedies | Where-Object { $_.Texts[0] -match 'Treiber|Richtlinie|Registrierung|Ausschl|ausnehmen|Ausnahme' })
         $changing.Count | Should -BeGreaterThan 40
@@ -738,11 +755,11 @@ Describe 'Katalog in src' {
         # what a restart of such a worker undoes says so
         $undone = @($remedies | Where-Object { $_.Texts[0] -match '^Treiber \{driver\} entfernen|in der Reihenfolge von HP entfernen|mit KmUninstall\.exe|Brother-Treiber vollständig entfernen' })
         $undone.Count | Should -Be 4
-        foreach ($e in $undone) { $e.Texts[0] | Should -Match 'am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image' -Because $e.Position }
+        foreach ($e in $undone) { $e.Texts[0] | Should -Match 'am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image' -Because $e.Position }
         # every element that empties the spool folder, in whatever words (follow-up of fix round 2: also Brother's reset)
         $emptied = @($Elements | Where-Object { ($_.Texts -join ' ') -match '(Spool-Ordner|PRINTERS)[^;]*(löschen|leeren)|(löschen|leeren)[^;]*(Spool-Ordner|PRINTERS)' })
         @($emptied | ForEach-Object { $_.Position }) | Should -Be @('print.remedies[10]', 'print.remedies[14]')
-        foreach ($e in $emptied) { $e.Texts[0] | Should -Match 'bei nicht persistenten Workern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' -Because $e.Position }
+        foreach ($e in $emptied) { $e.Texts[0] | Should -Match 'bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' -Because $e.Position }
         # ending a process or restarting an application lasts until it starts or fills the memory again, as a restart does
         $ended = @($remedies | Where-Object { $_.Texts[0] -match 'Prozess\b[^;]*\bbeenden' })
         @($ended | ForEach-Object { $_.Position }) | Should -Be @('cpu.remedies[0]')
@@ -755,15 +772,15 @@ Describe 'Katalog in src' {
         $g = Get-Guide (New-Engpass 'cpu' @{ cause = @{ kind = 'security'; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 } }; main = $null })
         $g.terms | Should -Contain 'Master-Image'; $g.terms | Should -Contain 'Nicht persistent'
     }
-    It 'sagt bei einem <S> vor der Messung, dass der Rueckblick auf nicht persistenten Workern nur bis zum letzten Neustart reicht' -ForEach @(      # fix round 2, B2
+    It 'sagt bei einem <S> vor der Messung, dass der Rueckblick auf nicht persistenten Servern nur bis zum letzten Neustart reicht' -ForEach @(      # fix round 2, B2
         @{ S = 'crash' }; @{ S = 'hang' }; @{ S = 'service' }; @{ S = 'print' }; @{ S = 'profileerror' }; @{ S = 'system' }
     ) {
         $ev = @{ kind = $S; app = 'simapp.exe'; service = 'SimSvc'; key = 'storage|D:'; users = @('user003'); count = 2 }
         $g = Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = ($ev + @{ before = $true }) })
         $g.conditions | Should -Contain 'before'
-        $step = @($g.checks | Where-Object { $_.text -match 'bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart' })
+        $step = @($g.checks | Where-Object { $_.text -match 'bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart' })
         $step.Count | Should -Be 1
-        $step[0].text | Should -Match 'eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde$'
+        $step[0].text | Should -Match 'eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde$'
         $step[0].where | Should -Match 'Vor der Messung'; $step[0].sign | Should -Match 'letzten Neustart'
         # after the step that asks whether it happened again
         $texts = @($g.checks | ForEach-Object { $_.text })
@@ -1009,6 +1026,31 @@ Describe 'Katalog in src' {
         'Messung auf Server {server} am' | Should -MatchExactly $pattern; 'Nur Benutzer „{user}“ ist betroffen' | Should -MatchExactly $pattern
         'in der Sitzung von {user}' | Should -Not -MatchExactly $pattern; 'eines Benutzers {duration} lang' | Should -Not -MatchExactly $pattern
     }
+    It 'nennt die gemessene Maschine in jedem Text des Katalogs Server, nie Worker' {                              # fix round 4, A3 (ruling P3-R66)
+        $strings = @(Get-CatalogueStrings (Get-Content -LiteralPath $CatalogueFile -Raw -Encoding UTF8 | ConvertFrom-Json) '')
+        $strings.Count | Should -BeGreaterThan 1200
+        # every text the loader knows is among them: an element's texts, a situation's, the parts outside the situations
+        $places = @($strings | ForEach-Object { $_.Place })
+        foreach ($p in 'terms.Master-Image', 'terms.Master-Image (Begriff)', 'copy.head', 'userView.many', 'lagebild.red', 'hints.skipped', 'fallbackNote',
+            'situations.cpu.title', 'situations.cpu.short', 'situations.cpu.meaning', 'situations.cpu.impact', 'situations.cpu.checks[0].text', 'situations.cpu.checks[0].where',
+            'situations.cpu.checks[0].sign', 'situations.cpu.remedies[0].text', 'situations.cpu.remedies[0].precondition', 'situations.print.contacts[0].text') { $places | Should -Contain $p }
+        @($places | Where-Object { $_ -match '\.(when|source)(\[|$)|^(version|vendors)' }) | Should -Be @()
+        @($strings | Where-Object { $_.Text -cmatch $WorkerWord } | ForEach-Object { $_.Place }) | Should -Be @()
+        # the fixed phrases of spec 5.8 say Server
+        $InImage | Should -BeExactly 'bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen'
+        $ByPolicy | Should -BeExactly 'eine Richtlinie wirkt auch auf nicht persistente Server'
+        @($strings | Where-Object { $_.Text.Contains($InImage) }).Count | Should -BeGreaterThan 40; @($strings | Where-Object { $_.Text.Contains($ByPolicy) }).Count | Should -BeGreaterThan 10
+        # the pattern finds the word of its own and the first part of a compound, and leaves the tool's name
+        foreach ($t in 'auf dem Worker', 'außerhalb des Workers', 'bei nicht persistenten Workern im Master-Image', 'in den gemessenen Worker-Ressourcen', '(Worker)', 'Citrix-Worker') { $t | Should -MatchExactly $WorkerWord }
+        foreach ($t in 'WorkerPerf: Hinweis zur Auswertung', 'Start-WorkerPerfCapture.ps1', 'auf dem Server', 'worker') { $t | Should -Not -MatchExactly $WorkerWord }
+    }
+    It 'nennt die gemessene Maschine in jedem Satz der Auswertung Server, nie Worker' {                           # fix round 4, A3 (ruling P3-R66)
+        $Texts.Count | Should -BeGreaterThan 190
+        @($Texts.Keys | Where-Object { $Texts[$_] -cmatch $WorkerWord } | Sort-Object) | Should -Be @()
+        $Texts['ohne'] | Should -Match 'ohne Engpass auf dem Server \('; $Texts['ohne.skipped'] | Should -Match 'ohne erkannten Engpass auf dem Server \('
+        $Texts['umfeld.network'] | Should -Match 'Betrifft die Sitzung, nicht den Server\.$'; $Texts['ohne.cause'] | Should -Match 'außerhalb des Servers oder in der Anwendung selbst'
+        $Texts['ohne.unmeasured'] | Should -Match '^ Kein Engpass in den gemessenen Ressourcen des Servers\. Nicht gemessen: '
+    }
 }
 
 Describe 'Katalog an der simulierten Stunde ohne Prozesse' {
@@ -1134,7 +1176,7 @@ Describe 'Nachweis der Druckempfehlungen' {
         }
         # what the section says about these elements still stands in them
         $find = { param($s, $start) @($Real.situations.$s.remedies | Where-Object { ([string]$_.text).StartsWith($start, [StringComparison]::Ordinal) })[0] }
-        (& $find 'crash' 'Ausnahme oder korrigierte Version der Schutzsoftware').text | Should -Match 'korrigierte Version bei nicht persistenten Workern im Master-Image'
+        (& $find 'crash' 'Ausnahme oder korrigierte Version der Schutzsoftware').text | Should -Match 'korrigierte Version bei nicht persistenten Servern im Master-Image'
         foreach ($start in 'Spool-Ordner von Hand leeren', 'Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt') { (& $find 'print' $start).text | Should -Match 'setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' }
         (& $find 'cpu' '{app} vom Benutzer schließen lassen').text | Should -Match 'das wirkt nur, bis die Anwendung wieder startet'
         (& $find 'memory' '{app} schließen und neu starten lassen').text | Should -Match 'nur frei, bis \{app\} ihn wieder belegt$'
@@ -1180,6 +1222,20 @@ Describe 'Nachweis der Druckempfehlungen' {
         $withForm.Count | Should -BeGreaterThan 9
         foreach ($p in 'cpu.checks[6]', 'cpu.checks[7]', 'cpu.checks[8]', 'memory.checks[5]') { $withForm | Should -Contain $p }
         $Doc | Should -Match 'Add-ins von ‹Anwendung› prüfen'; $Doc | Should -Match 'in der Sitzung von ‹Benutzer› mit Medienoptimierung lief'
+    }
+    It 'nennt die gemessene Maschine im Nachweis Server, nie Worker' {                                                              # fix round 4, A1 (ruling P3-R66)
+        # every line; of a row of a table of adopted sources not the first cell, which quotes the title of a document literally
+        $lines = @($Doc -split "`n"); $hits = New-Object System.Collections.Generic.List[string]
+        for ($n = 0; $n -lt $lines.Count; $n++) {
+            $text = $lines[$n]
+            if ($text -match '^\| .*? \| <https://') { $text = $text.Substring($text.IndexOf(' | <https://')) }
+            if ($text -cmatch $WorkerWord) { $hits.Add("Zeile $($n + 1): $($lines[$n].Substring(0, [Math]::Min(80, $lines[$n].Length)))") }
+        }
+        $hits.ToArray() | Should -Be @()
+        $Doc | Should -Match 'allgemein so beschreiben lässt: Server mit mehreren Sitzungen'
+        # where a row names the print servers and the measured server, it tells them apart
+        $Doc | Should -Match ([regex]::Escape('(Einrichtung der Druckserver, auf dem gemessenen Server nicht sichtbar)'))
+        $Doc | Should -Match ([regex]::Escape('(Komponenten der Druckserver, nicht des gemessenen Servers)'))
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
         @($Sourced | Where-Object { $_.Source -match 'Generic PCL' }) | Should -Be @()

@@ -37,9 +37,9 @@
     "WHQL": "Windows Hardware Quality Labs: das Prüfprogramm von Microsoft, in dem Hersteller ihre Treiber für Windows zertifizieren lassen.",
     "SNMP": "Ein Netzwerkprotokoll, über das Windows den Zustand eines Druckers abfragt.",
     "WSD": "Web Services for Devices: eine Anschlussart, bei der Windows einen Netzwerkdrucker selbst findet und einrichtet.",
-    "Master-Image": "Das Abbild, aus dem nicht persistente Worker bei jedem Neustart neu bereitgestellt werden. Eine Änderung, die bleiben soll, gehört deshalb in das Master-Image oder in eine Richtlinie.",
-    "Nicht persistent": "Ein Worker, der bei jedem Neustart neu aus dem Master-Image entsteht: Was auf ihm selbst geändert oder gespeichert wurde, ist danach verloren, auch seine Ereignisprotokolle.",
-    "Workspace Environment Management": "Citrix Workspace Environment Management (WEM) richtet die Benutzerumgebung ein und kann Prozessor und Arbeitsspeicher der Sitzungen steuern; auf dem Worker läuft dafür der WEM-Agent.",
+    "Master-Image": "Das Abbild, aus dem nicht persistente Server bei jedem Neustart neu bereitgestellt werden. Eine Änderung, die bleiben soll, gehört deshalb in das Master-Image oder in eine Richtlinie.",
+    "Nicht persistent": "Ein Server, der bei jedem Neustart neu aus dem Master-Image entsteht: Was auf ihm selbst geändert oder gespeichert wurde, ist danach verloren, auch seine Ereignisprotokolle.",
+    "Workspace Environment Management": "Citrix Workspace Environment Management (WEM) richtet die Benutzerumgebung ein und kann Prozessor und Arbeitsspeicher der Sitzungen steuern; auf dem Server läuft dafür der WEM-Agent.",
     "WebView2": "Laufzeitkomponente von Microsoft Edge, mit der Anwendungen wie Teams und Office Web-Inhalte anzeigen; ihr Prozess heißt msedgewebview2.exe.",
     "Medienoptimierung": "Audio, Video und Bildschirmfreigabe von Teams werden auf dem Endgerät verarbeitet statt auf dem Server.",
     "Add-in": "Zusatzmodul, das eine Office-Anwendung beim Start lädt.",
@@ -372,65 +372,65 @@
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Schlafende Tabs in Microsoft Edge einschalten (Richtlinie SleepingTabsEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Schlafende Tabs in Microsoft Edge einschalten (Richtlinie SleepingTabsEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "viele Tabs im Hintergrund offen sind und schlafende Tabs abgeschaltet sind",
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Weiterlaufen von Erweiterungen und Apps im Hintergrund nach dem Schließen von Microsoft Edge abschalten (Richtlinie BackgroundModeEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Weiterlaufen von Erweiterungen und Apps im Hintergrund nach dem Schließen von Microsoft Edge abschalten (Richtlinie BackgroundModeEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "Microsoft Edge nach dem Schließen aller Fenster weiter Rechenzeit verbraucht",
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Browser Content Redirection von Citrix für die betroffenen Seiten prüfen; im Modus „client fetch client render“ nimmt sie dem Server laut Citrix Netz-, CPU- und Speicherlast ab (Citrix-Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Browser Content Redirection von Citrix für die betroffenen Seiten prüfen; im Modus „client fetch client render“ nimmt sie dem Server laut Citrix Netz-, CPU- und Speicherlast ab (Citrix-Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Last von einzelnen Seiten mit Video oder Webkonferenz kommt und die Endgeräte die Umleitung unterstützen",
           "source": "Citrix: Browser content redirection (CVAD 2402 LTSR)"
         },
         {
           "when": ["cause.app", "app.webview2", "companion.security"],
-          "text": "Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen; Microsoft rät von pauschalen Ausschlüssen ab (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen; Microsoft rät von pauschalen Ausschlüssen ab (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "Anwendungen mit WebView2 beim Start auffällig lange brauchen und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
           "when": ["cause.app", "app.office"],
-          "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
+          "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
           "precondition": "die Störung ohne Add-ins ausbleibt und die Benutzer nach Rücksprache auf die Add-ins verzichten können",
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
           "when": ["cause.app", "app.outlook"],
-          "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
+          "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
           "precondition": "die Störung ohne Add-ins ausbleibt und die Benutzer nach Rücksprache auf die Add-ins verzichten können",
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
           "when": ["cause.app", "app.teams"],
-          "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
           "when": ["cause.app", "app.teams"],
-          "text": "Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen (Registrierungswert MaxFPS unter HKLM\\Software\\Microsoft\\Teams\\VMSS zwischen 5 und 10; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen (Registrierungswert MaxFPS unter HKLM\\Software\\Microsoft\\Teams\\VMSS zwischen 5 und 10; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "geteilte Bildschirme den Prozessor wiederholt belasten",
           "source": "Microsoft: New VDI solution for Teams"
         },
         {
           "when": ["scan"],
-          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
@@ -440,7 +440,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         }
@@ -641,19 +641,19 @@
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten (Richtlinie AutoDiscardSleepingTabsEnabled; eine Richtlinie wirkt auch auf nicht persistente Worker); es senkt laut Microsoft den Speicherbedarf, indem lange untätige Tabs im Hintergrund verworfen werden",
+          "text": "Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten (Richtlinie AutoDiscardSleepingTabsEnabled; eine Richtlinie wirkt auch auf nicht persistente Server); es senkt laut Microsoft den Speicherbedarf, indem lange untätige Tabs im Hintergrund verworfen werden",
           "precondition": "die Richtlinie das automatische Verwerfen abschaltet (ab Microsoft Edge 120)",
           "source": "Microsoft: Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled)"
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Speichergrenze je Instanz von Microsoft Edge setzen (Richtlinie TotalMemoryLimitMb; eine Richtlinie wirkt auch auf nicht persistente Worker); Edge verwirft dann Tabs, sobald die Grenze überschritten ist, laut Microsoft ohne Garantie, dass sie immer eingehalten wird",
+          "text": "Speichergrenze je Instanz von Microsoft Edge setzen (Richtlinie TotalMemoryLimitMb; eine Richtlinie wirkt auch auf nicht persistente Server); Edge verwirft dann Tabs, sobald die Grenze überschritten ist, laut Microsoft ohne Garantie, dass sie immer eingehalten wird",
           "precondition": "Microsoft Edge wiederholt der größte Verbraucher von Arbeitsspeicher ist (ab Microsoft Edge 80)",
           "source": "Microsoft: Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb)"
         },
         {
           "when": ["cause.app", "app.teams"],
-          "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
@@ -675,7 +675,7 @@
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
-          "text": "Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen (Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste; die Praxisquelle nennt als Größenordnung 3 Stunden; eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen (Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste; die Praxisquelle nennt als Größenordnung 3 Stunden; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "getrennte Sitzungen über Stunden Arbeitsspeicher belegen und die Benutzer ihre Arbeit dort nicht fortsetzen müssen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Group Policy Computer Settings for VDAs"
         }
@@ -826,17 +826,17 @@
         },
         {
           "when": ["scan"],
-          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         }
       ],
@@ -975,23 +975,23 @@
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "Active Write Back der Citrix Profilverwaltung abschalten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Worker); die Praxisquelle rät dazu, weil die Funktion den Dateiserver zusätzlich belastet, und nennt sie als standardmäßig eingeschaltet",
+          "text": "Active Write Back der Citrix Profilverwaltung abschalten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle rät dazu, weil die Funktion den Dateiserver zusätzlich belastet, und nennt sie als standardmäßig eingeschaltet",
           "precondition": "Benutzer nicht auf mehreren Servern zugleich angemeldet sind und Änderungen am Profil nicht schon während der Sitzung gesichert werden müssen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
         },
         {
           "when": ["scan"],
-          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         }
       ],
@@ -1161,27 +1161,27 @@
         },
         {
           "when": ["cause.app", "app.outlook"],
-          "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die OST-Datei im betroffenen Profilcontainer größer als 10 GB ist",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
         },
         {
           "when": ["scan"],
-          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Zeitplan der Scans in eine Zeit ohne angemeldete Benutzer legen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
-          "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Worker); die Praxisquelle nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
+          "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
           "precondition": "die Verzögerung regelmäßig bei Anmeldungen auftritt",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
         }
@@ -1281,7 +1281,7 @@
           "precondition": "die Ursache hinter der Anwendung vermutet wird"
         },
         {
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         }
@@ -1374,7 +1374,7 @@
           "precondition": "dieselbe Anwendung bei diesem Benutzer wiederholt hängt, bei anderen Benutzern aber nicht"
         },
         {
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         }
@@ -1538,7 +1538,7 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "Ursache der Dauerlast von {app} beheben lassen (Aktualisierung, Einstellung, Neustart der Anwendung; Aktualisierung und maschinenweite Einstellung bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Ursache der Dauerlast von {app} beheben lassen (Aktualisierung, Einstellung, Neustart der Anwendung; Aktualisierung und maschinenweite Einstellung bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{app} ohne Zutun des Benutzers ständig Last erzeugt"
         },
         {
@@ -1670,7 +1670,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Absturz eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Absturz eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
         },
@@ -1712,7 +1712,7 @@
         {
           "when": ["app.webview2"],
           "text": "Version der WebView2-Runtime feststellen: laut Microsoft können abgeschaltete Updates der Runtime zu Kompatibilitätsproblemen mit den Anwendungen führen, die sie nutzen",
-          "where": "Programme und Features auf dem Server: Microsoft Edge WebView2 Runtime; bei nicht persistenten Workern ist das der Stand des Master-Image",
+          "where": "Programme und Features auf dem Server: Microsoft Edge WebView2 Runtime; bei nicht persistenten Servern ist das der Stand des Master-Image",
           "sign": "Runtime deutlich älter als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Microsoft Edge - Update policies"
         },
@@ -1783,7 +1783,7 @@
           "when": ["app.printaurus"],
           "text": "Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen: laut AKI sollen beim Update auf Version 6.4 alle Komponenten zum selben Release gehören",
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Landschaftsinformationen der PrinTaurus GUI",
-          "sign": "Client auf dem Worker mit einem anderen Release als die Druckserver",
+          "sign": "Client auf dem Server mit einem anderen Release als die Druckserver",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         }
       ],
@@ -1795,35 +1795,35 @@
         },
         {
           "when": ["pattern.sharedmodule"],
-          "text": "Produkt, zu dem das gemeinsame Modul gehört, aktualisieren oder zum Test abschalten (dauerhaft bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Produkt, zu dem das gemeinsame Modul gehört, aktualisieren oder zum Test abschalten (dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "das Modul zu einem Add-in oder einer Erweiterung gehört, die sich abschalten lässt"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Abstürze immer das Modul dieses Treibers nennen, die Drucker über Citrix-Richtlinien zugeordnet werden und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.Kyocera"],
-          "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der KX-Treiber installiert ist und die Benutzer seine zusätzlichen Funktionen nicht brauchen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
           "when": ["pattern.securitymodule"],
-          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Betreuung klären (eine korrigierte Version bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen; eine Ausnahme in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst ebenfalls im Master-Image)",
+          "text": "Ausnahme oder korrigierte Version der Schutzsoftware mit deren Betreuung klären (eine korrigierte Version bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen; eine Ausnahme in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst ebenfalls im Master-Image)",
           "precondition": "ein Modul der Schutzsoftware bei jedem dieser Abstürze genannt ist"
         },
         {
           "when": ["pattern.manyusers"],
-          "text": "Änderung zurücknehmen oder die korrigierte Version von {app} einspielen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Änderung zurücknehmen oder die korrigierte Version von {app} einspielen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Abstürze nach einer Installation oder Aktualisierung begonnen haben"
         },
         {
@@ -1833,31 +1833,31 @@
         },
         {
           "when": ["app.webview2"],
-          "text": "WebView2-Runtime auf den aktuellen Stand bringen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "WebView2-Runtime auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Runtime älter ist als der aktuelle Stand von Microsoft und ihre automatische Aktualisierung abgeschaltet ist",
           "source": "Microsoft: Microsoft Edge - Update policies"
         },
         {
           "when": ["app.office"],
-          "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
+          "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
           "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Update Office LTSC 2024"
         },
         {
           "when": ["app.outlook"],
-          "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
+          "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
           "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Update Office LTSC 2024"
         },
         {
           "when": ["app.teams"],
-          "text": "Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt (ms-teams.exe, msedgewebview2.exe, ms-teamsupdate.exe, msteams_autostarter.exe; in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt (ms-teams.exe, msedgewebview2.exe, ms-teamsupdate.exe, msteams_autostarter.exe; in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Schutzsoftware nachweislich in Teams eingreift (Meldung oder Modul der Schutzsoftware beim Absturz) und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Include or exclude Teams from antivirus or DLP applications"
         },
         {
           "when": ["app.printaurus"],
-          "text": "PrinTaurus auf eine Version bringen, die AKI noch unterstützt (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); laut AKI sind alle Versionen vor 6.2 zum 31. Dezember 2025 abgekündigt",
+          "text": "PrinTaurus auf eine Version bringen, die AKI noch unterstützt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); laut AKI sind alle Versionen vor 6.2 zum 31. Dezember 2025 abgekündigt",
           "precondition": "der SmartSpread Client älter als Version 6.2 ist",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         }
@@ -1932,7 +1932,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Hänger eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Hänger eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
         },
@@ -2003,7 +2003,7 @@
           "when": ["app.printaurus"],
           "text": "Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen: laut AKI sollen beim Update auf Version 6.4 alle Komponenten zum selben Release gehören",
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Landschaftsinformationen der PrinTaurus GUI",
-          "sign": "Client auf dem Worker mit einem anderen Release als die Druckserver",
+          "sign": "Client auf dem Server mit einem anderen Release als die Druckserver",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         }
       ],
@@ -2015,7 +2015,7 @@
         },
         {
           "when": ["pattern.manyusers"],
-          "text": "Änderung zurücknehmen oder die korrigierte Version von {app} einspielen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Änderung zurücknehmen oder die korrigierte Version von {app} einspielen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Hänger nach einer Installation oder Aktualisierung begonnen haben"
         },
         {
@@ -2062,7 +2062,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Ausfall eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Ausfall eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
         },
@@ -2100,7 +2100,7 @@
           "precondition": "der Fehler nur bei knappem Arbeitsspeicher auftritt"
         },
         {
-          "text": "Neustart des Dienstes nach einem Fehler einstellen (Registerkarte „Wiederherstellung“; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Neustart des Dienstes nach einem Fehler einstellen (Registerkarte „Wiederherstellung“; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Dienst nach einem Ausfall nicht von selbst wieder startet und sein Hersteller das zulässt"
         }
       ],
@@ -2175,7 +2175,7 @@
         {
           "when": ["driver.shared"],
           "text": "Treiberisolierung von {driver} prüfen: der Treiber läuft im Prozess des Dienstes „Druckwarteschlange“ oder teilt sich einen Prozess mit anderen Treibern",
-          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“; ändern lässt sich die Einstellung je Treiber in der Druckverwaltung (Treiber, Kontextmenü des Treibers), bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen",
+          "where": "Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“; ändern lässt sich die Einstellung je Treiber in der Druckverwaltung (Treiber, Kontextmenü des Treibers), bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen",
           "sign": "Isolierung „keine“ (Standardeinstellung für Treiber, deren Installationsdatei die Isolierung nicht als unterstützt angibt) oder „gemeinsam“",
           "source": "Microsoft: Printer driver isolation"
         },
@@ -2318,7 +2318,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Druckproblem eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Druckproblem eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
           "source": "WorkerPerf: Hinweis zur Auswertung"
@@ -2327,55 +2327,55 @@
       "remedies": [
         {
           "when": ["driver.shared", "pattern.printdriver"],
-          "text": "Treiber {driver} in einem eigenen Prozess laufen lassen (Isolierung „isoliert“, je Treiber einstellbar in der Druckverwaltung; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiber {driver} in einem eigenen Prozess laufen lassen (Isolierung „isoliert“, je Treiber einstellbar in der Druckverwaltung; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Treiber in einem eigenen Prozess lauffähig ist (bei Isolierung „keine“ hat sein Hersteller das nicht zugesagt), häufig Fehler verursacht oder Arbeitsspeicher verliert und damit andere Treiber im selben Prozess stört und die Wirkung zuerst auf einem Testserver geprüft ist",
           "source": "Microsoft: Printer driver isolation"
         },
         {
           "when": ["spooler.crash", "pattern.printdriver"],
-          "text": "Treiber {driver} entfernen und die betroffenen Drucker zum Test mit dem Citrix-Universaltreiber oder einem generischen Microsoft-Treiber betreiben (am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiber {driver} entfernen und die betroffenen Drucker zum Test mit dem Citrix-Universaltreiber oder einem generischen Microsoft-Treiber betreiben (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Abstürze des Dienstes „Druckwarteschlange“ immer das Modul dieses Treibers nennen, der Treiber von einem Druckerhersteller stammt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Citrix: Troubleshooting"
         },
         {
           "when": ["driver.shared", "spooler.crash"],
-          "text": "Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren (Registrierungswert PrintDriverIsolationOverrideCompat); der Dienst „Druckwarteschlange“ isoliert dann alle Treiber, die die Isolierung nicht ausdrücklich ablehnen (eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren (Registrierungswert PrintDriverIsolationOverrideCompat); der Dienst „Druckwarteschlange“ isoliert dann alle Treiber, die die Isolierung nicht ausdrücklich ablehnen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "Treiber mit der Isolierung „keine“ den Dienst „Druckwarteschlange“ zum Absturz bringen, die Wirkung auf einem Testserver geprüft ist und die Richtlinie auf dem Server gilt (Microsoft beschreibt die Richtlinie für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Citrix-Universaltreiber als Regel verwenden und nicht mehr benötigte Druckertreiber deinstallieren, damit Zahl und Konflikte der Treiber klein bleiben (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Citrix-Universaltreiber als Regel verwenden und nicht mehr benötigte Druckertreiber deinstallieren, damit Zahl und Konflikte der Treiber klein bleiben (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "Citrix die Drucker anlegt (Clientdrucker oder Sitzungsdrucker über Citrix-Richtlinien), die Drucker mit dem Universaltreiber die benötigten Funktionen bieten und die Treiber in einem Wartungsfenster entfernt werden",
           "source": "Citrix: Best practices"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Worker)",
+          "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Drucker über Citrix-Richtlinien zugeordnet werden, der Universaltreiber nicht für alle Drucker in Frage kommt und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.HP"],
-          "text": "Treiberwahl für automatisch angelegte Clientdrucker von HP nach dem Endgerät richten; laut HP ist der Citrix-Universaltreiber die bessere Wahl für Windows-Endgeräte, der HP Universal Print Driver für Thin Clients und Endgeräte ohne Windows (Treiberwechsel bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiberwahl für automatisch angelegte Clientdrucker von HP nach dem Endgerät richten; laut HP ist der Citrix-Universaltreiber die bessere Wahl für Windows-Endgeräte, der HP Universal Print Driver für Thin Clients und Endgeräte ohne Windows (Treiberwechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein HP-Treiber für Clientdrucker ersetzt werden soll",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.HP"],
-          "text": "Hostbasierte HP-Treiber nicht auf dem Server betreiben; HP empfiehlt sie auf Citrix-Servern nicht, und laut HP können diese Clientdrucker über den Citrix-Universaltreiber bedient werden, während der hostbasierte Treiber auf dem Endgerät bleibt (Entfernen des Treibers bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Hostbasierte HP-Treiber nicht auf dem Server betreiben; HP empfiehlt sie auf Citrix-Servern nicht, und laut HP können diese Clientdrucker über den Citrix-Universaltreiber bedient werden, während der hostbasierte Treiber auf dem Endgerät bleibt (Entfernen des Treibers bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{driver} ein hostbasierter Treiber ist und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
         },
         {
           "when": ["pattern.printdriver", "driver.vendor.HP"],
-          "text": "HP Universal Print Driver in der Reihenfolge von HP entfernen (erst alle Drucker löschen, die ihn verwenden, dann den Treiber in den Druckservereigenschaften auf der Registerkarte „Treiber“; am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "HP Universal Print Driver in der Reihenfolge von HP entfernen (erst alle Drucker löschen, die ihn verwenden, dann den Treiber in den Druckservereigenschaften auf der Registerkarte „Treiber“; am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein HP Universal Print Driver entfernt oder ersetzt werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
@@ -2387,19 +2387,19 @@
         },
         {
           "when": ["spooler.crash"],
-          "text": "Spool-Ordner von Hand leeren (Dienst „Druckwarteschlange“ anhalten, die Dateien im Spool-Ordner löschen, Dienst wieder starten); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Workern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
+          "text": "Spool-Ordner von Hand leeren (Dienst „Druckwarteschlange“ anhalten, die Dateien im Spool-Ordner löschen, Dienst wieder starten); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
           "precondition": "die Benutzer des Servers informiert sind und der Neustart des Dienstes nicht hilft oder der Ausfall sich wiederholt",
           "source": "Citrix: Troubleshooting"
         },
         {
           "when": ["spooler.crash"],
-          "text": "Spool-Ordner in der Schutzsoftware vom Scan ausnehmen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Spool-Ordner in der Schutzsoftware vom Scan ausnehmen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Schutzsoftware nachweislich Dateien blockiert, die der Dienst „Druckwarteschlange“ braucht (Meldung der Schutzsoftware zur Uhrzeit des Ausfalls), und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Troubleshoot printing issues caused by Print Spooler service not running"
         },
         {
           "when": ["queue.stuck"],
-          "text": "Treiber der betroffenen Druckwarteschlange auf die aktuelle Version des Herstellers bringen; ist er schon aktuell, einen generischen, mit Windows gelieferten Treiber verwenden (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Treiber der betroffenen Druckwarteschlange auf die aktuelle Version des Herstellers bringen; ist er schon aktuell, einen generischen, mit Windows gelieferten Treiber verwenden (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "sich hängende oder fehlgeschlagene Aufträge auf einen Treiber eingrenzen lassen",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
@@ -2411,60 +2411,60 @@
         },
         {
           "when": ["queue.stuck", "driver.vendor.Brother"],
-          "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Workern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
+          "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
           "precondition": "Aufträge an Brother-Geräten mit Netzwerkanschluss im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ stehen bleiben, sich in der Druckwarteschlange nicht einzeln löschen lassen und die Benutzer des Servers informiert sind (die Seite von Brother nennt Windows Vista bis 10)",
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },
         {
           "when": ["driver.vendor.HP"],
-          "text": "HP Universal Print Driver auf dem Server im „Traditional Mode“ installieren (install.exe oder Druckerinstallations-Assistent); den „Dynamic Mode“ unterstützt HP auf Citrix-Servern nicht, weil sich dann mehrere Benutzer den einen Anschluss der Druckwarteschlange teilen (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "HP Universal Print Driver auf dem Server im „Traditional Mode“ installieren (install.exe oder Druckerinstallations-Assistent); den „Dynamic Mode“ unterstützt HP auf Citrix-Servern nicht, weil sich dann mehrere Benutzer den einen Anschluss der Druckwarteschlange teilen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der HP Universal Print Driver auf dem Server im „Dynamic Mode“ installiert ist",
           "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
         },
         {
           "when": ["driver.vendor.Kyocera"],
-          "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der KX-Treiber installiert ist und die Benutzer seine zusätzlichen Funktionen nicht brauchen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
           "when": ["driver.vendor.Kyocera"],
-          "text": "KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren, sondern erst die alte Version deinstallieren und dann die neue installieren; die Aktualisierung per Installationsprogramm hat Kyocera in Druckserver-Umgebungen entfernt (bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren, sondern erst die alte Version deinstallieren und dann die neue installieren; die Aktualisierung per Installationsprogramm hat Kyocera in Druckserver-Umgebungen entfernt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein KX-Treiber auf einem Server mit freigegebenen Druckern erneuert werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
           "when": ["driver.vendor.Kyocera"],
-          "text": "Kyocera-Treiber aus einem Web-Paket mit KmUninstall.exe aus dem Ordner \\Program Files\\Kyocera entfernen und danach die Treiberliste kontrollieren; laut Kyocera lassen sich alternative Treiber in manchen Fällen nicht mit dem Deinstallationsprogramm löschen (am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Kyocera-Treiber aus einem Web-Paket mit KmUninstall.exe aus dem Ordner \\Program Files\\Kyocera entfernen und danach die Treiberliste kontrollieren; laut Kyocera lassen sich alternative Treiber in manchen Fällen nicht mit dem Deinstallationsprogramm löschen (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Kyocera-Treiber entfernt werden soll, im Startmenü ein Eintrag zum Deinstallieren fehlt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: Release Notes April 29, 2025 (DVD Contents)"
         },
         {
           "when": ["driver.vendor.Kyocera", "driver.v3"],
-          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 3 auf den KX-Treiber Typ 4 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht und hat zum Beispiel keinen Status Monitor (Wechsel bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 3 auf den KX-Treiber Typ 4 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht und hat zum Beispiel keinen Status Monitor (Wechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Wechsel auf die Bauart Typ 4 erwogen wird",
           "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
         },
         {
           "when": ["driver.vendor.Kyocera", "driver.v4"],
-          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 4 (PCL 6 oder XPS) auf den KX-Treiber Typ 3 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht, der Funktionsumfang beider unterscheidet sich (Wechsel bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 4 (PCL 6 oder XPS) auf den KX-Treiber Typ 3 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht, der Funktionsumfang beider unterscheidet sich (Wechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Wechsel auf die Bauart Typ 3 erwogen wird",
           "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
         },
         {
           "when": ["driver.vendor.Brother"],
-          "text": "Brother Universal Printer Driver als gemeinsamen Treiber für die Brother-Geräte im Netz prüfen (ein Treiber statt je Modell ein eigener, nur für Geräte mit Netzwerkanschluss); die gelesene Seite von Brother nennt Windows Server nur bis 2016 (Installation bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Brother Universal Printer Driver als gemeinsamen Treiber für die Brother-Geräte im Netz prüfen (ein Treiber statt je Modell ein eigener, nur für Geräte mit Netzwerkanschluss); die gelesene Seite von Brother nennt Windows Server nur bis 2016 (Installation bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "mehrere Brother-Treiber für einzelne Modelle installiert sind und Brother den Treiber für Windows Server 2022 anbietet",
           "source": "Brother: Use the Universal Printer Driver for BR-Script. (PostScript language emulation)"
         },
         {
           "when": ["driver.vendor.Brother"],
-          "text": "Brother-Treiber vollständig entfernen (zuerst über „Brother Utilities“ deinstallieren, sonst mit dem „Uninstall Tool“ von Brother; Administratorrechte nötig); die Seite von Brother nennt dafür Windows 7 bis 11 (am Worker selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen)",
+          "text": "Brother-Treiber vollständig entfernen (zuerst über „Brother Utilities“ deinstallieren, sonst mit dem „Uninstall Tool“ von Brother; Administratorrechte nötig); die Seite von Brother nennt dafür Windows 7 bis 11 (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Brother-Treiber entfernt oder neu installiert werden soll, Brother das „Uninstall Tool“ für das Betriebssystem des Servers anbietet und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Brother: Uninstall the Brother Software and Drivers (Windows)"
         },
         {
-          "text": "PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, bei doppelt angezeigten Druckern auf Version 6.4 oder neuer (Client bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen); laut AKI behebt 6.4 Fehler des Clients, die Druckwarteschlangen doppelt anzeigten",
+          "text": "PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, bei doppelt angezeigten Druckern auf Version 6.4 oder neuer (Client bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); laut AKI behebt 6.4 Fehler des Clients, die Druckwarteschlangen doppelt anzeigten",
           "precondition": "der Client älter als Version 6.4 ist oder einen anderen Release-Stand hat als die Druckserver (die Regel, dass alle Komponenten zum selben Release gehören sollen, nennt AKI für das Update auf 6.4)",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         },
@@ -2524,7 +2524,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Profilfehler eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Profilfehler eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
         },
@@ -2606,7 +2606,7 @@
         },
         {
           "when": ["before"],
-          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Workern beginnen die Ereignisprotokolle mit dem letzten Neustart, eine Meldung eines früheren Tages ist deshalb nur zu sehen, wenn der Worker seither nicht neu gestartet wurde",
+          "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, eine Meldung eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
         },

@@ -45,7 +45,7 @@ Describe 'Durchlauf Simulation -> Bericht' {
         $i = Get-Hit 'backend'
         $i.delayProcs[0].name | Should -Be 'nexus.exe'; $i.resources | Should -Be @('endpoint')
         ($i.endpoints | Where-Object name -eq 'Oracle-Listener').maxMs | Should -BeGreaterOrEqual 200
-        $i.text | Should -Match 'außerhalb des Workers'
+        $i.text | Should -Match 'außerhalb des Servers'
     }
     It 'bewertet alle zwoelf Messwerte gegen das Soll' {
         $D.sollIst.Count | Should -Be 12; @($D.sollIst | Where-Object measured).Count | Should -Be 12
@@ -122,15 +122,15 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         $i[0].cause.kind | Should -Be 'nodata'; $i[0].main | Should -BeNullOrEmpty; $n.unmeasured.input | Should -BeTrue
         $i[0].text | Should -Match 'CPU-Engpass \(.+\)\. Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar\. Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor\.$'
     }
-    It 'schliesst einen Engpass in einer nicht gemessenen Worker-Ressource nicht aus' {   # Abschlussrunde I3
+    It 'schliesst einen Engpass in einer nicht gemessenen Ressource des Servers nicht aus' {   # Abschlussrunde I3
         $disk = $Exp | Where-Object Key -eq 'disk'; $out = Join-Path $TestDrive 'novol.html'
         $bare = Copy-SimRun $R.Run (Join-Path $TestDrive 'novol') @('volumes.csv')
         [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $bare -OutFile $out -From (Get-ServerTime $R.Run ($disk.StartMs - 60000)) -To (Get-ServerTime $R.Run ($disk.EndMs + 60000)) 6>$null)
         $n = Get-ReportData $out
         $n.unmeasured.worker | Should -Be @('Datenträger-Antwortzeit'); ($n.sollIst | Where-Object id -eq 'disk.latency').measured | Should -BeFalse
         $i = @($n.incidents | Where-Object type -eq 'ohne-engpass'); $i.Count | Should -Be 1
-        $i[0].text | Should -Match 'Kein Engpass in den gemessenen Worker-Ressourcen\. Nicht gemessen: Datenträger-Antwortzeit; ein Engpass dort ist nicht ausgeschlossen\.'
-        $i[0].text | Should -Not -Match 'außerhalb des Workers'
+        $i[0].text | Should -Match 'Kein Engpass in den gemessenen Ressourcen des Servers\. Nicht gemessen: Datenträger-Antwortzeit; ein Engpass dort ist nicht ausgeschlossen\.'
+        $i[0].text | Should -Not -Match 'außerhalb des Servers'
     }
     It 'wertet einen Zeitausschnitt aus' {
         $out = Join-Path $TestDrive 'cut.html'; $from = [DateTimeOffset]::FromUnixTimeMilliseconds($R.StartMs + 240000).LocalDateTime

@@ -103,9 +103,9 @@ Describe 'Get-WorkerPerfIncidentText' {
     }
     It 'beschreibt eine Verzoegerung ohne Engpass' {
         $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; Add-Detail $m $i
-        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Worker (Spitze 300 ms, Soll unter 150 ms). ' +
+        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Server (Spitze 300 ms, Soll unter 150 ms). ' +
             'Betroffen: 1 Sitzung. Höchste Verzögerung in EXCEL.EXE (user017). ' +
-            'Die Ursache liegt außerhalb des Workers oder in der Anwendung selbst (Datenbank, Proxy, Netz). Gegenstelle DB: 350 ms.')
+            'Die Ursache liegt außerhalb des Servers oder in der Anwendung selbst (Datenbank, Proxy, Netz). Gegenstelle DB: 350 ms.')
     }
     It 'stellt einem Dauerzustand den Hinweis voran und nennt dauerhaft erhoehte Signale' {
         $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97; $i.Chronic = $true
@@ -141,7 +141,7 @@ Describe 'Signalnamen im Klartext' {
     It 'nennt bei Netzstrecken die Bezeichnung des Schwellwerts statt der Sitzungsbezeichnung' {
         $m = New-TestModel; $i = New-TestIncident 'network' 'ica.rtt' 225; $i.Type = 'umfeld'; $i.Lead = $null
         $i.Findings[0].Label = 'user018 (#3)'; $i.Findings[0].Scope = 'session'; $i.Findings[0].SessionIndex = 1; Add-Detail $m $i
-        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be '23:13:35–23:14:05: Netzstrecke von user018 auffällig (ICA Round Trip Spitze 225 ms, Soll unter 150 ms). Betrifft die Sitzung, nicht den Worker.'
+        Get-WorkerPerfIncidentText -Incident $i -Model $m -Thresholds $Th -Texts $Texts | Should -Be '23:13:35–23:14:05: Netzstrecke von user018 auffällig (ICA Round Trip Spitze 225 ms, Soll unter 150 ms). Betrifft die Sitzung, nicht den Server.'
     }
     It 'nennt dauerhaft erhoehte Signale mit Instanz nur, wenn die Bezeichnung abweicht' {
         $m = New-TestModel; $i = New-TestIncident 'cpu' 'cpu.host' 97
@@ -274,13 +274,13 @@ Describe 'Nicht gemessene Signale im Klartext' {                                
         Get-Text $m $i | Should -Match ([regex]::Escape('Soll unter 75 %). Keine Sitzung mit messbarer Eingabeverzögerung. Hauptverursacher:'))
         Get-Text $m $i @{ Input = $true; Worker = @() } | Should -Match ([regex]::Escape('Soll unter 75 %). Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar. Hauptverursacher:'))
     }
-    It 'schliesst einen Engpass in nicht gemessenen Worker-Ressourcen nicht aus' {
+    It 'schliesst einen Engpass in nicht gemessenen Ressourcen des Servers nicht aus' {
         $m = New-TestModel; $i = New-TestIncident 'input' 'input.session' 300 -Type 'ohne-engpass'; Add-Detail $m $i
         $u = @{ Input = $false; Worker = @($Th['disk.latency'].label, $Th['smb.latency'].label) }
-        Get-Text $m $i $u | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Worker (Spitze 300 ms, Soll unter 150 ms). ' +
+        Get-Text $m $i $u | Should -Be ('23:13:35–23:14:05: Eingabeverzögerung ohne Engpass auf dem Server (Spitze 300 ms, Soll unter 150 ms). ' +
             'Betroffen: 1 Sitzung. Höchste Verzögerung in EXCEL.EXE (user017). ' +
-            'Kein Engpass in den gemessenen Worker-Ressourcen. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen. Gegenstelle DB: 350 ms.')
-        Get-Text $m $i @{ Input = $false; Worker = @() } | Should -Match 'Die Ursache liegt außerhalb des Workers'
+            'Kein Engpass in den gemessenen Ressourcen des Servers. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen. Gegenstelle DB: 350 ms.')
+        Get-Text $m $i @{ Input = $false; Worker = @() } | Should -Match 'Die Ursache liegt außerhalb des Servers'
     }
 }
 Describe 'Belege bei Umfeld und Dauerzustand' {                                     # Abschlussrunde I2
