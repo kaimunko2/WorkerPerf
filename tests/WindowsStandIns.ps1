@@ -490,6 +490,7 @@ function Get-WorkerPerfPrintDriverAttribute($Driver) { Add-WinStandInCall 'regis
 
 # health picture: registry, native calls and the oldest entry of a log
 function Get-WorkerPerfRegistryValues([string]$SubKey) {
+    # values come back as they stand in Registry, like the thin call, which does not expand REG_EXPAND_SZ (%USERNAME% stays)
     Add-WinStandInCall ('registry:' + $SubKey)
     if ($script:WinFake.RegistryFail.ContainsKey($SubKey)) { throw $script:WinFake.RegistryFail[$SubKey] }
     if (-not $script:WinFake.Registry.ContainsKey($SubKey)) { return $null }

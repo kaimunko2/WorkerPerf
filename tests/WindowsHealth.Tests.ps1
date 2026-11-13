@@ -263,4 +263,60 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
         $c = @(ConvertTo-WorkerPerfControllerEntries 'ddc01.klinik.example,ddc02  10.1.1.5' 'policy'); @($c.Entry) | Should -Be @('ddc01.klinik.example', 'ddc02', '10.1.1.5')
         ConvertTo-WorkerPerfControllerKind '12345' | Should -Be 'short'                             # eine Zahl ist keine Adresse
     }
+    It 'haelt das Bereichslimit ueber alle drei Abfragen der Container ein' {   # Fix-Runde 1, Punkt 1
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null)
+        foreach ($cls in 'MSFT_Disk', 'MSFT_Partition', 'MSFT_Volume') { $script:WinFake.Delay['cim:' + $cls] = 4000 }
+        $script:WorkerPerfWinHealthAreaBudgetSec = 5
+        try { $h = Get-WorkerPerfHealth 3>$null } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-V $h 'profile.containers').State | Should -Be 'unreadable'; (Get-V $h 'profile.containers').Reason | Should -Be 'timeout'
+        $h.Areas['profile'].DurationMs | Should -BeLessThan 6500                                    # nicht 12 s: jede Abfrage bekommt nur den Rest
+        $script:WinFake.Calls.Keys | Should -Not -Contain 'cim:MSFT_Volume'                         # nach dem Limit keine Abfrage mehr
+    }
+    It 'beendet den Gang durch die Registrierung am Zeitlimit des Bereichs' {   # Fix-Runde 1, Punkt 2
+        foreach ($i in 1..12) {
+            foreach ($k in ('SOFTWARE\Policies\Citrix\Sim{0:D2}' -f $i), ('SOFTWARE\Policies\Citrix\UserProfileManager\Sim{0:D2}' -f $i)) {
+                $script:WinFake.Registry[$k] = [ordered]@{ SimWert = $i }; $script:WinFake.Delay['registry:' + $k] = 250
+            }
+        }
+        $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Read-Health } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        foreach ($id in 'vda.policyRaw', 'profile.policyGpo') { (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'timeout' -Because $id }
+        $h.Areas['vda'].DurationMs | Should -BeLessThan 2500; $h.Areas['profile'].DurationMs | Should -BeLessThan 2500   # nicht 3 s fuer 12 Unterschluessel
+    }
+    It 'laesst die Kopien der Benutzerrichtlinien je Sitzung in den Rohwerten der Richtlinie aus' {   # Fix-Runde 1, Punkt 3
+        $script:WinFake.Registry['SOFTWARE\Policies\Citrix\0'] = [ordered]@{}
+        $script:WinFake.Registry['SOFTWARE\Policies\Citrix\0\User'] = [ordered]@{ SimSitzung = 1 }
+        $script:WinFake.Registry['SOFTWARE\Policies\Citrix\12'] = [ordered]@{ SimZwoelf = 1 }
+        $script:WinFake.Registry['SOFTWARE\Policies\Citrix\12\User'] = [ordered]@{ SimSitzung = 2 }
+        $raw = @((Get-V (Read-Health) 'vda.policyRaw').Value)
+        @($raw.Key | Select-Object -Unique) | Should -Be @('ICAPolicies'); @($raw.Name | Sort-Object) | Should -Be @('SimDrucker', 'SimRichtlinie')
+    }
+    It 'macht aus einem Registrierungswert vom falschen Typ keinen Text' {   # Fix-Runde 1, Punkt 4
+        $script:WinFake.Registry['SYSTEM\CurrentControlSet\Control\Norskale\Agent Host']['AgentCacheAlternateLocation'] = [byte[]](0, 0)
+        $script:WinFake.Registry['SOFTWARE\Policies\Norskale\Agent Host']['BrokerSvcName'] = [string[]]@('wem01.klinik.example')   # eine Zeichenkette als Liste: bleibt eine Liste
+        $h = Read-Health
+        foreach ($id in 'vda.wemCacheLocation', 'vda.wemServer') { (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'error' -Because $id }
+        (Get-V $h 'vda.wemService').State | Should -Be 'read'
+    }
+    It 'liest Pfade der Richtlinie so, wie sie geschrieben stehen' {   # Fix-Runde 1, Punkt 5
+        ((Get-V (Read-Health) 'profile.policyGpo').Value | Where-Object Name -eq 'PathToUserStore').Value | Should -Be '\\fs01\upm$\%USERNAME%.%USERDOMAIN%'
+        # der duenne Aufruf (unter Linux nicht ausfuehrbar) erweitert REG_EXPAND_SZ nicht
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1'), [ref]$null, [ref]$null)
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-WorkerPerfRegistryValues' }, $true)
+        $fn.Body.Extent.Text | Should -Match 'GetValue\(\$name, \$null, \[Microsoft\.Win32\.RegistryValueOptions\]::DoNotExpandEnvironmentNames\)'
+    }
+    It 'beendet die Schleifen ueber Sitzungen und Container am Zeitlimit des Bereichs' {   # Fix-Runde 1, Punkt 6
+        foreach ($i in 1..12) { $script:WinFake.Sessions.Add([pscustomobject]@{ SessionId = 10 + $i; State = 'Active'; WinStation = ''; User = ('sim{0:D2}' -f $i); Domain = 'KLINIK'; ClientName = ''; LogonTime = [datetime]::Now; IdleSec = 0 }) }
+        foreach ($i in 1..12) { Add-WinStandInDisk ('sim{0:D2}' -f $i) ('C:\Users\sim{0:D2}_UPM_local\UpmTempMount' -f $i) (300 + $i) }
+        Mock ConvertTo-WorkerPerfHealthSession { Start-Sleep -Milliseconds 250; [ordered]@{ Id = 0 } }
+        Mock ConvertTo-WorkerPerfProfileContainer { Start-Sleep -Milliseconds 250; [ordered]@{ Location = '' } }
+        $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Read-Health } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        foreach ($id in 'sessions.list', 'profile.containers') { (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'timeout' -Because $id }
+        $h.Areas['sessions'].DurationMs | Should -BeLessThan 2500; $h.Areas['profile'].DurationMs | Should -BeLessThan 2500
+    }
+    It 'nennt einen anderen Fehler der VDA-Klasse nicht: nicht installiert' {   # Fix-Runde 1, Punkt 7
+        $script:WinFake.CimFail['Citrix_VirtualDesktopInfo'] = New-WinStandInDenied 'cim'
+        $v = Get-V (Read-Health) 'vda.persistentDataLocation'; $v.State | Should -Be 'unreadable'; $v.Reason | Should -Be 'rights'
+    }
 }

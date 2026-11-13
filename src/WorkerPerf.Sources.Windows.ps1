@@ -1317,6 +1317,14 @@ function ConvertTo-WorkerPerfRegistryText($Value) {
     return [string]$Value
 }
 
+function ConvertTo-WorkerPerfRegistrySingleText($Value) {
+    # A registry value that must be one text (REG_SZ, REG_EXPAND_SZ, or a number as text); a multi-string or binary value
+    # is not turned into a text but thrown as an error.
+    if ($Value -is [string]) { return $Value }
+    if ($Value -is [System.Collections.IEnumerable]) { throw (New-Object System.IO.InvalidDataException 'Registrierungswert hat nicht den Typ Text.') }
+    return [string]$Value
+}
+
 function ConvertTo-WorkerPerfWinHealthTime($Value) {
     # A time of health.json from a DateTime; 0 (unknown) for anything else and for DateTime.MinValue.
     if ($Value -is [datetime]) { return (ConvertTo-WorkerPerfHealthTime $Value) }
@@ -1481,11 +1489,12 @@ function Open-WorkerPerfRegistryKey([string]$SubKey) {
 
 function Get-WorkerPerfRegistryValues([string]$SubKey) {
     # The values (name -> value) and the names of the subkeys of a key below HKLM, read only; $null when it is missing.
+    # A REG_EXPAND_SZ value is returned as written: expanding it would put the collector's own account into it.
     $key = Open-WorkerPerfRegistryKey $SubKey
     if ($null -eq $key) { return $null }
     try {
         $values = [ordered]@{}
-        foreach ($name in @($key.GetValueNames())) { $values[[string]$name] = $key.GetValue($name) }
+        foreach ($name in @($key.GetValueNames())) { $values[[string]$name] = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
         return @{ Values = $values; SubKeys = [string[]]@($key.GetSubKeyNames()) }
     }
     finally { $key.Close() }
@@ -1639,12 +1648,19 @@ function Get-WorkerPerfProfileDisks {
     # New-WorkerPerfProfileMap; each record also carries SizeBytes and AllocatedBytes of the disk. With -WithSize each
     # partition also carries VolumeSizeBytes and VolumeFreeBytes of its volume (MSFT_Volume, joined over the volume GUID
     # path in AccessPaths; $null without one); without it MSFT_Volume is not queried. TimeoutSec: the time limit of each query.
-    param([switch]$WithSize, [int]$TimeoutSec = $script:WorkerPerfWinStorageTimeoutSec)
+    # DeadlineSec (> 0): the time the whole call may take; each query then gets the rest of it, in whole seconds rounded
+    # up and at least 1, measured from the start of the call, and TimeoutSec is not used.
+    param([switch]$WithSize, [int]$TimeoutSec = $script:WorkerPerfWinStorageTimeoutSec, [double]$DeadlineSec = 0)
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $limitOf = {
+        if ($DeadlineSec -le 0) { return $TimeoutSec }
+        return [Math]::Max(1, [int][Math]::Ceiling($DeadlineSec - $clock.Elapsed.TotalSeconds))
+    }
     $ns = 'root\Microsoft\Windows\Storage'
-    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)
+    $disks = @(Get-CimInstance -Namespace $ns -ClassName MSFT_Disk -Filter 'BusType = 15' -OperationTimeoutSec (& $limitOf) -ErrorAction Stop)
     if ($disks.Count -eq 0) { return }
     $byDisk = @{}
-    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)) {
+    foreach ($p in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Partition -OperationTimeoutSec (& $limitOf) -ErrorAction Stop)) {
         if ($null -eq $p) { continue }
         $n = [int](Get-WorkerPerfField $p 'DiskNumber')
         if (-not $byDisk.ContainsKey($n)) { $byDisk[$n] = New-Object System.Collections.Generic.List[object] }
@@ -1652,7 +1668,7 @@ function Get-WorkerPerfProfileDisks {
     }
     $volumes = @{}
     if ($WithSize) {
-        foreach ($v in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Volume -Property Path, Size, SizeRemaining -OperationTimeoutSec $TimeoutSec -ErrorAction Stop)) {
+        foreach ($v in @(Get-CimInstance -Namespace $ns -ClassName MSFT_Volume -Property Path, Size, SizeRemaining -OperationTimeoutSec (& $limitOf) -ErrorAction Stop)) {
             $vp = [string](Get-WorkerPerfField $v 'Path')
             if ($vp) { $volumes[$vp.TrimEnd('\')] = $v }
         }
@@ -2362,6 +2378,11 @@ function Test-WorkerPerfWinHealthTimeUp($Ctx) {
     return ($Ctx.Clock.Elapsed.TotalMilliseconds -ge $Ctx.BudgetMs)
 }
 
+function Assert-WorkerPerfWinHealthTimeLeft($Ctx) {
+    # For a loop inside one value: ends the read as a timeout when the limit of the area is reached ($Ctx $null: no limit).
+    if ($null -ne $Ctx -and (Test-WorkerPerfWinHealthTimeUp $Ctx)) { throw (New-Object System.TimeoutException 'Zeitlimit des Bereichs erreicht.') }
+}
+
 function Test-WorkerPerfWinTimeoutCode($Code) {
     # true for a native error code (signed or unsigned 32 bits) of an operation that timed out
     if ($null -eq $Code) { return $false }
@@ -2547,14 +2568,18 @@ function Test-WorkerPerfWinMissingNamespace($Exception) {
     return $false
 }
 
-function Get-WorkerPerfRegistryTree([string]$SubKey, [string[]]$Without = @(), [int]$MaxValues = 2000, [int]$MaxDepth = 6) {
+function Get-WorkerPerfRegistryTree([string]$SubKey, [string[]]$Without = @(), [int]$MaxValues = 2000, [int]$MaxDepth = 6, $Ctx = $null,
+    [switch]$WithoutNumeric) {
     # The values of a key below HKLM and of its subkeys, depth first and at most MaxDepth levels below it, at most
     # MaxValues values, as records Key (relative to SubKey, '' for the key itself), Name, Value (as text:
-    # ConvertTo-WorkerPerfRegistryText). Subkeys named in Without are passed over at the top level. Nothing without the key.
+    # ConvertTo-WorkerPerfRegistryText). Subkeys named in Without, and with WithoutNumeric those whose name consists
+    # only of digits, are passed over at the top level. Nothing without the key. With the context of an area, the walk
+    # ends as a timeout (TimeoutException) when the limit of the area is reached.
     $hcCount = 0
     $hcStack = New-Object System.Collections.Generic.Stack[object]
     $hcStack.Push([object[]]@('', 0))
     while ($hcStack.Count -gt 0 -and $hcCount -lt $MaxValues) {
+        Assert-WorkerPerfWinHealthTimeLeft $Ctx
         $hcItem = $hcStack.Pop()
         $hcRel = [string]$hcItem[0]; $hcDepth = [int]$hcItem[1]
         $hcFull = $SubKey
@@ -2570,7 +2595,7 @@ function Get-WorkerPerfRegistryTree([string]$SubKey, [string[]]$Without = @(), [
         $hcSubs = @($hcKey['SubKeys'])
         for ($hcI = $hcSubs.Count - 1; $hcI -ge 0; $hcI--) {
             $hcSub = [string]$hcSubs[$hcI]
-            if ($hcDepth -eq 0 -and @($Without) -contains $hcSub) { continue }
+            if ($hcDepth -eq 0 -and (@($Without) -contains $hcSub -or ($WithoutNumeric -and $hcSub -match '^[0-9]+$'))) { continue }
             $hcChild = $hcSub
             if ($hcRel) { $hcChild = $hcRel + '\' + $hcSub }
             $hcStack.Push([object[]]@($hcChild, ($hcDepth + 1)))
@@ -2681,12 +2706,16 @@ function Read-WorkerPerfWinHealthOperation($Ctx) {
 
 function Read-WorkerPerfWinHealthSessions($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.list' {
-        foreach ($sess in @(Get-WorkerPerfWinHealthSessions $Ctx)) { if ($null -ne $sess) { ConvertTo-WorkerPerfHealthSession $sess } }
+        foreach ($sess in @(Get-WorkerPerfWinHealthSessions $Ctx)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            if ($null -ne $sess) { ConvertTo-WorkerPerfHealthSession $sess }
+        }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.limits' {
         # the limits in milliseconds as minutes (0 = no limit); FromPolicy: the disconnected limit comes from a policy
         $tsProps = @('TerminalName', 'IdleSessionLimit', 'DisconnectedSessionLimit', 'ActiveSessionLimit', 'BrokenConnectionAction', 'PolicySourceDisconnectedSessionLimit')
         foreach ($ts in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_TSSessionSetting' 'root\CIMv2\TerminalServices' -Property $tsProps)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
             $tsSource = Get-WorkerPerfField $ts 'PolicySourceDisconnectedSessionLimit'
             $fromPolicy = $null
             if ($null -ne $tsSource) { $fromPolicy = ([long]$tsSource -eq 1) }
@@ -2700,6 +2729,7 @@ function Read-WorkerPerfWinHealthSessions($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.localProfiles' {
         # Status is a bit field: bit 1 set = temporary profile
         foreach ($up in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_UserProfile' -Property LocalPath, Loaded, Special, LastUseTime, Status)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
             $upStatus = Get-WorkerPerfField $up 'Status'
             $temporary = $null
             if ($null -ne $upStatus) { $temporary = (([long]$upStatus -band 1) -ne 0) }
@@ -2722,9 +2752,10 @@ function Read-WorkerPerfWinHealthVda($Ctx) {
         $found }
     $wemGroups = $script:WorkerPerfHealthWemServices
     $wemAgent = { @(& $byDisplay $wemGroups[0]) }
+    # a value as the registry gives it: an array (multi-string, binary) is not unrolled
     $wemRegistry = { param([string]$Key, [string]$Name)
         $wemValues = & $valuesOf $Key
-        if (Test-WorkerPerfRegistryValueSet $wemValues $Name) { $wemValues[$Name] } }
+        if (Test-WorkerPerfRegistryValueSet $wemValues $Name) { , $wemValues[$Name] } }
 
     Set-WorkerPerfWinHealthValue $Ctx 'vda.version' {
         $entry = @(Get-WorkerPerfWinHealthUninstall $Ctx | Where-Object { $_.DisplayName -like 'Citrix*Virtual Delivery Agent*' })
@@ -2747,7 +2778,8 @@ function Read-WorkerPerfWinHealthVda($Ctx) {
     }
     Set-WorkerPerfWinHealthValue $Ctx 'vda.listOfSids' { & $anySet 'ListOfSIDs' }
     Set-WorkerPerfWinHealthValue $Ctx 'vda.farmGuid' { & $anySet 'FarmGUID' }
-    Set-WorkerPerfWinHealthValue $Ctx 'vda.policyRaw' { Get-WorkerPerfRegistryTree $script:WorkerPerfWinCitrixPolicyKey $script:WorkerPerfWinCitrixPolicySkip }
+    # the subkeys named only by digits hold per-session copies of user policies: no machine facts, and they grow with the sessions
+    Set-WorkerPerfWinHealthValue $Ctx 'vda.policyRaw' { Get-WorkerPerfRegistryTree $script:WorkerPerfWinCitrixPolicyKey $script:WorkerPerfWinCitrixPolicySkip -Ctx $Ctx -WithoutNumeric }
     Set-WorkerPerfWinHealthValue $Ctx 'vda.persistentDataLocation' {
         $vdi = $null
         try { $vdi = @(Get-WorkerPerfWinHealthCim $Ctx 'Citrix_VirtualDesktopInfo' 'root\Citrix\DesktopInformation' -Property PersistentDataLocation) }
@@ -2776,13 +2808,13 @@ function Read-WorkerPerfWinHealthVda($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'vda.wemServer' {
         if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
         $server = & $wemRegistry $script:WorkerPerfWinWemPolicyKey 'BrokerSvcName'
-        if ($null -ne $server) { ConvertTo-WorkerPerfRegistryText $server }
+        if ($null -ne $server) { ConvertTo-WorkerPerfRegistrySingleText $server }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'vda.wemCacheLocation' {
         # missing or empty: the cache lies in the program folder
         if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
         $cache = & $wemRegistry $script:WorkerPerfWinWemAgentKey 'AgentCacheAlternateLocation'
-        if ($null -ne $cache) { ConvertTo-WorkerPerfRegistryText $cache }
+        if ($null -ne $cache) { ConvertTo-WorkerPerfRegistrySingleText $cache }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'vda.wemGpNetworkTimeout' {
         if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
@@ -2811,10 +2843,11 @@ function Read-WorkerPerfWinHealthProfile($Ctx) {
         $version = Get-WorkerPerfFileVersion (Get-WorkerPerfServiceExe ([string](Get-WorkerPerfField $svc[0] 'PathName')))
         if ($version) { $version }
     }
-    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyGpo' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManager') }
-    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyStudio' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManagerHDX') }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyGpo' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManager') -Ctx $Ctx }
+    Set-WorkerPerfWinHealthValue $Ctx 'profile.policyStudio' { Get-WorkerPerfRegistryTree ($script:WorkerPerfWinCitrixPolicyKey + '\UserProfileManagerHDX') -Ctx $Ctx }
     Set-WorkerPerfWinHealthValue $Ctx 'profile.containers' {
-        $disks = @(Get-WorkerPerfProfileDisks -WithSize -TimeoutSec (Get-WorkerPerfWinHealthRestSec $Ctx))
+        # the three storage queries together get the rest of the area's limit
+        $disks = @(Get-WorkerPerfProfileDisks -WithSize -DeadlineSec ([Math]::Max(0.001, ($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0)))
         $sessions = @()
         if ($disks.Count -gt 0) {
             try { $sessions = @(Get-WorkerPerfWinHealthSessions $Ctx) }
@@ -2822,7 +2855,10 @@ function Read-WorkerPerfWinHealthProfile($Ctx) {
             catch { $sessions = @() }
         }
         $userIndex = New-WorkerPerfUserIndex $sessions
-        foreach ($disk in $disks) { ConvertTo-WorkerPerfProfileContainer $disk $sessions $userIndex }
+        foreach ($disk in $disks) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            ConvertTo-WorkerPerfProfileContainer $disk $sessions $userIndex
+        }
     }
 }
 
