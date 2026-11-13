@@ -105,7 +105,7 @@ section[hidden] { display: none; }
 .seg button[aria-pressed="true"] { background: var(--sel); color: var(--text); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2); margin: 4px 0 2px; min-height: 18px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
-.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .legend i.dash { height: 0; border-top: 2px dashed; border-radius: 0; width: 14px; }
 .legend i.failmark { width: 2px; height: 10px; border-radius: 0; background: var(--crit); }
 .chart { position: relative; touch-action: none; }
@@ -343,21 +343,23 @@ details.fold[open] > summary { margin-bottom: 12px; }
 /* incident view: it replaces the content of the guided view. Head with title, time and buttons, then what happened, the cause,
    what to do, who was affected and, folded, the evidence */
 #guided.in-incident > :not(#incident) { display: none; }
-#incident { display: flex; flex-direction: column; gap: var(--gap); }
+/* the first screen (1400 x 900) reaches the first step of "Was ist zu tun": the buttons stand in one row above the head, the
+   head holds title, time and classification, the chart of the first section is small */
+#incident { display: flex; flex-direction: column; gap: 16px; }
 #incident p { overflow-wrap: anywhere; }
-.iv-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
-.iv-head { border-left: 6px solid var(--border); padding: 20px 24px; }
+.iv-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.iv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.iv-actions label.inline { color: var(--text); }
+.iv-head { border-left: 6px solid var(--border); padding: 16px 24px; }
 .iv-head.sev1 { border-left-color: var(--warn); } .iv-head.sev2 { border-left-color: var(--crit); }
 #guided .iv-title { font-size: 24px; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
 .iv-title:focus { outline: none; }
-.iv-tech { margin: 4px 0 0; color: var(--text2); font-size: 13px; }
-.iv-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin: 14px 0 0; }
+.iv-tech { margin: 2px 0 0; color: var(--text2); font-size: 13px; }
+.iv-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin: 10px 0 0; }
 .iv-meta .status { margin: 0; font-size: 14px; }
 .iv-meta .inum, .iv-meta .iv-when { color: var(--text2); font-variant-numeric: tabular-nums; }
 .iv-meta .iv-view { font-weight: 600; min-width: 0; }
-.iv-meta .flag { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; font-size: 13px; }
-.iv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: 18px; }
-.iv-actions label.inline { color: var(--text); margin-right: 8px; }
+.iv-meta .flag, ul.aff .flag { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; font-size: 13px; }
 #incident section > h3 { font-size: 17px; margin: 0 0 12px; }
 .iv-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 28px; align-items: start; }
 .iv-cols.single { grid-template-columns: minmax(0, 1fr); }
@@ -374,6 +376,14 @@ ol.checks > li { padding: 0 0 14px 6px; }
 ol.checks > li + li { padding-top: 14px; border-top: 1px solid var(--grid); }
 ol.checks > li:last-child { padding-bottom: 0; }
 ol.checks > li::marker { font-weight: 700; }
+/* a long list of steps shows its first items; the rest is folded behind a line that says how many more there are (it goes
+   away once they are shown; printing opens it with the other folded parts) */
+details.morefold { margin-top: 14px; }
+details.morefold > summary { cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 600; }
+details.morefold > summary:hover { text-decoration: underline; }
+details.morefold[open] > summary { display: none; }
+details.morefold > ol.checks > li:first-child { padding-top: 14px; border-top: 1px solid var(--grid); }
+.remedies details.morefold { margin-top: 8px; }
 .iv-todo .step { font-weight: 600; }
 .how { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 6px 0 0; font-size: 14px; color: var(--text2); }
 .how > div { display: contents; }
@@ -387,12 +397,14 @@ ol.checks > li::marker { font-weight: 700; }
 .remedies .pre { color: var(--text2); }
 .remedies .pre b, .remedies .act b { color: var(--text); font-weight: 600; }
 .contact li { padding-left: 14px; border-left: 3px solid var(--border); }
-.aff-head, ul.aff > li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1.5fr); gap: 2px 16px; padding: 6px 0; max-width: 820px; }
+.aff-head, ul.aff > li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 2.4fr); gap: 2px 16px; padding: 6px 0; max-width: 900px; }
 .aff-head { font-size: 12px; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 ul.aff { list-style: none; margin: 0; padding: 0; }
 ul.aff > li { border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
 ul.aff .num { font-variant-numeric: tabular-nums; }
+ul.aff .flag { margin-left: 6px; white-space: nowrap; }
 .iv-affected > p { margin: 0; }
+.iv-affected > ul.aff + p { margin-top: 10px; }
 details.iv-evidence > summary { cursor: pointer; }
 details.iv-evidence > summary h3 { display: inline; margin: 0; font-size: 17px; }
 details.iv-evidence[open] > summary { margin-bottom: 14px; }
@@ -400,7 +412,13 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 .techtext { margin: 0 0 14px; padding: 10px 14px; background: var(--page); border-left: 3px solid var(--border); border-radius: 4px; }
 /* the rankings stand in the column of the guided view: the processes over the full width, applications and sessions under them */
 @media (min-width: 701px) { .iv-evbody .grid3.contrib { grid-template-columns: repeat(2, minmax(0, 1fr)); } .iv-evbody .grid3.contrib > :first-child { grid-column: 1 / -1; } }
-.iv-evbody .num .sig, ul.aff .num .sig { margin-right: 4px; }
+/* a list of names with one measured value each (ul.vals): in the evidence the value stands at the right in a column of its
+   own, so every row wraps the same way */
+.iv-evbody ul.plain.vals > li { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 14px; }
+.iv-evbody ul.plain.vals > li > .what { min-width: 0; overflow-wrap: anywhere; }
+.iv-evbody ul.plain.vals > li > .num { flex: none; text-align: right; }
+/* a measured value over its target: the status as symbol and word before the number */
+.iv-evbody .num .status, ul.aff .num .status { margin: 0 6px 0 0; font-size: inherit; font-weight: 400; white-space: nowrap; }
 .chartbox h4 { margin: 0 0 4px; }
 .iv-notm ul { margin: 0; padding-left: 18px; font-size: 13px; }
 .iv-notm li { margin: 2px 0; overflow-wrap: anywhere; }
@@ -439,6 +457,8 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 @media print {
   nav, .toolbar, .zoombar, #viewSwitch, .iv-nav, .iv-actions, .term-pop, #copyFallback { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
   #guided > section[hidden] { display: none; }
+  /* a chart with its title, a step and a proposal stay on one page */
+  .chartbox, .iv-chart, .sigcharts > .card, .grid2 > .card, ol.checks > li, .remedies li, .contact li { break-inside: avoid; page-break-inside: avoid; }
 }
 </style>
 </head>
@@ -632,6 +652,10 @@ function notMeasured(place, inline) {
 const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
 // Small inline marker for table cells whose value reached a target band.
 const sigMark = (v, th) => { const l = levelOf(v, th); return l ? `<i class="sig st-${STATUS[l][2]}" title="${STATUS[l][1]}">${STATUS[l][0]}</i>` : ""; };
+// The same as symbol and word, before a value of the guided view ("◆ kritisch 598 ms").
+const sigWord = (v, th) => { const l = levelOf(v, th); return l ? statusHtml(String(l)) + " " : ""; };
+// The page scrolls smoothly to what was chosen, except where the reader asked for reduced motion.
+const scrollMode = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 // ---------- time range and zoom ----------
 const firstLast = [D.tickT, D.snapT].filter((a) => a && a.length);
@@ -821,7 +845,7 @@ function drawChart(host) {
   const stacked = !!opt.stacked, agg = stacked ? "mean" : (opt.agg || "mean");
   const red = st.series.map((s) => reduceSeries(s, z, agg));
   if (!red.some((r) => r.visible)) { host.innerHTML = `<div class="empty">Keine Messwerte im gewählten Ausschnitt.</div>`; return; }
-  const W = Math.max(280, Math.floor(host.clientWidth)), H = opt.height || 190;
+  const W = Math.max(280, Math.floor(host.clientWidth)); let H = opt.height || 190;
   const unit = opt.unit || "", tdec = opt.decimals ?? 1;
 
   // stacking: all series share one grid, so their reduced points line up
@@ -853,7 +877,10 @@ function drawChart(host) {
   const dec = step >= 1 ? 0 : Math.min(3, [1, 2, 3].find((d) => Math.abs(step * 10 ** d - Math.round(step * 10 ** d)) < 1e-6) || 3);
   const yLabels = []; for (let v = 0; v <= yMax + 1e-9; v += step) yLabels.push(v);
   const yw = Math.max(...yLabels.map((v) => fmt(v, dec).length)) * 6.6 + 12;
-  const m = { l: Math.round(yw), r: 12, t: 10, b: 22 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  // a mark with its label (the reported time) gets a line of its own above the plot, so the label covers no measured line
+  const marked = !!opt.mark && opt.mark.t >= z.t0 && opt.mark.t <= z.t1, m = { l: Math.round(yw), r: 12, t: marked ? 24 : 10, b: 22 };
+  if (marked) H += 14;
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
   const span = z.t1 - z.t0, sec = span < 600000;
   const X = (t) => m.l + ((t - z.t0) / span) * pw;
   const Y = (v) => m.t + ph - (Math.min(v, yMax * 1.5) / yMax) * ph;
@@ -911,25 +938,55 @@ function drawChart(host) {
   }
   g += `<g clip-path="url(#${clip})">${marks}</g>`;
 
-  // target bands and limit line, labels in text colour with the status symbol
-  const bandLine = (cls, v, sym, word, below) => {
-    const y = Y(v), ty = below ? y + 13 : y - 4;
+  // target bands and limit line, labels in text colour with the status symbol. The label of a target line stands at the right
+  // end of its line, over it (under it near the top edge). Where the measured lines or the other label run through it there, it
+  // goes under its line or left along it, to the first place that is free (or to the place the lines cross least).
+  const through = (x0, x1, y0, y1) => {
+    if (stacked) return 0;
+    let n = 0;
+    for (const r of red) {
+      let px = null, py = 0;
+      for (let k = 0; k < r.xs.length; k++) {
+        if (r.ys[k] == null) { px = null; continue; }
+        const x = X(r.xs[k]), y = Y(r.ys[k]), ax = px == null ? x : px, ay = px == null ? y : py;
+        px = x; py = y;
+        if (Math.max(ax, x) < x0 || Math.min(ax, x) > x1 || Math.max(ay, y) < y0 || Math.min(ay, y) > y1) continue;
+        // the part of the segment inside the box (Liang-Barsky)
+        let a = 0, b = 1, inside = true;
+        for (const [d, q] of [[ax - x, ax - x0], [x - ax, x1 - ax], [ay - y, ay - y0], [y - ay, y1 - ay]]) {
+          if (d === 0) { if (q < 0) inside = false; } else if (d < 0) a = Math.max(a, q / d); else b = Math.min(b, q / d);
+        }
+        if (inside && a <= b) n++;
+      }
+    }
+    return n;
+  };
+  const labels = [];
+  const bandLine = (cls, v, sym, word) => {
+    const y = Y(v), text = `${word} ab ${fmtLimit(v, th.unit)}`, tw = 18 + 6.2 * (word.length + 4 + fmtLimit(v, "").length + (th.unit ? th.unit.length + 1 : 0));
+    const over = y - 4, under = y + 13, tys = y - m.t < 14 ? [under] : m.t + ph - y < 18 ? [over] : [over, under], xr = W - m.r - 4;
+    const crossed = (x1, ty) => through(x1 - tw, x1 + 2, ty - 10, ty + 3) + (labels.some((b) => x1 - tw < b.x1 && x1 + 2 > b.x0 && ty - 12 < b.y1 && ty + 5 > b.y0) ? 1e6 : 0);
+    let best = null;
+    for (let x1 = xr; (!best || best.n > 0) && (x1 === xr || x1 - tw >= m.l + 2); x1 -= 12) {
+      for (const ty of tys) { const n = crossed(x1, ty); if (!best || n < best.n) best = { n, x1, ty }; }
+    }
+    labels.push({ x0: best.x1 - tw, x1: best.x1 + 2, y0: best.ty - 10, y1: best.ty + 3 });
     return `<g class="${cls}"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(y)}" y2="${f1(y)}" stroke-width="1.5" stroke-dasharray="6 4"/>` +
-      `<text x="${W - m.r - 4}" y="${f1(ty)}" text-anchor="end"><tspan class="sym">${sym}</tspan> ${word} ab ${fmtLimit(v, th.unit)}</text></g>`;
+      `<text x="${f1(best.x1)}" y="${f1(best.ty)}" text-anchor="end"><tspan class="sym">${sym}</tspan> ${text}</text></g>`;
   };
   if (showWarn) {
-    const yw2 = Y(th.warn), yc = Y(th.crit), close = showCrit && Math.abs(yw2 - yc) < 15;
-    g += bandLine("band-warn", th.warn, "▲", "auffällig", close);
-    if (showCrit) g += bandLine("band-crit", th.crit, "◆", "kritisch", yc - m.t < 14);
+    // the label of the critical line finds its place first
+    const crit = showCrit ? bandLine("band-crit", th.crit, "◆", "kritisch") : "";
+    g += bandLine("band-warn", th.warn, "▲", "auffällig") + crit;
   }
   if (opt.limit != null && opt.limit <= yMax) {
     g += `<g class="limit"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(opt.limit))}" y2="${f1(Y(opt.limit))}" stroke="var(--text2)" stroke-width="1" stroke-dasharray="2 3"/>`;
     g += `<text x="${m.l + 6}" y="${f1(Y(opt.limit) + (Y(opt.limit) - m.t < 14 ? 13 : -4))}">${esc(opt.limitLabel || "")}</text></g>`;
   }
-  if (opt.mark && opt.mark.t >= z.t0 && opt.mark.t <= z.t1) {
+  if (marked) {
     const x = X(opt.mark.t), right = x < m.l + pw / 2;
-    g += `<g class="repmark limit"><line x1="${f1(x)}" x2="${f1(x)}" y1="${m.t}" y2="${m.t + ph}"/>` +
-      `<text x="${f1(x + (right ? 5 : -5))}" y="${m.t + 11}" text-anchor="${right ? "start" : "end"}">${esc(opt.mark.label || "")}</text></g>`;
+    g += `<g class="repmark limit"><line x1="${f1(x)}" x2="${f1(x)}" y1="${m.t - 14}" y2="${m.t + ph}"/>` +
+      `<text x="${f1(x + (right ? 5 : -5))}" y="${m.t - 5}" text-anchor="${right ? "start" : "end"}">${esc(opt.mark.label || "")}</text></g>`;
   }
 
   // legend from two series on, or for a single series when asked for; identity never by colour alone
@@ -1310,7 +1367,7 @@ function showSession(i) {
   if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1, "Mittelwert über die Schnappschüsse mit einem Wert: Bandbreiten von 0 zeichnet der Collector nicht auf, ihr Mittel gilt nur für die Zeit mit Datenverkehr"), cNum("max", "Max", 1), cNum("n", "Messungen", 0, "Schnappschüsse mit einem Wert")], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
   const procs = D.procs.filter((p) => p.s === i);
   if (!res.procs) table("sp" + u, procCols(false), procs, { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => procDetail(document.getElementById("spd" + u), procs.find((p) => p.k === k)) });
-  host.scrollIntoView({ behavior: "smooth", block: "start" });
+  host.scrollIntoView({ behavior: scrollMode(), block: "start" });
 }
 const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession });
 
@@ -1326,7 +1383,7 @@ function showApp(i) {
   chart(host.querySelector(".chart-cpu"), { axis: "snap", series: a.cpu ? [{ name: "CPU", values: a.cpu }] : [], unit: "%", decimals: 2, agg: "max", empty: noSeries });
   chart(host.querySelector(".chart-ws"), { axis: "snap", series: a.ws ? [{ name: "RAM", values: a.ws }] : [], unit: "MB", decimals: 0, empty: noSeries });
   table("as" + u, pairCols({ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }), D.pairs.filter((p) => p.a === i), { sort: "cpuSec", id: (r) => r.s, text: () => "", onSelect: (s) => { activate("sessions"); sessTable.select(s); } });
-  host.scrollIntoView({ behavior: "smooth", block: "start" });
+  host.scrollIntoView({ behavior: scrollMode(), block: "start" });
 }
 const appTable = table("tApps", [
   { key: "name", head: "Anwendung" },
@@ -1355,7 +1412,7 @@ skipTab("apps", "apps");
 // ---------- processes ----------
 if (!notMeasured("procs")) document.getElementById("procNote").textContent = `Enthält die ${fmt(D.procs.length, 0)} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O, die Spitzenreiter jeder Sitzung und alle Prozesse aus den Ranglisten der Befunde).`;
 const procTable = table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: procText, filterInput: "fProcs", roleSelect: "fRoleProcs", rowClass: (r) => r.isCollector ? "collector" : "",
-  onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+  onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: scrollMode(), block: "start" }); } });
 skipTab("procs", "procs");
 
 // ---------- tabs ----------
@@ -1398,6 +1455,17 @@ const SENT_RES = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", 
 // at most 10 entries of a list, the rest behind a button (the sentences cut the same lists at 10 with " (+n weitere)")
 const capList = (items) => items.length <= 10 ? items.join(", ")
   : items.slice(0, 10).join(", ") + `<span class="rest" hidden>, ${items.slice(10).join(", ")}</span> <button type="button" class="lnk more">(+${items.length - 10} weitere)</button>`;
+// a click on such a button shows the rest of its list and takes the button away: true when the click was on one
+function showRest(ev) {
+  const more = ev.target.closest("button.more"); if (!more) return false;
+  more.previousElementSibling.hidden = false; more.remove();
+  return true;
+}
+// what an incident has to do with the report of a user: the reported user and the reported time, each named
+const flagsHtml = (inc) => (inc.focus ? `<span class="flag">betrifft den gemeldeten Benutzer${FOCUS.user ? " " + esc(FOCUS.user) : ""}</span>` : "") +
+  (inc.nearReported ? `<span class="flag">nahe der gemeldeten Uhrzeit${FOCUS.reportedMs != null ? " " + fmtTime(FOCUS.reportedMs) : ""}</span>` : "");
+// the kind of an endpoint beside its name, unless the name ends with it ("FortiGate-Proxy" is a proxy)
+const endpointKind = (name, kind) => kind && !String(name).toLowerCase().endsWith(String(kind).toLowerCase()) ? kind : "";
 const BEFORE_INC = (D.before && D.before.incidents) || [];
 const RES_WORD = { cpu: "CPU", memory: "Arbeitsspeicher", disk: "Datenträger", share: "Freigabe", profile: "Profilcontainer", network: "Netzstrecke", endpoint: "Gegenstelle", input: "Eingabeverzögerung" };
 // measure of a ranking; the I/O share of a profile container is a share within the owning session (scope "session")
@@ -1426,6 +1494,8 @@ function incWindow(inc) {
   const margin = Math.max(30000, (inc.end - inc.start) / 4);
   return { t0: Math.max(FULL.t0, inc.start - margin), t1: Math.min(FULL.t1, inc.end + margin) };
 }
+// what that window shows beside the incident: time before it, time after it, or neither (the incident fills the capture)
+const winMargin = (inc, win) => ({ before: win.t0 < inc.start, after: win.t1 > inc.end });
 // Start and end of an incident, for the cards, the incident view and the entries of the expert view. An incident from events
 // shows each end in the local time of its own event (the first and the last kept event), a single point in time alone.
 // clock: the clock times without the date, with seconds only below a minute (cards and rows of the capture).
@@ -1659,7 +1729,7 @@ const incOrder = INC.slice().sort((a, b) => (b.focus - a.focus) || (a.chronic - 
 // the number names the incident the sentences refer to ("Zeitgleich mit Vorfall 3")
 function incArticle(inc) {
   const k = sevKey(inc.severity), cls = ["incident", "sev" + k, "type-" + inc.type, inc.focus ? "focus" : "", inc.nearReported ? "near" : "", inc.chronic ? "chronic" : ""].filter(Boolean).join(" ");
-  const flags = (inc.focus ? '<span class="flag">betrifft den gemeldeten Benutzer</span>' : "") + (inc.nearReported ? '<span class="flag">nahe der gemeldeten Uhrzeit</span>' : "");
+  const flags = flagsHtml(inc);
   const when = inc.type === "ereignis" ? plural(inc.event.count, "Ereignis", "Ereignisse") + (inc.end > inc.start ? " in " + fmtSpan(inc.end - inc.start) : "")
     : "Dauer " + fmtSpan(Math.max(0, inc.end - inc.start));
   return `<article class="${cls}" data-id="${inc.id}">
@@ -1832,7 +1902,7 @@ const sigChartOpt = (c, win, more) => Object.assign({
 // of the expert view, and ends with what was not measured; its charts leave the shared zoom alone.
 function renderDetail(inc, host, iv) {
   if (inc.type === "ereignis") { renderEventDetail(inc, host, iv); return; }
-  const u = ++uid, win = incWindow(inc);
+  const u = ++uid, win = incWindow(inc), margin = winMargin(inc, win), mark = iv ? sigWord : sigMark;
   const affected = inc.affected.map((a) => `<li>${lnkS(a.s)} <span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span></li>`).join("");
   const charts = signalCharts(inc);
   const contrib = contribTables(inc, u), skipContrib = inc.type !== "umfeld" && notMeasured("incidents.contributors");
@@ -1848,13 +1918,13 @@ function renderDetail(inc, host, iv) {
   const skipIca = inc.type !== "engpass" && skipped("incidents.ica", "ICA Round Trip (Spitze)");
   const skipEvents = !narrow && skipped("incidents.events", "Ereignisse im Fenster");
   if (skipDelay) evid.push(skipDelay);
-  else if (inc.delayProcs.length) evid.push(`<div><h4>Höchste Eingabeverzögerung je Prozess</h4><ul class="plain">${inc.delayProcs.map((d) =>
-    `<li>${lnkK(d.k, d.name)} <span class="tag">${esc(d.pid)}</span>${d.role ? ` <span class="tag">${esc(d.role)}</span>` : ""} · ${lnkS(d.s)} <span class="num">${sigMark(d.maxMs, TH.get("input.session"))}${fmt(d.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
+  else if (inc.delayProcs.length) evid.push(`<div><h4>Höchste Eingabeverzögerung je Prozess</h4><ul class="plain vals">${inc.delayProcs.map((d) =>
+    `<li><span class="what">${lnkK(d.k, d.name)} <span class="tag">${esc(d.pid)}</span>${d.role ? ` <span class="tag">${esc(d.role)}</span>` : ""} · ${lnkS(d.s)}</span> <span class="num">${mark(d.maxMs, TH.get("input.session"))}${fmt(d.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
   if (skipEndpoints) evid.push(skipEndpoints);
-  else if (inc.endpoints.length) evid.push(`<div><h4>Gegenstellen (Verbindungsaufbau, Spitze)</h4><ul class="plain">${inc.endpoints.map((e) =>
-    `<li>${esc(e.name)}${e.role && e.role !== e.name ? ` <span class="tag">${esc(e.role)}</span>` : ""} <span class="num">${e.maxMs == null ? "keine Antwort" : sigMark(e.maxMs, TH.get("probe.connect")) + fmt(e.maxMs, 1) + " ms"}${e.failed && e.maxMs != null ? " · mit Verbindungsfehlern" : ""}</span></li>`).join("")}</ul></div>`);
+  else if (inc.endpoints.length) evid.push(`<div><h4>Gegenstellen (Verbindungsaufbau, Spitze)</h4><ul class="plain vals">${inc.endpoints.map((e) =>
+    `<li><span class="what">${esc(e.name)}${endpointKind(e.name, e.role) ? ` <span class="tag">${esc(e.role)}</span>` : ""}</span> <span class="num">${e.maxMs == null ? "keine Antwort" : mark(e.maxMs, TH.get("probe.connect")) + fmt(e.maxMs, 1) + " ms"}${e.failed && e.maxMs != null ? " · mit Verbindungsfehlern" : ""}</span></li>`).join("")}</ul></div>`);
   if (skipIca) evid.push(skipIca);
-  else if (inc.ica.length) evid.push(`<div><h4>ICA Round Trip (Spitze)</h4><ul class="plain">${inc.ica.map((r) => `<li>${lnkS(r.s)} <span class="num">${sigMark(r.maxMs, TH.get("ica.rtt"))}${fmt(r.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
+  else if (inc.ica.length) evid.push(`<div><h4>ICA Round Trip (Spitze)</h4><ul class="plain vals">${inc.ica.map((r) => `<li><span class="what">${lnkS(r.s)}</span> <span class="num">${mark(r.maxMs, TH.get("ica.rtt"))}${fmt(r.maxMs, 0)} ms</span></li>`).join("")}</ul></div>`);
   if (inc.type !== "umfeld") {
     const sec = inc.security || { products: [], totalPct: 0 };
     const leadMeasure = { memory: "memory", disk: "io", share: "io", profile: "io" }[inc.lead] || "cpu";
@@ -1882,13 +1952,13 @@ function renderDetail(inc, host, iv) {
       <div><h4>Betroffen (${inc.affected.length})</h4>${inc.affected.length ? `<ul class="plain affected">${affected}</ul>` : `<ul class="plain affected"></ul><div class="note">${noneAffected(inc)}</div>`}</div>
       ${causeBox}
     </div>`) + `
-    <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>${iv ? "" : `
+    <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, ${margin.before || margin.after ? "Vorfall mit Rand" : "die gesamte gemessene Zeit"}</span>${iv ? "" : `
       <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button>`}</h4>
     <div class="sigcharts">${charts.map((c, k) => `<div class="card chartbox"><${hc}>${esc(c.title)}</${hc}><div class="sc${k}"></div></div>`).join("")}</div>
     ${skipContrib ? "" : contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
     <div class="evidence">${evid.join("")}</div>
     <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>${iv ? notMeasuredBlock() : ""}`;
-  charts.forEach((c, k) => chart(host.querySelector(".sc" + k), sigChartOpt(c, win, iv ? { still: true, band: { t0: inc.start, t1: inc.end } } : null)));
+  charts.forEach((c, k) => chart(host.querySelector(".sc" + k), sigChartOpt(c, win, iv ? { still: true, band: margin.before || margin.after ? { t0: inc.start, t1: inc.end } : null } : null)));
   if (!skipContrib) contrib.forEach((c) => c.build());
   table("isg" + u, [
     { key: "id", head: "Messwert", fmt: (v) => esc(TH.get(v)?.label || v) },
@@ -1928,11 +1998,10 @@ function showIncident(id, zoom) {
   if (rest) { rest.hidden = false; rest.nextElementSibling?.classList.contains("more") && rest.nextElementSibling.remove(); }
   setIncidentOpen(entry, true);
   if (zoom && !(inc.event && inc.event.before)) { const w = incWindow(inc); window.WP.setZoom(w.t0, w.t1); }
-  entry.scrollIntoView({ behavior: "smooth", block: "start" });
+  entry.scrollIntoView({ behavior: scrollMode(), block: "start" });
 }
 const onIncidentClick = (ev) => {
-  const more = ev.target.closest("button.more");
-  if (more) { more.previousElementSibling.hidden = false; more.remove(); return; }
+  if (showRest(ev)) return;
   const b = ev.target.closest("button.lnk, button.zoomto");
   if (b) {
     if (b.classList.contains("zoomto")) { const w = incWindow(incById.get(Number(b.dataset.incident))); window.WP.setZoom(w.t0, w.t1); return; }
@@ -2370,17 +2439,31 @@ function sourceHtml(src) {
   const text = !src ? "" : typeof src === "string" ? src : [src.title, src.url].filter(Boolean).join(" – ");
   return text ? `<p class="src">Quelle: ${esc(text)}</p>` : "";
 }
-// Who was affected: the sessions with user, client and highest input delay; for an incident from events the sessions and
-// users its events name. Where nobody can be listed, a sentence says why.
+// Who was affected: the sessions with user, client and highest input delay; for an incident of the surroundings the sessions
+// whose own measured value is over its target, as the cause names them; for an incident from events the sessions and users
+// its events name. Where nobody can be listed, a sentence says why. The reported user is marked.
+const REPORTED = new Set(FOCUS.found ? FOCUS.sessions : []), REPORTED_TAG = ' <span class="flag">gemeldeter Benutzer</span>';
 function affectedHtml(inc) {
   const list = (head, rows) => `<div class="aff-head" aria-hidden="true">${head.map((h) => `<span>${h}</span>`).join("")}</div><ul class="aff">${rows.join("")}</ul>`;
-  const session = (s, last) => `<li><span>${lnkS(s)}</span><span>${esc((sessByIdx.get(s) || {}).client || "–")}</span>${last}</li>`;
+  const session = (s, last) => `<li${REPORTED.has(s) ? ' class="rep-user"' : ""}><span>${lnkS(s)}${REPORTED.has(s) ? REPORTED_TAG : ""}</span><span>${esc((sessByIdx.get(s) || {}).client || "–")}</span>${last}</li>`;
+  const delay = (ms) => `${sigWord(ms, TH.get("input.session"))}${fmt(ms, 0)} ms`;
+  if (inc.type === "umfeld") {
+    const own = new Map(), peak = new Map(inc.affected.map((a) => [a.s, a.peakMs]));
+    for (const sg of inc.signals) if (sg.s != null && sg.s >= 0 && sessByIdx.has(sg.s)) { if (!own.has(sg.s)) own.set(sg.s, []); own.get(sg.s).push(sg); }
+    const value = (sg) => `${statusHtml(sevKey(sg.severity))} ${esc((TH.get(sg.id) || {}).label || sg.id)} ${fmtVal(sg.peak, sg.unit)}${sg.ideal ? ` <span class="note">(Soll ${esc(sg.ideal)})</span>` : ""}`;
+    const rows = [...own].map(([s, sigs]) => session(s, `<span class="num">${sigs.map(value).concat(peak.has(s) ? ["Eingabeverzögerung " + delay(peak.get(s))] : []).join("<br>")}</span>`));
+    // the input delay is measured on the server: a note under the list says what it showed for these sessions
+    const note = !rows.length ? "Der Vorfall betrifft eine Gegenstelle, keine einzelne Sitzung; welche Sitzungen sie in dieser Zeit genutzt haben, zeigt die Messung nicht."
+      : UNM.input ? "Eingabeverzögerung nicht gemessen; ob Eingaben in diesen Sitzungen verzögert ankamen, ist nicht bestimmbar."
+      : inc.affected.length ? "" : "Die auf dem Server gemessene Eingabeverzögerung lag in den Sitzungen dieses Vorfalls nicht über dem Soll.";
+    return (rows.length ? list(["Benutzer (Sitzung)", "Client", "Messwert über dem Soll"], rows) : "") + (note ? `<p class="note">${note}</p>` : "");
+  }
   if (inc.type !== "ereignis") {
-    return inc.affected.length ? list(["Benutzer (Sitzung)", "Client", "Höchste Verzögerung"], inc.affected.map((a) => session(a.s, `<span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span>`)))
+    return inc.affected.length ? list(["Benutzer (Sitzung)", "Client", "Höchste Verzögerung"], inc.affected.map((a) => session(a.s, `<span class="num">${delay(a.peakMs)}</span>`)))
       : `<p class="note">${noneAffected(inc)}</p>`;
   }
   const ev = inc.event, known = ev.sessions.filter((s) => sessByIdx.has(s)), named = new Set(known.map((s) => sessByIdx.get(s).user));
-  const rows = known.map((s) => session(s, "")).concat(ev.users.filter((u) => !named.has(u)).map((u) => `<li><span>${esc(u)}</span></li>`));
+  const rows = known.map((s) => session(s, "")).concat(ev.users.filter((u) => !named.has(u)).map((u) => `<li${u === FOCUS.user ? ' class="rep-user"' : ""}><span>${esc(u)}${u === FOCUS.user ? REPORTED_TAG : ""}</span></li>`));
   if (rows.length) return list(known.length ? ["Benutzer (Sitzung)", "Client"] : ["Benutzer"], rows);
   // the assignment to users and sessions not checked (without processes): no statement about the session
   const unchecked = (ev.unchecked || []).find((x) => x.id === "users");
@@ -2392,43 +2475,64 @@ function nextIncident(id) {
   const list = LOOKBACK.some((i) => i.id === id) ? LOOKBACK.map((i) => i.id) : (D.order || []).filter((x) => incById.has(x)), k = list.indexOf(id);
   return k >= 0 && k + 1 < list.length ? list[k + 1] : null;
 }
+// A long list of steps shows its first items (as many as a copy text carries: guidance.copy.maxChecks and maxRemedies of the
+// report data, else five checks and three remedies); the rest is folded behind a line that says how many more there are.
+const STEP_MAX = (() => {
+  const c = (D.guidance && D.guidance.copy) || {}, count = (v, d) => Number.isInteger(v) && v > 0 ? v : d;
+  return { checks: count(c.maxChecks, 5), remedies: count(c.maxRemedies, 3) };
+})();
+function foldRest(items, max, wrap, one, many) {
+  const n = items.length - max;
+  return wrap(items.slice(0, max), 0) + (n > 0 ? `<details class="morefold"><summary>${n === 1 ? one : `Weitere ${n} ${many} anzeigen`}</summary>${wrap(items.slice(max), max)}</details>` : "");
+}
+const NO_VALUES = "Für diese Zeit liegen keine Messwerte vor.";
+// A section whose part of the data is missing is left out: no heading without content, no empty paragraph or list.
 function renderIncident(id) {
   const inc = incById.get(id), g = inc.guide || {}, k = sevKey(inc.severity), terms = (g.terms || []).filter(termText);
   // a paragraph of the guidance: its terms are marked once
-  const tx = (tag, cls, text) => `<${tag} class="tx${cls ? " " + cls : ""}">${termHtml(text, terms)}</${tag}>`;
+  const tx = (tag, cls, text) => text ? `<${tag} class="tx${cls ? " " + cls : ""}">${termHtml(text, terms)}</${tag}>` : "";
   const before = !!(inc.event && inc.event.before), charts = inc.type === "ereignis" ? [] : signalCharts(inc);
   // the chart of the triggering value: the lead resource of a bottleneck, the input delay of a delay without one
   const lead = (inc.type === "ohne-engpass" && charts.find((c) => c.g.resource === "input")) || charts[0], win = lead ? incWindow(inc) : null;
-  const flags = (inc.focus ? '<span class="flag">betrifft den gemeldeten Benutzer</span>' : "") + (inc.nearReported ? '<span class="flag">nahe der gemeldeten Uhrzeit</span>' : "");
+  const margin = win ? winMargin(inc, win) : {}, tinted = margin.before || margin.after;
+  const caption = margin.before && margin.after ? "der Vorfall (getönt) mit Vor- und Nachlauf." : margin.before ? "der Vorfall (getönt) mit Vorlauf." : margin.after ? "der Vorfall (getönt) mit Nachlauf."
+    : "der Vorfall erstreckt sich über die gesamte gemessene Zeit.";
   const cause = causeParts(inc), checks = g.checks || [], remedies = g.remedies || [], contacts = g.contacts || [];
   const how = (label, text) => text ? `<div><dt>${label}</dt>${tx("dd", "", text)}</div>` : "";
   const note = g.fallback ? (D.guidance || {}).fallbackNote : "";
+  // the days before the capture have no measured values: said once, not again where the classification in the head says it
+  const noValues = before && !String(g.userView || "").toLowerCase().includes(NO_VALUES.toLowerCase().replace(/\.$/, ""));
+  const text = (noValues ? `<p class="bnote">${NO_VALUES}</p>` : "") + tx("p", "iv-meaning", g.meaning) + tx("p", "iv-impact", g.impact);
+  const checkList = (list, from) => !list.length ? "" : `<ol class="checks"${from ? ` start="${from + 1}"` : ""}>${list.map((c) => `<li>${tx("p", "step", c.text)}${c.where || c.sign ? `<dl class="how">${how("Wo:", c.where)}${how("Woran erkennbar:", c.sign)}</dl>` : ""}${sourceHtml(c.source)}</li>`).join("")}</ol>`;
+  const remedyList = (list) => `<ul>${list.map((r) => `<li>${r.precondition ? `<p class="tx pre"><b>Wenn</b> ${termHtml(r.precondition, terms)},</p>` : ""}<p class="tx act">${r.precondition ? "<b>dann:</b> " : ""}${termHtml(r.text, terms)}</p>${sourceHtml(r.source)}</li>`).join("")}</ul>`;
+  const next = nextIncident(id);
   ivEl.dataset.id = id;
-  ivEl.innerHTML = `<div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> Zurück zum Lagebild</button>${nextIncident(id) == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div>
+  ivEl.innerHTML = `<div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> ${ivFrom && ivFrom.view === "expert" ? "Zurück zur Expertenansicht" : "Zurück zum Lagebild"}</button>
+      <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button>${next == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div></div>
     <div class="iv-head card sev${k}">
-      <h2 class="iv-title" id="ivTitle" tabindex="-1">${esc(g.title || typeText(inc))}</h2>
-      <p class="iv-tech">${esc(g.tech)}</p>
-      <p class="iv-meta">${statusHtml(k)}<span class="inum">Vorfall ${inc.id}</span><span class="iv-when">${esc(incWhen(inc))}</span><span class="iv-view">${esc(g.userView)}</span>${flags}</p>
-      <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button></div>
-    </div>
+      <h2 class="iv-title" id="ivTitle" tabindex="-1">${esc(g.title || typeText(inc))}</h2>${g.tech ? `
+      <p class="iv-tech">${esc(g.tech)}</p>` : ""}
+      <p class="iv-meta">${statusHtml(k)}<span class="inum">Vorfall ${inc.id}</span><span class="iv-when">${esc(incWhen(inc))}</span>${g.userView ? `<span class="iv-view">${esc(g.userView)}</span>` : ""}${flagsHtml(inc)}</p>
+    </div>${text || lead ? `
     <section class="iv-what card"><h3>Was war los</h3>
-      <div class="iv-cols${lead ? "" : " single"}"><div class="iv-text">${before ? '<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>' : ""}${tx("p", "iv-meaning", g.meaning)}${tx("p", "iv-impact", g.impact)}</div>${lead ? `
-        <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: der Vorfall (getönt) mit Vor- und Nachlauf.</p></div>` : ""}</div></section>
-    <section class="iv-cause card"><h3>Wer oder was hat es verursacht</h3>${cause.skip ? notMeasured(cause.place) : ""}${cause.text ? tx("p", "causetext", cause.text) : ""}</section>
+      <div class="iv-cols${text && lead ? "" : " single"}">${text ? `<div class="iv-text">${text}</div>` : ""}${lead ? `
+        <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: ${caption}</p></div>` : ""}</div></section>` : ""}${cause.skip || cause.text ? `
+    <section class="iv-cause card"><h3>Wer oder was hat es verursacht</h3>${cause.skip ? notMeasured(cause.place) : ""}${tx("p", "causetext", cause.text)}</section>` : ""}${note || checks.length || remedies.length || contacts.length ? `
     <section class="iv-todo card"><h3>Was ist zu tun</h3>${note ? `<p class="hint fallback" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(note)}</p>` : ""}
-      <ol class="checks">${checks.map((c) => `<li>${tx("p", "step", c.text)}${c.where || c.sign ? `<dl class="how">${how("Wo:", c.where)}${how("Woran erkennbar:", c.sign)}</dl>` : ""}${sourceHtml(c.source)}</li>`).join("")}</ol>${remedies.length ? `
-      <div class="remedies"><h4>Mögliche Abhilfe – Vorschlag</h4><ul>${remedies.map((r) => `<li>${r.precondition ? `<p class="tx pre"><b>Wenn</b> ${termHtml(r.precondition, terms)},</p>` : ""}<p class="tx act">${r.precondition ? "<b>dann:</b> " : ""}${termHtml(r.text, terms)}</p>${sourceHtml(r.source)}</li>`).join("")}</ul></div>` : ""}${contacts.length ? `
-      <div class="contact"><h4>An wen wenden</h4><ul>${contacts.map((c) => `<li>${tx("p", "", c.text)}${sourceHtml(c.source)}</li>`).join("")}</ul></div>` : ""}</section>
+      ${foldRest(checks, STEP_MAX.checks, checkList, "Weiteren Prüfschritt anzeigen", "Prüfschritte")}${remedies.length ? `
+      <div class="remedies"><h4>Mögliche Abhilfe – Vorschlag</h4>${foldRest(remedies, STEP_MAX.remedies, remedyList, "Weiteren Vorschlag anzeigen", "Vorschläge")}</div>` : ""}${contacts.length ? `
+      <div class="contact"><h4>An wen wenden</h4><ul>${contacts.map((c) => `<li>${tx("p", "", c.text)}${sourceHtml(c.source)}</li>`).join("")}</ul></div>` : ""}</section>` : ""}
     <section class="iv-affected card"><h3>Wer war betroffen</h3>${affectedHtml(inc)}</section>
     <details class="iv-evidence card"><summary><h3>Belege</h3></summary><div class="iv-evbody incdetail"></div></details>`;
-  if (lead) chart(ivEl.querySelector(".iv-plot"), sigChartOpt(lead, win, { still: true, band: { t0: inc.start, t1: inc.end }, height: 200 }));
+  // the incident tinted where the chart shows time beside it; the reported time marked as on the timeline
+  if (lead) chart(ivEl.querySelector(".iv-plot"), sigChartOpt(lead, win, { still: true, height: 150, band: tinted ? { t0: inc.start, t1: inc.end } : null,
+    mark: FOCUS.reportedMs != null ? { t: FOCUS.reportedMs, label: "gemeldet " + fmtTime(FOCUS.reportedMs) } : null }));
   renderDetail(inc, ivEl.querySelector(".iv-evbody"), true);
 }
 // the charts of the evidence are drawn when it is unfolded
 ivEl.addEventListener("toggle", refreshCharts, true);
 ivEl.addEventListener("click", (ev) => {
-  const more = ev.target.closest("button.more");
-  if (more) { more.previousElementSibling.hidden = false; more.remove(); return; }
+  if (showRest(ev)) return;
   const b = ev.target.closest("button"), id = window.WP.incident; if (!b) return;
   if (b.id === "ivBack") window.WP.closeIncident();
   else if (b.id === "ivNext") window.WP.openIncident(nextIncident(id));
@@ -2438,15 +2542,28 @@ ivEl.addEventListener("click", (ev) => {
 });
 
 // ---------- incident view: opening and leaving ----------
-// The view replaces the content of the guided view; leaving it returns to the place the reader came from (scroll position and
-// the button that opened it). The history of the page holds one step for the incident view and one for the way from it into
-// the expert view, so the back button of the browser leads back the same way: state { wpIncident, wpView }.
+// The view replaces the content of the guided view; leaving it returns to the place the reader came from: the view (the
+// situation summary or the expert view), its scroll position and the button that opened it. The history of the page holds
+// steps that are true to the screen, so the back button of the browser leads back the same way: { wpIncident } for the
+// incident view, { wpIncident, wpView: "expert" } for the way from it into the expert view, { wpView: "expert" } for the expert
+// view an incident was opened from.
 let ivFrom = null, leaving = false, reopened = null;
 const histState = () => { try { return history.state; } catch (e) { return null; } };
 // a page that may not write its history (some embedded viewers) works without the steps
 const histWrite = (push, state) => { try { history[push ? "pushState" : "replaceState"](state, ""); } catch (e) { /* no history */ } };
-function showIncidentView(id) {
-  if (window.WP.incident == null) ivFrom = { y: window.scrollY, el: document.activeElement };
+const isIncidentStep = (st) => !!st && st.wpIncident != null && st.wpView !== "expert";
+// the step that describes what is on screen now
+function screenStep() {
+  const st = {};
+  if (window.WP.incident != null) st.wpIncident = window.WP.incident;
+  if (window.WP.view === "expert") st.wpView = "expert";
+  return st.wpIncident != null || st.wpView ? st : null;
+}
+// byHistory: shown by a step of the history, which lies behind the situation summary or behind a step that names its view
+function showIncidentView(id, byHistory) {
+  const guided = window.WP.view === "guided";
+  if (!guided || window.WP.incident == null) ivFrom = { view: byHistory ? "guided" : window.WP.view, y: guided ? window.scrollY : viewScroll.guided, el: document.activeElement };
+  window.WP.showView("guided");
   window.WP.incident = id;
   guidedEl.classList.add("in-incident"); ivEl.hidden = false;
   hideTerm();
@@ -2456,48 +2573,64 @@ function showIncidentView(id) {
 }
 function hideIncidentView() {
   if (window.WP.incident == null) return;
-  const from = ivFrom || { y: 0, el: null };
+  const from = ivFrom || { view: "guided", y: 0, el: null }, shown = window.WP.view === "guided";
   window.WP.incident = null; ivFrom = null;
   ivEl.hidden = true; ivEl.innerHTML = ""; delete ivEl.dataset.id; guidedEl.classList.remove("in-incident");
   hideTerm();
-  if (window.WP.view !== "guided") { viewScroll.guided = from.y; return; }
-  drawTimeline(false); refreshCharts();
-  window.scrollTo(0, from.y);
+  // closed behind the expert view: the guided view shows its place when it is seen again
+  if (!shown) { viewScroll.guided = from.y; return; }
+  if (from.view === "guided") { drawTimeline(false); refreshCharts(); window.scrollTo(0, from.y); }
+  else { window.WP.showView(from.view); viewScroll.guided = from.y; }
   if (from.el && from.el.isConnected && from.el.focus) from.el.focus({ preventScroll: true });
 }
-// into the expert view; from the incident view this is a step of the history
+// into the expert view; from the incident view this is a step of the history (one step, also when the reader came back with
+// the switch of the head bar and goes there again)
 function showExpertView() {
-  if (window.WP.view === "guided" && window.WP.incident != null) histWrite(true, { wpIncident: window.WP.incident, wpView: "expert" });
+  const st = histState(), id = window.WP.incident;
+  if (window.WP.view === "guided" && id != null && !(st && st.wpView === "expert" && st.wpIncident === id)) histWrite(true, { wpIncident: id, wpView: "expert" });
   window.WP.showView("expert");
 }
 window.WP.incident = null;
 window.WP.openIncident = function (id) {
   id = Number(id);
   if (!incById.has(id)) return;
-  this.showView("guided");
-  // the step is written before the view scrolls to its top: the browser keeps the scroll position of the step it leaves.
-  // While the step back of closeIncident is still under way, the new step is written when it has arrived.
-  const st = histState(), inside = !!st && st.wpIncident != null;
-  if (leaving) reopened = id; else histWrite(!inside, Object.assign({}, inside ? st : null, { wpIncident: id }));
+  // From one incident to the next the step of the incident view stays one step: it is replaced, by { wpIncident } alone (the
+  // step it replaces may be the one of the expert view the reader came back from with the switch of the head bar). Opened
+  // from elsewhere, the incident view is a new step, and the step it leaves is made true to the screen first, so the way back
+  // leads to the view the reader came from. The steps are written before the view scrolls to its top: the browser keeps the
+  // scroll position of the step it leaves. While the step back of closeIncident is still under way, the new step is written
+  // when it has arrived.
+  const st = histState(), shown = this.view === "guided" && this.incident != null;
+  if (leaving) reopened = id;
+  else if (shown && st && st.wpIncident != null) histWrite(false, { wpIncident: id });
+  else {
+    const here = screenStep();
+    if (JSON.stringify(here) !== JSON.stringify(st == null ? null : st)) histWrite(false, here);
+    histWrite(true, { wpIncident: id });
+  }
   showIncidentView(id);
 };
 window.WP.closeIncident = function () {
   if (this.incident == null) return;
   hideIncidentView();
   const st = histState();
-  if (st && st.wpIncident != null && !leaving) { leaving = true; reopened = null; history.go(st.wpView === "expert" ? -2 : -1); }
+  if (st && st.wpIncident != null && !leaving) { leaving = true; reopened = null; history.go(-1); }
 };
 // the page as a step of its history describes it
 function applyHistory(st) {
   const expert = !!st && st.wpView === "expert", id = st ? st.wpIncident : null;
-  if (!expert && id != null && incById.has(id)) { window.WP.showView("guided"); if (window.WP.incident !== id) showIncidentView(id); }
-  else if (!expert) { window.WP.showView("guided"); hideIncidentView(); }
-  else window.WP.showView("expert");
+  if (id == null || !incById.has(id)) { hideIncidentView(); window.WP.showView(expert ? "expert" : "guided"); }
+  else if (expert) window.WP.showView("expert");
+  else if (window.WP.incident !== id) showIncidentView(id, true);
+  else window.WP.showView("guided");
 }
 window.addEventListener("popstate", (ev) => {
   const back = leaving; leaving = false;
-  if (back && reopened != null) { histWrite(true, { wpIncident: reopened }); reopened = null; return; }
-  applyHistory(ev.state);
+  if (!back) { applyHistory(ev.state); return; }
+  // on the way out of the incident view: past every step of it, to the step it was opened from
+  if (isIncidentStep(ev.state)) { leaving = true; history.go(-1); return; }
+  if (reopened != null) { histWrite(true, { wpIncident: reopened }); reopened = null; }
+  else if (ev.state && ev.state.wpView === "expert") window.WP.showView("expert");
 });
 // Esc closes what is open on top: the explanation of a term, then the incident view (the copy dialog closes itself)
 document.addEventListener("keydown", (ev) => {
