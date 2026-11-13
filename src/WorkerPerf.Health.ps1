@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 # Catalogue of the health picture (health.de.json): the facts it can rate (the read values, the derived facts and the
-# facts of the applications), loading and checking the catalogue, the thresholds that differ from their default, and
-# forming the facts of a capture (Get-WorkerPerfHealthFacts).
+# facts of the applications), loading and checking the catalogue, the thresholds that differ from their default,
+# forming the facts of a capture (Get-WorkerPerfHealthFacts) and rating them with the checks (Get-WorkerPerfHealthResult).
 # Dot-source this file; it only defines variables and functions and runs nothing. It needs WorkerPerf.Common.ps1
 # ($script:WorkerPerfHealthAreas, $script:WorkerPerfHealthValues, $script:WorkerPerfHealthWemServices,
 # $script:WorkerPerfCategories, Get-WorkerPerfAppFactType, ConvertFrom-WorkerPerfJsonFile, Get-WorkerPerfField),
@@ -1400,4 +1400,471 @@ function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$
         if ($F.ContainsKey($id)) { $out[$id] = $F[$id] } else { $out[$id] = New-WorkerPerfHealthFact 'unreadable' 'error' }
     }
     return $out
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Rating: every check of the catalogue applied to the facts (Get-WorkerPerfHealthResult). A condition is true, false,
+# na (its fact is absent with notInstalled or notInUse: the check does not apply) or unknown (the fact is unreadable);
+# a check is act, check, ok, unknown ("nicht pruefbar") or na ("trifft nicht zu"). Every text comes from the catalogue
+# (copy, findings) or from the texts of the report (skip.label.<category>). Needs WorkerPerf.Findings.ps1
+# (Format-WorkerPerfTextNumber) besides the files named at the head.
+
+# the order of the checks inside an area
+$script:WorkerPerfHealthCheckOrder = @('act', 'check', 'unknown', 'ok', 'na')
+
+function Get-WorkerPerfHealthCopyText($Catalogue, [string]$Key) {
+    # A text of copy, '' when the catalogue has none.
+    $text = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'copy') $Key
+    if ($null -eq $text) { return '' }
+    return [string]$text
+}
+
+function Format-WorkerPerfHealthPlaceholders([string]$Text, [System.Collections.IDictionary]$Values) {
+    # Each {name} of $Text replaced by $Values[name]; a placeholder without a value stays as it is.
+    $out = New-Object System.Text.StringBuilder
+    $at = 0
+    foreach ($m in [regex]::Matches($Text, '\{([^{}]*)\}')) {
+        $null = $out.Append($Text.Substring($at, $m.Index - $at))
+        $name = $m.Groups[1].Value
+        if ($Values.Contains($name)) { $null = $out.Append([string]$Values[$name]) } else { $null = $out.Append($m.Value) }
+        $at = $m.Index + $m.Length
+    }
+    $null = $out.Append($Text.Substring($at))
+    return $out.ToString()
+}
+
+function Get-WorkerPerfHealthCopy($Catalogue, [string]$Key, [System.Collections.IDictionary]$Values = @{}) {
+    # A text of copy with its placeholders filled in.
+    return (Format-WorkerPerfHealthPlaceholders (Get-WorkerPerfHealthCopyText $Catalogue $Key) $Values)
+}
+
+function Format-WorkerPerfHealthTime($Ms, [int]$OffsetMinutes) {
+    # A point in time (ms since 1970, UTC) as dd.MM.yyyy HH:mm in the server's local time.
+    return [DateTimeOffset]::FromUnixTimeMilliseconds([long]$Ms).UtcDateTime.AddMinutes($OffsetMinutes).ToString('dd.MM.yyyy HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catalogue, [int]$OffsetMinutes) {
+    # The value of a fact as the report shows it: a number through Format-WorkerPerfTextNumber with its unit, a yes/no
+    # value as copy.yes or copy.no, a time as dd.MM.yyyy HH:mm in the server's local time (0: copy.noValue), the value of
+    # a probe (type value) by the kind of its content, a text as it is, a list as the number of its entries. A fact that
+    # is not read (or read without content): copy.noValue.
+    $noValue = Get-WorkerPerfHealthCopyText $Catalogue 'noValue'
+    if ($null -eq $Fact -or [string](Get-WorkerPerfHealthModelMember $Fact 'State') -cne 'read') { return $noValue }
+    $value = Get-WorkerPerfHealthModelMember $Fact 'Value'
+    if ($null -eq $value) { return $noValue }
+    $unitPart = ''; if ($Unit) { $unitPart = ' ' + $Unit }
+    if ($Type -ceq 'list') { return (Format-WorkerPerfTextNumber @($value).Count) }
+    if ($Type -ceq 'time') {
+        if (-not (Test-WorkerPerfHealthWhole $value)) { return [string]$value }
+        if ([double]$value -eq 0) { return $noValue }
+        return (Format-WorkerPerfHealthTime $value $OffsetMinutes)
+    }
+    if (@('number', 'bool', 'value') -ccontains $Type) {
+        if ($value -is [bool]) {
+            if ($value) { return (Get-WorkerPerfHealthCopyText $Catalogue 'yes') }
+            return (Get-WorkerPerfHealthCopyText $Catalogue 'no')
+        }
+        if (Test-WorkerPerfHealthNumber $value) { return (Format-WorkerPerfTextNumber ([double]$value)) + $unitPart }
+    }
+    return [string]$value
+}
+
+function Get-WorkerPerfHealthReasonText($Catalogue, $Texts, [string]$Reason, [string]$Label = '') {
+    # The text of the reason of a fact: copy.reasonRights, reasonTimeout, reasonError, reasonNotRecorded, reasonAbsent
+    # (absent without a reason), reasonSkipped with skip.label.<category> of the texts, reasonNotInstalled and
+    # reasonNotInUse with the label of the fact.
+    if ($Reason.StartsWith('skipped:', [StringComparison]::Ordinal)) {
+        $category = $Reason.Substring(8)
+        $key = 'skip.label.' + $category
+        if ($Texts -is [System.Collections.IDictionary] -and $Texts.Contains($key) -and [string]$Texts[$key]) { $category = [string]$Texts[$key] }
+        return (Get-WorkerPerfHealthCopy $Catalogue 'reasonSkipped' @{ category = $category })
+    }
+    switch -CaseSensitive ($Reason) {
+        '' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonAbsent') }
+        'rights' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonRights') }
+        'timeout' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonTimeout') }
+        'notRecorded' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonNotRecorded') }
+        'notInstalled' { return (Get-WorkerPerfHealthCopy $Catalogue 'reasonNotInstalled' @{ label = $Label }) }
+        'notInUse' { return (Get-WorkerPerfHealthCopy $Catalogue 'reasonNotInUse' @{ label = $Label }) }
+    }
+    return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonError')
+}
+
+function Get-WorkerPerfHealthFactLabel($Catalogue, $Table, [string]$Id) {
+    # The label of a fact: from values of the catalogue; for a value of an application from the fact table, for
+    # apps.<key>.installed "<label of the application> - " and copy.appInstalledLabel.
+    $entry = $Table[$Id]
+    if ($null -ne $entry -and $entry.Label) {
+        if ($Id -cmatch '^apps\.[^.]+\.installed\z') { return $entry.Label + ' ' + [string][char]0x2013 + ' ' + (Get-WorkerPerfHealthCopyText $Catalogue 'appInstalledLabel') }
+        return $entry.Label
+    }
+    $label = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'values') $Id
+    if ($null -eq $label) { return $Id }
+    return [string]$label
+}
+
+function Get-WorkerPerfHealthThan($Catalogue, $Than) {
+    # The comparison value of a condition; @<threshold> gives the value of the threshold.
+    if ($Than -is [string] -and $Than.StartsWith('@', [StringComparison]::Ordinal)) {
+        $threshold = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'thresholds') $Than.Substring(1)
+        $value = Get-WorkerPerfField $threshold 'value'
+        if (-not (Test-WorkerPerfHealthNumber $value)) { throw "Zustandsbild: die Schwelle '$Than' hat keinen Wert." }
+        return $value
+    }
+    return , $Than
+}
+
+function ConvertTo-WorkerPerfHealthCompareText($Value) {
+    if ($null -eq $Value) { return '' }
+    if (Test-WorkerPerfHealthNumber $Value) { return ([double]$Value).ToString('R', [Globalization.CultureInfo]::InvariantCulture) }
+    return [string]$Value
+}
+
+function Test-WorkerPerfHealthEqual($A, $B) {
+    # Equality of a condition (ruling ZB-R14): yes/no values as such, numbers as numbers, everything else as texts
+    # ignoring case.
+    if ($A -is [bool] -or $B -is [bool]) { return ($A -is [bool] -and $B -is [bool] -and $A -eq $B) }
+    if ((Test-WorkerPerfHealthNumber $A) -and (Test-WorkerPerfHealthNumber $B)) { return ([double]$A -eq [double]$B) }
+    return [string]::Equals((ConvertTo-WorkerPerfHealthCompareText $A), (ConvertTo-WorkerPerfHealthCompareText $B), [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-WorkerPerfHealthConditionResult($Condition, $Facts, $Model, $EventConfig, $Catalogue) {
+    # One condition in four values: @{ Result = true|false|na|unknown; Reason (of the fact, or why the lookback is not
+    # read); Fact (the id of the fact, '' for an event); Event (an event condition) }.
+    $event = Get-WorkerPerfHealthModelMember $Condition 'event'
+    if ($null -ne $event) {
+        $min = [double](Get-WorkerPerfHealthModelMember $Condition 'min'); $days = [double](Get-WorkerPerfHealthModelMember $Condition 'days')
+        $count = Get-WorkerPerfHealthEventCount -Model $Model -EventConfig $EventConfig -Kind ([string]$event) -Days $days
+        if ($count.Count -ge $min) { return @{ Result = 'true'; Reason = ''; Fact = ''; Event = $true } }
+        if ($count.Known) { return @{ Result = 'false'; Reason = ''; Fact = ''; Event = $true } }
+        return @{ Result = 'unknown'; Reason = (Get-WorkerPerfHealthMissingReason -Model $Model -What 'lookback'); Fact = ''; Event = $true }
+    }
+    $id = [string](Get-WorkerPerfHealthModelMember $Condition 'value')
+    $op = [string](Get-WorkerPerfHealthModelMember $Condition 'op')
+    $done = { param($Result, $Reason = '') @{ Result = $Result; Reason = $Reason; Fact = $id; Event = $false } }
+    if (-not $Facts.Contains($id)) { return (& $done 'unknown' 'error') }
+    $fact = $Facts[$id]
+    $state = [string]$fact.State; $reason = [string]$fact.Reason
+    if ($state -ceq 'absent' -and @('notInstalled', 'notInUse') -ccontains $reason) { return (& $done 'na' $reason) }
+    if ($state -cne 'read' -and $state -cne 'absent') { return (& $done 'unknown' $reason) }
+    $bool = { param($Yes) if ($Yes) { & $done 'true' } else { & $done 'false' } }
+    if ($state -ceq 'absent') {
+        # not set: equality is decided, a comparison of size is not
+        switch -CaseSensitive ($op) {
+            'exists' { return (& $done 'false') }
+            'absent' { return (& $done 'true') }
+            'ne' { return (& $done 'true') }
+            'eq' { return (& $done 'false') }
+            'in' { return (& $done 'false') }
+            'contains' { return (& $done 'false') }
+            'gt' { return (& $done 'unknown' $reason) }
+            'ge' { return (& $done 'unknown' $reason) }
+            'lt' { return (& $done 'unknown' $reason) }
+            'le' { return (& $done 'unknown' $reason) }
+        }
+        throw "Zustandsbild: unbekannter Operator '$op'."
+    }
+    $value = Get-WorkerPerfHealthModelMember $fact 'Value'
+    if ($op -ceq 'exists') { return (& $done 'true') }
+    if ($op -ceq 'absent') { return (& $done 'false') }
+    $than = Get-WorkerPerfHealthThan $Catalogue (Get-WorkerPerfHealthModelMember $Condition 'than')
+    if (@('gt', 'ge', 'lt', 'le') -ccontains $op) {
+        if (-not (Test-WorkerPerfHealthNumber $value) -or -not (Test-WorkerPerfHealthNumber $than)) { return (& $done 'unknown' 'error') }
+        $a = [double]$value; $b = [double]$than
+        switch -CaseSensitive ($op) {
+            'gt' { return (& $bool ($a -gt $b)) }
+            'ge' { return (& $bool ($a -ge $b)) }
+            'lt' { return (& $bool ($a -lt $b)) }
+            'le' { return (& $bool ($a -le $b)) }
+        }
+    }
+    switch -CaseSensitive ($op) {
+        'eq' { return (& $bool (Test-WorkerPerfHealthEqual $value $than)) }
+        'ne' { return (& $bool (-not (Test-WorkerPerfHealthEqual $value $than))) }
+        'in' {
+            foreach ($item in @($than)) { if (Test-WorkerPerfHealthEqual $value $item) { return (& $done 'true') } }
+            return (& $done 'false')
+        }
+        'contains' {
+            $hay = ConvertTo-WorkerPerfHealthCompareText $value; $needle = ConvertTo-WorkerPerfHealthCompareText $than
+            return (& $bool ($hay.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0))
+        }
+    }
+    throw "Zustandsbild: unbekannter Operator '$op'."
+}
+
+function Test-WorkerPerfHealthRule {
+    # A rule (a list of conditions that must all hold) in four values: a false condition makes it false, else one that
+    # does not apply na, else an unknown one unknown, else true. A rule without conditions (not in the catalogue) is
+    # false. Returns @{ Result; Reason; EventsUnknown; Fact }: Reason and Fact of the first condition that makes the
+    # rule na or unknown; EventsUnknown when an event condition is unknown.
+    param($Conditions, $Facts, $Model, $EventConfig, $Catalogue)
+    $list = @($Conditions | Where-Object { $null -ne $_ })
+    $falseSeen = $false; $na = $null; $unknown = $null; $eventsUnknown = $false
+    foreach ($condition in $list) {
+        $x = Get-WorkerPerfHealthConditionResult $condition $Facts $Model $EventConfig $Catalogue
+        if ($x.Result -ceq 'false') { $falseSeen = $true }
+        elseif ($x.Result -ceq 'na') { if ($null -eq $na) { $na = $x } }
+        elseif ($x.Result -ceq 'unknown') {
+            if ($null -eq $unknown) { $unknown = $x }
+            if ($x.Event) { $eventsUnknown = $true }
+        }
+    }
+    if ($list.Count -eq 0 -or $falseSeen) { return @{ Result = 'false'; Reason = ''; EventsUnknown = $eventsUnknown; Fact = '' } }
+    if ($null -ne $na) { return @{ Result = 'na'; Reason = $na.Reason; EventsUnknown = $eventsUnknown; Fact = $na.Fact } }
+    if ($null -ne $unknown) { return @{ Result = 'unknown'; Reason = $unknown.Reason; EventsUnknown = $eventsUnknown; Fact = $unknown.Fact } }
+    return @{ Result = 'true'; Reason = ''; EventsUnknown = $eventsUnknown; Fact = '' }
+}
+
+function Get-WorkerPerfHealthCheckValueText($Check, $Facts, $Ctx) {
+    # "<label>: <value>" per fact of values, joined by "; "; free server text only as copy.valueSet or copy.valueNotSet.
+    $parts = @(foreach ($id in @($Check.values)) {
+            $t = $Ctx.Table[$id]; $fact = $Facts[$id]
+            if ($t.Type -ceq 'text:free') {
+                if ($fact.State -ceq 'read' -and -not [string]::IsNullOrEmpty([string]$fact.Value)) { $shown = Get-WorkerPerfHealthCopyText $Ctx.Catalogue 'valueSet' }
+                elseif ($fact.State -ceq 'unreadable') { $shown = Get-WorkerPerfHealthCopyText $Ctx.Catalogue 'noValue' }
+                else { $shown = Get-WorkerPerfHealthCopyText $Ctx.Catalogue 'valueNotSet' }
+            }
+            else { $shown = Format-WorkerPerfHealthFact $fact $t.Type $t.Unit $Ctx.Catalogue $Ctx.Offset }
+            (Get-WorkerPerfHealthFactLabel $Ctx.Catalogue $Ctx.Table $id) + ': ' + $shown
+        })
+    return ($parts -join '; ')
+}
+
+function Get-WorkerPerfHealthFindingText($Check, $Facts, $Ctx, [string]$Grade, [string]$Why) {
+    # The finding of a check: copy.notApplicable for na, else findings.<grade> with the facts (without their unit), the
+    # thresholds and {reason} filled in.
+    if ($Grade -ceq 'na') { return (Get-WorkerPerfHealthCopy $Ctx.Catalogue 'notApplicable' @{ reason = $Why }) }
+    $map = @{ reason = $Why }
+    foreach ($k in $Ctx.ThresholdTexts.Keys) { $map[$k] = $Ctx.ThresholdTexts[$k] }
+    foreach ($id in @($Check.values)) {
+        try { $map[$id] = Format-WorkerPerfHealthFact $Facts[$id] $Ctx.Table[$id].Type '' $Ctx.Catalogue $Ctx.Offset }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { $map[$id] = Get-WorkerPerfHealthCopyText $Ctx.Catalogue 'noValue' }
+    }
+    return (Format-WorkerPerfHealthPlaceholders ([string](Get-WorkerPerfField $Check.findings $Grade)) $map)
+}
+
+function Get-WorkerPerfHealthCheckResult($Check, $Facts, $Ctx) {
+    # One check applied to the facts: [ordered]@{ id; title; grade; app; finding; why; note; value; meaning; todo; source;
+    # kind; kindLabel; relates }. A check of an application that is not installed is na without its rules; one whose
+    # installation is not known is unknown with that reason. A failure while rating makes this check unknown with the
+    # reason error; the other checks are rated (ruling ZB-R27).
+    $cat = $Ctx.Catalogue
+    $app = ''
+    if ([string]$Check.area -ceq 'apps') { $app = ([string]@($Check.values)[0]).Split('.')[1] }
+    $grade = ''; $why = ''; $note = ''; $finding = ''; $value = ''
+    try {
+        if ($app) {
+            $installed = $Facts["apps.$app.installed"]
+            if ($null -eq $installed) { $grade = 'unknown'; $why = Get-WorkerPerfHealthReasonText $cat $Ctx.Texts 'error' }
+            elseif (($installed.State -ceq 'read' -and $installed.Value -is [bool] -and -not $installed.Value) -or
+                ($installed.State -ceq 'absent' -and [string]$installed.Reason -ceq 'notInstalled')) {
+                $grade = 'na'; $why = Get-WorkerPerfHealthCopy $cat 'reasonAppNotInstalled' @{ app = $Ctx.AppLabels[$app] }
+            }
+            elseif (-not ($installed.State -ceq 'read' -and $installed.Value -is [bool])) {
+                $r = [string]$installed.Reason; if ($installed.State -ceq 'read') { $r = 'error' }
+                $grade = 'unknown'; $why = Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $r
+            }
+        }
+        if (-not $grade) {
+            $act = Test-WorkerPerfHealthRule -Conditions $Check.rules.act -Facts $Facts -Model $Ctx.Model -EventConfig $Ctx.EventConfig -Catalogue $cat
+            $chk = Test-WorkerPerfHealthRule -Conditions $Check.rules.check -Facts $Facts -Model $Ctx.Model -EventConfig $Ctx.EventConfig -Catalogue $cat
+            if ($act.Result -ceq 'true') { $grade = 'act' }
+            elseif ($chk.Result -ceq 'true') {
+                $grade = 'check'
+                if ($act.Result -ceq 'unknown' -and $act.EventsUnknown) { $note = Get-WorkerPerfHealthCopyText $cat 'eventsUnchecked' }
+            }
+            elseif ($chk.Result -ceq 'na') { $grade = 'na'; $why = Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $chk.Reason (Get-WorkerPerfHealthFactLabel $cat $Ctx.Table $chk.Fact) }
+            elseif ($chk.Result -ceq 'unknown') { $grade = 'unknown'; $why = Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $chk.Reason (Get-WorkerPerfHealthFactLabel $cat $Ctx.Table $chk.Fact) }
+            else { $grade = 'ok' }
+        }
+        $finding = Get-WorkerPerfHealthFindingText $Check $Facts $Ctx $grade $why
+        $value = Get-WorkerPerfHealthCheckValueText $Check $Facts $Ctx
+    }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch {
+        $grade = 'unknown'; $why = Get-WorkerPerfHealthReasonText $cat $Ctx.Texts 'error'; $note = ''
+        $map = @{ reason = $why }; $noValue = Get-WorkerPerfHealthCopyText $cat 'noValue'
+        foreach ($id in @($Check.values)) { $map[[string]$id] = $noValue }
+        foreach ($k in $Ctx.ThresholdTexts.Keys) { $map[$k] = $Ctx.ThresholdTexts[$k] }
+        $finding = Format-WorkerPerfHealthPlaceholders ([string](Get-WorkerPerfField $Check.findings 'unknown')) $map
+        try { $value = Get-WorkerPerfHealthCheckValueText $Check $Facts $Ctx }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { $value = '' }
+    }
+    $kindKey = @{ vendor = 'kindVendor'; practice = 'kindPractice'; rule = 'kindRule' }[[string]$Check.kind]
+    $kindLabel = ''; if ($kindKey) { $kindLabel = Get-WorkerPerfHealthCopyText $cat $kindKey }
+    return [ordered]@{
+        id = [string]$Check.id; title = [string]$Check.title; grade = $grade; app = $app; finding = $finding; why = $why; note = $note
+        value = $value; meaning = [string]$Check.meaning
+        todo = [object[]]@(foreach ($step in @($Check.todo)) { [ordered]@{ text = [string]$step.text; where = [string]$step.where; sign = [string]$step.sign } })
+        source = [ordered]@{ vendor = [string]$Check.source.vendor; title = [string]$Check.source.title; url = [string]$Check.source.url; date = [string]$Check.source.date }
+        kind = [string]$Check.kind; kindLabel = $kindLabel; relates = [object[]]@(foreach ($x in @($Check.relates)) { [string]$x })
+    }
+}
+
+function Get-WorkerPerfHealthAreaResult($AreaDef, [object[]]$Checks, $Facts, $Ctx) {
+    # One area: [ordered]@{ id; label; grade; status; statusText; error; notCovered; intro; apps; counts; countsText;
+    # checks }. The grade is the worst of its checks (act, check, else ok: unknown alone does not make it stand out); na
+    # counts nowhere.
+    $cat = $Ctx.Catalogue
+    $id = [string]$AreaDef.id
+    $fileArea = Get-WorkerPerfField (Get-WorkerPerfField $Ctx.Health 'Areas') $id
+    $status = [string](Get-WorkerPerfField $fileArea 'Status'); $areaError = [string](Get-WorkerPerfField $fileArea 'Error')
+    if ($null -eq $fileArea) { $status = 'failed'; $areaError = 'notInFile' }
+    $statusText = ''
+    if ($status -cne 'read') {
+        if ($status -ceq 'partial') { $statusText = Get-WorkerPerfHealthCopyText $cat 'areaPartial' } else { $statusText = Get-WorkerPerfHealthCopyText $cat 'areaFailed' }
+    }
+    $errorText = $areaError
+    if ($script:WorkerPerfHealthAreaErrors -ccontains $areaError) {
+        $errorText = ''
+        if ($statusText) { $statusText += ' ' + (Get-WorkerPerfHealthCopyText $cat ('areaReason' + $areaError.Substring(0, 1).ToUpperInvariant() + $areaError.Substring(1))) }
+    }
+
+    $counts = [ordered]@{ act = 0; check = 0; unknown = 0; ok = 0 }
+    foreach ($c in $Checks) { if ($counts.Contains($c.grade)) { $counts[$c.grade]++ } }
+    $grade = 'ok'; if ($counts.act -gt 0) { $grade = 'act' } elseif ($counts.check -gt 0) { $grade = 'check' }
+    $countParts = @(foreach ($pair in @(@('act', 'countsAct'), @('check', 'countsCheck'), @('unknown', 'countsUnknown'))) {
+            if ($counts[$pair[0]] -gt 0) { Get-WorkerPerfHealthCopy $cat $pair[1] @{ n = [string]$counts[$pair[0]] } } })
+
+    $apps = @()
+    if ($id -ceq 'apps') {
+        $apps = @(foreach ($a in $Ctx.Apps) {
+                if ($null -eq (Get-WorkerPerfField $a 'installed')) { continue }
+                $key = [string](Get-WorkerPerfField $a 'key'); $label = [string](Get-WorkerPerfField $a 'label')
+                $f = $Facts["apps.$key.installed"]
+                if ($null -ne $f -and $f.State -ceq 'read' -and $f.Value -is [bool]) {
+                    if ($f.Value) { $state = 'installed'; $text = Get-WorkerPerfHealthCopy $cat 'appInstalled' @{ app = $label } }
+                    else { $state = 'notInstalled'; $text = Get-WorkerPerfHealthCopy $cat 'appNotInstalled' @{ app = $label } }
+                }
+                elseif ($null -ne $f -and $f.State -ceq 'absent' -and [string]$f.Reason -ceq 'notInstalled') { $state = 'notInstalled'; $text = Get-WorkerPerfHealthCopy $cat 'appNotInstalled' @{ app = $label } }
+                else {
+                    $r = 'error'; if ($null -ne $f -and $f.State -cne 'read') { $r = [string]$f.Reason }
+                    $state = 'unknown'; $text = Get-WorkerPerfHealthCopy $cat 'appUnknown' @{ app = $label; reason = (Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $r) }
+                }
+                [ordered]@{ key = $key; label = $label; state = $state; text = $text }
+            })
+    }
+    $intro = ''; if ($id -ceq 'events') { $intro = $Ctx.EventsReachText }
+    $sorted = @(foreach ($g in $script:WorkerPerfHealthCheckOrder) { foreach ($c in $Checks) { if ($c.grade -ceq $g) { $c } } })
+    return [ordered]@{
+        id = $id; label = [string]$AreaDef.label; grade = $grade; status = $status; statusText = $statusText; error = $errorText
+        notCovered = [string]$AreaDef.notCovered; intro = $intro; apps = [object[]]$apps; counts = $counts; countsText = ($countParts -join ', ')
+        checks = [object[]]$sorted
+    }
+}
+
+function Get-WorkerPerfHealthRawEntry([string]$Id, $Fact, $Ctx) {
+    # The raw value of a fact: [ordered]@{ area; id; label; derived; state; stateText; reason; text; free; items }. A
+    # single value in text (free server text in free instead); a list in items[] with text ("field: value" per field,
+    # joined by "; ") and free (the same for the fields of free server text). A value that is not read has empty texts.
+    $cat = $Ctx.Catalogue
+    $t = $Ctx.Table[$Id]
+    $label = Get-WorkerPerfHealthFactLabel $cat $Ctx.Table $Id
+    $state = [string]$Fact.State; $reason = [string]$Fact.Reason
+    $entry = [ordered]@{ area = [string]$t.Area; id = $Id; label = $label; derived = [bool]$t.Derived; state = $state; stateText = ''
+        reason = $reason; text = ''; free = ''; items = [object[]]@() }
+    try {
+        if ($state -ceq 'read') { $entry.stateText = Get-WorkerPerfHealthCopyText $cat 'stateRead' }
+        elseif ($state -ceq 'absent' -and @('notInstalled', 'notInUse') -ccontains $reason) {
+            $entry.stateText = Get-WorkerPerfHealthCopy $cat 'stateNotApplicable' @{ reason = (Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $reason $label) }
+        }
+        elseif ($state -ceq 'absent') { $entry.stateText = Get-WorkerPerfHealthCopyText $cat 'stateAbsent' }
+        else { $entry.stateText = Get-WorkerPerfHealthCopy $cat 'stateUnreadable' @{ reason = (Get-WorkerPerfHealthReasonText $cat $Ctx.Texts $reason $label) } }
+        if ($state -cne 'read') { return $entry }
+        if ($t.Type -ceq 'list') {
+            $list = Get-WorkerPerfHealthModelMember $Fact 'Value'   # an array (assigned first: @() around the call would nest it)
+            $entry.items = [object[]]@(foreach ($item in @($list)) {
+                    $fields = $t.Fields
+                    if ($null -eq $fields) { $fields = [ordered]@{}; foreach ($n in @(Get-WorkerPerfHealthItemNames $item)) { $fields[$n] = 'text' } }
+                    $text = @(); $free = @()
+                    foreach ($name in $fields.Keys) {
+                        $shown = Format-WorkerPerfHealthFact @{ State = 'read'; Value = (Get-WorkerPerfHealthModelMember $item $name) } $fields[$name] '' $cat $Ctx.Offset
+                        if ($fields[$name] -ceq 'text:free') { $free += "${name}: $shown" } else { $text += "${name}: $shown" }
+                    }
+                    [ordered]@{ text = ($text -join '; '); free = ($free -join '; ') }
+                })
+        }
+        elseif ($t.Type -ceq 'text:free') { $entry.free = [string](Get-WorkerPerfHealthModelMember $Fact 'Value') }
+        else { $entry.text = Format-WorkerPerfHealthFact $Fact $t.Type $t.Unit $cat $Ctx.Offset }
+    }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch {
+        $entry.text = ''; $entry.free = ''; $entry.items = [object[]]@()
+        $entry.stateText = Get-WorkerPerfHealthCopy $cat 'stateUnreadable' @{ reason = (Get-WorkerPerfHealthReasonText $cat $Ctx.Texts 'error') }
+    }
+    return $entry
+}
+
+function Get-WorkerPerfHealthItemNames($Item) {
+    # The field names of a list entry (a table or an object), in their order.
+    if ($Item -is [System.Collections.IDictionary]) { return , [object[]]@($Item.Keys) }
+    if ($null -eq $Item) { return , [object[]]@() }
+    return , [object[]]@($Item.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+function Get-WorkerPerfHealthResult($Model, $Catalogue, $EventConfig, [object[]]$Roles = @(), $Texts = @{}) {
+    # The result of the health picture for the report data. Without a read health picture only state, text (copy.
+    # notRecorded, notRecordedFailed when SourceErrors names health, copy.unreadable; '' when skipped) and empty areas
+    # and raw. With one: state, readAt, offsetMin, durationMs, catalogueVersion, grades, areas, summary, changed,
+    # unknownCount, raw, environmentText, eventsReachText. Everything taken from the catalogue is copied into ordered
+    # dictionaries and arrays (never a pscustomobject: the JSON writer of the report would write it as one text).
+    $state = [string](Get-WorkerPerfHealthModelMember $Model 'HealthState')
+    if ($state -cne 'read') {
+        $text = ''
+        if ($state -ceq 'notRecorded') {
+            $failed = @(foreach ($e in (Get-WorkerPerfHealthModelList $Model 'SourceErrors')) { if ([string](Get-WorkerPerfField $e 'Source') -ceq 'health') { $e } }).Count -gt 0
+            if ($failed) { $text = Get-WorkerPerfHealthCopyText $Catalogue 'notRecordedFailed' } else { $text = Get-WorkerPerfHealthCopyText $Catalogue 'notRecorded' }
+        }
+        elseif ($state -cne 'skipped') { $text = Get-WorkerPerfHealthCopyText $Catalogue 'unreadable' }
+        return [ordered]@{ state = $state; text = $text; areas = [object[]]@(); raw = [object[]]@() }
+    }
+
+    $health = Get-WorkerPerfHealthModelMember $Model 'Health'
+    $apps = Get-WorkerPerfHealthModelList $Catalogue 'appList'
+    $table = Get-WorkerPerfHealthFactTable $apps
+    $facts = Get-WorkerPerfHealthFacts -Model $Model -Catalogue $Catalogue -EventConfig $EventConfig -Roles $Roles
+    $offset = Get-WorkerPerfField $health 'OffsetMinutes'
+    if (Test-WorkerPerfHealthWhole $offset) { $offset = [int]$offset } else { $offset = Get-WorkerPerfHealthServerOffset $Model }
+    $thresholdTexts = @{}
+    foreach ($p in @((Get-WorkerPerfField $Catalogue 'thresholds').PSObject.Properties)) {
+        $v = Get-WorkerPerfField $p.Value 'value'
+        if (Test-WorkerPerfHealthNumber $v) { $thresholdTexts['@' + $p.Name] = Format-WorkerPerfTextNumber ([double]$v) }
+    }
+    $appLabels = @{}
+    foreach ($a in $apps) { $appLabels[[string](Get-WorkerPerfField $a 'key')] = [string](Get-WorkerPerfField $a 'label') }
+    $ctx = @{ Model = $Model; Catalogue = $Catalogue; EventConfig = $EventConfig; Texts = $Texts; Table = $table; Offset = $offset
+        Health = $health; Apps = $apps; AppLabels = $appLabels; ThresholdTexts = $thresholdTexts }
+    $ctx.EventsReachText = Get-WorkerPerfHealthCopy $Catalogue 'eventsReach' @{
+        from = (Format-WorkerPerfHealthFact $facts['events.reachFrom'] 'time' '' $Catalogue $offset)
+        boot = (Format-WorkerPerfHealthFact $facts['operation.lastBoot'] 'time' '' $Catalogue $offset) }
+
+    $checkResults = @(foreach ($check in @($Catalogue.checks)) { , @([string]$check.area, (Get-WorkerPerfHealthCheckResult $check $facts $ctx)) })
+    $areas = @(foreach ($areaDef in @($Catalogue.areas)) {
+            $mine = @(foreach ($pair in $checkResults) { if ($pair[0] -ceq [string]$areaDef.id) { $pair[1] } })
+            Get-WorkerPerfHealthAreaResult $areaDef $mine $facts $ctx
+        })
+
+    $summary = [ordered]@{ act = 0; check = 0; ok = 0; text = '' }
+    $unknownCount = 0
+    foreach ($a in $areas) { $summary[$a.grade]++; $unknownCount += $a.counts.unknown }
+    $actText = Get-WorkerPerfHealthCopyText $Catalogue 'areaOne'
+    if ($summary.act -ne 1) { $actText = Get-WorkerPerfHealthCopy $Catalogue 'areaMany' @{ n = [string]$summary.act } }
+    $summary.text = Get-WorkerPerfHealthCopy $Catalogue 'summary' @{ act = $actText; check = [string]$summary.check; ok = [string]$summary.ok }
+
+    $grades = [ordered]@{}
+    foreach ($g in @($script:WorkerPerfHealthGrades) + 'na') {
+        $def = Get-WorkerPerfField $Catalogue.grades $g
+        $grades[$g] = [ordered]@{ word = [string](Get-WorkerPerfField $def 'word'); symbol = [string](Get-WorkerPerfField $def 'symbol') }
+    }
+    $raw = @(foreach ($id in $table.Keys) { Get-WorkerPerfHealthRawEntry $id $facts[$id] $ctx })
+
+    return [ordered]@{
+        state = $state; readAt = (Get-WorkerPerfField $health 'ReadAtMs'); offsetMin = $offset; durationMs = (Get-WorkerPerfField $health 'DurationMs')
+        catalogueVersion = [string]$Catalogue.version; grades = $grades; areas = [object[]]$areas; summary = $summary
+        changed = [object[]]@(Get-WorkerPerfHealthChangedThresholds $Catalogue); unknownCount = $unknownCount; raw = [object[]]$raw
+        environmentText = (Get-WorkerPerfHealthCopyText $Catalogue 'environment'); eventsReachText = $ctx.EventsReachText
+    }
 }

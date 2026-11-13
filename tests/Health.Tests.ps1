@@ -70,6 +70,12 @@ BeforeAll {
         foreach ($id in $Raw.Keys) { $m.Health.Areas[$WorkerPerfHealthValues[$id].Area].Values[$id] = $Raw[$id] }; $m
     }
     function Get-RawFacts([hashtable]$Raw, [hashtable]$Values = @{}, [hashtable]$With = @{}) { Get-WorkerPerfHealthFacts -Model (New-RawModel $Raw $Values $With) -Catalogue $Cat -EventConfig $Cfg -Roles $script:Roles }
+    function Get-Check([hashtable]$Values, [hashtable]$With = @{}, [string]$Id = 'operation.diskFree', $Catalogue = $script:Cat) {
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $Values $With) -Catalogue $Catalogue -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        @($r.areas | ForEach-Object { $_.checks }) | Where-Object id -eq $Id }
+    $script:NoLookback = @{ Skip = [string[]]@('Ereignisse', 'Rueckblick'); Meta = @{ EventLookbackDays = 0; HealthOnly = $false; OffsetMinutes = 60; Computer = 'T1' } }
+    $script:HpNone = @(@{ Name = 'A'; Manufacturer = 'HP'; Type = 3; Isolation = 'none' })
+    function Get-Vol([double]$Free) { @{ 'operation.volumes' = @(@{ Drive = 'C:'; SizeGB = 100; FreeGB = $Free; FileSystem = 'NTFS'; System = $true; PageFile = $true }) } }
 }
 Describe 'Katalog des Zustandsbilds laden und pruefen' {
     It 'liest einen vollstaendigen Katalog und kennt jeden Fakt' {
@@ -506,5 +512,186 @@ Describe 'Fakten des Zustandsbilds' {
         $f['sessions.disconnectedOldestHours'].Value | Should -Be 26.5
         # 0,25 % und 2,25 % liegen genau auf der Mitte: der Plan rundet von null weg (AwayFromZero), nicht zur geraden Ziffer
         $f['size.commitPeakPct'].Value | Should -Be 0.3; $f['size.commitNowPct'].Value | Should -Be 2.3
+    }
+}
+Describe 'Bewertung' {
+    It 'stuft <Grade> ein bei <Free> GB frei' -TestCases @(
+        @{ Free = 38; Grade = 'ok'; Finding = '38 GB frei.' }
+        @{ Free = 8.5; Grade = 'check'; Finding = 'Nur 8,5 GB frei (Schwelle 10 GB).' }
+        @{ Free = 1.5; Grade = 'act'; Finding = 'Nur 1,5 GB frei.' }
+    ) { $c = Get-Check (Get-Vol $Free); $c.grade | Should -Be $Grade; $c.finding | Should -Be $Finding; $c.app | Should -Be ''; $c.why | Should -Be ''; $c.value | Should -Match '^Wert operation\.minFreeGB: ' }
+    It 'nennt nicht pruefbar mit dem Grund' {   # Review Focus 1
+        $c = Get-Check @{ 'operation.volumes' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }
+        $c.grade | Should -Be 'unknown'; $c.why | Should -Be 'Text reasonRights'; $c.finding | Should -Be 'Nicht prüfbar: Text reasonRights.'
+        (Get-Check @{} @{ Skip = [string[]]@('Drucken') } 'print.driversInSpooler').why | Should -Be 'Drucken nicht erfasst'
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{} @{ Skip = [string[]]@('Drucken') }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $o = $r.areas | Where-Object id -eq 'operation'; $o.status | Should -Be 'read'; $o.checks[0].grade | Should -Be 'unknown'; $o.checks[0].why | Should -Be 'Text reasonAbsent'
+        $o.grade | Should -Be 'ok'; $o.counts.unknown | Should -Be 1                                                    # nicht pruefbar allein macht den Bereich nicht auffaellig
+    }
+    It 'nennt den Grund eines nicht gelesenen Bereichs mit dem Text des Katalogs' {   # Review Focus 1
+        $m = New-HealthModel
+        $m.Health.Areas['operation'] = Complete-WorkerPerfHealthArea 'operation' @{} 0 'budget' $true
+        $m.Health.Areas['print'] = Complete-WorkerPerfHealthArea 'print' @{ 'print.queueCount' = (New-WorkerPerfHealthValue 'read' '' 2) } 3 'Zugriff verweigert'
+        $r = Get-WorkerPerfHealthResult -Model $m -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $o = $r.areas | Where-Object id -eq 'operation'; $o.status | Should -Be 'failed'; $o.statusText | Should -Be 'Text areaFailed Text areaReasonBudget'; $o.error | Should -Be ''
+        $o.checks[0].grade | Should -Be 'unknown'; $o.checks[0].why | Should -Be 'Text reasonTimeout'; $o.grade | Should -Be 'ok'; $o.countsText | Should -Be '1 nicht prüfbar'
+        $p = $r.areas | Where-Object id -eq 'print'; $p.status | Should -Be 'partial'; $p.statusText | Should -Be 'Text areaPartial'; $p.error | Should -Be 'Zugriff verweigert'
+        ($r.areas | Where-Object id -eq 'size').statusText | Should -Be ''; ($r.areas | Where-Object id -eq 'size').countsText | Should -Be ''
+    }
+    It 'macht handeln nur mit harter Grenze oder mit Dauerzustand und Ereignis' {
+        (Get-Check @{} @{ PrintDrivers = $HpNone } 'print.driversInSpooler').grade | Should -Be 'check'
+        (Get-Check @{} @{ PrintDrivers = $HpNone; EventsBefore = @((New-Ev 2 'crash' 'app' 'spoolsv.exe')) } 'print.driversInSpooler').grade | Should -Be 'act'
+        (Get-Check @{} @{ PrintDrivers = $HpNone; EventsBefore = @((New-Ev 2 'crash' 'app' 'EXCEL.EXE')) } 'print.driversInSpooler').grade | Should -Be 'check'      # ein anderes Ereignis zaehlt nicht
+        (Get-Check @{} @{ PrintDrivers = $HpNone; EventsBefore = @((New-Ev 8 'crash' 'app' 'spoolsv.exe')) } 'print.driversInSpooler').grade | Should -Be 'check'    # aelter als sieben Tage
+        (Get-Check @{} @{ PrintDrivers = $HpNone; EventsAll = @((New-Ev -0.01 'crash' 'app' 'spoolsv.exe')); Events = @() } 'print.driversInSpooler').grade | Should -Be 'act'   # Ereignis der Messung, auch ausserhalb von -From und -To
+        (Get-Check @{} @{ PrintDrivers = @(); EventsBefore = @((New-Ev 2 'crash' 'app' 'spoolsv.exe')) } 'print.driversInSpooler').grade | Should -Be 'ok'           # Ereignis ohne Dauerzustand
+    }
+    It 'bleibt bei pruefen und sagt es, wenn die Ereignisse nicht gelesen wurden' {   # Review Focus 5
+        $c = Get-Check @{} (@{ PrintDrivers = $HpNone } + $NoLookback) 'print.driversInSpooler'
+        $c.grade | Should -Be 'check'; $c.note | Should -Be 'Text eventsUnchecked'
+        (Get-Check @{} @{ PrintDrivers = $HpNone } 'print.driversInSpooler').note | Should -Be ''
+        (Get-Check @{} (@{ PrintDrivers = @() } + $NoLookback) 'print.driversInSpooler').grade | Should -Be 'ok'
+        # ein Schnelllauf ohne Rueckblick, und eine Aufzeichnung, in der die Datei des Rueckblicks fehlt: dieselbe Lage
+        $ho = @{ PrintDrivers = $HpNone; Skip = [string[]]@('Rueckblick'); Meta = @{ EventLookbackDays = 0; HealthOnly = $true; OffsetMinutes = 60; Computer = 'T1' } }
+        (Get-Check @{} $ho 'print.driversInSpooler').note | Should -Be 'Text eventsUnchecked'
+        (Get-Check @{} @{ PrintDrivers = $HpNone; Recorded = @{ EventsBefore = $false; PrintDrivers = $true } } 'print.driversInSpooler').note | Should -Be 'Text eventsUnchecked'
+    }
+    It 'wertet nicht gesetzt als Wert und ein fehlendes Produkt als nicht zutreffend' {   # Review Focus 3
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+            $c.checks[0].id = 'print.isolationOff'; $c.checks[0].area = 'print'; $c.checks[0].values = @('print.isolationExecution')
+            $c.checks[0].rules = @{ check = @(@{ value = 'print.isolationExecution'; op = 'exists' }, @{ value = 'print.isolationExecution'; op = 'eq'; than = 0 }) }
+            $c.checks[0].findings = @{ ok = 'Isolierung nicht abgeschaltet.'; check = 'Isolierung abgeschaltet.'; unknown = '{reason}' }
+            $c.checks[1].id = 'security.signatureAge'; $c.checks[1].area = 'security'; $c.checks[1].values = @('security.defenderSignatureAgeDays'); $c.checks[1].kind = 'rule'; $c.checks[1].relates = @('system')
+            $c.checks[1].rules = @{ check = @(@{ value = 'security.defenderSignatureAgeDays'; op = 'gt'; than = 2 }) }
+            $c.checks[1].findings = @{ ok = 'Signaturen {security.defenderSignatureAgeDays} Tage alt.'; check = 'alt'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') })                    # sonst nutzt keine Regel diese Schwellen
+        (Get-Check @{} @{} 'print.isolationOff' $cat).grade | Should -Be 'ok'                                          # der Wert fehlt: keine Richtlinie
+        (Get-Check @{ 'print.isolationExecution' = 0 } @{} 'print.isolationOff' $cat).grade | Should -Be 'check'
+        (Get-Check @{ 'print.isolationExecution' = 1 } @{} 'print.isolationOff' $cat).grade | Should -Be 'ok'
+        (Get-Check @{ 'print.isolationExecution' = (New-WorkerPerfHealthValue 'unreadable' 'error') } @{} 'print.isolationOff' $cat).grade | Should -Be 'unknown'
+        $n = Get-Check @{ 'security.defenderSignatureAgeDays' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } @{} 'security.signatureAge' $cat
+        $n.grade | Should -Be 'na'; $n.why | Should -Be 'Wert security.defenderSignatureAgeDays fehlt'; $n.finding | Should -Be 'Trifft nicht zu: Wert security.defenderSignatureAgeDays fehlt.'
+        (Get-Check @{} @{} 'security.signatureAge' $cat).grade | Should -Be 'unknown'                                   # fehlt ohne Grund bei einem Vergleich: nicht pruefbar
+        (Get-Check @{ 'security.defenderSignatureAgeDays' = 1 } @{} 'security.signatureAge' $cat).finding | Should -Be 'Signaturen 1 Tage alt.'
+        # trifft nicht zu wird nicht gezaehlt und macht den Bereich nicht auffaellig
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'security.defenderSignatureAgeDays' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $s = $r.areas | Where-Object id -eq 'security'; $s.grade | Should -Be 'ok'; $s.countsText | Should -Be ''; $s.checks[0].grade | Should -Be 'na'
+        ($s.counts.act + $s.counts.check + $s.counts.unknown + $s.counts.ok) | Should -Be 0; $r.unknownCount | Should -Be 0
+        ($r.raw | Where-Object id -eq 'security.defenderSignatureAgeDays').stateText | Should -Be 'Text stateNotApplicable'
+    }
+    It 'entscheidet Gleichheit auch fuer einen nicht gesetzten Wert und laesst Groessenvergleiche offen' {
+        $f = Get-Facts @{ 'print.isolationExecution' = 0; 'security.defenderSignatureAgeDays' = (New-WorkerPerfHealthValue 'absent' 'notInstalled'); 'operation.pendingRename' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }
+        $t = { param($id, $op, $than) (Test-WorkerPerfHealthRule -Conditions @(@{ value = $id; op = $op; than = $than }) -Facts $f -Model (New-HealthModel) -EventConfig $Cfg -Catalogue $Cat).Result }
+        # nicht gesetzt (absent ohne Grund): print.isolationOverride
+        & $t 'print.isolationOverride' 'exists' $null | Should -Be 'false'; & $t 'print.isolationOverride' 'absent' $null | Should -Be 'true'
+        & $t 'print.isolationOverride' 'eq' 0 | Should -Be 'false'; & $t 'print.isolationOverride' 'ne' 0 | Should -Be 'true'; & $t 'print.isolationOverride' 'in' @(0, 1) | Should -Be 'false'
+        & $t 'print.isolationOverride' 'lt' 1 | Should -Be 'unknown'; & $t 'print.isolationOverride' 'ge' 1 | Should -Be 'unknown'
+        # nicht installiert: trifft nicht zu, mit jedem Operator; nicht lesbar: unbekannt, mit jedem Operator
+        foreach ($op in 'exists', 'absent', 'eq', 'ne', 'gt') { & $t 'security.defenderSignatureAgeDays' $op 1 | Should -Be 'na' -Because $op; & $t 'operation.pendingRename' $op 1 | Should -Be 'unknown' -Because $op }
+        & $t 'print.isolationExecution' 'eq' 0 | Should -Be 'true'; & $t 'print.isolationExecution' 'ne' 0 | Should -Be 'false'; & $t 'print.isolationExecution' 'exists' $null | Should -Be 'true'
+    }
+    It 'stuft die Pruefungen einer Anwendung ein und zaehlt eine nicht installierte nicht' {   # Review Focus 3
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+            $c.checks[0].id = 'apps.edgeBackgroundMode'; $c.checks[0].area = 'apps'; $c.checks[0].values = @('apps.edge.backgroundMode')
+            $c.checks[0].rules = @{ check = @(@{ value = 'apps.edge.backgroundMode'; op = 'eq'; than = 1 }) }
+            $c.checks[0].findings = @{ ok = 'Hintergrundmodus aus.'; check = 'Hintergrundmodus an ({apps.edge.backgroundMode}).'; unknown = 'Nicht prüfbar: {reason}.' }
+            $c.checks[1].id = 'apps.simCache'; $c.checks[1].area = 'apps'; $c.checks[1].values = @('apps.simapp.cacheMode', 'apps.simapp.dataPath'); $c.checks[1].kind = 'rule'; $c.checks[1].relates = @('disk')
+            $c.checks[1].rules = @{ check = @(@{ value = 'apps.simapp.cacheMode'; op = 'ne'; than = 2 }, @{ value = 'apps.simapp.dataPath'; op = 'exists' }) }
+            $c.checks[1].findings = @{ ok = 'Cache in Ordnung.'; check = 'Cache-Betriebsart {apps.simapp.cacheMode}.'; unknown = 'Nicht prüfbar: {reason}.' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') }) $TestApps
+        $row = { param($app, $id, $state, $reason, $value, $names) [ordered]@{ App = $app; Id = $id; Kind = 'registryValue'; Read = 'value'; State = $state; Reason = $reason; Value = $value; Names = $names } }
+        $edge = @((& $row 'edge' 'installed' 'read' '' $true $null), (& $row 'edge' 'backgroundMode' 'read' '' 1 $null))
+        $res = { param($sim) Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'apps.probes' = @($edge + $sim) }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts }
+        $get = { param($r, $id) ($r.areas | Where-Object id -eq 'apps').checks | Where-Object id -eq $id }
+        # die vierte Anwendung ist nicht installiert
+        $r = & $res @((& $row 'simapp' 'installed' 'read' '' $false $null), (& $row 'simapp' 'cacheMode' 'absent' 'notInstalled' $null $null), (& $row 'simapp' 'dataPath' 'absent' 'notInstalled' $null $null))
+        $a = $r.areas | Where-Object id -eq 'apps'; @($a.checks.id) | Should -Be @('apps.edgeBackgroundMode', 'apps.simCache'); @($a.checks.grade) | Should -Be @('check', 'na')
+        $a.checks[0].finding | Should -Be 'Hintergrundmodus an (1).'; $a.checks[0].app | Should -Be 'edge'; $a.checks[1].app | Should -Be 'simapp'
+        $a.checks[1].why | Should -Be 'Sim-Fachanwendung ist nicht installiert'; $a.checks[1].finding | Should -Be 'Trifft nicht zu: Sim-Fachanwendung ist nicht installiert.'
+        $a.grade | Should -Be 'check'; $a.countsText | Should -Be '1 zum Prüfen'; $a.counts.ok | Should -Be 0; $a.counts.unknown | Should -Be 0; $r.summary.check | Should -Be 1
+        @($a.apps.key) | Should -Be @($TestApps | Where-Object { $_.installed } | ForEach-Object key); ($a.apps | Where-Object key -eq 'edge').state | Should -Be 'installed'; ($a.apps | Where-Object key -eq 'simapp').state | Should -Be 'notInstalled'
+        ($a.apps | Where-Object key -eq 'simapp').text | Should -Be 'Text appNotInstalled'; ($a.apps | Where-Object key -eq 'office').state | Should -Be 'unknown'       # die Aufzeichnung hat keine Zeile fuer Office
+        @(($r.areas | Where-Object id -eq 'size').apps).Count | Should -Be 0
+        # dieselbe Anwendung installiert: bewertet, ohne dass der Code sie kennt; der Pfad steht nur in den Rohwerten
+        $r = & $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'read' '' 1 $null), (& $row 'simapp' 'dataPath' 'read' '' $null '\\fs01\simapp$'))
+        $s = & $get $r 'apps.simCache'; $s.grade | Should -Be 'check'; $s.finding | Should -Be 'Cache-Betriebsart 1.'
+        $s.value | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart: 1; Sim-Fachanwendung – Datenordner der Sim-Fachanwendung: Text valueSet'; ($s | ConvertTo-Json -Depth 6) | Should -Not -Match 'fs01'
+        $raw = $r.raw | Where-Object id -eq 'apps.simapp.dataPath'; $raw.free | Should -Be '\\fs01\simapp$'; $raw.text | Should -Be ''; $raw.label | Should -Be 'Sim-Fachanwendung – Datenordner der Sim-Fachanwendung'; $raw.area | Should -Be 'apps'
+        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 206
+        (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'read' '' 2 $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'ok'
+        (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'absent' '' $null $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'check'   # nicht gesetzt ist ungleich 2
+        # die Installation laesst sich nicht lesen: nicht pruefbar mit dem Grund
+        $u = & $get (& $res @((& $row 'simapp' 'installed' 'unreadable' 'rights' $null $null), (& $row 'simapp' 'cacheMode' 'unreadable' 'rights' $null $null))) 'apps.simCache'
+        $u.grade | Should -Be 'unknown'; $u.why | Should -Be 'Text reasonRights'
+    }
+    It 'bewertet eine Pruefung zur Zuordnung ueber Citrix-Richtlinien nur, wo Citrix zuordnen kann' {   # Review Focus 3
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+            $c.checks[0].id = 'print.citrixQueues'; $c.checks[0].area = 'print'; $c.checks[0].values = @('print.citrixMapping', 'print.queuesPerSession')
+            $c.checks[0].rules = @{ check = @(@{ value = 'print.citrixMapping'; op = 'eq'; than = $true }, @{ value = 'print.queuesPerSession'; op = 'gt'; than = 10 }) }
+            $c.checks[0].findings = @{ ok = 'in Ordnung'; check = '{print.queuesPerSession} Warteschlangen je Sitzung'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') })
+        $v = @{ 'print.queueCount' = 50; 'sessions.list' = @(@{ Id = 2; State = 'Active'; User = 'a'; DisconnectTime = 0 }) }
+        (Get-Check ($v + @{ 'print.citrixPrintService' = 'Running' }) @{} 'print.citrixQueues' $cat).grade | Should -Be 'check'
+        $n = Get-Check ($v + @{ 'print.citrixPrintService' = 'Stopped' }) @{} 'print.citrixQueues' $cat
+        $n.grade | Should -Be 'na'; $n.why | Should -Be 'Wert print.citrixMapping nicht in Gebrauch'
+        (Get-Check ($v + @{ 'print.citrixPrintService' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }) @{} 'print.citrixQueues' $cat).grade | Should -Be 'na'
+        (Get-Check ($v + @{ 'print.citrixPrintService' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }) @{} 'print.citrixQueues' $cat).grade | Should -Be 'unknown'
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel ($v + @{ 'print.citrixPrintService' = 'Stopped' })) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        ($r.raw | Where-Object id -eq 'print.citrixMapping').stateText | Should -Be 'Text stateNotApplicable'; ($r.areas | Where-Object id -eq 'print').grade | Should -Be 'ok'
+    }
+    It 'sagt, ab wann die Protokolle reichen' {
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.copy.eventsReach = 'Die Protokolle reichen bis {from} zurück; letzter Start {boot}.' })
+        $logs = @(@{ Log = 'Application'; Present = $true; Enabled = $true; Oldest = $ReadMs - 129600000 }, @{ Log = 'System'; Present = $true; Enabled = $true; Oldest = $ReadMs - 30 * 86400000 })
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'events.logs' = $logs; 'operation.lastBoot' = $ReadMs - 2 * 86400000 }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $r.eventsReachText | Should -Be 'Die Protokolle reichen bis 13.01.2026 20:00 zurück; letzter Start 13.01.2026 08:00.'
+        ($r.areas | Where-Object id -eq 'events').intro | Should -Be $r.eventsReachText; ($r.areas | Where-Object id -eq 'size').intro | Should -Be ''
+        (Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts).eventsReachText | Should -Be 'Die Protokolle reichen bis – zurück; letzter Start –.'
+    }
+    It 'gibt jedem Bereich die Einstufung seiner auffaelligsten Pruefung und zaehlt die Bereiche' {
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5) @{ PrintDrivers = $HpNone }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        @($r.areas.id) | Should -Be $WorkerPerfHealthAreas; @($r.areas.label)[0] | Should -Be 'Bereich size'
+        ($r.areas | Where-Object id -eq 'operation').grade | Should -Be 'act'; ($r.areas | Where-Object id -eq 'print').grade | Should -Be 'check'
+        ($r.areas | Where-Object id -eq 'operation').countsText | Should -Be '1 zum Handeln'; ($r.areas | Where-Object id -eq 'print').countsText | Should -Be '1 zum Prüfen'
+        ($r.areas | Where-Object id -eq 'size').grade | Should -Be 'ok'; @(($r.areas | Where-Object id -eq 'size').checks).Count | Should -Be 0
+        $r.summary.act | Should -Be 1; $r.summary.check | Should -Be 1; $r.summary.ok | Should -Be 9; $r.summary.text | Should -Be '1 Bereich zum Handeln, 1 zum Prüfen, 9 in Ordnung'
+        $r.unknownCount | Should -Be 0; $r.state | Should -Be 'read'; $r.readAt | Should -Be $ReadMs; $r.offsetMin | Should -Be 60; $r.durationMs | Should -Be 10
+        @($r.changed).Count | Should -Be 0; $r.catalogueVersion | Should -Be '2026-11-13'
+        $c = ($r.areas | Where-Object id -eq 'print').checks[0]; $c.kind | Should -Be 'vendor'; $c.kindLabel | Should -Be 'Text kindVendor'; $c.source.url | Should -Be 'https://learn.microsoft.com/x'
+        @($c.relates) | Should -Be @('print', 'pattern.printdriver'); $c.todo[0].where | Should -Be 'w'; ($r.areas | Where-Object id -eq 'print').notCovered | Should -Be 'Nicht abgedeckt in print'
+        # was aus dem Katalog kommt, ist Woerterbuch oder Array, nie pscustomobject (der JSON-Schreiber des Berichts schriebe es als Text)
+        foreach ($o in $c.source, $c.todo[0], $r.grades, $r.grades.act) { ($o -is [System.Collections.IDictionary]) | Should -BeTrue }
+        $r.grades.act.word | Should -Be 'Handeln'; $r.grades.na.word | Should -Be 'Trifft nicht zu'; $r.environmentText | Should -Be 'Text environment'
+    }
+    It 'liefert ohne gelesenes Zustandsbild nur den Zustand' {   # Review Focus 2
+        foreach ($s in 'notRecorded', 'skipped', 'unreadable') {
+            $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{} @{ Health = $null; HealthState = $s }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+            $r.state | Should -Be $s; @($r.areas).Count | Should -Be 0; @($r.raw).Count | Should -Be 0; $r.Contains('summary') | Should -BeFalse
+            $r.text | Should -Be @{ notRecorded = 'Text notRecorded'; skipped = ''; unreadable = 'Text unreadable' }[$s]
+        }
+        # das Lesen ist beim Start gescheitert: ebenfalls keine Datei, aber der Satz sagt es
+        $failed = New-HealthModel @{} @{ Health = $null; HealthState = 'notRecorded'; SourceErrors = @((New-SourceError 'health')) }
+        (Get-WorkerPerfHealthResult -Model $failed -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts).text | Should -Be 'Text notRecordedFailed'
+    }
+    It 'listet jeden Fakt als Rohwert und trennt freien Servertext' {
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'size.memTotalMB' = 65536; 'operation.lastBoot' = $ReadMs - 2 * 86400000
+            'maintenance.tasks' = @(@{ Path = '\Sim\Inventarlauf'; Enabled = $true; State = 'Ready'; NextRun = $ReadMs + 7200000; LastRun = 0; Triggers = 'daily'; RepeatMinutes = 0; Action = 'C:\Tools\inventar.exe' })
+            'vda.controllers' = @(@{ Entry = 'ddc01.sim.local'; Kind = 'fqdn'; From = 'policy' }); 'security.defenderSharedSignatures' = '\\fs01\defender$' }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $raw = { param($id) $r.raw | Where-Object id -eq $id }
+        (& $raw 'size.memTotalMB').text | Should -Be '65536 MB'; (& $raw 'size.memTotalMB').label | Should -Be 'Wert size.memTotalMB'; (& $raw 'size.memTotalMB').area | Should -Be 'size'; (& $raw 'size.memTotalMB').derived | Should -BeFalse
+        (& $raw 'operation.lastBoot').text | Should -Be '13.01.2026 08:00'; (& $raw 'operation.uptimeDays').text | Should -Be '2 Tage'; (& $raw 'operation.uptimeDays').derived | Should -BeTrue
+        $t = (& $raw 'maintenance.tasks').items[0]; $t.free | Should -Be 'Path: \Sim\Inventarlauf; Action: C:\Tools\inventar.exe'
+        $t.text | Should -Be 'Enabled: ja; State: Ready; NextRun: 15.01.2026 10:00; LastRun: –; Triggers: daily; RepeatMinutes: 0'
+        (& $raw 'vda.controllers').items[0].text | Should -Be 'Entry: ddc01.sim.local; Kind: fqdn; From: policy'; (& $raw 'vda.controllers').items[0].free | Should -Be ''
+        (& $raw 'security.defenderSharedSignatures').text | Should -Be '\\fs01\defender$'; (& $raw 'size.cpuLogical').state | Should -Be 'absent'; (& $raw 'size.cpuLogical').text | Should -Be ''
+        (& $raw 'size.cpuLogical').stateText | Should -Be 'Text stateAbsent'; (& $raw 'size.memTotalMB').stateText | Should -Be 'Text stateRead'
+        @($r.raw).Count | Should -Be 164
+    }
+    It 'macht eine Pruefung, deren Bewertung scheitert, nicht pruefbar und bewertet die anderen' {   # ZB-R27, Zusatz b
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
+        $cat.checks[0].rules.check[0].op = 'kaputt'                                                       # ein Fehler nach dem Laden
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5) @{ PrintDrivers = $HpNone }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $o = ($r.areas | Where-Object id -eq 'operation').checks[0]
+        $o.grade | Should -Be 'unknown'; $o.why | Should -Be 'Text reasonError'; $o.finding | Should -Be 'Nicht prüfbar: Text reasonError.'
+        ($r.areas | Where-Object id -eq 'print').checks[0].grade | Should -Be 'check'; $r.unknownCount | Should -Be 1
     }
 }
