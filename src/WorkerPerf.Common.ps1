@@ -583,6 +583,7 @@ $script:WorkerPerfAppProbeKinds = [ordered]@{
     file          = @('version', 'exists')
 }
 $script:WorkerPerfAppProbeFields = @('id', 'kind', 'read', 'path', 'name', 'displayName', 'names', 'label', 'documented')
+$script:WorkerPerfAppFields = @('key', 'label', 'processes', 'installed', 'probes')
 
 function Stop-WorkerPerfHealthApps([string]$Path, [string]$App, [string]$Probe, [string]$Reason) {
     # Anwendungsliste '<Pfad>': [Anwendung <Anwendung>: [Probe <Probe>: ]]<Grund>.
@@ -607,7 +608,7 @@ function ConvertTo-WorkerPerfHealthAppProbe([string]$Path, [string]$App, $Entry,
         if ($null -eq $m) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' fehlt" }
         if ($m.Value -isnot [string]) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' ist kein Text" }
         $id = $m.Value; $Name = "'" + $id + "'"
-        if ($id -cnotmatch '^[a-z][A-Za-z0-9]*$') { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' muss mit einem Kleinbuchstaben beginnen und darf nur Buchstaben und Ziffern enthalten" }
+        if ($id -cnotmatch '^[a-z][A-Za-z0-9]*\z') { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' muss mit einem Kleinbuchstaben beginnen und darf nur Buchstaben und Ziffern enthalten" }
         if ($id -ceq 'installed') { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' darf nicht 'installed' heissen (die Kennung der Installation)" }
         if (-not $Ids.Add($id)) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'id' ist doppelt" }
     }
@@ -655,12 +656,22 @@ function ConvertTo-WorkerPerfHealthAppProbe([string]$Path, [string]$App, $Entry,
         }
         'scheduledTask' { if (-not $texts.path.StartsWith('\')) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' muss mit '\' beginnen" } }
         'file' {
-            $parts = $texts.path.Split('\')
             if ($texts.path -notmatch '^[A-Za-z]:\\.') { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' muss ein lokaler Pfad sein (X:\...)" }
+            if ($texts.path.Contains('/')) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf kein '/' enthalten (Trennzeichen ist '\')" }
+            $parts = $texts.path.Split('\')
             if (@($parts | Where-Object { $_ -eq '..' }).Count -gt 0) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf '..' nicht enthalten" }
+            if ($parts[$parts.Count - 1] -eq '') { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf nicht mit '\' enden (der letzte Teil ist leer)" }
             if ($texts.path.Split('*').Count -gt 2) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf hoechstens ein '*' enthalten" }
             if ($parts[$parts.Count - 1].Contains('*')) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf im letzten Teil kein '*' enthalten" }
         }
+    }
+    if (@('registryValue', 'registryKey', 'scheduledTask') -ccontains $kind) {
+        # literal paths only: no wildcard, no '..' segment, no empty segment ('/' stays allowed: key names may contain it)
+        if ($texts.path.IndexOfAny([char[]]@('*', '?')) -ge 0) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf kein '*' und kein '?' enthalten" }
+        $parts = $texts.path.Split('\')
+        if ($kind -eq 'scheduledTask') { $parts = @($parts | Select-Object -Skip 1) }
+        if (@($parts | Where-Object { $_ -eq '..' }).Count -gt 0) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf '..' nicht enthalten" }
+        if (@($parts | Where-Object { $_ -eq '' }).Count -gt 0) { Stop-WorkerPerfHealthApps $Path $App $Name "Feld 'path' darf keinen leeren Teil enthalten ('\\' oder '\' am Ende)" }
     }
     $names = $false
     $m = Get-WorkerPerfHealthAppsMember $Entry 'names'
@@ -713,6 +724,9 @@ function Read-WorkerPerfHealthApps([string]$Path) {
         $key = $m.Value; $name = "'" + $key + "'"
         if ($key -cnotmatch '^[A-Za-z0-9]+$') { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'key' darf nur Buchstaben und Ziffern enthalten" }
         if (-not $keys.Add($key)) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'key' ist doppelt" }
+        foreach ($p in $app.PSObject.Properties) {
+            if ($script:WorkerPerfAppFields -cnotcontains $p.Name) { Stop-WorkerPerfHealthApps $Path $name '' "Feld '$($p.Name)' ist unbekannt" }
+        }
         $m = Get-WorkerPerfHealthAppsMember $app 'label'
         if ($null -eq $m) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'label' fehlt" }
         if ($m.Value -isnot [string] -or [string]::IsNullOrWhiteSpace($m.Value)) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'label' ist kein Text oder leer" }
@@ -721,7 +735,8 @@ function Read-WorkerPerfHealthApps([string]$Path) {
         if ($null -eq $m) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'processes' fehlt" }
         if ($m.Value -isnot [array] -or @($m.Value).Count -eq 0) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'processes' ist keine Liste mit mindestens einem Namen" }
         foreach ($p in @($m.Value)) {
-            if ($p -isnot [string] -or [string]::IsNullOrWhiteSpace($p)) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'processes' enthaelt einen leeren Namen" }
+            if ($p -isnot [string]) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'processes' enthaelt einen Eintrag, der kein Text ist" }
+            if ([string]::IsNullOrWhiteSpace($p)) { Stop-WorkerPerfHealthApps $Path $name '' "Feld 'processes' enthaelt einen leeren Namen" }
         }
         $processes = [string[]]@($m.Value)
         $installed = $null; $probes = @()
@@ -773,12 +788,40 @@ function ConvertTo-WorkerPerfAppRegistryValue($Value) {
     return [string]$Value
 }
 
+function ConvertFrom-WorkerPerfAppResult($Result, [string]$ReadAs) {
+    # The fact a reader's result gives for the read $ReadAs. Throws when the result is not a table, lacks the field the
+    # read needs or carries a value of the wrong type, so that nothing is invented from a malformed result.
+    if ($Result -isnot [System.Collections.IDictionary] -and $Result -isnot [System.Management.Automation.PSCustomObject]) {
+        throw 'Anwendungsliste: das Ergebnis des Lesers ist keine Tabelle.'
+    }
+    if ($ReadAs -eq 'exists') { return $true }
+    $field = @{ value = 'Value'; valueCount = 'ValueCount'; subKeyCount = 'SubKeyCount'; state = 'State'; startMode = 'StartMode'
+        enabled = 'Enabled'; lastRun = 'LastRun'; nextRun = 'NextRun'; version = 'Version' }[$ReadAs]
+    if (-not $field) { throw "Anwendungsliste: unbekannte Lesart '$ReadAs'." }
+    $has = $(if ($Result -is [System.Collections.IDictionary]) { $Result.Contains($field) } else { $null -ne $Result.PSObject.Properties[$field] })
+    if (-not $has) { throw "Anwendungsliste: dem Ergebnis des Lesers fehlt das Feld '$field'." }
+    $v = Get-WorkerPerfAppResultField $Result $field
+    $bad = "Anwendungsliste: das Feld '$field' im Ergebnis des Lesers hat nicht den erwarteten Typ."
+    switch ($ReadAs) {
+        'value' { if ($null -eq $v) { throw $bad }; return , (ConvertTo-WorkerPerfAppRegistryValue $v) }
+        { $_ -eq 'valueCount' -or $_ -eq 'subKeyCount' } {
+            $whole = $v -is [int] -or $v -is [long] -or $v -is [int16] -or $v -is [byte] -or $v -is [sbyte] -or $v -is [uint16] -or $v -is [uint32] -or ($v -is [uint64] -and $v -le [uint64][long]::MaxValue)
+            if (-not $whole) { throw $bad }; return [long]$v
+        }
+        'enabled' { if ($v -isnot [bool]) { throw $bad }; return $v }
+        { $_ -eq 'lastRun' -or $_ -eq 'nextRun' } { if ($v -isnot [datetime]) { throw $bad }; return (ConvertTo-WorkerPerfHealthTime $v) }
+        default { if ($v -isnot [string]) { throw $bad }; return $v }
+    }
+}
+
 function Get-WorkerPerfAppRows {
     # The rows of the value apps.probes: per application with installed first the row installed, then its probes in the
     # order of the file. -Read names per reading kind a reader of the source ($null when the thing is not there).
     # Not installed: no probe is read, each is absent/notInstalled; installed unreadable: each row of the application is
-    # unreadable with its reason. A reader that throws gives unreadable with the reason of -FailReason (default error);
-    # once -Expired returns true before a row, that row and all following are unreadable/timeout. Plain pipeline output.
+    # unreadable with its reason. A reader that throws, or a result that is not a table, lacks the field its read needs
+    # or carries a value of the wrong type, gives unreadable with the reason of -FailReason (default error); once
+    # -Expired returns true (or throws) before a row, that row and all following are unreadable/timeout. Plain
+    # pipeline output.
     param([object[]]$Apps, [hashtable]$Read, [scriptblock]$FailReason = $null, [scriptblock]$Expired = $null)
     $timedOut = $false
     foreach ($app in @($Apps)) {
@@ -793,12 +836,15 @@ function Get-WorkerPerfAppRows {
             $id = [string]$probe.id; $readAs = [string]$probe.read
             if ($isInstalled) { $id = 'installed'; $readAs = 'exists' }
             $row = [ordered]@{ App = $key; Id = $id; Kind = $kind; Read = $readAs; State = 'read'; Reason = ''; Value = $null; Names = $null }
-            if (-not $timedOut -and $null -ne $Expired -and [bool](& $Expired)) { $timedOut = $true }
+            if (-not $timedOut -and $null -ne $Expired) {
+                $over = $true
+                try { $over = [bool](& $Expired) } catch { $over = $true }
+                if ($over) { $timedOut = $true }
+            }
             if ($timedOut) { $row.State = 'unreadable'; $row.Reason = 'timeout' }
             elseif (-not $isInstalled -and $appState -eq 'absent') { $row.State = 'absent'; $row.Reason = 'notInstalled' }
             elseif (-not $isInstalled -and $appState -eq 'unreadable') { $row.State = 'unreadable'; $row.Reason = $appReason }
             else {
-                $result = $null; $failed = $false
                 try {
                     $reader = $Read[$kind]
                     if ($null -eq $reader) { throw "Anwendungsliste: kein Leser fuer die Leseart '$kind'." }
@@ -807,34 +853,20 @@ function Get-WorkerPerfAppRows {
                         'service' { & $reader $probe.name $probe.displayName }
                         default { & $reader $probe.path }
                     }
+                    # the conversion runs inside the try: a malformed result makes this row unreadable, not the area
+                    if ($null -eq $result) { if ($readAs -eq 'exists') { $row.Value = $false } else { $row.State = 'absent' } }
+                    else {
+                        $v = ConvertFrom-WorkerPerfAppResult $result $readAs
+                        if ($readAs -eq 'value' -and $probe.names) { $row.Names = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0}', $v) }
+                        else { $row.Value = $v }
+                    }
                 }
                 catch {
-                    $failed = $true; $reason = 'error'
+                    $reason = 'error'
                     if ($null -ne $FailReason) {
                         try { $given = [string](& $FailReason $_); if (@('rights', 'timeout', 'error') -ccontains $given) { $reason = $given } } catch { $reason = 'error' }
                     }
-                    $row.State = 'unreadable'; $row.Reason = $reason
-                }
-                if (-not $failed) {
-                    if ($readAs -eq 'exists') { $row.Value = ($null -ne $result) }
-                    elseif ($null -eq $result) { $row.State = 'absent' }
-                    else {
-                        switch ($readAs) {
-                            'value' {
-                                $v = ConvertTo-WorkerPerfAppRegistryValue (Get-WorkerPerfAppResultField $result 'Value')
-                                if ($probe.names) { if ($null -ne $v) { $row.Names = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0}', $v) } }
-                                else { $row.Value = $v }
-                            }
-                            'valueCount' { $row.Value = [long](Get-WorkerPerfAppResultField $result 'ValueCount') }
-                            'subKeyCount' { $row.Value = [long](Get-WorkerPerfAppResultField $result 'SubKeyCount') }
-                            'state' { $row.Value = [string](Get-WorkerPerfAppResultField $result 'State') }
-                            'startMode' { $row.Value = [string](Get-WorkerPerfAppResultField $result 'StartMode') }
-                            'enabled' { $row.Value = [bool](Get-WorkerPerfAppResultField $result 'Enabled') }
-                            'lastRun' { $row.Value = ConvertTo-WorkerPerfHealthTime ([datetime](Get-WorkerPerfAppResultField $result 'LastRun')) }
-                            'nextRun' { $row.Value = ConvertTo-WorkerPerfHealthTime ([datetime](Get-WorkerPerfAppResultField $result 'NextRun')) }
-                            'version' { $row.Value = [string](Get-WorkerPerfAppResultField $result 'Version') }
-                        }
-                    }
+                    $row.State = 'unreadable'; $row.Reason = $reason; $row.Value = $null; $row.Names = $null
                 }
             }
             if ($isInstalled) {
