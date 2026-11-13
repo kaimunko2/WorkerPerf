@@ -240,4 +240,132 @@ Describe 'Zustandsbild: Format und Werteliste' {
         $a.Values['profile.containers'].State | Should -Be 'read'; $a.Values['profile.containers'].Value[0].UsedPct | Should -BeNullOrEmpty
         ($a | ConvertTo-Json -Depth 10) | Should -Not -Match 'NaN|Infinity'
     }
+    It 'speichert auch in der Tiefe keine Zahl, die nicht endlich ist' {
+        $n = Complete-WorkerPerfHealthArea 'network' @{ 'network.dnsServers' = (New-WorkerPerfHealthValue 'read' '' @([double]::NaN, [ordered]@{ Interface = [double]::PositiveInfinity; Address = '10.0.0.1' })) } 1
+        $n.Values['network.dnsServers'].State | Should -Be 'read'; @($n.Values['network.dnsServers'].Value).Count | Should -Be 2
+        $n.Values['network.dnsServers'].Value[0] | Should -BeNullOrEmpty; $n.Values['network.dnsServers'].Value[1].Interface | Should -BeNullOrEmpty; $n.Values['network.dnsServers'].Value[1].Address | Should -Be '10.0.0.1'
+        $row = [ordered]@{ App = 'alpha'; Id = 'x'; Kind = 'registryValue'; Read = 'value'; State = 'read'; Reason = ''; Value = @(1, [double]::NaN); Names = @{ n = [double]::NegativeInfinity; m = @([single]::NaN, 'a') } }
+        $p = Complete-WorkerPerfHealthArea 'apps' @{ 'apps.probes' = (New-WorkerPerfHealthValue 'read' '' @($row)) } 1
+        $item = $p.Values['apps.probes'].Value[0]; @($item.Value) | Should -Be @(1, $null); $item.Names['n'] | Should -BeNullOrEmpty; $item.Names['m'][0] | Should -BeNullOrEmpty; $item.Names['m'][1] | Should -Be 'a'
+        ($n | ConvertTo-Json -Depth 10) | Should -Not -Match 'NaN|Infinity'; ($p | ConvertTo-Json -Depth 10) | Should -Not -Match 'NaN|Infinity'
+        (New-WorkerPerfHealthValue 'read' '' @(2, [double]::NaN)).Value[1] | Should -BeNullOrEmpty
+    }
+    It 'prueft jeden gegebenen Wert und nimmt eine gelesene Liste ohne Inhalt nicht als leer' {
+        { Complete-WorkerPerfHealthArea 'print' @{ 'print.queueCount' = @{ Value = 1 } } 1 } | Should -Throw "*Zustand ''*"
+        { Complete-WorkerPerfHealthArea 'print' @{ 'print.queueCount' = @{ State = 'gelesen'; Reason = ''; Value = 1 } } 1 } | Should -Throw "*gelesen*"
+        $p = Complete-WorkerPerfHealthArea 'print' @{ 'print.queueCount' = @{ State = 'read'; Reason = ''; Value = [double]::NaN } } 1
+        $p.Values['print.queueCount'].State | Should -Be 'unreadable'; $p.Values['print.queueCount'].Reason | Should -Be 'error'
+        $e = Complete-WorkerPerfHealthArea 'events' @{ 'events.logs' = @{ State = 'read'; Reason = ''; Value = $null } } 1
+        $e.Values['events.logs'].State | Should -Be 'unreadable'; $e.Values['events.logs'].Reason | Should -Be 'error'; $e.Status | Should -Be 'failed'
+        $e = Complete-WorkerPerfHealthArea 'events' @{ 'events.logs' = [pscustomobject]@{ State = 'read'; Reason = ''; Value = @() } } 1
+        $e.Values['events.logs'].State | Should -Be 'read'; ($e.Values['events.logs'].Value -is [array]) | Should -BeTrue; @($e.Values['events.logs'].Value).Count | Should -Be 0
+        $h = New-WorkerPerfHealth ([datetime]::MinValue) 1 @{ events = $null }
+        $h.Areas['events'].Status | Should -Be 'failed'; $h.Areas['events'].Error | Should -Be 'notRead'
+        { Complete-WorkerPerfHealthArea 'wetter' @{} 1 } | Should -Throw "*'wetter'*"; { New-WorkerPerfHealth ([datetime]::MinValue) 1 @{ wetter = @{} } } | Should -Throw "*'wetter'*"
+    }
+    It 'rechnet eine lokale und eine unbestimmte Zeit in Millisekunden seit 1970 um' {
+        $local = [datetime]::new(2026, 1, 15, 8, 0, 0, [DateTimeKind]::Local); $unspecified = [datetime]::new(2026, 1, 15, 8, 0, 0, [DateTimeKind]::Unspecified)
+        ConvertTo-WorkerPerfHealthTime $local | Should -Be ([DateTimeOffset]::new($local).ToUnixTimeMilliseconds())
+        ConvertTo-WorkerPerfHealthTime $unspecified | Should -Be ([DateTimeOffset]::new($unspecified).ToUnixTimeMilliseconds())
+        ConvertTo-WorkerPerfHealthTime $unspecified | Should -Be ([DateTimeOffset]::new($unspecified.ToUniversalTime()).ToUnixTimeMilliseconds())
+    }
+}
+Describe 'Anwendungsliste lesen und pruefen' {
+    BeforeAll {
+        function New-AppFile([scriptblock]$Change = {}) {
+            # eine kleine gueltige Liste als Hashtable in $a; . $Change aendert sie; liefert den Pfad der geschriebenen Datei
+            $a = [ordered]@{ version = '2026-11-13'; apps = @(
+                [ordered]@{ key = 'alpha'; label = 'Alpha'; processes = @('alpha.exe'); installed = [ordered]@{ kind = 'file'; path = 'C:\Program Files\Alpha\alpha.exe' }
+                    probes = @([ordered]@{ id = 'version'; kind = 'file'; path = 'C:\Program Files\Alpha\alpha.exe' }
+                        [ordered]@{ id = 'mode'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\Alpha'; name = 'Mode'; names = $false; label = 'Betriebsart' }
+                        [ordered]@{ id = 'dataPath'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\Alpha'; name = 'DataPath'; names = $true }
+                        [ordered]@{ id = 'plugins'; kind = 'registryKey'; path = 'HKLM\SOFTWARE\Alpha\Plugins'; read = 'subKeyCount' }
+                        [ordered]@{ id = 'service'; kind = 'service'; displayName = 'Alpha Dienst'; read = 'startMode'; documented = $false }
+                        [ordered]@{ id = 'task'; kind = 'scheduledTask'; path = '\Alpha\Update' }
+                        [ordered]@{ id = 'nextUpdate'; kind = 'scheduledTask'; path = '\Alpha\Update'; read = 'nextRun' }
+                        [ordered]@{ id = 'addin'; kind = 'file'; path = 'C:\Program Files\Alpha_*\addin'; read = 'exists' }) }
+                [ordered]@{ key = 'beta'; label = 'Beta'; processes = @('beta.exe') }) }          # ohne installed: nur fuer den gefuehrten Bericht
+            . $Change
+            $file = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + '.json'); [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $a -Depth 8)); $file
+        }
+        function New-Reader([hashtable]$Missing = @{}) {
+            # Leser, die alles vorfinden ausser dem, was $Missing nennt (Leseart -> Pfad oder Name)
+            @{ registryValue = { param($Path, $Name) if ($Missing['registryValue'] -eq $Name) { return $null }; @{ Value = $(if ($Name -eq 'DataPath') { '\\fs01\alpha$' } else { 3 }) } }.GetNewClosure()
+               registryKey = { param($Path) @{ ValueCount = 2; SubKeyCount = 5 } }
+               service = { param($Name, $DisplayName) if ($Missing['service'] -eq $DisplayName) { return $null }; @{ State = 'Running'; StartMode = 'Auto' } }.GetNewClosure()
+               scheduledTask = { param($Path) if ($Missing['scheduledTask'] -eq $Path) { return $null }; @{ Enabled = $true; LastRun = [datetime]::MinValue; NextRun = [datetime]::new(1970, 1, 2, 0, 0, 0, [DateTimeKind]::Utc) } }.GetNewClosure()
+               file = { param($Path) if ($Missing['file'] -and $Path -like $Missing['file']) { return $null }; @{ Version = $(if ($Path -like '*addin') { '' } else { '1.2.3' }) } }.GetNewClosure() }
+        }
+    }
+    It 'liest die Liste und setzt die Vorgaben ein' {
+        $apps = @(Read-WorkerPerfHealthApps (New-AppFile)); @($apps.key) | Should -Be @('alpha', 'beta')
+        $a = $apps[0]; $a.label | Should -Be 'Alpha'; @($a.processes) | Should -Be @('alpha.exe'); $a.installed.kind | Should -Be 'file'; @($a.probes.id) | Should -Be @('version', 'mode', 'dataPath', 'plugins', 'service', 'task', 'nextUpdate', 'addin')
+        @($a.probes.read) | Should -Be @('version', 'value', 'value', 'subKeyCount', 'startMode', 'enabled', 'nextRun', 'exists')
+        @($a.probes.label) | Should -Be @('version', 'Betriebsart', 'dataPath', 'plugins', 'service', 'task', 'nextUpdate', 'addin')
+        @($a.probes | ForEach-Object { Get-WorkerPerfAppFactType $_ }) | Should -Be @('text', 'value', 'text:free', 'number', 'text', 'bool', 'time', 'bool')
+        @($a.probes | Where-Object { -not $_.documented }).id | Should -Be @('service'); $apps[1].installed | Should -BeNullOrEmpty; @($apps[1].probes).Count | Should -Be 0
+        @(Read-WorkerPerfHealthApps (New-AppFile { $a.apps = @() })).Count | Should -Be 0
+    }
+    It 'lehnt eine fehlerhafte Liste mit Anwendung und Probe in der Meldung ab' -TestCases @(
+        @{ Change = { $a.apps[0].probes[1].path = 'HKCU\SOFTWARE\Alpha' }; Msg = "*Anwendung 'alpha': Probe 'mode':*HKLM*" }
+        @{ Change = { $a.apps[0].probes[1].kind = 'command' }; Msg = "*Anwendung 'alpha': Probe 'mode':*command*" }                       # keine andere Leseart, nichts wird ausgefuehrt
+        @{ Change = { $a.apps[0].probes[1].Remove('name') }; Msg = "*Anwendung 'alpha': Probe 'mode':*name*" }
+        @{ Change = { $a.apps[0].probes[1].Remove('names') }; Msg = "*Anwendung 'alpha': Probe 'mode':*names*" }
+        @{ Change = { $a.apps[0].probes[0].names = $true }; Msg = "*Anwendung 'alpha': Probe 'version':*names*" }
+        @{ Change = { $a.apps[0].probes[3].read = 'size' }; Msg = "*Anwendung 'alpha': Probe 'plugins':*read*size*" }
+        @{ Change = { $a.apps[0].probes[4].name = 'AlphaSvc' }; Msg = "*Anwendung 'alpha': Probe 'service':*name*displayName*" }
+        @{ Change = { $a.apps[0].probes[5].path = 'Alpha\Update' }; Msg = "*Anwendung 'alpha': Probe 'task':*path*" }
+        @{ Change = { $a.apps[0].probes[0].path = '\\fs01\alpha\alpha.exe' }; Msg = "*Anwendung 'alpha': Probe 'version':*path*" }
+        @{ Change = { $a.apps[0].probes[0].path = 'C:\Program Files\*\Alpha_*\alpha.exe' }; Msg = "*Anwendung 'alpha': Probe 'version':*path*" }
+        @{ Change = { $a.apps[0].probes[0].path = 'C:\Program Files\Alpha\*.exe' }; Msg = "*Anwendung 'alpha': Probe 'version':*path*" }
+        @{ Change = { $a.apps[0].probes[0].command = 'alpha.exe /version' }; Msg = "*Anwendung 'alpha': Probe 'version':*command*unbekannt*" }
+        @{ Change = { $a.apps[0].probes[1].id = 'version' }; Msg = "*Anwendung 'alpha': Probe 'version':*doppelt*" }
+        @{ Change = { $a.apps[0].probes[1].id = 'installed' }; Msg = "*Anwendung 'alpha': Probe 'installed':*" }
+        @{ Change = { $a.apps[0].installed.path = 'HKLM\SOFTWARE\Alpha' }; Msg = "*Anwendung 'alpha': Probe 'installed':*path*" }
+        @{ Change = { $a.apps[1].probes = @([ordered]@{ id = 'x'; kind = 'file'; path = 'C:\x.exe' }) }; Msg = "*Anwendung 'beta': Feld 'probes'*installed*" }
+        @{ Change = { $a.apps[1].key = 'alpha' }; Msg = "*Anwendung 'alpha': Feld 'key'*doppelt*" }
+        @{ Change = { $a.apps[1].key = 'Beta App' }; Msg = "*Anwendung 'Beta App': Feld 'key'*" }
+        @{ Change = { $a.apps[1].processes = @() }; Msg = "*Anwendung 'beta': Feld 'processes'*" }
+        @{ Change = { $a.Remove('apps') }; Msg = "Anwendungsliste '*': *apps*" }
+    ) { { Read-WorkerPerfHealthApps (New-AppFile $Change) } | Should -Throw $Msg }
+    It 'meldet eine fehlende oder kaputte Datei' {
+        { Read-WorkerPerfHealthApps (Join-Path $TestDrive 'gibtesnicht.json') } | Should -Throw "Anwendungsliste '*gibtesnicht.json' fehlt."
+        $bad = Join-Path $TestDrive 'bad.json'; [IO.File]::WriteAllText($bad, '{ kein json'); { Read-WorkerPerfHealthApps $bad } | Should -Throw "Anwendungsliste '*bad.json': *"
+    }
+    It 'bildet je Probe eine Zeile mit Zustand und Wert' {
+        $apps = @(Read-WorkerPerfHealthApps (New-AppFile)); $rows = @(Get-WorkerPerfAppRows -Apps $apps -Read (New-Reader))
+        @($rows.App | Select-Object -Unique) | Should -Be @('alpha'); @($rows.Id) | Should -Be @('installed', 'version', 'mode', 'dataPath', 'plugins', 'service', 'task', 'nextUpdate', 'addin')
+        $r = @{}; foreach ($x in $rows) { $r[$x.Id] = $x }; foreach ($x in $rows) { $x.State | Should -Be 'read' -Because $x.Id; @($x.Keys) | Should -Be @('App', 'Id', 'Kind', 'Read', 'State', 'Reason', 'Value', 'Names') }
+        $r.installed.Value | Should -BeTrue; $r.installed.Read | Should -Be 'exists'; $r.version.Value | Should -Be '1.2.3'; $r.mode.Value | Should -Be 3; $r.mode.Names | Should -BeNullOrEmpty
+        $r.dataPath.Value | Should -BeNullOrEmpty; $r.dataPath.Names | Should -Be '\\fs01\alpha$'; $r.plugins.Value | Should -Be 5; $r.service.Value | Should -Be 'Auto'
+        $r.task.Value | Should -BeTrue; $r.nextUpdate.Value | Should -Be 86400000; $r.addin.Value | Should -BeTrue
+    }
+    It 'nennt nicht gesetzt, nicht installiert und nicht lesbar beim Namen' {   # Review Focus 3
+        $apps = @(Read-WorkerPerfHealthApps (New-AppFile))
+        $r = @{}; foreach ($x in @(Get-WorkerPerfAppRows -Apps $apps -Read (New-Reader @{ registryValue = 'Mode'; scheduledTask = '\Alpha\Update'; file = '*addin' }))) { $r[$x.Id] = $x }
+        $r.mode.State | Should -Be 'absent'; $r.mode.Reason | Should -Be ''; $r.task.State | Should -Be 'absent'; $r.nextUpdate.State | Should -Be 'absent'
+        $r.addin.State | Should -Be 'read'; $r.addin.Value | Should -BeFalse                                   # exists: gelesen, nein
+        $calls = [ref]0; $read = New-Reader @{ file = '*alpha.exe' }; $inner = $read.registryValue
+        $read.registryValue = { param($Path, $Name) $calls.Value++; & $inner $Path $Name }.GetNewClosure()
+        $rows = @(Get-WorkerPerfAppRows -Apps $apps -Read $read)
+        $rows[0].Value | Should -BeFalse; @($rows | Select-Object -Skip 1 | Where-Object { $_.State -ne 'absent' -or $_.Reason -ne 'notInstalled' }).Count | Should -Be 0
+        $calls.Value | Should -Be 0                                                                              # nicht installiert: keine Probe wird gelesen
+        $read = New-Reader; $read.service = { throw 'Zugriff verweigert' }
+        $rows = @(Get-WorkerPerfAppRows -Apps $apps -Read $read -FailReason { param($e) 'rights' })
+        ($rows | Where-Object Id -eq 'service').State | Should -Be 'unreadable'; ($rows | Where-Object Id -eq 'service').Reason | Should -Be 'rights'; ($rows | Where-Object Id -eq 'task').State | Should -Be 'read'
+        $read = New-Reader; $read.file = { throw 'kaputt' }
+        $rows = @(Get-WorkerPerfAppRows -Apps $apps -Read $read); @($rows | Where-Object { $_.State -ne 'unreadable' -or $_.Reason -ne 'error' }).Count | Should -Be 0
+        $n = [ref]0; $rows = @(Get-WorkerPerfAppRows -Apps $apps -Read (New-Reader) -Expired { $n.Value++; $n.Value -gt 3 }.GetNewClosure())
+        @($rows | Where-Object State -eq 'read').Count | Should -Be 3; @($rows | Where-Object Reason -eq 'timeout').Count | Should -Be 6      # Review Focus 1
+    }
+    It 'schreibt einen Registrierungswert als Zahl oder Text' {
+        $apps = @(Read-WorkerPerfHealthApps (New-AppFile)); $read = New-Reader
+        foreach ($case in @(@{ In = [uint32]7; Out = [long]7 }, @{ In = [long]5000000000; Out = [long]5000000000 }, @{ In = [string[]]@('a', 'b'); Out = 'a; b' }, @{ In = [byte[]]@(1, 2, 3); Out = 'binaer, 3 Byte' }, @{ In = 'x'; Out = 'x' })) {
+            $value = $case.In; $read.registryValue = { param($Path, $Name) @{ Value = $value } }.GetNewClosure()
+            $mode = @(Get-WorkerPerfAppRows -Apps $apps -Read $read) | Where-Object Id -eq 'mode'
+            $mode.Value | Should -Be $case.Out; $mode.Value.GetType() | Should -Be $case.Out.GetType()
+        }
+        $read.registryValue = { param($Path, $Name) @{ Value = 3 } }
+        (@(Get-WorkerPerfAppRows -Apps $apps -Read $read) | Where-Object Id -eq 'dataPath').Names | Should -Be '3'
+    }
 }
