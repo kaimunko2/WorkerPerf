@@ -143,3 +143,21 @@ function New-PatchedSource([string]$OutDir, [string]$Overrides) {
     [IO.File]::AppendAllText((Join-Path $OutDir 'WorkerPerf.Sources.Simulation.ps1'), "`n" + $Overrides + "`n")
     Join-Path $OutDir 'Start-WorkerPerfCapture.ps1'
 }
+function New-TestAppFile([string]$Dir) {
+    # Writes <Dir>/apps.test.json: the shipped application list plus a fourth application with probes, the invented
+    # simapp; returns the path.
+    $list = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/apps.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+    $sim = [ordered]@{
+        key = 'simapp'; label = 'Sim-Fachanwendung'; processes = @('simapp.exe')
+        installed = [ordered]@{ kind = 'file'; path = 'C:\Program Files\SimApp\simapp.exe' }
+        probes = @(
+            [ordered]@{ id = 'version'; label = 'Version der Sim-Fachanwendung'; kind = 'file'; path = 'C:\Program Files\SimApp\simapp.exe'; read = 'version' }
+            [ordered]@{ id = 'cacheMode'; label = 'Cache-Betriebsart'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimApp'; name = 'CacheMode'; names = $false }
+            [ordered]@{ id = 'dataPath'; label = 'Datenordner der Sim-Fachanwendung'; kind = 'registryValue'; path = 'HKLM\SOFTWARE\SimApp'; name = 'DataPath'; names = $true }
+        )
+    }
+    $list.apps = @($list.apps) + [pscustomobject]$sim
+    $file = Join-Path $Dir 'apps.test.json'
+    [IO.File]::WriteAllText($file, ($list | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+    $file
+}

@@ -279,6 +279,14 @@
     "appList.version": "composed",
     "appList.apps[].key": "keyword",
     "appList.apps[].label": "composed",
-    "appList.apps[].processes[]": "name"
+    "appList.apps[].processes[]": "name",
+    "appList.apps[].installed.kind": "keyword",
+    "appList.apps[].installed.path": "composed",
+    "appList.apps[].probes[].id": "keyword",
+    "appList.apps[].probes[].kind": "keyword",
+    "appList.apps[].probes[].path": "composed",
+    "appList.apps[].probes[].name": "composed",
+    "appList.apps[].probes[].label": "composed",
+    "appList.apps[].probes[].read": "composed"
   }
 }

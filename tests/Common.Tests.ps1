@@ -429,3 +429,34 @@ Describe 'Anwendungsliste lesen und pruefen' {
         $rows.Count | Should -Be 9; @($rows | Where-Object { $_.State -ne 'unreadable' -or $_.Reason -ne 'timeout' }).Count | Should -Be 0; $calls.Value | Should -Be 0
     }
 }
+Describe 'Anwendungsliste in src' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        $script:AppFile = Join-Path $PSScriptRoot '../src/apps.json'; $script:Apps = @{}; foreach ($a in @(Read-WorkerPerfHealthApps $AppFile)) { $Apps[$a.key] = $a }
+    }
+    It 'beschreibt Edge, Office und Teams mit den Proben des Plans' {
+        @($Apps.edge.probes.id) | Should -Be @('version', 'webview2Version', 'updateDefault', 'updateStable', 'updateWebView2', 'updateCheckMinutes', 'startupBoost', 'backgroundMode',
+            'sleepingTabs', 'autoDiscard', 'roamingProfile', 'userDataDir', 'diskCacheDir', 'forcedExtensions', 'updateService')
+        @($Apps.office.probes.id) | Should -Be @('updateChannel', 'updateUrl', 'policyUpdatePath', 'policyUpdateBranch', 'hideUpdateNotifications', 'hideEnableDisableUpdates', 'updateTask',
+            'perUserCatalog', 'outlookAddins', 'outlookAddinsWow', 'version', 'platform', 'updatesEnabled')
+        @($Apps.teams.probes.id) | Should -Be @('version', 'disableAutoUpdate', 'disableFallback', 'maxFps', 'meetingAddin', 'classicTeams', 'webview2Version')
+        $Apps.edge.installed.kind | Should -Be 'file'; $Apps.edge.installed.path | Should -Be 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+        $Apps.office.installed.kind | Should -Be 'registryKey'; $Apps.office.installed.path | Should -Be 'HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+        $Apps.teams.installed.path | Should -Be 'C:\Program Files\WindowsApps\MSTeams_*_x64__8wekyb3d8bbwe\ms-teams.exe'
+        $p = @{}; foreach ($k in 'edge', 'office', 'teams') { foreach ($x in $Apps[$k].probes) { $p["$k.$($x.id)"] = $x } }
+        $p['edge.backgroundMode'].path | Should -Be 'HKLM\SOFTWARE\Policies\Microsoft\Edge'; $p['edge.backgroundMode'].name | Should -Be 'BackgroundModeEnabled'
+        $p['edge.updateStable'].name | Should -Be 'Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}'; $p['edge.forcedExtensions'].read | Should -Be 'valueCount'; $p['edge.updateService'].read | Should -Be 'startMode'
+        $p['office.updateTask'].path | Should -Be '\Microsoft\Office\Office Automatic Updates 2.0'; $p['office.outlookAddins'].read | Should -Be 'subKeyCount'
+        $p['teams.disableAutoUpdate'].path | Should -Be 'HKLM\SOFTWARE\Microsoft\Teams'; $p['teams.meetingAddin'].read | Should -Be 'exists'
+        @($p.Keys | Where-Object { $p[$_].names } | Sort-Object) | Should -Be @('edge.diskCacheDir', 'edge.userDataDir', 'office.policyUpdatePath', 'office.updateUrl')
+        @($p.Keys | Where-Object { -not $p[$_].documented } | Sort-Object) | Should -Be @('edge.updateService', 'office.platform', 'office.updatesEnabled', 'office.version')
+        foreach ($k in $p.Keys) { $p[$k].label | Should -Not -Be $p[$k].id -Because $k }                         # jede Probe hat eine Bezeichnung
+        foreach ($k in 'edge', 'office', 'teams') { @($Apps[$k].processes).Count | Should -BeGreaterThan 0 -Because $k }
+        @($Apps.Keys | Where-Object { $Apps[$_].installed } | Sort-Object) | Should -Be @('edge', 'office', 'teams')      # die weiteren Anwendungen der Datei liest das Zustandsbild nicht
+        (Get-Content $AppFile -Raw) | Should -Not -Match 'HKCU|HKEY_CURRENT_USER|HKEY_USERS'                    # nichts je Benutzer
+    }
+    It 'liefert den Tests eine Liste mit einer vierten, erfundenen Anwendung' {
+        $t = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive)); $t[-1].key | Should -Be 'simapp'; $t[-1].label | Should -Be 'Sim-Fachanwendung'
+        @($t[-1].probes.id) | Should -Be @('version', 'cacheMode', 'dataPath'); $t[-1].probes[2].names | Should -BeTrue; $t.Count | Should -Be (@(Read-WorkerPerfHealthApps $AppFile).Count + 1)
+    }
+}
