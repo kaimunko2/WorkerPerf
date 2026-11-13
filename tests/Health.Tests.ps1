@@ -62,6 +62,14 @@ BeforeAll {
         @{ TimeMs = $ReadMs - [long]($DaysBefore * 86400000); OffsetMinutes = 60; Kind = $Kind; Group = $Group; App = $App; Service = ''; Log = 'application' } }
     function New-SourceError([string]$Source) { @{ Source = $Source; Count = 1; FirstMs = $null; FirstMessage = 'Testfehler' } }
     function Get-Facts([hashtable]$Values = @{}, [hashtable]$With = @{}, $Roles = $script:Roles) { Get-WorkerPerfHealthFacts -Model (New-HealthModel $Values $With) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles }
+    # ein Eintrag von health.json, wie ihn eine andere Fassung schreiben koennte: State, Reason und Value ungeprueft
+    function New-Raw($Value, [string]$State = 'read', [string]$Reason = '') { [ordered]@{ State = $State; Reason = $Reason; Value = $Value } }
+    function New-RawModel([hashtable]$Raw, [hashtable]$Values = @{}, [hashtable]$With = @{}) {
+        # wie New-HealthModel, die Eintraege in $Raw aber an Complete-WorkerPerfHealthArea vorbei unveraendert im Bereich
+        $m = New-HealthModel $Values $With
+        foreach ($id in $Raw.Keys) { $m.Health.Areas[$WorkerPerfHealthValues[$id].Area].Values[$id] = $Raw[$id] }; $m
+    }
+    function Get-RawFacts([hashtable]$Raw, [hashtable]$Values = @{}, [hashtable]$With = @{}) { Get-WorkerPerfHealthFacts -Model (New-RawModel $Raw $Values $With) -Catalogue $Cat -EventConfig $Cfg -Roles $script:Roles }
 }
 Describe 'Katalog des Zustandsbilds laden und pruefen' {
     It 'liest einen vollstaendigen Katalog und kennt jeden Fakt' {
@@ -433,5 +441,70 @@ Describe 'Fakten des Zustandsbilds' {
         Get-WorkerPerfHealthMissingReason -Model (New-HealthModel @{} @{ Meta = @{ OffsetMinutes = 60 } }) -What 'lookback' | Should -Be 'notRecorded'
         $u = Get-Facts @{ 'size.model' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }
         foreach ($id in 'size.vmware', 'size.vmtoolsMajor', 'size.balloonRunning', 'size.lsiControllers', 'network.rssOff') { $u[$id].State | Should -Be 'unreadable' -Because $id; $u[$id].Reason | Should -Be 'timeout' -Because $id }
+    }
+    It 'macht aus einem Wert, dessen Inhalt nicht zu seinem Typ passt, nur dessen Fakten nicht lesbar' {   # ZB-R27, Korrektur 1
+        $err = { param($f, $id) $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'error' -Because $id }
+        $good = @{ 'size.cpuLogical' = 8; 'size.commitTotalMB' = 38000; 'size.memTotalMB' = 65536; 'size.model' = 'VMware, Inc. VMware7,1'
+            'vda.controllers' = @(@{ Entry = 'ddc01.sim.local'; Kind = 'fqdn'; From = 'policy' }); 'maintenance.scanTime' = '12:30' }
+        # Zahlen, ein Ja/Nein-Wert und eine Zeit als Text, eine Zeit mit Bruchteil, eine Liste als Text: kein Abbruch, nur deren Fakten nicht lesbar
+        $f = Get-RawFacts @{ 'security.mdeOnboarding' = (New-Raw 'x'); 'maintenance.updateOptions' = (New-Raw '4'); 'maintenance.scanDay' = (New-Raw 'Montag')
+            'size.hypervisor' = (New-Raw 'ja'); 'operation.lastBoot' = (New-Raw 1.5); 'size.netAdapters' = (New-Raw 'vmxnet3') } $good
+        foreach ($id in 'security.mdeOnboarding', 'security.mdeOnboarded', 'maintenance.updateOptions', 'maintenance.updateInWorkHours', 'maintenance.scanDay',
+            'maintenance.scanInWorkHours', 'size.hypervisor', 'operation.lastBoot', 'operation.uptimeDays', 'size.netAdapters', 'size.otherNetAdapters') { & $err $f $id }
+        $f['size.cpuLogical'].Value | Should -Be 8; $f['size.commitOfRamPct'].Value | Should -Be 58; $f['vda.controllerCount'].Value | Should -Be 1; $f['size.vmware'].Value | Should -BeTrue
+        $f['size.lsiControllers'].State | Should -Be 'absent'
+        # eine Liste aus Texten statt Eintraegen, ein Feld mit falschem Typ
+        $l = Get-RawFacts @{ 'vda.controllers' = (New-Raw @('ddc01', 'ddc02')); 'size.pagefiles' = (New-Raw @(@{ Path = 'C:\pagefile.sys'; AllocatedMB = 1; PeakUsageMB = 1; Temporary = 'nein' })) } $good
+        foreach ($id in 'vda.controllers', 'vda.controllerCount', 'vda.controllersNotFqdn', 'size.pagefiles', 'size.pagefileCount') { & $err $l $id }
+        # ein Eintrag ohne ein Feld, das eine Regel liest: nur die Fakten, die das Feld lesen
+        $p = Get-Facts ($good + @{ 'sessions.localProfiles' = @(@{ Path = 'C:\Users\a'; Loaded = $false; Special = $false }) })
+        & $err $p 'sessions.tempProfiles'; $p['sessions.unloadedProfiles'].Value | Should -Be 1; $p['sessions.localProfiles'].State | Should -Be 'read'
+        $q = Get-Facts ($good + @{ 'size.pagefiles' = @(@{ Path = 'C:\pagefile.sys'; AllocatedMB = 1; PeakUsageMB = 1 }) })      # die Regel scheitert, die Fakten danach entstehen
+        & $err $q 'size.pagefileCount'; $q['size.commitOfRamPct'].Value | Should -Be 58; $q['size.vmware'].Value | Should -BeTrue; $q['size.lsiControllers'].State | Should -Be 'absent'
+        # Zahlen kommen als Int32, Int64, Double oder Decimal
+        foreach ($n in @([int]38000, [long]38000, [double]38000, [decimal]38000)) {
+            $x = Get-RawFacts @{ 'size.commitTotalMB' = (New-Raw $n) } @{ 'size.memTotalMB' = 65536 }; $x['size.commitOfRamPct'].Value | Should -Be 58 -Because $n.GetType().Name }
+        (Get-RawFacts @{ 'operation.lastBoot' = (New-Raw ([double]($ReadMs - 3 * 86400000))) })['operation.uptimeDays'].Value | Should -Be 3
+        # ein Lesezeitpunkt, der keine Zahl ist: nur die Fakten, die ihn brauchen
+        $m = New-HealthModel ($good + @{ 'operation.lastBoot' = $ReadMs - 86400000 }); $m.Health.ReadAtMs = 'gestern'
+        $t = Get-WorkerPerfHealthFacts -Model $m -Catalogue $Cat -EventConfig $Cfg -Roles $Roles
+        & $err $t 'operation.uptimeDays'; $t['size.commitOfRamPct'].Value | Should -Be 58
+        # dasselbe nach ConvertTo-Json und ConvertFrom-Json
+        $j = New-RawModel @{ 'security.mdeOnboarding' = (New-Raw 'x'); 'maintenance.scanDay' = (New-Raw 'Montag'); 'size.netAdapters' = (New-Raw 'vmxnet3') } $good
+        $fj = Get-WorkerPerfHealthFacts -Model (ConvertTo-Json -InputObject $j -Depth 12 | ConvertFrom-Json) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles
+        foreach ($id in 'security.mdeOnboarded', 'maintenance.scanInWorkHours', 'size.otherNetAdapters') { & $err $fj $id }
+        $fj['size.commitOfRamPct'].Value | Should -Be 58; $fj['vda.controllerCount'].Value | Should -Be 1
+    }
+    It 'zaehlt eine gelesene Liste ohne Inhalt nicht und prueft Zustand und Grund jedes gelesenen Werts' {   # Korrektur 2
+        $err = { param($f, $id) $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'error' -Because $id }
+        $f = Get-RawFacts @{ 'vda.controllers' = (New-Raw $null); 'profile.containers' = (New-Raw ([ordered]@{ Owner = 'user9'; UsedPct = 96 }))
+            'size.cpuLogical' = (New-Raw 8 'bogus'); 'size.memTotalMB' = (New-Raw 65536 'read' 'vielleicht'); 'size.commitTotalMB' = (New-Raw 38000 'read' 'notRecorded') }
+        foreach ($id in 'vda.controllers', 'vda.controllerCount', 'vda.controllersNotFqdn', 'size.cpuLogical', 'size.memTotalMB', 'size.commitTotalMB', 'size.commitOfRamPct') { & $err $f $id }
+        ($f['profile.containers'].Value -is [object[]]) | Should -BeTrue; $f['profile.containerCount'].Value | Should -Be 1; $f['profile.containerMaxUsedPct'].Value | Should -Be 96
+    }
+    It 'nennt die Luecke und den Rueckblick seit dem Start nicht lesbar, wenn ein Protokoll keinen bekannten aeltesten Eintrag hat' {   # Korrektur 3
+        $log = { param($name, $oldest) @{ Log = $name; Present = $true; Enabled = $true; MaxSizeMB = 20; FileSizeMB = 20; Records = 1; Mode = 'Circular'; Full = $false; Oldest = $oldest } }
+        $f = Get-Facts @{ 'operation.lastBoot' = $ReadMs - 86400000; 'events.logs' = @((& $log 'Application' $null), (& $log 'System' ($ReadMs - 30 * 86400000))) }
+        foreach ($id in 'events.coverageGapDays', 'events.sinceBootOnly') { $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'error' -Because $id }
+        $f['events.retainLogs'].Value | Should -Be 0
+        $z = Get-Facts @{ 'operation.lastBoot' = $ReadMs - 86400000; 'events.logs' = @((& $log 'Application' 0)) }          # Oldest 0: das Protokoll hat keinen Eintrag
+        $z['events.coverageGapDays'].Value | Should -Be 0; $z['events.sinceBootOnly'].Value | Should -BeFalse
+    }
+    It 'nennt den Rueckblick ohne Beginn der Aufzeichnung nicht lesbar' {   # Korrektur 4
+        $m = New-HealthModel @{} @{ EventsBefore = @((New-Ev 1 'crash' 'app' 'EXCEL.EXE')) }; $m.Remove('CaptureStartMs')
+        $f = Get-WorkerPerfHealthFacts -Model $m -Catalogue $Cat -EventConfig $Cfg -Roles $Roles
+        foreach ($id in 'events.crashDays', 'events.storageCount', 'events.fileserverDays', 'events.perDay') { $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'error' -Because $id }
+        (Get-WorkerPerfHealthEventCount -Model $m -EventConfig $Cfg -Kind 'crash' -Days 7).Known | Should -BeFalse
+        (Get-Facts @{} @{ EventsBefore = @((New-Ev 1 'crash' 'app' 'EXCEL.EXE')); CaptureStartMs = $null })['events.crashDays'].Reason | Should -Be 'error'
+    }
+    It 'rundet je Fakt, wie der Plan es sagt' {   # Korrektur 5
+        $f = Get-Facts @{ 'operation.lastBoot' = $ReadMs - [long](19.6 * 86400000); 'operation.lastUpdate' = $ReadMs - [long](19.6 * 86400000)
+            'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - [long](26.5 * 3600000) })
+            'size.commitPeakMB' = 1; 'size.commitTotalMB' = 9; 'size.commitLimitMB' = 400 }
+        $f['operation.uptimeDays'].Value | Should -Be 19.6                     # "in Tagen": eine Nachkommastelle
+        $f['operation.updateAgeDays'].Value | Should -Be 19                    # "in ganzen Tagen": abgerundet
+        $f['sessions.disconnectedOldestHours'].Value | Should -Be 26.5
+        # 0,25 % und 2,25 % liegen genau auf der Mitte: der Plan rundet von null weg (AwayFromZero), nicht zur geraden Ziffer
+        $f['size.commitPeakPct'].Value | Should -Be 0.3; $f['size.commitNowPct'].Value | Should -Be 2.3
     }
 }

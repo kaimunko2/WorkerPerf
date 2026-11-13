@@ -781,6 +781,92 @@ function New-WorkerPerfHealthFact([string]$State, [string]$Reason = '', $Value =
     return [ordered]@{ State = $State; Reason = $Reason; Value = $Value }
 }
 
+# health.json is written by another process, maybe of an older or newer version: one value of an unexpected shape
+# costs the facts that depend on it, never the evaluation of the whole capture (ruling ZB-R27).
+$script:WorkerPerfHealthValueReasons = @('', 'rights', 'notInstalled', 'timeout', 'error')
+$script:WorkerPerfHealthNumberTypes = @([byte], [sbyte], [int16], [uint16], [int], [uint32], [long], [uint64], [single], [double], [decimal])
+
+function Test-WorkerPerfHealthNumber($Value) {
+    # True for a number (Int32, Int64, Double, Decimal and the other number types); a number given as text is none.
+    return ($null -ne $Value -and $script:WorkerPerfHealthNumberTypes -contains $Value.GetType())
+}
+
+function Test-WorkerPerfHealthWhole($Value) {
+    # True for a finite number without a fraction (the type time).
+    if (-not (Test-WorkerPerfHealthNumber $Value)) { return $false }
+    if ($Value -is [decimal]) { return ($Value -eq [decimal]::Truncate($Value)) }
+    $d = [double]$Value
+    return (-not [double]::IsNaN($d) -and -not [double]::IsInfinity($d) -and [Math]::Floor($d) -eq $d)
+}
+
+function Test-WorkerPerfHealthRecord($Value) {
+    return ($Value -is [System.Collections.IDictionary] -or $Value -is [System.Management.Automation.PSCustomObject])
+}
+
+function Test-WorkerPerfHealthContent([string]$Type, $Value) {
+    # True when a content fits a type of the value list: number, bool and time as such; every other type (text, value)
+    # takes a single value or $null, no record and no list.
+    if ($Type -ceq 'number') { return (Test-WorkerPerfHealthNumber $Value) }
+    if ($Type -ceq 'bool') { return ($Value -is [bool]) }
+    if ($Type -ceq 'time') { return (Test-WorkerPerfHealthWhole $Value) }
+    return (-not (Test-WorkerPerfHealthRecord $Value) -and -not ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]))
+}
+
+function ConvertTo-WorkerPerfHealthReadFact([string]$Id, $Entry) {
+    # The fact of a read value of health.json. Unreadable with error: a state or reason that is no known word, or a
+    # read content that does not fit the value's type (a number, yes/no value or time of another kind or $null; a list
+    # that is $null, no list, or has an entry that is no record or a field whose content does not fit its type). A read
+    # list is always an array; a single record is wrapped.
+    $state = [string](Get-WorkerPerfField $Entry 'State'); $reason = [string](Get-WorkerPerfField $Entry 'Reason')
+    if (@('read', 'absent', 'unreadable') -cnotcontains $state -or $script:WorkerPerfHealthValueReasons -cnotcontains $reason) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+    $value = Get-WorkerPerfHealthModelMember $Entry 'Value'
+    if ($state -ne 'read') { return (New-WorkerPerfHealthFact $state $reason $value) }
+    $def = $script:WorkerPerfHealthValues[$Id]
+    if ($def.Type -ne 'list') {
+        if (-not (Test-WorkerPerfHealthContent $def.Type $value)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+        return (New-WorkerPerfHealthFact 'read' '' $value)
+    }
+    if ($null -eq $value -or $value -is [string]) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+    if (Test-WorkerPerfHealthRecord $value) { $items = [object[]]@($value) }
+    elseif ($value -is [System.Collections.IEnumerable]) { $items = [object[]]@($value) }
+    else { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+    foreach ($item in $items) {
+        if (-not (Test-WorkerPerfHealthRecord $item)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+        if ($null -eq $def.Fields) { continue }
+        foreach ($field in $def.Fields.Keys) {
+            $content = Get-WorkerPerfHealthModelMember $item $field
+            if ($null -ne $content -and -not (Test-WorkerPerfHealthContent $def.Fields[$field] $content)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+        }
+    }
+    return (New-WorkerPerfHealthFact 'read' '' $items)
+}
+
+function Get-WorkerPerfHealthItemField($Item, [string]$Name) {
+    # A field of a list entry that a rule reads. An entry without the field (written by another version) stops the
+    # rule, and Invoke-WorkerPerfHealthRule makes its fact unreadable with error.
+    if ($Item -is [System.Collections.IDictionary]) { if ($Item.Contains($Name)) { return $Item[$Name] } }
+    elseif ($null -ne $Item -and $null -ne $Item.PSObject.Properties[$Name]) { return $Item.PSObject.Properties[$Name].Value }
+    throw "Zustandsbild: dem Eintrag fehlt das Feld '$Name'."
+}
+
+function Invoke-WorkerPerfHealthRule([scriptblock]$HealthRule) {
+    # The fact of a rule: its result (a fact, or a value that is read). An error inside the rule (a content of an
+    # unexpected shape) makes this fact unreadable with error; the other facts are still built. Stopping the pipeline
+    # is passed on.
+    $ErrorActionPreference = 'Stop'
+    try { $healthRuleResult = & $HealthRule }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+    if ($healthRuleResult -is [System.Collections.IDictionary] -and $healthRuleResult.Contains('State')) { return $healthRuleResult }
+    return (New-WorkerPerfHealthFact 'read' '' $healthRuleResult)
+}
+
+function Get-WorkerPerfHealthReadAt($Ctx) {
+    # The moment of reading (ms); a rule that needs it stops when health.json gives none.
+    if ($null -eq $Ctx.ReadAt) { throw 'Zustandsbild: der Lesezeitpunkt ist unbekannt.' }
+    return $Ctx.ReadAt
+}
+
 function Get-WorkerPerfHealthModelMember($Object, [string]$Name) {
     # A member of the model or of one of its records (a table or an object), or $null; a list is not unrolled.
     if ($null -eq $Object) { return $null }
@@ -802,7 +888,7 @@ function Get-WorkerPerfHealthModelList($Object, [string]$Name) {
 
 function Get-WorkerPerfHealthMissingReason($Model, [ValidateSet('lookback', 'drivers')][string]$What) {
     # Empty when the source of the evaluation's facts was read, else the reason: lookback (events_before.csv) or
-    # drivers (printdrivers.csv).
+    # drivers (printdrivers.csv). The lookback is not read (error) when EventLookbackDays or CaptureStartMs is no number.
     $skip = Get-WorkerPerfHealthModelList $Model 'Skip'
     $recorded = Get-WorkerPerfHealthModelMember $Model 'Recorded'
     $sources = @(foreach ($e in (Get-WorkerPerfHealthModelList $Model 'SourceErrors')) { [string](Get-WorkerPerfField $e 'Source') })
@@ -816,19 +902,23 @@ function Get-WorkerPerfHealthMissingReason($Model, [ValidateSet('lookback', 'dri
     $meta = Get-WorkerPerfHealthModelMember $Model 'Meta'
     $days = Get-WorkerPerfField $meta 'EventLookbackDays'
     if ($null -eq $days) { return 'notRecorded' }
+    if (-not (Test-WorkerPerfHealthNumber $days)) { return 'error' }
     if ([double]$days -le 0) { return 'skipped:Rueckblick' }
     if ((Get-WorkerPerfField $recorded 'EventsBefore') -ne $true) { return 'notRecorded' }
     if ((Get-WorkerPerfHealthModelList $Model 'EventsBefore').Count -eq 0) {
         foreach ($s in $sources) { if ($s -ceq 'eventsbefore' -or $s.StartsWith('eventsbefore.', [StringComparison]::Ordinal)) { return 'error' } }
     }
+    # without the start of the capture the window of the lookback is unknown
+    if (-not (Test-WorkerPerfHealthNumber (Get-WorkerPerfHealthModelMember $Model 'CaptureStartMs'))) { return 'error' }
     return ''
 }
 
 function Get-WorkerPerfHealthServerOffset($Model) {
     # The UTC offset of the server in minutes: from meta.json, else from health.json, else 0.
+    # An offset that is no number counts as missing.
     $o = Get-WorkerPerfField (Get-WorkerPerfHealthModelMember $Model 'Meta') 'OffsetMinutes'
-    if ($null -eq $o) { $o = Get-WorkerPerfField (Get-WorkerPerfHealthModelMember $Model 'Health') 'OffsetMinutes' }
-    if ($null -eq $o) { return 0 }
+    if (-not (Test-WorkerPerfHealthWhole $o)) { $o = Get-WorkerPerfField (Get-WorkerPerfHealthModelMember $Model 'Health') 'OffsetMinutes' }
+    if (-not (Test-WorkerPerfHealthWhole $o)) { return 0 }
     return [int]$o
 }
 
@@ -888,13 +978,11 @@ function Get-WorkerPerfHealthBlocking($F, [string[]]$Ids) {
 }
 
 function Get-WorkerPerfHealthDerived($F, [string[]]$Ids, [scriptblock]$Rule) {
-    # A derived fact: the blocking fact of its inputs, else the rule's result (a fact, or a value that is read). A rule
-    # that gives a list returns it with a leading comma.
+    # A derived fact: the blocking fact of its inputs, else the rule's result (a fact, or a value that is read; an error
+    # in the rule gives unreadable with error). A rule that gives a list returns it with a leading comma.
     $blocking = Get-WorkerPerfHealthBlocking $F $Ids
     if ($null -ne $blocking) { return $blocking }
-    $result = & $Rule
-    if ($result -is [System.Collections.IDictionary] -and $result.Contains('State')) { return $result }
-    return (New-WorkerPerfHealthFact 'read' '' $result)
+    return (Invoke-WorkerPerfHealthRule $Rule)
 }
 
 function Get-WorkerPerfHealthVmwareDerived($F, [string[]]$Ids, [scriptblock]$Rule) {
@@ -931,7 +1019,7 @@ function Test-WorkerPerfHealthWorkDay($Day) {
 function Add-WorkerPerfHealthSizeFacts($F, $Ctx) {
     $F['size.commitPeakPct'] = Get-WorkerPerfHealthDerived $F @('size.commitPeakMB', 'size.commitLimitMB') { Get-WorkerPerfHealthRatio $F['size.commitPeakMB'].Value $F['size.commitLimitMB'].Value 100 }
     $F['size.commitNowPct'] = Get-WorkerPerfHealthDerived $F @('size.commitTotalMB', 'size.commitLimitMB') { Get-WorkerPerfHealthRatio $F['size.commitTotalMB'].Value $F['size.commitLimitMB'].Value 100 }
-    $F['size.pagefileCount'] = Get-WorkerPerfHealthDerived $F @('size.pagefiles') { Get-WorkerPerfHealthCountWhere $F['size.pagefiles'].Value { -not (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Temporary')) } }
+    $F['size.pagefileCount'] = Get-WorkerPerfHealthDerived $F @('size.pagefiles') { Get-WorkerPerfHealthCountWhere $F['size.pagefiles'].Value { -not (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Temporary')) } }
     $F['size.memPerSessionMB'] = Get-WorkerPerfHealthDerived $F @('size.memTotalMB', 'sessions.userCount') {
         if ([double]$F['sessions.userCount'].Value -le 0) { New-WorkerPerfHealthFact 'absent' }
         else { Get-WorkerPerfHealthRatio $F['size.memTotalMB'].Value $F['sessions.userCount'].Value 1 } }
@@ -940,79 +1028,80 @@ function Add-WorkerPerfHealthSizeFacts($F, $Ctx) {
     $F['size.vmware'] = Get-WorkerPerfHealthDerived $F @('size.model') { ([string]$F['size.model'].Value).StartsWith('VMware', [StringComparison]::OrdinalIgnoreCase) }
 
     # missing VMware Tools on a VMware VM count as version 0, a missing balloon driver as not running
-    $vm = $F['size.vmware']
-    if ($vm.State -ne 'read') { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact $vm.State $vm.Reason; $F['size.balloonRunning'] = New-WorkerPerfHealthFact $vm.State $vm.Reason }
-    elseif (-not (Test-WorkerPerfHealthYes $vm.Value)) { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact 'absent' 'notInstalled'; $F['size.balloonRunning'] = New-WorkerPerfHealthFact 'absent' 'notInstalled' }
-    else {
-        $tools = $F['size.vmtoolsVersion']
-        if ($tools.State -eq 'unreadable') { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact 'unreadable' $tools.Reason }
-        elseif ($tools.State -eq 'absent') { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact 'read' '' 0 }
-        elseif ([string]$tools.Value -match '^\s*(\d+)') { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact 'read' '' ([int]$Matches[1]) }
-        else { $F['size.vmtoolsMajor'] = New-WorkerPerfHealthFact 'unreadable' 'error' }
-        $balloon = $F['size.balloonDriver']
-        if ($balloon.State -eq 'unreadable') { $F['size.balloonRunning'] = New-WorkerPerfHealthFact 'unreadable' $balloon.Reason }
-        else { $F['size.balloonRunning'] = New-WorkerPerfHealthFact 'read' '' ($balloon.State -eq 'read' -and [string]$balloon.Value -eq 'Running') }
-    }
+    $F['size.vmtoolsMajor'] = Invoke-WorkerPerfHealthRule {
+        $vm = $F['size.vmware']; $tools = $F['size.vmtoolsVersion']
+        if ($vm.State -ne 'read') { New-WorkerPerfHealthFact $vm.State $vm.Reason }
+        elseif (-not (Test-WorkerPerfHealthYes $vm.Value)) { New-WorkerPerfHealthFact 'absent' 'notInstalled' }
+        elseif ($tools.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $tools.Reason }
+        elseif ($tools.State -eq 'absent') { 0 }
+        elseif ([string]$tools.Value -match '^\s*(\d+)') { [int]$Matches[1] }
+        else { New-WorkerPerfHealthFact 'unreadable' 'error' } }
+    $F['size.balloonRunning'] = Invoke-WorkerPerfHealthRule {
+        $vm = $F['size.vmware']; $balloon = $F['size.balloonDriver']
+        if ($vm.State -ne 'read') { New-WorkerPerfHealthFact $vm.State $vm.Reason }
+        elseif (-not (Test-WorkerPerfHealthYes $vm.Value)) { New-WorkerPerfHealthFact 'absent' 'notInstalled' }
+        elseif ($balloon.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $balloon.Reason }
+        else { ($balloon.State -eq 'read' -and [string]$balloon.Value -eq 'Running') } }
     $F['size.otherNetAdapters'] = Get-WorkerPerfHealthVmwareDerived $F @('size.netAdapters') {
-        Get-WorkerPerfHealthCountWhere $F['size.netAdapters'].Value { (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Enabled')) -and [string](Get-WorkerPerfField $_ 'Name') -notlike '*vmxnet3*' } }
+        Get-WorkerPerfHealthCountWhere $F['size.netAdapters'].Value { (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Enabled')) -and [string](Get-WorkerPerfHealthItemField $_ 'Name') -notlike '*vmxnet3*' } }
     $F['size.lsiControllers'] = Get-WorkerPerfHealthVmwareDerived $F @('size.storageControllers') {
-        Get-WorkerPerfHealthCountWhere $F['size.storageControllers'].Value { [string](Get-WorkerPerfField $_ 'Driver') -like 'LSI_*' } }
+        Get-WorkerPerfHealthCountWhere $F['size.storageControllers'].Value { [string](Get-WorkerPerfHealthItemField $_ 'Driver') -like 'LSI_*' } }
 }
 
 function Add-WorkerPerfHealthOperationFacts($F, $Ctx) {
     $F['operation.uptimeDays'] = Get-WorkerPerfHealthDerived $F @('operation.lastBoot') {
         if ([double]$F['operation.lastBoot'].Value -le 0) { New-WorkerPerfHealthFact 'absent' }
-        else { Get-WorkerPerfHealthRound (($Ctx.ReadAt - [double]$F['operation.lastBoot'].Value) / $script:WorkerPerfHealthDayMs) } }
+        else { Get-WorkerPerfHealthRound (((Get-WorkerPerfHealthReadAt $Ctx) - [double]$F['operation.lastBoot'].Value) / $script:WorkerPerfHealthDayMs) } }
     $F['operation.updateAgeDays'] = Get-WorkerPerfHealthDerived $F @('operation.lastUpdate') {
         if ([double]$F['operation.lastUpdate'].Value -le 0) { New-WorkerPerfHealthFact 'absent' }
-        else { [Math]::Floor(($Ctx.ReadAt - [double]$F['operation.lastUpdate'].Value) / $script:WorkerPerfHealthDayMs) } }
+        else { [Math]::Floor(((Get-WorkerPerfHealthReadAt $Ctx) - [double]$F['operation.lastUpdate'].Value) / $script:WorkerPerfHealthDayMs) } }
     # a drive whose PageFile is unknown counts only through System
     $F['operation.minFreeGB'] = Get-WorkerPerfHealthDerived $F @('operation.volumes') {
         $free = @(foreach ($v in @($F['operation.volumes'].Value)) {
-                $gb = Get-WorkerPerfField $v 'FreeGB'
-                if ($null -ne $gb -and ((Test-WorkerPerfHealthYes (Get-WorkerPerfField $v 'System')) -or (Test-WorkerPerfHealthYes (Get-WorkerPerfField $v 'PageFile')))) { [double]$gb } })
+                $gb = Get-WorkerPerfHealthItemField $v 'FreeGB'
+                if ($null -ne $gb -and ((Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $v 'System')) -or (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $v 'PageFile')))) { [double]$gb } })
         if ($free.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($free | Measure-Object -Minimum).Minimum } }
 }
 
 function Add-WorkerPerfHealthSessionFacts($F, $Ctx) {
     # the sessions of a user (session 0 and listeners have none)
-    $userSessions = { @($F['sessions.list'].Value) | Where-Object { -not [string]::IsNullOrEmpty([string](Get-WorkerPerfField $_ 'User')) } }
+    $userSessions = { @($F['sessions.list'].Value) | Where-Object { -not [string]::IsNullOrEmpty([string](Get-WorkerPerfHealthItemField $_ 'User')) } }
     $F['sessions.userCount'] = Get-WorkerPerfHealthDerived $F @('sessions.list') { @(& $userSessions).Count }
-    $F['sessions.disconnectedCount'] = Get-WorkerPerfHealthDerived $F @('sessions.list') { Get-WorkerPerfHealthCountWhere @(& $userSessions) { [string](Get-WorkerPerfField $_ 'State') -eq 'Disconnected' } }
+    $F['sessions.disconnectedCount'] = Get-WorkerPerfHealthDerived $F @('sessions.list') { Get-WorkerPerfHealthCountWhere @(& $userSessions) { [string](Get-WorkerPerfHealthItemField $_ 'State') -eq 'Disconnected' } }
     $F['sessions.disconnectedOldestHours'] = Get-WorkerPerfHealthDerived $F @('sessions.list') {
         $hours = 0.0
         foreach ($s in @(& $userSessions)) {
-            $at = Get-WorkerPerfField $s 'DisconnectTime'
-            if ([string](Get-WorkerPerfField $s 'State') -eq 'Disconnected' -and $null -ne $at -and [double]$at -gt 0) {
-                $h = ($Ctx.ReadAt - [double]$at) / 3600000; if ($h -gt $hours) { $hours = $h } }
+            $at = Get-WorkerPerfHealthItemField $s 'DisconnectTime'
+            if ([string](Get-WorkerPerfHealthItemField $s 'State') -eq 'Disconnected' -and $null -ne $at -and [double]$at -gt 0) {
+                $h = ((Get-WorkerPerfHealthReadAt $Ctx) - [double]$at) / 3600000; if ($h -gt $hours) { $hours = $h } }
         }
         Get-WorkerPerfHealthRound $hours }
     foreach ($pair in @(@('sessions.disconnectLimitMin', 'DisconnectedLimitMin'), @('sessions.idleLimitMin', 'IdleLimitMin'))) {
         $field = $pair[1]
         $F[$pair[0]] = Get-WorkerPerfHealthDerived $F @('sessions.limits') {
-            $limits = @(foreach ($l in @($F['sessions.limits'].Value)) { $m = Get-WorkerPerfField $l $field; if ($null -ne $m -and [double]$m -gt 0) { [double]$m } })
+            $limits = @(foreach ($l in @($F['sessions.limits'].Value)) { $m = Get-WorkerPerfHealthItemField $l $field; if ($null -ne $m -and [double]$m -gt 0) { [double]$m } })
             if ($limits.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($limits | Measure-Object -Minimum).Minimum } }
     }
     $F['sessions.unloadedProfiles'] = Get-WorkerPerfHealthDerived $F @('sessions.localProfiles') {
-        Get-WorkerPerfHealthCountWhere $F['sessions.localProfiles'].Value { (Get-WorkerPerfField $_ 'Loaded') -eq $false -and (Get-WorkerPerfField $_ 'Special') -eq $false } }
+        Get-WorkerPerfHealthCountWhere $F['sessions.localProfiles'].Value { (Get-WorkerPerfHealthItemField $_ 'Loaded') -eq $false -and (Get-WorkerPerfHealthItemField $_ 'Special') -eq $false } }
     $F['sessions.tempProfiles'] = Get-WorkerPerfHealthDerived $F @('sessions.localProfiles') {
-        Get-WorkerPerfHealthCountWhere $F['sessions.localProfiles'].Value { Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Temporary') } }
+        Get-WorkerPerfHealthCountWhere $F['sessions.localProfiles'].Value { Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Temporary') } }
 }
 
 function Add-WorkerPerfHealthVdaFacts($F, $Ctx) {
     $F['vda.stoppedAutoServices'] = Get-WorkerPerfHealthDerived $F @('vda.services') {
-        Get-WorkerPerfHealthCountWhere $F['vda.services'].Value { [string](Get-WorkerPerfField $_ 'StartMode') -eq 'Auto' -and [string](Get-WorkerPerfField $_ 'State') -ne 'Running' } }
+        Get-WorkerPerfHealthCountWhere $F['vda.services'].Value { [string](Get-WorkerPerfHealthItemField $_ 'StartMode') -eq 'Auto' -and [string](Get-WorkerPerfHealthItemField $_ 'State') -ne 'Running' } }
     $F['vda.controllerCount'] = Get-WorkerPerfHealthDerived $F @('vda.controllers') { @($F['vda.controllers'].Value).Count }
     $F['vda.controllersNotFqdn'] = Get-WorkerPerfHealthDerived $F @('vda.controllers') {
-        Get-WorkerPerfHealthCountWhere $F['vda.controllers'].Value { [string](Get-WorkerPerfField $_ 'Kind') -ne 'fqdn' } }
+        Get-WorkerPerfHealthCountWhere $F['vda.controllers'].Value { [string](Get-WorkerPerfHealthItemField $_ 'Kind') -ne 'fqdn' } }
     # a group is ready when the list names a service with one of its display names that runs and starts automatically
     $F['vda.wemServicesNotReady'] = Get-WorkerPerfHealthDerived $F @('vda.wemService', 'vda.wemServices') {
         $notReady = 0
         foreach ($group in $script:WorkerPerfHealthWemServices) {
             $ready = $false
             foreach ($s in @($F['vda.wemServices'].Value)) {
-                if (@($group) -contains [string](Get-WorkerPerfField $s 'Name') -and [string](Get-WorkerPerfField $s 'State') -eq 'Running' -and
-                    [string](Get-WorkerPerfField $s 'StartMode') -eq 'Auto') { $ready = $true }
+                if (@($group) -contains [string](Get-WorkerPerfHealthItemField $s 'Name') -and [string](Get-WorkerPerfHealthItemField $s 'State') -eq 'Running' -and
+                    [string](Get-WorkerPerfHealthItemField $s 'StartMode') -eq 'Auto') { $ready = $true }
             }
             if (-not $ready) { $notReady++ }
         }
@@ -1022,12 +1111,12 @@ function Add-WorkerPerfHealthVdaFacts($F, $Ctx) {
 function Add-WorkerPerfHealthProfileFacts($F, $Ctx) {
     $F['profile.containerCount'] = Get-WorkerPerfHealthDerived $F @('profile.containers') { @($F['profile.containers'].Value).Count }
     $F['profile.containerMaxUsedPct'] = Get-WorkerPerfHealthDerived $F @('profile.containers') {
-        $used = @(foreach ($c in @($F['profile.containers'].Value)) { $u = Get-WorkerPerfField $c 'UsedPct'; if ($null -ne $u) { [double]$u } })
+        $used = @(foreach ($c in @($F['profile.containers'].Value)) { $u = Get-WorkerPerfHealthItemField $c 'UsedPct'; if ($null -ne $u) { [double]$u } })
         if ($used.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($used | Measure-Object -Maximum).Maximum } }
     $F['profile.maxContainersPerUser'] = Get-WorkerPerfHealthDerived $F @('profile.containers') {
         $owners = @{}
         foreach ($c in @($F['profile.containers'].Value)) {
-            $o = [string](Get-WorkerPerfField $c 'Owner')
+            $o = [string](Get-WorkerPerfHealthItemField $c 'Owner')
             if ($o.Length -gt 0) { if ($owners.ContainsKey($o)) { $owners[$o]++ } else { $owners[$o] = 1 } }
         }
         if ($owners.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { (@($owners.Values) | Measure-Object -Maximum).Maximum } }
@@ -1045,14 +1134,15 @@ function Add-WorkerPerfHealthPrintFacts($F, $Ctx) {
     }
     foreach ($id in $rules.Keys) {
         if ($reason) { $F[$id] = New-WorkerPerfHealthFact 'unreadable' $reason }
-        else { $F[$id] = New-WorkerPerfHealthFact 'read' '' (Get-WorkerPerfHealthCountWhere $drivers $rules[$id]) }
+        else { $F[$id] = Invoke-WorkerPerfHealthRule { Get-WorkerPerfHealthCountWhere $drivers $rules[$id] } }
     }
     $F['print.queuesPerSession'] = Get-WorkerPerfHealthDerived $F @('print.queueCount', 'sessions.userCount') {
         Get-WorkerPerfHealthRatio $F['print.queueCount'].Value ([Math]::Max(1, [double]$F['sessions.userCount'].Value)) 1 }
-    $svc = $F['print.citrixPrintService']
-    if ($svc.State -eq 'unreadable') { $F['print.citrixMapping'] = New-WorkerPerfHealthFact 'unreadable' $svc.Reason }
-    elseif ($svc.State -eq 'read' -and [string]$svc.Value -eq 'Running') { $F['print.citrixMapping'] = New-WorkerPerfHealthFact 'read' '' $true }
-    else { $F['print.citrixMapping'] = New-WorkerPerfHealthFact 'absent' 'notInUse' }
+    $F['print.citrixMapping'] = Invoke-WorkerPerfHealthRule {
+        $svc = $F['print.citrixPrintService']
+        if ($svc.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $svc.Reason }
+        elseif ($svc.State -eq 'read' -and [string]$svc.Value -eq 'Running') { $true }
+        else { New-WorkerPerfHealthFact 'absent' 'notInUse' } }
     $F['print.mappingClientRelease'] = Get-WorkerPerfHealthDerived $F @('print.mappingClientVersion') {
         if ([string]$F['print.mappingClientVersion'].Value -match '^\s*(\d+)\.(\d+)') { [int]$Matches[1] * 100 + [int]$Matches[2] }
         else { New-WorkerPerfHealthFact 'unreadable' 'error' } }
@@ -1061,10 +1151,10 @@ function Add-WorkerPerfHealthPrintFacts($F, $Ctx) {
 function Add-WorkerPerfHealthSecurityFacts($F, $Ctx) {
     $security = @(@($Ctx.Roles) | Where-Object { [string](Get-WorkerPerfField $_ 'role') -eq 'Sicherheit' })
     $hasFilter = { param($Role) foreach ($flt in @($F['security.filters'].Value)) {
-            if (Test-WorkerPerfNamePattern ([string](Get-WorkerPerfField $flt 'Name')) ([string[]]@(Get-WorkerPerfField $Role 'filters'))) { return $true } }
+            if (Test-WorkerPerfNamePattern ([string](Get-WorkerPerfHealthItemField $flt 'Name')) ([string[]]@(Get-WorkerPerfField $Role 'filters'))) { return $true } }
         return $false }
     $F['security.products'] = Get-WorkerPerfHealthDerived $F @('security.services', 'security.filters') {
-        $running = @(foreach ($s in @($F['security.services'].Value)) { if ([string](Get-WorkerPerfField $s 'State') -eq 'Running') { [string](Get-WorkerPerfField $s 'Name') } })
+        $running = @(foreach ($s in @($F['security.services'].Value)) { if ([string](Get-WorkerPerfHealthItemField $s 'State') -eq 'Running') { [string](Get-WorkerPerfHealthItemField $s 'Name') } })
         $labels = @(foreach ($role in $security) {
                 $byService = @(@(Get-WorkerPerfField $role 'services') | Where-Object { $running -contains [string]$_ }).Count -gt 0
                 if ($byService -or (& $hasFilter $role)) { [string](Get-WorkerPerfField $role 'label') } })
@@ -1072,28 +1162,29 @@ function Add-WorkerPerfHealthSecurityFacts($F, $Ctx) {
     # the products besides Defender: the entry whose filters name WdFilter is Defender
     $F['security.otherFilterProducts'] = Get-WorkerPerfHealthDerived $F @('security.filters') {
         Get-WorkerPerfHealthCountWhere $security { @(Get-WorkerPerfField $_ 'filters') -notcontains 'WdFilter' -and (& $hasFilter $_) } }
-    $onboarding = $F['security.mdeOnboarding']
-    if ($onboarding.State -eq 'unreadable') { $F['security.mdeOnboarded'] = New-WorkerPerfHealthFact 'unreadable' $onboarding.Reason }
-    else { $F['security.mdeOnboarded'] = New-WorkerPerfHealthFact 'read' '' ($onboarding.State -eq 'read' -and $null -ne $onboarding.Value -and [double]$onboarding.Value -eq 1) }
+    $F['security.mdeOnboarded'] = Invoke-WorkerPerfHealthRule {
+        $onboarding = $F['security.mdeOnboarding']
+        if ($onboarding.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $onboarding.Reason }
+        else { ($onboarding.State -eq 'read' -and $null -ne $onboarding.Value -and [double]$onboarding.Value -eq 1) } }
 
     $missing = { param([object[]]$Processes, [string[]]$Names)
-        $leaves = @(foreach ($p in @($Processes)) { Get-WorkerPerfLeafName ([string](Get-WorkerPerfField $p 'Path')) })
+        $leaves = @(foreach ($p in @($Processes)) { Get-WorkerPerfLeafName ([string](Get-WorkerPerfHealthItemField $p 'Path')) })
         @($Names | Where-Object { $leaves -notcontains $_ }).Count }
     $F['security.citrixExclusionsMissing'] = Get-WorkerPerfHealthDerived $F @('vda.version', 'security.defenderExclusionProcesses') {
         & $missing $F['security.defenderExclusionProcesses'].Value $script:WorkerPerfHealthCitrixProcesses }
     # WEM: a missing exclusion list counts as empty; the folder of the agent covers all of its processes
-    $wem = $F['vda.wemService']
-    $paths = $F['security.defenderExclusionPaths']; $procs = $F['security.defenderExclusionProcesses']
-    if ($wem.State -ne 'read') { $F['security.wemExclusionsMissing'] = New-WorkerPerfHealthFact $wem.State $wem.Reason }
-    elseif ($paths.State -eq 'unreadable') { $F['security.wemExclusionsMissing'] = New-WorkerPerfHealthFact 'unreadable' $paths.Reason }
-    elseif ($procs.State -eq 'unreadable') { $F['security.wemExclusionsMissing'] = New-WorkerPerfHealthFact 'unreadable' $procs.Reason }
-    else {
-        $pathList = @(); if ($paths.State -eq 'read') { $pathList = @($paths.Value) }
-        $procList = @(); if ($procs.State -eq 'read') { $procList = @($procs.Value) }
-        $folder = @($pathList | Where-Object { @(([string](Get-WorkerPerfField $_ 'Path')).Split([char[]]@('\', '/'))) -contains $script:WorkerPerfHealthWemFolder }).Count -gt 0
-        if ($folder) { $F['security.wemExclusionsMissing'] = New-WorkerPerfHealthFact 'read' '' 0 }
-        else { $F['security.wemExclusionsMissing'] = New-WorkerPerfHealthFact 'read' '' (& $missing $procList $script:WorkerPerfHealthWemProcesses) }
-    }
+    $F['security.wemExclusionsMissing'] = Invoke-WorkerPerfHealthRule {
+        $wem = $F['vda.wemService']
+        $paths = $F['security.defenderExclusionPaths']; $procs = $F['security.defenderExclusionProcesses']
+        if ($wem.State -ne 'read') { New-WorkerPerfHealthFact $wem.State $wem.Reason }
+        elseif ($paths.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $paths.Reason }
+        elseif ($procs.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $procs.Reason }
+        else {
+            $pathList = @(); if ($paths.State -eq 'read') { $pathList = @($paths.Value) }
+            $procList = @(); if ($procs.State -eq 'read') { $procList = @($procs.Value) }
+            $folder = @($pathList | Where-Object { @(([string](Get-WorkerPerfHealthItemField $_ 'Path')).Split([char[]]@('\', '/'))) -contains $script:WorkerPerfHealthWemFolder }).Count -gt 0
+            if ($folder) { 0 } else { & $missing $procList $script:WorkerPerfHealthWemProcesses }
+        } }
 }
 
 function Test-WorkerPerfHealthPublicAddress([string]$Text) {
@@ -1117,91 +1208,103 @@ function Add-WorkerPerfHealthNetworkFacts($F, $Ctx) {
     $F['network.smbOldDialects'] = Get-WorkerPerfHealthDerived $F @('network.smbConnections') {
         $sum = 0
         foreach ($c in @($F['network.smbConnections'].Value)) {
-            if ([string](Get-WorkerPerfField $c 'Dialect') -match '^\s*(\d+(\.\d+)?)' -and [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) -lt 3) {
-                $n = Get-WorkerPerfField $c 'Connections'; if ($null -ne $n) { $sum += [double]$n } }
+            if ([string](Get-WorkerPerfHealthItemField $c 'Dialect') -match '^\s*(\d+(\.\d+)?)' -and [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) -lt 3) {
+                $n = Get-WorkerPerfHealthItemField $c 'Connections'; if ($null -ne $n) { $sum += [double]$n } }
         }
         $sum }
     $F['network.dnsServersMin'] = Get-WorkerPerfHealthDerived $F @('network.dnsServers') {
         $per = @{}
-        foreach ($d in @($F['network.dnsServers'].Value)) { $k = [string](Get-WorkerPerfField $d 'Interface'); if ($per.ContainsKey($k)) { $per[$k]++ } else { $per[$k] = 1 } }
+        foreach ($d in @($F['network.dnsServers'].Value)) { $k = [string](Get-WorkerPerfHealthItemField $d 'Interface'); if ($per.ContainsKey($k)) { $per[$k]++ } else { $per[$k] = 1 } }
         if ($per.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { (@($per.Values) | Measure-Object -Minimum).Minimum } }
     $F['network.dnsPublic'] = Get-WorkerPerfHealthDerived $F @('network.dnsServers') {
-        Get-WorkerPerfHealthCountWhere $F['network.dnsServers'].Value { Test-WorkerPerfHealthPublicAddress ([string](Get-WorkerPerfField $_ 'Address')) } }
+        Get-WorkerPerfHealthCountWhere $F['network.dnsServers'].Value { Test-WorkerPerfHealthPublicAddress ([string](Get-WorkerPerfHealthItemField $_ 'Address')) } }
     $F['network.timeFromDomain'] = Get-WorkerPerfHealthDerived $F @('network.timeType') { @('NT5DS', 'AllSync') -contains [string]$F['network.timeType'].Value }
     $F['network.rssOff'] = Get-WorkerPerfHealthVmwareDerived $F @('network.rss') {
-        Get-WorkerPerfHealthCountWhere $F['network.rss'].Value { [string](Get-WorkerPerfField $_ 'Description') -like '*vmxnet3*' -and (Get-WorkerPerfField $_ 'Enabled') -eq $false } }
+        Get-WorkerPerfHealthCountWhere $F['network.rss'].Value { [string](Get-WorkerPerfHealthItemField $_ 'Description') -like '*vmxnet3*' -and (Get-WorkerPerfHealthItemField $_ 'Enabled') -eq $false } }
 }
 
 function Add-WorkerPerfHealthEventFacts($F, $Ctx) {
     $model = $Ctx.Model
-    $lookback = Get-WorkerPerfField (Get-WorkerPerfHealthModelMember $model 'Meta') 'EventLookbackDays'
-    if ($null -eq $lookback) { $lookback = 0 }
-    $F['events.lookbackDays'] = New-WorkerPerfHealthFact 'read' '' ([double]$lookback)
+    $F['events.lookbackDays'] = Invoke-WorkerPerfHealthRule {
+        $days = Get-WorkerPerfField (Get-WorkerPerfHealthModelMember $model 'Meta') 'EventLookbackDays'
+        if ($null -eq $days) { 0.0 } elseif (Test-WorkerPerfHealthNumber $days) { [double]$days } else { New-WorkerPerfHealthFact 'unreadable' 'error' } }
     $reason = Get-WorkerPerfHealthMissingReason -Model $model -What 'lookback'
     $ids = @('events.crashDays', 'events.storageCount', 'events.fileserverDays', 'events.perDay')
     if ($reason) { foreach ($id in $ids) { $F[$id] = New-WorkerPerfHealthFact 'unreadable' $reason } }
     else {
-        $days = New-Object 'System.Collections.Generic.SortedDictionary[string,object]' ([StringComparer]::Ordinal)
-        $crashDays = @{}; $fileserverDays = @{}; $storage = 0
-        foreach ($e in @(Get-WorkerPerfHealthLookbackEvents $model ([double]$lookback))) {
-            $kind = Get-WorkerPerfEventIncidentKind $e $Ctx.EventConfig
-            if ($null -eq $kind) { continue }
-            if ($kind -ceq 'system') { $kind = 'system.' + [string](Get-WorkerPerfField $e 'Group') }
-            if (-not $script:WorkerPerfHealthPerDayColumns.Contains($kind)) { continue }
-            $o = Get-WorkerPerfEventOffset $e $Ctx.Offset
-            $day = [DateTimeOffset]::FromUnixTimeMilliseconds([long](Get-WorkerPerfField $e 'TimeMs')).UtcDateTime.AddMinutes($o).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
-            if (-not $days.ContainsKey($day)) {
-                $row = [ordered]@{ Day = $day }; foreach ($c in $script:WorkerPerfHealthPerDayColumns.Values) { $row[$c] = 0 }; $days[$day] = $row }
-            $days[$day][$script:WorkerPerfHealthPerDayColumns[$kind]]++
-            if ($kind -ceq 'crash') { $crashDays[$day] = $true }
-            if ($kind -ceq 'system.fileserver') { $fileserverDays[$day] = $true }
-            if ($kind -ceq 'system.storage') { $storage++ }
+        try {
+            $days = New-Object 'System.Collections.Generic.SortedDictionary[string,object]' ([StringComparer]::Ordinal)
+            $crashDays = @{}; $fileserverDays = @{}; $storage = 0
+            foreach ($e in @(Get-WorkerPerfHealthLookbackEvents $model ([double]$F['events.lookbackDays'].Value))) {
+                $kind = Get-WorkerPerfEventIncidentKind $e $Ctx.EventConfig
+                if ($null -eq $kind) { continue }
+                if ($kind -ceq 'system') { $kind = 'system.' + [string](Get-WorkerPerfField $e 'Group') }
+                if (-not $script:WorkerPerfHealthPerDayColumns.Contains($kind)) { continue }
+                $o = Get-WorkerPerfEventOffset $e $Ctx.Offset
+                $day = [DateTimeOffset]::FromUnixTimeMilliseconds([long](Get-WorkerPerfField $e 'TimeMs')).UtcDateTime.AddMinutes($o).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+                if (-not $days.ContainsKey($day)) {
+                    $row = [ordered]@{ Day = $day }; foreach ($c in $script:WorkerPerfHealthPerDayColumns.Values) { $row[$c] = 0 }; $days[$day] = $row }
+                $days[$day][$script:WorkerPerfHealthPerDayColumns[$kind]]++
+                if ($kind -ceq 'crash') { $crashDays[$day] = $true }
+                if ($kind -ceq 'system.fileserver') { $fileserverDays[$day] = $true }
+                if ($kind -ceq 'system.storage') { $storage++ }
+            }
+            $F['events.crashDays'] = New-WorkerPerfHealthFact 'read' '' $crashDays.Count
+            $F['events.storageCount'] = New-WorkerPerfHealthFact 'read' '' $storage
+            $F['events.fileserverDays'] = New-WorkerPerfHealthFact 'read' '' $fileserverDays.Count
+            $F['events.perDay'] = New-WorkerPerfHealthFact 'read' '' ([object[]]@($days.Values))
         }
-        $F['events.crashDays'] = New-WorkerPerfHealthFact 'read' '' $crashDays.Count
-        $F['events.storageCount'] = New-WorkerPerfHealthFact 'read' '' $storage
-        $F['events.fileserverDays'] = New-WorkerPerfHealthFact 'read' '' $fileserverDays.Count
-        $F['events.perDay'] = New-WorkerPerfHealthFact 'read' '' ([object[]]@($days.Values))
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { foreach ($id in $ids) { $F[$id] = New-WorkerPerfHealthFact 'unreadable' 'error' } }
     }
 
-    # the logs: present and enabled ones with an entry (Oldest 0 = no entry)
-    $withEntry = { @(@($F['events.logs'].Value) | Where-Object {
-                (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Present')) -and (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Enabled')) -and
-                $null -ne (Get-WorkerPerfField $_ 'Oldest') -and [double](Get-WorkerPerfField $_ 'Oldest') -gt 0 }) }
+    # the logs that are present and enabled; of these the ones with an entry (Oldest 0 = no entry; $null = unknown,
+    # which makes the facts that need the oldest entry of every log unreadable). A log that is not present has no
+    # other fields.
+    $enabled = { @(@($F['events.logs'].Value) | Where-Object {
+                (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Present')) -and (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Enabled')) }) }
+    $withEntry = { @(@(& $enabled) | Where-Object { $o = Get-WorkerPerfHealthItemField $_ 'Oldest'; $null -ne $o -and [double]$o -gt 0 }) }
+    $unknownOldest = { param([object[]]$Logs) @(@($Logs) | Where-Object { $null -eq (Get-WorkerPerfHealthItemField $_ 'Oldest') }).Count -gt 0 }
     $lookbackNames = @(foreach ($l in @($Ctx.EventConfig.Logs.Values)) { if ($l.Lookback) { @($l.Names) } })
-    $F['events.coverageGapDays'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
-        $oldest = @(foreach ($l in @(& $withEntry)) { if ($lookbackNames -contains [string](Get-WorkerPerfField $l 'Log')) { [double](Get-WorkerPerfField $l 'Oldest') } })
-        if ($oldest.Count -eq 0) { 0 }
+    $F['events.coverageGapDays'] = Get-WorkerPerfHealthDerived $F @('events.logs', 'events.lookbackDays') {
+        $isLookback = { $lookbackNames -contains [string](Get-WorkerPerfHealthItemField $_ 'Log') }
+        if (& $unknownOldest @(@(& $enabled) | Where-Object $isLookback)) { New-WorkerPerfHealthFact 'unreadable' 'error' }
         else {
-            $reach = [Math]::Floor(($Ctx.ReadAt - ($oldest | Measure-Object -Maximum).Maximum) / $script:WorkerPerfHealthDayMs)
-            [Math]::Max(0.0, [double]$F['events.lookbackDays'].Value - $reach) } }
+            $oldest = @(foreach ($l in @(@(& $withEntry) | Where-Object $isLookback)) { [double](Get-WorkerPerfHealthItemField $l 'Oldest') })
+            if ($oldest.Count -eq 0) { 0 }
+            else {
+                $reach = [Math]::Floor(((Get-WorkerPerfHealthReadAt $Ctx) - ($oldest | Measure-Object -Maximum).Maximum) / $script:WorkerPerfHealthDayMs)
+                [Math]::Max(0.0, [double]$F['events.lookbackDays'].Value - $reach) } } }
     $F['events.retainLogs'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
-        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value { [string](Get-WorkerPerfField $_ 'Mode') -eq 'Retain' } }
+        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value { (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Present')) -and [string](Get-WorkerPerfHealthItemField $_ 'Mode') -eq 'Retain' } }
     $F['events.fullLogs'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
-        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value { [string](Get-WorkerPerfField $_ 'Mode') -eq 'Retain' -and (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Full')) } }
+        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value {
+            (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Present')) -and [string](Get-WorkerPerfHealthItemField $_ 'Mode') -eq 'Retain' -and (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Full')) } }
     $F['events.disabledLogs'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
-        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value { (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Present')) -and (Get-WorkerPerfField $_ 'Enabled') -eq $false } }
+        Get-WorkerPerfHealthCountWhere $F['events.logs'].Value { (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Present')) -and (Get-WorkerPerfHealthItemField $_ 'Enabled') -eq $false } }
     $F['events.reachFrom'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
-        $oldest = @(foreach ($l in @(& $withEntry)) { [double](Get-WorkerPerfField $l 'Oldest') })
+        $oldest = @(foreach ($l in @(& $withEntry)) { [double](Get-WorkerPerfHealthItemField $l 'Oldest') })
         if ($oldest.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($oldest | Measure-Object -Maximum).Maximum } }
     # no log reaches more than ten minutes before the last start
     $F['events.sinceBootOnly'] = Get-WorkerPerfHealthDerived $F @('events.logs', 'operation.lastBoot') {
         $boot = [double]$F['operation.lastBoot'].Value
         $logs = @(& $withEntry)
         if ($boot -le 0) { New-WorkerPerfHealthFact 'absent' }
+        elseif (& $unknownOldest @(& $enabled)) { New-WorkerPerfHealthFact 'unreadable' 'error' }
         elseif ($logs.Count -eq 0) { $false }
-        else { @($logs | Where-Object { [double](Get-WorkerPerfField $_ 'Oldest') -lt $boot - 600000 }).Count -eq 0 } }
+        else { @($logs | Where-Object { [double](Get-WorkerPerfHealthItemField $_ 'Oldest') -lt $boot - 600000 }).Count -eq 0 } }
 }
 
 function Add-WorkerPerfHealthMaintenanceFacts($F, $Ctx) {
     $F['maintenance.tasksInWorkHours'] = Get-WorkerPerfHealthDerived $F @('maintenance.tasks') {
         Get-WorkerPerfHealthCountWhere $F['maintenance.tasks'].Value {
-            $repeat = Get-WorkerPerfField $_ 'RepeatMinutes'
-            (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Enabled')) -and
-            ((Test-WorkerPerfHealthWorkTimeMs (Get-WorkerPerfField $_ 'NextRun') $Ctx) -or ($null -ne $repeat -and [double]$repeat -gt 0)) } }
+            $repeat = Get-WorkerPerfHealthItemField $_ 'RepeatMinutes'
+            (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Enabled')) -and
+            ((Test-WorkerPerfHealthWorkTimeMs (Get-WorkerPerfHealthItemField $_ 'NextRun') $Ctx) -or ($null -ne $repeat -and [double]$repeat -gt 0)) } }
     $F['maintenance.sessionTriggerTasks'] = Get-WorkerPerfHealthDerived $F @('maintenance.tasks') {
         Get-WorkerPerfHealthCountWhere $F['maintenance.tasks'].Value {
-            $words = @(([string](Get-WorkerPerfField $_ 'Triggers')).Split(',') | ForEach-Object { $_.Trim() })
-            (Test-WorkerPerfHealthYes (Get-WorkerPerfField $_ 'Enabled')) -and @($words | Where-Object { @('idle', 'logon', 'session') -contains $_ }).Count -gt 0 } }
+            $words = @(([string](Get-WorkerPerfHealthItemField $_ 'Triggers')).Split(',') | ForEach-Object { $_.Trim() })
+            (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Enabled')) -and @($words | Where-Object { @('idle', 'logon', 'session') -contains $_ }).Count -gt 0 } }
     # the scan: never on scanDay 8 (and not on a weekend day); the time of day HH:mm in server local time
     $F['maintenance.scanInWorkHours'] = Get-WorkerPerfHealthDerived $F @('maintenance.scanDay') {
         if (-not (Test-WorkerPerfHealthWorkDay $F['maintenance.scanDay'].Value)) { $false }
@@ -1211,13 +1314,14 @@ function Add-WorkerPerfHealthMaintenanceFacts($F, $Ctx) {
             elseif ([string]$time.Value -match '^\s*(\d{1,2}):(\d{2})') { Test-WorkerPerfHealthWorkTime ([int]$Matches[1] + [int]$Matches[2] / 60.0) 1 $Ctx }
             else { New-WorkerPerfHealthFact 'unreadable' 'error' } } }
     # Windows Update: no policy (no AUOptions) is no installation in the working hours
-    $options = $F['maintenance.updateOptions']
-    if ($options.State -eq 'unreadable') { $F['maintenance.updateInWorkHours'] = New-WorkerPerfHealthFact 'unreadable' $options.Reason }
-    elseif ($options.State -ne 'read' -or [double]$options.Value -ne 4) { $F['maintenance.updateInWorkHours'] = New-WorkerPerfHealthFact 'read' '' $false }
-    else {
-        $F['maintenance.updateInWorkHours'] = Get-WorkerPerfHealthDerived $F @('maintenance.updateDay', 'maintenance.updateHour') {
-            (Test-WorkerPerfHealthWorkDay $F['maintenance.updateDay'].Value) -and (Test-WorkerPerfHealthWorkTime ([double]$F['maintenance.updateHour'].Value) 1 $Ctx) }
-    }
+    $F['maintenance.updateInWorkHours'] = Invoke-WorkerPerfHealthRule {
+        $options = $F['maintenance.updateOptions']
+        if ($options.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $options.Reason }
+        elseif ($options.State -ne 'read' -or [double]$options.Value -ne 4) { $false }
+        else {
+            Get-WorkerPerfHealthDerived $F @('maintenance.updateDay', 'maintenance.updateHour') {
+                (Test-WorkerPerfHealthWorkDay $F['maintenance.updateDay'].Value) -and (Test-WorkerPerfHealthWorkTime ([double]$F['maintenance.updateHour'].Value) 1 $Ctx) }
+        } }
 }
 
 function Add-WorkerPerfHealthAppFacts($F, $Ctx, [object[]]$Apps) {
@@ -1250,21 +1354,23 @@ function Add-WorkerPerfHealthAppFacts($F, $Ctx, [object[]]$Apps) {
 function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$Roles = @()) {
     # All facts of a capture: id -> fact ([ordered]@{ State; Reason; Value }), for every fact of
     # Get-WorkerPerfHealthFactTable $Catalogue.appList in its order (the 164 fixed facts, then those of the application
-    # list). The read values come unchanged from health.json; without a read health picture (HealthState skipped,
-    # notRecorded or unreadable) they are unreadable with skipped:Zustand, notRecorded or error. The working hours come
-    # from the thresholds workStartHour and workEndHour of the catalogue.
+    # list). The read values come from health.json as ConvertTo-WorkerPerfHealthReadFact checks them; without a read
+    # health picture (HealthState skipped, notRecorded or unreadable) they are unreadable with skipped:Zustand,
+    # notRecorded or error. The working hours come from the thresholds workStartHour and workEndHour of the catalogue.
+    # A value of an unexpected shape costs the facts that depend on it, never the whole evaluation (ruling ZB-R27).
     $apps = Get-WorkerPerfHealthModelList $Catalogue 'appList'
     $table = Get-WorkerPerfHealthFactTable $apps
     $health = Get-WorkerPerfHealthModelMember $Model 'Health'
     $healthState = [string](Get-WorkerPerfHealthModelMember $Model 'HealthState')
     $thresholds = Get-WorkerPerfField $Catalogue 'thresholds'
-    $readAt = Get-WorkerPerfField $health 'ReadAtMs'; if ($null -eq $readAt) { $readAt = 0 }
-    $ctx = @{ Model = $Model; EventConfig = $EventConfig; Roles = @($Roles); ReadAt = [double]$readAt; Offset = (Get-WorkerPerfHealthServerOffset $Model)
+    # the moment of reading: unknown ($null) when health.json gives no number; the facts that need it are unreadable
+    $readAt = Get-WorkerPerfField $health 'ReadAtMs'; if (Test-WorkerPerfHealthNumber $readAt) { $readAt = [double]$readAt } else { $readAt = $null }
+    $ctx = @{ Model = $Model; EventConfig = $EventConfig; Roles = @($Roles); ReadAt = $readAt; Offset = (Get-WorkerPerfHealthServerOffset $Model)
         WorkStart = [double](Get-WorkerPerfField (Get-WorkerPerfField $thresholds 'workStartHour') 'value')
         WorkEnd = [double](Get-WorkerPerfField (Get-WorkerPerfField $thresholds 'workEndHour') 'value') }
     # the server's local time for the working hours: the offset at the moment of reading (health.json)
     $healthOffset = Get-WorkerPerfField $health 'OffsetMinutes'
-    if ($null -ne $healthOffset) { $ctx.WorkOffset = [int]$healthOffset } else { $ctx.WorkOffset = $ctx.Offset }
+    if (Test-WorkerPerfHealthWhole $healthOffset) { $ctx.WorkOffset = [int]$healthOffset } else { $ctx.WorkOffset = $ctx.Offset }
 
     $F = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
     $notRead = 'error'
@@ -1277,23 +1383,21 @@ function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$
             $reason = $notRead; if ($healthState -eq 'read') { $reason = 'error' }
             $F[$id] = New-WorkerPerfHealthFact 'unreadable' $reason; continue
         }
-        $F[$id] = [ordered]@{ State = [string](Get-WorkerPerfField $entry 'State'); Reason = [string](Get-WorkerPerfField $entry 'Reason')
-            Value = (Get-WorkerPerfHealthModelMember $entry 'Value') }
+        $F[$id] = ConvertTo-WorkerPerfHealthReadFact $id $entry
     }
 
-    Add-WorkerPerfHealthSessionFacts $F $ctx
-    Add-WorkerPerfHealthSizeFacts $F $ctx
-    Add-WorkerPerfHealthOperationFacts $F $ctx
-    Add-WorkerPerfHealthVdaFacts $F $ctx
-    Add-WorkerPerfHealthProfileFacts $F $ctx
-    Add-WorkerPerfHealthPrintFacts $F $ctx
-    Add-WorkerPerfHealthSecurityFacts $F $ctx
-    Add-WorkerPerfHealthNetworkFacts $F $ctx
-    Add-WorkerPerfHealthEventFacts $F $ctx
-    Add-WorkerPerfHealthMaintenanceFacts $F $ctx
-    Add-WorkerPerfHealthAppFacts $F $ctx $apps
+    # each area on its own: an error outside a rule leaves the facts of the area it did not build unreadable with error
+    foreach ($add in @('Session', 'Size', 'Operation', 'Vda', 'Profile', 'Print', 'Security', 'Network', 'Event', 'Maintenance', 'App')) {
+        try {
+            if ($add -eq 'App') { Add-WorkerPerfHealthAppFacts $F $ctx $apps } else { & "Add-WorkerPerfHealth$($add)Facts" $F $ctx }
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { $null = $_ }   # the facts this area did not build are filled in below
+    }
 
     $out = [ordered]@{}
-    foreach ($id in $table.Keys) { $out[$id] = $F[$id] }
+    foreach ($id in $table.Keys) {
+        if ($F.ContainsKey($id)) { $out[$id] = $F[$id] } else { $out[$id] = New-WorkerPerfHealthFact 'unreadable' 'error' }
+    }
     return $out
 }
