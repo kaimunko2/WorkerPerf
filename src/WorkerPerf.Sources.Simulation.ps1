@@ -182,8 +182,9 @@ function Add-WorkerPerfSimRead([string]$Kind) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null)
+          [object]$EventConfig = $null, [object[]]$Apps = @())
     # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
+    # Apps: the application list of the health picture (Read-WorkerPerfHealthApps); without it the area apps is empty.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). The source reads nothing of them and writes no entry of
     # theirs into Sources (the collector notes them); the base values stay the same.
 
@@ -345,6 +346,8 @@ function Initialize-WorkerPerfSource {
     # memory scene and far from other scenes, so it matches no pattern (the resource pattern looks 5 minutes back).
     $cfg = $EventConfig
     if ($null -eq $cfg) { $cfg = Read-WorkerPerfEventConfig $script:WorkerPerfSimEventFile }
+    # kept for the area events of the health picture
+    $script:WorkerPerfSimEventConfig = $cfg
     $spoolerPid = @($script:WorkerPerfSimProcs | Where-Object { $_.Name -eq 'spoolsv.exe' -and $_.SessionId -eq 0 })[0].Pid
     $defender = 'Microsoft-Windows-Windows Defender'
     $script:WorkerPerfSimEvents = @(
@@ -381,6 +384,38 @@ function Initialize-WorkerPerfSource {
     $script:WorkerPerfSimQueues = @(
         @{ Queue = 'PRN-EG-01'; JobErrors = 2; Jobs = 3; JobsA = 2590.0; JobsB = 2700.0; ErrorAt = 2600.0 }
         @{ Queue = 'PRN-OG-02'; JobErrors = 0; Jobs = 0; JobsA = 0.0; JobsB = 0.0; ErrorAt = [double]::PositiveInfinity })
+
+    # ---- health picture: the application list and the state of the applications on the simulated worker ----
+    # Values: registry path + '|' + value name -> value; Keys: path -> counts; Services: name -> state; Tasks: path ->
+    # state ([datetime]::MinValue = no run); Files: path -> version ('' for a folder). Anything not listed does not exist.
+    $script:WorkerPerfSimApps = [object[]]@($Apps | Where-Object { $null -ne $_ })
+    $edgeUpdate = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    $c2r = 'HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+    $officePolicy = 'HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate'
+    $script:WorkerPerfSimAppState = @{
+        Values   = @{
+            ($edgeUpdate + '|pv') = '130.0.2849.80'
+            'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|UpdateDefault' = 0
+            'HKLM\SOFTWARE\Policies\Microsoft\Edge|StartupBoostEnabled' = 0
+            'HKLM\SOFTWARE\Policies\Microsoft\Edge|BackgroundModeEnabled' = 1
+            ($c2r + '|UpdateChannel') = 'http://officecdn.microsoft.com/pr/00000000-0000-0000-0000-000000000000'
+            ($c2r + '|UpdateUrl') = '\\fs01\office$\updates'
+            ($c2r + '|VersionToReport') = '16.0.17932.20162'
+            ($c2r + '|Platform') = 'x64'
+            ($c2r + '|UpdatesEnabled') = 'False'
+            ($officePolicy + '|hideupdatenotifications') = 1
+            ($officePolicy + '|hideenabledisableupdates') = 1
+            'HKLM\SOFTWARE\Microsoft\Teams|DisableFallback' = 2
+        }
+        Keys     = @{ 'HKLM\SOFTWARE\Microsoft\Office\Outlook\Addins' = @{ ValueCount = 0; SubKeyCount = 3 } }
+        Services = @{ edgeupdate = @{ State = 'Stopped'; StartMode = 'Manual'; DisplayName = 'Microsoft Edge Update Service (edgeupdate)' } }
+        Tasks    = @{ '\Microsoft\Office\Office Automatic Updates 2.0' = @{ Enabled = $false; LastRun = [datetime]::MinValue; NextRun = [datetime]::MinValue } }
+        Files    = @{
+            'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' = '130.0.2849.80'
+            'C:\Program Files\WindowsApps\MSTeams_24277.3502.3161.3007_x64__8wekyb3d8bbwe\ms-teams.exe' = '24277.3502.3161.3007'
+            'C:\Program Files (x86)\Microsoft\TeamsMeetingAdd-in' = ''
+        }
+    }
 
     # Sources: none of a left-out category; the logs events.<id> belong to Ereignisse and Rueckblick together
     $leftOutIds = @{}
@@ -671,6 +706,209 @@ function Get-WorkerPerfPrintQueues {
         [pscustomobject]@{ Queue = $q.Queue; Jobs = $(if ($e -gt $q.JobsA -and $e -le $q.JobsB) { $q.Jobs } else { 0 })
             JobErrors = $(if ($e -ge $q.ErrorAt) { $q.JobErrors + 1 } else { $q.JobErrors }); NotReadyErrors = 0 }
     }
+}
+
+function Get-WorkerPerfSimAppReaders {
+    # The five readers of Get-WorkerPerfAppRows on the state of the applications: $null when the thing does not exist,
+    # otherwise a table with exactly the fields of its kind. The simulation knows no application by name.
+    $state = $script:WorkerPerfSimAppState
+    return @{
+        registryValue = {
+            param([string]$Path, [string]$Name)
+            $key = $Path + '|' + $Name
+            if ($state['Values'].ContainsKey($key)) { return @{ Value = $state['Values'][$key] } }
+            return $null
+        }.GetNewClosure()
+        registryKey   = {
+            param([string]$Path)
+            if ($state['Keys'].ContainsKey($Path)) { $k = $state['Keys'][$Path]; return @{ ValueCount = [int]$k.ValueCount; SubKeyCount = [int]$k.SubKeyCount } }
+            # a key under which Values names a value exists, with those values and no subkey
+            $prefix = $Path + '|'
+            $count = @($state['Values'].Keys | Where-Object { ([string]$_).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }).Count
+            if ($count -gt 0) { return @{ ValueCount = [int]$count; SubKeyCount = 0 } }
+            return $null
+        }.GetNewClosure()
+        service       = {
+            param([string]$Name, [string]$DisplayName)
+            $svc = $null
+            if ($Name) { if ($state['Services'].ContainsKey($Name)) { $svc = $state['Services'][$Name] } }
+            else { $svc = @($state['Services'].Values | Where-Object { $_.DisplayName -eq $DisplayName }) | Select-Object -First 1 }
+            if ($null -eq $svc) { return $null }
+            return @{ State = [string]$svc.State; StartMode = [string]$svc.StartMode }
+        }.GetNewClosure()
+        scheduledTask = {
+            param([string]$Path)
+            if (-not $state['Tasks'].ContainsKey($Path)) { return $null }
+            $t = $state['Tasks'][$Path]
+            return @{ Enabled = [bool]$t.Enabled; LastRun = [datetime]$t.LastRun; NextRun = [datetime]$t.NextRun }
+        }.GetNewClosure()
+        file          = {
+            param([string]$Path)
+            # a path with '*' matches through -like; of several matches the highest version counts
+            $hits = @($state['Files'].Keys | Where-Object { $(if ($Path.Contains('*')) { $_ -like $Path } else { $_ -eq $Path }) })
+            if ($hits.Count -eq 0) { return $null }
+            $versions = @($hits | ForEach-Object { [string]$state['Files'][$_] })
+            $best = $versions | Sort-Object -Descending -Property @{ Expression = { $v = $null; if ([version]::TryParse($_, [ref]$v)) { $v } else { [version]'0.0' } } }, @{ Expression = { $_ } } |
+                Select-Object -First 1
+            return @{ Version = [string]$best }
+        }.GetNewClosure()
+    }
+}
+
+function Get-WorkerPerfHealth {
+    # The scripted health picture of the simulated worker: eleven areas, each value read with the content of the script
+    # unless stated otherwise; $null (and no read) without Zustand.
+    if (-not (Test-WorkerPerfSimMeasured 'Zustand')) { return $null }
+    Add-WorkerPerfSimRead 'health'
+    $s = $script:WorkerPerfSimStart
+    $ok = { param($Value) New-WorkerPerfHealthValue 'read' '' $Value }
+    $absent = New-WorkerPerfHealthValue 'absent'
+    $time = { param([datetime]$Time) ConvertTo-WorkerPerfHealthTime $Time }
+    $running = { param([string]$Name, [string]$State = 'Running', [string]$StartMode = 'Auto') [ordered]@{ Name = $Name; State = $State; StartMode = $StartMode } }
+    $areas = [ordered]@{}
+
+    $areas['size'] = Complete-WorkerPerfHealthArea 'size' ([ordered]@{
+            'size.cpuLogical' = & $ok 8; 'size.cpuSockets' = & $ok 2; 'size.memTotalMB' = & $ok 65536
+            'size.commitTotalMB' = & $ok 38000; 'size.commitLimitMB' = & $ok 98304; 'size.commitPeakMB' = & $ok 61000
+            'size.pagefiles' = & $ok @([ordered]@{ Path = 'C:\pagefile.sys'; AllocatedMB = 32768; PeakUsageMB = 5200; Temporary = $false })
+            'size.pagefileManaged' = & $ok $false; 'size.hypervisor' = & $ok $true; 'size.model' = & $ok 'VMware, Inc. VMware7,1'
+            'size.vmtoolsPresent' = & $ok $true; 'size.vmtoolsService' = & $ok 'Running'; 'size.vmtoolsVersion' = & $ok '12.3.5'
+            'size.netAdapters' = & $ok @([ordered]@{ Name = 'vmxnet3 Ethernet Adapter'; Service = 'vmxnet3ndis6'; SpeedMbit = 10000; Enabled = $true })
+            'size.storageControllers' = & $ok @([ordered]@{ Name = 'VMware PVSCSI Controller'; Driver = 'pvscsi' })
+            'size.balloonDriver' = & $ok 'Running'
+        }) 0
+
+    $areas['operation'] = Complete-WorkerPerfHealthArea 'operation' ([ordered]@{
+            'operation.lastBoot' = & $ok (& $time $s.AddDays(-3)); 'operation.pendingRename' = & $ok 2
+            'operation.pendingServicing' = & $ok $false; 'operation.pendingUpdate' = & $ok $false
+            'operation.lastUpdate' = & $ok (& $time $s.AddDays(-20)); 'operation.lastUpdateId' = & $ok 'KB5099999'
+            'operation.powerPlan' = & $ok 'highPerformance'
+            'operation.volumes' = & $ok @(
+                [ordered]@{ Drive = 'C:'; SizeGB = 100; FreeGB = 38; FileSystem = 'NTFS'; System = $true; PageFile = $true }
+                [ordered]@{ Drive = 'D:'; SizeGB = 200; FreeGB = 150; FileSystem = 'NTFS'; System = $false; PageFile = $false })
+        }) 0
+
+    # sessions: session 0 as in the snapshot (no user, idle time unknown) and the 25 user sessions
+    $list = New-Object System.Collections.Generic.List[object]
+    $list.Add([ordered]@{ Id = 0; State = 'Disconnected'; WinStation = 'Services'; User = ''; Domain = ''; Client = ''
+            LogonTime = (& $time ([datetime]::MinValue)); ConnectTime = (& $time ([datetime]::MinValue)); DisconnectTime = 0; IdleMinutes = -1 })
+    $containers = New-Object System.Collections.Generic.List[object]
+    $profiles = New-Object System.Collections.Generic.List[object]
+    foreach ($ses in $script:WorkerPerfSimSessions) {
+        $logon = & $time $s.AddSeconds($ses.LogonSec)
+        $list.Add([ordered]@{ Id = [int]$ses.Sid; State = 'Active'; WinStation = $ses.WinStation; User = $ses.User; Domain = $script:WorkerPerfSimDomain
+                Client = $ses.Client; LogonTime = $logon; ConnectTime = $logon; DisconnectTime = 0; IdleMinutes = 0 })
+        $full = ($ses.User -eq 'user009')
+        $containers.Add([ordered]@{ Location = ('\\fs01\profile$\{0}.{1}\Win2022\ProfileContainer.vhdx' -f $ses.User, $script:WorkerPerfSimDomain)
+                Mount = ('C:\Users\{0}_UPM_local\UpmTempMount' -f $ses.User); Owner = $ses.User; SessionId = [int]$ses.Sid; SizeGB = 50
+                AllocatedGB = $(if ($full) { 48 } else { 20 }); VolumeSizeGB = 50; VolumeFreeGB = $(if ($full) { 2 } else { 30 }); UsedPct = $(if ($full) { 96 } else { 40 }) })
+        $profiles.Add([ordered]@{ Path = ('C:\Users\' + $ses.User); Loaded = $true; Special = $false; LastUse = (& $time $s); Temporary = $false })
+    }
+    $profiles.Add([ordered]@{ Path = 'C:\Users\user026'; Loaded = $false; Special = $false; LastUse = (& $time $s.AddDays(-10)); Temporary = $false })
+    $profiles.Add([ordered]@{ Path = 'C:\Users\Administrator'; Loaded = $false; Special = $false; LastUse = (& $time $s.AddDays(-40)); Temporary = $false })
+    $limits = @(foreach ($terminal in 'ICA-CGP', 'RDP-Tcp') {
+            [ordered]@{ Terminal = $terminal; IdleLimitMin = 180; DisconnectedLimitMin = 240; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true } })
+    $areas['sessions'] = Complete-WorkerPerfHealthArea 'sessions' ([ordered]@{
+            'sessions.list' = & $ok $list.ToArray(); 'sessions.limits' = & $ok $limits; 'sessions.localProfiles' = & $ok $profiles.ToArray()
+        }) 0
+
+    $areas['vda'] = Complete-WorkerPerfHealthArea 'vda' ([ordered]@{
+            'vda.version' = & $ok '2203.0.4000'
+            'vda.services' = & $ok @(foreach ($n in 'BrokerAgent', 'PorticaService', 'CitrixHealthMon', 'ctxProfile', 'CpSvc') { & $running $n })
+            'vda.desktopService' = & $ok 'Running'
+            'vda.controllers' = & $ok @(foreach ($n in 'ddc01.sim.local', 'ddc02.sim.local') { [ordered]@{ Entry = $n; Kind = 'fqdn'; From = 'policy' } })
+            'vda.listOfSids' = & $ok $false; 'vda.farmGuid' = & $ok $false
+            'vda.policyRaw' = & $ok @(
+                [ordered]@{ Key = 'ICAPolicies'; Name = 'SimSitzungslimit'; Value = '1' }
+                [ordered]@{ Key = 'ICAPolicies'; Name = 'SimDruckerzuweisung'; Value = '\\prn01\Etage2' })
+            'vda.persistentDataLocation' = & $ok 'D:\PersistentData'; 'vda.wemService' = & $ok 'Running'
+            'vda.wemServices' = & $ok @(foreach ($n in 'Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'System Event Notification Service') { & $running $n })
+            'vda.wemVersion' = & $ok '2407.1.0.1'; 'vda.wemServer' = & $ok 'wem01.sim.local'; 'vda.wemCacheLocation' = & $ok 'D:\WEMCache'
+            'vda.wemGpNetworkTimeout' = & $ok 120; 'vda.teamsService' = & $ok 'Running'; 'vda.webSocketService' = & $ok 'Running'
+        }) 0
+
+    $areas['profile'] = Complete-WorkerPerfHealthArea 'profile' ([ordered]@{
+            'profile.service' = & $ok 'Running'; 'profile.version' = & $ok '2203.0.4000'
+            'profile.policyGpo' = & $ok @(
+                [ordered]@{ Key = ''; Name = 'ServiceActive'; Value = '1' }
+                [ordered]@{ Key = ''; Name = 'PathToUserStore'; Value = '\\fs01\profile$\%USERNAME%.%USERDOMAIN%' })
+            'profile.policyStudio' = & $ok @(); 'profile.containers' = & $ok $containers.ToArray()
+        }) 0
+
+    $areas['print'] = Complete-WorkerPerfHealthArea 'print' ([ordered]@{
+            'print.isolationExecution' = $absent; 'print.isolationOverride' = $absent; 'print.queueCount' = & $ok 2
+            'print.spooler' = & $ok 'Running'; 'print.spoolerStartMode' = & $ok 'Auto'; 'print.citrixPrintService' = & $ok 'Running'
+            'print.operationalLog' = & $ok $false; 'print.mappingClientVersion' = & $ok '6.4.1'
+        }) 0
+
+    # every service of the processes in the order of their PIDs, plus the services that run without a process of their own
+    $services = New-Object System.Collections.Generic.List[object]
+    foreach ($procId in @($script:WorkerPerfSimServices.Keys | Sort-Object)) {
+        foreach ($n in ([string]$script:WorkerPerfSimServices[$procId]).Split(';')) {
+            if (-not $n) { continue }
+            if ($n -eq 'wuauserv') { $services.Add((& $running $n 'Stopped' 'Disabled')) } else { $services.Add((& $running $n)) }
+        }
+    }
+    $services.Add((& $running 'Sense' 'Running' 'Manual'))
+    foreach ($n in 'W32Time', 'VMTools', 'CpSvc') { $services.Add((& $running $n)) }
+    $areas['security'] = Complete-WorkerPerfHealthArea 'security' ([ordered]@{
+            'security.services' = & $ok $services.ToArray(); 'security.defenderService' = & $ok 'Running'; 'security.defenderMode' = & $ok 'Normal'
+            'security.defenderRealTime' = & $ok $true; 'security.defenderTamper' = & $ok $true; 'security.defenderSignatureAgeDays' = & $ok 1
+            'security.defenderSignaturesOutOfDate' = & $ok $false; 'security.defenderVersion' = & $ok '4.18.24090.11'
+            'security.defenderExclusionPaths' = New-WorkerPerfHealthValue 'unreadable' 'rights'
+            'security.defenderExclusionProcesses' = New-WorkerPerfHealthValue 'unreadable' 'rights'
+            'security.defenderExclusionExtensions' = New-WorkerPerfHealthValue 'unreadable' 'rights'
+            'security.defenderSharedSignatures' = & $ok '\\fs01\defsig$'; 'security.defenderNetworkProtection' = & $ok 0
+            'security.defenderForcePassive' = $absent; 'security.mdeOnboarding' = & $ok 1; 'security.mdeService' = & $ok 'Running'
+            'security.filters' = & $ok @(
+                [ordered]@{ Name = 'WdFilter'; Altitude = '328010'; Instances = 4; Legacy = $false }
+                [ordered]@{ Name = 'upmjit'; Altitude = '182400'; Instances = 26; Legacy = $false }
+                [ordered]@{ Name = 'FileInfo'; Altitude = '45000'; Instances = 5; Legacy = $false })
+            'security.applockerService' = & $ok 'Running'
+            'security.applockerCollections' = & $ok @(
+                [ordered]@{ Collection = 'Exe'; Enforcement = 1; Rules = 12 }
+                [ordered]@{ Collection = 'Msi'; Enforcement = 1; Rules = 4 }
+                [ordered]@{ Collection = 'Script'; Enforcement = 1; Rules = 6 })
+        }) 0
+
+    $areas['network'] = Complete-WorkerPerfHealthArea 'network' ([ordered]@{
+            'network.domainMember' = & $ok $true; 'network.smbRequireSigning' = & $ok $false; 'network.smbDirectoryCache' = & $ok 16
+            'network.smbFileInfoCache' = & $ok 64; 'network.smbFileNotFoundCache' = & $ok 128; 'network.smb1' = $absent
+            'network.smbConnections' = & $ok @(foreach ($share in '\\fs01\daten', '\\fs01\profile$') {
+                    [ordered]@{ Share = $share; Dialect = '3.1.1'; Signed = $true; Encrypted = $false; Connections = 25 } })
+            'network.dnsServers' = & $ok @(foreach ($a in '10.20.0.10', '10.20.0.11', 'fd00:20::10') { [ordered]@{ Interface = 4; Address = $a } })
+            'network.rss' = & $ok @([ordered]@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $true })
+            'network.timeType' = & $ok 'NT5DS'; 'network.timeServers' = & $ok 'zeit01.sim.local 10.20.0.20'; 'network.timeService' = & $ok 'Running'
+        }) 0
+
+    $logs = @(foreach ($l in @(Get-WorkerPerfEventReadLogs $script:WorkerPerfSimEventConfig)) {
+            foreach ($n in @($l.Names)) {
+                [ordered]@{ Log = $n; Present = $true; Enabled = $true; MaxSizeMB = 20; FileSizeMB = 12; Records = 30000; Mode = 'Circular'; Full = $false
+                    Oldest = (& $time $s.AddDays(-30)) }
+            } })
+    $areas['events'] = Complete-WorkerPerfHealthArea 'events' ([ordered]@{ 'events.logs' = & $ok $logs }) 0
+
+    # the inventory runs at 10:00 on the next working day after the start, the backup at 02:00 the next night
+    $workday = $s.Date.AddDays(1)
+    while ($workday.DayOfWeek -eq [DayOfWeek]::Saturday -or $workday.DayOfWeek -eq [DayOfWeek]::Sunday) { $workday = $workday.AddDays(1) }
+    $areas['maintenance'] = Complete-WorkerPerfHealthArea 'maintenance' ([ordered]@{
+            'maintenance.tasks' = & $ok @(
+                [ordered]@{ Path = '\Sim\Inventarlauf'; Enabled = $true; State = 'Ready'; NextRun = (& $time $workday.AddHours(10)); LastRun = (& $time $s.AddHours(-22))
+                    Triggers = 'daily'; RepeatMinutes = 0; Action = 'C:\Tools\inventar.exe' }
+                [ordered]@{ Path = '\Sim\Nachtsicherung'; Enabled = $true; State = 'Ready'; NextRun = (& $time $s.Date.AddDays(1).AddHours(2)); LastRun = (& $time $s.AddHours(-6))
+                    Triggers = 'daily'; RepeatMinutes = 0; Action = 'C:\Tools\sicherung.cmd' })
+            'maintenance.taskCount' = & $ok 162; 'maintenance.scanDay' = & $ok 0; 'maintenance.scanTime' = & $ok '02:00'
+            'maintenance.quickScanTime' = & $ok '02:00'; 'maintenance.scanType' = & $ok 1; 'maintenance.scanRandomize' = & $ok $true
+            'maintenance.scanCpuLoad' = & $ok 50; 'maintenance.updateOptions' = $absent; 'maintenance.updateDay' = $absent
+            'maintenance.updateHour' = $absent; 'maintenance.updateNoRebootWithUsers' = $absent
+            'maintenance.searchService' = New-WorkerPerfHealthValue 'absent' 'notInstalled'; 'maintenance.updateService' = & $ok 'Disabled'
+        }) 0
+
+    # the applications of the list, read through the same row builder as on Windows
+    $rows = [object[]]@(Get-WorkerPerfAppRows -Apps $script:WorkerPerfSimApps -Read (Get-WorkerPerfSimAppReaders))
+    $areas['apps'] = Complete-WorkerPerfHealthArea 'apps' ([ordered]@{ 'apps.probes' = & $ok $rows }) 0
+
+    return (New-WorkerPerfHealth $script:WorkerPerfSimNow 0 $areas)
 }
 
 function Get-WorkerPerfFreeSpaceMB {

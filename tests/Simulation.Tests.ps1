@@ -175,23 +175,80 @@ Describe 'Simulation mit weggelassenen Kategorien' {
         function Invoke-SimReads([string[]]$Skip) {   # jeder Aufruf der Schnittstelle einmal, wie der Collector sie nutzt
             [void](Initialize-WorkerPerfSource -StartTime $Start -Skip $Skip); Set-SimTime 47.5
             $r = @{ Fast = (Get-WorkerPerfFastSample); Snap = (Get-WorkerPerfSnapshot -Kind K); Services = (Get-WorkerPerfServices); Events = @(Get-WorkerPerfEvents -Since $Start)
-                Before = (Get-WorkerPerfEventsBefore -Days 7 -Until $Start); Drivers = @(Get-WorkerPerfPrintDrivers); Queues = @(Get-WorkerPerfPrintQueues) }
+                Before = (Get-WorkerPerfEventsBefore -Days 7 -Until $Start); Drivers = @(Get-WorkerPerfPrintDrivers); Queues = @(Get-WorkerPerfPrintQueues)
+                Health = (Get-WorkerPerfHealth) }
             Start-WorkerPerfProbes; Set-SimTime 47.6; $r.Probes = @(Receive-WorkerPerfProbes); $r.Reads = $script:WorkerPerfSimReads.Clone(); $r
         }
         $script:ReadKeys = @{ Prozesse = @('process', 'input.process', 'services'); Laufwerke = @('volumes', 'shares'); Citrix = @('citrix'); Ereignisse = @('events'); Rueckblick = @('eventsbefore')
-            Drucken = @('printdrivers', 'printqueues'); Gegenstellen = @('probes') }
+            Drucken = @('printdrivers', 'printqueues'); Gegenstellen = @('probes'); Zustand = @('health') }
     }
     AfterAll { [void](Initialize-WorkerPerfSource -StartTime $Start) }
-    It 'liest die Quellen von <_> nicht und alle anderen weiter' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen' {
+    It 'liest die Quellen von <_> nicht und alle anderen weiter' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand' {
         $cat = $_; $r = Invoke-SimReads @($cat)
         foreach ($c in $ReadKeys.Keys) { foreach ($k in $ReadKeys[$c]) { if ($c -eq $cat) { [int]$r.Reads[$k] | Should -Be 0 -Because $k } else { [int]$r.Reads[$k] | Should -BeGreaterThan 0 -Because $k } } }
     }
     It 'liefert ohne alle Kategorien nur die Basis, mit denselben Werten' {   # Review Focus 1
-        $full = Invoke-SimReads @(); $r = Invoke-SimReads @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+        $full = Invoke-SimReads @(); $r = Invoke-SimReads @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
         @($r.Reads.Values | Where-Object { $_ -gt 0 }).Count | Should -Be 0
         @($r.Snap.Processes).Count + @($r.Snap.Citrix).Count + $r.Services.Count | Should -Be 0; @($r.Snap.Sessions).Count | Should -Be 26
         @($r.Fast.Volumes).Count + @($r.Fast.Shares).Count + @($r.Fast.InputProcesses).Count | Should -Be 0; @($r.Fast.InputSessions).Count | Should -Be 25
         foreach ($c in 'CpuPct', 'MemAvailMB', 'DiskReadBps', 'DiskWriteBps', 'DiskReadIops', 'DiskQueue', 'NetRecvBps', 'NetSentBps') { $r.Fast.$c | Should -Be $full.Fast.$c -Because $c }
         @($r.Events).Count + @($r.Before.Events).Count + @($r.Drivers).Count + @($r.Queues).Count + @($r.Probes).Count | Should -Be 0
+    }
+}
+Describe 'Simuliertes Zustandsbild' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1'); $script:TestApps = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive))
+        [void](Initialize-WorkerPerfSource -StartTime $Start -Apps $TestApps); $script:H = Get-WorkerPerfHealth
+        function Get-V([string]$Id) { $H.Areas[$WorkerPerfHealthValues[$Id].Area].Values[$Id] }
+        function Get-Row([string]$App, [string]$Id) { (Get-V 'apps.probes').Value | Where-Object { $_.App -eq $App -and $_.Id -eq $Id } }
+    }
+    AfterAll { [void](Initialize-WorkerPerfSource -StartTime $Start) }
+    It 'liefert elf Bereiche mit jedem Wert der Liste und der Dauer 0' {
+        $H.FormatVersion | Should -Be 1; $H.DurationMs | Should -Be 0; @($H.Areas.Keys) | Should -Be $WorkerPerfHealthAreas
+        foreach ($id in $WorkerPerfHealthValues.Keys) { $H.Areas[$WorkerPerfHealthValues[$id].Area].Values.Contains($id) | Should -BeTrue -Because $id }
+        @($H.Areas.Keys | Where-Object { $H.Areas[$_].Status -ne 'read' }) | Should -Be @('security'); $H.Areas['security'].Status | Should -Be 'partial'
+        ($H | ConvertTo-Json -Depth 10 | ConvertFrom-Json).Areas.profile.Values.'profile.containers'.Value.Count | Should -Be 25
+    }
+    It 'traegt die auffaelligen Werte des Drehbuchs' {
+        (Get-V 'operation.pendingRename').Value | Should -Be 2; (Get-V 'operation.pendingServicing').Value | Should -BeFalse
+        $full = @((Get-V 'profile.containers').Value | Where-Object { $_.UsedPct -ge 95 }); $full.Count | Should -Be 1; $full[0].Owner | Should -Be 'user009'; $full[0].UsedPct | Should -Be 96
+        (Get-V 'security.defenderExclusionPaths').State | Should -Be 'unreadable'; (Get-V 'security.defenderExclusionPaths').Reason | Should -Be 'rights'
+        $task = (Get-V 'maintenance.tasks').Value | Where-Object Path -eq '\Sim\Inventarlauf'
+        $next = [DateTimeOffset]::FromUnixTimeMilliseconds($task.NextRun).LocalDateTime; $next.Hour | Should -Be 10; $next.DayOfWeek | Should -Not -BeIn 'Saturday', 'Sunday'
+        (Get-V 'size.memTotalMB').Value | Should -Be 65536; @((Get-V 'sessions.list').Value | Where-Object { $_.User }).Count | Should -Be 25
+        @((Get-V 'vda.controllers').Value.Entry) | Should -Be @('ddc01.sim.local', 'ddc02.sim.local')
+        # enumerated explicitly: .Address of an array names its method Address(int), not the field of the entries
+        @((Get-V 'network.dnsServers').Value | ForEach-Object { $_.Address }) | Should -Be @('10.20.0.10', '10.20.0.11', 'fd00:20::10')
+        (Get-V 'maintenance.searchService').State | Should -Be 'absent'; (Get-V 'maintenance.searchService').Reason | Should -Be 'notInstalled'
+        (Get-V 'print.isolationExecution').State | Should -Be 'absent'; (Get-V 'print.isolationExecution').Reason | Should -Be ''
+        (Get-V 'operation.lastBoot').Value | Should -Be (ConvertTo-WorkerPerfHealthTime $Start.AddDays(-3))
+        (Get-V 'network.timeServers').Value | Should -Be 'zeit01.sim.local 10.20.0.20'; (Get-V 'security.defenderSharedSignatures').Value | Should -Be '\\fs01\defsig$'
+        @((Get-V 'events.logs').Value).Count | Should -Be 8; @((Get-V 'vda.services').Value.Name) | Should -Be @('BrokerAgent', 'PorticaService', 'CitrixHealthMon', 'ctxProfile', 'CpSvc')
+        @((Get-V 'sessions.localProfiles').Value.Path)[-1] | Should -Be 'C:\Users\Administrator'; ((Get-V 'security.services').Value | Where-Object Name -eq 'RpcSs').State | Should -Be 'Running'
+        (Get-V 'vda.wemServer').Value | Should -Be 'wem01.sim.local'; (Get-V 'vda.wemCacheLocation').Value | Should -Be 'D:\WEMCache'; @((Get-V 'vda.wemServices').Value).Count | Should -Be 3
+        (Get-V 'size.balloonDriver').Value | Should -Be 'Running'; (Get-V 'print.citrixPrintService').Value | Should -Be 'Running'; (Get-V 'maintenance.updateService').Value | Should -Be 'Disabled'
+        (Get-V 'network.rss').Value[0].Enabled | Should -BeTrue; ((Get-V 'sessions.limits').Value | Select-Object -First 1).IdleLimitMin | Should -Be 180
+        (Get-V 'operation.powerPlan').Value | Should -Be 'highPerformance'; (Get-V 'print.mappingClientVersion').Value | Should -Be '6.4.1'
+        $wu = (Get-V 'security.services').Value | Where-Object Name -eq 'wuauserv'; $wu.State | Should -Be 'Stopped'; $wu.StartMode | Should -Be 'Disabled'      # das Drehbuch widerspricht sich nicht
+        ((Get-V 'security.services').Value | Where-Object Name -eq 'CpSvc').State | Should -Be 'Running'
+    }
+    It 'liest die Anwendungen der Liste: zwei auffaellig, eine in Ordnung, eine nicht installiert' {   # Review Focus 3
+        $rows = @((Get-V 'apps.probes').Value); $rows.Count | Should -Be 42                                    # 16 Edge, 14 Office, 8 Teams, 4 simapp
+        foreach ($k in 'edge', 'office', 'teams') { (Get-Row $k 'installed').Value | Should -BeTrue -Because $k }
+        (Get-Row 'edge' 'backgroundMode').Value | Should -Be 1; (Get-Row 'edge' 'version').Value | Should -Be '130.0.2849.80'; (Get-Row 'edge' 'updateDefault').Value | Should -Be 0
+        (Get-Row 'edge' 'userDataDir').State | Should -Be 'absent'; (Get-Row 'edge' 'userDataDir').Reason | Should -Be ''; (Get-Row 'edge' 'updateService').Value | Should -Be 'Manual'
+        (Get-Row 'teams' 'disableAutoUpdate').State | Should -Be 'absent'; (Get-Row 'teams' 'disableFallback').Value | Should -Be 2
+        (Get-Row 'teams' 'version').Value | Should -Be '24277.3502.3161.3007'; (Get-Row 'teams' 'meetingAddin').Value | Should -BeTrue; (Get-Row 'teams' 'classicTeams').Value | Should -BeFalse
+        (Get-Row 'office' 'hideEnableDisableUpdates').Value | Should -Be 1; (Get-Row 'office' 'updateTask').Value | Should -BeFalse; (Get-Row 'office' 'outlookAddins').Value | Should -Be 3
+        (Get-Row 'office' 'outlookAddinsWow').State | Should -Be 'absent'; (Get-Row 'office' 'updateUrl').Names | Should -Be '\\fs01\office$\updates'; (Get-Row 'office' 'updateUrl').Value | Should -BeNullOrEmpty
+        (Get-Row 'simapp' 'installed').Value | Should -BeFalse
+        foreach ($id in 'version', 'cacheMode', 'dataPath') { (Get-Row 'simapp' $id).State | Should -Be 'absent' -Because $id; (Get-Row 'simapp' $id).Reason | Should -Be 'notInstalled' -Because $id }
+        $H.Areas['apps'].Status | Should -Be 'read'
+        # ohne Anwendungsliste: der Bereich ist gelesen und leer
+        [void](Initialize-WorkerPerfSource -StartTime $Start); @((Get-WorkerPerfHealth).Areas['apps'].Values['apps.probes'].Value).Count | Should -Be 0
+    }
+    It 'liest ohne Zustand nichts' {
+        [void](Initialize-WorkerPerfSource -StartTime $Start -Skip Zustand); Get-WorkerPerfHealth | Should -BeNullOrEmpty; [int]$script:WorkerPerfSimReads['health'] | Should -Be 0
     }
 }
