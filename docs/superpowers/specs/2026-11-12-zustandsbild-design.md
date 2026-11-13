@@ -75,7 +75,7 @@ Die Bewertung steht in `src/health.de.json`, getrennt vom Code. Je Prüfung:
 | Was bedeutet das? | zwei bis drei Sätze in einfacher Sprache: warum der Punkt für Geschwindigkeit oder Stabilität zählt |
 | Was tun? | Prüfschritte und übliche Abhilfen als Vorschläge, im Stil des geführten Berichts, ohne kopierbare Befehle |
 | Quelle | Hersteller, Titel, Adresse, Datum der Prüfung |
-| Art | „Empfehlung des Herstellers" oder „Faustregel" |
+| Art | „Empfehlung des Herstellers", „Empfehlung aus der Praxis" oder „Faustregel" |
 | Bezug | Arten und Muster von Vorfällen, zu denen die Prüfung passt |
 
 Die Bedingungen nutzen dieselbe Schreibweise wie der Katalog des geführten Berichts. Die Befundsätze mit eingesetzten Zahlen stehen ebenfalls im Katalog.
@@ -91,7 +91,8 @@ Jeder Bereich trägt die Einstufung seiner auffälligsten Prüfung; „nicht pr�
 
 ### 4.3 Regeln für den Katalog
 
-- Keine Prüfung ohne Quelle. Fehlt eine Herstellerempfehlung, heißt die Art „Faustregel" und die Formulierung bleibt vorsichtig.
+- Keine Prüfung ohne Quelle. Fehlt eine Herstellerempfehlung und eine Empfehlung aus der Praxis, heißt die Art „Faustregel" und die Formulierung bleibt vorsichtig.
+- Neben den Quellen der Hersteller dienen zwei Quellen aus der Praxis als Grundlage (ergänzt am 13.11.2026 auf Wunsch des Auftraggebers): die Empfehlungen des Base Image Script Framework (BIS-F) und die Anleitungen von Carl Stalhood (carlstalhood.com). Eine Prüfung, die sich darauf stützt, trägt die Art „Empfehlung aus der Praxis" und nennt ihre Quelle wie eine Herstellerquelle mit Titel, Adresse und Datum. Sie wird nie als Empfehlung des Herstellers bezeichnet. Widerspricht eine Quelle aus der Praxis dem Hersteller, gilt der Hersteller; der Katalog nennt den Widerspruch.
 - Jede Quelle wird beim Schreiben nachgeschlagen und mit Datum in `docs/guidance/quellen.md` vermerkt.
 - Der Auftraggeber liest den Katalog vor der Freigabe einmal durch.
 - Eine Schwelle lässt sich im Katalog ändern; der Bericht vermerkt im Kopf, dass Schwellen vom ausgelieferten Stand abweichen.
@@ -168,7 +169,7 @@ Der Baustein gilt erst nach einem Schnelllauf auf dem Test-Worker als fertig. Er
 
 ## Anhang: Der Einhängepunkt `Zustand` (Stand nach dem Plan Messkategorien)
 
-Der Plan Messkategorien hat die Kategorie `Zustand` vorbereitet: Zeile in `$script:WorkerPerfCategories` (`Active = $false`), zwei Texte, und der Collector kennt die Abfrage `$leftOut -notcontains 'Zustand'`. Auflösung von `-Skip`, Startmeldung, Lader, Vermerk in den Quellen und die Seite nehmen eine aktive Kategorie von selbst auf. Der Umsetzungsplan für das Zustandsbild muss darüber hinaus vier Dinge regeln:
+Der Plan Messkategorien hat die Kategorie `Zustand` vorbereitet: Es gibt die Zeile in `$script:WorkerPerfCategories` (`Active = $false`). Die beiden Texte (`skip.label.Zustand`, `skip.text.Zustand`) und eine Abfrage der Kategorie im Collector gibt es noch nicht; der Umsetzungsplan legt sie an (berichtigt am 13.11.2026: eine frühere Fassung dieses Anhangs nannte sie als vorhanden). Auflösung von `-Skip`, Startmeldung, Lader, Vermerk in den Quellen und die Seite nehmen eine aktive Kategorie von selbst auf. Der Umsetzungsplan für das Zustandsbild muss darüber hinaus vier Dinge regeln:
 
 1. **Kein CSV-Schreiber.** `health.json` ist keine Datei aus `$script:WorkerPerfHeaders`. Die Regel des Collectors „fehlender Schreiber heißt kein Aufruf" trägt diese Kategorie nicht; sie braucht eine eigene Abfrage.
 2. **Aufzeichnungen von vor dem Zustandsbild.** Sie haben weder `health.json` noch `Zustand` in `Skip`. Der Satz „Aufzeichnungen ohne die neue Angabe gelten als vollständig gemessen" stimmt für sie nicht. Eigene Regel: Fehlt die Datei und nennt `Skip` die Kategorie nicht, heißt das „nicht aufgezeichnet"; der Lader meldet es weder als weggelassen noch als gemessen.
