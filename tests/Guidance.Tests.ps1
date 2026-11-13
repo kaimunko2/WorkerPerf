@@ -1,7 +1,10 @@
 BeforeAll {
     Set-StrictMode -Version 2
-    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Common.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.EventConfig.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
+    # the masking for the version without names of the copy texts (Hide-WorkerPerfReportText, New-WorkerPerfMask)
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1')
     function New-Inc([hashtable]$Over = @{}) {
         # every key of an incident entry with neutral values (2 minutes from 10 min after the capture start), overwritten by
         # the given ones; a given event gets every key of an event with neutral values first
@@ -33,13 +36,14 @@ BeforeAll {
             terms        = @{ 'Working Set' = 'Arbeitsspeicher, den ein Programm gerade belegt.' }
             vendors      = @(@{ key = 'HP'; match = @('HP*', 'Hewlett*') }, @{ key = 'Kyocera'; match = @('Kyocera*') }, @{ key = 'Brother'; match = @('Brother*') },
                 @{ key = 'Microsoft'; match = @('Microsoft*') }, @{ key = 'Citrix'; match = @('Citrix*') })
-            userView     = @{ many = '{affected} Sitzungen waren betroffen.'; one = '{user} war betroffen.'; none = 'Niemand war betroffen.'; unknown = 'Unbekannt.'
+            userView     = @{ many = '{affected} Sitzungen waren betroffen.'; one = '{affected} Sitzung war betroffen.'; none = 'Niemand war betroffen.'; unknown = 'Unbekannt.'
                 chronic = 'Dauerzustand.'; eventMany = 'Viele.'; eventOne = 'Einer.'; eventNone = 'Keiner.'; before = 'Vor der Messung.' }
             lagebild     = @{ red = '{bottlenecks} Engpaesse.'; yellow = '{delays} Verzoegerungen.'; green = 'Keine Störung erkannt.'; greenSkipped = 'Keine Störung erkannt; nicht erfasst: {skipped}.' }
             hints        = @{ unmeasured = 'Nicht gemessen: {signals}.'; skipped = 'Abgeschaltet: {skipped}.'; notFinished = 'Nicht beendet.'; error = 'Fehler: {message}'
                 errorNoMessage = 'Fehler.'; stopped = 'Angehalten.' }
-            copy         = @{ head = 'WorkerPerf {server}, {date}'; summaryHead = '{incidents} Vorfaelle'; measure = 'Messung: {minutes} Minuten'; cause = 'Ursache: {app}'
-                affected = 'Betroffen: {affected}'; checks = 'Empfohlene Pruefschritte:'; remedies = 'Moegliche Abhilfe (Vorschlag):'; contact = 'Ansprechpartner:' }
+            # the placeholders of ruling P3-R26 only
+            copy         = @{ head = 'WorkerPerf {server}, {date}'; summaryHead = 'WorkerPerf {server}, {date}, {from} bis {to}'; measure = 'Messwert: {value}, Soll {target}'
+                cause = 'Verursacher:'; affected = 'Betroffen: {affected}'; checks = 'Empfohlene Pruefschritte:'; remedies = 'Moegliche Abhilfe (Vorschlag):'; contact = 'Ansprechpartner:' }
             fallbackNote = 'Keine spezifische Anleitung.'
             situations   = @{}
         }
@@ -127,6 +131,29 @@ Describe 'Katalog laden und pruefen' {
         @(foreach ($k in 'unmeasured', 'skipped', 'notFinished', 'error', 'errorNoMessage', 'stopped') { @{ Part = 'hints'; Key = $k } })
         @(foreach ($k in 'head', 'summaryHead', 'measure', 'cause', 'affected', 'checks', 'remedies', 'contact') { @{ Part = 'copy'; Key = $k } })
     ) { { Read-WorkerPerfGuidance (New-Catalogue { $c[$Part].Remove($Key) }) } | Should -Throw "Katalog '*': Eintrag '$Part': Feld '$Key' fehlt." }
+    It 'erlaubt in <Part>.<Key> nur die Platzhalter der Tabelle, nicht <Text>' -TestCases @(           # ruling P3-R26
+        @{ Part = 'copy'; Key = 'head'; Text = '{affected}' }; @{ Part = 'copy'; Key = 'summaryHead'; Text = '{incidents}' }; @{ Part = 'copy'; Key = 'measure'; Text = '{app}' }
+        @{ Part = 'copy'; Key = 'affected'; Text = '{user}' }; @{ Part = 'copy'; Key = 'cause'; Text = '{app}' }; @{ Part = 'copy'; Key = 'checks'; Text = '{server}' }
+        @{ Part = 'copy'; Key = 'remedies'; Text = '{date}' }; @{ Part = 'copy'; Key = 'contact'; Text = '{server}' }
+        @{ Part = 'userView'; Key = 'one'; Text = '{user}' }; @{ Part = 'userView'; Key = 'eventMany'; Text = '{app}' }; @{ Part = 'userView'; Key = 'unknown'; Text = '{affected}' }
+        @{ Part = 'lagebild'; Key = 'red'; Text = '{server}' }; @{ Part = 'lagebild'; Key = 'yellow'; Text = '{skipped}' }; @{ Part = 'lagebild'; Key = 'green'; Text = '{minutes}' }
+        @{ Part = 'lagebild'; Key = 'greenSkipped'; Text = '{incidents}' }
+        @{ Part = 'hints'; Key = 'unmeasured'; Text = '{skipped}' }; @{ Part = 'hints'; Key = 'skipped'; Text = '{signals}' }; @{ Part = 'hints'; Key = 'error'; Text = '{server}' }
+        @{ Part = 'hints'; Key = 'errorNoMessage'; Text = '{message}' }; @{ Part = 'hints'; Key = 'notFinished'; Text = '{message}' }; @{ Part = 'hints'; Key = 'stopped'; Text = '{date}' }
+    ) {
+        { Read-WorkerPerfGuidance (New-Catalogue { $c[$Part][$Key] = "Text mit $Text." }) } |
+            Should -Throw "Katalog '*': Eintrag '$Part': Feld '$Key' enthaelt den Platzhalter '$Text', der in diesem Text nicht erlaubt ist."
+    }
+    It 'nimmt jeden Platzhalter der Tabelle an' {                                                     # ruling P3-R26
+        $cat = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.copy.head = '{server} {date}'; $c.copy.summaryHead = '{server} {date} {from} {to}'; $c.copy.measure = '{value} {target}'; $c.copy.affected = '{affected}'
+                foreach ($k in @($c.userView.Keys)) { $c.userView[$k] = '{duration} {from} {to}' + $(if ($k -ne 'unknown') { ' {affected} {count}' }) }
+                $c.lagebild.red = '{bottlenecks} {delays} {events} {chronic} {minutes} {incidents}'; $c.lagebild.yellow = $c.lagebild.red; $c.lagebild.greenSkipped = '{skipped}'
+                $c.hints.unmeasured = '{signals}'; $c.hints.skipped = '{skipped}'; $c.hints.error = '{message}' })
+        $cat.userView.one | Should -Be '{duration} {from} {to} {affected} {count}'
+        $script:WorkerPerfGuidanceTextPlaceholders['copy.summaryHead'] | Should -Be @('server', 'date', 'from', 'to')
+        $script:WorkerPerfGuidanceTextPlaceholders['userView.*'] | Should -Be @('affected', 'duration', 'from', 'to', 'count')
+    }
     It 'verlangt das Feld <Field> <Where>' -TestCases @(
         @(foreach ($f in 'title', 'meaning', 'short', 'checks', 'remedies', 'contacts') { @{ Field = $f; Where = 'der Situation'; List = ''; Msg = "*Eintrag 'cpu': Feld '$f' fehlt." } })
         @{ Field = 'where'; Where = 'eines Pruefschritts'; List = 'checks'; Msg = "*Eintrag 'cpu', checks``[0``]: Feld 'where' fehlt." }
@@ -581,7 +608,7 @@ Describe 'Anleitung zusammenstellen' {
     }
     It 'waehlt die Benutzersicht <Want>' -TestCases @(
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.many'); V = @{ affected = '4' }; Want = '4 Sitzungen waren betroffen.' }
-        @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.one'); V = @{ user = 'user003' }; Want = 'user003 war betroffen.' }
+        @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.one'); V = @{ affected = '1' }; Want = '1 Sitzung war betroffen.' }
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @(); V = @{}; Want = 'Niemand war betroffen.' }
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.unknown'); V = @{}; Want = 'Unbekannt.' }
         @{ I = @{ type = 'engpass'; lead = 'cpu'; chronic = $true }; C = @('affected.many', 'chronic'); V = @{ affected = '4' }; Want = 'Dauerzustand.' }
@@ -592,7 +619,7 @@ Describe 'Anleitung zusammenstellen' {
         @{ I = @{ type = 'ereignis'; event = @{ kind = 'crash'; before = $true } }; C = @('affected.one', 'before'); V = @{}; Want = 'Vor der Messung.' }
         # a text whose placeholders cannot be filled: userView.unknown
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.many'); V = @{}; Want = 'Unbekannt.' }
-        @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.one'); V = @{ affected = '1' }; Want = 'Unbekannt.' }
+        @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.one'); V = @{ user = 'user003' }; Want = 'Unbekannt.' }
     ) {
         (New-WorkerPerfGuidance -Catalogue $Cat -Facts @{ Situation = 'cpu'; Conditions = $C; Values = $V } -Incident (New-Inc $I) -Texts $Texts).userView | Should -Be $Want
     }
@@ -798,17 +825,175 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         , $h | Should -BeOfType [string[]]; @($h) | Should -Be $Want
     }
     It 'fuellt Satz und Hinweise mit den Platzhaltern des Lagebilds und meldet einen fehlenden Wert' {   # addition e)
-        $cat = Read-WorkerPerfGuidance (New-Catalogue {
-                $c.lagebild.red = '{incidents} Vorfaelle auf {server} am {date}: {bottlenecks}/{delays}/{events}/{chronic}, {minutes} min.'
-                $c.lagebild.yellow = 'Gelb auf {server}, {skipped}.'; $c.hints.notFinished = 'Auf {server} nicht beendet ({message}).' })
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.lagebild.red = '{incidents} Vorfaelle: {bottlenecks}/{delays}/{events}/{chronic}, {minutes} min.' })
         $ctx = New-Ctx
         $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0), (New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts
-        $l.sentence | Should -Be '2 Vorfaelle auf SIM-VDA01 am 09.09.2001: 1/0/0/1, 1,3 min.'
+        $l.sentence | Should -Be '2 Vorfaelle: 1/0/0/1, 1,3 min.'
+        # texts the loader rejects (ruling P3-R26), set after loading: a value the summary does not have stops it
+        $cat.lagebild.red = '{incidents} Vorfaelle auf {server} am {date}.'; $cat.lagebild.yellow = 'Gelb auf {server}, {skipped}.'; $cat.hints.notFinished = 'Auf {server} nicht beendet ({message}).'
+        (Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data $ctx.Data -Catalogue $cat -Texts $Texts).sentence | Should -Be '1 Vorfaelle auf SIM-VDA01 am 09.09.2001.'
         { Get-WorkerPerfLagebild -Incidents @((New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'lagebild.yellow'*'{skipped}'*"
         $ctx.Data.meta.endReason = ''
         { Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'hints.notFinished'*'{message}'*"
         $ctx = New-Ctx; $ctx.Data.meta.computer = ''
         { Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'lagebild.red'*'{server}'*"
+    }
+}
+Describe 'Kopiertexte' {
+    BeforeAll {
+        # a recorded run with a person's name, for a real mask of level Alles (as tests/Mask.Tests.ps1 builds one)
+        . (Join-Path $PSScriptRoot 'LoadHelpers.ps1')
+        $copyRun = Write-TestRun 'copy-mask' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'sessions.csv' = @('0,2,schoenberger,TESTDOM,Active,ICA-1,WS-0042,,0')
+            'procinfo.csv' = @('0,100,1,EXCEL.EXE,2,,C:\Program Files\x.exe,,') }
+        $script:CopyMask = New-WorkerPerfMask -Path $copyRun -Level 'Alles' -Texts $Texts
+        function Get-Lines([string]$Text) { , @($Text -split "`r`n") }
+        function Join-Copy([string]$Text) { $Text -replace "`r`n\s*", ' ' }
+        function New-CpuInc {
+            New-Inc @{ id = 2; type = 'engpass'; lead = 'cpu'; start = 1e12; end = 1e12 + 120000; affected = @(@{ s = 0 }, @{ s = 1 })
+                signals = @(@{ id = 'cpu.host'; resource = 'cpu'; peak = 99.5; unit = '%'; ideal = 'unter 75 %'; severity = 2 })
+                main = @{ app = 'EXCEL.EXE'; user = 'user003'; sharePct = 62; baselinePct = 4 }; cause = @{ kind = 'main'; measure = 'cpu' } }
+        }
+        function New-CopyGuide($Incident, $Ctx = (New-Ctx)) {
+            New-WorkerPerfGuidance -Catalogue $Cat -Facts (Get-WorkerPerfGuidanceFacts -Incident $Incident -Context $Ctx -Catalogue $Cat) -Incident $Incident -Texts $Texts
+        }
+    }
+    It 'haelt 78 Zeichen ein und verliert nichts, auch bei langen Namen' {                         # Review Focus 4
+        $long = '\\' + ('s' * 60) + '\' + ('f' * 60)
+        $t = Format-WorkerPerfCopyLines @("1. Freigabe $long pruefen und die Antwortzeit mit dem Soll vergleichen", '- kurz')
+        @($t -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        ($t -replace "`r`n\s*", '') | Should -Match ([regex]::Escape($long)); ($t -split "`r`n")[1] | Should -Match '^   '
+    }
+    It 'stimmt inhaltlich mit der Vorfallsansicht ueberein' {
+        $i = New-CpuInc
+        $g = New-WorkerPerfGuidance -Catalogue $Cat -Facts (Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat) -Incident $i -Texts $Texts
+        # -Texts: the cause sentence and the words of the steps come from texts.de.json (ruling P3-R27 for Lagebild and groups)
+        $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        # '100 %', not the plan's '99,5 %': the value as the guidance's facts write it (Format-WorkerPerfValue, whole from 10 on; ruling P3-R1)
+        foreach ($part in $g.title, $g.impact, $g.checks[0].text, 'EXCEL.EXE', '100 %', 'unter 75 %', $Cat.copy.checks) { ($t -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($part)) }
+        if (@($g.remedies).Count) { $t | Should -Match ([regex]::Escape($Cat.copy.remedies)) }
+    }
+    It 'bricht mit CR LF um, rueckt zweistellige Nummern ein und zaehlt Zeichen' {                   # addition e)
+        $words = @(1..30 | ForEach-Object { 'Wort{0:00}' -f $_ }) -join ' '
+        $t = Format-WorkerPerfCopyLines @("10. $words", '', "- $words", ([string][char]0xE4 * 78), "Kopf $words")
+        $lines = Get-Lines $t
+        ($t -replace "`r`n", '').Contains("`n") | Should -BeFalse; ($t -replace "`r`n", '').Contains("`r") | Should -BeFalse
+        @($lines | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        $lines[0] | Should -Match '^10\. Wort01 '; $lines[1] | Should -Match '^    Wort\d\d'; $lines[1] | Should -Not -Match '^     '
+        $empty = [array]::IndexOf($lines, ''); $empty | Should -BeGreaterThan 1
+        $lines[$empty + 1] | Should -Match '^- Wort01'; $lines[$empty + 2] | Should -Match '^  Wort\d\d'
+        $umlaut = @($lines | Where-Object { $_ -match '^\p{L}+$' -and $_[0] -eq [char]0xE4 }); $umlaut.Count | Should -Be 1; $umlaut[0].Length | Should -Be 78
+        $last = @($lines | Where-Object { $_ -like 'Kopf *' })[0]; $lines[[array]::IndexOf($lines, $last) + 1] | Should -Match '^Wort'
+        (Join-Copy $t).Contains($words) | Should -BeTrue
+        # a word longer than the width on a line of its own, and another width
+        $t = Format-WorkerPerfCopyLines @(('x' * 100) + ' y') -Width 40
+        (Get-Lines $t) | Should -Be @(('x' * 40), ('x' * 40), (('x' * 20) + ' y'))
+        # a number and its unit stay on one line
+        $t = Format-WorkerPerfCopyLines @(('x' * 74) + ' 63 % der CPU-Zeit (sonst 4 %).', ('y' * 73) + ' 225 ms, Soll')
+        @((Get-Lines $t) | Where-Object { $_ -match '^(%|ms)' }).Count | Should -Be 0; (Get-Lines $t) | Should -Contain '63 % der CPU-Zeit (sonst 4 %).'
+        Format-WorkerPerfCopyLines @() | Should -BeExactly ''
+        Format-WorkerPerfCopyLines @("Zeile`r`nmit`nUmbruch") | Should -BeExactly 'Zeile mit Umbruch'
+    }
+    It 'setzt den Text eines Vorfalls aus Absaetzen in fester Reihenfolge zusammen' {
+        $i = New-CpuInc; $g = New-CopyGuide $i
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
+        $dash = [string][char]0x2013
+        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001', "02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU)", 'Langsam.', 'Messwert: 100 %, Soll unter 75 %'
+            'Verursacher: Hauptverursacher: EXCEL.EXE in der Sitzung von user003 mit 62 % der CPU-Zeit (sonst 4 %).', 'Betroffen: 2', ''
+            'Empfohlene Pruefschritte:', "1. Pruefen ${dash} Ort; erkennbar an Merkmal", '', 'Moegliche Abhilfe (Vorschlag):', '- Wenn Voraussetzung: Abhelfen', '', 'Ansprechpartner:', '- Kontakt')
+        $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
+        # the users of the affected sessions
+        $ctx = New-Ctx; $ctx.Data.sessions = @(@{ i = 0; id = 2; user = 'user001' }, @{ i = 1; id = 3; user = 'user002' })
+        @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data $ctx.Data -Catalogue $Cat -Texts $Texts) | Should -Contain 'Betroffen: 2 (user001, user002)'
+        # without remedies and contacts: neither label
+        $g.remedies = @(); $g.contacts = @()
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
+        $p[-1] | Should -Be "1. Pruefen ${dash} Ort; erkennbar an Merkmal"; $p | Should -Not -Contain $Cat.copy.remedies
+        # a chronic state without affected sessions names none, as its sentence (Get-WorkerPerfIncidentText) does
+        $i = New-Inc @{ type = 'umfeld'; chronic = $true; start = 1e12; end = 1e12 + 3600000; signals = @(@{ id = 'ica.rtt'; resource = 'network'; peak = 225; unit = 'ms'; ideal = 'unter 150 ms'; severity = 1 }) }
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
+        @($p | Where-Object { $_ -like 'Betroffen*' }).Count | Should -Be 0; $p | Should -Contain 'Messwert: 225 ms, Soll unter 150 ms'
+        $i.chronic = $false
+        @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts) | Should -Contain 'Betroffen: 0'
+    }
+    It 'nennt Schutzsoftware, keinen Hauptverursacher, fehlende Prozessdaten und den Satz der abgeschalteten Kategorie' {   # addition c)
+        $base = @{ type = 'engpass'; lead = 'disk'; start = 1e12; end = 1e12 + 60000 }
+        $cases = @(
+            @{ Cause = @{ kind = 'security'; measure = 'io'; scan = $true; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 }; other = @{ app = 'robocopy.exe'; user = 'user011'; sharePct = 30; baselinePct = $null } }
+                Want = 'Verursacher: Größter Verbraucher: Die Schutzsoftware mit 40 % der I/O-Menge. Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen. Größter Anteil außerhalb der Schutzsoftware: robocopy.exe in der Sitzung von user011 mit 30 % der I/O-Menge.' }
+            @{ Cause = @{ kind = 'none'; measure = 'cpu'; minSharePct = 25 }; Want = 'Verursacher: Kein einzelner Hauptverursacher: kein Prozess erreicht 25 % der CPU-Zeit.' }
+            @{ Cause = @{ kind = 'nodata'; measure = 'cpu' }; Want = 'Verursacher: Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.' }
+            @{ Cause = @{ kind = 'notmeasured'; measure = 'cpu' }; Want = 'Verursacher: Prozesse wurden in dieser Messung abgeschaltet.' })
+        foreach ($case in $cases) {
+            $i = New-Inc ($base + @{ cause = $case.Cause }); $ctx = New-Ctx
+            $ctx.Data.skipped = @([ordered]@{ id = 'Prozesse'; label = 'Prozesse'; text = 'Prozesse wurden in dieser Messung abgeschaltet.'; places = @() })
+            @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i $ctx) -Data $ctx.Data -Catalogue $Cat -Texts $Texts) | Should -Contain $case.Want
+        }
+        # a delay without bottleneck: the process with the highest delay and the hint on a cause outside the worker
+        $i = New-Inc @{ type = 'ohne-engpass'; start = 1e12; end = 1e12 + 60000; delayProcs = @(@{ name = 'nexus.exe'; s = 1; maxMs = 900 }) }
+        $ctx = New-Ctx; $ctx.Data.sessions = @(@{ i = 1; id = 3; user = 'user002' })
+        @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i $ctx) -Data $ctx.Data -Catalogue $Cat -Texts $Texts) |
+            Should -Contain 'Verursacher: Höchste Verzögerung in nexus.exe (user002). Die Ursache liegt außerhalb des Workers oder in der Anwendung selbst (Datenbank, Proxy, Netz).'
+    }
+    It 'sagt bei einer Verzoegerung ohne erkannten Engpass den Typ und bei unbekannten Betroffenen den Satz des Katalogs' {   # additions c), d)
+        $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true; $ctx.Data.unmeasured.worker = @('Latenz der Laufwerke')
+        $i = New-Inc @{ type = 'ohne-engpass'; unverified = $true; start = 1e12; end = 1e12 + 60000 }
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i $ctx) -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $p[1] | Should -BeLike '*(Verzögerung ohne erkannten Engpass)'
+        $p | Should -Contain $Cat.userView.unknown
+        @($p | Where-Object { $_ -like 'Betroffen:*' }).Count | Should -Be 0
+        @($p | Where-Object { $_ -like 'Messwert:*' }).Count | Should -Be 0                       # no measured value: no measure line
+        $p | Should -Contain 'Verursacher: Kein Engpass in den gemessenen Worker-Ressourcen. Nicht gemessen: Latenz der Laufwerke; ein Engpass dort ist nicht ausgeschlossen.'
+    }
+    It 'nennt bei einem Ereignisvorfall die Muster und die nicht geprueften Muster' {                # addition c)
+        $ev = @{ kind = 'crash'; app = 'EXCEL.EXE'; sessions = @(1, 2); users = @('user004', 'user005')
+            patterns = @(@{ id = 'resource'; text = 'Wahrscheinlich Folge des Speichermangels.'; detail = @{} })
+            unchecked = @(@{ id = 'printdriver'; category = 'Drucken'; text = '' }, @{ id = 'overlap'; category = 'Laufwerke'; text = '' }, @{ id = 'overlap'; category = 'Citrix'; text = '' }) }
+        $i = New-Inc @{ type = 'ereignis'; start = 1e12; end = 1e12; event = $ev }
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
+        $p[1] | Should -Be '02:46: Titel crash (Vorfall aus Ereignissen · Anwendungsabsturz)'          # no duration: the time alone
+        $p | Should -Contain ('Verursacher: Wahrscheinlich Folge des Speichermangels. Nicht geprüft: Bezug zu einem Druckertreiber (Drucken nicht gemessen). ' +
+            'Nicht geprüft: Zusammentreffen mit Vorfällen der Kategorien Laufwerke, Citrix (nicht gemessen).')
+        $p | Should -Contain 'Betroffen: 2 (user004, user005)'
+        @($p | Where-Object { $_ -like 'Messwert:*' }).Count | Should -Be 0
+        $ev.patterns = @(); $ev.unchecked = @(); $ev.sessions = @(); $ev.users = @('user004'); $ev.before = $true
+        $i = New-Inc @{ type = 'ereignis'; start = 1e12; end = 1e12 + 3600000; event = $ev }
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
+        $p | Should -Contain 'Verursacher: Kein Muster erkannt.'; $p | Should -Contain 'Betroffen: user004'
+    }
+    It 'fasst die Messung zusammen: Kopf, Lagebild mit Hinweisen, Vorfaelle in Rangfolge' {
+        $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() })
+        $ctx.Data.sollIst = @([ordered]@{ id = 'ica.rtt'; label = 'ICA Round Trip'; measured = $false; detail = 'Zaehler fehlt' })
+        $a = New-CpuInc; $a.guide = New-CopyGuide $a $ctx
+        $b = New-Inc @{ id = 5; type = 'ereignis'; start = 1e12 + 300000; end = 1e12 + 300000; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; sessions = @(1, 2, 3) } }; $b.guide = New-CopyGuide $b $ctx
+        $l = Get-WorkerPerfLagebild -Incidents @($a, $b) -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($a, $b) -Order @(5, 2, 5) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $dash = [string][char]0x2013
+        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001, 02:46 bis 03:46', ([string][char]0x25C6 + ' kritisch: 1 Engpaesse.'), 'Abgeschaltet: Laufwerke.', 'Nicht gemessen: ICA Round Trip.', ''
+            '- 02:51: Titel crash (Vorfall aus Ereignissen · Anwendungsabsturz). Langsam.', "- 02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU). Langsam.")
+        $t = New-WorkerPerfCopySummary -Incidents @($a, $b) -Order @(5, 2) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
+        { Get-WorkerPerfCopySummaryParagraphs -Incidents @($a) -Order @(9) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts } | Should -Throw '*9*'
+    }
+    It 'ersetzt Namen vor dem Umbruch, auch einen, den der Umbruch teilen wuerde' {                 # addition a), ruling P3-R9
+        # the name starts at column 75 of a word longer than the line: the wrapper would cut it
+        $path = 'C:\' + ('a' * 66) + '\schoenberger\x.dat'
+        $plain = Format-WorkerPerfCopyLines @("Pfad $path")
+        (Get-Lines $plain) | ForEach-Object { $_ | Should -Not -Match 'schoenberger' }                # split by the wrapper
+        $anon = Format-WorkerPerfCopyLines @(ConvertTo-WorkerPerfAnonymousText "Pfad $path" $CopyMask)
+        foreach ($part in 'schoenberger', 'schoen', 'berger') { $anon | Should -Not -Match $part }
+        (Join-Copy $anon) | Should -Match 'Benutzer 01'; @((Get-Lines $anon) | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        ConvertTo-WorkerPerfAnonymousText 'Sitzung von schoenberger an WS-0042' $CopyMask | Should -Be 'Sitzung von Benutzer 01 an Client 01'
+        # the copy text with -Mask: every paragraph is masked before wrapping
+        $i = New-CpuInc; $i.main.user = 'schoenberger'; $g = New-CopyGuide $i; $g.impact = "Pfad $path"
+        $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        (Join-Copy $t) | Should -Match 'Sitzung von schoenberger'
+        $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Mask $CopyMask
+        foreach ($part in 'schoenberger', 'schoen', 'berger') { $t | Should -Not -Match $part }
+        (Join-Copy $t) | Should -Match 'Sitzung von Benutzer 01'; (Join-Copy $t) | Should -Match 'EXCEL\.EXE'
+        @((Get-Lines $t) | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        $s = New-WorkerPerfCopySummary -Incidents @() -Order @() -Lagebild (Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Mask $CopyMask
+        $s | Should -Match '^WorkerPerf SIM-VDA01'                                                   # the mask of another run knows no SIM-VDA01
     }
 }
 Describe 'Situation und Bedingungen der simulierten Stunde' {
@@ -892,5 +1077,52 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $l.kpis.bottlenecks | Should -Be 5; $l.kpis.delays | Should -Be 2; $l.kpis.events | Should -Be 4; $l.kpis.chronic | Should -Be 1
         $l.kpis.minutes | Should -Be 12.9
         $l.state | Should -Be 'red'; $l.top | Should -Be $backend
+    }
+    It 'schreibt fuer jeden Vorfall und fuer die Messung Kopiertexte mit und ohne Namen' {
+        # the mask of level Alles of the same recording, with the arguments the report script passes
+        $roles = @(Read-WorkerPerfRoles $guideSimRoles)
+        $mask = New-WorkerPerfMask -Path $guideSimRun -Level 'Alles' -Texts $Texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) `
+            -EventConfig (Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json'))
+        $names = @($mask.Entries | Where-Object { @('user', 'client', 'server', 'share', 'domain') -contains [string]$_.Kind } | ForEach-Object { [string]$_.Name })
+        foreach ($n in 'SIM-VDA01', 'user003', 'CONTOSO') { $names | Should -Contain $n }
+        @($mask.Entries | Where-Object { $_.Kind -eq 'client' }).Count | Should -BeGreaterThan 0
+        @($mask.Entries | Where-Object { $_.Kind -eq 'share' }).Count | Should -BeGreaterThan 0
+        $apps = @(@($SimData.apps) | ForEach-Object { [string]$_.name } | Where-Object { $_ })
+        $check = {
+            param([string]$Plain, [string]$Anon, [string[]]$Titles, [string]$What)
+            foreach ($t in $Plain, $Anon) {
+                @(($t -split "`r`n") | Where-Object { $_.Length -gt 78 }) | Should -Be @() -Because $What
+                foreach ($title in $Titles) { ($t -replace "`r`n\s*", ' ').Contains($title) | Should -BeTrue -Because "$What, $title" }
+            }
+            foreach ($n in $names) {
+                $Anon -match ('(?i)(?<![\p{L}\p{N}_])' + [regex]::Escape($n) + '(?![\p{L}\p{N}_])') | Should -BeFalse -Because "$What nennt $n"
+            }
+            foreach ($a in $apps) { if ($Plain.Contains($a)) { $Anon.Contains($a) | Should -BeTrue -Because "$What, $a" } }
+        }
+        $userNames = @($mask.Entries | Where-Object { $_.Kind -eq 'user' } | ForEach-Object { [string]$_.Name })
+        $hits = 0
+        foreach ($inc in $SimIncidents) {
+            $id = [int]$inc.id
+            $g = New-WorkerPerfGuidance -Catalogue $Cat -Facts $SimFacts[$id] -Incident $inc -Texts $Texts
+            $plain = New-WorkerPerfCopyText -Incident $inc -Guide $g -Data $SimData -Catalogue $Cat -Texts $Texts
+            $anon = New-WorkerPerfCopyText -Incident $inc -Guide $g -Data $SimData -Catalogue $Cat -Texts $Texts -Mask $mask
+            & $check $plain $anon @($g.title) "Vorfall $id"
+            $plain | Should -Match 'SIM-VDA01' -Because "Vorfall $id"
+            if (@($userNames | Where-Object { $plain -match ('(?i)(?<![\p{L}\p{N}_])' + [regex]::Escape($_) + '(?![\p{L}\p{N}_])') }).Count -gt 0) { $hits++ }
+        }
+        $hits | Should -BeGreaterThan 5                                                            # the plain texts do name users
+        $capture = @(foreach ($inc in @($SimData.incidents)) {
+                $copy = [ordered]@{}
+                if ($inc -is [System.Collections.IDictionary]) { foreach ($k in $inc.Keys) { $copy[$k] = $inc[$k] } }
+                else { foreach ($p in $inc.PSObject.Properties) { $copy[$p.Name] = $p.Value } }
+                $copy['guide'] = New-WorkerPerfGuidance -Catalogue $Cat -Facts $SimFacts[[int]$inc.id] -Incident $inc -Texts $Texts
+                $copy
+            })
+        $order = @(Get-WorkerPerfIncidentRanking -Incidents $capture)
+        $l = Get-WorkerPerfLagebild -Incidents @($SimData.incidents) -Data $SimData -Catalogue $Cat -Texts $Texts
+        $plain = New-WorkerPerfCopySummary -Incidents $capture -Order $order -Lagebild $l -Data $SimData -Catalogue $Cat -Texts $Texts
+        $anon = New-WorkerPerfCopySummary -Incidents $capture -Order $order -Lagebild $l -Data $SimData -Catalogue $Cat -Texts $Texts -Mask $mask
+        & $check $plain $anon @($capture | ForEach-Object { [string]$_.guide.title }) 'Zusammenfassung'
+        $plain | Should -Match 'SIM-VDA01'
     }
 }
