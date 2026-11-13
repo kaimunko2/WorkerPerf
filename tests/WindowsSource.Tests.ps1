@@ -621,6 +621,13 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $script:WinFake.Queries.Clear(); [void](Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null)
         @($script:WinFake.Queries | Where-Object { $_ -like '*AppLocker/MSI and Script*' }).Count | Should -Be 1   # auch der abgeschaltete Name des Protokolls
         $info.Sources['events.smbclient'].PSObject.Properties.Name | Should -Not -Contain 'LookbackRead'
+        # Abschlussrunde (Minor 2): ohne Rueckblick liest niemand das abgeschaltete Protokoll, auch -EventLookbackDays 0
+        # kommt als Rueckblick in -Skip an (Resolve-WorkerPerfSkip)
+        $noLb = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip @(Resolve-WorkerPerfSkip @() $false 0) 3>$null
+        $noLb.Sources['events.printservice'].Detail | Should -Be 'Protokoll nicht vorhanden oder abgeschaltet'; $noLb.Sources['events.printservice'].Keys | Should -Not -Contain 'LookbackRead'
+        $noLb.Sources['events.applocker'].Detail | Should -Be 'Microsoft-Windows-AppLocker/EXE and DLL'
+        $script:WinFake.Queries.Clear(); [void](Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>$null)
+        @($script:WinFake.Queries | Where-Object { $_ -like '*PrintService/Admin*' -or $_ -like '*AppLocker/MSI and Script*' }).Count | Should -Be 0
         $script:WinFake.DisabledLogs = @('Microsoft-Windows-TerminalServices-LocalSessionManager/Operational')
         (Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null).Sources['events.session'].Detail | Should -Be 'Protokoll nicht vorhanden oder abgeschaltet'   # ohne Rueckblick
         $script:WinFake.DisabledLogs = @('Microsoft-Windows-PrintService/Admin', 'Microsoft-Windows-AppLocker/MSI and Script')
@@ -748,14 +755,47 @@ $tb = @($xb.QueryList.Query.Select)[0].InnerText; $te = @($xe.QueryList.Query.Se
         @{ Skip = 'Drucken'; Action = { Get-WorkerPerfPrintDrivers; Get-WorkerPerfPrintQueues }; Absent = 'MSFT_PrinterDriver|Print Queue|^registry:print' }
     ) {
         $calls = { param([string[]]$s) Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $s 3>$null); [void](& $Action 3>$null); @($script:WinFake.Calls.Keys) }
-        @(& $calls @() | Where-Object { $_ -match $Absent }).Count | Should -BeGreaterThan 0   # gemessen: die Aufrufe sind zu sehen
+        # gemessen: jeder Aufruf der Kategorie ist zu sehen (Abschlussrunde: jede Alternative, nicht nur eine)
+        $measured = @(& $calls @())
+        foreach ($alt in $Absent.Split('|')) { @($measured | Where-Object { $_ -match $alt }).Count | Should -BeGreaterThan 0 -Because "$Skip gemessen: $alt" }
         @(& $calls @($Skip) | Where-Object { $_ -match $Absent }) | Should -BeNullOrEmpty
+    }
+    It 'baut ohne Gegenstellen keine Verbindung auf, auch wenn Gegenstellen genannt sind' {   # Abschlussrunde (Task 2, geparkt)
+        $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep 3>$null
+        Start-WorkerPerfProbes; $script:WinProbe | Should -Not -BeNullOrEmpty; @($info.Endpoints).Count | Should -Be 1   # gemessen: eine Probe laeuft
+        $script:WinProbe = $null; Reset-WinStandIns
+        $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep -Skip Gegenstellen 3>$null
+        Start-WorkerPerfProbes; Start-WorkerPerfProbes -Endpoints $ep
+        $script:WinProbe | Should -BeNullOrEmpty; @(Receive-WorkerPerfProbes).Count | Should -Be 0; @($info.Endpoints).Count | Should -Be 0
+        $info.Sources.Contains('probe.connect') | Should -BeFalse
+        # nur Gegenstellen fehlt: die anderen Kategorien fragen weiter ab
+        [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfSnapshot -Kind K)
+        foreach ($k in 'perf:LogicalDisk', 'cim:Win32_Process', 'perf:ICA Session') { $script:WinFake.Calls.Keys | Should -Contain $k }
+    }
+    It 'fragt ohne Laufwerke im schnellen Takt keine Sitzungen ab' {   # Abschlussrunde (Task 2, geparkt)
+        # gemessen: ein neu eingehaengter UPM-Container fragt im schnellen Takt die Sitzungen ab (WTS), bis der naechste
+        # regulaere Schnappschuss die Zuordnung neu baut
+        $wts = { param([string[]]$s)
+            Reset-WinStandIns; [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $s 3>$null)
+            [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfSnapshot -Kind K); [void](Get-WorkerPerfFastSample)
+            Add-WinStandInUser -SessionId 3 -User 'neu' -Volume 'C:\Users\neu_UPM_local\UpmTempMount'
+            $before = [int]$script:WinFake.Calls['wts']
+            [void](Get-WorkerPerfFastSample); [void](Get-WorkerPerfFastSample)
+            [int]$script:WinFake.Calls['wts'] - $before }
+        & $wts @() | Should -Be 2
+        & $wts @('Laufwerke') | Should -Be 0
     }
     It 'laesst ohne alle Kategorien nur die Aufrufe der Basis uebrig und baut keine Verbindung auf' {   # Review Focus 1
         $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep -Skip Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen 3>$null
         [void](Get-WorkerPerfFastSample); $snap = Get-WorkerPerfSnapshot -Kind K; $s = Get-WorkerPerfFastSample
         Start-WorkerPerfProbes -Endpoints $ep; $script:WinProbe | Should -BeNullOrEmpty; @($info.Endpoints).Count | Should -Be 0
+        # Abschlussrunde (Task 2, geparkt): auch Dienste, Ereignisse, Rueckblick und Drucken fragen nichts ab
+        @((Get-WorkerPerfServices).Keys).Count | Should -Be 0
+        @(Get-WorkerPerfEvents -Since ([datetime]::Now.AddMinutes(-5)) 3>$null).Count | Should -Be 0
+        @((Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null).Events).Count | Should -Be 0
+        @(Get-WorkerPerfPrintDrivers 3>$null).Count | Should -Be 0; @(Get-WorkerPerfPrintQueues 3>$null).Count | Should -Be 0
         @($script:WinFake.Calls.Keys | Where-Object { $_ -match 'Win32_Process|Win32_Service|per Process|LogicalDisk|SMB Client|MSFT_|ICA Session|Citrix_Euem|Print Queue|^winevent|^registry:print' }) | Should -BeNullOrEmpty
         $s.CpuPct | Should -Be 27.5; @($s.InputSessions).Count | Should -Be 2; @($snap.Sessions).Count | Should -Be 2; @($snap.Processes).Count | Should -Be 0
         foreach ($id in 'process', 'disk.latency', 'ica.rtt', 'print.drivers', 'probe.connect', 'events.application') { $info.Sources.Contains($id) | Should -BeFalse -Because $id }

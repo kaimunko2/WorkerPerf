@@ -38,7 +38,9 @@
     'error', EndMessage).
 
 .PARAMETER OutputPath
-    Base folder. A sub folder <COMPUTER>_<yyyyMMdd-HHmmss> is created per capture.
+    Base folder. A sub folder <COMPUTER>_<yyyyMMdd-HHmmss> is created per capture. Together with -Skip a bare
+    category name (Rueckblick) stops the start: it is a value of -Skip given with a blank instead of a comma; a folder
+    of that name is given as a path (.\Rueckblick).
 
 .PARAMETER FastIntervalSeconds
     Fast cadence for host signals and input delay (1-60 s, default 2).
@@ -67,7 +69,8 @@
     this file no probes are made (see endpoints.example.json).
 
 .PARAMETER IncludeCommandLine
-    Also store process command lines (may contain sensitive data such as file names or URLs).
+    Also store process command lines (may contain sensitive data such as file names or URLs). Without Prozesse
+    (-Skip Prozesse) no command line is recorded and meta.json says IncludeCommandLine false.
 
 .PARAMETER NoCitrix
     Skip the Citrix ICA/EUEM WMI metrics. Same as -Skip Citrix.
@@ -139,6 +142,14 @@ $ErrorActionPreference = 'Stop'
 # the categories left out (resolved from -Skip, -NoCitrix and -EventLookbackDays), before anything is read or
 # created (an unknown value stops the start here)
 $leftOut = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
+# -Skip Prozesse Rueckblick (a blank instead of a comma) binds the second value to the first positional parameter,
+# -OutputPath: stop before anything is created. A folder of that name can still be given as a path (.\Rueckblick).
+if ($PSBoundParameters.ContainsKey('Skip') -and $PSBoundParameters.ContainsKey('OutputPath') -and @($script:WorkerPerfCategories.Keys) -contains $OutputPath) {
+    $given = @(@($Skip) | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).Split(',') } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    throw ("-OutputPath '{0}' ist der Name einer Kategorie: die Werte von -Skip mit Komma trennen (-Skip {1})." -f $OutputPath, ((@($given) + $OutputPath) -join ','))
+}
+# command lines come from the process snapshots: without Prozesse none is recorded, and meta.json says so
+$withCommandLine = ([bool]$IncludeCommandLine -and $leftOut -notcontains 'Prozesse')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
 if ($Simulate) {
@@ -164,7 +175,7 @@ if ($leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoi
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$IncludeCommandLine -Skip $leftOut -EventConfig $eventConfig
+    -IncludeCommandLine:$withCommandLine -Skip $leftOut -EventConfig $eventConfig
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -211,7 +222,7 @@ $meta = [ordered]@{
     Snapshots            = 0
     SkippedTicks         = 0
     Simulated            = [bool]$Simulate
-    IncludeCommandLine   = [bool]$IncludeCommandLine
+    IncludeCommandLine   = $withCommandLine
     EventLookbackDays    = $(if ($leftOut -contains 'Rueckblick') { 0 } else { $EventLookbackDays })
     LookbackCapped       = @()
     EventReadCounts      = [ordered]@{}
@@ -277,6 +288,7 @@ function Write-WorkerPerfProbeRows([object[]]$Results, [int]$T) {
 Write-Host "WorkerPerf-Aufzeichnung laeuft: $runDir"
 Write-Host ('Gemessen: ' + ((@('Basis') + @(@($script:WorkerPerfCategories.Keys) | Where-Object { $script:WorkerPerfCategories[$_].Active -and $leftOut -notcontains $_ })) -join ', '))
 Write-Host ('Nicht gemessen (-Skip): ' + $(if ($leftOut.Count -gt 0) { $leftOut -join ', ' } else { 'keine' }))
+if ($IncludeCommandLine -and -not $withCommandLine) { Write-Host 'Befehlszeilen werden nicht aufgezeichnet: Prozesse ist weggelassen (-Skip Prozesse).' }
 Write-Host ("Schneller Takt {0} s, Schnappschuss alle {1} s{2}. Beenden mit Strg+C oder Datei 'stop.flag' im Ausgabeordner." -f `
         $FastIntervalSeconds, $IntervalSeconds, $(if ($DurationMinutes -gt 0) { ", Dauer $DurationMinutes min" } else { '' }))
 
@@ -326,7 +338,7 @@ try {
     $base = Get-WorkerPerfSnapshot -Kind K
     if ($withProcesses) {
         [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
-                -IncludeCommandLine:$IncludeCommandLine)
+                -IncludeCommandLine:$withCommandLine)
     }
     $prevSnapTime = [datetime]$base.Time
     # The session of an event is found through its process id: in the processes of the recent snapshots (a crashed
@@ -457,7 +469,7 @@ try {
                     $procTotal = ''; $procWritten = ''
                     if ($withProcesses) {
                         $res = Get-WorkerPerfProcessRows -State $procState -Processes @($snap.Processes) -P $P -PrevTime $prevSnapTime `
-                            -Keyframe:$keyframe -Services $services -IncludeCommandLine:$IncludeCommandLine
+                            -Keyframe:$keyframe -Services $services -IncludeCommandLine:$withCommandLine
                         foreach ($line in $res.Info) { $wInfo.WriteLine($line) }
                         foreach ($line in $res.Rows) { $wProcs.WriteLine($line) }
                         foreach ($line in $res.Ended) { $wEnded.WriteLine($line) }

@@ -1504,7 +1504,8 @@ function Initialize-WorkerPerfSource {
         }
         $id = 'events.' + $l.Id
         $lookbackNames = [string[]]@()
-        if ($l.Lookback) { $lookbackNames = $present.ToArray() }
+        # only a lookback that runs reads a switched-off log (-Skip Rueckblick, also -EventLookbackDays 0, reads none)
+        if ($l.Lookback -and $leftOut -notcontains 'Rueckblick') { $lookbackNames = $present.ToArray() }
         if ($readable.Count -gt 0 -or $lookbackNames.Count -gt 0) {
             $names = $readable.ToArray()
             $log = @{ Id = $l.Id; Names = $names; Lookback = ($lookbackNames.Count -gt 0); Queries = @(New-WorkerPerfEventQueries $EventConfig $l.Id $names)
