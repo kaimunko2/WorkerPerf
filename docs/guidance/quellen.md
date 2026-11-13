@@ -1,10 +1,40 @@
-# Quellen der Druckempfehlungen
+# Quellen der Empfehlungen im Katalog
 
 Der Katalog `src/guidance.de.json` enthält Empfehlungen zum Drucken auf Citrix- und Terminalservern: die Elemente der
 Situation `print` und in anderen Situationen die Elemente mit einer Bedingung `pattern.printdriver` oder `driver.*`.
 Jedes dieser Elemente nennt im Feld `source` den Hersteller und den Titel des Dokuments, aus dem es stammt; der
 Bericht zeigt die Quelle beim Element. Diese Datei weist je Hersteller nach, welches Dokument welches Element stützt,
 und nennt die Empfehlungen, die gefunden, aber nicht aufgenommen wurden, mit dem Grund.
+
+Seit dem 13.11.2026 tragen auch Elemente anderer Situationen eine Quelle: die Schritte zu den Standardanwendungen aus
+`src/apps.json` (Bedingung `app.<Anwendung>`: Microsoft Edge, Microsoft Edge WebView2, Microsoft Office, Microsoft
+Teams, PrinTaurus SmartSpread Client), die Schritte zu Citrix Workspace Environment Management und die Empfehlungen
+aus zwei Quellen der Praxis (Carl Stalhood, BIS-F). Ein Element aus einer Quelle der Praxis nennt in `source` die
+Quelle mit dem Zusatz „Empfehlung aus der Praxis“ und ist nie als Empfehlung eines Herstellers formuliert. Die
+Abschnitte dazu stehen nach den Druckerherstellern; der Abschnitt „Ausnahmen: Praxisquelle vor Hersteller“ nennt, wo
+nach Entscheidung des Auftraggebers eine Quelle der Praxis vor dem Hersteller gilt.
+
+## Zielumgebung
+
+Der Katalog ist für eine Umgebung geschrieben, die sich allgemein so beschreiben lässt: Worker mit mehreren Sitzungen
+(Windows Server 2022, Citrix VDA), ausschließlich über Machine Creation Services bereitgestellt und nicht persistent.
+Ein solcher Worker entsteht bei jedem Neustart neu aus dem Master-Image; was auf ihm selbst geändert wurde, ist danach
+verloren, auch seine Ereignisprotokolle. Die Benutzerumgebung richtet Citrix Workspace Environment Management ein, die
+Drucker ordnet PrinTaurus SmartSpread zu, nicht die Citrix-Richtlinien. Daraus folgen drei Regeln des Katalogs:
+
+- Ein Vorschlag, der eine Einstellung ändert (Treiber, Richtlinie, Registrierung, Scan-Ausschluss, Dienst,
+  installierte Software), nennt den Ort der Änderung mit einer von zwei festen Wendungen:
+  „bei nicht persistenten Workern im Master-Image, danach die Worker neu bereitstellen“ oder, wo die Änderung selbst
+  eine Richtlinie ist, „eine Richtlinie wirkt auch auf nicht persistente Worker“. Einen Scan-Ausschluss oder einen
+  Zeitplan der Schutzsoftware setzt ihre zentrale Verwaltung oder eine Richtlinie, sonst das Master-Image. Ein
+  Schritt, dessen Wirkung ein Neustart des Workers aufhebt (einen Treiber am Worker entfernen), sagt
+  „am Worker selbst nur bis zum Neustart wirksam“. Diese Zusätze stammen nicht vom Hersteller des jeweiligen Elements.
+- Die Schritte zu einem Vorfall aus der Zeit vor der Messung sagen, dass die Ereignisprotokolle auf solchen Workern
+  nur bis zum letzten Neustart zurückreichen.
+- Schritte zur Zuordnung der Drucker setzen keine Citrix-Richtlinien voraus; wo ein Schritt von ihnen abhängt, sagt er
+  es („Wenn die Drucker über Citrix-Richtlinien zugeordnet werden: …“ oder in der Voraussetzung).
+
+Namen von Systemen des Auftraggebers stehen weder im Katalog noch in dieser Datei.
 
 Ein Element der Situation `print`, das keine Empfehlung eines Herstellers ist, sondern ein Hinweis des Berichts
 selbst, trägt die Quelle „WorkerPerf: Hinweis zur Auswertung“; der Abschnitt „WorkerPerf“ führt diese Elemente auf.
@@ -16,9 +46,11 @@ Eine Stelle wie `print.remedies[2]` bezeichnet Situation, Liste und Position im 
 
 ## Wie die Quellen geprüft wurden
 
-- Recherchiert wurde am 13.11.2026 nur in der eigenen Dokumentation der fünf Hersteller (Microsoft Learn,
-  docs.citrix.com und die Support- und Dokumentseiten von HP, Kyocera und Brother). Seiten Dritter, Foren und
-  Suchtreffer ohne geöffnete Seite zählen nicht als Quelle.
+- Recherchiert wurde am 13.11.2026 für die Druckempfehlungen nur in der eigenen Dokumentation der fünf Hersteller
+  (Microsoft Learn, docs.citrix.com und die Support- und Dokumentseiten von HP, Kyocera und Brother), für die
+  Standardanwendungen, Workspace Environment Management und PrinTaurus in der Dokumentation von Microsoft, Citrix und
+  AKI, und in den beiden Quellen der Praxis. Seiten Dritter, Foren und Suchtreffer ohne geöffnete Seite zählen nicht
+  als Quelle.
 - Jede Seite wurde nach der Recherche ein zweites Mal geöffnet und das Zitat mit dem Text der Seite verglichen. Was
   die Seite nicht stützt, ist gestrichen; die Spalte „Hinweis“ nennt Einschränkungen, die die Seite selbst macht.
 - Eine Empfehlung, deren Quelle nicht erreichbar war, ist nicht aufgenommen. Jeder Abschnitt nennt am Ende, welche
@@ -96,7 +128,7 @@ Die erreichbare Produktdokumentation von Citrix sagt nichts zur Treiberisolierun
 | Troubleshooting | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting.html> | 2026-11-13 | `print.checks[0]` Dienst läuft wieder, sonst starten<br>`print.checks[1]` fehlerhaftes Modul dem Treiber zuordnen<br>`print.checks[24]` Citrix Print Manager Service läuft<br>`print.remedies[1]` Treiber entfernen, mit Universaltreiber oder Microsoft-Treiber testen<br>`print.remedies[10]` Spool-Ordner von Hand leeren | Die Zuordnung des fehlerhaften Moduls zu einem Treiber stammt aus der Messung; die Seite sagt nur, dass das Modul festzustellen ist. Den Neustart des Dienstes nennt die Seite als Schritt vor dem Leeren von Hand („If restarting fails …“); wo der Zustand des Dienstes steht, ist ein eigener Hinweis. Das Leeren von Hand nennt sie nur für Abstürze der Druckwarteschlange. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Citrix, ebenso wenig die Voraussetzungen „Benutzer informiert“ (`print.remedies[10]`) und „Wartungsfenster“ (`print.remedies[1]`). |
 | Maintain the printing environment | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-maintain-environment.html> | 2026-11-13 | `crash.remedies[2]` Treiber über die Treiberzuordnung ersetzen oder sperren<br>`print.remedies[4]` Treiber über die Treiberzuordnung ersetzen oder sperren | Seite der Version 2503. |
 | Best practices, security considerations, and default operations | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-best-practices.html> | 2026-11-13 | `crash.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen<br>`print.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen | Seite der Version 2503; sie verwendet noch die Bezeichnung „Terminal Services“. |
-| Drivers policy settings | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/ica-policy-settings/printing-policy-settings/drivers-policy-settings.html> | 2026-11-13 | `print.checks[17]` Richtlinie zur Verwendung des Universaltreibers | Aktuelle Fassung der Produktdokumentation. |
+| Drivers policy settings | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/ica-policy-settings/printing-policy-settings/drivers-policy-settings.html> | 2026-11-13 | `print.checks[17]` Richtlinie zur Verwendung des Universaltreibers | Aktuelle Fassung der Produktdokumentation. Das Element beginnt mit „Wenn die Drucker über Citrix-Richtlinien zugeordnet werden“: In der Zielumgebung ordnet ein Zuordnungswerkzeug die Drucker zu. |
 | Network Printers (on the VDA) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/configuration/network-printers.html> | 2026-11-13 | `print.checks[18]` Herkunft der Drucker (Windows-Druckserver oder Universal Print Server) | Aktuelle Fassung der Produktdokumentation. |
 
 ### Belegstellen
@@ -272,17 +304,303 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 
 Nicht erreichbar: download.brother.com (unter anderem der „Universal Printer Driver Guide“); die Treiberlisten je Modell für Windows Server 2022 auf support.brother.com ließen sich nicht auslesen. Ob Brother einen Treiber für Windows Server 2022 anbietet, ist deshalb je Modell auf der Download-Seite zu prüfen.
 
+## AKI
+
+Die AKI GmbH ist der Hersteller von PrinTaurus; PrinTaurus SmartSpread ordnet in der Zielumgebung die Drucker zu, auf dem Worker läuft dafür der PrinTaurus SmartSpread Client. Die Website des Herstellers enthält kein öffentliches Handbuch; technische Aussagen stehen nur in den Release Notes 6.2 und 6.4. Elemente zu einem Absturz oder Hänger des Clients hängen an der Bedingung `app.printaurus`; die übrigen stehen als allgemeine Elemente in der Situation `print` und nennen in ihrer Voraussetzung die Version, für die die Release Notes die Aussage machen. In `vendors` steht AKI nicht: die Liste ist für Hersteller von Druckertreibern.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Release Notes 6.2 deutsch | <https://www.aki-gmbh.com/download/45927/> | 2026-11-13 | `crash.checks[28]` Version des .NET Framework prüfen<br>`print.checks[28]` Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach einem Wechsel des En … | Release Notes PrinTaurus 6.2, Version 11 vom 28.03.2022. Kapitel 2 nennt .NET Framework 4.7.2 für die SmartSpread Clients; den Registrierungswert Release und die Zahl 461808 nennt Microsoft („How to determine which .NET Framework versions are installed“). Kapitel 3 nennt den behobenen Fehler beim erzwungenen Standarddrucker, die bekannte Einschränkung (doppelte Anzeige) und als Änderung, dass die Zuordnungen bei einem Wechsel des Endgeräts ohne Neuanmeldung passend gesetzt werden; ob ältere Versionen das nicht taten, sagt AKI nicht, und `print.checks[28]` sagt es auch nicht. |
+| Release Notes PrinTaurus 6.4 | <https://www.aki-gmbh.com/download/47826/> | 2026-11-13 | `crash.checks[29]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`crash.remedies[11]` PrinTaurus auf eine Version bringen, die AKI noch unterstützt<br>`crash.contacts[3]` Support von AKI: mit Version des SmartSpread Client, Uhrzeit, fehlerhaftem Modul und Fehlercode aus den Bel …<br>`hang.checks[18]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`print.remedies[23]` PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, b …<br>`print.remedies[24]` Lokale IPP-Druckerwarteschlangen von PrinTaurus SmartSpread den Benutzern dieses Servers nicht zuweisen | Release Notes PrinTaurus 6.4, Version 3 vom 16.02.2025. Die Regel „alle Komponenten im selben Release“ steht unter den Hinweisen zum Update auf 6.4; die Elemente beschränken sie darauf. Dass die Version unter „Programme und Features“ dieser Release-Stand ist, sagt AKI nicht. Die Release Notes nennen support@aki-gmbh.com; welche Angaben der Support braucht, ist ein eigener Hinweis. Der Zusatz zum Master-Image stammt nicht von AKI. |
+
+### Belegstellen
+
+- **Release Notes 6.2 deutsch**
+  - „.NET Framework Mit dieser Version ist das .NET Framework 4.7.2 erforderlich für • Druckserver • Rechner, auf dem die PrinTaurus GUI installiert wird • SmartSpread Webserver • SmartSpread Clients“
+  - „Bei der Verwendung von unterschiedlichen Drucker- und Freigabenamen für eine Queue wurde der erzwungene Standarddrucker den Clients nicht korrekt zugewiesen. Dies wurde behoben. (Known issue: die entsprechende Queue wird seitens Windows doppelt dargestellt.)“
+  - „Bei Wechsel des (Thin-)Clients ohne Neuanmeldung am Terminalserver werden die Zuordnungen passend zum Client gesetzt.“
+- **Release Notes PrinTaurus 6.4**
+  - „Prüfen Sie die Systemvoraussetzungen der einzelnen Komponenten! Alle Software-Komponenten sollten zur gleichen Release-Version gehören! Die aktuellen Dateiversionen finden Sie in den Release Notes, die bei Ihnen eingesetzten Versionen in den Landschaftsinformationen der PrinTaurus GUI.“
+  - „Zum 31. Dezember 2025 kündigen wir alle PrinTaurus Versionen < 6.2. ab.“
+  - „Das Feature ist in dieser Version nur für Fat Clients verfügbar. In Citrix- oder Terminalserver-Umgebungen wird es nicht unterstützt.“
+  - „PrinTaurus SmartSpread Client: Behebung von Bugs, die zu doppelter Anzeige von Queues führten, und Optimierung der Anzeige von Queues, wenn Queuename und Freigabename nicht identisch sind.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Wie und wann der Client die Drucker zuordnet (Anmeldung, Wiederverbindung, Regeln), Treiber auf dem Worker, Hinweise zu Master-Image und nicht persistenten Workern, Dauer und Protokoll der Zuordnung, Verhältnis zu den Druckrichtlinien von Citrix | keine Herstellerquelle gefunden (die Installationsanleitung ist nicht veröffentlicht; der allgemeine Schritt zur Zuordnung ist ein eigener Hinweis, siehe Abschnitt WorkerPerf) |
+| Aliasnamen für Verbunde: Hochverfügbarkeit entfällt, Wartungsmodus abgeschaltet (Release Notes 6.4) | setzt eine Änderung voraus, die die Messung nicht stützt (Einrichtung der Druckserver, auf dem Worker nicht sichtbar) |
+| Hochverfügbarkeit der Drucker-Mappings über Master- und Backup-Server (Produktseite) | setzt eine Änderung voraus, die die Messung nicht stützt (die Seite spricht von Client-PCs und nennt weder SmartSpread noch Terminalserver) |
+| Verzögerungen beim Speichern vieler IPP-Anschlüsse, CleanJob, TLS-Einstellungen, SAP-Anbindung und weitere Server-Komponenten | Quelle veraltet oder nur für ein anderes Produkt (Komponenten der Druckserver, nicht des Workers) |
+
+Nicht erreichbar: die Seiten „FAQ“ und „Service & Support“ des Herstellers (HTTP 404), www.printaurus.com und die bei Kyocera liegende Broschüre zur Hochverfügbarkeit. Von dort ist nichts übernommen.
+
+## Citrix – Workspace Environment Management
+
+In der Zielumgebung richtet Citrix Workspace Environment Management (WEM) die Benutzerumgebung ein. Die Elemente nennen WEM als möglichen Beteiligten an einem Prozessor- oder Arbeitsspeicher-Engpass: Der CPU-Spitzenschutz senkt die Priorität eines Prozesses, die Speicheroptimierung gibt Arbeitsspeicher untätiger Prozesse frei. Die wirksamen Einstellungen von WEM sind auf dem Worker nicht dokumentiert lesbar; die Schritte verweisen deshalb auf das Ereignisprotokoll des Agenten und auf die WEM-Konsole.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| CPU Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/cpu-management.html> | 2026-11-13 | `cpu.remedies[2]` CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen | Citrix sagt, der Schutz sei nicht dafür gedacht, die Gesamtlast zu senken, und rät, die Messzeit so zu wählen, dass andere Benutzer desselben Servers nicht leiden. Eine Regel, wann ein Prozess auszunehmen ist, nennt die Seite nicht. Die Einstellung liegt in der WEM-Konsole, nicht auf dem Worker; ein Zusatz zum Master-Image entfällt deshalb. |
+| Memory Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/memory-management.html> | 2026-11-13 | `memory.remedies[5]` Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen | Standard der Leerlaufgrenze laut Seite 1 %. Dass Anwendungen nach einer Pause träge reagieren, steht nicht auf der Seite: Es ist die Voraussetzung, unter der der Katalog den Schritt vorschlägt. |
+| Agent event logs (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/agent-event-logs.html> | 2026-11-13 | `cpu.checks[12]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob der CPU-Spitzenschutz von Citrix Workspace Environment M …<br>`memory.checks[10]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob die Speicheroptimierung von Citrix Workspace Environment … | Die Seite nennt die Ereignisse 7001 und 7002 (CPU-Spitzenschutz) und 8001 bis 8003 (Speicheroptimierung). Die Bezeichnung des Protokolls „WEM Agent Service“ stammt von den Seiten „CPU Management“ und „System optimization“; den genauen Namen des Protokolls dokumentiert Citrix nicht (siehe „Auf dem Zielsystem zu bestätigen“). Was die Speicheroptimierung mit dem Arbeitsspeicher untätiger Prozesse tut, steht auf der Seite „Memory Management“. |
+
+### Belegstellen
+
+- **CPU Management (WEM current release)**
+  - „CPU spike protection is not designed to reduce overall CPU usage. It is designed to reduce the impact on user experience by processes that consume an excessive percentage of CPU Usage.“
+  - „We recommend that you experiment with the sample time to decide the optimal value for your environment that does not affect other users logged on to the same VDA.“
+- **Memory Management (WEM current release)**
+  - „The default is 1%. We recommend that you do not use a value greater than 5%. Otherwise, a process being actively used can be mistaken for idle, causing its memory to be released.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Agent-Cache an einem beständigen Ort, benötigte Dienste auf „Automatisch“, Agent nicht per Skript starten oder anhalten, Einstellungen der Anmeldung (SyncForegroundPolicy, GpNetworkStartTimeoutPolicyValue), VUEMAppCmd, Cache-Aktualisierung | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Virenschutz vom CPU-Spitzenschutz ausnehmen und ihm niedrige I/O-Priorität geben | setzt eine Änderung voraus, die die Messung nicht stützt (die Einstellungen von WEM sind auf dem Worker nicht lesbar) |
+| CPU-Begrenzung (Clamping) nur für Ausnahmen, Optimierung getrennter Sitzungen, Citrix Optimizer bei jedem Neustart, schnelles Abmelden, asynchrone Verarbeitung von Druckern und Laufwerken | setzt eine Änderung voraus, die die Messung nicht stützt (Erklärungen ohne Merkmal, das die Messung zeigt) |
+| Intelligente CPU-Optimierung startet Prozesse mit hoher Priorität (CTX233218) | Quelle veraltet oder nur für ein anderes Produkt (Artikel ohne Datum mit der Wortwahl der alten Konsole; die aktuelle Seite sagt das nicht) |
+| „Launch agent on reconnection“ eingeschaltet lassen | keine Herstellerquelle gefunden (das Zitat steht auf der Seite unter einer anderen Einstellung) |
+| CPU-Spitzenschutz für das klassische Teams (Seite „Optimization for Microsoft Teams (Classic)“) | Quelle veraltet oder nur für ein anderes Produkt (für das neue Teams nicht dokumentiert; der allgemeine Vorschlag zum CPU-Spitzenschutz ist aufgenommen) |
+
+Für die Verzögerung ohne Engpass ist kein Element zu WEM aufgenommen: Keine der gelesenen Seiten verbindet eine Einstellung von WEM mit einem Merkmal, das die Messung dort zeigt.
+
+## Microsoft – Edge und WebView2
+
+Microsoft Edge ist in der Zielumgebung der einzige Browser; die WebView2-Runtime (msedgewebview2.exe) nutzen Teams und Office für ihre Web-Oberflächen. Die Elemente hängen an den Bedingungen `app.edge` und `app.webview2` aus `src/apps.json`.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Fix high CPU or memory usage in Microsoft Edge | <https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/performance/edge-high-cpu-memory> | 2026-11-13 | `cpu.checks[3]` Im Browser-Task-Manager von Microsoft Edge nachsehen, welcher Tab, welche Erweiterung oder welcher Hilfspro …<br>`cpu.checks[4]` Klären, ob der Benutzer Videos, WebGL- oder Canvas-Inhalte im Browser nutzte<br>`cpu.remedies[3]` Erweiterungen von Microsoft Edge abschalten und einzeln wieder einschalten, bis die verursachende gefunden ist<br>`cpu.remedies[4]` Schlafende Tabs in Microsoft Edge einschalten<br>`cpu.remedies[5]` Weiterlaufen von Erweiterungen und Apps im Hintergrund nach dem Schließen von Microsoft Edge abschalten<br>`memory.checks[3]` Im Browser-Task-Manager von Microsoft Edge nachsehen, welcher Tab oder welche Erweiterung den Arbeitsspeich … | Stand der Seite 2026-06-03. Die Namen der Richtlinien SleepingTabsEnabled und BackgroundModeEnabled stehen auf den Richtlinienseiten von Microsoft Edge. Eine Schwelle für die Zeit bis zum Schlafen nennt der Katalog nicht (Microsoft nennt 900 Sekunden nur als Standard). Dass Edge ohne Grafikkarte in Software rendert, sagt die Seite nicht; `cpu.checks[4]` fragt deshalb nur nach den Inhalten. |
+| Microsoft Edge for Virtual desktop infrastructure (VDI) | <https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure> | 2026-11-13 | `memory.checks[4]` Arbeitsspeicher je Benutzer mit der Angabe von Microsoft für Edge auf VDI vergleichen<br>`profile.checks[5]` Prüfen, ob Richtlinien die Benutzerdaten oder den Cache von Microsoft Edge auf eine Freigabe legen | Stand 2026-11-03. Die Seite spricht allgemein von „VDI“, nicht von Servern mit mehreren Sitzungen. Ob Daten in einem Profilcontainer als umgeleitet oder geroamt gelten, sagt Microsoft nicht; das Element zu den Benutzerdaten sagt das. |
+| Microsoft Edge stops responding or doesn't start | <https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/performance/edge-crashes-fails-to-launch> | 2026-11-13 | `crash.checks[19]` Die von Microsoft genannten häufigen Ursachen prüfen<br>`hang.checks[12]` Die von Microsoft genannten häufigen Ursachen prüfen | Stand 2026-06-03. Die Seite nennt Ereignisse der Quelle „Application Error“ zu msedge.exe; eine Ereignisnummer nennt sie nicht. |
+| Enable Process Isolation (ProcessIsolationEnabled) | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/processisolationenabled> | 2026-11-13 | `crash.checks[20]` Einstellung „Process Isolation“ von Microsoft Edge feststellen | Ab Microsoft Edge 151; ohne Richtlinie wird die Funktion laut Microsoft schrittweise eingeführt. Komponenten von Citrix nennt Microsoft nicht. |
+| Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled) | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/autodiscardsleepingtabsenabled> | 2026-11-13 | `memory.remedies[2]` Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten | Ab Microsoft Edge 120; ohne Richtlinie ist das Verwerfen eingeschaltet. |
+| Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb) | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/totalmemorylimitmb> | 2026-11-13 | `memory.remedies[3]` Speichergrenze je Instanz von Microsoft Edge setzen | Ab Microsoft Edge 80. Microsoft beschreibt die Richtlinie, empfiehlt sie aber nicht; Werte unter 1024 werden auf 1024 aufgerundet. |
+| Microsoft Edge - Update policies | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-update-policies> | 2026-11-13 | `crash.checks[21]` Version der WebView2-Runtime feststellen<br>`crash.remedies[8]` WebView2-Runtime auf den aktuellen Stand bringen | Abschnitt „Update (WebView)“, Microsoft Edge Update ab 1.3.127.1. Für nicht persistente Maschinen nennt Microsoft auf der Seite zu Edge für VDI als bewährtes Vorgehen, automatische Updates abzuschalten und über das Master-Image zu aktualisieren: Der Stand der Runtime ist dann der des Master-Image, und beide Elemente sagen das. |
+| WebView2 end-user FAQ | <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/end-user-faq> | 2026-11-13 | `cpu.checks[6]` Feststellen, welche Anwendung der Anwendung nutzt<br>`memory.checks[5]` Feststellen, welche Anwendung der Anwendung nutzt | Seite von 2023. Teams und Outlook nennt Microsoft als Beispiele für Anwendungen, die WebView2 nutzen; „in den meisten Fällen“ bezieht sich auf die Art der Nutzung von WebView2. |
+| Enterprise management of WebView2 | <https://learn.microsoft.com/en-us/deployedge/webview2-enterprise> | 2026-11-13 | `cpu.checks[7]` Einordnen, welche Einstellungen auf der Anwendung wirken | Abschnitt „Browser policies vs. WebView2 policies“. |
+| Prevent security tools from blocking WebView2 apps | <https://learn.microsoft.com/en-us/deployedge/webview2-security-tools> | 2026-11-13 | `cpu.remedies[7]` Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen<br>`crash.checks[22]` Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt<br>`crash.checks[23]` Prüfen, ob Software Module in die Prozesse von WebView2 lädt<br>`hang.checks[13]` Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt | Den Herausgeber, für den eine Regel gelten soll, nennt die Seite nicht. Die Zustimmung der Verantwortlichen für die Sicherheit und der Ort der Änderung stammen nicht von Microsoft. |
+
+### Belegstellen
+
+- **Fix high CPU or memory usage in Microsoft Edge**
+  - „One or more msedge.exe processes consistently use a large share of CPU power while the browser is idle. [...] To find the responsible tab, extension, subframe, or utility process, sort by CPU or Memory.“
+  - „Extensions can cause high CPU usage. [...] If usage returns to normal, turn extensions back on one at a time to find the one that causes the problem.“
+  - „If Edge continues to use excessive CPU after you close all windows, background processes are still running. [...] Turn off Continue running background extensions and apps when Microsoft Edge is closed.“
+  - „Software rendering of video, WebGL, and canvas content increases CPU usage.“
+- **Microsoft Edge for Virtual desktop infrastructure (VDI)**
+  - „The following minimum requirements are recommended for deploying Microsoft Edge on a VDI environment: [...] RAM – 1 GB per User [...] Large and complex web applications and extensions need more memory and processing capability“
+  - „Redirecting or roaming any UDF content is not supported and should be avoided, as it can cause reliability and performance issues related with many state-preserving files, databases, and caches.“
+- **Microsoft Edge stops responding or doesn't start**
+  - „The article describes common causes, such as leftover background processes, graphics driver problems, a corrupted user profile, and a broken installation.“
+- **Enable Process Isolation (ProcessIsolationEnabled)**
+  - „Enabling Process Isolation may cause incompatibilities with third party applications that rely on being able to inject or tamper with Microsoft Edge's processes, such as antivirus, screen reader or window manager applications.“
+- **Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled)**
+  - „Auto discard reduces memory usage by discarding inactive background tabs. When the user switches back to a discarded tab, the tab is reloaded. By default, auto discard is turned on.“
+- **Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb)**
+  - „If you enable this policy, the browser starts to discard tabs to save memory once the limitation is exceeded. However, there's no guarantee that the browser is always running under the limit.“
+- **Microsoft Edge - Update policies**
+  - „Automatic updates are enabled by default. Disabling automatic updates for the WebView2 Runtime might cause compatibility issues with applications that depend on this component.“
+- **WebView2 end-user FAQ**
+  - „In most cases, any extra memory or CPU usage is due to how WebView2 is being used, not WebView2 itself. If the application is rendering non-optimized web content, then the WebView2 control might consume more resources.“
+- **Enterprise management of WebView2**
+  - „Browser policies are separate from WebView2 policies. Policies for Microsoft Edge don't apply to the WebView2 Runtime and WebView2 apps.“
+- **Prevent security tools from blocking WebView2 apps**
+  - „AppLocker deny rules; policies that explicitly block execution. [...] Allowlist the WebView2 Runtime (msedgewebview2.exe) and host executables.“
+  - „Dynamic-link library (DLL) injection into renderer or Graphics Processing Unit (GPU) processes breaks Chromium's sandboxing model, and commonly causes renderer crashes.“
+  - „Slow startup due to deep real-time scanning of the WebView2 Runtime and the user data folder (UDF). [...] Configure scoped exclusions for WebView2 Runtime binaries and user data folder (UDF); avoid broad exclusions.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| 2 bis 4 Prozessorkerne je Benutzer für Edge auf VDI | setzt eine Änderung voraus, die die Messung nicht stützt (die Angabe gilt für VDI allgemein und ist auf Servern mit mehreren Sitzungen kaum erreichbar; die Angabe zum Arbeitsspeicher ist aufgenommen) |
+| Automatische Updates auf nicht persistenten Maschinen abschalten, Prüfabstand des Updaters, Erststart-Erlebnis ausblenden, Startup boost, On-Premises-Sync, Ordner für Cache und Benutzerdaten nicht auf die Wurzel eines Laufwerks | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Eigene Cachegröße (DiskCacheSize) entfernen | setzt eine Änderung voraus, die die Messung nicht stützt |
+| msedge.exe nicht vom Citrix-Hooking ausnehmen (CTX695046) | widerspricht einer anderen Herstellerquelle (Microsoft nennt für ältere Versionen von Citrix das Abschalten der Hooks als Umgehung; der Artikel von Citrix behandelt nur Virtual Loopback) |
+| Citrix-Richtlinien, die das Darstellen sehr großer HTML-Tabellen bremsen | setzt eine Änderung voraus, die die Messung nicht stützt (eine Verzögerung ohne Engpass nennt keine Anwendung als Verursacher; die Bedingung `app.edge` gilt dort nicht) |
+| Berechtigungen des Ordners der WebView2-Runtime, Freigabe von msedgewebview2.exe für die Teams-Optimierung vor VDA 2402 | Quelle veraltet oder nur für ein anderes Produkt |
+
+## Citrix – Browser und Teams
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Browser content redirection (CVAD 2402 LTSR) | <https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2402-ltsr/multimedia/browser-content-redirection.html> | 2026-11-13 | `cpu.remedies[6]` Browser Content Redirection von Citrix für die betroffenen Seiten prüfen | Seite der Version 2402 LTSR. Laut Citrix muss die HTML5-Videoumleitung abgeschaltet sein, wenn die Umleitung genutzt wird. |
+| Optimization for Microsoft Teams (New) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams-new.html> | 2026-11-13 | `cpu.checks[9]` Prüfen, ob Teams in der Sitzung von des Benutzers mit Medienoptimierung lief<br>`memory.checks[7]` Prüfen, ob Teams in der Sitzung von des Benutzers mit Medienoptimierung lief | Abschnitt „Interoperability and roaming“. Wo Teams den Stand der Optimierung anzeigt, nennt diese Seite nicht (siehe „Auf dem Zielsystem zu bestätigen“). |
+| Optimization for Microsoft Teams (Classic) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams.html> | 2026-11-13 | `memory.checks[9]` Größe des Servers für Teams einordnen<br>`disk.checks[4]` Bedarf von Teams an Datenträgerzugriffen einordnen | Messung von Citrix mit dem klassischen Teams unter Windows Server 2019 (Version 2106), ohne Medien; beide Elemente sagen, dass es eine Messung mit dem klassischen Teams ist. Die Angabe „512 bis 1024 MB je Benutzer“ der Seite meint Speicherplatz, nicht Arbeitsspeicher, und ist nicht übernommen. |
+| Enable roaming for the new Microsoft Teams (Profile Management) | <https://docs.citrix.com/us/en/profile-management/current-release/how-to/enable-new-teams-roaming.html> | 2026-11-13 | `profile.checks[4]` Ausschlussliste des Profilcontainers auf Ordner von Teams prüfen | Abschnitt „Required settings for the container-based profile solution“. Microsoft nennt für nicht persistente Umgebungen eine eigene Ausschlussliste; für den Profilcontainer von Citrix gilt die Aussage von Citrix. |
+
+### Belegstellen
+
+- **Browser content redirection (CVAD 2402 LTSR)**
+  - „Client fetch client render scenario offloads all the network, CPU and RAM usage from Citrix VDA to the client and is the most optimal way to configure Browser content redirection“
+- **Optimization for Microsoft Teams (New)**
+  - „If the New VDI solution for Teams fails, Teams falls back directly to standard audio/video redirection rather than to WebRTC. A Teams app restart is required to re-run the selection and choose the optimization that fits.“
+- **Optimization for Microsoft Teams (Classic)**
+  - „40% scalability impact with Microsoft Teams Workload (81 users), when compared to Baseline (137 users).“
+  - „20% extra memory required with Microsoft Teams Workload, when compared to Baseline.“
+  - „~50% increase in IOPS write, ~100% increase in IOPS reads. Microsoft Teams can have a significant impact in an environment with slower storage.“
+- **Enable roaming for the new Microsoft Teams (Profile Management)**
+  - „Don't follow Microsoft's recommendations to exclude folders. Ensure that no folders under AppData\Local\Packages\MSTeams_8wekyb3d8bbwe are in the container exclusion list.“
+
+## Microsoft – Office
+
+In der Zielumgebung ist Office LTSC 2024 installiert. Die Elemente hängen an der Bedingung `app.office`; Schritte, die nur Outlook betreffen, beginnen mit „Bei Outlook:“, weil die Bedingung alle Office-Anwendungen umfasst. Mehrere Seiten sind für Microsoft 365 Apps oder für Outlook 2016 geschrieben; die Spalte „Hinweis“ und das Element sagen das.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Performance recommendations for Microsoft 365 Apps on Windows 10 | <https://learn.microsoft.com/en-us/microsoft-365-apps/best-practices/performance-recommendations> | 2026-11-13 | `cpu.checks[8]` Add-ins von der Anwendung prüfen<br>`cpu.remedies[8]` Add-ins von der Anwendung, die nicht gebraucht werden, entfernen und die übrigen aktuell halten<br>`memory.checks[6]` Add-ins von der Anwendung prüfen<br>`crash.checks[24]` Add-ins von der Anwendung als Ursache prüfen | Die Seite gilt für Microsoft 365 Apps unter Windows 10; zu Office LTSC 2024 sagt Microsoft nur, dass Add-ins früherer Versionen voraussichtlich funktionieren. Die Prüfschritte sagen, wofür Microsoft den Test beschreibt. Die Rücksprache mit den Benutzern und der Ort der Änderung stammen nicht von Microsoft. |
+| Add-ins are user re-enabled after being disabled by Office programs | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/add-ins-are-user-re-enabled-after-being-disabled> | 2026-11-13 | `hang.checks[14]` Bei Outlook: nachsehen, ob Office ein Add-in wegen langsamer Ausführung abgeschaltet hat und wie lange die … | Die Seite nennt die Ereignisse 45 und 59 im Protokoll „Anwendung“. |
+| You may experience application pauses if you have a large Outlook data file | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/application-pauses-if-you-have-large-data-file> | 2026-11-13 | `profile.checks[3]` Bei Outlook: Größe der OST-Datei und Zahl der Elemente je Ordner prüfen<br>`profile.remedies[1]` Lokale Postfachdaten von Outlook verkleinern<br>`hang.checks[15]` Bei Outlook: Größe der OST-Datei der betroffenen Benutzer prüfen | Die Zahlen zu Elementen je Ordner stehen auf der Seite „Outlook performance issues in a Cached Exchange Mode .ost or .pst file“. Die Werte der Richtlinie für den Zeitraum des Cache-Modus sind auf keiner gelesenen Seite belegt; der Katalog nennt deshalb keinen Wert. |
+| Limits to using personal folders files over LAN and WAN links | <https://learn.microsoft.com/en-us/troubleshoot/outlook/data-files/limits-using-pst-files-over-lan-wan> | 2026-11-13 | `share.checks[2]` Bei Outlook: prüfen, ob PST- oder OST-Dateien direkt auf einer Freigabe liegen | Microsoft nennt als Bedingungen eine Verbindung mit hoher Bandbreite und geringer Latenz und ein Outlook je Datei. |
+| Outlook not responding error or Outlook freezes when you open a file or send mail | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/outlook-not-responding-error-or-outlook-freezes> | 2026-11-13 | `hang.checks[16]` Bei Outlook: prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist und ob die Schutzsoftware ein A … | Die Seite nennt beide Ursachen getrennt; das Element fasst sie zusammen. |
+| Plan and configure Cached Exchange Mode in Outlook 2016 for Windows | <https://learn.microsoft.com/en-us/microsoft-365-apps/outlook/configuration/cached-exchange-mode> | 2026-11-13 | `disk.checks[3]` Bei Outlook: einordnen, ob die Last vom Cache-Modus kommt | Für Outlook 2016 geschrieben; ob die Aussage für Outlook LTSC 2024 gilt, sagt die Seite nicht. Das Element sagt das. |
+| Overview of Office LTSC 2024 | <https://learn.microsoft.com/en-us/office/ltsc/2024/overview> | 2026-11-13 | `crash.checks[25]` Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist | Dass die 64-Bit-Version mehr Arbeitsspeicher nutzen kann, steht nicht auf der Seite und ist nicht übernommen. |
+| Update Office LTSC 2024 | <https://learn.microsoft.com/en-us/office/ltsc/2024/update> | 2026-11-13 | `crash.remedies[9]` Office auf den aktuellen Stand bringen | Wie alt eine Version sein darf, sagt Microsoft nicht. Der Zusatz zum Master-Image stammt nicht von Microsoft. |
+
+### Belegstellen
+
+- **Performance recommendations for Microsoft 365 Apps on Windows 10**
+  - „Add-ins are one of the most common causes of poor app performance, especially at larger organizations.“
+- **Add-ins are user re-enabled after being disabled by Office programs**
+  - „However, if an add-in causes performance issues in an Office program, an Event ID: 59 is added to the Application Event log.“
+- **You may experience application pauses if you have a large Outlook data file**
+  - „More than 10 GB: When the .ost file reaches this size, short pauses begin to occur on most hardware.“
+- **Limits to using personal folders files over LAN and WAN links**
+  - „Microsoft will not assist in troubleshooting slow performance due to networked.pst or .ost files.“
+- **Outlook not responding error or Outlook freezes when you open a file or send mail**
+  - „Outlook stores certain data, such as email signatures and the spelling checker dictionary, in the AppData folder. If the network is performing slowly, Outlook must wait for read and write operations to the AppData directory to finish.“
+  - „If your antivirus software includes integration with Outlook, you may experience performance issues.“
+- **Plan and configure Cached Exchange Mode in Outlook 2016 for Windows**
+  - „When you configure a computer running RDS to use Cached Exchange Mode, be sure to consider the additional storage space and disk I/O that are required for multiple client accesses.“
+- **Overview of Office LTSC 2024**
+  - „Office LTSC 2024 is available in both 32-bit and 64-bit versions. We recommend 64-bit on devices with 4 GB or more of memory. However, you should assess application compatibility and other factors that might require the use of the 32-bit version.“
+- **Update Office LTSC 2024**
+  - „To minimize the size of the updates that need to be downloaded, we recommend keeping Office up to date.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Lizenzierung, Update-Kanal, Rearm vor dem Erstellen des Abbilds, Updates nur über das Master-Image | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Outlook-Suche: Suchindex, Windows-Suchdienst, EnablePerUserCatalog, Standard-Suchbereich | setzt eine Änderung voraus, die die Messung nicht stützt (Verursacher wäre der Suchdienst, keine Office-Anwendung; die Seiten von Citrix nennen Outlook LTSC 2024 nicht, die Seite von Microsoft zu RDSH und VDI ist für Office 2016 geschrieben) |
+| Outlook im Cache-Modus mit Profilcontainer als Leistungsgewinn | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (die Quelle nennt FSLogix) |
+| Zeiten, ab denen Start und Öffnen bedenklich sind (Outlook über 20 Sekunden, Word, Excel und PowerPoint über 10 Sekunden) | setzt eine Änderung voraus, die die Messung nicht stützt (die Messung erfasst keine Startdauer; eine Verzögerung ohne Engpass nennt keine Anwendung als Verursacher) |
+
+## Microsoft – Teams
+
+In der Zielumgebung läuft der neue Teams-Client mit Medienoptimierung: Audio, Video und Bildschirmfreigabe werden auf dem Endgerät verarbeitet. Die Elemente hängen an der Bedingung `app.teams`; der erste Schritt zu Teams fragt immer, ob die Sitzung optimiert lief (Quelle: Citrix, Abschnitt „Citrix – Browser und Teams“).
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Install Teams for Virtualized Desktop Infrastructure (VDI) | <https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy> | 2026-11-13 | `cpu.checks[5]` Prüfen, ob der Benutzer Microsoft Teams im Browser statt im Teams-Client nutzte<br>`cpu.remedies[9]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`memory.remedies[4]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`crash.checks[27]` Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen | Stand 2026-08-25. DisableFallback gilt ab Teams 24257; ob der Rückfall abgeschaltet wird, überlässt Microsoft dem Betreiber. Dieselbe Seite nennt Oktober 2026 als Ende der Unterstützung auf Windows Server 2022 und führt Windows Server 2022 in der Tabelle der Anforderungen weiter; `crash.checks[27]` nennt beides. Der Zusatz zum Master-Image stammt nicht von Microsoft. |
+| New VDI solution for Teams | <https://learn.microsoft.com/en-us/microsoftteams/vdi-2> | 2026-11-13 | `cpu.checks[10]` Klären, ob der Benutzer an einer Großveranstaltung<br>`cpu.checks[11]` Klären, ob der Benutzer seinen Bildschirm geteilt hat<br>`cpu.remedies[10]` Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen<br>`memory.checks[8]` Klären, ob der Benutzer an einer Großveranstaltung | Stand 2026-11-12. Die Messwerte von Microsoft zur Bildschirmfreigabe stammen von einer virtuellen Maschine mit einem Benutzer und vier Prozessoren; der Katalog nennt deshalb keine Zahl. Die vom Server kodierte Bildschirmfreigabe ist für Windows-Endgeräte laut Seite in der Vorschau. |
+| Include or exclude Teams from antivirus or DLP applications | <https://learn.microsoft.com/en-us/troubleshoot/microsoftteams/teams-administration/include-exclude-teams-from-antivirus-dlp> | 2026-11-13 | `crash.checks[26]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift<br>`crash.remedies[10]` Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt<br>`hang.checks[17]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift | Stand 2026-11-09. Microsoft spricht von Schutzsoftware anderer Hersteller; die Elemente sagen das. Die Zustimmung der Verantwortlichen für die Sicherheit stammt nicht von Microsoft. |
+
+### Belegstellen
+
+- **Install Teams for Virtualized Desktop Infrastructure (VDI)**
+  - „To disable fallback mode, set the value to 1. To enable audio only, set the value to 2. If the value isn't present or is set to 0 (zero), fallback mode is enabled.“
+  - „Teams for Web isn't supported in VDI environments, so performance and reliability may be negatively impacted if used in VDI.“
+  - „End-of-support dates for Windows Server 2019 and Windows Server 2022 are October 2025 and October 2026 respectively.“
+- **New VDI solution for Teams**
+  - „Attendees joining these types of events aren't optimized (WebRTC or SlimCore), hence they default to server-side rendering, incurring in high resource consumption on the virtual desktop (mostly CPU, RAM, and virtual channel bandwidth).“
+  - „If the user clicks on the "optimize" button in the sharing toolbar (intended for sharing videos), Teams attempts to ramp up to 15 fps and a higher CPU impact is expected. Capping MaxFPS somewhere between 5-10 can help reduce impact in this scenario.“
+- **Include or exclude Teams from antivirus or DLP applications**
+  - „These tools can degrade Teams client performance and also cause the app to exit unexpectedly.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Unterstützte Versionen des VDA, Freigabeliste der virtuellen Kanäle, Dienste der Teams-Umleitung, Proxy-Ausnahme, Bereitstellung im Master-Image, Auto-Update, Besprechungs-Add-in, Autostart | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Ausschlussliste von Microsoft für die Zwischenspeicher von Teams | widerspricht einer anderen Herstellerquelle (für den Profilcontainer von Citrix rät Citrix, ihr ohne lokale Zwischenspeicherung nicht zu folgen; die Aussage von Citrix ist aufgenommen) |
+| AppLocker: Herausgeberregeln für Teams | Quelle veraltet oder nur für ein anderes Produkt (Seite von 2024 für das klassische Teams) |
+| Windows-Updates gegen Fehler bei der Registrierung von Teams | Quelle veraltet oder nur für ein anderes Produkt (der Abschnitt gilt für FSLogix) |
+| Abkündigung der WebRTC-Optimierung, geringere CPU-Last ab VDA 2511 | setzt eine Änderung voraus, die die Messung nicht stützt (Hinweise für die Planung) |
+
+## Carl Stalhood (Empfehlung aus der Praxis)
+
+Die Anleitungen von Carl Stalhood (carlstalhood.com) sind eine Quelle aus der Praxis, keine Dokumentation eines Herstellers. Jedes Element aus dieser Quelle nennt sie in `source` mit dem Zusatz „Empfehlung aus der Praxis“ und ist im Text als Empfehlung aus der Praxis oder als Aussage der Praxisquelle formuliert, nie als Empfehlung des Herstellers. Die Seiten beschreiben Citrix-Versionen bis 2411; neuere deckt keine von ihnen ab.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Citrix Virtual Delivery Agent (VDA) 2411 | <https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/> | 2026-11-13 | `cpu.checks[19]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen<br>`cpu.checks[24]` Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`memory.checks[15]` Arbeitsspeicher der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`disk.checks[9]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen | Stand der Seite 4.12.2024. Die Größe (8 vCPU, 24 bis 48 GB) nennt die Seite für Windows Server 2016 bis 2022 als Server mit mehreren Sitzungen. Die Liste der Ausschlüsse gibt die Seite als Inhalt eines Beitrags von Citrix wieder, der nicht mehr erreichbar war; sie steht deshalb hier und nicht unter Citrix. Den Ausschluss des WEM-Agenten nennt die Seite „Workspace Environment Management (WEM) 2411“ derselben Quelle. |
+| Citrix Health Check | <https://www.carlstalhood.com/citrix-health-check/> | 2026-11-13 | `cpu.checks[25]` Energiesparplan des Servers feststellen<br>`memory.remedies[7]` Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher<br>`delay.many.checks[11]` Energiesparplan des Servers feststellen<br>`delay.single.checks[9]` Energiesparplan des Servers feststellen | Stand der Seite 28.2.2024 (Prüfliste). Zum Energiesparplan siehe „Ausnahmen: Praxisquelle vor Hersteller“. Die Aussage zum zugesagten Speicher ist ein Punkt der Prüfliste ohne Zahl. |
+| Citrix Profile Management 2411 | <https://www.carlstalhood.com/citrix-profile-management/> | 2026-11-13 | `share.remedies[1]` Active Write Back der Citrix Profilverwaltung abschalten<br>`profile.checks[12]` Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung aus der Praxis vergleichen<br>`profile.remedies[5]` Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen | Stand der Seite 8.2.2025. Die Empfehlung zu Streaming und Profilcontainer schreibt die Seite Citrix zu (CTX463658); der Artikel war nicht lesbar, deshalb steht sie hier und nicht unter Citrix. Die Prüfung der Ausschlüsse bei der Anmeldung („Logon Exclusion Check“) nennt die Seite nur als Möglichkeit und ist nicht übernommen; die Ausschlüsse für das klassische Teams ebenfalls nicht. |
+| Group Policy Computer Settings for VDAs | <https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/> | 2026-11-13 | `memory.remedies[8]` Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen | Stand der Seite 3.11.2023. „3 hours or similar“ ist eine Größenordnung. Dass die Zeitlimits nur an einer der beiden Stellen (Microsoft-Richtlinie oder Citrix-Richtlinie) gesetzt sein sollen, sagt auch Citrix („Session limits policy settings“); der Katalog nennt beide Stellen als Möglichkeit. |
+
+### Belegstellen
+
+- **Citrix Virtual Delivery Agent (VDA) 2411**
+  - „For Windows Server 2022, 2019, or 2016 RDSH, give the virtual machine 8 vCPU, and 24-48 GB of RAM“
+  - „Exclude the pagefile(s) from being scanned [...] Exclude Windows event logs from being scanned“
+- **Citrix Health Check**
+  - „Power management is set to High Performance with no sleep timers.“
+  - „Allocated VM Memory matches or exceeds memory Committed Bytes – Hypervisor monitoring can’t show actual VM memory usage.“
+- **Citrix Profile Management 2411**
+  - „Disable Active write back. This feature places additional load on the file server and is only needed if users login to multiple machines concurrently and need mid-session changes to be saved, or if users never log off from their sessions. Note: if you don’t disable this, then it is enabled by default.“
+  - „For fastest logons, Citrix recommends Profile streaming + Enable profile streaming for folders + Accelerate folder mirroring all enabled, or only enable Profile Container for the entire user profile.“
+  - „Under the File system node in the Group Policy Editor, enable the setting Enable Default Exclusion List – directories.“
+- **Group Policy Computer Settings for VDAs**
+  - „Set a time limit for active but idle Terminal Services sessions = enabled, 3 hours or similar [...] Set time limit for disconnected sessions = enabled, 3 hours or similar“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Virtuelle Hardware unter vSphere, Updates und Neustarts, Lizenzierung der Remotedesktopdienste, Zeitgrenzen des VDA, WEM-Agent auf den lastverteilten Namen, Protokoll der Profilverwaltung, maschinenweite Installation von Teams und OneDrive, Selbstaktualisierer abschalten | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
+| Schreibcache und Auslagerungsdatei bei Citrix Provisioning, Ereignisprotokolle auf beständigem Laufwerk bei Provisioning | gilt nur für Citrix Provisioning; die Worker der Zielumgebung werden über Machine Creation Services bereitgestellt |
+| AppData nicht auf eine Freigabe umleiten | der Hersteller sagt es für Outlook selbst (Microsoft, aufgenommen unter Office); für andere Anwendungen stützt die Messung es nicht |
+| Netzwerkschutz von Microsoft Defender abschalten | setzt eine Änderung voraus, die die Messung nicht stützt (Schutzfunktion; die Messung erfasst keine unterbrochenen Sitzungen) |
+| Drucken: keine direkten Verbindungen zu Druckservern, Citrix Universal Print Server | setzt eine Änderung voraus, die die Messung nicht stützt (in der Zielumgebung ordnet PrinTaurus SmartSpread die Drucker zu) |
+| Anmeldeverzögerungen aus Windows-Richtlinien, hängende Sitzungen veröffentlichter Anwendungen, lokale Profile löschen | setzt eine Änderung voraus, die die Messung nicht stützt (der Bericht hat keine Situation für die Dauer der Anmeldung) |
+
+## BIS-F (Empfehlung aus der Praxis)
+
+Das Base Image Script Framework (BIS-F) ist eine Sammlung von Skripten, die ein Master-Image vor dem Versiegeln vorbereiten: eine Quelle aus der Praxis, keine Dokumentation eines Herstellers. Was BIS-F einstellt, steht in seinen Skripten; die Dokumentation beschreibt den Stand 7.1912 (Windows Server bis 2019). Jedes Element nennt die Quelle mit dem Zusatz „Empfehlung aus der Praxis“.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| 97_PrepBISF_PRE_BaseImage.ps1 | <https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1> | 2026-11-13 | `cpu.remedies[15]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.many.remedies[1]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.single.remedies[2]` Energiesparplan „Höchstleistung“ einstellen | Skript des Zweigs „master“; BIS-F stellt den Plan beim Versiegeln ohne Bedingung ein. Der Vorschlag steht nur unter der Ausnahme des Auftraggebers (siehe „Ausnahmen: Praxisquelle vor Hersteller“); das Element nennt die Sicht von Microsoft und VMware. |
+
+### Belegstellen
+
+- **97_PrepBISF_PRE_BaseImage.ps1**
+  - „Description = "Set Power Saving Scheme to High Performance";“ mit dem Befehl „powercfg.exe [...] -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Receive Side Scaling abschalten | widerspricht einer anderen Herstellerquelle (bei Microsoft ist es standardmäßig eingeschaltet; hier gilt nach Entscheidung des Auftraggebers der Hersteller, und BIS-F widerspricht sich in Skript und Versionshinweisen selbst) |
+| Ereignisprotokolle und Spool-Ordner auf einen beständigen Cache-Datenträger legen | beschreibt einen Zustand des Workers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; setzt einen beständigen Datenträger voraus, den die Zielumgebung nicht hat) |
+| Windows-Update-Dienst im Abbild abschalten, Netzwerkeinstellungen (Task-Offload, UDP, ARP), Auslagerungsdatei fest einstellen, Leistungsindikatoren neu aufbauen, .NET vorkompilieren, Citrix Optimizer, Reihenfolge der Dienste beim Start | beschreibt einen Zustand des Master-Image, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; die Quelle ist für Windows Server 2022 sichtbar älter) |
+| Einstellungen für Citrix Provisioning (Schreibcache) | gilt nur für Citrix Provisioning |
+
+## Ausnahmen: Praxisquelle vor Hersteller
+
+Widerspricht eine Quelle aus der Praxis dem Hersteller, gilt der Hersteller, und der Text nennt die andere Sicht. Ausnahmen legt der Auftraggeber fest. Festgelegt ist eine:
+
+- **Energiesparplan.** Die Praxisquellen stellen für Citrix-Server den Plan „Höchstleistung“ ein (Carl Stalhood, Citrix Health Check: „Power management is set to High Performance with no sleep timers“; BIS-F beim Versiegeln des Master-Image). Microsoft liefert Windows Server mit dem Plan „Ausbalanciert“ aus und nennt ihn als empfohlene Vorgabe für allgemeine Last („Overview about power and performance tuning for the Windows Server“, <https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning>, Abruf 2026-11-13). VMware rät, bei der Suche nach der Ursache von Leistungs- und Latenzproblemen in virtuellen Maschinen den Plan „Höchstleistung“ zu wählen („Poor network performance or high network latency on Windows virtual machines“, <https://knowledge.broadcom.com/external/article/310350>, Abruf 2026-11-13). Hier gelten die Praxisquellen. Begründung des Auftraggebers: Die Praxisquellen beziehen sich auf Citrix-Terminalserver und auf Betriebserfahrung, die Dokumentation der Hersteller nicht. Die Elemente dazu (ein Prüfschritt mit der Quelle Carl Stalhood, ein Abhilfevorschlag mit der Quelle BIS-F, in den Situationen `cpu`, `delay.many` und `delay.single`) nennen alle drei Sichten.
+
+Keine Ausnahme ist Receive Side Scaling: BIS-F schaltet es ab, bei Microsoft ist es standardmäßig eingeschaltet; hier gilt der Hersteller, und der Katalog enthält dazu kein Element.
+
 ## WorkerPerf
 
 Eigene Hinweise der Auswertung. Diese Elemente der Situation `print` stammen von keinem Hersteller: Sie führen zu
 dem, was der Bericht bei der Ursache des Vorfalls nennt (die Muster), oder sagen, was nicht gemessen oder nicht
-geprüft wurde und wie sich das nachholen lässt. Weil in der Situation `print` jedes Element eine Quelle nennt,
+geprüft wurde und wie sich das nachholen lässt, oder was aus der Zielumgebung folgt (Zuordnung der Drucker durch
+ein Zuordnungswerkzeug, Reichweite des Rückblicks). Weil in der Situation `print` jedes Element eine Quelle nennt,
 tragen sie die Quelle „WorkerPerf: Hinweis zur Auswertung“. Keines ist als Empfehlung eines Herstellers formuliert,
 und keines nennt einen Hersteller.
 
 | Titel | Übernommene Elemente | Hinweis |
 |---|---|---|
-| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. |
+| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen<br>`print.checks[27]` Zuordnung der Drucker durch ein Zuordnungswerkzeug bei Anmeldung und Wiederverbindung<br>`print.checks[29]` Vorfall vor der Messung: Reichweite des Rückblicks auf nicht persistenten Workern | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. Der Schritt zur Zuordnung der Drucker nennt kein Produkt: Wie PrinTaurus SmartSpread zuordnet, dokumentiert sein Hersteller nicht öffentlich (siehe Abschnitt AKI). |
 
 ## Auf dem Zielsystem zu bestätigen
 
@@ -323,3 +641,15 @@ angepasst.
   ihren Werten (englisch wie in der Quelle); „Profil zurücksetzen“ in Citrix Director; „CPU Spikes Protection“ in
   Citrix Workspace Environment Management; der Dienst „Citrix Print Manager Service“ (CpSvc.exe).
 - **VMware:** die CPU-Bereitschaft („Ready“) im Leistungsdiagramm der virtuellen Maschine im vCenter.
+- **Standardanwendungen (`src/apps.json`):** die Prozessnamen der Office-Anwendungen (WINWORD.EXE, EXCEL.EXE,
+  OUTLOOK.EXE, POWERPNT.EXE, ONENOTE.EXE, MSACCESS.EXE) stehen auf keiner der gelesenen Seiten von Microsoft; belegt
+  sind msedge.exe, msedgewebview2.exe, ms-teams.exe und PtSmartSpreadClient.exe. Zu bestätigen sind auch der
+  Anzeigename des PrinTaurus SmartSpread Client unter „Programme und Features“ und die deutschen Bezeichnungen in
+  Microsoft Edge (Browser-Task-Manager, schlafende Tabs) und in Outlook (Datendateien, Exchange-Cache-Modus).
+- **Workspace Environment Management:** der Name des Ereignisprotokolls des Agenten in der Ereignisanzeige („WEM
+  Agent Service“, in älteren Texten „Norskale Agent Service“) und die Prozessnamen des Agenten in `src/roles.json`;
+  die Kurznamen seiner Dienste dokumentiert Citrix nicht.
+- **Teams:** wo der Teams-Client den Stand der VDI-Optimierung anzeigt und wie der Text dort lautet (Microsoft nennt
+  für die neue VDI-Lösung „Citrix SlimCore Media Optimized“).
+- **Energiesparplan:** die deutschen Namen der Pläne („Höchstleistung“, „Ausbalanciert“) und die Ausgabe von
+  „powercfg /getactivescheme“ auf dem Zielsystem.
