@@ -81,10 +81,16 @@
     "before": "Vor der Messung aufgetreten, {count}-mal; für diese Zeit liegen keine Messwerte vor."
   },
   "lagebild": {
-    "red": "Handlungsbedarf: {bottlenecks}-mal Engpass auf dem Server, {delays}-mal Verzögerung, {events}-mal Absturz oder Fehler, {chronic}-mal Dauerzustand; {minutes} min mit spürbarer Störung.",
-    "yellow": "Auffälligkeiten ohne erkannten Engpass auf dem Server: {delays}-mal Verzögerung, {events}-mal Absturz oder Fehler, {chronic}-mal Dauerzustand; {minutes} min mit spürbarer Störung.",
+    "red": "Handlungsbedarf: {parts}; {minutes} min mit spürbarer Störung.",
+    "yellow": "Auffälligkeiten ohne erkannten Engpass auf dem Server: {parts}; {minutes} min mit spürbarer Störung.",
     "green": "Keine Störung erkannt.",
-    "greenSkipped": "In den gemessenen Werten keine Störung erkannt; Vorfälle aus Ereignissen wurden nicht erfasst. Nicht gemessen: {skipped}."
+    "greenSkipped": "In den gemessenen Werten keine Störung erkannt; Vorfälle aus Ereignissen wurden nicht erfasst. Nicht gemessen: {skipped}.",
+    "partBottlenecks": "{bottlenecks}-mal Engpass auf dem Server",
+    "partDelays": "{delays}-mal Verzögerung",
+    "partEvents": "{events}-mal Absturz oder Fehler",
+    "partChronic": "{chronic}-mal Dauerzustand",
+    "partSeparator": ", ",
+    "notMeasured": "Nicht gemessen: {skipped}."
   },
   "hints": {
     "unmeasured": "Nicht gemessen: {signals}. Ein Engpass oder eine Auffälligkeit dort ist nicht ausgeschlossen.",
@@ -102,7 +108,13 @@
     "affected": "Betroffene Sitzungen: {affected}",
     "checks": "Empfohlene Prüfschritte:",
     "remedies": "Mögliche Abhilfe (Vorschlag):",
-    "contact": "An wen wenden:"
+    "contact": "An wen wenden:",
+    "maxChecks": 5,
+    "maxRemedies": 3,
+    "moreChecks": "Weitere {count} Prüfschritte stehen im Bericht.",
+    "moreCheck": "Ein weiterer Prüfschritt steht im Bericht.",
+    "moreRemedies": "Weitere {count} Vorschläge stehen im Bericht.",
+    "moreRemedy": "Ein weiterer Vorschlag steht im Bericht."
   },
   "fallbackNote": "Für diese Art von Vorfall enthält der Katalog keine eigene Anleitung; die folgenden Schritte sind allgemein gehalten.",
   "situations": {

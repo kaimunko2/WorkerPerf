@@ -572,6 +572,63 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $all = @(Get-CopyTexts $D); $all.Count | Should -Be (2 * (12 + 4) + 2)
         foreach ($t in $all) { $t | Should -Not -BeNullOrEmpty; Get-LongLines $t | Should -BeNullOrEmpty }
     }
+    It 'nimmt in den Kopiertext eines Vorfalls nur die ersten Pruefschritte und Vorschlaege und sagt, wie viele weitere im Bericht stehen' {   # ruling P3-R59
+        # the numbers are the catalogue's and stand in the report data (the page folds what exceeds them)
+        $maxChecks = [int]$Catalogue.copy.maxChecks; $maxRemedies = [int]$Catalogue.copy.maxRemedies
+        $maxChecks | Should -Be 5; $maxRemedies | Should -Be 3; $D.guidance.copy.maxChecks | Should -Be 5; $D.guidance.copy.maxRemedies | Should -Be 3
+        function Get-CopySteps([string]$Text) {
+            # the numbered checks, the remedies and the lines on left-out steps of one copy text
+            $lines = @($Text -split "`r`n")
+            $at = [array]::IndexOf($lines, [string]$Catalogue.copy.remedies); $end = [array]::IndexOf($lines, [string]$Catalogue.copy.contact); if ($end -lt 0) { $end = $lines.Count }
+            $remedies = @(); if ($at -ge 0) { $remedies = @($lines[($at + 1)..($end - 1)] | Where-Object { $_ -match '^- ' }) }
+            @{ Checks = @($lines | Where-Object { $_ -match '^\d+\. ' }); Remedies = $remedies; Lines = $lines }
+        }
+        function Get-MoreLine([int]$Left, [string]$One, [string]$Many) { if ($Left -eq 1) { [string]$Catalogue.copy.$One } elseif ($Left -gt 1) { ([string]$Catalogue.copy.$Many).Replace('{count}', [string]$Left) } }
+        $more = @([string]$Catalogue.copy.moreCheck, [string]$Catalogue.copy.moreRemedy, ([string]$Catalogue.copy.moreChecks).Split('{')[0], ([string]$Catalogue.copy.moreRemedies).Split('{')[0])
+        # the print incident: the longest guidance of the hour; the report data keep every step
+        $print = Get-ByKey 'print.spooler'
+        $checks = @($print.guide.checks).Count; $remedies = @($print.guide.remedies).Count
+        $checks | Should -BeGreaterThan 10; $remedies | Should -BeGreaterThan 10
+        foreach ($t in $print.copy.named, $print.copy.anonymous) {
+            $s = Get-CopySteps $t
+            $s.Checks.Count | Should -Be 5; $s.Remedies.Count | Should -Be 3
+            @($s.Checks | ForEach-Object { ($_ -split '\. ', 2)[0] }) | Should -Be @('1', '2', '3', '4', '5')
+            $s.Lines | Should -Contain (Get-MoreLine ($checks - 5) 'moreCheck' 'moreChecks'); $s.Lines | Should -Contain (Get-MoreLine ($remedies - 3) 'moreRemedy' 'moreRemedies')
+            # the first steps of the guide, in its order
+            $flat = $t -replace "`r`n\s*", ' '
+            $last = -1
+            foreach ($c in @($print.guide.checks)[0..4]) { $here = $flat.IndexOf(([string]$c.text).Substring(0, 25)); $here | Should -BeGreaterThan $last; $last = $here }
+            # every contact
+            foreach ($c in @($print.guide.contacts)) { $flat.Contains(([string]$c.text).Substring(0, 20)) | Should -BeTrue }
+            $s.Lines.Count | Should -BeLessThan 110
+        }
+        # every incident of the report, with and without names: the steps the catalogue allows, the line only where steps are left out
+        $short = 0
+        foreach ($i in @($D.incidents) + @($D.before.incidents)) {
+            $checks = @($i.guide.checks).Count; $remedies = @($i.guide.remedies).Count
+            foreach ($t in $i.copy.named, $i.copy.anonymous) {
+                $s = Get-CopySteps $t
+                $s.Checks.Count | Should -Be ([Math]::Min($checks, $maxChecks)) -Because "Vorfall $($i.id)"; $s.Remedies.Count | Should -Be ([Math]::Min($remedies, $maxRemedies)) -Because "Vorfall $($i.id)"
+                $want = @(@((Get-MoreLine ($checks - $maxChecks) 'moreCheck' 'moreChecks'), (Get-MoreLine ($remedies - $maxRemedies) 'moreRemedy' 'moreRemedies')) | Where-Object { $_ })
+                @($s.Lines | Where-Object { $line = $_; @($more | Where-Object { $line.StartsWith($_) }).Count -gt 0 }) | Should -Be $want -Because "Vorfall $($i.id)"
+            }
+            if ($checks -le $maxChecks -and $remedies -le $maxRemedies) { $short++ }
+        }
+        $short | Should -BeGreaterThan 0                                                            # an incident with fewer steps has no such line
+        # the summary of the capture is not shortened and has no such line
+        foreach ($t in $D.copyAll.named, $D.copyAll.anonymous) {
+            @($t -split "`r`n" | Where-Object { $line = $_; @($more | Where-Object { $line.StartsWith($_) }).Count -gt 0 }) | Should -Be @()
+            @($t -split "`r`n" | Where-Object { $_ -match '^- ' }).Count | Should -Be (12 + 4)
+        }
+        # a masked report alike
+        foreach ($f in $R.Masked, $R.MaskedP) {
+            $x = Get-ReportData $f; $p = $x.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.event.kind -eq 'print' }
+            $s = Get-CopySteps $p.copy.named
+            $s.Checks.Count | Should -Be 5 -Because $f; $s.Remedies.Count | Should -Be 3 -Because $f; @($p.guide.checks).Count | Should -Be @($print.guide.checks).Count -Because $f
+            $s.Lines | Should -Contain (Get-MoreLine (@($p.guide.checks).Count - 5) 'moreCheck' 'moreChecks') -Because $f
+            $x.guidance.copy.maxChecks | Should -Be 5 -Because $f
+        }
+    }
     It 'maskiert Anleitung und Kopiertexte im maskierten Bericht und laesst die Fassung ohne Namen weg' {
         $m = Get-ReportData $R.Masked
         $m.copyAll.anonymous | Should -BeNullOrEmpty; $m.copyAll.named | Should -Not -Match 'SIM-VDA01'; (($m.incidents | Where-Object lead -eq 'cpu').copy.named) | Should -Not -Match 'user003'

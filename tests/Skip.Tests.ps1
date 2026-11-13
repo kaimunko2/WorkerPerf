@@ -212,6 +212,37 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         @('Voll', 'Ereignisse', 'Rueckblick', 'Alle', 'Drucken' | ForEach-Object { $D[$_].print.involvedFrom }) | Should -Be @('both', 'lookback', 'capture', 'none', 'both')
         (Get-ReportData $Rep.AlleMasked.Report).print.involvedFrom | Should -Be 'none'
     }
+    It 'zaehlt im Satz des Lagebilds ohne <Name> keine weggelassene Kategorie als null: <Left> fehlt' -ForEach @(   # Gefuehrter Bericht, ruling P3-R49
+        @{ Name = 'Voll'; Left = @() }; @{ Name = 'Ereignisse'; Left = @('partEvents') }; @{ Name = 'Citrix'; Left = @('partChronic') }; @{ Name = 'Alle'; Left = @('partEvents', 'partChronic') }
+        @{ Name = 'Prozesse'; Left = @() }; @{ Name = 'Laufwerke'; Left = @() }; @{ Name = 'Rueckblick'; Left = @() }; @{ Name = 'Drucken'; Left = @() }; @{ Name = 'Gegenstellen'; Left = @() }
+    ) {
+        # the texts of the catalogue as the report data carry them (no wording pinned here)
+        $x = $D[$Name]; $lb = $x.guidance.lagebild; $k = $x.lagebild.kpis
+        $x.lagebild.state | Should -Be 'red'
+        $filled = [ordered]@{ partBottlenecks = $lb.partBottlenecks.Replace('{bottlenecks}', [string]$k.bottlenecks); partDelays = $lb.partDelays.Replace('{delays}', [string]$k.delays)
+            partEvents = $lb.partEvents.Replace('{events}', [string]$k.events); partChronic = $lb.partChronic.Replace('{chronic}', [string]$k.chronic) }
+        foreach ($t in $filled.Values) { $t | Should -Not -Match '[{}]' }
+        # a part that is left out would have counted zero; every other part stands in the sentence, in its order
+        foreach ($part in $Left) { $k.($part.Substring(4).ToLowerInvariant()) | Should -Be 0 -Because $part }
+        $parts = @($filled.Keys | Where-Object { $Left -notcontains $_ } | ForEach-Object { $filled[$_] }) -join $lb.partSeparator
+        $minutes = ([double]$k.minutes).ToString('0.#', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+        $want = $lb.red.Replace('{parts}', $parts).Replace('{minutes}', $minutes)
+        # the reservation names the categories left out, as the green sentence does; none in a sentence that lists every part
+        $reserve = $lb.notMeasured.Replace('{skipped}', (@($x.skipped | ForEach-Object { $_.label }) -join ', '))
+        if ($Left.Count -gt 0) { $want += ' ' + $reserve }
+        $x.lagebild.sentence | Should -BeExactly $want
+        foreach ($part in $Left) { $x.lagebild.sentence.Contains($filled[$part]) | Should -BeFalse -Because $part }
+        if ($Left.Count -eq 0) { $x.lagebild.sentence.Contains($lb.notMeasured.Split('{')[0]) | Should -BeFalse }
+        # where the events were left out, the page writes "nicht gemessen" at the key figure: the same place decides here
+        (@($x.skipped | ForEach-Object { $_.places }) -contains 'events') | Should -Be ($Left -contains 'partEvents')
+        # the summary to copy says the same
+        ($x.copyAll.named -replace "`r`n\s*", ' ').Contains($want) | Should -BeTrue
+    }
+    It 'laesst den Satz des Lagebilds im maskierten Bericht ohne alle Kategorien ohne Nullen fuer nicht Gemessenes' {   # ruling P3-R49
+        $m = Get-ReportData $Rep.AlleMasked.Report; $lb = $m.guidance.lagebild
+        foreach ($part in 'partEvents', 'partChronic') { $m.lagebild.sentence.Contains(($lb.$part -replace '\{\w+\}', '0')) | Should -BeFalse -Because $part }
+        $m.lagebild.sentence | Should -BeExactly $D.Alle.lagebild.sentence
+    }
     It 'liest die Dateien einer Kategorie nicht, die Skip nennt, auch wenn die Aufzeichnung sie hat' {   # Abschlussrunde (Minor 6, MK-R20)
         # eine Kopie des vollen Laufs mit "Skip": "Prozesse" (New-SkipReports, Odd) und mit "Skip": ["Prozesse"]: der Bericht
         # ist der einer Aufzeichnung mit -Skip Prozesse, soweit die Dateien reichen

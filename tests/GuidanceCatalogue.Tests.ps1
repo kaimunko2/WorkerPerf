@@ -236,7 +236,11 @@ Describe 'Katalog in src' {
     It 'haelt in den Texten ausserhalb der Situationen die vereinbarten Platzhalter ein' {                       # ruling P3-R26
         $allowed = @{ 'copy.head' = @('server', 'date'); 'copy.summaryHead' = @('server', 'date', 'from', 'to'); 'copy.measure' = @('value', 'target'); 'copy.affected' = @('affected')
             'copy.cause' = @(); 'copy.checks' = @(); 'copy.remedies' = @(); 'copy.contact' = @()
-            'lagebild.red' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents'); 'lagebild.yellow' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents')
+            # fix round 3 (rulings P3-R49, P3-R59): the counts stand in the parts of the red and the yellow sentence; the copy text says how many steps it left out
+            'copy.maxChecks' = @(); 'copy.maxRemedies' = @(); 'copy.moreChecks' = @('count'); 'copy.moreCheck' = @(); 'copy.moreRemedies' = @('count'); 'copy.moreRemedy' = @()
+            'lagebild.red' = @('parts', 'minutes', 'incidents'); 'lagebild.yellow' = @('parts', 'minutes', 'incidents')
+            'lagebild.partBottlenecks' = @('bottlenecks'); 'lagebild.partDelays' = @('delays'); 'lagebild.partEvents' = @('events'); 'lagebild.partChronic' = @('chronic')
+            'lagebild.partSeparator' = @(); 'lagebild.notMeasured' = @('skipped')
             'lagebild.green' = @(); 'lagebild.greenSkipped' = @('skipped'); 'hints.unmeasured' = @('signals'); 'hints.skipped' = @('skipped'); 'hints.error' = @('message')
             'hints.errorNoMessage' = @(); 'hints.notFinished' = @(); 'hints.stopped' = @(); 'userView.unknown' = @('duration', 'from', 'to') }
         foreach ($k in 'many', 'one', 'none', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { $allowed["userView.$k"] = @('affected', 'duration', 'from', 'to', 'count') }
@@ -253,6 +257,67 @@ Describe 'Katalog in src' {
         $Real.hints.unmeasured | Should -Match '\{signals\}'; $Real.hints.skipped | Should -Match '\{skipped\}'; $Real.hints.error | Should -Match '\{message\}'
         $Real.copy.measure | Should -Match '\{value\}'; $Real.copy.measure | Should -Match '\{target\}'; $Real.copy.affected | Should -Match '\{affected\}'
         $Real.copy.head | Should -Match '\{server\}'; $Real.copy.head | Should -Match '\{date\}'
+        # each part of the red and the yellow sentence names its count, both sentences their parts and the minutes
+        foreach ($k in 'red', 'yellow') { $Real.lagebild.$k | Should -Match '\{parts\}' -Because $k; $Real.lagebild.$k | Should -Match '\{minutes\}' -Because $k }
+        foreach ($k in 'Bottlenecks', 'Delays', 'Events', 'Chronic') { $Real.lagebild."part$k" | Should -Match ('^\{' + $k.ToLowerInvariant() + '\}-mal \S') -Because $k }
+        $Real.lagebild.notMeasured | Should -Match '\{skipped\}'; $Real.copy.moreChecks | Should -Match '\{count\}'; $Real.copy.moreRemedies | Should -Match '\{count\}'
+    }
+    It 'baut den roten und den gelben Satz des Lagebilds aus Teilen und zaehlt nicht Gemessenes nie als null' {     # fix round 3, A1 (ruling P3-R49)
+        $say = { param($Incidents, [string[]]$Skip)
+            $ctx = New-Ctx; $ctx.Data.skipped = @(Get-WorkerPerfSkippedOut $Skip $Texts)
+            (Get-WorkerPerfLagebild -Incidents $Incidents -Data $ctx.Data -Catalogue $Real -Texts $Texts).sentence }
+        $delay = New-Inc @{ id = 2; type = 'ohne-engpass'; severity = 1; affected = @(@{ s = 1 }) }
+        $crash = New-Inc @{ id = 3; type = 'ereignis'; start = [long](1e12 + 660000); end = [long](1e12 + 660000); event = @{ kind = 'crash'; app = 'simapp.exe' } }
+        $chronic = New-Inc @{ id = 4; type = 'umfeld'; chronic = $true; start = [long]1e12; end = [long](1e12 + 3600000); signals = @(New-Sig 'ica.rtt' 'network' 'ICA Round Trip' 225 'ms' 'unter 150 ms') }
+        $red = @((New-Engpass 'cpu'), $delay, $crash, $chronic)
+        # a complete capture: the sentence as before this round, word for word
+        & $say $red @() | Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Absturz oder Fehler, 1-mal Dauerzustand; 2 min mit spürbarer Störung.'
+        & $say @($delay) @() | Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung, 0-mal Absturz oder Fehler, 0-mal Dauerzustand; 2 min mit spürbarer Störung.'
+        # without events, without Citrix, without everything: no part that would count zero, and the reservation
+        & $say @((New-Engpass 'cpu'), $delay, $chronic) @('Ereignisse') |
+            Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Dauerzustand; 2 min mit spürbarer Störung. Nicht gemessen: Ereignisse.'
+        & $say @((New-Engpass 'cpu'), $delay, $crash) @('Citrix') |
+            Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Absturz oder Fehler; 2 min mit spürbarer Störung. Nicht gemessen: Citrix.'
+        $all = @($script:WorkerPerfCategories.Keys | Where-Object { $script:WorkerPerfCategories[$_].Active })
+        & $say @($delay) $all |
+            Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung; 2 min mit spürbarer Störung. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rückblick, Drucken, Gegenstellen.'
+        # a zero stands only for what was measured: without events none for crashes, without Citrix none for chronic states
+        foreach ($list in @($delay), @((New-Engpass 'cpu'), $delay)) {
+            & $say $list @('Ereignisse') | Should -Not -Match '(?<!\d)0-mal Absturz'; & $say $list @('Ereignisse') | Should -Match '(?<!\d)0-mal Dauerzustand'
+            & $say $list @('Citrix') | Should -Not -Match '(?<!\d)0-mal Dauerzustand'; & $say $list @('Citrix') | Should -Match '(?<!\d)0-mal Absturz'
+            & $say $list $all | Should -Not -Match '(?<!\d)0-mal'
+        }
+        # a category no part of the sentence depends on leaves the sentence as it is
+        & $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen') | Should -BeExactly (& $say $red @())
+    }
+    It 'nimmt in den Kopiertext die ersten fuenf Pruefschritte und drei Vorschlaege und sagt, wie viele weitere im Bericht stehen' {      # fix round 3, A2 (ruling P3-R59)
+        $Real.copy.maxChecks | Should -Be 5; $Real.copy.maxRemedies | Should -Be 3
+        $Real.copy.moreChecks | Should -BeExactly 'Weitere {count} Prüfschritte stehen im Bericht.'; $Real.copy.moreCheck | Should -BeExactly 'Ein weiterer Prüfschritt steht im Bericht.'
+        $Real.copy.moreRemedies | Should -BeExactly 'Weitere {count} Vorschläge stehen im Bericht.'; $Real.copy.moreRemedy | Should -BeExactly 'Ein weiterer Vorschlag steht im Bericht.'
+        # the print incident with an HP driver in the spooler: the longest guidance of the catalogue
+        $inc = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; causeText = 'Ohne Benutzersitzung.'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe'; driver = 'Sim PCL 6'; noUserSession = $true
+                patterns = @(@{ id = 'printdriver'; detail = @{ module = 'hpsimgr.dll'; driver = 'Sim PCL 6' } }); modules = @(@{ name = 'hpsimgr.dll'; count = 1 }) }
+            events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }
+        $g = Get-Guide $inc
+        $checks = @($g.checks).Count; $remedies = @($g.remedies).Count; $checks | Should -BeGreaterThan 10; $remedies | Should -BeGreaterThan 10
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts)
+        $numbered = @($p | Where-Object { $_ -match '^\d+\. ' }); $numbered.Count | Should -Be 5
+        for ($n = 0; $n -lt 5; $n++) { $numbered[$n].StartsWith(('{0}. {1}' -f ($n + 1), $g.checks[$n].text)) | Should -BeTrue -Because "Schritt $($n + 1)" }
+        $at = [array]::IndexOf($p, $Real.copy.remedies); $end = [array]::IndexOf($p, $Real.copy.contact)
+        $p[$at - 2] | Should -BeExactly "Weitere $($checks - 5) Prüfschritte stehen im Bericht."; $p[$at - 3] | Should -Be $numbered[4]
+        $proposals = @($p[($at + 1)..($end - 2)])
+        $proposals.Count | Should -Be 4; $proposals[3] | Should -BeExactly "Weitere $($remedies - 3) Vorschläge stehen im Bericht."
+        for ($n = 0; $n -lt 3; $n++) { $proposals[$n].EndsWith($g.remedies[$n].text) | Should -BeTrue -Because "Vorschlag $($n + 1)" }
+        # every contact
+        @($p[($end + 1)..($p.Count - 1)]).Count | Should -Be @($g.contacts).Count
+        # the guidance itself is complete, and a line of the text has at most 78 characters
+        @($g.checks).Count | Should -Be $checks
+        @((New-WorkerPerfCopyText -Incident $inc -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts) -split "`r`n" | Where-Object { $_.Length -gt 78 }) | Should -Be @()
+        # an incident with fewer steps: no such line (a chronic state of the connection)
+        $few = New-Inc @{ type = 'umfeld'; chronic = $true; start = [long]1e12; end = [long](1e12 + 3600000); signals = @(New-Sig 'ica.rtt' 'network' 'ICA Round Trip' 225 'ms' 'unter 150 ms') }
+        $g = Get-Guide $few
+        @($g.checks).Count | Should -BeLessOrEqual 5; @($g.remedies).Count | Should -BeLessOrEqual 3
+        @(Get-WorkerPerfCopyParagraphs -Incident $few -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts | Where-Object { $_ -match 'stehen? im Bericht\.$' }) | Should -Be @()
     }
     It 'waehlt die Benutzersicht ohne Luecke, auch ohne Dauer und ohne Zahl der Betroffenen' {
         # a text that cannot be filled falls back to userView.unknown, which therefore needs no value at all

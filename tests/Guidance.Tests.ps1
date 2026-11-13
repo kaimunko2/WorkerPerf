@@ -41,12 +41,18 @@ BeforeAll {
                 @{ key = 'Microsoft'; match = @('Microsoft*') }, @{ key = 'Citrix'; match = @('Citrix*') })
             userView     = @{ many = '{affected} Sitzungen waren betroffen.'; one = '{affected} Sitzung war betroffen.'; none = 'Niemand war betroffen.'; unknown = 'Unbekannt.'
                 chronic = 'Dauerzustand.'; eventMany = 'Viele.'; eventOne = 'Einer.'; eventNone = 'Keiner.'; before = 'Vor der Messung.' }
-            lagebild     = @{ red = '{bottlenecks} Engpaesse.'; yellow = '{delays} Verzoegerungen.'; green = 'Keine Störung erkannt.'; greenSkipped = 'Keine Störung erkannt; nicht erfasst: {skipped}.' }
+            # the red and the yellow sentence are joined from parts; one that was not measured is left out (ruling P3-R49)
+            lagebild     = @{ red = 'Rot: {parts}.'; yellow = 'Gelb: {parts}.'; green = 'Keine Störung erkannt.'; greenSkipped = 'Keine Störung erkannt; nicht erfasst: {skipped}.'
+                partBottlenecks = '{bottlenecks} Engpaesse'; partDelays = '{delays} Verzoegerungen'; partEvents = '{events} Ereignisse'; partChronic = '{chronic} Dauerzustaende'
+                partSeparator = ', '; notMeasured = 'Nicht gemessen: {skipped}.' }
             hints        = @{ unmeasured = 'Nicht gemessen: {signals}.'; skipped = 'Abgeschaltet: {skipped}.'; notFinished = 'Nicht beendet.'; error = 'Fehler: {message}'
                 errorNoMessage = 'Fehler.'; stopped = 'Angehalten.' }
             # the placeholders of ruling P3-R26 only
             copy         = @{ head = 'WorkerPerf {server}, {date}'; summaryHead = 'WorkerPerf {server}, {date}, {from} bis {to}'; measure = 'Messwert: {value}, Soll {target}'
-                cause = 'Verursacher:'; affected = 'Betroffen: {affected}'; checks = 'Empfohlene Pruefschritte:'; remedies = 'Moegliche Abhilfe (Vorschlag):'; contact = 'Ansprechpartner:' }
+                cause = 'Verursacher:'; affected = 'Betroffen: {affected}'; checks = 'Empfohlene Pruefschritte:'; remedies = 'Moegliche Abhilfe (Vorschlag):'; contact = 'Ansprechpartner:'
+                # a copy text carries the first steps only and says how many more the report has (ruling P3-R59)
+                maxChecks = 5; maxRemedies = 3; moreChecks = 'Weitere {count} Pruefschritte im Bericht.'; moreCheck = 'Ein weiterer Pruefschritt im Bericht.'
+                moreRemedies = 'Weitere {count} Vorschlaege im Bericht.'; moreRemedy = 'Ein weiterer Vorschlag im Bericht.' }
             fallbackNote = 'Keine spezifische Anleitung.'
             situations   = @{}
         }
@@ -130,9 +136,9 @@ Describe 'Katalog laden und pruefen' {
     }
     It 'verlangt den Schluessel <Key> im Teil <Part>' -TestCases @(
         @(foreach ($k in 'many', 'one', 'none', 'unknown', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { @{ Part = 'userView'; Key = $k } })
-        @(foreach ($k in 'red', 'yellow', 'green', 'greenSkipped') { @{ Part = 'lagebild'; Key = $k } })
+        @(foreach ($k in 'red', 'yellow', 'green', 'greenSkipped', 'partBottlenecks', 'partDelays', 'partEvents', 'partChronic', 'partSeparator', 'notMeasured') { @{ Part = 'lagebild'; Key = $k } })
         @(foreach ($k in 'unmeasured', 'skipped', 'notFinished', 'error', 'errorNoMessage', 'stopped') { @{ Part = 'hints'; Key = $k } })
-        @(foreach ($k in 'head', 'summaryHead', 'measure', 'cause', 'affected', 'checks', 'remedies', 'contact') { @{ Part = 'copy'; Key = $k } })
+        @(foreach ($k in 'head', 'summaryHead', 'measure', 'cause', 'affected', 'checks', 'remedies', 'contact', 'maxChecks', 'maxRemedies', 'moreChecks', 'moreCheck', 'moreRemedies', 'moreRemedy') { @{ Part = 'copy'; Key = $k } })
     ) { { Read-WorkerPerfGuidance (New-Catalogue { $c[$Part].Remove($Key) }) } | Should -Throw "Katalog '*': Eintrag '$Part': Feld '$Key' fehlt." }
     It 'erlaubt in <Part>.<Key> nur die Platzhalter der Tabelle, nicht <Text>' -TestCases @(           # ruling P3-R26
         @{ Part = 'copy'; Key = 'head'; Text = '{affected}' }; @{ Part = 'copy'; Key = 'summaryHead'; Text = '{incidents}' }; @{ Part = 'copy'; Key = 'measure'; Text = '{app}' }
@@ -141,6 +147,13 @@ Describe 'Katalog laden und pruefen' {
         @{ Part = 'userView'; Key = 'one'; Text = '{user}' }; @{ Part = 'userView'; Key = 'eventMany'; Text = '{app}' }; @{ Part = 'userView'; Key = 'unknown'; Text = '{affected}' }
         @{ Part = 'lagebild'; Key = 'red'; Text = '{server}' }; @{ Part = 'lagebild'; Key = 'yellow'; Text = '{skipped}' }; @{ Part = 'lagebild'; Key = 'green'; Text = '{minutes}' }
         @{ Part = 'lagebild'; Key = 'greenSkipped'; Text = '{incidents}' }
+        # a count stands in its part only, so that a part that was not measured can be left out (ruling P3-R49)
+        @{ Part = 'lagebild'; Key = 'red'; Text = '{events}' }; @{ Part = 'lagebild'; Key = 'yellow'; Text = '{chronic}' }; @{ Part = 'lagebild'; Key = 'red'; Text = '{bottlenecks}' }
+        @{ Part = 'lagebild'; Key = 'yellow'; Text = '{delays}' }; @{ Part = 'lagebild'; Key = 'partEvents'; Text = '{chronic}' }; @{ Part = 'lagebild'; Key = 'partBottlenecks'; Text = '{minutes}' }
+        @{ Part = 'lagebild'; Key = 'partDelays'; Text = '{parts}' }; @{ Part = 'lagebild'; Key = 'partChronic'; Text = '{events}' }; @{ Part = 'lagebild'; Key = 'partSeparator'; Text = '{parts}' }
+        @{ Part = 'lagebild'; Key = 'notMeasured'; Text = '{signals}' }; @{ Part = 'lagebild'; Key = 'green'; Text = '{parts}' }
+        @{ Part = 'copy'; Key = 'moreChecks'; Text = '{server}' }; @{ Part = 'copy'; Key = 'moreCheck'; Text = '{count}' }; @{ Part = 'copy'; Key = 'moreRemedies'; Text = '{affected}' }
+        @{ Part = 'copy'; Key = 'moreRemedy'; Text = '{count}' }
         @{ Part = 'hints'; Key = 'unmeasured'; Text = '{skipped}' }; @{ Part = 'hints'; Key = 'skipped'; Text = '{signals}' }; @{ Part = 'hints'; Key = 'error'; Text = '{server}' }
         @{ Part = 'hints'; Key = 'errorNoMessage'; Text = '{message}' }; @{ Part = 'hints'; Key = 'notFinished'; Text = '{message}' }; @{ Part = 'hints'; Key = 'stopped'; Text = '{date}' }
     ) {
@@ -151,11 +164,29 @@ Describe 'Katalog laden und pruefen' {
         $cat = Read-WorkerPerfGuidance (New-Catalogue {
                 $c.copy.head = '{server} {date}'; $c.copy.summaryHead = '{server} {date} {from} {to}'; $c.copy.measure = '{value} {target}'; $c.copy.affected = '{affected}'
                 foreach ($k in @($c.userView.Keys)) { $c.userView[$k] = '{duration} {from} {to}' + $(if ($k -ne 'unknown') { ' {affected} {count}' }) }
-                $c.lagebild.red = '{bottlenecks} {delays} {events} {chronic} {minutes} {incidents}'; $c.lagebild.yellow = $c.lagebild.red; $c.lagebild.greenSkipped = '{skipped}'
+                $c.lagebild.red = '{parts} {minutes} {incidents}'; $c.lagebild.yellow = $c.lagebild.red; $c.lagebild.greenSkipped = '{skipped}'; $c.lagebild.notMeasured = '{skipped}'
+                $c.lagebild.partBottlenecks = '{bottlenecks}'; $c.lagebild.partDelays = '{delays}'; $c.lagebild.partEvents = '{events}'; $c.lagebild.partChronic = '{chronic}'
+                $c.copy.moreChecks = '{count}'; $c.copy.moreRemedies = '{count}'
                 $c.hints.unmeasured = '{signals}'; $c.hints.skipped = '{skipped}'; $c.hints.error = '{message}' })
         $cat.userView.one | Should -Be '{duration} {from} {to} {affected} {count}'
+        $script:WorkerPerfGuidanceTextPlaceholders['lagebild.red'] | Should -Be @('parts', 'minutes', 'incidents')
+        $script:WorkerPerfGuidanceTextPlaceholders['lagebild.yellow'] | Should -Be @('parts', 'minutes', 'incidents')
         $script:WorkerPerfGuidanceTextPlaceholders['copy.summaryHead'] | Should -Be @('server', 'date', 'from', 'to')
         $script:WorkerPerfGuidanceTextPlaceholders['userView.*'] | Should -Be @('affected', 'duration', 'from', 'to', 'count')
+    }
+    It 'verlangt fuer copy.<Key> eine ganze Zahl ab 1, nicht <Name>' -TestCases @(                      # ruling P3-R59
+        @(foreach ($k in 'maxChecks', 'maxRemedies') {
+                @{ Key = $k; Name = '0'; Value = 0 }; @{ Key = $k; Name = '-1'; Value = -1 }; @{ Key = $k; Name = '2,5'; Value = 2.5 }; @{ Key = $k; Name = 'den Text 5'; Value = '5' }
+                @{ Key = $k; Name = 'wahr'; Value = $true }; @{ Key = $k; Name = 'nichts'; Value = $null }; @{ Key = $k; Name = 'eine Liste'; Value = @(5) }
+            })
+    ) {
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.copy[$Key] = $Value }) } | Should -Throw "Katalog '*': Eintrag 'copy': Feld '$Key' ist keine ganze Zahl ab 1."
+    }
+    It 'nimmt die Hoechstzahlen des Kopiertexts als Zahlen an' {                                       # ruling P3-R59
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.copy.maxChecks = 1; $c.copy.maxRemedies = 12 })
+        $cat.copy.maxChecks | Should -Be 1; $cat.copy.maxRemedies | Should -Be 12
+        $cat.copy.maxChecks -is [string] | Should -BeFalse
+        $script:WorkerPerfGuidancePartNumbers | Should -Be @('copy.maxChecks', 'copy.maxRemedies')
     }
     It 'verlangt das Feld <Field> <Where>' -TestCases @(
         @(foreach ($f in 'title', 'meaning', 'short', 'checks', 'remedies', 'contacts') { @{ Field = $f; Where = 'der Situation'; List = ''; Msg = "*Eintrag 'cpu': Feld '$f' fehlt." } })
@@ -965,12 +996,12 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         @($l.Keys) | Should -Be @('state', 'symbol', 'word', 'sentence', 'kpis', 'hints', 'top')
         @($l.kpis.Keys) | Should -Be @('bottlenecks', 'delays', 'delaysUnverified', 'events', 'chronic', 'minutes')
-        $l.symbol | Should -Be ([string][char]0x25C6); $l.sentence | Should -Be '1 Engpaesse.'; $l.kpis.minutes | Should -Be 4; $l.kpis.minutes | Should -BeOfType [double]
+        $l.symbol | Should -Be ([string][char]0x25C6); $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'; $l.kpis.minutes | Should -Be 4; $l.kpis.minutes | Should -BeOfType [double]
         , $l.hints | Should -BeOfType [string[]]; $l.hints.Count | Should -Be 0
         # yellow: a delay of severity 1, an event outside a session, a chronic bottleneck
         $ev = New-Ev 4 0 10; $ev.severity = 1
         $y = Get-WorkerPerfLagebild -Incidents @((New-R 1 'ohne-engpass' 1 90 0 -Sev 1), $ev, (New-R 5 'engpass' 3 600 0 -Chronic), (New-R 6 'umfeld' 1 30 100)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
-        $y.state | Should -Be 'yellow'; $y.symbol | Should -Be ([string][char]0x25B2); $y.word | Should -Be ('auff' + [char]0xE4 + 'llig'); $y.sentence | Should -Be '2 Verzoegerungen.'
+        $y.state | Should -Be 'yellow'; $y.symbol | Should -Be ([string][char]0x25B2); $y.word | Should -Be ('auff' + [char]0xE4 + 'llig'); $y.sentence | Should -Be 'Gelb: 2 Verzoegerungen, 1 Ereignisse, 1 Dauerzustaende.'    # no bottleneck part: there is none in this state
         $y.kpis.bottlenecks | Should -Be 0; $y.kpis.delays | Should -Be 2; $y.kpis.events | Should -Be 1; $y.kpis.chronic | Should -Be 1; $y.kpis.minutes | Should -Be 2
         $y.top | Should -Be 4                                                                     # an event incident stands in the first class
         $g = Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
@@ -986,10 +1017,48 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         $l.kpis.delays | Should -Be 3; $l.kpis.delaysUnverified | Should -Be 2
     }
     It 'nennt im gruenen Zustand ohne Ereignisse den Vorbehalt' {                                     # addition c)
-        $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() }, [ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
+        # the events count as not measured by the place of the report data, as for the key figure of the page (places 'events')
+        $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @('volumes') }, [ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @('events', 'sessions.events') })
         (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Keine Störung erkannt; nicht erfasst: Laufwerke, Ereignisse.'
         $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() })
         (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Keine Störung erkannt.'
+    }
+    It 'laesst im roten und gelben Satz den Teil einer nicht gemessenen Kategorie weg und nennt den Vorbehalt' {   # ruling P3-R49
+        # the skipped entries as the report data carry them: the places of the category table
+        $skip = { param([string[]]$Ids) @(foreach ($id in $Ids) { [ordered]@{ id = $id; label = $id; text = ''; places = [string[]]@($script:WorkerPerfCategories[$id].Places) } }) }
+        $say = { param($Incidents, [string[]]$Ids) $ctx = New-Ctx; $ctx.Data.skipped = @(& $skip $Ids); Get-WorkerPerfLagebild -Incidents $Incidents -Data $ctx.Data -Catalogue $Cat -Texts $Texts }
+        $red = @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600))
+        # everything measured: every part, also one that counts nothing
+        (& $say $red @()).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        # without events: no "0 Ereignisse", and the reservation; the key figure stays (the page writes "nicht gemessen" there)
+        $l = & $say $red @('Ereignisse')
+        $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.'
+        $l.kpis.events | Should -Be 0; $l.kpis.chronic | Should -Be 0; @($l.kpis.Keys) | Should -Be @('bottlenecks', 'delays', 'delaysUnverified', 'events', 'chronic', 'minutes')
+        $l.hints | Should -Be @('Abgeschaltet: Ereignisse.')
+        # without Citrix a chronic state of the connection cannot be found: no "0 Dauerzustaende"
+        (& $say $red @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse. Nicht gemessen: Citrix.'
+        # both: the reservation names every category left out, as the green sentence does
+        (& $say $red @('Prozesse', 'Citrix', 'Ereignisse')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Prozesse, Citrix, Ereignisse.'
+        (& $say $red $script:WorkerPerfCategories.Keys).sentence | Should -Match '^Rot: 1 Engpaesse, 1 Verzoegerungen\. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\.$'
+        # a category no part depends on: the sentence of a complete capture
+        (& $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        # a real count stays, although its category was left out: a chronic bottleneck without Citrix, an event incident
+        (& $say ($red + (New-R 5 'engpass' 3 600 0 -Chronic)) @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 1 Dauerzustaende.'
+        (& $say ($red + (New-Ev 7 0 900)) @('Ereignisse')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Ereignisse, 0 Dauerzustaende.'
+        (& $say ($red + (New-Ev 7 0 900)) @('Ereignisse', 'Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Ereignisse. Nicht gemessen: Ereignisse, Citrix.'
+        # yellow: the same rule
+        $yellow = @((New-R 1 'ohne-engpass' 1 90 0 -Sev 1))
+        (& $say $yellow @()).sentence | Should -Be 'Gelb: 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        (& $say $yellow @('Ereignisse')).sentence | Should -Be 'Gelb: 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.'
+        (& $say $yellow @('Citrix', 'Ereignisse')).sentence | Should -Be 'Gelb: 1 Verzoegerungen. Nicht gemessen: Citrix, Ereignisse.'
+        # the place decides, not the name of the category
+        $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
+        (Get-WorkerPerfLagebild -Incidents $red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        $script:WorkerPerfLagebildParts | ForEach-Object { $_.Place } | Should -Be @('', '', 'events', 'citrix')
+        # the summary to copy carries the same sentence
+        $l = & $say $red @('Ereignisse'); $ctx = New-Ctx; $ctx.Data.skipped = @(& $skip @('Ereignisse'))
+        $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @() -Order @() -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $p[1] | Should -Be ($l.symbol + ' ' + $l.word + ': Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.')
     }
     It 'gibt die Hinweise zur Messung in ihrer Reihenfolge' {                                          # addition b)
         $ctx = New-Ctx
@@ -1056,7 +1125,8 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         , $h | Should -BeOfType [string[]]; @($h) | Should -Be $Want
     }
     It 'fuellt Satz und Hinweise mit den Platzhaltern des Lagebilds und meldet einen fehlenden Wert' {   # addition e)
-        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.lagebild.red = '{incidents} Vorfaelle: {bottlenecks}/{delays}/{events}/{chronic}, {minutes} min.' })
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.lagebild.red = '{incidents} Vorfaelle: {parts}, {minutes} min.'; $c.lagebild.partSeparator = '/'
+                $c.lagebild.partBottlenecks = '{bottlenecks}'; $c.lagebild.partDelays = '{delays}'; $c.lagebild.partEvents = '{events}'; $c.lagebild.partChronic = '{chronic}' })
         $ctx = New-Ctx
         $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0), (New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts
         $l.sentence | Should -Be '2 Vorfaelle: 1/0/0/1, 1,3 min.'
@@ -1165,6 +1235,52 @@ Describe 'Kopiertexte' {
         $i.chronic = $false
         @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts) | Should -Contain 'Betroffen: 0'
     }
+    It 'nimmt hoechstens fuenf Pruefschritte und drei Vorschlaege in den Kopiertext und sagt, wie viele weitere im Bericht stehen' {   # ruling P3-R59
+        $i = New-CpuInc; $g = New-CopyGuide $i; $dash = [string][char]0x2013
+        $steps = { param([int]$Checks, [int]$Remedies, [int]$Contacts)
+            $g.checks = @(1..$Checks | ForEach-Object { [ordered]@{ text = "Schritt $_"; where = 'Ort'; sign = 'Merkmal'; source = $null } })
+            $g.remedies = @(1..$Remedies | ForEach-Object { [ordered]@{ text = "Abhilfe $_"; precondition = 'Voraussetzung'; source = $null } })
+            $g.contacts = @(1..$Contacts | ForEach-Object { [ordered]@{ text = "Kontakt $_"; source = $null } }) }
+        $tail = { param($Catalogue = $Cat) $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Catalogue -Texts $Texts); @($p[([array]::IndexOf($p, $Cat.copy.checks) - 1)..($p.Count - 1)]) }
+        # seven checks, five remedies, four contacts: the first five and three in the guide's order, one line after each shortened block, every contact
+        & $steps 7 5 4
+        & $tail | Should -Be @('', 'Empfohlene Pruefschritte:', "1. Schritt 1 ${dash} Ort; erkennbar an Merkmal", "2. Schritt 2 ${dash} Ort; erkennbar an Merkmal", "3. Schritt 3 ${dash} Ort; erkennbar an Merkmal",
+            "4. Schritt 4 ${dash} Ort; erkennbar an Merkmal", "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal", 'Weitere 2 Pruefschritte im Bericht.', '', 'Moegliche Abhilfe (Vorschlag):',
+            '- Wenn Voraussetzung: Abhilfe 1', '- Wenn Voraussetzung: Abhilfe 2', '- Wenn Voraussetzung: Abhilfe 3', 'Weitere 2 Vorschlaege im Bericht.', '', 'Ansprechpartner:',
+            '- Kontakt 1', '- Kontakt 2', '- Kontakt 3', '- Kontakt 4')
+        # the guide itself stays complete: the report shows every step
+        @($g.checks).Count | Should -Be 7; @($g.remedies).Count | Should -Be 5
+        # one step more than the text carries: the singular
+        & $steps 6 4 1
+        $p = @(& $tail); $p | Should -Contain 'Ein weiterer Pruefschritt im Bericht.'; $p | Should -Contain 'Ein weiterer Vorschlag im Bericht.'
+        @($p | Where-Object { $_ -match '^Weitere ' }) | Should -Be @()
+        # as many steps as the text carries, or fewer: no such line
+        foreach ($n in @(5, 3), @(1, 1)) {
+            & $steps $n[0] $n[1] 1
+            $p = @(& $tail); @($p | Where-Object { $_ -match 'im Bericht\.$' }) | Should -Be @() -Because "$($n[0]) und $($n[1])"
+            @($p | Where-Object { $_ -match '^\d+\. ' }).Count | Should -Be $n[0]; @($p | Where-Object { $_ -match '^- Wenn ' }).Count | Should -Be $n[1]
+        }
+        # the numbers are the catalogue's
+        & $steps 7 5 1
+        $small = Read-WorkerPerfGuidance (New-Catalogue { $c.copy.maxChecks = 2; $c.copy.maxRemedies = 1 })
+        $p = @(& $tail $small)
+        @($p | Where-Object { $_ -match '^\d+\. ' }).Count | Should -Be 2; @($p | Where-Object { $_ -match '^- Wenn ' }).Count | Should -Be 1
+        $p | Should -Contain 'Weitere 5 Pruefschritte im Bericht.'; $p | Should -Contain 'Weitere 4 Vorschlaege im Bericht.'
+        # the wrapped text, with and without names: the same steps, the line on its own line without indent
+        foreach ($mask in $null, $CopyMask) {
+            $lines = Get-Lines (New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Mask $mask)
+            @($lines | Where-Object { $_ -match '^\d+\. ' }).Count | Should -Be 5; @($lines | Where-Object { $_ -match '^- Wenn ' }).Count | Should -Be 3
+            $lines | Should -Contain 'Weitere 2 Pruefschritte im Bericht.'; $lines | Should -Contain 'Weitere 2 Vorschlaege im Bericht.'
+            [array]::IndexOf($lines, 'Weitere 2 Pruefschritte im Bericht.') | Should -Be ([array]::IndexOf($lines, "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal") + 1)
+        }
+        # the summary of the capture names no steps and no such line
+        $i.guide = $g
+        $l = Get-WorkerPerfLagebild -Incidents @($i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($i) -Order @(2) -Lagebild $l -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts | Where-Object { $_ -match 'im Bericht\.$|Schritt \d' }) | Should -Be @()
+        # a catalogue changed after loading: a number that is none stops with the name of the value
+        $small.copy.maxChecks = 0
+        { Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $small -Texts $Texts } | Should -Throw "Catalogue value 'copy.maxChecks' is no whole number from 1 on."
+    }
     It 'nimmt den Verursacher aus dem Teil des Vorfallssatzes und laesst die Zeile ohne ihn weg' {     # ruling P3-R30
         $i = New-Inc @{ type = 'ohne-engpass'; start = 1e12; end = 1e12 + 60000; causeText = ' Die Ursache liegt außerhalb des Workers. Gegenstelle Oracle-Listener: 348 ms. ' }
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
@@ -1230,7 +1346,7 @@ Describe 'Kopiertexte' {
         $l = Get-WorkerPerfLagebild -Incidents @($a, $b) -Data $ctx.Data -Catalogue $Cat -Texts $Texts
         $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($a, $b) -Order @(5, 2, 5) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
         $dash = [string][char]0x2013
-        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001, 02:46 bis 03:46', ([string][char]0x25C6 + ' kritisch: 1 Engpaesse.'), 'Abgeschaltet: Laufwerke.', 'Nicht gemessen: ICA Round Trip.', ''
+        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001, 02:46 bis 03:46', ([string][char]0x25C6 + ' kritisch: Rot: 1 Engpaesse, 0 Verzoegerungen, 1 Ereignisse, 0 Dauerzustaende.'), 'Abgeschaltet: Laufwerke.', 'Nicht gemessen: ICA Round Trip.', ''
             '- 02:51: Titel crash (Vorfall aus Ereignissen · Anwendungsabsturz). Langsam.', "- 02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU). Langsam.")
         $t = New-WorkerPerfCopySummary -Incidents @($a, $b) -Order @(5, 2) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts
         $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
