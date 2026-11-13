@@ -24,20 +24,31 @@ async function open(browser, file, scheme) {
   const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
   return { page, D };
 }
-// The report opens in the guided view; the tabs of the former page stand in the expert view.
+// The report opens in the guided view. The expert view shows the incident column, the tiles and the charts always and the
+// tables in the eight tabs of #xtabs.
 // Switching tabs and views (P3-R55): click, then wait until the section the button leads to is visible. A click can miss its
 // button while the page still scrolls smoothly to a chosen row: when the section is not visible after a second, the click is
-// repeated once.
+// repeated once - unless the button itself is gone by then (the click worked: "In der Expertenansicht zeigen" leaves the view
+// of its button), in which case the helper goes on waiting for the section.
 async function showSection(page, button, section) {
   for (let again = 0; ; again++) {
     await page.click(button);
-    try { await page.locator(section).waitFor({ state: 'visible', timeout: again ? 15000 : 1000 }); return; } catch (e) { if (again) throw e; }
+    try { await page.locator(section).waitFor({ state: 'visible', timeout: again ? 15000 : 1000 }); return; }
+    catch (e) {
+      if (again) throw e;
+      if (!(await page.locator(button).isVisible())) { await page.locator(section).waitFor({ state: 'visible', timeout: 15000 }); return; }
+    }
   }
 }
 const showExpert = (page) => showSection(page, '#viewSwitch button[data-view=expert]', '#expert');
 const showGuided = (page) => showSection(page, '#viewSwitch button[data-view=guided]', '#guided');
-const showTab = (page, name) => showSection(page, `nav button[data-tab=${name}]`, '#tab-' + name);
+// a tab of the tables of the expert view (the view is shown first where the page stands in the guided one)
+async function showTab(page, name) {
+  if (await page.evaluate(() => window.WP.view) !== 'expert') await showExpert(page);
+  await showSection(page, `#xtabs button[data-tab=${name}]`, '#xt-' + name);
+}
 const ivExpert = (page) => showSection(page, '#ivExpert', '#expert');                   // "In der Expertenansicht zeigen"
+const TABS = ['sollist', 'sessions', 'apps', 'procs', 'quality', 'events', 'print', 'before'];
 async function openExpert(browser, file, scheme) {
   const r = await open(browser, file, scheme);
   await showExpert(r.page);
@@ -92,12 +103,14 @@ async function checkViews(browser, dir, scheme) {                   // zwei Ansi
   ok(await page.locator('#expert').isVisible() && !(await page.locator('#guided').isVisible()), 'Expertenansicht sichtbar, gefuehrte verborgen');
   ok(await pageLum(page) < 0.1, 'Expertenansicht dunkel, bei jedem Farbschema: ' + await pageLum(page));
   ok(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme) === 'dark', 'Expertenansicht: auch Rollbalken und Grund des Fensters dunkel (Schema am Wurzelelement)');
-  ok(await page.locator('#expert nav button[data-tab]').count() === 5 && await page.locator('#expert .zoombar #zoomInfo').count() === 1 && await page.locator('#expert main > section[role=tabpanel]').count() === 5, 'Expertenansicht mit Reiterleiste, Zoomleiste und fuenf Reitern');
+  ok(await page.locator('#expert #xtabs button[data-tab]').count() === 8 && await page.locator('#expert #rangeBar #rangeInfo').count() === 1 && await page.locator('#expert #xtables > section[role=tabpanel]').count() === 8, 'Expertenansicht mit Zeitraumleiste, Reiterleiste und acht Reitern');
+  ok(await page.locator('#incList').isVisible() && await page.locator('#tiles').isVisible() && await page.locator('#charts').isVisible(), 'Expertenansicht: Vorfallsspalte, Kacheln und Diagramme stehen ohne Reiter da');
   ok(await page.locator('header').isVisible() && await page.locator('footer').isVisible() && (await page.locator('footer').innerText()).includes('Bericht erstellt am'), 'Kopfleiste und Fuss in beiden Ansichten');
   ok(await page.evaluate(() => window.scrollY) === 0, 'Expertenansicht beginnt oben');
   await page.evaluate(() => window.scrollTo(0, 700));
-  const hb = await page.locator('header').boundingBox(), tb = await page.locator('#expert .topbar').boundingBox();
-  ok(hb.y === 0 && Math.abs(tb.y - hb.height) <= 1, 'Kopfleiste oben fest, Reiterleiste direkt darunter: ' + JSON.stringify([hb, tb]));
+  const hb = await page.locator('header').boundingBox(), tb = await page.locator('#rangeBar').boundingBox(), cb = await page.locator('#incCol').boundingBox();
+  ok(hb.y === 0 && Math.abs(tb.y - hb.height) <= 1, 'Kopfleiste oben fest, Zeitraumleiste direkt darunter: ' + JSON.stringify([hb, tb]));
+  ok(cb.y >= tb.y + tb.height && cb.y <= tb.y + tb.height + 12 && cb.y + cb.height <= 900 && Math.abs(cb.width - 280) <= 1, 'Vorfallsspalte bleibt unter der Zeitraumleiste im Bild, 280 px breit: ' + JSON.stringify(cb));
   await page.evaluate(() => window.WP.showView('guided'));
   ok(await viewState(page) === 'guided | guided | guided:true expert:false' && await page.locator('#guided').isVisible() && await page.locator('#guided #timeline .mark').count() === D.incidents.length, 'WP.showView wechselt zurueck');
   ok(await page.evaluate(() => window.scrollY) === 500, 'die gefuehrte Ansicht steht wieder an ihrer Stelle');
@@ -106,28 +119,28 @@ async function checkViews(browser, dir, scheme) {                   // zwei Ansi
   // "Oeffnen" leads to the incident view; from there "In der Expertenansicht zeigen" leads to the incident in the expert
   // view: its entry unfolded, the charts on its window
   const inView = async (id) => await page.evaluate(() => window.WP.view) === 'guided' && await page.locator(`#incident[data-id="${id}"]`).isVisible() && !(await page.locator('#expert').isVisible());
-  const opened = async (list, id) => await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`${list} .incident[data-id="${id}"].open`).isVisible();
+  const opened = async (list, id) => await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`${list} .inc[data-id="${id}"].selected`).isVisible();
   const leave = async () => { await showGuided(page); await page.click('#ivBack'); await page.waitForFunction(() => window.WP.incident === null && history.state === null); };
-  ok(await page.locator('#incident').isHidden() && await page.locator('#incidents .incident.open').count() === 0 && await page.evaluate(() => window.WP.zoom === null), 'vor dem Oeffnen: keine Vorfallsansicht, kein Eintrag aufgeklappt, kein Zeitraum');
+  ok(await page.locator('#incident').isHidden() && await page.locator('#incList .inc.selected').count() === 0 && await page.evaluate(() => window.WP.zoom === null), 'vor dem Oeffnen: keine Vorfallsansicht, kein Eintrag gewaehlt, kein Zeitraum');
   await page.click('#openTop');
   ok(await inView(D.lagebild.top), 'Wichtigsten Vorfall oeffnen: Vorfallsansicht');
   await ivExpert(page);
-  ok(await opened('#incidents', D.lagebild.top) && await page.evaluate(() => window.WP.zoom !== null), 'Wichtigsten Vorfall oeffnen');
+  ok(await opened('#incList', D.lagebild.top) && await page.evaluate(() => window.WP.zoom !== null), 'Wichtigsten Vorfall oeffnen');
   await leave();
   await page.click(`#cards .card.inc[data-id="${D.cards[2]}"] .card-open`);
   ok(await inView(D.cards[2]), 'Karte oeffnet ihren Vorfall: Vorfallsansicht');
   await ivExpert(page);
-  ok(await opened('#incidents', D.cards[2]), 'Karte oeffnet ihren Vorfall');
+  ok(await opened('#incList', D.cards[2]), 'Karte oeffnet ihren Vorfall');
   await leave();
   await page.click(`#more .row[data-id="${D.more[0].ids[0]}"] .row-open`);
   ok(await inView(D.more[0].ids[0]), 'Zeile der weiteren Vorfaelle oeffnet ihren Vorfall: Vorfallsansicht');
   await ivExpert(page);
-  ok(await opened('#incidents', D.more[0].ids[0]), 'Zeile der weiteren Vorfaelle oeffnet ihren Vorfall');
+  ok(await opened('#incList', D.more[0].ids[0]), 'Zeile der weiteren Vorfaelle oeffnet ihren Vorfall');
   await leave();
   await page.click(`#beforeG .card.inc[data-id="${D.before.incidents[0].id}"] .card-open`);
   ok(await inView(D.before.incidents[0].id), 'Karte vor der Messung oeffnet ihren Vorfall: Vorfallsansicht');
   await ivExpert(page);
-  ok(await opened('#before', D.before.incidents[0].id), 'Karte vor der Messung oeffnet ihren Vorfall');
+  ok(await opened('#before', D.before.incidents[0].id) && await page.locator('#xt-before').isVisible(), 'Karte vor der Messung oeffnet ihren Vorfall');
   ok(page.errors.length === 0, 'Skriptfehler Ansichten: ' + page.errors.join(' | '));
   await page.close();
 }
@@ -173,7 +186,7 @@ async function checkCards(browser, dir, scheme) {                   // Karten, w
   ok(!mt.includes('Kein Vorfall') && !mt.includes('Keine Schwelle wurde überschritten') && !mt.includes('im ganzen Zeitraum im Soll'), 'mit Vorfaellen keine Aussage ohne Befund');
   await page.click('#qualityG > summary');
   const flat = (s) => s.replace(/\s+/g, ' ').trim(), qg = flat(await page.locator('#qualityG').innerText());
-  await showExpert(page);
+  await showTab(page, 'quality');
   ok(qg === flat(await page.locator('#quality').innerText()) && await page.locator('#qualityG table tbody tr').count() === await page.locator('#tSources tbody tr').count(), 'Messqualitaet mit denselben Inhalten wie in der Expertenansicht');
   ok(await page.evaluate(() => [...document.querySelectorAll('[id]')].map((e) => e.id).filter((id, k, a) => a.indexOf(id) !== k).length) === 0, 'keine Kennung doppelt');
   ok(page.errors.length === 0, 'Skriptfehler Karten: ' + page.errors.join(' | '));
@@ -225,6 +238,14 @@ async function checkGuidedStates(browser, dir, scheme) {            // gefuehrte
   const lt = await l.page.locator('#guided').innerText();
   ok(!lt.includes('von außen') && !lt.includes('ohne Engpass'), 'ohne Laufwerke: kein "von aussen" und kein "ohne Engpass" in der gefuehrten Ansicht');
   await l.page.close();
+  // chronic states of the network paths form from the ICA values: without them the count 0 is no measured 0
+  const ci = await open(browser, path.join(dir, 'report-skip-citrix.html'), scheme), ck = ci.page.locator('#kpis .kpi[data-kpi="chronic"]');
+  ok(ci.D.lagebild.kpis.chronic === 0 && (await ck.locator('.num').innerText()) === '–' && await ck.locator('.notmeasured[data-place="citrix"]').isVisible() && (await ck.innerText()).includes('nicht gemessen') && (await ck.innerText()).includes(ci.D.skipped[0].text), 'ohne Citrix: die Kennzahl der Dauerzustaende ist keine 0, sie sagt "nicht gemessen" mit dem Grund');
+  ok((await ci.page.locator('#kpis .kpi[data-kpi="events"] .num').innerText()) === String(ci.D.lagebild.kpis.events) && await ci.page.locator('#kpis .notmeasured').count() === 1, 'ohne Citrix: die uebrigen Kennzahlen wie geliefert');
+  await ci.page.close();
+  const cz = await open(browser, patched(dir, 'report-skip-citrix.html', 'report-skip-citrix-chronic.html', (J) => { J.lagebild.kpis.chronic = 2; }), scheme);
+  ok((await cz.page.locator('#kpis .kpi[data-kpi="chronic"] .num').innerText()) === '2' && await cz.page.locator('#kpis .kpi[data-kpi="chronic"] .notmeasured').count() === 0, 'ohne Citrix mit gezaehlten Dauerzustaenden: die Zahl wie geliefert, ohne Hinweis');
+  await cz.page.close();
   const p = await open(browser, path.join(dir, 'report-skip-prozesse.html'), scheme);
   const cpu = p.D.incidents.find((i) => i.lead === 'cpu'), delay = p.D.incidents.find((i) => i.type === 'ohne-engpass'), reason = p.D.skipped[0].text;
   let card = p.page.locator(`#cards .card.inc[data-id="${cpu.id}"]`), text = await card.innerText();
@@ -308,7 +329,22 @@ async function checkOpens(browser, dir, scheme) {                   // jeder Ber
     ok(await page.locator('#openTop').count() === (D.lagebild.top == null ? 0 : 1) && await page.locator('#measured').evaluate((d) => d.open) === (D.incidents.length === 0), name + ': erster Knopf nur mit Vorfall; gemessene Werte ohne Vorfall aufgeklappt');
     const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
     ok(w[0] <= w[1], name + ': ohne seitliches Rollen: ' + w.join(' > '));
-    await showExpert(page); await showGuided(page);
+    await showExpert(page);
+    // the expert view of every report: incident column, tiles, range bar, every tab, and a range in the middle of the capture
+    const x = await page.evaluate(() => {
+      const count = (sel) => document.querySelectorAll(sel).length, info = () => document.getElementById('rangeInfo').textContent;
+      const out = { inc: count('#incList .inc'), tiles: count('#tiles .tile'), range: info(), all: document.getElementById('rangeAll').disabled, tabs: count('#xtabs button[data-tab]') };
+      for (const b of document.querySelectorAll('#xtabs button[data-tab]')) b.click();
+      const mid = (FULL.t0 + FULL.t1) / 2;
+      window.WP.setZoom(mid - 30000, mid + 30000);
+      out.ranged = [count('#tiles .tile'), document.getElementById('rangeAll').disabled, info().startsWith('Zeitraum') && !info().includes('gesamte Messung'), [...document.querySelectorAll('#tiles .tile[data-status="na"] .value')].every((v) => v.textContent === '–')].join();
+      window.WP.resetZoom();
+      out.fits = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+      return out;
+    });
+    ok(x.inc === D.incidents.length && x.tiles === D.sollIst.length + (D.mainApp ? 1 : 0) + 1 && x.tabs === 8 && x.range.startsWith('Zeitraum') && x.range.includes('gesamte Messung') && x.all, name + ': Expertenansicht mit Vorfallsspalte, Kacheln, Zeitraumleiste und acht Reitern: ' + JSON.stringify(x));
+    ok(x.ranged === [x.tiles, false, true, true].join() && x.fits, name + ': Expertenansicht mit einem Zeitraum in der Mitte der Messung, ohne seitliches Rollen: ' + x.ranged + ' ' + x.fits);
+    await showGuided(page);
     ok(page.errors.length === 0, name + ': Skriptfehler: ' + page.errors.join(' | '));
     // every incident opens in the incident view with its five sections; each place of the view that depends on a category
     // left out with -Skip says "nicht gemessen" there, and only there
@@ -498,7 +534,7 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   ok(await iv.locator('.iv-evidence .iv-notm li').count() === nm.length && (nm.length > 0 || await iv.locator('.iv-evidence .iv-notm').count() === 0), 'Belege: nicht Gemessenes nur, wo etwas fehlt (keine leere Liste)');
   // a link of the evidence leads to the table of the expert view
   await iv.locator('.iv-evidence .causebox button.lnk[data-s]').click();
-  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#tab-sessions').isVisible() && await page.locator('#tSessions tbody tr.selected').count() === 1, 'Verweis aus den Belegen fuehrt in die Tabelle der Expertenansicht');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#xt-sessions').isVisible() && await page.locator('#tSessions tbody tr.selected').count() === 1, 'Verweis aus den Belegen fuehrt in die Tabelle der Expertenansicht');
   await showGuided(page);
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(cpu.id), 'zurueck in der gefuehrten Ansicht steht die Vorfallsansicht noch');
   // "Naechster Vorfall" follows the ranking and is missing on the last incident
@@ -509,7 +545,7 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   const delay = D.incidents.find((i) => i.type === 'ohne-engpass' && i.affected.length > 1);
   await ivOpen(page, delay.id);
   ok((await iv.locator('.iv-chart h4').innerText()).includes('Eingabeverzögerung') && await iv.locator('.iv-chart svg path').count() > 0 && await iv.locator('.iv-chart .legend span').count() > 1, 'Verzoegerung ohne Engpass: Diagramm der Eingabeverzoegerung je Sitzung');
-  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(delay.causeText) && delay.causeText.includes('außerhalb des Workers'), 'Verzoegerung ohne Engpass: Hinweis auf eine Ursache ausserhalb');
+  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(delay.causeText) && delay.causeText.includes('außerhalb'), 'Verzoegerung ohne Engpass: Hinweis auf eine Ursache ausserhalb');
   ok(delay.guide.contacts.length > 0 && await iv.locator('.iv-todo .contact li').count() === delay.guide.contacts.length && (await iv.locator('.iv-todo .contact h4').innerText()) === 'An wen wenden' && (await iv.locator('.iv-todo .contact li').first().innerText()).includes(delay.guide.contacts[0].text), 'An wen wenden');
   ok(await iv.locator('.iv-affected li').count() === delay.affected.length, 'Verzoegerung ohne Engpass: Betroffene');
   // an incident with at most five checks and three proposals shows them all, without a line that folds a rest
@@ -576,7 +612,7 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   await iv.locator('details.iv-evidence > summary').click();
   ok((await iv.locator('.iv-evidence').innerText()).includes('Für die Tage vor der Messung gelten nur die Muster, die keine Messwerte brauchen.') && await iv.locator('.iv-evidence .evlist tbody tr').count() === lb[lb.length - 1].events.length && await iv.locator('.iv-evidence .iv-notm').count() === 0, 'vor der Messung: Belege aus den Ereignissen');
   await ivExpert(page);
-  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#before .incident[data-id="${lb[lb.length - 1].id}"].open`).isVisible() && await page.evaluate(() => window.WP.zoom === null), 'vor der Messung: in der Expertenansicht aufgeklappt, ohne Zeitraum');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#xt-before').isVisible() && await page.locator(`#before .inc[data-id="${lb[lb.length - 1].id}"].selected`).isVisible() && await page.evaluate(() => window.WP.zoom === null), 'vor der Messung: in der Expertenansicht in ihrem Reiter hervorgehoben, ohne Zeitraum');
   ok(await page.evaluate(() => [...document.querySelectorAll('[id]')].map((e) => e.id).filter((id, k, a) => a.indexOf(id) !== k).length) === 0, 'keine Kennung doppelt, auch mit Vorfallsansicht');
   ok(page.errors.length === 0, 'Skriptfehler Vorfallsansicht: ' + page.errors.join(' | '));
   await page.close();
@@ -663,7 +699,8 @@ async function checkIncidentStates(browser, dir, scheme) {          // Vorfallsa
   ok(await ivSections(rd.page) === IV_SECTIONS && await rd.page.locator('#incident ol.checks').count() === 0 && await rd.page.locator('#incident .remedies li').count() > 0 && await bareParts(rd.page) === '', 'nur Abhilfe: der Abschnitt ohne leere Schrittliste');
   // the numbers of items shown before the fold come from the report data when it carries them
   const rs = rd.D.incidents.find((i) => i.lead === 'share'), rshown = (await ivOpen(rd.page, rs.id), await stepsShown(rd.page));
-  ok(rs.guide.checks.length === 7 && rs.guide.remedies.length === 1 && rshown.checks === 2 && rshown.remedies === 1 && rshown.folds.join('|') === 'Weitere 5 Prüfschritte anzeigen' && await rd.page.locator('#incident ol.checks').nth(1).getAttribute('start') === '3', 'Zahl der gezeigten Schritte aus den Berichtsdaten (maxChecks, maxRemedies): ' + JSON.stringify(rshown));
+  // (literal adapted, P3-R1: the catalogue after its round 3 gives this incident six checks, not seven; the number comes from the data)
+  ok(rs.guide.checks.length >= 4 && rs.guide.remedies.length === 1 && rshown.checks === 2 && rshown.remedies === 1 && rshown.folds.join('|') === `Weitere ${rs.guide.checks.length - 2} Prüfschritte anzeigen` && await rd.page.locator('#incident ol.checks').nth(1).getAttribute('start') === '3', 'Zahl der gezeigten Schritte aus den Berichtsdaten (maxChecks, maxRemedies): ' + JSON.stringify(rshown));
   ok(rd.page.errors.length === 0, 'Skriptfehler fehlende Teile: ' + rd.page.errors.join(' | '));
   await rd.page.close();
   // incidents of the surroundings: a session with input delay over its target shows both values and no note; an endpoint alone
@@ -861,7 +898,7 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   ok(await place() === home, 'nach "Naechster Vorfall" fuehrt ein Schritt zurueck zum Lagebild: ' + await place());
   // from the incident view to the expert view and back with the browser
   await page.click(opener); await ivExpert(page);
-  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#incidents .incident[data-id="${id}"].open`).isVisible(), 'In der Expertenansicht zeigen klappt den Vorfall dort auf');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#incList .inc[data-id="${id}"].selected`).isVisible(), 'In der Expertenansicht zeigen hebt den Vorfall dort hervor');
   await page.goBack();
   await page.waitForFunction(() => window.WP.view === 'guided');
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'Zurueck-Taste: aus der Expertenansicht wieder in die Vorfallsansicht');
@@ -883,7 +920,7 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   const state = () => page.evaluate(() => JSON.stringify(history.state)), inExpert = async () => [await page.evaluate(() => window.WP.view), await page.locator('#expert').isVisible(), await iv.isHidden(), await page.evaluate(() => window.WP.incident), await page.evaluate(() => window.scrollY)].join();
   await page.evaluate((i) => window.WP.openIncident(i), id);
   ok(await page.evaluate(() => window.WP.view) === 'guided' && await iv.isVisible(), 'WP.openIncident aus der Expertenansicht wechselt in die gefuehrte');
-  ok(oneLine(await page.locator('#ivBack').innerText()).includes('Zurück zur Expertenansicht') && await state() === JSON.stringify({ wpIncident: id }), 'aus der Expertenansicht geoeffnet: der Knopf nennt das Ziel, der Schritt ist der der Vorfallsansicht: ' + await state());
+  ok(oneLine(await page.locator('#ivBack').innerText()).includes('Zurück zur Expertenansicht') && await state() === JSON.stringify({ wpIncident: id, wpFrom: 'expert' }), 'aus der Expertenansicht geoeffnet: der Knopf nennt das Ziel, der Schritt ist der der Vorfallsansicht und nennt ihre Herkunft: ' + await state());
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.WP.incident === null && history.state !== null && history.state.wpIncident == null);
   ok(await inExpert() === 'expert,true,true,,260' && await state() === JSON.stringify({ wpView: 'expert' }), 'Esc fuehrt in die Expertenansicht zurueck, an ihre Stelle: ' + await inExpert() + ' ' + await state());
@@ -898,6 +935,23 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   await page.goForward();
   await page.waitForFunction(() => window.WP.view === 'guided');
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'Vorwaerts zeigt die Vorfallsansicht wieder');
+  // shown again by a step of the history (forward, reload), the view still knows where it was opened from: label and target agree
+  const backLabel = async () => oneLine(await page.locator('#ivBack').innerText());
+  ok((await backLabel()).includes('Zurück zur Expertenansicht'), 'nach Vorwaerts nennt der Knopf wieder die Expertenansicht: ' + await backLabel());
+  await page.click('#ivBack');
+  await page.waitForFunction(() => window.WP.incident === null && history.state !== null && history.state.wpIncident == null);
+  ok(await inExpert() === 'expert,true,true,,260' && await state() === JSON.stringify({ wpView: 'expert' }), 'und fuehrt dorthin: ' + await inExpert());
+  await page.goForward();
+  await page.waitForFunction(() => window.WP.view === 'guided');
+  await page.reload();
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id) && (await backLabel()).includes('Zurück zur Expertenansicht'), 'nach dem Neuladen ebenso: ' + await backLabel());
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.WP.incident === null && history.state !== null && history.state.wpIncident == null);
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#expert').isVisible() && await iv.isHidden(), 'Esc fuehrt nach dem Neuladen in die Expertenansicht');
+  // "Naechster Vorfall" keeps the origin
+  await page.evaluate((i) => window.WP.openIncident(i), id);
+  await page.click('#ivNext');
+  ok((await backLabel()).includes('Zurück zur Expertenansicht') && JSON.parse(await state()).wpFrom === 'expert', '"Naechster Vorfall" behaelt die Herkunft: ' + await state());
   await page.goBack();
   await page.waitForFunction(() => window.WP.view === 'expert');
   // back in the situation summary, the incident view opened there returns there again
@@ -1002,11 +1056,13 @@ async function checkPrint(browser, dir, scheme) {                   // Drucken d
   // expert view: every tab, as before the two views
   await showExpert(page);
   await media('print');
-  for (const t of ['findings', 'overview', 'sessions', 'apps', 'procs']) ok(await page.locator('#tab-' + t).isVisible(), 'Expertenansicht: Reiter ' + t + ' wird gedruckt');
-  ok(await page.evaluate(() => getComputedStyle(document.querySelector('#tab-overview .grid2 > .card')).breakInside) === 'avoid', 'Expertenansicht: Diagrammkarte ohne Seitenumbruch im Innern');
-  ok(await page.locator('#expert nav').isHidden() && await page.locator('#guided').isHidden() && await page.locator('#chCpu svg path').count() > 0 && await page.locator('#sollist tbody tr').first().isVisible(), 'Expertenansicht: ohne Reiterleiste, Diagramme gezeichnet, gefuehrte Ansicht nicht gedruckt');
+  for (const t of TABS) ok(await page.locator('#xt-' + t).isVisible(), 'Expertenansicht: Reiter ' + t + ' wird gedruckt');
+  ok(await page.evaluate(() => getComputedStyle(document.querySelector('#charts .grid2 > .card')).breakInside) === 'avoid', 'Expertenansicht: Diagrammkarte ohne Seitenumbruch im Innern');
+  ok(await page.locator('#expert #xtabs').isHidden() && await page.locator('#guided').isHidden() && await page.locator('#chCpu svg path').count() > 0 && await page.locator('#sollist tbody tr').first().isVisible(), 'Expertenansicht: ohne Reiterleiste, Diagramme gezeichnet, gefuehrte Ansicht nicht gedruckt');
+  ok(await page.locator('#rangeInfo').isVisible() && await page.locator('#rangeAll').isHidden() && await page.locator('#incList .inc:visible').count() === D.incidents.length && await page.locator('#incList .inc-guided:visible').count() === 0 && await page.locator('#tiles .tile').first().isVisible(),
+    'Expertenansicht: gedruckt werden der Zeitraum, alle Vorfaelle und die Kacheln, ohne Knoepfe');
   await media('screen');
-  ok(await page.locator('#tab-findings').isVisible() && await page.locator('#tab-overview').isHidden(), 'Expertenansicht: nach dem Druck wieder ein Reiter');
+  ok(await page.locator('#xt-sollist').isVisible() && await page.locator('#xt-sessions').isHidden(), 'Expertenansicht: nach dem Druck wieder ein Reiter');
   ok(page.errors.length === 0, 'Skriptfehler Drucken: ' + page.errors.join(' | '));
   await page.close();
 }
@@ -1073,7 +1129,7 @@ async function checkCarried(browser, dir, scheme) {                 // Punkte au
   ok(await r.page.locator('#guided #timeline .mark').count() === r.D.incidents.length && await r.page.locator('#more > .group').count() === 1 && await r.page.locator('#more .row').count() === 1 && await r.page.locator('#kpis .kpi').count() === 5 && (await r.page.locator('#kpis .kpi .num').allInnerTexts()).every((t) => t === '–'), 'ohne Lagebild: Zeitleiste, Liste und Kennzahlen stehen, eine Gruppe ohne Kennungen entfaellt');
   await r.page.click('#copyAll');
   await ivOpen(r.page, r.D.incidents[0].id); await r.page.click('#ivCopy'); await ivOpen(r.page, r.D.incidents[1].id); await r.page.click('#ivCopy'); await ivExpert(r.page);
-  ok(await r.page.evaluate(() => window.WP.view) === 'expert' && (await r.page.locator('#zoomInfo').innerText()).startsWith('Ausschnitt') && await r.page.locator('#incidents .incident').count() === r.D.incidents.length && await r.page.locator(`#incidents .incident[data-id="${r.D.incidents[1].id}"] .detail svg path`).count() > 0, 'ohne Lagebild: die Expertenansicht arbeitet');
+  ok(await r.page.evaluate(() => window.WP.view) === 'expert' && (await r.page.locator('#rangeInfo').innerText()).startsWith('Zeitraum') && await r.page.locator('#rangeAll').isEnabled() && await r.page.locator('#incList .inc').count() === r.D.incidents.length && await r.page.locator(`#incList .inc[data-id="${r.D.incidents[1].id}"].selected`).count() === 1 && await r.page.locator('#chCpu svg path').count() > 0, 'ohne Lagebild: die Expertenansicht arbeitet');
   ok(r.page.errors.length === 0, 'ohne optionale Teile: kein Skriptfehler: ' + r.page.errors.join(' | '));
   await r.page.close();
 }
@@ -1123,6 +1179,35 @@ async function checkIncidentLayout(browser, dir, scheme) {          // Vorfallsa
   await narrow.evaluate((i) => window.WP.openIncident(i), cpu.id);
   ok(await labelCovers(narrow, '#incident .iv-plot') === free, 'schmal: die Beschriftung der Soll-Linien verdeckt die Messlinie nicht: ' + await labelCovers(narrow, '#incident .iv-plot'));
   await narrow.close();
+  // (carried from the re-review of Task 9) the incidents of a share, a drive, a profile container, the memory and a delay: no
+  // label lies on a measured line, two labels never touch, at 1400 and at 390 px; the width of a label is the measured one
+  const picks = [['Freigabe', (i) => i.lead === 'share'], ['Laufwerk', (i) => i.lead === 'disk'], ['Profil', (i) => i.lead === 'profile'], ['Arbeitsspeicher', (i) => i.lead === 'memory'], ['Verzoegerung', (i) => i.type === 'ohne-engpass' && i.affected.length > 1]];
+  for (const [width, height] of [[1400, 900], [390, 844]]) {
+    const lp = await browser.newPage({ viewport: { width, height }, colorScheme: scheme });
+    await lp.goto('file://' + path.join(dir, 'report.html'));
+    for (const [name, pick] of picks) {
+      await lp.evaluate((i) => window.WP.openIncident(i), D.incidents.find(pick).id);
+      const cov = await labelCovers(lp, '#incident .iv-plot'), faults = await labelFaults(lp, '#incident .iv-plot');
+      ok(cov !== '' && cov.split(' | ').every((c) => c.endsWith(': 0')) && faults === '', `${width} px, ${name}: Beschriftungen der Soll-Linien frei von der Messlinie und voneinander: ${cov} ${faults}`);
+    }
+    const est = await lp.locator('#incident .iv-plot svg').evaluate((svg) => [...svg.querySelectorAll('.band-warn text, .band-crit text')].map((t) => [Math.round(t.getComputedTextLength()), Math.round(textWidth(t.textContent))]));
+    ok(est.length > 0 && est.every((e) => Math.abs(e[0] - e[1]) <= 1), width + ' px: die Breite einer Beschriftung ist gemessen, nicht geschaetzt: ' + JSON.stringify(est));
+    await lp.close();
+  }
+  // (carried, too) the folded rest of a list of steps: shown with the keyboard or the mouse, the focus stands on its first step
+  // (the line that was clicked is gone; the focus fell to the page)
+  const fp = await open(browser, path.join(dir, 'report.html'), scheme), pr = D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print');
+  await ivOpen(fp.page, pr.id);
+  const focusAt = () => fp.page.evaluate(() => { const a = document.activeElement, d = a.closest('details.morefold'); return [a.tagName, !!d && d.open, !!d && a === d.querySelector('li'), !!d && d.parentNode.className, document.querySelectorAll('#incident details.morefold > summary').length].join(); });
+  await fp.page.focus('#incident .iv-todo > details.morefold > summary');
+  await fp.page.keyboard.press('Enter');
+  ok(await focusAt() === 'LI,true,true,iv-todo card,2' && await fp.page.locator('#incident .iv-todo > details.morefold > summary').isHidden(), 'weitere Pruefschritte mit der Tastatur gezeigt: der Fokus steht auf dem ersten von ihnen: ' + await focusAt());
+  await fp.page.keyboard.press('Tab');
+  ok(await fp.page.evaluate(() => document.activeElement !== document.body && !!document.activeElement.closest('#incident')), 'von dort fuehrt die Tabulatortaste in der Vorfallsansicht weiter');
+  await fp.page.click('#incident .remedies details.morefold > summary');
+  ok(await focusAt() === 'LI,true,true,remedies,2', 'weitere Vorschlaege mit der Maus gezeigt: der Fokus steht auf dem ersten von ihnen: ' + await focusAt());
+  ok(fp.page.errors.length === 0, 'Skriptfehler Fokus der Schrittliste: ' + fp.page.errors.join(' | '));
+  await fp.page.close();
 }
 
 async function checkReported(browser, dir, scheme) {                // gemeldeter Benutzer und gemeldete Uhrzeit in der Vorfallsansicht
@@ -1148,7 +1233,7 @@ async function checkReported(browser, dir, scheme) {                // gemeldete
   ok(await iv.locator('.iv-meta .flag').count() === 0 && await iv.locator('.iv-plot .repmark').count() === 0 && await iv.locator('.iv-plot svg path').count() > 0, 'weder Benutzer noch Uhrzeit: keine Hinweise, keine Markierung im Diagramm');
   // the entries of the expert view name them the same way
   await showExpert(page);
-  ok((await page.locator(`#incidents .incident[data-id="${inc.id}"] .ihead .flag`).allInnerTexts()).join('|') === 'betrifft den gemeldeten Benutzer ' + F.user + '|nahe der gemeldeten Uhrzeit ' + when, 'Eintrag der Expertenansicht nennt Benutzer und Uhrzeit ebenso');
+  ok((await page.locator(`#incList .inc[data-id="${inc.id}"] .flag`).allInnerTexts()).join('|') === 'betrifft den gemeldeten Benutzer ' + F.user + '|nahe der gemeldeten Uhrzeit ' + when, 'Eintrag der Expertenansicht nennt Benutzer und Uhrzeit ebenso');
   ok(page.errors.length === 0, 'Skriptfehler gemeldeter Benutzer: ' + page.errors.join(' | '));
   await page.close();
   // a masked report shows the alias, as everywhere
@@ -1174,13 +1259,20 @@ async function checkMotion(browser, dir, scheme) {                  // weiches R
     await page.waitForTimeout(900);
     const end = await page.evaluate(() => window.scrollY);
     ok(end > y[0] + 100 && (y[1] === end) === !smooth, (smooth ? 'ohne den Wunsch rollt die Seite weich zur gewaehlten Sitzung' : 'reduzierte Bewegung: die Seite springt ohne weiches Rollen zur gewaehlten Sitzung') + ': ' + y.concat(end).join(' '));
-    await showTab(page, 'findings');
-    ok(await page.locator('#tab-findings').isVisible() && page.errors.length === 0, 'danach wechselt der Reiter (' + motion + ')');
+    await showTab(page, 'sollist');
+    ok(await page.locator('#xt-sollist').isVisible() && page.errors.length === 0, 'danach wechselt der Reiter (' + motion + ')');
     // the helper of these checks repeats a click that did not switch the tab (here: the page swallows the first one)
     if (smooth) {
-      await page.evaluate(() => { window.__swallowed = 0; document.querySelector('nav').addEventListener('click', (ev) => { if (!window.__swallowed++) ev.stopPropagation(); }, true); });
+      await page.evaluate(() => { window.__swallowed = 0; document.querySelector('#xtabs').addEventListener('click', (ev) => { if (!window.__swallowed++) ev.stopPropagation(); }, true); });
       await showTab(page, 'apps');
-      ok(await page.locator('#tab-apps').isVisible() && await page.evaluate(() => window.__swallowed) === 2, 'der Helfer wiederholt einen Klick, nach dem der Reiter nicht gewechselt hat');
+      ok(await page.locator('#xt-apps').isVisible() && await page.evaluate(() => window.__swallowed) === 2, 'der Helfer wiederholt einen Klick, nach dem der Reiter nicht gewechselt hat');
+      // a click that worked is not repeated: "In der Expertenansicht zeigen" leaves the view of its button, and where the expert
+      // view takes longer than a second to appear, the helper waits for it (a second click on the hidden button waited 30 s)
+      await page.evaluate((i) => window.WP.openIncident(i), 2);
+      await page.evaluate(() => { const x = document.getElementById('expert'); x.style.visibility = 'hidden'; setTimeout(() => { x.style.visibility = ''; }, 1600); });
+      const t0 = Date.now();
+      await ivExpert(page);
+      ok(Date.now() - t0 < 8000 && await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#expert').isVisible(), 'der Helfer wiederholt den Klick nicht, wenn sein Knopf nicht mehr zu sehen ist: ' + (Date.now() - t0) + ' ms');
     }
     await ctx.close();
   }
@@ -1188,20 +1280,20 @@ async function checkMotion(browser, dir, scheme) {                  // weiches R
 
 async function checkPage(browser, dir, scheme) {                    // Task 13
   const { page, D } = await openExpert(browser, path.join(dir, 'report.html'), scheme);
-  ok(await page.locator('nav button[data-tab]').count() === 5, 'fuenf Reiter');
-  await showTab(page, 'overview');
+  ok(await page.locator('#xtabs button[data-tab]').count() === 8, 'acht Reiter');
+  // tiles and charts stand above the tabs, always visible
   for (const id of ['chCpu', 'chMem', 'chInput', 'chVolumes', 'chCpuStack', 'chMemStack']) ok(await page.locator(`#${id} svg path`).count() > 0, id + ' gezeichnet');
   ok(await page.locator('#chCpu .band-warn').count() === 1 && await page.locator('#chCpu .band-crit').count() === 1, 'Soll-Baender im CPU-Diagramm');
   ok(await page.locator('.tile[data-signal="cpu.host"]').getAttribute('data-status') === '2', 'CPU-Kachel kritisch');
   ok((await page.locator('.tile[data-signal="cpu.host"]').innerText()).includes('kritisch'), 'Status als Wort');
   ok(await page.locator('.tile.info[data-info="userspercore"]').count() === 1, 'Benutzer je logischer CPU als Information');
   ok(await page.locator('#chMainApp svg path').count() > 0, 'Verlauf der Hauptanwendung');
-  ok(!(await page.locator('#zoomReset').isVisible()), 'ohne Zoom keine Ruecksetz-Schaltflaeche');
+  ok(await page.locator('#rangeAll').isVisible() && await page.locator('#rangeAll').isDisabled(), 'ohne Zeitraum ist "Gesamte Messung" deaktiviert');
   const inc = D.incidents.find((i) => i.lead === 'cpu');
   await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [inc.start, inc.end]);
-  ok(await page.locator('#zoomReset').isVisible(), 'Ruecksetz-Schaltflaeche sichtbar');
+  ok(await page.locator('#rangeAll').isVisible() && await page.locator('#rangeAll').isEnabled(), 'mit Zeitraum ist "Gesamte Messung" aktiv');
   ok((await page.locator('#chCpu svg text.xaxis').first().textContent()).startsWith(hhmm(inc.start, D.meta.offsetMin)), 'Zeitachse beginnt am Fensteranfang');
-  await page.click('#zoomReset');
+  await page.click('#rangeAll');
   ok(await page.evaluate(() => window.WP.zoom === null), 'Zoom zurueckgesetzt');
   await showTab(page, 'apps');
   await page.selectOption('#fRoleApps', 'Sicherheit');
@@ -1221,27 +1313,36 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
   ok(await page.locator('#guided #timeline .mark').count() === D.incidents.length && await page.locator('#guided #timeline').isVisible(), 'eine Markierung je Vorfall');
   ok(await page.locator('#guided #timeline .event').count() === D.events.length, 'Ereignisse in der Zeitleiste');
   await showExpert(page);
-  ok(await page.locator('#tab-findings').isVisible() && await page.locator('nav button[data-tab]').first().getAttribute('data-tab') === 'findings' && await page.locator('nav button[data-tab=findings]').getAttribute('aria-selected') === 'true', 'in der Expertenansicht ist Befunde der erste Reiter');
-  ok(await page.locator('#incidents .incident').count() === D.incidents.length, 'ein Eintrag je Vorfall');
+  ok(await page.locator('#incList').isVisible() && await page.locator('#xtabs button[data-tab]').first().getAttribute('data-tab') === 'sollist' && await page.locator('#xtabs button[data-tab=sollist]').getAttribute('aria-selected') === 'true' && await page.locator('#xt-sollist').isVisible(),
+    'in der Expertenansicht stehen die Vorfaelle in ihrer Spalte, Soll-Ist ist der erste Reiter');
+  ok(await page.locator('#incList .inc').count() === D.incidents.length, 'ein Eintrag je Vorfall');
   ok(!(await page.locator('#noFinding').isVisible()), 'kein Hinweis auf fehlende Befunde');
   const cpu = D.incidents.find((i) => i.lead === 'cpu');
-  const entry = page.locator(`#incidents .incident[data-id="${cpu.id}"]`);
-  ok((await entry.locator('.text').innerText()).includes('CPU-Engpass'), 'Klartext sichtbar');
-  ok((await entry.locator('.badge').innerText()).includes('kritisch'), 'Schwere als Wort');
-  await entry.locator('.text').click();
-  ok(await entry.locator('.detail .affected li').count() === cpu.affected.length, 'Betroffene aufgelistet');
-  ok((await entry.locator('.detail .contributors').innerText()).includes('EXCEL.EXE'), 'Verursacher aufgelistet');
-  ok(await entry.locator('.detail svg path').count() > 0, 'Verlauf im Vorfall');
+  // the entry of the column: status as symbol and word, time, kind, the cause in one line with its full text as the tooltip
+  const item = page.locator(`#incList .inc[data-id="${cpu.id}"]`), itemText = oneLine(await item.innerText());
+  ok(itemText.includes('◆ kritisch') && itemText.includes(hhmm(cpu.start, D.meta.offsetMin)) && (await item.locator('.inc-kind').innerText()) === cpu.guide.tech && await item.locator('.inc-cause').getAttribute('title') === cpu.causeText && cpu.causeText.startsWith(await item.locator('.inc-cause').innerText()),
+    'Eintrag der Spalte: Schwere als Symbol und Wort, Uhrzeit, Art, Verursacher: ' + itemText);
+  const line = await item.locator('.inc-cause').evaluate((e) => e.getBoundingClientRect().height);
+  ok(line <= 22 && (await item.locator('.inc-guided').innerText()) === 'Geführt öffnen' && (await item.locator('.inum').innerText()) === 'Vorfall ' + cpu.id, 'Eintrag: Verursacher in einer Zeile, darunter "Gefuehrt oeffnen" und die Nummer: ' + line);
+  // the detail of an incident stands in its incident view
+  const entry = await openIncident(page, cpu.id);
+  ok((await entry.locator('.iv-evidence .techtext').innerText()).includes('CPU-Engpass'), 'Klartext sichtbar');
+  ok((await entry.locator('.iv-meta .status').innerText()).includes('kritisch'), 'Schwere als Wort');
+  ok(await entry.locator('.iv-affected ul.aff > li').count() === cpu.affected.length, 'Betroffene aufgelistet');
+  ok((await entry.locator('.iv-evidence .contributors').innerText()).includes('EXCEL.EXE'), 'Verursacher aufgelistet');
+  ok(await entry.locator('.iv-evidence svg path').count() > 0, 'Verlauf im Vorfall');
+  await page.click('#ivBack'); await ivClosed(page);
   await showGuided(page);
-  // the mark of an incident that was not opened so far: nothing of what follows holds before the click
-  const disk = D.incidents.find((i) => i.lead === 'disk'), dEntry = page.locator(`#incidents .incident[data-id="${disk.id}"]`);
-  ok(await page.locator('#incident').isHidden() && !(await dEntry.getAttribute('class')).includes('open') && await page.evaluate(() => window.WP.zoom === null), 'vor dem Klick: keine Vorfallsansicht, Eintrag eingeklappt, kein Zeitraum');
+  // the mark of an incident that was not chosen so far: nothing of what follows holds before the click
+  const disk = D.incidents.find((i) => i.lead === 'disk'), dEntry = page.locator(`#incList .inc[data-id="${disk.id}"]`);
+  ok(await page.locator('#incident').isHidden() && !(await dEntry.getAttribute('class')).includes('selected') && await page.evaluate(() => window.WP.zoom === null), 'vor dem Klick: keine Vorfallsansicht, Eintrag nicht gewaehlt, kein Zeitraum');
   await page.click(`#guided #timeline .mark[data-incident="${disk.id}"]`);
   ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator(`#incident[data-id="${disk.id}"]`).isVisible() && await page.locator('#incident .iv-chart svg path').count() > 0, 'Klick auf die Markierung oeffnet die Vorfallsansicht ihres Vorfalls');
   await ivExpert(page);
   const z = await page.evaluate(() => window.WP.zoom);
-  ok(await page.evaluate(() => window.WP.view) === 'expert' && await dEntry.locator('.detail').isVisible() && await dEntry.locator('.detail svg path').count() > 0, 'Klick auf die Markierung wechselt in die Expertenansicht zum aufgeklappten Vorfall');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await dEntry.isVisible() && (await dEntry.getAttribute('class')).includes('selected') && await page.locator('#chVolumes svg .incband').count() === 1, 'Klick auf die Markierung wechselt in die Expertenansicht zum gewaehlten Vorfall, sein Fenster ist in den Diagrammen getoent');
   ok(z && z.t0 < disk.start && z.t1 > disk.end && z.t1 - z.t0 < (disk.end - disk.start) * 3, 'Klick stellt die Diagramme auf das Fenster ein');
+  await showTab(page, 'sollist');
   ok(await page.locator('#sollist tbody tr').count() === D.sollIst.length, 'Soll-Ist-Tabelle vollstaendig');
   ok((await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()).includes('unter 75 %'), 'Idealbereich genannt');
   ok(await page.locator('#sollist tbody tr[data-id="cpu.host"] a[href]').count() === 1, 'Herkunft verlinkt');
@@ -1257,11 +1358,17 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
     ok(u.page.errors.length === 0, 'Skriptfehler mit javascript:-URL: ' + u.page.errors.join(' | '));
     await u.page.close();
   }
-  await page.click('#eventList summary');
-  ok(await page.locator('#tEvents tbody tr').count() === Math.min(200, D.events.length), 'Ereignisliste');
+  // the list of events stands in its tab and follows the range: the whole capture shows them all
+  await page.click('#rangeAll');
+  await showTab(page, 'events');
+  ok(await page.locator('#tEvents tbody tr').count() === Math.min(200, D.events.length) && (await page.locator('#eventHead').innerText()) === `Ereignisse (${D.events.length})`, 'Ereignisliste');
   await page.click('#tEvents tbody tr >> nth=0');
   const ez = await page.evaluate(() => window.WP.zoom);
   ok(ez && Math.abs((ez.t0 + ez.t1) / 2 - D.events[0].t) <= 60000, 'Ereignis stellt den Zoom ein');
+  const near = D.events.filter((e) => e.t >= ez.t0 && e.t <= ez.t1).length;
+  ok(near >= 1 && near < D.events.length && await page.locator('#tEvents tbody tr').count() === near && (await page.locator('#eventHead').innerText()) === `Ereignisse im Zeitraum (${near} von ${D.events.length})` && (await page.locator('#xtab-events .cnt').innerText()) === String(near),
+    'die Ereignisliste folgt dem Zeitraum: ' + await page.locator('#eventHead').innerText());
+  await showTab(page, 'quality');
   ok((await page.locator('#quality').innerText()).includes('WorkerPerf'), 'Messqualitaet nennt den Collector');
   ok((await page.locator('#limits').innerText()).includes('SYSTEM'), 'Grenzen der Aussage genannt');
   ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
@@ -1269,9 +1376,11 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
 
   const f = await open(browser, path.join(dir, 'report-focus.html'), scheme);
   ok(await f.page.locator('#guided #timeline .reported').isVisible() && await f.page.locator('#timeline .reported').count() === 1, 'gemeldete Uhrzeit markiert');
+  ok(await f.page.locator('header #focusInfo').isVisible() && (await f.page.locator('header #focusInfo').innerText()).includes('user003'), 'Fokus in der Kopfleiste genannt, auch in der gefuehrten Ansicht');
   await showExpert(f.page);
-  ok((await f.page.locator('#incidents .incident').first().getAttribute('class')).includes('focus'), 'Vorfall des Benutzers steht vorn');
-  ok((await f.page.locator('#focusInfo').innerText()).includes('user003'), 'Fokus genannt');
+  const fFirst = f.page.locator('#incList .inc').first();
+  ok((await fFirst.getAttribute('class')).includes('focus') && await fFirst.getAttribute('data-id') === String(f.D.incidents.find((i) => i.focus).id) && (await fFirst.locator('.flag').first().innerText()) === 'betrifft den gemeldeten Benutzer user003', 'Vorfall des Benutzers steht vorn und traegt die Kennzeichnung');
+  ok(await f.page.locator('header #focusInfo').isVisible() && (await f.page.locator('#focusInfo').innerText()).includes('user003'), 'Fokus genannt');
   await f.page.close();
 
   const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
@@ -1280,7 +1389,7 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
   await showExpert(n.page);
   ok(await n.page.locator('#noFinding').isVisible(), 'Hinweis ohne Befund');
   ok((await n.page.locator('#noFinding').innerText()).includes('Keine Schwelle wurde überschritten'), 'ausdrueckliche Aussage');
-  ok(await n.page.locator('#incidents .incident').count() === 0, 'keine Vorfaelle');
+  ok(await n.page.locator('#incList .inc').count() === 0 && await n.page.locator('#incList').isHidden() && (await n.page.locator('#findHead').innerText()) === 'Keine Vorfälle im Messzeitraum.', 'keine Vorfaelle');
   ok(n.page.errors.length === 0, 'Skriptfehler ohne Befund: ' + n.page.errors.join(' | '));
   await n.page.close();
 }
@@ -1294,10 +1403,14 @@ function patched(dir, base, name, change) {
   fs.writeFileSync(file, src.substring(0, a) + JSON.stringify(J).replace(/</g, '\\u003c') + src.substring(b));
   return file;
 }
+// The detail of an incident stands in its incident view (the entries of the expert view do not unfold): opens the view of
+// the incident, unfolds its evidence and returns the view.
 async function openIncident(page, id) {
-  const entry = page.locator(`#incidents .incident[data-id="${id}"]`);
-  await entry.locator('.text').click();
-  return entry;
+  await page.evaluate((i) => { window.WP.openIncident(i); document.querySelector('#incident details.iv-evidence').open = true; }, id);
+  await page.locator(`#incident[data-id="${id}"] .iv-evbody`).waitFor({ state: 'visible' });
+  // the charts of the evidence are drawn when it has unfolded
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  return page.locator('#incident');
 }
 
 async function checkFinalFix(browser, dir, scheme) {                // Abschlussrunde
@@ -1316,30 +1429,32 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   }
   // I2: the chronic state of one session's network path shows nothing of other sessions
   const chronic = D.incidents.find((i) => i.chronic && i.type === 'umfeld');
-  let entry = await openIncident(page, chronic.id), text = await entry.locator('.detail').innerText();
-  ok((await entry.locator('.causebox').innerText()).includes('nicht den Worker'), 'Umfeld: Aussage zur Netzstrecke');
-  for (const word of ['nexus.exe', 'Oracle-Listener', 'Virenscan', 'Ereignisse im Fenster', 'Schutzprodukte', 'Kein Engpass auf dem Worker']) ok(!text.includes(word), 'Dauerzustand im Umfeld ohne fremde Belege: ' + word);
+  let entry = await openIncident(page, chronic.id), text = await entry.locator('.iv-evidence').innerText();
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('nicht den Server'), 'Umfeld: Aussage zur Netzstrecke');
+  for (const word of ['nexus.exe', 'Oracle-Listener', 'Virenscan', 'Ereignisse im Fenster', 'Schutzprodukte', 'Kein Engpass auf dem Server']) ok(!text.includes(word), 'Dauerzustand im Umfeld ohne fremde Belege: ' + word);
   // engpass with main cause: as before, with the unit of the ranking
   const mem = D.incidents.find((i) => i.lead === 'memory');
   entry = await openIncident(page, mem.id);
-  ok((await entry.locator('.causebox').innerText()).includes('ms-teams.exe') && (await entry.locator('.causebox').innerText()).includes('des Arbeitsspeichers aller Prozesse (Working Set)'), 'Hauptverursacher mit Einheit');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('ms-teams.exe') && (await entry.locator('.iv-evidence .causebox').innerText()).includes('des Arbeitsspeichers aller Prozesse (Working Set)'), 'Hauptverursacher mit Einheit');
   const prof = D.incidents.find((i) => i.lead === 'profile');
   entry = await openIncident(page, prof.id);
-  ok((await entry.locator('.causebox').innerText()).includes('der I/O-Menge dieser Sitzung'), 'Profilcontainer: Anteil der Sitzung');
-  ok((await entry.locator('.detail .contributors').innerText()).includes('Anteil an der I/O-Menge dieser Sitzung'), 'Profilcontainer: Rangliste der Sitzung');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('der I/O-Menge dieser Sitzung'), 'Profilcontainer: Anteil der Sitzung');
+  ok((await entry.locator('.iv-evidence .contributors').innerText()).includes('Anteil an der I/O-Menge dieser Sitzung'), 'Profilcontainer: Rangliste der Sitzung');
   // ohne-engpass: as before; Minor 20: a chart with a single probe names the endpoint
   const backend = D.incidents.find((i) => i.type === 'ohne-engpass' && i.resources.includes('endpoint'));
   entry = await openIncident(page, backend.id);
-  ok((await entry.locator('.causebox').innerText()).includes('Kein Engpass auf dem Worker. Höchste Eingabeverzögerung in nexus.exe'), 'Verzoegerung ohne Engpass wie bisher');
-  ok((await entry.locator('.detail .sigcharts .legend').allInnerTexts()).some((t) => t.includes('Oracle-Listener')), 'Diagramm einer einzelnen Probe nennt die Gegenstelle');
-  ok((await entry.locator('.detail').innerText()).includes('Ereignisse im Fenster'), 'Ereignisse bleiben beim kurzen Vorfall');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('Kein Engpass auf dem Server. Höchste Eingabeverzögerung in nexus.exe'), 'Verzoegerung ohne Engpass wie bisher');
+  ok((await entry.locator('.iv-evidence .sigcharts .legend').allInnerTexts()).some((t) => t.includes('Oracle-Listener')), 'Diagramm einer einzelnen Probe nennt die Gegenstelle');
+  ok((await entry.locator('.iv-evidence').innerText()).includes('Ereignisse im Fenster'), 'Ereignisse bleiben beim kurzen Vorfall');
   // Minor 1, 2, 11 and the limits
+  await showTab(page, 'quality');
   const q = await page.locator('#quality').innerText(), burstTicks = D.host.burst.filter((b) => b).length;
   ok(burstTicks > 0 && D.quality.burstTicks === burstTicks && Math.abs(D.quality.burstMin - burstTicks * D.meta.fastSec / 60) < 0.01, 'Zeit im Verdichtungsmodus aus den Takten');
   ok(q.includes(burstTicks.toLocaleString('de-DE') + ' Takte') && q.includes('im Abstand von 6 s'), 'Verdichtung: Dauer aus den Takten, Abstand wie gemessen');
   ok(!q.includes('unlesbare Zeilen') && !q.includes('Fehlgeschlagene Abfragen'), 'ohne uebersprungene Zeilen und Fehler keine Zeile dazu');
-  ok((await page.locator('#sollNote').innerText()).includes('gelten Ø, P95 und Max für die jeweils schlechteste Instanz je Zeitpunkt'), 'Hinweis zu mehreren Instanzen');
   ok((await page.locator('#limits').innerText()).includes('Prozesse, die zwischen zwei Schnappschüssen starten und wieder enden, werden nicht erfasst; für einen beendeten Prozess fehlt der Verbrauch seit dem letzten Schnappschuss.'), 'Grenze der Prozess-Schnappschuesse');
+  await showTab(page, 'sollist');
+  ok((await page.locator('#sollNote').innerText()).includes('gelten Ø, P95 und Max für die jeweils schlechteste Instanz je Zeitpunkt'), 'Hinweis zu mehreren Instanzen');
   ok((await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()).includes('vor produktiver Nutzung'), 'Hinweis zur Herkunft der Citrix-Werte');
   ok(!(await page.locator('#subtitle').innerText()).includes('Aufzeichnung'), 'regulaeres Ende ohne Hinweis im Kopf');
   ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
@@ -1354,11 +1469,10 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   const nf = await sp.page.locator('#noFinding').innerText();
   ok(nf.includes('Kein Vorfall.') && nf.includes('Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): CPU-Auslastung Max 96,5 % (Soll unter 75 %).'), 'einzelne Ueberschreitungen genannt: ' + nf.split('\n').slice(0, 2).join(' / '));
   ok(!nf.includes('Keine Schwelle wurde überschritten') && !nf.includes('lagen im ganzen Zeitraum im Soll'), 'keine Aussage, alles sei im Soll');
-  ok(await sp.page.locator('#incidents .incident').count() === 0, 'kein Vorfall aus zwei Takten');
+  ok(await sp.page.locator('#incList .inc').count() === 0, 'kein Vorfall aus zwei Takten');
   let row = await sp.page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText();
   ok(row.includes('normal') && row.includes('einzelne Überschreitungen') && !row.includes('kritisch'), 'Soll-Ist-Zeile normal mit Zusatz');
-  await showTab(sp.page, 'overview');
-  ok(await sp.page.locator('.tile[data-signal="cpu.host"]').getAttribute('data-status') === '0', 'CPU-Kachel normal');
+  ok(await sp.page.locator('.tile[data-signal="cpu.host"]').isVisible() && await sp.page.locator('.tile[data-signal="cpu.host"]').getAttribute('data-status') === '0', 'CPU-Kachel normal');
   ok((await sp.page.locator('.tile[data-signal="cpu.host"]').innerText()).includes('einzelne Überschreitungen'), 'CPU-Kachel mit Zusatz');
   ok(await sp.page.locator('.tile[data-signal="ica.rtt"]').getAttribute('data-status') === 'na', 'nicht gemessen bleibt');
   ok(sp.page.errors.length === 0, 'Skriptfehler einzelne Ueberschreitungen: ' + sp.page.errors.join(' | '));
@@ -1368,10 +1482,10 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   const nd = await openExpert(browser, path.join(dir, 'report-nodata.html'), scheme);
   const bare = nd.D.incidents.find((i) => i.type === 'engpass' && i.lead === 'cpu');
   entry = await openIncident(nd.page, bare.id);
-  let box = await entry.locator('.causebox').innerText();
+  let box = await entry.locator('.iv-evidence .causebox').innerText();
   ok(box.includes('Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.') && bare.text.includes('Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.'), 'Engpass ohne Prozessdaten: Text und Seite gleich');
-  ok(!(await entry.locator('.detail').innerText()).includes('Kein Engpass auf dem Worker'), 'Engpass nie als "Kein Engpass auf dem Worker"');
-  ok((await entry.locator('.detail .essentials').innerText()).includes('Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar.'), 'Betroffene nicht bestimmbar');
+  ok(!(await entry.locator('.iv-evidence').innerText()).includes('Kein Engpass auf dem Server'), 'Engpass nie als "Kein Engpass auf dem Server"');
+  ok((await entry.locator('.iv-affected').innerText()).includes('Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar.'), 'Betroffene nicht bestimmbar');
   ok(nd.page.errors.length === 0, 'Skriptfehler ohne Prozessdaten: ' + nd.page.errors.join(' | '));
   await nd.page.close();
 
@@ -1388,14 +1502,15 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
     J.quality.sourceErrors = [{ source: 'events', label: 'Ereignisprotokoll', count: 240, firstMs: J.meta.start + 15000, firstMessage: 'Zugriff verweigert' }];
   }), scheme);
   entry = await openIncident(v.page, disk.id);
-  box = await entry.locator('.causebox').innerText();
+  box = await entry.locator('.iv-evidence .causebox').innerText();
   ok(box.includes('Größter Verbraucher: Microsoft Defender mit 96 % der I/O-Menge. Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen.'), 'Schutzsoftware als groesster Verbraucher: ' + box);
-  ok(box.includes('Größter Anteil außerhalb der Schutzsoftware: robocopy.exe') && !box.includes('Begleiter') && !(await entry.locator('.detail').innerText()).includes('Begleiter:'), 'nicht als Begleiter bezeichnet');
+  ok(box.includes('Größter Anteil außerhalb der Schutzsoftware: robocopy.exe') && !box.includes('Begleiter') && !(await entry.locator('.iv-evidence .evidence').innerText()).includes('Begleiter:'), 'nicht als Begleiter bezeichnet');   // the lists of the evidence (its first line is the incident's sentence as delivered)
   entry = await openIncident(v.page, D.incidents.find((i) => i.lead === 'cpu').id);
-  ok((await entry.locator('.causebox').innerText()).includes('Kein einzelner Hauptverursacher: kein Prozess erreicht 10 % der CPU-Zeit.'), 'kein Hauptverursacher unter der Untergrenze');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('Kein einzelner Hauptverursacher: kein Prozess erreicht 10 % der CPU-Zeit.'), 'kein Hauptverursacher unter der Untergrenze');
   entry = await openIncident(v.page, backend.id);
-  ok((await entry.locator('.causebox').innerText()).includes('Kein Engpass in den gemessenen Worker-Ressourcen. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen.'), 'nicht gemessene Worker-Ressourcen genannt');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('Kein Engpass in den gemessenen Server-Ressourcen. Nicht gemessen: Datenträger-Antwortzeit, Freigabe-Antwortzeit (SMB); ein Engpass dort ist nicht ausgeschlossen.'), 'nicht gemessene Server-Ressourcen genannt');
   ok((await v.page.locator('#subtitle').innerText()).includes('Aufzeichnung mit Fehler beendet: Testfehler <b>im Takt</b>'), 'Ende mit Fehler im Kopf');
+  await showTab(v.page, 'quality');
   const vq = await v.page.locator('#quality').innerText();
   ok(vq.includes('Übersprungene unlesbare Zeilen ticks.csv: 3 · snapshots.csv: 1'), 'uebersprungene Zeilen je Datei');
   ok(vq.includes('Ereignisprotokoll: 240 mal, zuerst') && vq.includes('Zugriff verweigert'), 'fehlgeschlagene Abfragen mit Anzahl, Zeit und Meldung');
@@ -1412,14 +1527,16 @@ async function checkEvents(browser, dir, scheme) {                 // Ereignisse
   ok(await page.locator('#guided #timeline .mark.type-ereignis').count() === ev.length, 'Ereignisvorfaelle in der Zeitleiste');
   for (const g of ['app', 'session', 'security', 'profile']) ok(await page.locator(`#guided #timeline .tl-row[data-group="${g}"] .event`).count() === D.events.filter((e) => e.group === g).length, 'Ereigniszeile ' + g);
   await showExpert(page);
-  ok(ev.length === 4 && await page.locator('#incidents .incident.type-ereignis').count() === ev.length, 'Ereignisvorfaelle in der Liste');
+  ok(ev.length === 4 && await page.locator('#incList .inc.type-ereignis').count() === ev.length, 'Ereignisvorfaelle in der Liste');
   const many = ev.find((i) => i.event.app === 'OUTLOOK.EXE');
   const entry = await openIncident(page, many.id);
-  ok((await entry.locator('.detail .patterns').innerText()).includes('spricht für Installation oder Update'), 'Aussage des Musters');
+  ok((await entry.locator('.iv-evidence .patterns').innerText()).includes('spricht für Installation oder Update'), 'Aussage des Musters');
   const prof = ev.find((i) => i.event.kind === 'profileerror');
-  ok((await (await openIncident(page, prof.id)).locator('.detail .patterns').innerText()).includes('Kein Muster erkannt'), 'kein Muster');
+  ok((await (await openIncident(page, prof.id)).locator('.iv-evidence .patterns').innerText()).includes('Kein Muster erkannt'), 'kein Muster');
+  await showTab(page, 'before');
   ok((await page.locator('#before').innerText()).includes('Für diese Zeit liegen keine Messwerte vor.'), 'Vor der Messung mit Hinweis');
-  ok(await page.locator('#before .day').count() === D.before.perDay.length && await page.locator('#before .incident').count() === D.before.incidents.length, 'Rueckblick je Tag und Vorfall');
+  ok(await page.locator('#before .day').count() === D.before.perDay.length && await page.locator('#before .inc').count() === D.before.incidents.length && (await page.locator('#xtab-before .cnt').innerText()) === String(D.before.incidents.length), 'Rueckblick je Tag und Vorfall');
+  await showTab(page, 'print');
   ok(await page.locator('#tPrintDrivers tbody tr').count() === 3 && (await page.locator('#tPrintQueues').innerText()).includes('PRN-EG-01'), 'Tabelle Drucken');
   await showTab(page, 'sessions');
   const s14 = D.sessions.find((s) => s.user === 'user014');
@@ -1443,44 +1560,52 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   await showExpert(page);
   ok((await page.locator('#findHead').innerText()).includes('4 Vorfälle aus Ereignissen'), 'Kopfsatz nennt die Vorfaelle aus Ereignissen');
   const entry = await openIncident(page, outlook.id);
-  ok((await entry.locator('.badge').innerText()).includes('kritisch') && (await entry.locator('.text').innerText()) === outlook.text, 'Ereignisvorfall: Satz und Schwere als Wort');
-  ok(await entry.locator('.detail .patterns li').count() === outlook.event.patterns.length, 'eine Zeile je Muster');
-  ok(await entry.locator('.detail .evlist tbody tr').count() === outlook.events.length, 'Ereignisse des Vorfalls');
-  ok((await entry.locator('.detail .evlist').innerText()).includes(evHms(outlook.events[0])), 'Zeit des Ereignisses in seiner Ortszeit');
-  const head = await entry.locator('.detail .kv').innerText();
+  ok((await entry.locator('.iv-meta .status').innerText()).includes('kritisch') && (await entry.locator('.iv-evidence .techtext').innerText()) === outlook.text, 'Ereignisvorfall: Satz und Schwere als Wort');
+  ok(await entry.locator('.iv-evidence .patterns li').count() === outlook.event.patterns.length, 'eine Zeile je Muster');
+  ok(await entry.locator('.iv-evidence .evlist tbody tr').count() === outlook.events.length, 'Ereignisse des Vorfalls');
+  ok((await entry.locator('.iv-evidence .evlist').innerText()).includes(evHms(outlook.events[0])), 'Zeit des Ereignisses in seiner Ortszeit');
+  const head = await entry.locator('.iv-evidence .kv').innerText();
   ok(head.includes('olmapi32.dll') && head.includes('user010') && head.includes('3'), 'Kopfzeile mit Modul, Benutzern und Anzahl');
   // the crash after the memory incident and the memory incident refer to each other
   const chrome = ev.find((i) => i.event.app === 'chrome.exe'), mem = D.incidents.find((i) => i.lead === 'memory');
   let e2 = await openIncident(page, chrome.id);
-  ok(await e2.locator(`.detail .lnk[data-incident="${mem.id}"]`).count() === 1, 'Verweis auf den Leistungsvorfall');
+  ok(await e2.locator(`.iv-evidence .lnk[data-incident="${mem.id}"]`).count() === 1, 'Verweis auf den Leistungsvorfall');
   e2 = await openIncident(page, mem.id);
-  ok(await e2.locator(`.detail .lnk[data-incident="${chrome.id}"]`).count() === 1, 'Leistungsvorfall verweist auf den Ereignisvorfall');
-  await e2.locator(`.detail .lnk[data-incident="${chrome.id}"]`).click();
-  ok(await page.locator(`#incidents .incident[data-id="${chrome.id}"]`).evaluate((n) => n.classList.contains('open')), 'Verweis oeffnet den Ereignisvorfall');
+  ok(await e2.locator(`.iv-evidence .lnk[data-incident="${chrome.id}"]`).count() === 1, 'Leistungsvorfall verweist auf den Ereignisvorfall');
+  await e2.locator(`.iv-evidence .lnk[data-incident="${chrome.id}"]`).click();
+  ok(await page.locator('#incident').getAttribute('data-id') === String(chrome.id) && await page.locator('#incident').isVisible(), 'Verweis oeffnet den Ereignisvorfall');
   // the print incident: the driver is named as involved, in words
+  await showTab(page, 'print');
   const drv = await page.locator('#tPrintDrivers tbody tr', { hasText: 'HP Universal Printing PCL 6 (Sim)' }).innerText();
   ok(drv.includes('beteiligt') && drv.includes('Typ 3') && !drv.includes('möglicherweise'), 'Treiber als beteiligt bezeichnet');
   ok((await page.locator('#tPrintDrivers tbody tr', { hasText: 'Kyocera' }).innerText()).includes('isoliert'), 'Isolierung als Wort');
   const spool = await page.locator('#tPrintProcs tbody tr', { hasText: 'spoolsv.exe' }).innerText();
   ok(spool.includes('16 MB'), 'Arbeitsspeicher der Druckwarteschlange');
   // lookback: both counts labelled, per-day bars with their number, lookback incidents with their date
+  await showTab(page, 'before');
   const before = await page.locator('#before').innerText();
   ok(before.includes('Ereignisse aus diesen Tagen') && before.includes('davon mit Vorfallsart'), 'beide Zahlen des Rueckblicks benannt');
   // the simulated lookback lies before the day of the run: its dates come from the data, not a fixed calendar day
   const d0 = D.before.perDay[0], d0Text = d0.day.split('-').reverse().join('.'), bar0 = await page.locator('#before .day').first().innerText();
   ok(bar0.includes(d0Text) && bar0.includes(String(d0.count)), 'Balken mit Datum und Zahl: ' + bar0);
   const nexus = D.before.incidents.find((i) => i.event.app === 'nexus.exe');
-  const be = page.locator(`#before .incident[data-id="${nexus.id}"]`);
-  await be.locator('.text').click();
-  ok((await be.locator('.detail .patterns').innerText()).includes('spricht für Profil oder Daten dieses Benutzers'), 'Muster im Rueckblick');
-  ok((await be.locator('.detail .evlist').innerText()).includes(ddmmyyyy(nexus.events[0].t, nexus.events[0].offsetMin)), 'Rueckblick-Ereignisse mit Datum');
-  ok(await be.locator('.detail .zoomto').count() === 0, 'kein Zoom fuer die Zeit vor der Messung');
+  // the entry of a lookback incident carries its date and leads into its incident view
+  const bItem = page.locator(`#before .inc[data-id="${nexus.id}"]`);
+  ok((await bItem.locator('.inc-when').innerText()).includes(ddmmyyyy(nexus.events[0].t, nexus.events[0].offsetMin)) && (await bItem.innerText()).includes('kritisch') && await bItem.locator('button.inc-main').count() === 0, 'Eintrag vor der Messung mit Datum und Schwere, ohne Zeitraum zum Setzen');
+  await bItem.locator('.inc-guided').click();
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator('#incident').getAttribute('data-id') === String(nexus.id), 'Eintrag vor der Messung fuehrt in seine Vorfallsansicht');
+  const be = await openIncident(page, nexus.id);
+  ok((await be.locator('.iv-evidence .patterns').innerText()).includes('spricht für Profil oder Daten dieses Benutzers'), 'Muster im Rueckblick');
+  ok((await be.locator('.iv-evidence .evlist').innerText()).includes(ddmmyyyy(nexus.events[0].t, nexus.events[0].offsetMin)), 'Rueckblick-Ereignisse mit Datum');
+  // (reworded: the entry had no button "Alle Diagramme auf diesen Zeitraum stellen") the way into the expert view sets no range
+  await ivExpert(page);
+  ok(await page.evaluate(() => window.WP.zoom === null) && await page.locator('#rangeAll').isDisabled() && await page.locator(`#before .inc[data-id="${nexus.id}"].selected`).isVisible(), 'kein Zoom fuer die Zeit vor der Messung');
   // C1: a lookback crash without session and account says so, never "ohne Benutzersitzung"
   const nosess = D.before.incidents.find((i) => i.event.app === 'simscan.exe');
-  const ne = page.locator(`#before .incident[data-id="${nosess.id}"]`);
-  await ne.locator('.text').click();
-  const nkv = await ne.locator('.detail .kv').innerText();
-  ok(nkv.includes('Sitzung nicht ermittelt') && !nkv.includes('ohne Benutzersitzung') && (await ne.locator('.text').innerText()).includes('Sitzung nicht ermittelt.'), 'Rueckblick: unbekannte Sitzung als solche benannt: ' + nkv);
+  const ne = await openIncident(page, nosess.id);
+  const nkv = await ne.locator('.iv-evidence .kv').innerText();
+  ok(nkv.includes('Sitzung nicht ermittelt') && !nkv.includes('ohne Benutzersitzung') && (await ne.locator('.iv-evidence .techtext').innerText()).includes('Sitzung nicht ermittelt.'), 'Rueckblick: unbekannte Sitzung als solche benannt: ' + nkv);
+  await showTab(page, 'quality');
   ok(!(await page.locator('#quality').innerText()).includes('unvollständig'), 'ohne Obergrenze kein Hinweis');
   ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
   await page.close();
@@ -1488,7 +1613,7 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   // without event files: the report without a finding stays as it was
   const n = await open(browser, path.join(dir, 'report-none.html'), scheme);
   ok(await n.page.locator('#guided #timeline .tl-row').count() > 0 && await n.page.locator('#guided #timeline .event').count() === 0 && await n.page.locator('#guided #timeline .tl-row[data-group]').count() === 0, 'ohne Ereignisse keine Ereigniszeilen');
-  await showExpert(n.page);
+  await showTab(n.page, 'before');
   // changed in fix round 1 (I1), and again in fix round 2 (N2): without events_before.csv the card says that the file is
   // missing; the sources of this capture were available
   ok((await n.page.locator('#before').innerText()).includes('Für die Tage vor der Messung liegt keine Ereignisdatei vor (events_before.csv fehlt).') && await n.page.locator('.type-ereignis').count() === 0, 'ohne Ereignisdatei: Datei fehlt, keine Ereignisvorfaelle');
@@ -1519,14 +1644,15 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
     J.quality.unreadable = Object.assign({}, J.quality.unreadable, { events: 2, printQueues: 1 });
     J.sessions.find((s) => s.user === 'user014').user = 'u' + bad;
   }), scheme);
-  ok(await v.page.evaluate(() => window.__xss === undefined) && await v.page.locator('#tab-findings img, #guided img').count() === 0, 'Markup aus den Daten wird nicht ausgefuehrt');
+  ok(await v.page.evaluate(() => window.__xss === undefined) && await v.page.locator('#expert img, #guided img').count() === 0, 'Markup aus den Daten wird nicht ausgefuehrt');
   const ve = await openIncident(v.page, D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'OUTLOOK.EXE').id);
-  ok((await ve.locator('.text').innerText()).includes('Satz ' + bad) && (await ve.locator('.detail .evlist').innerText()).includes('Ereignis ' + bad), 'Markup erscheint als Text');
-  ok((await ve.locator('.detail .patterns').innerText()).includes('Muster ' + bad) && (await ve.locator('.detail .kv').innerText()).includes(bad), 'Muster und Kopfzeile als Text');
-  ok(await ve.locator('.detail img').count() === 0, 'kein Bild im Vorfall');
-  ok((await ve.locator('.detail .evlist').innerText()).includes('die ersten 2 und das letzte der 120 Ereignisse'), 'gekuerzte Ereignisliste benannt');
-  await v.page.click('#eventList summary');
-  ok((await v.page.locator('#tEvents').innerText()).includes('Text ' + bad), 'Ereignisliste zeigt Markup als Text');
+  ok((await ve.locator('.iv-evidence .techtext').innerText()).includes('Satz ' + bad) && (await ve.locator('.iv-evidence .evlist').innerText()).includes('Ereignis ' + bad), 'Markup erscheint als Text');
+  ok((await ve.locator('.iv-evidence .patterns').innerText()).includes('Muster ' + bad) && (await ve.locator('.iv-evidence .kv').innerText()).includes(bad), 'Muster und Kopfzeile als Text');
+  ok(await ve.locator('img').count() === 0, 'kein Bild im Vorfall');
+  ok((await ve.locator('.iv-evidence .evlist').innerText()).includes('die ersten 2 und das letzte der 120 Ereignisse'), 'gekuerzte Ereignisliste benannt');
+  await showTab(v.page, 'events');
+  ok((await v.page.locator('#tEvents').innerText()).includes('Text ' + bad) && await v.page.locator('#expert img').count() === 0, 'Ereignisliste zeigt Markup als Text');
+  await showTab(v.page, 'print');
   const pd = await v.page.locator('#tPrintDrivers tbody tr', { hasText: bad }).innerText();
   ok(pd.includes('möglicherweise beteiligt'), 'moeglicherweise beteiligter Treiber in Worten');
   ok((await v.page.locator('#tPrintQueues').innerText()).includes(bad), 'Warteschlange als Text');
@@ -1534,10 +1660,12 @@ async function checkEventDetails(browser, dir, scheme) {           // Ereignisse
   ok(await sp.count() === 1, 'neu gestarteter Druckprozess in einer Zeile');
   const spt = await sp.innerText();
   ok(spt.includes('12 MB') && spt.includes('70 MB') && spt.includes('76 MB') && spt.includes('9999'), 'Anfang des ersten, Ende des letzten Prozesses, Hoechstwert: ' + spt);
+  await showTab(v.page, 'before');
   const vb = await v.page.locator('#before').innerText();
   ok(vb.includes('unvollständig') && vb.includes('Anwendung'), 'unvollstaendiger Rueckblick im Block');
   ok(vb.includes('Ereignisse um die gemeldete Uhrzeit') && vb.includes(D.before.incidents[0].events[0].text), 'Ereignisse um die gemeldete Zeit');
   ok(vb.includes('Ereignisse um die gemeldete Uhrzeit ' + ddmmyyyy(D.before.incidents[0].start + 60000, D.meta.offsetMin)), 'gemeldete Uhrzeit mit Datum');
+  await showTab(v.page, 'quality');
   const vq = await v.page.locator('#quality').innerText();
   ok(vq.includes('ticks.csv: 0 · snapshots.csv: 0 · events.csv: 2 · printqueues.csv: 1'), 'uebersprungene Zeilen der Ereignisdateien: ' + vq);
   ok(vq.includes('Rückblick unvollständig') && vq.includes('Anwendung'), 'Obergrenze des Rueckblicks in der Messqualitaet');
@@ -1561,11 +1689,22 @@ async function checkNarrow(browser, dir, scheme) {                  // schmale A
   ok(col[0][0] === col[1][0] && col[1][1] > col[0][1] && col[0][2] <= 390, 'gefuehrte Ansicht schmal: Karten in einer Spalte: ' + JSON.stringify(col));
   const kp = await page.locator('#kpis .kpi').evaluateAll((k) => k.map((x) => Math.round(x.getBoundingClientRect().right)));
   ok(kp.every((r) => r <= 390), 'gefuehrte Ansicht schmal: Kennzahlen brechen um: ' + kp.join(' '));
+  // the expert view in one column: the incident column is a list over the tiles that unfolds
   await showExpert(page);
-  for (const inc of [D.incidents.find((i) => i.type === 'ereignis'), D.incidents.find((i) => i.lead === 'memory')]) await openIncident(page, inc.id);
-  await page.locator(`#before .incident[data-id="${D.before.incidents[0].id}"] .text`).click();
-  const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  const widths = () => page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(await page.locator('#incList').isHidden() && await page.locator('#incToggle').getAttribute('aria-expanded') === 'false', 'schmal: die Vorfallsspalte ist eingeklappt');
+  await page.click('#incToggle');
+  const nb = await page.evaluate(() => { const b = (id) => document.getElementById(id).getBoundingClientRect(); return [b('incCol').bottom, b('tiles').top, b('incCol').width, b('tiles').width]; });
+  ok(await page.locator('#incList .inc:visible').count() === D.incidents.length && await page.locator('#incToggle').getAttribute('aria-expanded') === 'true' && nb[0] <= nb[1] && Math.abs(nb[2] - nb[3]) <= 2, 'schmal: aufgeklappt steht die Liste der Vorfaelle ueber den Kacheln, in einer Spalte: ' + nb.join(' '));
+  await showTab(page, 'before');
+  let w = await widths();
   ok(w[0] <= w[1], 'Befunde schmal ohne seitliches Rollen: ' + w.join(' > '));
+  // the detail of an incident (it unfolded in the list before) stands in its incident view
+  for (const inc of [D.incidents.find((i) => i.type === 'ereignis'), D.incidents.find((i) => i.lead === 'memory'), D.before.incidents[0]]) {
+    await openIncident(page, inc.id);
+    w = await widths();
+    ok(w[0] <= w[1], 'Vorfall ' + inc.id + ' schmal ohne seitliches Rollen: ' + w.join(' > '));
+  }
   await showTab(page, 'sessions');
   await page.click(`#tSessions tbody tr[data-id="${D.sessions.find((s) => s.user === 'user014').i}"]`);
   const w2 = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
@@ -1575,7 +1714,7 @@ async function checkNarrow(browser, dir, scheme) {                  // schmale A
 }
 
 async function checkFix1(browser, dir, scheme) {                   // Task 9, Korrekturrunde 1
-  const bt = async (page) => page.locator('#before').innerText();
+  const bt = async (page) => { await showTab(page, 'before'); return page.locator('#before').innerText(); };
   // C1: a reported time inside the capture but before the cut: the page names the cut, never "no events"
   const c = await openExpert(browser, path.join(dir, 'report-cutrep.html'), scheme);
   ok(c.D.meta.focus.reportedMs >= c.D.before.captureStart && c.D.meta.focus.reportedMs < c.D.meta.start && c.D.eventsOutsideCut > 0, 'Eingabe: gemeldete Zeit in der Aufzeichnung vor dem Ausschnitt');
@@ -1603,7 +1742,9 @@ async function checkFix1(browser, dir, scheme) {                   // Task 9, Ko
     await p.page.close();
   }
   const f2 = await openExpert(browser, patched(dir, 'report.html', 'report-lb-fmt2.html', (J) => { empty(J); J.before.status = 'notRecorded'; J.before.days = 0; }), scheme);
+  await showTab(f2.page, 'before');
   ok(await f2.page.locator('#before').isHidden(), 'Format 2 ohne Rueckblick: keine Karte');
+  ok((await f2.page.locator('#xt-before').innerText()).includes('Diese Aufzeichnung enthält keinen Rückblick auf die Tage vor der Messung.') && (await f2.page.locator('#xtab-before .cnt').innerText()) === '', 'Format 2 ohne Rueckblick: der Reiter sagt es, ohne Zahl');
   await f2.page.close();
   // M1, M3, M4, M5 on the simulated hour
   const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
@@ -1616,8 +1757,8 @@ async function checkFix1(browser, dir, scheme) {                   // Task 9, Ko
   await showExpert(page);
   const chrome = D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'chrome.exe');
   const ce = await openIncident(page, chrome.id);
-  ok((await ce.locator('.detail .lnk[data-incident]').first().innerText()).includes('Arbeitsspeicher-Engpass'), 'Verweis nennt die Ressource wie der Satz');
-  await page.click('#eventList summary');
+  ok((await ce.locator('.iv-evidence .lnk[data-incident]').first().innerText()).includes('Arbeitsspeicher-Engpass'), 'Verweis nennt die Ressource wie der Satz');
+  await showTab(page, 'events');
   const sec = D.events.find((e) => e.kind === 'scan-start');
   ok((await page.locator('#tEvents').innerText()).includes('Virenscan gestartet') && !(await page.locator('#tEvents').innerText()).includes('Scan gestartet\t'), 'ein Wort fuer dasselbe Ereignis' + (sec ? '' : ' (kein Scan in den Daten)'));
   ok(page.errors.length === 0, 'Skriptfehler Runde 1: ' + page.errors.join(' | '));
@@ -1631,17 +1772,17 @@ async function checkFix1(browser, dir, scheme) {                   // Task 9, Ko
     o.event.sessions = J.sessions.map((s) => s.i);
   }), scheme);
   const me = await openIncident(many.page, out.id);
-  let kv = await me.locator('.detail .kv').innerText();
+  let kv = await me.locator('.iv-evidence .kv').innerText();
   ok(kv.includes('user109') && !kv.includes('user110') && kv.includes('(+50 weitere)') && kv.includes('16.0.9') && !kv.includes('16.0.10'), 'Kopfzeile hoechstens 10 Eintraege: ' + kv.slice(0, 200));
-  await me.locator('.detail .kv button.more').first().click();
-  kv = await me.locator('.detail .kv').innerText();
+  await me.locator('.iv-evidence .kv button.more').first().click();
+  kv = await me.locator('.iv-evidence .kv').innerText();
   ok(kv.includes('user159'), 'die ganze Liste bleibt erreichbar');
   ok(many.page.errors.length === 0, 'Skriptfehler viele Benutzer: ' + many.page.errors.join(' | '));
   await many.page.close();
 }
 
 async function checkFix2(browser, dir, scheme) {                   // Task 9, Korrekturrunde 2
-  const bt = async (page) => page.locator('#before').innerText();
+  const bt = async (page) => { await showTab(page, 'before'); return page.locator('#before').innerText(); };
   // N1: five lookback logs not available, Defender and AppLocker available (the reviewer's input)
   const partLogs = (J) => J.before.logs.map((l) => Object.assign({}, l, { available: l.id === 'defender' || l.id === 'applocker' }));
   const pe = await openExpert(browser, patched(dir, 'report.html', 'report-lb-partial.html', (J) => {
@@ -1654,7 +1795,7 @@ async function checkFix2(browser, dir, scheme) {                   // Task 9, Ko
   await pe.page.close();
   const pv = await openExpert(browser, patched(dir, 'report.html', 'report-lb-partial-events.html', (J) => { J.before.status = 'partial'; J.before.logs = partLogs(J); }), scheme);
   t = await bt(pv.page);
-  ok(t.includes('Nicht gelesen: Ereignisprotokoll Anwendung') && t.includes('Ereignisse aus diesen Tagen') && await pv.page.locator('#before .day').count() === pv.D.before.perDay.length && await pv.page.locator('#before .incident').count() === pv.D.before.incidents.length, 'teilweiser Rueckblick mit Ereignissen: Zahlen, Balken, Vorfaelle und nicht gelesene Protokolle');
+  ok(t.includes('Nicht gelesen: Ereignisprotokoll Anwendung') && t.includes('Ereignisse aus diesen Tagen') && await pv.page.locator('#before .day').count() === pv.D.before.perDay.length && await pv.page.locator('#before .inc').count() === pv.D.before.incidents.length, 'teilweiser Rueckblick mit Ereignissen: Zahlen, Balken, Vorfaelle und nicht gelesene Protokolle');
   ok(!t.includes('keine Ereignisse der erfassten Arten'), 'teilweiser Rueckblick mit Ereignissen ohne Leer-Aussage');
   await pv.page.close();
   const full = await openExpert(browser, path.join(dir, 'report.html'), scheme);
@@ -1688,11 +1829,17 @@ async function checkLongNames(browser, dir, scheme) {               // I2: lange
   const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
   const wg = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   ok((await page.locator('#cards').innerText()).includes(long) && (await page.locator('#more').innerText()).includes(long.replace('.dll', ' Druckertreiber')) && wg[0] <= wg[1], 'lange Namen in der gefuehrten Ansicht schmal ohne seitliches Rollen: ' + wg.join(' > '));
+  // the expert view with the list of incidents unfolded and the tab of the print drivers, then the incident views
   await showExpert(page);
-  for (const inc of D.incidents.filter((i) => i.type === 'ereignis' && (i.event.kind === 'print' || i.event.modules.some((m) => m.name.length > 80)))) await openIncident(page, inc.id);
+  await page.click('#incToggle'); await showTab(page, 'print');
   ok(long.length >= 90, 'Name mit 90 Zeichen');
-  const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
-  ok(w[0] <= w[1], 'lange Namen schmal ohne seitliches Rollen: ' + w.join(' > '));
+  let w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok((await page.locator('#tPrintDrivers').innerText()).includes(long.replace('.dll', ' Druckertreiber')) && w[0] <= w[1], 'lange Namen schmal ohne seitliches Rollen: ' + w.join(' > '));
+  for (const inc of D.incidents.filter((i) => i.type === 'ereignis' && (i.event.kind === 'print' || i.event.modules.some((m) => m.name.length > 80)))) {
+    await openIncident(page, inc.id);
+    w = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    ok(w[0] <= w[1], 'lange Namen im Vorfall ' + inc.id + ' schmal ohne seitliches Rollen: ' + w.join(' > '));
+  }
   ok(page.errors.length === 0, 'Skriptfehler lange Namen: ' + page.errors.join(' | '));
   await page.close();
 }
@@ -1757,7 +1904,7 @@ async function checkMaskedPersonen(browser, dir, scheme) {         // Maskierung
   }), scheme);
   const cpu = win.D.incidents.find((i) => i.lead === 'cpu');
   await openIncident(win.page, cpu.id);
-  const li = await win.page.locator(`#incidents .incident[data-id="${cpu.id}"] .detail ul.plain li`).allInnerTexts();
+  const li = await win.page.locator(`#incident[data-id="${cpu.id}"] .iv-evidence ul.plain li`).allInnerTexts();
   ok(li.some((t) => t.endsWith(': Meldung entfernt (maskiert)')) && !li.some((t) => /:\s*$/.test(t)), 'Personen: Ereignisse im Fenster ohne leeren Doppelpunkt');
   ok(win.page.errors.length === 0, 'Skriptfehler Ereignisse im Fenster: ' + win.page.errors.join(' | '));
   await win.page.close();
@@ -1777,15 +1924,15 @@ async function checkMaskedPersonen(browser, dir, scheme) {         // Maskierung
 
 async function checkMaskedPage(browser, dir, scheme) {             // Maskierung: der ganze Bericht bleibt bedienbar (ein Schema genuegt)
   const { page, D } = await openExpert(browser, path.join(dir, 'report-masked.html'), scheme);
-  ok(D.incidents.length > 0 && await page.locator('#incidents .incident').count() === D.incidents.length, 'maskiert: ein Eintrag je Vorfall');
-  for (const inc of D.incidents) await openIncident(page, inc.id);
-  ok(await page.locator('#incidents .incident.open').count() === D.incidents.length, 'maskiert: alle Vorfaelle geoeffnet');
-  for (const inc of D.before.incidents) await page.locator(`#before .incident[data-id="${inc.id}"] .text`).click();
-  await page.click('#eventList summary');
+  ok(D.incidents.length > 0 && await page.locator('#incList .inc').count() === D.incidents.length, 'maskiert: ein Eintrag je Vorfall');
+  let shown = 0;
+  for (const inc of D.incidents.concat(D.before.incidents)) { const v = await openIncident(page, inc.id); if ((await v.locator('.iv-evidence .techtext').innerText()) === inc.text) shown++; }
+  ok(shown === D.incidents.length + D.before.incidents.length, 'maskiert: alle Vorfaelle geoeffnet');
+  await showTab(page, 'events');
   ok(await page.locator('#tEvents tbody tr').count() === Math.min(200, D.events.length), 'maskiert: Ereignisliste');
+  await showTab(page, 'print');
   ok(await page.locator('#tPrintQueues tbody tr').count() > 0 && (await page.locator('#tPrintQueues').innerText()).includes('Drucker 01'), 'maskiert: Drucken mit Ersatznamen');
-  await showTab(page, 'overview');
-  ok(await page.locator('#chCpu svg path').count() > 0, 'maskiert: Uebersicht gezeichnet');
+  ok(await page.locator('#chCpu svg path').count() > 0 && await page.locator('#tiles .tile').count() > 0, 'maskiert: Uebersicht gezeichnet');
   await showTab(page, 'sessions');
   const s = D.sessions.find((x) => x.user === 'Benutzer 01');
   await page.click(`#tSessions tbody tr[data-id="${s.i}"]`);
@@ -1815,6 +1962,7 @@ async function checkFinalWave(browser, dir, scheme) {               // Abschluss
   // the simulated hour: no counters, no folding, nothing read incompletely
   const base = await openExpert(browser, path.join(dir, 'report.html'), scheme);
   ok(await base.page.locator('#eventReads').count() === 0 && await base.page.locator('#beforeReads').count() === 0 && await base.page.locator('#beforeMore').count() === 0, 'ohne Zaehler und kurze Liste: kein Hinweis');
+  await showTab(base.page, 'quality');
   ok(!(await base.page.locator('#tSources').innerText()).includes('beim Lesen fehlgeschlagen'), 'ohne Lesefehler kein Vermerk in den Quellen');
   await base.page.close();
   const p = await openExpert(browser, patched(dir, 'report.html', 'report-finalwave.html', (J) => {
@@ -1826,52 +1974,57 @@ async function checkFinalWave(browser, dir, scheme) {               // Abschluss
     const first = J.before.incidents[0];
     for (let k = 0; k < 27; k++) J.before.incidents.push(Object.assign({}, first, { id: 1000 + k, start: first.start + (k + 1) * 3600000, end: first.end + (k + 1) * 3600000, focus: false }));
   }), scheme);
+  await showTab(p.page, 'quality');
   const D = p.D, q = await p.page.locator('#quality').innerText();
   ok(q.includes('Ereignisprotokoll Anwendung: mindestens 250 Ereignisse nicht aufgezeichnet (Obergrenze je Abruf) · 3 Datensätze nicht lesbar und übersprungen'), 'Messqualitaet nennt die nicht aufgezeichneten Ereignisse: ' + q);
   ok(q.includes('Ereignisprotokoll Microsoft Defender: 1 Meldungstext nicht lesbar') && !q.includes('0 Datensätze'), 'nur Zahlen ueber null');
   ok(q.includes('Rückblick unvollständig gelesen für Anwendung, System'), 'unvollstaendig gelesener Rueckblick in der Messqualitaet');
   ok((await p.page.locator('#tSources tbody tr', { hasText: 'Ereignisprotokoll System' }).innerText()).includes('beim Lesen fehlgeschlagen'), 'Lesefehler beim Protokoll in den Quellen');
+  await showTab(p.page, 'before');
   const b = await p.page.locator('#before').innerText();
   const oldest = D.before.oldest.find((o) => o.log === 'application');
   ok(b.includes('Rückblick unvollständig gelesen') && b.includes('Anwendung (gelesen ab ' + ddmmyyyy(oldest.t, D.meta.offsetMin)) && b.includes('System (kein Ereignis gelesen)') && !b.includes('Obergrenze der gelesenen'), 'je Protokoll gelesen ab: ' + b.split('\n').slice(0, 6).join(' / '));
   ok(b.includes('Beim Lesen des Rückblicks: Anwendung: 2 Datensätze nicht lesbar und übersprungen, 1 Meldungstext nicht lesbar.'), 'Hinweis am Rueckblick: ' + b);
   ok(await p.page.locator('#before .day.partial').count() === 1 && (await p.page.locator('#before .day.partial').innerText()).includes('(Teil des Tages)') && b.includes('nur zum Teil erfasst'), 'Teiltage gekennzeichnet');
-  ok(await p.page.locator('#before .before-incidents > .incident').count() === 20 && (await p.page.locator('#beforeMore').innerText()) === 'weitere 11 Vorfälle anzeigen', 'Liste der Vorfaelle vor der Messung nach 20 gefaltet');
+  ok(await p.page.locator('#before .before-incidents > .inc').count() === 20 && await p.page.locator('#before .inc:visible').count() === 20 && (await p.page.locator('#beforeMore').innerText()) === 'weitere 11 Vorfälle anzeigen', 'Liste der Vorfaelle vor der Messung nach 20 gefaltet');
   await p.page.click('#beforeMore');
-  ok(await p.page.locator('#before .incident:visible').count() === 31 && await p.page.locator('#beforeMore').count() === 0, 'alle Vorfaelle nach dem Klick');
+  ok(await p.page.locator('#before .inc:visible').count() === 31 && await p.page.locator('#beforeMore').count() === 0, 'alle Vorfaelle nach dem Klick');
   ok(p.page.errors.length === 0, 'Skriptfehler Abschlussrunde: ' + p.page.errors.join(' | '));
   await p.page.close();
 }
 
-// locations of each place of the brief's table: [where, selector of the hint there]; where is a tab of the expert view or
-// 'guided' for the guided view (its folded areas are opened before); incidents are opened before
+// locations of each place of the brief's table: [where, selector of the hint there, optional condition on the report data].
+// where: 'guided' for the guided view (its folded areas are opened before), 'expert' for what the expert view always shows
+// (incident column, tiles, charts, foot), a tab of its tables, or 'incident' for the evidence of the incident view of an
+// incident that has the place (the detail of an incident does not unfold in the expert view any more)
 const SKIP_LOCATIONS = (() => {
-  const at = (p) => `.notmeasured[data-place="${p}"]`, inc = (p) => `#incidents .incident.open .evidence ${at(p)}`;
+  const at = (p) => `.notmeasured[data-place="${p}"]`, inc = (p) => `#incident .iv-evidence .evidence ${at(p)}`;
   return {
-    procs: [['procs', `#tab-procs > ${at('procs')}`], ['overview', `#chCpuStack ${at('procs')}`], ['overview', `#chMemStack ${at('procs')}`],
-      ['findings', `footer ${at('procs')}`], ['findings', `#quality ${at('procs')}`], ['guided', `footer ${at('procs')}`], ['guided', `#qualityG ${at('procs')}`]],
-    apps: [['apps', `#tab-apps > ${at('apps')}`], ['overview', `#cardMainApp #chMainApp ${at('apps')}`]],
-    'sessions.resources': [['sessions', `#tab-sessions > ${at('sessions.resources')}`], ['sessions', `#dSessions .chart-cpu ${at('sessions.resources')}`],
+    procs: [['procs', `#xt-procs > ${at('procs')}`], ['expert', `#chCpuStack ${at('procs')}`], ['expert', `#chMemStack ${at('procs')}`],
+      ['expert', `footer ${at('procs')}`], ['quality', `#quality ${at('procs')}`], ['guided', `footer ${at('procs')}`], ['guided', `#qualityG ${at('procs')}`]],
+    apps: [['apps', `#xt-apps > ${at('apps')}`], ['expert', `#cardMainApp #chMainApp ${at('apps')}`]],
+    'sessions.resources': [['sessions', `#xt-sessions > ${at('sessions.resources')}`], ['sessions', `#dSessions .chart-cpu ${at('sessions.resources')}`],
       ['sessions', `#dSessions .chart-ws ${at('sessions.resources')}`], ['sessions', `#dSessions .chart-io ${at('sessions.resources')}`],
       ['sessions', `#dSessions > ${at('sessions.resources')} >> nth=0`], ['sessions', `#dSessions > ${at('sessions.resources')} >> nth=1`]],
-    'incidents.contributors': [['findings', inc('incidents.contributors')], ['guided', `#cards .card.inc ${at('incidents.contributors')}`]],
-    'incidents.delayProcs': [['findings', inc('incidents.delayProcs')], ['guided', `#cards .card.inc ${at('incidents.delayProcs')}`]],
-    'print.processes': [['findings', `#print ${at('print.processes')}`]],
-    'print.drivers': [['findings', `#print ${at('print.drivers')}`]],
-    'print.queues': [['findings', `#print ${at('print.queues')}`]],
-    volumes: [['overview', `#chVolumes ${at('volumes')}`]],
-    shares: [['overview', `#chShares ${at('shares')}`]],
-    probes: [['overview', `#chProbes ${at('probes')}`]],
+    'incidents.contributors': [['incident', inc('incidents.contributors')], ['expert', `#incList .inc ${at('incidents.contributors')}`], ['guided', `#cards .card.inc ${at('incidents.contributors')}`]],
+    'incidents.delayProcs': [['incident', inc('incidents.delayProcs')], ['expert', `#incList .inc ${at('incidents.delayProcs')}`], ['guided', `#cards .card.inc ${at('incidents.delayProcs')}`]],
+    'print.processes': [['print', `#print ${at('print.processes')}`]],
+    'print.drivers': [['print', `#print ${at('print.drivers')}`]],
+    'print.queues': [['print', `#print ${at('print.queues')}`]],
+    volumes: [['expert', `#chVolumes ${at('volumes')}`]],
+    shares: [['expert', `#chShares ${at('shares')}`]],
+    probes: [['expert', `#chProbes ${at('probes')}`]],
     'sessions.profile': [['sessions', `#dSessions .chart-profile ${at('sessions.profile')}`]],
     'sessions.rtt': [['sessions', `#dSessions .chart-rtt ${at('sessions.rtt')}`]],
-    citrix: [['sessions', `#dSessions > ${at('citrix')}`]],
+    // the key figure of the chronic states says "nicht gemessen" where its count is 0 only because the ICA values are missing
+    citrix: [['sessions', `#dSessions > ${at('citrix')}`], ['guided', `#kpis .kpi[data-kpi="chronic"] ${at('citrix')}`, (D) => !D.lagebild.kpis.chronic]],
     'sessions.events': [['sessions', `#dSessions .sess-events ${at('sessions.events')}`]],
-    'incidents.ica': [['findings', inc('incidents.ica')]],
-    'incidents.endpoints': [['findings', inc('incidents.endpoints')]],
-    'incidents.events': [['findings', inc('incidents.events')]],
+    'incidents.ica': [['incident', inc('incidents.ica')]],
+    'incidents.endpoints': [['incident', inc('incidents.endpoints')]],
+    'incidents.events': [['incident', inc('incidents.events')]],
     events: [['guided', `#guided #timeline .tl-row[data-group="skipped"] ${at('events')}`], ['guided', `#kpis .kpi[data-kpi="events"] ${at('events')}`], ['guided', `#qualityG ${at('events')}`],
-      ['findings', `#quality ${at('events')}`]],
-    before: [['findings', `#before ${at('before')}`], ['guided', `#beforeG ${at('before')}`]]
+      ['quality', `#quality ${at('events')}`], ['events', `#xt-events ${at('events')}`]],
+    before: [['before', `#before ${at('before')}`], ['guided', `#beforeG ${at('before')}`]]
   };
 })();
 async function checkSkip(browser, dir, scheme) {   // Messkategorien
@@ -1883,22 +2036,29 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
     ok(await page.locator('header #skipInfo').isVisible(), n + ': Kopf nennt die Kategorien auch in der gefuehrten Ansicht');
     await page.evaluate(() => { for (const d of document.querySelectorAll('#guided details')) d.open = true; });
     await showExpert(page);
-    for (const t of ['overview', 'apps', 'procs', 'sessions']) await showTab(page, t);
-    await page.click('#tSessions tbody tr >> nth=0'); await showTab(page, 'findings');
-    for (const i of D.incidents) await openIncident(page, i.id);
+    for (const t of ['apps', 'procs', 'sessions']) await showTab(page, t);
+    await page.click('#tSessions tbody tr >> nth=0');
+    // the incident view of an incident that has a place of the incident's evidence; back out of it to the view it was opened from
+    const withPlace = (p) => D.incidents.find((i) => IV_PLACES[p](i));
+    const leaveIncident = async () => { if (await page.evaluate(() => window.WP.incident) != null) { await page.evaluate(() => window.WP.closeIncident()); await ivClosed(page); } };
     const info = await page.locator('header #skipInfo').innerText();
     ok(info.includes('Nicht gemessen (-Skip): ' + D.skipped.map((s) => s.label).join(', ')), n + ': Kopf nennt die Kategorien: ' + info);
     const all = await page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent; });
     for (const s of D.skipped) {
       ok(all.includes(s.text + ' (-Skip ' + s.id + ')'), n + ': Grund von ' + s.id + ' steht auf der Seite');
-      for (const p of s.places) ok(await page.locator(`.notmeasured[data-place="${p}"]`).count() > 0, n + ': Stelle ' + p + ' sagt "nicht gemessen"');
+      for (const p of s.places) {
+        if (IV_PLACES[p] && withPlace(p)) await openIncident(page, withPlace(p).id);
+        ok(await page.locator(`.notmeasured[data-place="${p}"]`).count() > 0, n + ': Stelle ' + p + ' sagt "nicht gemessen"');
+      }
     }
     // every location of a place in the brief's table shows its hint, visibly, in the view and on the tab where it stands
-    for (const s of D.skipped) for (const p of s.places) for (const [where, sel] of (ok(SKIP_LOCATIONS[p], n + ': Stelle ' + p + ' fehlt in SKIP_LOCATIONS (tests/report-browser.js)'), SKIP_LOCATIONS[p])) {
-      if (where === 'guided') await showGuided(page); else { await showExpert(page); await showTab(page, where); }
+    for (const s of D.skipped) for (const p of s.places) for (const [where, sel, when] of (ok(SKIP_LOCATIONS[p], n + ': Stelle ' + p + ' fehlt in SKIP_LOCATIONS (tests/report-browser.js)'), SKIP_LOCATIONS[p])) {
+      if (when && !when(D)) continue;
+      if (where === 'incident') await openIncident(page, withPlace(p).id);
+      else { await leaveIncident(); if (where === 'guided') await showGuided(page); else if (where === 'expert') await showExpert(page); else await showTab(page, where); }
       ok(await page.locator(sel).first().isVisible(), n + ': Stelle ' + p + ' sichtbar an ' + sel);
     }
-    await showExpert(page); await showTab(page, 'findings');
+    await leaveIncident(); await showExpert(page);
     // an input delay that could not be checked for a bottleneck (without Laufwerke) is never called "ohne Engpass"
     if (n === 'laufwerke' || n === 'alle') {
       ok(D.incidents.some((i) => i.type === 'ohne-engpass' && i.unverified), n + ': Daten mit ungeprueftem Vorfall ohne erkannten Engpass');
@@ -1914,41 +2074,43 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
   const p = await openExpert(browser, path.join(dir, 'report-skip-prozesse.html'), scheme);
   const cpu = p.D.incidents.find((i) => i.lead === 'cpu'), sentence = 'Kein Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst.';
   let entry = await openIncident(p.page, cpu.id);
-  ok((await entry.locator('.causebox').innerText()).includes(sentence) && cpu.text.includes(sentence), 'Verursacher: Text und Seite gleich');   // Review Focus 3
-  ok(!(await entry.locator('.detail').innerText()).match(/keine Prozessdaten|keine Prozesse mit der Rolle Sicherheit/), 'kein "keine" fuer nicht Gemessenes');
+  ok((await entry.locator('.iv-evidence .causebox').innerText()).includes(sentence) && cpu.text.includes(sentence), 'Verursacher: Text und Seite gleich');   // Review Focus 3
+  ok(!(await entry.locator('.iv-evidence').innerText()).match(/keine Prozessdaten|keine Prozesse mit der Rolle Sicherheit/), 'kein "keine" fuer nicht Gemessenes');
   // counts that are 0 only because processes were not measured are not printed as numbers
   const foot = await p.page.locator('footer').innerText();
   ok(!foot.includes('von 0 Prozessen') && !foot.includes('Prozess-Messwerte') && await p.page.locator('footer .notmeasured[data-place="procs"]').count() === 1, 'Fuss ohne Prozesszahlen: ' + foot);
   await showTab(p.page, 'sessions');
-  ok(await p.page.locator('#tab-sessions .notmeasured[data-place="sessions.resources"]').count() === 1, 'Hinweis ueber der Sitzungstabelle');
+  ok(await p.page.locator('#xt-sessions .notmeasured[data-place="sessions.resources"]').count() === 1, 'Hinweis ueber der Sitzungstabelle');
   const row = await p.page.locator('#tSessions tbody tr >> nth=0').innerText(), heads = await p.page.locator('#tSessions thead th').allInnerTexts();
   const cells = row.split('\t'), at = (h) => cells[heads.findIndex((x) => x.startsWith(h))];
   ok(['CPU-Anteil %', 'CPU-Zeit s', 'CPU Ø %', 'RAM Ø', 'I/O MB', 'Prozesse Ø'].every((h) => at(h) === '–'), 'Spalten der Prozessdaten zeigen "–": ' + row);
   await p.page.click('#tSessions tbody tr >> nth=0');
   ok(!(await p.page.locator('#dSessions .kv').innerText()).match(/CPU-Anteil 0/), 'Sitzungsansicht ohne 0 % CPU-Anteil');
-  await showTab(p.page, 'findings');
   // a crash without process data: the assignment to sessions was not checked, never "Sitzung nicht ermittelt"
   const chrome = p.D.incidents.find((i) => i.type === 'ereignis' && i.event.app === 'chrome.exe');
   ok(chrome && chrome.event.sessionUnknown && chrome.event.unchecked.some((u) => u.id === 'users'), 'Daten: chrome.exe ohne Zuordnung, nicht geprueft');
   entry = await openIncident(p.page, chrome.id);
-  const det = await entry.locator('.detail').innerText(), pats = await entry.locator('.patterns li').allInnerTexts();
+  const det = await entry.locator('.iv-evidence').innerText(), pats = await entry.locator('.iv-evidence .patterns li').allInnerTexts();
   ok(!det.includes('Sitzung nicht ermittelt') && !det.match(/ohne Benutzersitzung/i), 'chrome.exe: keine Aussage zur Sitzung: ' + det.slice(0, 300));
   ok(chrome.event.unchecked.every((u) => pats.some((t) => t.includes('nicht geprüft: ' + u.text))) && !pats.some((t) => t.includes('Kein Muster erkannt')), 'chrome.exe: je Eintrag ein "nicht geprueft": ' + pats.join(' / '));
   ok(p.page.errors.length === 0, 'Skriptfehler prozesse: ' + p.page.errors.join(' | '));
   await p.page.close();
   const d = await openExpert(browser, path.join(dir, 'report-skip-drucken.html'), scheme);
   entry = await openIncident(d.page, d.D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print').id);
-  const pat = await entry.locator('.patterns').innerText();
+  const pat = await entry.locator('.iv-evidence .patterns').innerText();
   ok(pat.includes('nicht geprüft: Bezug zu einem Druckertreiber (Drucken nicht gemessen)') && !pat.includes('Kein Muster erkannt'), 'Muster nicht geprueft statt "kein Muster"');
+  await showTab(d.page, 'print');
   ok(!(await d.page.locator('#print').innerText()).includes('Keine Treiberliste aufgezeichnet'), 'Drucken: nicht "keine Treiberliste"');
   await d.page.close();
   const r = await openExpert(browser, path.join(dir, 'report-skip-rueckblick.html'), scheme);
   // Aussage geaendert (Abschlussrunde, Minor 5): der Hinweis nennt den Grund, der Satz zum Zustand sagt dasselbe nicht noch einmal
+  await showTab(r.page, 'before');
   const rbt = await r.page.locator('#before').innerText();
   ok(rbt.includes('nicht gemessen – Ereignisse der Tage vor der Messung wurden nicht erfasst. (-Skip Rueckblick)') && !rbt.includes('Der Rückblick war abgeschaltet'), 'Rueckblick abgeschaltet, einmal gesagt: ' + rbt);
   await r.page.close();
   const e = await openExpert(browser, path.join(dir, 'report-skip-ereignisse.html'), scheme);
   ok(e.D.quality.eventReads.length === 0 && await e.page.locator('#quality .notmeasured[data-place="events"]').count() === 1, 'Messqualitaet: Ereignisprotokolle nicht gemessen');
+  await showTab(e.page, 'print');
   // driver involvement draws on the incidents from events: without the events of the capture never "nein"
   const cellsOf = async (page) => (await page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
   let drv = await cellsOf(e.page);
@@ -1956,13 +2118,16 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
   ok(e.D.before.status === 'read' && drv.length === 3 && drv.every((t, k) => t === (e.D.print.drivers[k].involved ? 'beteiligt' : 'nein (vor der Messung)')) && await e.page.locator('#print .notmeasured[data-place="events"]').isVisible(), 'Ereignisse: Treiber "nein" nur vor der Messung, mit Grund: ' + drv.join(' / '));
   await e.page.close();
   const a = await openExpert(browser, path.join(dir, 'report-skip-alle.html'), scheme);
+  await showTab(a.page, 'print');
   ok(await a.page.locator('#tPrintDrivers').count() === 0 && !(await a.page.locator('#print').innerText()).match(/\bnein\b/), 'alle: keine Treibertabelle, kein "nein"');
   await a.page.close();
   const rb = await openExpert(browser, path.join(dir, 'report-skip-rueckblick.html'), scheme);
+  await showTab(rb.page, 'print');
   drv = await cellsOf(rb.page);
   ok(drv.filter((t) => t === 'beteiligt').length === 1 && drv.filter((t) => t === 'nein (während der Messung)').length === 2 && await rb.page.locator('#print .notmeasured[data-place="before"]').isVisible(), 'Rueckblick: "nein" nur fuer die Messung: ' + drv.join(' / '));
   await rb.page.close();
   const f = await openExpert(browser, path.join(dir, 'report.html'), scheme);
+  await showTab(f.page, 'print');
   drv = await cellsOf(f.page);
   ok(drv.join('|') === f.D.print.drivers.map((x) => x.involved ? 'beteiligt' : 'nein').join('|') && await f.page.locator('#print .note', { hasText: 'An einem Vorfall beteiligt' }).count() === 0, 'voller Lauf: Spalte unveraendert: ' + drv.join(' / '));
   await f.page.close();
@@ -2020,7 +2185,7 @@ async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlu
   const sec = (J) => { const i = J.incidents.find((x) => x.type === 'engpass' && x.cause && x.cause.kind === 'main'); i.cause = Object.assign({}, i.cause, { kind: 'security', security: { label: 'Microsoft Defender', sharePct: 74 }, scan: false, other: null }); J.secId = i.id; };
   for (const [base, want] of [['report-skip-ereignisse.html', 'Ob im Fenster ein Virenscan lief, ist nicht erfasst (Ereignisse nicht gemessen); Zeitplan des Scans und Scan-Ausschlüsse prüfen.'], ['report.html', 'Scan-Ausschlüsse prüfen.']]) {
     const q = await openExpert(browser, patched(dir, base, 'scan-' + base, sec), scheme), id = q.D.secId;
-    const box = await (await openIncident(q.page, id)).locator('.causebox').innerText();
+    const box = await (await openIncident(q.page, id)).locator('.iv-evidence .causebox').innerText();
     ok(box.includes('Microsoft Defender mit 74 %') && box.includes(want) && (base === 'report.html') === !box.includes('nicht erfasst'), base + ': Schutzsoftware ohne Scan: ' + box);
     await q.page.close();
   }
@@ -2030,18 +2195,20 @@ async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlu
     i.event.unchecked = ['Laufwerke', 'Citrix', 'Gegenstellen'].map((c) => ({ id: 'overlap', category: c, text: `Zusammentreffen mit einem Vorfall der Kategorie ${c} (${c} nicht gemessen)` }));
     J.overlapId = i.id;
   }), scheme);
-  let pats = await (await openIncident(g.page, g.D.overlapId)).locator('.patterns li.unchecked').allInnerTexts();
+  let pats = await (await openIncident(g.page, g.D.overlapId)).locator('.iv-evidence .patterns li.unchecked').allInnerTexts();
   ok(pats.length === 1 && pats[0].includes('nicht geprüft: Zusammentreffen mit Vorfällen der Kategorien Laufwerke, Citrix, Gegenstellen (nicht gemessen)'), 'drei Kategorien in einer Zeile: ' + pats.join(' / '));
   await g.page.close();
   const g1 = await openExpert(browser, path.join(dir, 'report-skip-gegenstellen.html'), scheme);
   const one = g1.D.incidents.find((x) => x.type === 'ereignis' && x.event.unchecked.length === 1);
-  pats = await (await openIncident(g1.page, one.id)).locator('.patterns li.unchecked').allInnerTexts();
+  pats = await (await openIncident(g1.page, one.id)).locator('.iv-evidence .patterns li.unchecked').allInnerTexts();
   ok(pats.length === 1 && pats[0].includes('nicht geprüft: Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen (Gegenstellen nicht gemessen)'), 'eine Kategorie wie bisher: ' + pats.join(' / '));
   await g1.page.close();
   // Minor 4: the limits of a category left out are no limits of the capture
   const IO = 'Bei Datenträgern und Freigaben ist sichtbar', SHORT = 'Prozesse, die zwischen zwei Schnappschüssen starten';
   for (const [file, io, short] of [['report.html', true, true], ['report-skip-laufwerke.html', false, true], ['report-skip-prozesse.html', false, false], ['report-skip-alle.html', false, false], ['report-skip-citrix.html', true, true]]) {
-    const r = await openExpert(browser, path.join(dir, file), scheme), l = await r.page.locator('#limits').innerText();
+    const r = await openExpert(browser, path.join(dir, file), scheme);
+    await showTab(r.page, 'quality');
+    const l = await r.page.locator('#limits').innerText();
     ok(l.includes(IO) === io && l.includes(SHORT) === short && l.includes('Die Eingabeverzögerung enthält keine Prozesse, die als SYSTEM laufen.'), file + ': Grenzen der Aussage: ' + l);
     await r.page.close();
   }
@@ -2050,23 +2217,326 @@ async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlu
     J.skipped.push({ id: 'Rueckblick', label: 'Rückblick', text: 'Ereignisse der Tage vor der Messung wurden nicht erfasst.', places: ['before'] });
     Object.assign(J.before, { status: 'off', days: 0, eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [] });
   }), scheme);
+  await showTab(both.page, 'print');
   const cells = (await both.page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.trim());
   ok(cells.length === 3 && cells.every((t) => t === '–') && (await both.page.locator('#print').innerText()).includes('„An einem Vorfall beteiligt“: nicht geprüft.'), 'Ereignisse und Rueckblick weggelassen: ' + cells.join(' / '));
   ok(both.page.errors.length === 0, 'Skriptfehler beide weggelassen: ' + both.page.errors.join(' | '));
   await both.page.close();
   // Minor 6: a capture whose Skip contradicts its files gives the page of its Skip, without a script error
   const odd = await openExpert(browser, path.join(dir, 'report-skip-odd.html'), scheme);
-  for (const t of ['overview', 'apps', 'procs', 'sessions', 'findings']) await showTab(odd.page, t);
-  ok(odd.page.errors.length === 0 && odd.D.procs.length === 0 && (await odd.page.locator('header #skipInfo').innerText()).includes('Nicht gemessen (-Skip): Prozesse') && (await odd.page.locator('#print').innerText()).includes('Drucken') && (await odd.page.locator('#quality').innerText()).length > 0, 'Skip gegen die Dateien: Seite ohne Fehler: ' + odd.page.errors.join(' | '));
+  let oddText = '';
+  for (const t of TABS) { await showTab(odd.page, t); oddText += t + ': ' + await odd.page.locator('#xt-' + t).innerText() + '\n'; }
+  ok(odd.page.errors.length === 0 && odd.D.procs.length === 0 && (await odd.page.locator('header #skipInfo').innerText()).includes('Nicht gemessen (-Skip): Prozesse') && oddText.includes('print: Drucken') && /quality: \S/.test(oddText), 'Skip gegen die Dateien: Seite ohne Fehler: ' + odd.page.errors.join(' | '));
   await odd.page.close();
+}
+
+// ---------- expert view with one shared time range (Task 10) ----------
+async function checkRange(browser, dir, scheme) {
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  await showExpert(page);
+  ok(await page.locator('#rangeAll').isDisabled() && (await page.locator('#rangeInfo').innerText()).startsWith('Zeitraum'), 'Zeitraumleiste zeigt immer den Zeitraum');
+  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  const before = await page.locator('#tSessions tbody tr').count();
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  const z = await page.evaluate(() => window.WP.zoom);
+  ok(z && z.t0 < cpu.start && z.t1 > cpu.end, 'Klick auf einen Vorfall setzt den Zeitraum');
+  ok(await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1 && await page.locator('#chCpu .incband').count() === 1, 'Vorfall und Fenster hervorgehoben');
+  ok((await page.locator('.tile[data-signal="cpu.host"]').innerText()).includes('kritisch'), 'Kachel bezogen auf den Zeitraum');
+  await page.click('#xtabs button[data-tab=sessions]');
+  ok(await page.locator('#tSessions tbody tr').count() <= before, 'Tabellen nur mit im Zeitraum aktiven Sitzungen');
+  // (literal adapted, P3-R1: the simulated hour takes a snapshot every 6 s while an incident lasts, so 20 s hold four of them;
+  // the shortest range, 10 s from the start of the incident, holds two)
+  const few = D.snapT.filter((t) => t >= cpu.start && t <= cpu.start + 10000).length;
+  await page.evaluate(([a]) => window.WP.setZoom(a, a + 10000), [cpu.start]);
+  ok(few === 2 && await page.locator('#rangeSnaps').isVisible() && (await page.locator('#rangeSnaps').innerText()).includes('gestützt auf 2 Schnappschüsse'), 'Hinweis bei weniger als drei Schnappschuessen: ' + await page.locator('#rangeSnaps').innerText());
+  await page.click('#xtabs button[data-tab=sollist]');
+  const rowMax = await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText();
+  await page.click('#rangeAll');
+  ok(await page.evaluate(() => window.WP.zoom === null) && (await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()) !== rowMax, 'Soll-Ist folgt dem Zeitraum');
+  ok(await page.locator('#rangeSnaps').isHidden() && await page.locator('#rangeAll').isDisabled(), 'gesamte Messung: kein Hinweis auf Schnappschuesse, Knopf deaktiviert');
+  // (added to the brief's check: the tab button scrolled the page down to the tables, the chart is brought back into the picture)
+  await page.evaluate(() => document.getElementById('chCpu').scrollIntoView({ block: 'center' }));
+  const box = await page.locator('#chCpu svg').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.3, box.y + 40); await page.mouse.down(); await page.mouse.move(box.x + box.width * 0.5, box.y + 40); await page.mouse.up();
+  ok(await page.evaluate(() => window.WP.zoom !== null), 'Ziehen im Diagramm setzt den Zeitraum');
+  await page.click(`#incList .inc[data-id="${cpu.id}"] .inc-guided`);
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator('#incident').getAttribute('data-id') === String(cpu.id), 'Eintrag fuehrt in die gefuehrte Vorfallsansicht');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await page.close();
+  // (file name per P3-R11: report-many.html is the file of checkFix1)
+  const many = await open(browser, patched(dir, 'report.html', 'report-many-cards.html', (J) => {    // viele Vorfaelle: zehn Karten, Rest als Liste
+    const c = J.incidents.find((i) => i.lead === 'cpu'), base = Math.max(...J.incidents.concat(J.before.incidents).map((i) => i.id));
+    for (let k = 1; k <= 14; k++) J.incidents.push(Object.assign({}, c, { id: base + k, rank: 100 + k }));
+    J.order = J.order.concat([...Array(14).keys()].map((k) => base + k + 1)); J.cards = J.order.slice(0, 10);
+    J.more = [{ label: '14-mal ' + c.guide.title, situation: 'cpu', ids: J.order.slice(10) }];
+  }), scheme);
+  ok(await many.page.locator('#cards .card.inc').count() === 10 && await many.page.locator('#more details.group').count() === 1, 'viele Vorfaelle');
+  await many.page.click('#more details.group summary');
+  ok(await many.page.locator('#more details.group .row').count() === many.D.more[0].ids.length, 'Gruppe laesst sich aufklappen');
+  // the incident column of the expert view holds them all and scrolls in itself
+  await showExpert(many.page);
+  const col = await many.page.evaluate(() => { const l = document.getElementById('incList'), c = document.getElementById('incCol').getBoundingClientRect(); return [l.children.length, l.scrollHeight > l.clientHeight, c.bottom <= window.innerHeight, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; });
+  ok(col[0] === many.D.incidents.length && col[1] && col[2] && col[3], 'viele Vorfaelle: die Vorfallsspalte nennt alle und rollt in sich: ' + col.join(' '));
+  await many.page.close();
+  const edge = await open(browser, patched(dir, 'report.html', 'report-edge.html', (J) => {          // Review Focus 5
+    const e = J.incidents.find((i) => i.type === 'ereignis'); e.start = e.end = J.meta.end;
+  }), scheme);
+  const e = edge.D.incidents.find((i) => i.type === 'ereignis');
+  await edge.page.evaluate((id) => window.WP.openIncident(id), e.id); await edge.page.click('#ivExpert');
+  const ez = await edge.page.evaluate(() => window.WP.zoom);
+  ok(ez && ez.t1 - ez.t0 >= 10000 && ez.t1 <= edge.D.meta.end && ez.t0 < e.start, 'Zeitraum eines Ereignisses ohne Dauer am Ende');
+  ok(await edge.page.locator(`#incList .inc[data-id="${e.id}"].selected`).count() === 1 && await edge.page.locator('#chCpu .incband').count() === 1 && edge.page.errors.length === 0, 'Ereignis ohne Dauer am Ende: gewaehlt und im Diagramm getoent, ohne Skriptfehler: ' + edge.page.errors.join(' | '));
+  await edge.page.close();
+}
+
+// what the tables of a range hold, computed from the report data as the page does: an item has load at a snapshot of the range
+const snapRange = (D, z) => [D.snapT.findIndex((t) => t >= z.t0) < 0 ? D.snapT.length : D.snapT.findIndex((t) => t >= z.t0), D.snapT.filter((t) => t <= z.t1).length];
+const hasLoad = (it, lo, hi) => { const o = it.o || 0; for (let i = Math.max(lo, o); i < hi; i++) if ((it.cpu && it.cpu[i - o] > 0) || (it.ws && it.ws[i - o] > 0)) return true; return false; };
+const de = (v, d) => v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+// pairs of target-line labels of the charts under a selector that touch each other, and labels that leave their plot
+const labelFaults = (page, sel) => page.locator(sel).evaluateAll((hosts) => {
+  const bad = [];
+  for (const host of hosts) for (const svg of host.querySelectorAll('svg')) {
+    const boxes = [...svg.querySelectorAll('.band-warn text, .band-crit text')].map((t) => t.getBBox()), c = svg.querySelector('clipPath rect');
+    const x0 = Number(c.getAttribute('x')), x1 = x0 + Number(c.getAttribute('width'));
+    boxes.forEach((b, k) => {
+      if (b.x < x0 - 1 || b.x + b.width > x1 + 1) bad.push((host.id || host.className) + ': ausserhalb');
+      for (const o of boxes.slice(k + 1)) if (b.x < o.x + o.width && b.x + b.width > o.x && b.y < o.y + o.height && b.y + b.height > o.y) bad.push((host.id || host.className) + ': ueberlappt');
+    });
+  }
+  return bad.join(' | ');
+});
+async function checkExpert(browser, dir, scheme) {                  // Expertenansicht: Spalte, Kacheln, Diagramme, Tabellen folgen einem Zeitraum
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  await showExpert(page);
+  const tileOf = (id) => page.locator(`.tile[data-signal="${id}"]`), rowOf = (id) => page.locator(`#sollist tbody tr[data-id="${id}"]`);
+  const off = D.meta.offsetMin, cpu = D.incidents.find((i) => i.lead === 'cpu'), word = (i) => i.severity >= 2 ? '◆ kritisch' : '▲ auffällig';
+  // the incident column: every incident, by time, chronic states last
+  const order = D.incidents.slice().sort((a, b) => (b.focus - a.focus) || (a.chronic - b.chronic) || (a.start - b.start) || (a.id - b.id)).map((i) => i.id);
+  ok((await cardIds(page, '#incList .inc')).join() === order.join() && (await page.locator('#incCol h2').innerText()) === 'Vorfälle' && /^\d+ Vorfälle: /.test(await page.locator('#findHead').innerText()), 'Vorfallsspalte: alle Vorfaelle nach der Zeit, Dauerzustaende zuletzt, mit dem Kopfsatz');
+  for (const inc of D.incidents) {
+    const e = page.locator(`#incList .inc[data-id="${inc.id}"]`), t = oneLine(await e.innerText());
+    ok(t.startsWith(word(inc) + ' ' + hhmm(inc.start, off)) && (await e.locator('.inc-kind').innerText()) === inc.guide.tech && await e.locator('.inc-cause').getAttribute('title') === inc.causeText && await e.locator('.inc-guided').count() === 1 && await e.locator('button.inc-main[aria-pressed="false"]').count() === 1,
+      'Eintrag ' + inc.id + ': Status, Uhrzeit, Art, Verursacher, Weg in die gefuehrte Ansicht: ' + t);
+  }
+  // tiles and charts stand above the tabs, always
+  const nTiles = D.sollIst.length + (D.mainApp ? 1 : 0) + 1;
+  ok(await page.locator('#tiles .tile:visible').count() === nTiles && await page.locator('#charts .card:visible').count() === 14 && await page.locator('#charts .card svg').count() === 14, 'Kacheln je Messwert und vierzehn gezeichnete Diagramme, ohne Reiter sichtbar');
+  const first = await page.evaluate(() => [document.getElementById('tiles').getBoundingClientRect().top, document.querySelector('#charts .card').getBoundingClientRect().top, document.documentElement.scrollWidth - document.documentElement.clientWidth]);
+  ok(first[0] < 200 && first[1] < 900 && first[2] <= 0, 'erster Bildschirm (1400 x 900): Kacheln oben, das erste Diagramm beginnt im Bild, kein seitliches Rollen: ' + first.join(' '));
+  ok(await labelFaults(page, '#charts .card > div[id]') === '', 'Diagramme: die Beschriftungen der Soll-Linien beruehren einander nicht und bleiben im Diagramm: ' + await labelFaults(page, '#charts .card > div[id]'));
+  const tiles0 = await page.locator('#tiles').innerHTML(), counts0 = (await page.locator('#xtabs .cnt').allInnerTexts()).join();
+  ok(counts0 === [D.sessions.length, D.apps.length, D.procs.length, D.events.length, D.before.incidents.length].join(), 'Reiter nennen die Zahl ihrer Zeilen: ' + counts0);
+  // the functions of the range reproduce the target comparison of the whole capture from the series of the report data
+  const stats = await page.evaluate(() => D.sollIst.map((r) => Object.assign({ id: r.id }, rangeStats(r.id, FULL.t0, FULL.t1))));
+  const near = (a, b, tol) => a != null && b != null && Math.abs(a - b) <= tol, wrong = [];
+  for (const st of stats) {
+    const r = D.sollIst.find((x) => x.id === st.id);
+    if (!st.series) { if (st.id !== 'ica.latency') wrong.push(st.id + ': ohne Verlauf'); continue; }
+    if (!(near(st.max, r.max, 0.06) && near(st.avg, r.avg, 0.06) && near(st.p95, r.p95, 0.06) && near(st.pctNormal, r.pctNormal, 0.06) && near(st.pctWarn, r.pctWarn, 0.06) && near(st.pctCrit, r.pctCrit, 0.06) && st.status === r.status && st.worst === r.worstInstance && st.exceeded === r.exceeded))
+      wrong.push(st.id + ': ' + JSON.stringify(st) + ' statt ' + JSON.stringify([r.max, r.avg, r.p95, r.pctNormal, r.pctWarn, r.pctCrit, r.status, r.worstInstance]));
+  }
+  ok(stats.length === D.sollIst.length && stats.filter((x) => x.series).length === D.sollIst.length - 1 && stats.every((x) => x.snaps === D.snapT.length) && !wrong.length, 'rangeStats ueber die ganze Messung ergibt den Soll-Ist-Vergleich: ' + wrong.join(' | '));
+  const rowsAll = await page.evaluate(() => ['sessions', 'apps', 'procs'].map((k) => rangeRows(k, FULL.t0, FULL.t1).map((r) => [k === 'procs' ? r.k : r.i, r.cpuSec, r.cpuMax, r.wsMax, r.cpuShare, r.inMax])));
+  const drift = [];
+  rowsAll[0].forEach((r) => { const x = D.sessions.find((y) => y.i === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.01)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1) && near(r[4], x.cpuShare, 0.2) && r[5] === x.inMax)) drift.push('Sitzung ' + r[0] + ' ' + JSON.stringify(r)); });
+  rowsAll[2].forEach((r) => { const x = D.procs.find((y) => y.k === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.02)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1))) drift.push('Prozess ' + r[0] + ' ' + JSON.stringify(r)); });
+  const bare = D.apps.filter((a) => !a.cpu && !a.ws).length;
+  ok(rowsAll[0].length === D.sessions.length && rowsAll[1].length === D.apps.length - bare && bare > 0 && rowsAll[2].length === D.procs.length && !drift.length, 'rangeRows ueber die ganze Messung: alle Sitzungen und Prozesse mit ihren Werten, Anwendungen ohne Verlauf fehlen: ' + drift.slice(0, 3).join(' | '));
+
+  // an incident chosen in the column: range, mark, tint in every chart, tiles and tables of the range
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  const z = await page.evaluate(() => window.WP.zoom), [lo, hi] = snapRange(D, z);
+  const info = await page.locator('#rangeInfo').innerText();
+  ok(info.startsWith('Zeitraum ' + ddmmyyyy(z.t0, off) + ' ' + hhmm(z.t0, off)) && info.includes(`· Vorfall ${cpu.id}: ${cpu.guide.tech}`) && !info.includes('gesamte Messung') && await page.locator('#rangeAll').isEnabled(), 'Zeitraumleiste nennt Zeitraum und gewaehlten Vorfall: ' + info);
+  ok(await page.locator(`#incList .inc[data-id="${cpu.id}"] .inc-main`).getAttribute('aria-pressed') === 'true' && await page.locator('#incList .inc.selected').count() === 1 && await page.locator('#expert.ranged').count() === 1, 'der gewaehlte Eintrag ist als gedrueckt gekennzeichnet');
+  ok(await page.locator('#charts .card svg').count() === 14 && await page.locator('#charts .card svg .incband').count() === 14, 'das Fenster des Vorfalls ist in allen Diagrammen getoent');
+  ok(await labelFaults(page, '#charts .card > div[id]') === '', 'Diagramme im Zeitraum: Beschriftungen ohne Beruehrung: ' + await labelFaults(page, '#charts .card > div[id]'));
+  const axis = await page.locator('#chMem svg text.xaxis').allTextContents();
+  ok(axis[0].startsWith(hhmm(z.t0, off)) && axis[axis.length - 1].startsWith(hhmm(z.t1, off)), 'gemeinsame Zeitachse: ' + axis.join(' '));
+  const cpuRow = D.sollIst.find((r) => r.id === 'cpu.host'), mem = D.sollIst.find((r) => r.id === 'mem.used');
+  let t = oneLine(await tileOf('cpu.host').innerText());
+  ok(await tileOf('cpu.host').getAttribute('data-status') === '2' && t.includes(de(cpuRow.max, 1) + ' % Max') && t.includes('◆ kritisch') && / \d+,\d % der Zeit/.test(t) && !t.includes(de(cpuRow.pctCrit, 1) + ' % der Zeit'), 'CPU-Kachel: Maximum, Status und Zeitanteil des Zeitraums: ' + t);
+  t = oneLine(await tileOf('mem.used').innerText());
+  ok(mem.status === 2 && await tileOf('mem.used').getAttribute('data-status') === '0' && t.includes('● normal') && !t.includes(de(mem.max, 0) + ' % Max'), 'Kachel folgt dem Zeitraum: der Arbeitsspeicher ist im Fenster des CPU-Vorfalls normal: ' + t);
+  t = oneLine(await tileOf('ica.latency').innerText());
+  ok(t.includes('kein Verlauf in den Berichtsdaten: für einen Zeitraum nicht auswertbar') && t.includes('● normal') && !/\d Max/.test(t), 'Messwert ohne Verlauf in den Berichtsdaten: kein Wert fuer den Zeitraum, Status aus den Befunden: ' + t);
+  await showTab(page, 'sollist');
+  t = oneLine(await rowOf('mem.used').innerText());
+  ok(t.includes('● normal') && !t.includes('◆ kritisch') && (await page.locator('#sollRange').innerText()).startsWith('Zeitraum ' + ddmmyyyy(z.t0, off) + ' ' + hhmm(z.t0, off)) && oneLine(await rowOf('ica.latency').innerText()).includes('kein Verlauf in den Berichtsdaten'), 'Soll-Ist im Zeitraum, mit Hinweis ueber der Tabelle: ' + t);
+  ok(oneLine(await rowOf('input.session').innerText()).includes(D.sessions.find((x) => x.i === cpu.affected[0].s).user), 'Soll-Ist im Zeitraum: am staerksten ist eine Sitzung des Vorfalls');
+  // tables: who had load in the range, with the values of the range
+  await showTab(page, 'sessions');
+  const main = D.sessions.find((x) => x.i === cpu.main.s), sRows = await page.locator('#tSessions tbody tr').count();
+  const firstRow = (await page.locator('#tSessions tbody tr').first().innerText()).split('\t'), heads = await page.locator('#tSessions thead th').allInnerTexts(), cell = (h) => firstRow[heads.findIndex((x) => x.startsWith(h))];
+  ok(sRows === D.sessions.filter((x) => hasLoad(x, lo, hi)).length && firstRow[0].startsWith(main.user) && cell('Aktiv %') === '–' && cell('Commit Max') === '–' && cell('Prozesse Ø') === '–' && parseFloat(cell('CPU-Anteil %').replace(',', '.')) > main.cpuShare * 2,
+    'Sitzungen im Zeitraum: die Sitzung des Verursachers fuehrt, Spalten ohne Verlauf zeigen "–": ' + firstRow.join(' | '));
+  const sn = await page.locator('#sessRange').innerText();
+  ok(sn.includes(`${sRows} von ${D.sessions.length} Sitzungen mit Last, Werte aus ${hi - lo} Schnappschüssen`) && sn.includes('Aktiv %, Commit Max, Prozesse Ø') && (await page.locator('#xtab-sessions .cnt').innerText()) === String(sRows), 'Hinweis ueber der Sitzungstabelle nennt Zeitraum, Zahl und Schnappschuesse: ' + sn);
+  await showTab(page, 'apps');
+  const aRows = D.apps.filter((a) => (a.cpu || a.ws) && hasLoad(a, lo, hi)).length, an = await page.locator('#appsRange').innerText();
+  ok(await page.locator('#tApps tbody tr').count() === aRows && an.includes(`${aRows} von ${D.apps.length} Anwendungen mit Last`) && an.includes(`${bare} Anwendungen mit geringer Last haben keinen gespeicherten Verlauf und fehlen im gewählten Zeitraum.`) && (await page.locator('#tApps tbody tr').first().innerText()).startsWith(cpu.main.app),
+    'Anwendungen im Zeitraum: ohne Verlauf fehlen sie, der Hinweis nennt ihre Zahl: ' + an);
+  await showTab(page, 'procs');
+  const pIn = D.procs.filter((x) => hasLoad(x, lo, hi)), gone = D.procs.find((x) => !hasLoad(x, lo, hi));
+  ok(pIn.length < D.procs.length && await page.locator('#tProcs tbody tr').count() === pIn.length && await page.locator(`#tProcs tbody tr[data-id="${gone.k}"]`).count() === 0 && (await page.locator('#procsRange').innerText()).includes(`${pIn.length} von ${D.procs.length} Prozessen mit Last`),
+    'Prozesse im Zeitraum: wer keinen Schnappschuss mit Last hat, fehlt (' + gone.name + ')');
+  // the detail of a session: charts of the range, its processes of the range, the rest marked as the whole capture
+  await showTab(page, 'sessions');
+  // (a session one of whose processes has no load in the range)
+  await page.click(`#tSessions tbody tr[data-id="${gone.s}"]`);
+  const dAxis = await page.locator('#dSessions .chart-cpu svg text.xaxis').allTextContents(), ownIn = pIn.filter((x) => x.s === gone.s).length, ownAll = D.procs.filter((x) => x.s === gone.s).length;
+  const tags = await page.locator('#dSessions .whole-tag:visible').allInnerTexts();
+  ok(dAxis[0].startsWith(hhmm(z.t0, off)) && await page.locator('#dSessions .chart-cpu svg .incband').count() === 1 && tags.join('|') === 'Gesamte Messung:|· gesamte Messung|· gesamte Messung|· im gewählten Zeitraum', 'Sitzung im Zeitraum: Diagramme im Zeitraum, was fuer die ganze Messung gilt, sagt es: ' + tags.join('|'));
+  ok(ownIn > 0 && ownIn < ownAll && await page.locator('#dSessions table[id^="sp"] tbody tr').count() === ownIn, 'Sitzung im Zeitraum: ihre Prozesse im Zeitraum');
+  // a link to a row the range leaves out shows the whole capture
+  await page.evaluate((k) => toTable('procs', k), gone.k);
+  ok(await page.evaluate(() => window.WP.zoom === null) && await page.locator('#xt-procs').isVisible() && await page.locator(`#tProcs tbody tr.selected[data-id="${gone.k}"]`).count() === 1, 'Verweis auf eine Zeile ausserhalb des Zeitraums: die gesamte Messung zeigt sie');
+  // "Gesamte Messung": everything as at the start
+  ok(await page.locator('#tiles').innerHTML() === tiles0 && (await page.locator('#xtabs .cnt').allInnerTexts()).join() === counts0 && await page.locator('#incList .inc.selected').count() === 0 && await page.locator('#charts .incband').count() === 0 && await page.locator('.rangenote:visible').count() === 0 && await page.locator('#expert.ranged').count() === 0,
+    'gesamte Messung: Kacheln, Zahlen der Reiter und Diagramme wie zu Beginn, kein Vorfall gewaehlt, keine Hinweise zum Zeitraum');
+  await showTab(page, 'sessions');
+  ok(await page.locator('#dSessions .whole-tag:visible').count() === 0 && await page.locator('#dSessions table[id^="sp"] tbody tr').count() === ownAll, 'gesamte Messung: die geoeffnete Sitzung zeigt wieder alles, ohne Kennzeichnung');
+  // a range chosen otherwise: it keeps the chosen incident while it reaches into it, and lets go of it beyond
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [cpu.start + 20000, cpu.start + 50000]);
+  ok(await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1 && await page.locator('#chCpu .incband').count() === 0, 'ein Zeitraum im Vorfall: der Vorfall bleibt gewaehlt, getoent wird nichts (er fuellt das Diagramm)');
+  await page.evaluate(([a]) => window.WP.setZoom(a + 600000, a + 660000), [cpu.end]);
+  ok(await page.locator('#incList .inc.selected').count() === 0 && !(await page.locator('#rangeInfo').innerText()).includes('Vorfall'), 'ein Zeitraum neben dem Vorfall: kein Vorfall mehr gewaehlt');
+  // a chronic state over the whole capture: chosen, the range is the whole capture, nothing to tint
+  const chronic = D.incidents.find((i) => i.chronic);
+  await page.click(`#incList .inc[data-id="${chronic.id}"]`);
+  const ci = await page.locator('#rangeInfo').innerText();
+  ok(await page.evaluate(() => window.WP.zoom === null) && await page.locator(`#incList .inc[data-id="${chronic.id}"].selected`).count() === 1 && ci.includes('gesamte Messung') && ci.includes('Vorfall ' + chronic.id) && await page.locator('#charts .incband').count() === 0, 'Dauerzustand ueber die ganze Messung: gewaehlt, Zeitraum bleibt die gesamte Messung: ' + ci);
+  // the entry is a button that stays pressed: pressed again, it lets go of the incident
+  await page.click(`#incList .inc[data-id="${chronic.id}"]`);
+  ok(await page.locator('#incList .inc.selected').count() === 0 && !(await page.locator('#rangeInfo').innerText()).includes('Vorfall') && await page.locator(`#incList .inc[data-id="${chronic.id}"] .inc-main`).getAttribute('aria-pressed') === 'false', 'der gewaehlte Dauerzustand, noch einmal gedrueckt, ist nicht mehr gewaehlt');
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`); await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  ok(await page.evaluate(() => window.WP.zoom === null) && await page.locator('#incList .inc.selected').count() === 0 && await page.locator('#rangeAll').isDisabled(), 'der gewaehlte Vorfall, noch einmal gedrueckt: gesamte Messung, kein Vorfall gewaehlt');
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [cpu.start + 20000, cpu.start + 50000]);
+  await page.click(`#incList .inc[data-id="${cpu.id}"]`);
+  const zz = await page.evaluate(() => window.WP.zoom);
+  ok(zz && zz.t0 === z.t0 && zz.t1 === z.t1 && await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1, 'nach einem anderen Zeitraum stellt der Eintrag wieder das Fenster seines Vorfalls ein');
+  // a range without a snapshot: sessions by presence, values from snapshots "–", a signal of the snapshot grid not measured there
+  const k0 = D.snapKind.indexOf('RRRR') + 1, gap = [D.snapT[k0] + 2000, D.snapT[k0] + 12000];
+  await page.evaluate(([a, b]) => window.WP.setZoom(a, b), gap);
+  ok(D.snapT.every((x) => x < gap[0] || x > gap[1]) && (await page.locator('#rangeSnaps').innerText()).includes('Tabellenwerte ohne Schnappschuss im Zeitraum'), 'Zeitraum ohne Schnappschuss: die Leiste sagt es: ' + await page.locator('#rangeSnaps').innerText());
+  const sr = (await page.locator('#tSessions tbody tr').first().innerText()).split('\t');
+  ok(await page.locator('#tSessions tbody tr').count() === D.sessions.length && sr[heads.findIndex((x) => x.startsWith('CPU-Zeit'))] === '–' && sr[heads.findIndex((x) => x.startsWith('RAM Ø'))] === '–', 'ohne Schnappschuss: Sitzungen nach Anwesenheit, Werte aus Schnappschuessen "–": ' + sr.join(' | '));
+  await showTab(page, 'apps');
+  ok((await page.locator('#tApps tbody').innerText()).trim() === 'Im gewählten Zeitraum ohne Last.' && (await page.locator('#xtab-apps .cnt').innerText()) === '0', 'ohne Schnappschuss: die Tabelle der Anwendungen sagt es');
+  t = oneLine(await tileOf('probe.connect').innerText());
+  ok(await tileOf('probe.connect').getAttribute('data-status') === 'na' && t.includes('○ nicht gemessen') && t.includes('keine Messwerte im gewählten Zeitraum') && await tileOf('cpu.host').getAttribute('data-status') === '0' && /\d % Max/.test(await tileOf('cpu.host').innerText()),
+    'ohne Messpunkt im Zeitraum sagt eine Kachel "nicht gemessen", nie "normal": ' + t);
+  await page.click('#rangeAll');
+  // stacked charts: by session, by application, or the host as a whole
+  const areas = () => page.locator('#chCpuStack svg g[clip-path] path').count();
+  ok((await page.locator('#segCpu button').allInnerTexts()).join('|') === 'Host|nach Sitzung|nach Anwendung' && await areas() === 8, 'gestapeltes Diagramm aufteilbar nach Host, Sitzung, Anwendung; nach Sitzung: sieben und Sonstige');
+  await page.click('#segCpu button[data-by=host]');
+  ok(await areas() === 1 && (await page.locator('#chCpuStack .legend').innerText()).trim() === 'alle Prozesse' && await page.locator('#segCpu button[data-by=host]').getAttribute('aria-pressed') === 'true', 'Host: eine Flaeche fuer alle Prozesse');
+  await page.click('#segMem button[data-by=apps]');
+  ok(await page.locator('#chMemStack svg g[clip-path] path').count() > 1 && await areas() === 1, 'jedes der beiden Diagramme hat seine eigene Aufteilung');
+  // tabs with the keyboard
+  await page.focus('#xtab-sollist'); await page.keyboard.press('ArrowRight');
+  const kb1 = await page.evaluate(() => [document.activeElement.id, !document.getElementById('xt-sessions').hidden, document.getElementById('xt-sollist').hidden].join());
+  await page.keyboard.press('End');
+  ok(kb1 === 'xtab-sessions,true,true' && await page.locator('#xt-before').isVisible() && await page.locator('#xtab-before').getAttribute('aria-selected') === 'true' && await page.locator('#xtabs button[tabindex="0"]').count() === 1, 'Reiter mit den Pfeiltasten und Ende: ' + kb1);
+  ok(await page.locator('#printNone').innerText() === '' && await page.locator('#beforeNone').innerText() === '' && await page.locator('#eventNone').innerText() === '', 'Reiter mit Inhalt ohne Leer-Hinweis');
+  ok(page.errors.length === 0, 'Skriptfehler Expertenansicht: ' + page.errors.join(' | '));
+  await page.close();
+
+  // other widths: three charts beside each other on a wide screen, two at 1000 px (as at 1400 px); one column at 390 px
+  for (const [width, height, cols] of [[1920, 1080, 3], [1000, 700, 2]]) {
+    const w = await browser.newPage({ viewport: { width, height }, colorScheme: scheme });
+    w.errors = []; w.on('pageerror', (e) => w.errors.push(e.message));
+    await w.goto('file://' + path.join(dir, 'report.html'));
+    await showExpert(w);
+    await w.click(`#incList .inc[data-id="${cpu.id}"]`);
+    const lay = await w.evaluate(() => { const tops = [...document.querySelectorAll('#charts .card')].map((c) => Math.round(c.getBoundingClientRect().top)), col = document.getElementById('incCol').getBoundingClientRect(), tl = document.getElementById('tiles').getBoundingClientRect();
+      return [tops.filter((y) => y === tops[0]).length, Math.round(col.width), col.right <= tl.left, document.documentElement.scrollWidth <= document.documentElement.clientWidth, col.bottom <= window.innerHeight]; });
+    ok(lay[0] === cols && lay[1] === 280 && lay[2] && lay[3] && lay[4] && w.errors.length === 0, width + ' px: Vorfallsspalte links neben Kacheln und Diagrammen (' + cols + ' je Zeile), ohne seitliches Rollen: ' + lay.join(' '));
+    ok(await labelFaults(w, '#charts .card > div[id]') === '', width + ' px: Beschriftungen der Soll-Linien ohne Beruehrung: ' + await labelFaults(w, '#charts .card > div[id]'));
+    await w.close();
+  }
+  const n = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+  n.errors = []; n.on('pageerror', (e) => n.errors.push(e.message));
+  await n.goto('file://' + path.join(dir, 'report.html'));
+  await showExpert(n);
+  await n.evaluate((i) => selectIncident(i), cpu.id);
+  for (const tab of TABS) await showTab(n, tab);
+  const nw = await n.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(nw[0] <= nw[1] && await labelFaults(n, '#charts .card > div[id]') === '' && n.errors.length === 0, '390 px: Expertenansicht mit Zeitraum und allen Reitern ohne seitliches Rollen, Beschriftungen ohne Beruehrung: ' + nw.join(' > ') + ' ' + await labelFaults(n, '#charts .card > div[id]'));
+  await n.close();
+
+  // states changed in the data: a session without load in the range, a response time that was too thin to be rated, a
+  // measured value whose series is missing
+  const v = await openExpert(browser, patched(dir, 'report.html', 'report-range-variant.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'), s = J.sessions.find((x) => x.user === 'user020'), vol = J.volumes.find((x) => x.name === 'C:');
+    J.snapT.forEach((t, i) => { if (t >= c.start - 60000 && t <= c.end + 60000) { s.cpu[i] = 0; s.ws[i] = 0; } });
+    vol.ms[vol.t.findIndex((ti) => J.tickT[ti] >= c.start)] = 5000;
+    J.probes = [];
+  }), scheme);
+  const vc = v.D.incidents.find((i) => i.lead === 'cpu'), idle = v.D.sessions.find((x) => x.user === 'user020');
+  ok(await v.page.locator(`#tSessions tbody tr[data-id="${idle.i}"]`).count() === 1, 'Sitzung ohne Last im Fenster: in der gesamten Messung steht sie in der Tabelle');
+  await v.page.click(`#incList .inc[data-id="${vc.id}"]`);
+  ok(await v.page.locator(`#tSessions tbody tr[data-id="${idle.i}"]`).count() === 0 && await v.page.locator('#tSessions tbody tr').count() === v.D.sessions.length - 1, 'wer im Zeitraum keinen Schnappschuss mit Last hat, fehlt in der Tabelle der Sitzungen');
+  const disk = v.D.sollIst.find((r) => r.id === 'disk.latency'), dt = oneLine(await v.page.locator('.tile[data-signal="disk.latency"]').innerText());
+  ok(!dt.includes('5.000') && parseFloat(dt.match(/([\d.,]+) ms Max/)[1].replace('.', '').replace(',', '.')) <= disk.max, 'ein Wert ueber dem Maximum der ganzen Messung (nicht bewertbar) zaehlt im Zeitraum nicht: ' + dt);
+  const pt = oneLine(await v.page.locator('.tile[data-signal="probe.connect"]').innerText());
+  ok(pt.includes('kein Verlauf in den Berichtsdaten') && v.page.errors.length === 0, 'gemessener Wert ohne Verlauf in den Daten: der Zeitraum sagt es, ohne Skriptfehler: ' + pt);
+  await v.page.close();
+
+  // nothing measured reads as measured: tiles, tabs and tables of a capture with every category left out, also with a range
+  const a = await openExpert(browser, path.join(dir, 'report-skip-alle.html'), scheme), unm = a.D.sollIst.filter((r) => !r.measured);
+  const naTiles = async () => (await a.page.locator('#tiles .tile[data-status="na"]').allInnerTexts()).map(oneLine);
+  let na = await naTiles();
+  ok(unm.length === 5 && na.length === unm.length && na.every((x, k) => x === `${unm[k].label} – ○ nicht gemessen ${unm[k].detail}`), 'ohne alle: Kacheln der nicht gemessenen Werte sagen "nicht gemessen" mit dem Grund: ' + na.join(' / '));
+  ok((await a.page.locator('#xtabs .cnt').allInnerTexts()).join('|') === `${a.D.sessions.length}||||` && await a.page.locator('#tiles .tile[data-signal="mainapp"]').count() === 0, 'ohne alle: Reiter ohne Zahl, wo nichts gemessen wurde; keine Kachel der Hauptanwendung');
+  for (const [tab, place] of [['apps', 'apps'], ['procs', 'procs'], ['events', 'events'], ['before', 'before'], ['print', 'print.drivers']]) {
+    await showTab(a.page, tab);
+    ok(await a.page.locator(`#xt-${tab} .notmeasured[data-place="${place}"]`).first().isVisible() && await a.page.locator(`#xt-${tab} table:visible`).count() === 0 && !/Keine Einträge|keine Ereignisse/i.test(await a.page.locator('#xt-' + tab).innerText()), 'ohne alle: Reiter ' + tab + ' sagt "nicht gemessen" statt einer leeren Tabelle');
+  }
+  const ac = a.D.incidents.find((i) => i.lead === 'cpu');
+  await a.page.click(`#incList .inc[data-id="${ac.id}"]`);
+  na = await naTiles();
+  ok(na.length === unm.length && na.every((x) => !x.includes('keine Messwerte im gewählten Zeitraum')) && await a.page.locator('#appsRange').isHidden() && await a.page.locator('#procsRange').isHidden() && (await a.page.locator('#xtabs .cnt').allInnerTexts()).join('|') === `${a.D.sessions.length}||||`,
+    'ohne alle, mit Zeitraum: nicht Gemessenes bleibt "nicht gemessen", keine Hinweise zu Tabellen, die es nicht gibt');
+  await showTab(a.page, 'sessions');
+  const ar = (await a.page.locator('#tSessions tbody tr').first().innerText()).split('\t'), ah = await a.page.locator('#tSessions thead th').allInnerTexts();
+  ok(await a.page.locator('#tSessions tbody tr').count() === a.D.sessions.length && ar[ah.findIndex((x) => x.startsWith('CPU-Anteil'))] === '–' && (await a.page.locator('#sessRange').innerText()).includes(`${a.D.sessions.length} von ${a.D.sessions.length} Sitzungen anwesend.`) && a.page.errors.length === 0,
+    'ohne alle, mit Zeitraum: Sitzungen nach Anwesenheit, Prozesswerte "–", ohne Skriptfehler: ' + a.page.errors.join(' | '));
+  await a.page.close();
+  // no incident: the column says so, the statement stands above the tiles; a capture without events and lookback says so in its tabs
+  const none = await openExpert(browser, path.join(dir, 'report-none.html'), scheme);
+  const nfb = await none.page.locator('#noFinding').boundingBox(), ntb = await none.page.locator('#tiles').boundingBox();
+  ok(await none.page.locator('#incList').isHidden() && (await none.page.locator('#incCol').innerText()).includes('Keine Vorfälle im Messzeitraum.') && nfb && nfb.y + nfb.height <= ntb.y, 'ohne Vorfall: die Spalte sagt es, die Aussage ohne Befund steht ueber den Kacheln');
+  await showTab(none.page, 'events');
+  ok((await none.page.locator('#xt-events').innerText()).trim() === 'Die Aufzeichnung enthält keine Ereignisse.' && (await none.page.locator('#xtab-events .cnt').innerText()) === '0' && none.page.errors.length === 0, 'ohne Ereignisse: der Reiter sagt es');
+  await none.page.close();
+}
+
+async function checkWording(browser, dir, scheme) {                 // die gemessene Maschine heisst in den Texten der Seite "Server" (P3-R66)
+  // the page's own texts: everything of the page source but the report data (labels, hints, sentences, titles, tooltips);
+  // the name of the tool stays
+  const src = fs.readFileSync(path.join(dir, 'report.html'), 'utf8'), tag = '<script id="wp-data" type="application/json">';
+  const own = src.substring(0, src.indexOf(tag)) + src.substring(src.indexOf('</script>', src.indexOf(tag)));
+  const hits = own.match(/.{0,40}(?<![A-Za-zÄÖÜäöüß])Worker(?!Perf)[A-Za-zÄÖÜäöüß-]*.{0,20}/g) || [];
+  ok(own.length > 100000 && own.includes('WorkerPerf') && hits.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Worker": ' + hits.join(' | '));
+  ok(own.includes('Kein Engpass auf dem Server.') && own.includes('nicht den Server.') && own.includes('Server-Ressourcen'), 'die Saetze zum Verursacher sagen "Server"');
+  // shown: the page's own sentences on the cause of every incident (the report data may still say otherwise in this line of work)
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme), boxes = [];
+  for (const inc of D.incidents.filter((i) => i.type !== 'ereignis')) boxes.push(await (await openIncident(page, inc.id)).locator('.iv-evidence .causebox').innerText());
+  ok(boxes.length >= 8 && boxes.some((b) => b.includes('Server')) && !boxes.some((b) => /Worker(?!Perf)/.test(b)), 'Verursacher-Aussagen der Seite ohne "Worker": ' + boxes.filter((b) => /Worker/.test(b)).join(' | '));
+  await page.close();
 }
 
 // every check function with the colour scheme of the system, then those that need one scheme only
 // (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
 // the incident view, of copying, of printing and of the points carried from the review run once)
-const PER_SCHEME = [checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkPage, checkFindings, checkFinalFix, checkEvents,
+const PER_SCHEME = [checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
-const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave];
+const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkWording];
 (async () => {
   const args = process.argv.slice(2), option = (name) => { const k = args.indexOf(name); return k < 0 ? null : args.splice(k, 2)[1]; };
   const only = option('--only'), oneScheme = option('--scheme'), dir = path.resolve(args[0]);
