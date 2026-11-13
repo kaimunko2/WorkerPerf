@@ -106,7 +106,17 @@ Describe 'Katalog laden und pruefen' {
         @{ Change = { $c.situations.cpu.checks = @() }; Msg = "*Eintrag 'cpu': Feld 'checks' braucht mindestens einen Pruefschritt ohne Bedingung*" }
         # a vendor pattern that is no valid wildcard pattern fails at loading, not at the first print incident
         @{ Change = { $c.vendors[1].match = @('Kyocera*', 'HP [') }; Msg = "Katalog '*': Eintrag 'vendors', vendors``[1``]: Feld 'match' enthaelt das ungueltige Muster 'HP ``['." }
+        # title and short hold no placeholder; meaning and impact only values every incident has (ruling P3-R19)
+        @{ Change = { $c.situations.disk.title = 'Laufwerk {resource} langsam' }; Msg = "Katalog '*': Eintrag 'disk': Feld 'title' darf keinen Platzhalter enthalten ('{resource}')." }
+        @{ Change = { $c.situations.cpu.short = 'CPU {server}' }; Msg = "Katalog '*': Eintrag 'cpu': Feld 'short' darf keinen Platzhalter enthalten ('{server}')." }
+        @{ Change = { $c.situations.crash.meaning = '{app} stuerzte ab.' }; Msg = "Katalog '*': Eintrag 'crash': Feld 'meaning' enthaelt den Platzhalter '{app}', den nicht jeder Vorfall hat." }
+        @{ Change = { $c.situations.fallback.impact = 'Am {date} fuer {user} langsam.' }; Msg = "Katalog '*': Eintrag 'fallback': Feld 'impact' enthaelt den Platzhalter '{user}', den nicht jeder Vorfall hat." }
     ) { { Read-WorkerPerfGuidance (New-Catalogue $Change) } | Should -Throw $Msg }
+    It 'erlaubt in Bedeutung und Wirkung die Werte, die jeder Vorfall hat' {
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.meaning = 'Am {date} von {from} bis {to} ({duration}) auf {server}.'; $c.situations.cpu.impact = '{server}: {duration} langsam.' })
+        $cat.situations.cpu.impact | Should -Be '{server}: {duration} langsam.'
+        $script:WorkerPerfGuidanceAlwaysValues | Should -Be @('from', 'to', 'duration', 'server', 'date')
+    }
     It 'verlangt den Schluessel <Key> im Teil <Part>' -TestCases @(
         @(foreach ($k in 'many', 'one', 'none', 'unknown', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { @{ Part = 'userView'; Key = $k } })
         @(foreach ($k in 'red', 'yellow', 'green', 'greenSkipped') { @{ Part = 'lagebild'; Key = $k } })
@@ -476,13 +486,13 @@ Describe 'Anleitung zusammenstellen' {
     }
     It 'fuellt Titel, Wirkung und Kuerzel und gibt jedem Element alle Felder' {
         $cat3 = Read-WorkerPerfGuidance (New-Catalogue {
-                $c.situations.disk.title = 'Laufwerk {resource} langsam'; $c.situations.disk.short = 'DISK'
+                $c.situations.disk.title = 'Laufwerk langsam'; $c.situations.disk.short = 'DISK'; $c.situations.disk.impact = 'Langsam auf {server}.'
                 $c.situations.disk.remedies = @(@{ text = 'Ausschluss fuer {app}'; precondition = 'Wenn {security} scannt'; when = @('scan'); source = 'Hersteller {security}' }
                     @{ text = 'Abhelfen'; precondition = 'Voraussetzung' })
                 $c.situations.disk.contacts = @(@{ text = 'Betreuung von {app}' }, @{ text = 'Betreuung {endpoint}' }) })
-        $vals = @{ resource = 'Latenz C:'; app = 'EXCEL.EXE'; security = 'Die Schutzsoftware'; from = '10:00'; to = '10:05' }
+        $vals = @{ resource = 'Latenz C:'; app = 'EXCEL.EXE'; security = 'Die Schutzsoftware'; from = '10:00'; to = '10:05'; server = 'SIM-VDA01' }
         $g = New-WorkerPerfGuidance -Catalogue $cat3 -Facts @{ Situation = 'disk'; Conditions = @('scan'); Values = $vals } -Incident (New-Inc @{ type = 'engpass'; lead = 'disk' }) -Texts $Texts
-        $g.title | Should -Be 'Laufwerk Latenz C: langsam'; $g.impact | Should -Be 'Langsam.'; $g.short | Should -Be 'DISK'; $g.tech | Should -Be 'Engpass · Datenträger'
+        $g.title | Should -Be 'Laufwerk langsam'; $g.impact | Should -Be 'Langsam auf SIM-VDA01.'; $g.short | Should -Be 'DISK'; $g.tech | Should -Be 'Engpass · Datenträger'
         @($g.Keys) | Should -Be @('situation', 'fallback', 'title', 'tech', 'meaning', 'impact', 'userView', 'checks', 'remedies', 'contacts', 'short', 'terms', 'conditions')
         @($g.checks[0].Keys) | Should -Be @('text', 'where', 'sign', 'source')
         $g.checks[0].source | Should -Be 'Hersteller, Titel'
@@ -490,12 +500,59 @@ Describe 'Anleitung zusammenstellen' {
         $g.remedies[0].precondition | Should -Be 'Wenn Die Schutzsoftware scannt'; $g.remedies[0].source | Should -Be 'Hersteller Die Schutzsoftware'
         $g.remedies[1].Contains('source') | Should -BeTrue; $g.remedies[1].source | Should -BeNullOrEmpty
         @($g.contacts.text) | Should -Be @('Betreuung von EXCEL.EXE')
-        @($g.contacts[0].Keys) | Should -Be @('text')
+        @($g.contacts[0].Keys) | Should -Be @('text', 'source')
+        $g.contacts[0].Contains('source') | Should -BeTrue; $null -eq $g.contacts[0].source | Should -BeTrue
         $g.conditions | Should -Be @('scan')
         # no element survives: empty lists, not null
         $g = New-WorkerPerfGuidance -Catalogue $cat3 -Facts @{ Situation = 'disk'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'disk' }) -Texts $Texts
         , $g.contacts | Should -BeOfType [object[]]; $g.contacts.Count | Should -Be 0
-        $g.conditions.Count | Should -Be 0; $g.title | Should -BeNullOrEmpty
+        $g.conditions.Count | Should -Be 0; $g.title | Should -Be 'Laufwerk langsam'
+    }
+    It 'gibt die Quelle eines Kontakts weiter' {                                                      # ruling P3-R21
+        $g = New-WorkerPerfGuidance -Catalogue $Cat -Facts @{ Situation = 'print'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print' } }) -Texts $Texts
+        @($g.contacts.text) | Should -Be @('Kontakt'); $g.contacts[0].source | Should -Be 'Hersteller, Titel'
+    }
+    It 'gibt einer Auffang-Bedeutung ohne fuellbaren Text $null' {
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.fallbackNote = 'Keine Anleitung fuer {server}.' })
+        $g = New-WorkerPerfGuidance -Catalogue $cat -Facts @{ Situation = 'fallback'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'umfeld' }) -Texts $Texts
+        $g.fallback | Should -BeTrue; $null -eq $g.meaning | Should -BeTrue
+        $g = New-WorkerPerfGuidance -Catalogue $cat -Facts @{ Situation = 'fallback'; Conditions = @(); Values = @{ server = 'SIM-VDA01' } } -Incident (New-Inc @{ type = 'umfeld' }) -Texts $Texts
+        $g.meaning | Should -BeExactly 'Keine Anleitung fuer SIM-VDA01.'
+    }
+    It 'laesst ein Element fallen, dessen Ort oder Quelle nicht gefuellt werden kann, und haelt die Reihenfolge je Gruppe' {
+        $cat5 = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks = @(
+                    @{ text = 'Erst allgemein'; where = 'w'; sign = 's' }
+                    @{ text = 'Erst bedingt'; where = 'w'; sign = 's'; when = @('cause.app') }
+                    @{ text = 'Dann allgemein'; where = 'w'; sign = 's' }
+                    @{ text = 'Ort fehlt'; where = 'Bei {endpoint}'; sign = 's' }
+                    @{ text = 'Dann bedingt'; where = 'w'; sign = 's'; when = @('scan') }
+                    @{ text = 'Quelle fehlt'; where = 'w'; sign = 's'; source = 'Hersteller {driver}' }) })
+        $g = New-WorkerPerfGuidance -Catalogue $cat5 -Facts @{ Situation = 'cpu'; Conditions = @('cause.app', 'scan'); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        @($g.checks.text) | Should -Be @('Erst bedingt', 'Dann bedingt', 'Erst allgemein', 'Dann allgemein')
+        # with the values both come back
+        $g = New-WorkerPerfGuidance -Catalogue $cat5 -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{ endpoint = 'DB'; driver = 'Sim PCL 6' } } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        @($g.checks.text) | Should -Be @('Erst allgemein', 'Dann allgemein', 'Ort fehlt', 'Quelle fehlt')
+        $g.checks[2].where | Should -Be 'Bei DB'; $g.checks[3].source | Should -Be 'Hersteller Sim PCL 6'
+    }
+    It 'gibt die Elemente als schlichte Pipeline-Ausgabe und haelt die Listen der Anleitung als Feld' {
+        $one = @(Get-WorkerPerfGuidanceItems $Cat2.situations.cpu 'checks' @() @{})
+        $one.Count | Should -Be 1; $one[0] | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]
+        @(Get-WorkerPerfGuidanceItems $Cat2.situations.cpu 'checks' @('cause.app') @{ app = 'a'; user = 'u' }).Count | Should -Be 2
+        $g = New-WorkerPerfGuidance -Catalogue $Cat2 -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        , $g.checks | Should -BeOfType [object[]]; $g.checks.Count | Should -Be 1; $g.checks[0].text | Should -Be 'Allgemein'
+        , $g.contacts | Should -BeOfType [object[]]; $g.contacts.Count | Should -Be 1; $g.contacts[0].text | Should -Be 'Kontakt'
+        $g = New-WorkerPerfGuidance -Catalogue $Cat2 -Facts @{ Situation = 'cpu'; Conditions = @('scan'); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        $g.conditions.GetType().IsArray | Should -BeTrue; $g.conditions.Count | Should -Be 1
+    }
+    It 'nimmt die Werte auch als geordnetes Woerterbuch' {
+        $hash = @{ app = 'EXCEL.EXE'; user = 'user003'; security = 'X'; from = '10:00'; to = '10:05'; affected = '3' }
+        $ord = [ordered]@{}; foreach ($k in 'to', 'from', 'affected', 'user', 'app', 'security') { $ord[$k] = $hash[$k] }
+        $facts = @{ Situation = 'cpu'; Conditions = @('cause.app', 'affected.many'); Values = $hash }
+        $a = New-WorkerPerfGuidance -Catalogue $Cat2 -Facts $facts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        $facts.Values = $ord
+        $b = New-WorkerPerfGuidance -Catalogue $Cat2 -Facts $facts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
+        @($b.checks.text) | Should -Be @('EXCEL.EXE von user003 pruefen', 'Allgemein'); $b.userView | Should -Be '3 Sitzungen waren betroffen.'
+        ($b | ConvertTo-Json -Depth 6) | Should -BeExactly ($a | ConvertTo-Json -Depth 6)
     }
     It 'nennt die Fachbezeichnung <Want>' -TestCases @(
         @{ I = @{ type = 'engpass'; lead = 'profile' }; Want = 'Engpass · Profilcontainer' }
@@ -511,9 +568,12 @@ Describe 'Anleitung zusammenstellen' {
     }
     It 'liest die Fachbezeichnung aus den Texten' {
         foreach ($k in 'type.engpass', 'type.ohne-engpass', 'type.ohne-engpass.unverified', 'type.umfeld', 'type.ereignis', 'type.chronic',
-            'kind.crash', 'kind.hang', 'kind.service', 'kind.print', 'kind.profileerror', 'kind.system') { $Texts.ContainsKey($k) | Should -BeTrue -Because $k }
+            'kind.crash', 'kind.hang', 'kind.service', 'kind.print', 'kind.profileerror', 'kind.system', 'tech.separator') { $Texts.ContainsKey($k) | Should -BeTrue -Because $k }
+        $Texts['tech.separator'] | Should -BeExactly ' · '
         $t = $Texts.Clone(); $t['type.engpass'] = 'ENG'; $t['resource.cpu'] = 'PROZ'
         (New-WorkerPerfGuidance -Catalogue $Cat -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $t).tech | Should -Be 'ENG · PROZ'
+        $t['tech.separator'] = ' / '
+        (New-WorkerPerfGuidance -Catalogue $Cat -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $t).tech | Should -Be 'ENG / PROZ'
     }
     It 'waehlt die Benutzersicht <Want>' -TestCases @(
         @{ I = @{ type = 'engpass'; lead = 'cpu' }; C = @('affected.many'); V = @{ affected = '4' }; Want = '4 Sitzungen waren betroffen.' }
@@ -543,6 +603,24 @@ Describe 'Anleitung zusammenstellen' {
         $g.terms | Should -Be @('Working Set', 'Paging')
         $g = New-WorkerPerfGuidance -Catalogue $cat4 -Facts @{ Situation = 'cpu'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
         , $g.terms | Should -BeOfType [object[]]; $g.terms.Count | Should -Be 0
+    }
+    It 'findet einen Fachbegriff am Wortanfang der Vorlagen, nicht im Wort und nicht in eingesetzten Werten' {     # ruling P3-R20
+        $cat6 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.terms = [ordered]@{ 'Profilcontainer' = 'a'; 'Modul' = 'b'; 'RAM' = 'c'; 'C++' = 'd'; 'Kerberos' = 'e'; 'Working Set' = 'f'; 'Gerät' = 'g' }
+                $c.situations.profile.meaning = 'Der Profilcontainers wuchs von {from} bis {to}.'
+                $c.situations.profile.checks = @(@{ text = 'Programm {app} pruefen'; where = 'Modulname'; sign = 'Die C++-Laufzeit fehlt' }
+                    @{ text = 'Arbeitsspeicher (working-set) von {user}'; where = 'w'; sign = 's'; when = @('cause.app') }) })
+        $vals = @{ app = 'Kerberos RAM Gerät.exe'; user = 'Working Set'; from = '10:00'; to = '10:05' }
+        $g = New-WorkerPerfGuidance -Catalogue $cat6 -Facts @{ Situation = 'profile'; Conditions = @(); Values = $vals } -Incident (New-Inc @{ type = 'engpass'; lead = 'profile' }) -Texts $Texts
+        $g.checks[0].text | Should -Be 'Programm Kerberos RAM Gerät.exe pruefen'
+        # inflected and compound forms found; RAM inside "Programm" and the terms only in inserted values not
+        $g.terms | Should -Be @('Profilcontainer', 'Modul', 'C++')
+        # a term is a word start in a placeholder-free template, ignoring case, also with a space and a non-ASCII letter
+        $cat7 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.terms = [ordered]@{ 'Working Set' = 'f'; 'Gerät' = 'g'; 'Set' = 'h' }
+                $c.situations.memory.meaning = 'Das WORKING SET und die gerätetreiber.' })
+        (New-WorkerPerfGuidance -Catalogue $cat7 -Facts @{ Situation = 'memory'; Conditions = @(); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'memory' }) -Texts $Texts).terms |
+            Should -Be @('Working Set', 'Gerät', 'Set')
     }
 }
 Describe 'Situation und Bedingungen der simulierten Stunde' {
@@ -589,7 +667,7 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
             $g = New-WorkerPerfGuidance -Catalogue $Cat -Facts $SimFacts[$id] -Incident $inc -Texts $Texts
             $g.fallback | Should -Be ($SimFacts[$id].Situation -eq 'fallback') -Because "Vorfall $id"
             $g.situation | Should -Be $SimFacts[$id].Situation -Because "Vorfall $id"
-            foreach ($k in 'title', 'tech', 'userView') { [string]$g[$k] | Should -Not -BeNullOrEmpty -Because "Vorfall ${id}: $k" }
+            foreach ($k in 'title', 'tech', 'meaning', 'userView') { [string]$g[$k] | Should -Not -BeNullOrEmpty -Because "Vorfall ${id}: $k" }
             @($g.checks).Count | Should -BeGreaterThan 0 -Because "Vorfall $id"
             $g.conditions | Should -Be $SimFacts[$id].Conditions -Because "Vorfall $id"
         }

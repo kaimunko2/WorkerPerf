@@ -32,6 +32,9 @@ $script:WorkerPerfGuidanceItemFields = [ordered]@{
     'remedies' = @('text', 'precondition')
     'contacts' = @('text')
 }
+# placeholders every incident has a value for: the only ones meaning and impact of a situation may hold (title and short
+# hold none), so these texts never vanish for want of a value
+$script:WorkerPerfGuidanceAlwaysValues = @('from', 'to', 'duration', 'server', 'date')
 $script:WorkerPerfGuidanceThresholdFile = Join-Path $PSScriptRoot 'thresholds.json'
 
 function Stop-WorkerPerfGuidance([string]$Path, [string]$Entry, [string]$Item, [string]$Field, [string]$Reason) {
@@ -141,6 +144,18 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
 function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals) {
     if (-not (Test-WorkerPerfGuidanceObject $Entry)) { Stop-WorkerPerfGuidance $Path $Name '' '' 'ist kein Objekt' }
     foreach ($f in 'title', 'meaning', 'impact', 'short') { Assert-WorkerPerfGuidanceField $Path $Name '' $Entry $f }
+    # title and short are constant; meaning and impact only use values every incident has
+    foreach ($f in 'title', 'short') {
+        $m = [regex]::Match($Entry.$f, '\{[A-Za-z0-9]+\}')
+        if ($m.Success) { Stop-WorkerPerfGuidance $Path $Name '' $f "darf keinen Platzhalter enthalten ('$($m.Value)')" }
+    }
+    foreach ($f in 'meaning', 'impact') {
+        foreach ($m in [regex]::Matches($Entry.$f, '\{([A-Za-z0-9]+)\}')) {
+            if ($script:WorkerPerfGuidanceAlwaysValues -cnotcontains $m.Groups[1].Value) {
+                Stop-WorkerPerfGuidance $Path $Name '' $f "enthaelt den Platzhalter '$($m.Value)', den nicht jeder Vorfall hat"
+            }
+        }
+    }
     foreach ($list in $script:WorkerPerfGuidanceItemFields.Keys) {
         $p = Get-WorkerPerfGuidanceMember $Entry $list
         if ($null -eq $p) { Stop-WorkerPerfGuidance $Path $Name '' $list 'fehlt' }
@@ -519,20 +534,20 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
 $script:WorkerPerfGuidanceOutputFields = [ordered]@{
     'checks'   = @('text', 'where', 'sign', 'source')
     'remedies' = @('text', 'precondition', 'source')
-    'contacts' = @('text')
+    'contacts' = @('text', 'source')
 }
-# the separator of the parts of the technical name, a middle dot between spaces as on the page (the file stays ASCII)
-$script:WorkerPerfGuidanceTechSeparator = ' ' + [char]0x00B7 + ' '
 
-function Format-WorkerPerfGuidanceText([string]$Template, [hashtable]$Values) {
+function Format-WorkerPerfGuidanceText([string]$Template, [System.Collections.IDictionary]$Values) {
     # Replaces every placeholder {name} in one pass: an inserted value is not read again, so braces or markup in a value
     # stay as they are. $null when a placeholder has no value (or an empty one); the report shows no text with a gap.
+    # most texts hold no placeholder: no evaluator for them
+    if ($Template.IndexOf('{') -lt 0) { return $Template }
     $state = @{ Missing = $false }
     $evaluator = {
         param($m)
         $name = $m.Groups[1].Value
         $value = $null
-        if ($null -ne $Values -and $Values.ContainsKey($name)) { $value = [string]$Values[$name] }
+        if ($null -ne $Values -and $Values.Contains($name)) { $value = [string]$Values[$name] }
         if ([string]::IsNullOrEmpty($value)) { $state.Missing = $true; return '' }
         return $value
     }
@@ -541,31 +556,41 @@ function Format-WorkerPerfGuidanceText([string]$Template, [hashtable]$Values) {
     return $text
 }
 
-function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values) {
+function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
-    # text can be filled. Elements with a condition first, otherwise the order of the file.
+    # text can be filled. Elements with a condition first, otherwise the order of the file. Plain pipeline output (the
+    # caller writes @(...)). Templates (a List[string]) receives the templates of the texts of the elements emitted
+    # (not their sources), for the glossary.
     $withCondition = New-Object System.Collections.Generic.List[object]
     $general = New-Object System.Collections.Generic.List[object]
+    $fields = $script:WorkerPerfGuidanceOutputFields[$ListName]
     foreach ($el in (Get-WorkerPerfGuidanceList $Entry $ListName)) {
         $when = Get-WorkerPerfGuidanceList $el 'when'
-        if (@($when | Where-Object { $Conditions -cnotcontains [string]$_ }).Count -gt 0) { continue }
+        $holds = $true
+        foreach ($n in $when) { if ($Conditions -cnotcontains [string]$n) { $holds = $false; break } }
+        if (-not $holds) { continue }
         $item = [ordered]@{}
+        $used = @()
         $complete = $true
-        foreach ($f in $script:WorkerPerfGuidanceOutputFields[$ListName]) {
+        foreach ($f in $fields) {
             $template = Get-WorkerPerfField $el $f
             if ($null -eq $template) { $item[$f] = $null; continue }
             $text = Format-WorkerPerfGuidanceText ([string]$template) $Values
             if ($null -eq $text) { $complete = $false; break }
             $item[$f] = $text
+            if ($f -ne 'source') { $used += [string]$template }
         }
         if (-not $complete) { continue }
+        if ($null -ne $Templates) { foreach ($t in $used) { $Templates.Add($t) } }
         if ($when.Count -gt 0) { $withCondition.Add($item) } else { $general.Add($item) }
     }
-    return , @(@($withCondition.ToArray()) + @($general.ToArray()))
+    foreach ($item in $withCondition) { $item }
+    foreach ($item in $general) { $item }
 }
 
 function Get-WorkerPerfGuidanceTech($Incident, $Texts) {
-    # The technical name of an incident: type and lead resource or kind of event, joined with a middle dot (from texts.de.json).
+    # The technical name of an incident: type and lead resource or kind of event, joined with tech.separator (all words
+    # from texts.de.json).
     # A delay whose bottleneck check was incomplete never reads "without bottleneck".
     $type = [string](Get-WorkerPerfField $Incident 'type')
     $parts = New-Object System.Collections.Generic.List[string]
@@ -578,12 +603,13 @@ function Get-WorkerPerfGuidanceTech($Incident, $Texts) {
         $lead = [string](Get-WorkerPerfField $Incident 'lead')
         if ($lead) { $parts.Add([string](Get-WorkerPerfField $Texts ('resource.' + $lead))) }
     }
-    return (@($parts | Where-Object { $_ }) -join $script:WorkerPerfGuidanceTechSeparator)
+    return (@($parts | Where-Object { $_ }) -join [string](Get-WorkerPerfField $Texts 'tech.separator'))
 }
 
-function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Conditions, [hashtable]$Values) {
+function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The sentence of the user's view: before, chronic, then the number of affected sessions of an event or performance
-    # incident. A text whose placeholders cannot be filled gives userView.unknown.
+    # incident. A text whose placeholders cannot be filled gives userView.unknown. Templates (a List[string]) receives
+    # the template of the sentence returned.
     $isEvent = [string](Get-WorkerPerfField $Incident 'type') -eq 'ereignis'
     if ($Conditions -ccontains 'before') { $key = 'before' }
     elseif ($Conditions -ccontains 'chronic') { $key = 'chronic' }
@@ -599,6 +625,7 @@ function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Condit
         $template = Get-WorkerPerfField $views 'unknown'
         if ($null -ne $template) { $text = Format-WorkerPerfGuidanceText ([string]$template) $Values }
     }
+    if ($null -ne $text -and $null -ne $Templates) { $Templates.Add([string]$template) }
     return $text
 }
 
@@ -608,25 +635,33 @@ function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
     # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts.
     $situation = [string](Get-WorkerPerfField $Facts 'Situation')
     $conditions = [string[]](Get-WorkerPerfGuidanceList $Facts 'Conditions')
-    $values = Get-WorkerPerfField $Facts 'Values'
-    if ($values -isnot [hashtable]) { $values = @{} }
+    # Values: a hashtable or any other dictionary (an ordered one gives the same result)
+    $given = Get-WorkerPerfField $Facts 'Values'
+    $values = @{}
+    if ($given -is [System.Collections.IDictionary]) { foreach ($k in $given.Keys) { $values[[string]$k] = $given[$k] } }
     $situations = Get-WorkerPerfField $Catalogue 'situations'
     $entry = $null
     if ($situation) { $entry = Get-WorkerPerfField $situations $situation }
     if ($null -eq $entry -or $situation -eq 'fallback') { $situation = 'fallback'; $entry = Get-WorkerPerfField $situations 'fallback' }
     $isFallback = $situation -eq 'fallback'
 
+    # the templates of the texts shown (title, meaning, impact, userView, the texts of the elements), for the glossary
+    $templates = New-Object System.Collections.Generic.List[string]
     $filled = @{}
     foreach ($f in 'title', 'meaning', 'impact', 'short') {
         $filled[$f] = $null
         $template = Get-WorkerPerfField $entry $f
         if ($null -ne $template) { $filled[$f] = Format-WorkerPerfGuidanceText ([string]$template) $values }
+        if ($f -ne 'short' -and $null -ne $filled[$f]) { $templates.Add([string]$template) }
     }
     if ($isFallback) {
         $template = Get-WorkerPerfField $Catalogue 'fallbackNote'
         $note = $null
         if ($null -ne $template) { $note = Format-WorkerPerfGuidanceText ([string]$template) $values }
-        $filled['meaning'] = (@($note, $filled['meaning']) | Where-Object { $_ }) -join ' '
+        if ($null -ne $note) { $templates.Add([string]$template) }
+        $meaning = (@($note, $filled['meaning']) | Where-Object { $_ }) -join ' '
+        # one shape for "no text": $null, as for the other fields
+        if ($meaning) { $filled['meaning'] = $meaning } else { $filled['meaning'] = $null }
     }
 
     $g = [ordered]@{
@@ -636,31 +671,26 @@ function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
         tech       = Get-WorkerPerfGuidanceTech $Incident $Texts
         meaning    = $filled['meaning']
         impact     = $filled['impact']
-        userView   = Get-WorkerPerfGuidanceUserView $Catalogue $Incident $conditions $values
-        checks     = Get-WorkerPerfGuidanceItems $entry 'checks' $conditions $values
-        remedies   = Get-WorkerPerfGuidanceItems $entry 'remedies' $conditions $values
-        contacts   = Get-WorkerPerfGuidanceItems $entry 'contacts' $conditions $values
+        userView   = Get-WorkerPerfGuidanceUserView $Catalogue $Incident $conditions $values $templates
+        checks     = @(Get-WorkerPerfGuidanceItems $entry 'checks' $conditions $values $templates)
+        remedies   = @(Get-WorkerPerfGuidanceItems $entry 'remedies' $conditions $values $templates)
+        contacts   = @(Get-WorkerPerfGuidanceItems $entry 'contacts' $conditions $values $templates)
         short      = $filled['short']
         terms      = @()
         conditions = $conditions
     }
 
-    # the texts of the guidance (not the sources), searched for the catalogue's terms ignoring case
-    $all = New-Object System.Collections.Generic.List[string]
-    foreach ($k in 'title', 'meaning', 'impact', 'userView', 'short') { if ($g[$k]) { $all.Add([string]$g[$k]) } }
-    foreach ($list in 'checks', 'remedies', 'contacts') {
-        foreach ($item in $g[$list]) {
-            foreach ($f in $item.Keys) { if ($f -ne 'source' -and $item[$f]) { $all.Add([string]$item[$f]) } }
-        }
-    }
-    $haystack = ($all.ToArray() -join "`n")
+    # a term is listed when it starts a word of a template shown, with any ending (German inflects and compounds), not
+    # inside a word and not in an inserted value: the placeholders are taken out of the templates first (ruling P3-R20)
+    $haystack = [regex]::Replace(($templates.ToArray() -join "`n"), '\{\w+\}', "`n")
     $terms = Get-WorkerPerfField $Catalogue 'terms'
     $found = New-Object System.Collections.Generic.List[string]
     if (Test-WorkerPerfGuidanceObject $terms) { $names = @($terms.PSObject.Properties | ForEach-Object { $_.Name }) }
     elseif ($terms -is [System.Collections.IDictionary]) { $names = @($terms.Keys) }
     else { $names = @() }
+    $options = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
     foreach ($n in $names) {
-        if ($haystack.IndexOf([string]$n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $found.Add([string]$n) }
+        if ([regex]::IsMatch($haystack, '(?<![\p{L}\p{N}])' + [regex]::Escape([string]$n), $options)) { $found.Add([string]$n) }
     }
     $g['terms'] = @($found.ToArray())
     return $g
