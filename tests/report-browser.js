@@ -512,6 +512,11 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(delay.causeText) && delay.causeText.includes('außerhalb des Workers'), 'Verzoegerung ohne Engpass: Hinweis auf eine Ursache ausserhalb');
   ok(delay.guide.contacts.length > 0 && await iv.locator('.iv-todo .contact li').count() === delay.guide.contacts.length && (await iv.locator('.iv-todo .contact h4').innerText()) === 'An wen wenden' && (await iv.locator('.iv-todo .contact li').first().innerText()).includes(delay.guide.contacts[0].text), 'An wen wenden');
   ok(await iv.locator('.iv-affected li').count() === delay.affected.length, 'Verzoegerung ohne Engpass: Betroffene');
+  // an incident with at most five checks and three proposals shows them all, without a line that folds a rest
+  const few = D.incidents.find((i) => i.guide.checks.length > 0 && i.guide.checks.length <= 5 && i.guide.remedies.length > 0 && i.guide.remedies.length <= 3);
+  await ivOpen(page, few.id);
+  const fshown = await stepsShown(page);
+  ok(fshown.checks === few.guide.checks.length && fshown.remedies === few.guide.remedies.length && fshown.folds.length === 0 && await iv.locator('details.morefold').count() === 0 && await iv.locator('.iv-todo ol.checks').count() === 1, 'kurze Listen: alle Schritte und Vorschlaege, keine Zeile "Weitere …": ' + JSON.stringify(fshown));
   // a chronic state: the same page; its first sentence says that it lasted
   const chronic = D.incidents.find((i) => i.chronic);
   await ivOpen(page, chronic.id);
