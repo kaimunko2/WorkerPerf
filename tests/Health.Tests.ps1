@@ -859,3 +859,168 @@ Describe 'Bewertung: Regeln im Einzelnen' {
         $r.eventsReachText | Should -Be 'bis –, Start –'
     }
 }
+Describe 'Katalog in src' {
+    BeforeAll {
+        $script:CatFile = Join-Path $PSScriptRoot '../src/health.de.json'; $script:Apps = @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))
+        $script:Real = Read-WorkerPerfHealthCatalogue $CatFile $Apps
+        # nur der Abschnitt des Zustandsbilds im Nachweis: bis zur naechsten Ueberschrift derselben Ebene
+        $script:Proof = [regex]::Match((Get-Content (Join-Path $PSScriptRoot '../docs/guidance/quellen.md') -Raw), '(?ms)^## Zustandsbild\s*$(.*?)(?=^## |\z)').Groups[1].Value
+        # die Pruefungen des Plans je Bereich; Task 14b ergaenzt print bis maintenance, Task 14c apps.
+        # size.workerCpuMax kommt aus den weiteren Praxisquellen (PXH-01, Entscheidungen ZB-R3, ZB-R8)
+        $script:PlanChecks = [ordered]@{
+            size = @('size.commitHeadroom', 'size.pagefilePresent', 'size.memoryPerSession', 'size.cpuPerSession', 'size.commitAboveRam', 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory',
+                'size.vmTools', 'size.balloonDriver', 'size.netAdapterType', 'size.storageController')
+            operation = @('operation.pendingRestart', 'operation.uptime', 'operation.updateAge', 'operation.powerPlan', 'operation.diskFree')
+            sessions = @('sessions.disconnectLimit', 'sessions.idleLimit', 'sessions.disconnectedOld', 'sessions.unloadedProfiles', 'sessions.tempProfiles')
+            vda = @('vda.services', 'vda.controllerCount', 'vda.controllerNotFqdn', 'vda.listOfSids', 'vda.wemServices', 'vda.wemCache', 'vda.wemGpTimeout')
+            profile = @('profile.containerFull', 'profile.containersPerUser', 'profile.serviceStopped') }
+        # die Art jeder Pruefung des ganzen Plans; was in keiner der zwei Listen steht, ist eine Faustregel
+        $script:Vendor = @('size.pagefilePresent', 'size.vmTools', 'size.balloonDriver', 'size.netAdapterType', 'size.storageController',
+            'vda.controllerCount', 'vda.controllerNotFqdn', 'vda.listOfSids', 'vda.wemServices', 'vda.wemCache', 'vda.wemGpTimeout',
+            'print.driversInSpooler', 'print.kernelModeV2', 'print.mappingClientSupported',
+            'security.twoScanners', 'security.passiveWithoutMde', 'security.citrixExclusions', 'network.smb1', 'network.dnsCount', 'network.rss',
+            'maintenance.sessionTriggerTasks', 'maintenance.defenderFullScan', 'maintenance.defenderRandomize',
+            'apps.edgeAutoUpdate', 'apps.edgeUpdateCheckOff', 'apps.edgeWebView2Update', 'apps.edgeBackgroundMode', 'apps.edgeSleepingTabs', 'apps.edgeAutoDiscard', 'apps.edgeRoamingProfile',
+            'apps.teamsAutoUpdate', 'apps.teamsFallback', 'apps.teamsWebView2')
+        # mit den drei Pruefungen aus den weiteren Praxisquellen: size.workerCpuMax (Task 14a), print.operationalLogOff (14b), apps.teamsClassic (14c)
+        $script:Practice = @('size.commitAboveRam', 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory', 'operation.uptime', 'operation.updateAge', 'operation.powerPlan', 'sessions.disconnectLimit', 'sessions.idleLimit',
+            'print.operationalLogOff', 'security.wemExclusions', 'security.networkProtection', 'events.sinceBoot', 'maintenance.updateServiceEnabled', 'apps.teamsClassic')
+        $script:K3 = @('events.crashes', 'events.storage', 'events.fileserver', 'events.coverage', 'events.sinceBoot', 'sessions.unloadedProfiles', 'sessions.tempProfiles')
+        # zwoelf Praxisquellen (Entscheidung ZB-R7): der Blog von Kasper Johansen ist nicht mehr erreichbar und wird nicht verwendet
+        $script:PracticeSources = @('BIS-F', 'Carl Stalhood', 'GO-EUC', 'James Kindon', 'James Rankin', 'Thomas Kötzing', 'Manuel Winkel', 'Aaron Parker', 'Trentent Tye',
+            'John Billekens', 'Guy Leech', 'Benny Tritsch')
+        # die Pruefungen dieser Task mit einer zweiten Quelle aus den weiteren Praxisquellen (Entscheidung ZB-R31) und der Name, der in ihrem Text steht
+        $script:SecondSources = [ordered]@{ 'size.pagefilePresent' = 'GO-EUC'; 'operation.pendingRestart' = 'Guy Leech'; 'operation.diskFree' = 'Thomas Kötzing'
+            'sessions.disconnectLimit' = 'James Rankin'; 'sessions.idleLimit' = 'James Rankin'; 'sessions.tempProfiles' = 'Thomas Kötzing'; 'vda.wemCache' = 'Manuel Winkel'
+            'profile.containerFull' = 'Aaron Parker'; 'profile.containersPerUser' = 'Aaron Parker' }
+    }
+    It 'enthaelt genau die Pruefungen des Plans mit Bereich, Art und Schwellen' {
+        @($Real.checks.id) | Should -Be @($PlanChecks.Values | ForEach-Object { $_ })
+        @($Real.checks).Count | Should -Be 32; $Vendor.Count | Should -Be 33; $Practice.Count | Should -Be 15       # Task 14b: 66 Pruefungen, Task 14c: 80
+        foreach ($c in $Real.checks) {
+            $c.id | Should -BeLike ($c.area + '.*')
+            $c.kind | Should -Be $(if ($Vendor -contains $c.id) { 'vendor' } elseif ($Practice -contains $c.id) { 'practice' } else { 'rule' }) -Because $c.id
+        }
+        $want = [ordered]@{ commitPeakPct = 90; commitNowPct = 98; memPerSessionMB = 1024; sessionsPerCpu = 8; workerCpuMin = 8; workerCpuMax = 8; workerMemMinMB = 24576; uptimeDays = 30; updateAgeDays = 60; diskFreeGB = 10; diskFreeHardGB = 2
+            disconnectedHours = 24; unloadedProfiles = 20; containerUsedPct = 90; containerUsedHardPct = 95; containersPerUser = 3; printDrivers = 20; queuesPerSession = 10; signatureAgeDays = 2; eventDays = 3; workStartHour = 7; workEndHour = 18 }
+        $want.Count | Should -Be 22
+        # Der Lader lehnt eine Schwelle ab, die keine Regel und kein Befundsatz nutzt: diese vier kommen mit ihren Pruefungen in Task 14b (die Zeile entfaellt dort)
+        foreach ($k in 'printDrivers', 'queuesPerSession', 'signatureAgeDays', 'eventDays') { $want.Remove($k) }
+        @($Real.thresholds.PSObject.Properties.Name) | Should -Be @($want.Keys)
+        foreach ($k in $want.Keys) { $Real.thresholds.$k.value | Should -Be $want[$k] -Because $k; $Real.thresholds.$k.default | Should -Be $want[$k] -Because $k }
+        @(Get-WorkerPerfHealthChangedThresholds $Real).Count | Should -Be 0
+    }
+    It 'fuehrt die Ausnahme des Auftraggebers: beim Energiesparplan gilt die Praxisquelle vor dem Hersteller' {
+        @($Real.precedence).Count | Should -Be 1; $Real.precedence[0].check | Should -Be 'operation.powerPlan'; $Real.precedence[0].winner | Should -Be 'practice'
+        $Real.precedence[0].reason | Should -Match 'Terminalserver'
+        $c = $Real.checks | Where-Object id -eq 'operation.powerPlan'; $c.kind | Should -Be 'practice'; $c.source.vendor | Should -Be 'Carl Stalhood'
+        # der Widerspruch bleibt genannt; GO-EUC steht mit den Bedingungen seiner Messung als andere Sicht da und aendert weder Regel noch Einstufung
+        foreach ($w in 'Microsoft', 'Ausbalanciert', 'VMware', 'BIS-F', 'GO-EUC', 'Windows 11', 'Azure') { $c.meaning | Should -Match $w -Because $w }
+        (Get-Check @{ 'operation.powerPlan' = 'balanced' } @{} 'operation.powerPlan' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'operation.powerPlan' = 'powerSaver' } @{} 'operation.powerPlan' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'operation.powerPlan' = 'highPerformance' } @{} 'operation.powerPlan' $Real).grade | Should -Be 'ok'
+        $Proof | Should -Match 'Ausnahmen: Praxisquelle vor Hersteller'
+    }
+    It 'meldet mehr und weniger Prozessoren als die Praxisquellen nennen, nie als handeln' {
+        foreach ($id in 'size.workerCpu', 'size.workerCpuMax') {
+            $c = $Real.checks | Where-Object id -eq $id; $c.kind | Should -Be 'practice'; $c.source.vendor | Should -Be 'Carl Stalhood'; @($c.rules.act).Count | Should -Be 0
+            foreach ($w in 'Carl Stalhood', 'GO-EUC', '2019', 'Windows Server 2016') { $c.meaning | Should -Match $w -Because "$id $w" }      # beide Quellen, GO-EUC mit den Bedingungen des Tests
+        }
+        foreach ($case in @(@(4, 'check', 'ok'), @(8, 'ok', 'ok'), @(16, 'ok', 'check'))) {
+            (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpu' $Real).grade | Should -Be $case[1] -Because "$($case[0]) Prozessoren"
+            (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpuMax' $Real).grade | Should -Be $case[2] -Because "$($case[0]) Prozessoren"
+        }
+        (Get-Check @{ 'size.cpuLogical' = 16 } @{} 'size.workerCpuMax' $Real).finding | Should -Match '16 logische Prozessoren'
+    }
+    It 'traegt die Texte, auf die sich Bericht und Seite stuetzen, und zu jeder Pruefung einen Vorschlag' {
+        $want = [ordered]@{ title = 'Zustand des Servers'; notRecorded = 'Zustandsbild nicht erfasst.'; unreadable = 'Zustandsbild nicht lesbar.'; healthOnlyHead = 'Zustandsbericht ohne Messung'
+            summary = '{act} zum Handeln, {check} zum Prüfen, {ok} in Ordnung'; areaOne = '1 Bereich'; areaMany = '{n} Bereiche'
+            countsAct = '{n} zum Handeln'; countsCheck = '{n} zum Prüfen'; countsUnknown = '{n} nicht prüfbar'; reasonSkipped = '{category} nicht erfasst (-Skip)'
+            yes = 'ja'; no = 'nein'; noValue = '–'; copyCheckTitle = '{area} – {title}: {grade}'; copyAreaTitle = '{area}: {grade}'; copyAreaItem = '- {title}: {grade}. {finding}'
+            kindVendor = 'Empfehlung des Herstellers'; kindPractice = 'Empfehlung aus der Praxis'; kindRule = 'Faustregel'; notApplicable = 'Trifft nicht zu: {reason}.'
+            reasonAppNotInstalled = '{app} ist nicht installiert'; appNotInstalled = '{app}: nicht installiert'
+            environment = 'Der Katalog geht von nicht persistenten, über Machine Creation Services bereitgestellten Multi-Session-Servern aus.' }
+        foreach ($k in $want.Keys) { $Real.copy.$k | Should -Be $want[$k] -Because $k }
+        $Real.copy.notRecordedFailed | Should -BeLike 'Zustandsbild nicht erfasst*'; $Real.copy.stateNotApplicable | Should -BeLike 'nicht zutreffend*'
+        $Real.copy.eventsReach | Should -Match '\{from\}'; $Real.copy.eventsReach | Should -Match '\{boot\}'; $Real.grades.na.word | Should -Be 'Trifft nicht zu'
+        @($Real.areas.label) | Should -Be @('Größe und Reserve', 'Betrieb', 'Sitzungen', 'Citrix VDA', 'Profilverwaltung', 'Drucken', 'Sicherheitsprodukte', 'Netz und Dateiserver', 'Ereignisbild', 'Wartung in der Arbeitszeit', 'Anwendungen')
+        foreach ($a in $Real.areas) { [string]$a.notCovered | Should -Not -BeNullOrEmpty -Because $a.id }
+        foreach ($c in $Real.checks) { @($c.todo).Count | Should -BeGreaterThan 0 -Because $c.id }
+    }
+    It 'nennt die gemessene Maschine Server' {                                                          # Wortwahl des Auftraggebers (Entscheidung ZB-R24)
+        # kein Wort des Katalogs beginnt mit "Worker", ausser dem Namen des Werkzeugs; Kennungen (workerCpuMin, size.workerCpu) beginnen klein
+        $words = @([regex]::Matches((Get-Content $CatFile -Raw), '\bWorker\w*') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+        @($words | Where-Object { $_ -cne 'WorkerPerf' }) | Should -Be @()
+        $Real.copy.eventsReach | Should -Match 'Start des Servers'
+    }
+    It 'nennt keine kopierbaren Befehle und keine Ursachen' {
+        foreach ($c in $Real.checks) {
+            foreach ($t in $c.todo) { "$($t.text) $($t.where) $($t.sign)" | Should -Not -Match '(?i)(\b(Set|New|Remove|Stop|Restart|Disable|Enable)-[A-Z]\w+|reg(\.exe)? add|powercfg|wevtutil|sc(\.exe)? (stop|config)|net stop)' -Because $c.id }
+            foreach ($f in $c.findings.PSObject.Properties) { $f.Value | Should -Not -Match 'ist die Ursache|verursacht den' -Because $c.id }
+        }
+        $Real.copy.incidentNote | Should -Match 'beitragen'
+    }
+    It 'nennt Praxisquellen als Praxisquellen, aus der Liste des Nachweises' {
+        # die Tabelle "Praxisquellen" des Nachweises: | Name | Adresse | recherchiert oder offen |
+        $px = @{}; foreach ($m in [regex]::Matches($Proof, '(?m)^\| (?<n>[^|]+?) \| (?<u>https?://\S+) \| (?<s>recherchiert|offen) \|\s*$')) { $px[$m.Groups['n'].Value] = $m.Groups['s'].Value }
+        $px.Count | Should -Be 12; foreach ($n in $PracticeSources) { $px.ContainsKey($n) | Should -BeTrue -Because $n }
+        @($px.Keys | Where-Object { $px[$_] -eq 'recherchiert' } | Sort-Object) | Should -Be @($PracticeSources | Sort-Object)
+        # die dreizehnte Quelle des Entwurfs steht ohne Adresse da; die alte Domaene von Trentent Tye kommt nicht vor
+        $Proof | Should -Match '(?m)^.*Kasper Johansen.*nicht mehr erreichbar, nicht verwendet.*$'; $Proof | Should -Not -Match 'virtualwarlock|theorypc'
+        foreach ($c in @($Real.checks | Where-Object kind -eq 'practice')) {
+            $px[[string]$c.source.vendor] | Should -Be 'recherchiert' -Because $c.id; $c.source.url | Should -Match '^https://' -Because $c.id
+            "$($c.title) $($c.meaning) $(@($c.findings.PSObject.Properties.Value) -join ' ')" | Should -Not -Match 'Empfehlung des Herstellers|Hersteller empfiehlt' -Because $c.id
+        }
+        foreach ($c in @($Real.checks | Where-Object kind -eq 'vendor')) { $px.ContainsKey([string]$c.source.vendor) | Should -BeFalse -Because $c.id; $c.source.url | Should -Match '^https://' -Because $c.id }
+        $Proof | Should -Match 'Quellen aus der Praxis: BIS-F'; $Proof | Should -Match 'Quellen aus der Praxis: carlstalhood\.com'
+    }
+    It 'nennt die zweite Quelle einer Pruefung im Text und fuehrt sie im Nachweis' {                    # Entscheidung ZB-R31
+        foreach ($id in $SecondSources.Keys) {
+            $c = $Real.checks | Where-Object id -eq $id
+            "$($c.meaning) $(@($c.todo | ForEach-Object { $_.text }) -join ' ')" | Should -Match ([regex]::Escape($SecondSources[$id])) -Because $id
+            # im Nachweis: eine Zeile mit der Kennung der Pruefung, "auch gestützt durch:" und einer Adresse
+            $Proof | Should -Match ('(?m)^.*`' + [regex]::Escape($id) + '`.*auch gestützt durch: .*https://\S+.*$') -Because $id
+        }
+    }
+    It 'nennt das Master-Image oder die Richtlinie als Ort der Aenderung und den letzten Start als Grenze' {
+        # Pruefungen ohne Einstellung im Master-Image oder in einer Richtlinie: ihre Schritte lassen nachsehen oder aufraeumen, oder die Abhilfe liegt im Neustartplan der Bereitstellungsgruppe
+        $look = @('size.commitHeadroom', 'size.commitAboveRam', 'operation.pendingRestart', 'operation.uptime', 'operation.diskFree', 'sessions.disconnectedOld', 'sessions.unloadedProfiles', 'sessions.tempProfiles',
+            'profile.containerFull', 'profile.containersPerUser', 'events.crashes', 'events.storage', 'events.fileserver', 'events.coverage', 'network.smbOldDialect')
+        foreach ($c in $Real.checks) {
+            foreach ($t in $c.todo) { "$($t.text) $($t.where)" | Should -Not -Match '(?i)auf diesem Server (ändern|einstellen|setzen)|am einzelnen Server (ändern|einstellen|setzen)' -Because $c.id }
+            if ($look -notcontains $c.id) { @($c.todo | Where-Object { $_.where -match 'Master-Image|Richtlinie|WEM-Konfiguration' }).Count | Should -BeGreaterThan 0 -Because $c.id }
+        }
+        foreach ($id in @($K3 | Where-Object { @($Real.checks.id) -contains $_ })) {      # in Task 14a die zwei der Sitzungen, ab Task 14b alle sieben
+            $c = $Real.checks | Where-Object id -eq $id; @($c.values) | Should -Contain 'operation.lastBoot' -Because $id
+            $c.findings.check | Should -Match '\{operation\.lastBoot\}' -Because $id
+        }
+        ($Real.checks | Where-Object id -eq 'operation.updateAge').findings.check | Should -Match 'Abbild'
+        (Get-Content $CatFile -Raw) | Should -Not -Match 'Provisioning Services|\bPVS\b'                              # nichts, was nur fuer Provisioning Services gilt
+    }
+    It 'stuetzt keine Pruefung auf einen Wert ohne dokumentierte Lesequelle' {
+        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 202
+        foreach ($c in $Real.checks) { foreach ($v in $c.values) { $t[$v].Documented | Should -BeTrue -Because "$($c.id): $v" } }
+        @($Real.values.PSObject.Properties.Name).Count | Should -Be 164
+    }
+    It 'fuehrt die Quelle jeder Pruefung im Nachweis' {
+        foreach ($c in $Real.checks) {
+            $Proof | Should -Match ([regex]::Escape($c.source.title)) -Because $c.id; $c.source.date | Should -Match '^\d{4}-\d\d-\d\d$' -Because $c.id
+            if ($c.source.url) { $Proof | Should -Match ([regex]::Escape($c.source.url)) -Because $c.id }
+        }
+    }
+    It 'fuellt in jedem Befund jeden Platzhalter und nennt die Einheit im Satz' {                       # Entscheidung ZB-R15
+        # ein Zustandsbild ohne gelesene Werte und eines mit auffaelligen Werten: kein Befund behaelt eine geschweifte Klammer
+        $bad = @{ 'size.cpuLogical' = 16; 'size.memTotalMB' = 16384; 'size.commitTotalMB' = 30000; 'size.commitLimitMB' = 30500; 'size.commitPeakMB' = 30400; 'size.pagefiles' = @()
+            'operation.lastBoot' = $ReadMs - 40 * 86400000L; 'operation.pendingRename' = 3; 'operation.lastUpdate' = $ReadMs - 90 * 86400000L; 'operation.powerPlan' = 'balanced'
+            'operation.volumes' = @(@{ Drive = 'C:'; SizeGB = 100; FreeGB = 1.5; FileSystem = 'NTFS'; System = $true; PageFile = $true }); 'profile.service' = 'Stopped' }
+        foreach ($values in @{}, $bad) {
+            $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $values) -Catalogue $Real -EventConfig $Cfg -Roles $Roles -Texts $Texts
+            $checks = @($r.areas | ForEach-Object { $_.checks }); $checks.Count | Should -Be @($Real.checks).Count
+            foreach ($c in $checks) { $c.finding | Should -Not -Match '[{}]' -Because $c.id; $c.finding | Should -Not -BeNullOrEmpty -Because $c.id }
+        }
+        (Get-Check $bad @{} 'operation.diskFree' $Real).grade | Should -Be 'act'
+        (Get-Check $bad @{} 'operation.diskFree' $Real).finding | Should -Match '1,5 GB frei .*2 GB'
+        (Get-Check $bad @{} 'operation.updateAge' $Real).finding | Should -Match '90 Tage alt .*60 Tage'
+        (Get-Check $bad @{} 'size.commitHeadroom' $Real).grade | Should -Be 'act'
+    }
+}

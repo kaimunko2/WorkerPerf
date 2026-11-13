@@ -323,3 +323,204 @@ angepasst.
   ihren Werten (englisch wie in der Quelle); „Profil zurücksetzen“ in Citrix Director; „CPU Spikes Protection“ in
   Citrix Workspace Environment Management; der Dienst „Citrix Print Manager Service“ (CpSvc.exe).
 - **VMware:** die CPU-Bereitschaft („Ready“) im Leistungsdiagramm der virtuellen Maschine im vCenter.
+
+## Zustandsbild
+
+Der Katalog `src/health.de.json` bewertet das Zustandsbild des Servers. Jede Prüfung nennt im Feld `source` eine
+Quelle mit Titel, Adresse und Datum und im Feld `kind` ihre Art: „Empfehlung des Herstellers“ (`vendor`), „Empfehlung
+aus der Praxis“ (`practice`) oder „Faustregel“ (`rule`). Dieser Abschnitt weist die Quellen nach. Er enthält bisher
+die Prüfungen der Bereiche Größe und Reserve, Betrieb, Sitzungen, Citrix VDA und Profilverwaltung; die übrigen
+Bereiche folgen. Stand: Katalog `version` 2026-11-13.
+
+Wie die Quellen geprüft wurden:
+
+- Jede Quelle wurde am 13.11.2026 für diesen Katalog geöffnet und die Aussage, auf die sich eine Prüfung stützt, mit
+  dem Text der Seite verglichen. Übernommen ist nur, was die Seite selbst sagt; eine Zahl aus einer Messung steht im
+  Katalog mit den Bedingungen der Messung.
+- Das Datum im Katalog ist der Stand, den die Seite selbst nennt (bei Microsoft Learn „Last updated on“, bei
+  docs.citrix.com „Last published“, bei techdocs.broadcom.com „Last Updated“, bei einem Blog das Datum des Beitrags).
+  Nennt eine Seite keinen Stand, steht das Datum des Abrufs da.
+- Eine Prüfung aus einer Praxisquelle heißt nie „Empfehlung des Herstellers“. Widerspricht eine Praxisquelle dem
+  Hersteller, gilt der Hersteller, und der Katalog nennt den Widerspruch. Die Ausnahmen legt der Auftraggeber fest;
+  sie stehen unten.
+- Der Katalog gilt für nicht persistente Multi-Session-Server, die über Machine Creation Services bereitgestellt
+  werden. Empfehlungen, die nur für andere Bereitstellungsarten, persistente Maschinen oder Einzelplatz-Desktops
+  gelten, sind nicht aufgenommen.
+
+### Praxisquellen
+
+Die geltende Liste der Praxisquellen. Eine weitere Quelle kommt nur mit Zustimmung des Auftraggebers hinzu.
+
+| Name | Adresse | Stand der Recherche |
+|---|---|---|
+| BIS-F | https://eucweb.com/ | recherchiert |
+| Carl Stalhood | https://www.carlstalhood.com/ | recherchiert |
+| GO-EUC | https://www.go-euc.com/ | recherchiert |
+| James Kindon | https://jkindon.com/ | recherchiert |
+| James Rankin | https://james-rankin.com/ | recherchiert |
+| Thomas Kötzing | https://koetzingit.de/ | recherchiert |
+| Manuel Winkel | https://www.deyda.net/ | recherchiert |
+| Aaron Parker | https://stealthpuppy.com/ | recherchiert |
+| Trentent Tye | https://trentent.github.io/ | recherchiert |
+| John Billekens | https://ave.j81.nl/ | recherchiert |
+| Guy Leech | https://guyrleech.wordpress.com/ | recherchiert |
+| Benny Tritsch | https://eucscore.com/ | recherchiert |
+
+Kasper Johansen stand ebenfalls auf der Liste des Auftraggebers: Sein Blog ist nicht mehr erreichbar, nicht verwendet.
+
+Alle zwölf Quellen wurden am 13.11.2026 recherchiert, jeder Eintrag mit einer Gegenprüfung an der Seite. Die Art
+`practice` tragen in den fünf Bereichen dieses Abschnitts nur Prüfungen, deren Quelle carlstalhood.com ist; BIS-F
+und sieben weitere Praxisquellen stehen als zweite Quelle im Text einzelner Prüfungen (unten: „auch gestützt
+durch“). Von Trentent Tye, John Billekens und Benny Tritsch stützt sich in diesen fünf Bereichen keine Prüfung.
+
+### Quellen aus der Praxis: BIS-F
+
+Base Image Script Framework (BIS-F), ein Werkzeug zum Versiegeln von Abbildern. Die Quelle ist für Windows Server
+2022 sichtbar älter: Dokumentation „7.1912“ (Dezember 2019 bis Januar 2020), die Liste der Betriebssysteme endet bei
+Windows Server 2019. Der Katalog kennzeichnet sie deshalb als ältere Praxis.
+
+| Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
+|---|---|---|---|---|
+| 97_PrepBISF_PRE_BaseImage.ps1 (Skript im Quelltext von BIS-F) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1 | letzter Eintrag der Historie im Skript: 22.11.2020 | 2026-11-13 | `operation.powerPlan` (zweite Praxisquelle im Text: BIS-F stellt beim Versiegeln den Plan „High Performance“ ein, ohne Bedingung) |
+| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Text: BIS-F bietet an, den Cache des WEM-Agenten auf den beständigen Datenträger zu legen; für MCS setzt das einen VDA ab 1903 mit MCSIO voraus) |
+
+### Quellen aus der Praxis: carlstalhood.com
+
+Anleitungen von Carl Stalhood. Die Seiten decken Citrix Virtual Apps and Desktops bis 2411 ab; die Seite zu den
+Gruppenrichtlinien ist älter und nennt Windows Server 2022 nur am Rand.
+
+| Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
+|---|---|---|---|---|
+| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Sitzungshosts mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr) |
+| Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Sitzungshosts regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
+| Group Policy Computer Settings for VDAs | https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/ | 2023-11-03 | 2026-11-13 | `sessions.disconnectLimit`, `sessions.idleLimit` (Zeitlimits per Gruppenrichtlinie, „3 hours or similar“: eine Größenordnung, keine Schwelle; die Prüfliste „Citrix Health Check“ nennt die Zeitlimits ebenfalls) |
+
+Nicht übernommen aus diesen Seiten, weil die Gegenprüfung es nicht trägt: beim zugesagten Speicher der Höchststand
+seit dem Start und eine Mindestlaufzeit (stehen nicht auf der Seite); bei den Zeitlimits die Aussage, sie gehörten
+nur in die Gruppenrichtlinie von Microsoft (neuere Seiten von Stalhood nennen den Zeitgeber der Citrix-Richtlinie als
+gleichwertigen Weg); beim Energiesparplan die Zeitgeber für Schlaf und Ruhezustand (das Zustandsbild liest sie nicht).
+
+### Weitere Praxisquellen als zweite Quelle
+
+Der Katalog führt je Prüfung eine Quelle im Feld `source`. Wo eine weitere Praxisquelle dieselbe Prüfung stützt,
+steht ihre Aussage im Text der Prüfung, mit dem Namen der Quelle und, bei einer Messung, mit deren Bedingungen. Die
+Art der Prüfung ändert sich dadurch nicht. Abruf aller Seiten: 2026-11-13.
+
+- `size.workerCpu`, `size.workerCpuMax` – auch gestützt durch: GO-EUC, „Impact of sizing RDSH VMs“, https://www.go-euc.com/impact-of-sizing-rdsh-vms/, 2019-02-27. Lasttest von 2019 mit Windows Server 2016 unter ESXi 6.7 U1 auf zwei Xeon E5-2680 v4, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; die genauen Zahlen sind für heutige Prozessoren nicht belegt. Die Empfehlung „höchstens 8 vCPU je Maschine“ und die Regel zur Summe der vCPU eines Hosts sind Rat der Autoren, kein Messwert.
+- `size.pagefilePresent` – auch gestützt durch: GO-EUC, „Page file sizing for virtualized environments“, https://www.go-euc.com/page-file-sizing-for-virtualized-environments/, 2019-12-03. Test von 2019 mit Windows 10 1803 (eine Sitzung je Maschine), 2 vCPU und 4 GB, MCS 1906.1; übernommen ist nur die Beobachtung, dass die Maschinen ohne Auslagerungsdatei unter Speicherdruck abstürzten. Der Rat zur Größe der Datei ist nicht übernommen.
+- `operation.pendingRestart` – auch gestützt durch: Guy Leech, „Reasons for Reboots – Part 1“, https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/, 2014-06-24. Aus der Zeit von Windows 7 und Windows Server 2008 R2; steht nur im Vorschlag zum Vorgehen (im Abbild nach jeder Installation prüfen). Der Mechanismus selbst ist der von Microsoft dokumentierte.
+- `operation.diskFree` – auch gestützt durch: Thomas Kötzing, „Citrix Maschinenerstellungsdienste (MCS) – Skript zum Auslesen des RAM- und Disk-Cache“, https://koetzingit.de/blog/2024/03/18/citrix-maschinenerstellungsdienste-mcs-skript-zum-auslesen-des-ram-und-disk-cache/, 2024-03-18. Gilt nur, wo MCS mit Speicheroptimierung eingerichtet ist; der Text der Prüfung sagt das.
+- `sessions.disconnectLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08 (Richtlinie statt Benutzerobjekt; zwei Stunden als sein Beispiel für einfache Benutzer); James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09 (die Werte am Benutzerobjekt greifen nur, wo nichts anderes gesetzt ist); Guy Leech, „The Taming of the Print Server“, https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/, 2016-02-23 (nur als Beispiel: ein Druckserver, kein Sitzungshost).
+- `sessions.idleLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08; James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09. Das Beispiel von Guy Leech ist hier nicht verwendet: Es handelt von getrennten Sitzungen.
+- `sessions.tempProfiles` – auch gestützt durch: Thomas Kötzing, „Powershell-Skript zum Löschen von temporären Benutzerprofilen“, https://koetzingit.de/blog/2024/09/10/powershell-skript-zum-loeschen-von-temporaeren-benutzerprofilen/, 2024-09-10. Gezeigt mit FSLogix; die Profilliste gehört zu Windows. Das Löschen von Einträgen auf dem laufenden Server ist nicht als Abhilfe übernommen.
+- `vda.wemCache` – auch gestützt durch: Manuel Winkel, „Finding in the Wild | Sometimes Old Citrix Problems Simply Return“, https://www.deyda.net/index.php/en/2026/09/26/finding-in-the-wild-sometimes-old-citrix-problems-simply-return/, 2026-09-26 (eigene Beobachtung mit WEM 2507 CU1 auf nicht persistenten VDAs, keine öffentliche Fehlernummer von Citrix); James Kindon, „The why does it of Citrix WEM Cache“, https://jkindon.com/the-why-does-it-of-citrix-wem-cache/, 2020-10-15 (nur als Vorgeschichte: gilt für Agenten vor Version 2012).
+- `profile.containerFull` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23. Geschrieben für FSLogix; übernommen sind nur die Folge eines vollen Containers und der Rat, die Größe nicht knapper zu begrenzen als nötig. Keine Zahl des Katalogs stammt von dort.
+- `profile.containersPerUser` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23 (zusätzlicher Speicherplatz bei gleichzeitigen Sitzungen; für FSLogix); James Rankin, „QuickPost – getting started with Citrix UPM Containers“, https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/, 2023-09-08 (die Citrix Profilverwaltung schreibt einen Differenzdatenträger und führt ihn bei der Abmeldung zurück).
+
+### Ausnahmen: Praxisquelle vor Hersteller
+
+Der Katalog führt die Ausnahmen im Teil `precedence`. Festgelegt ist eine.
+
+**Energiesparplan (`operation.powerPlan`).** Die Prüfung meldet „prüfen“, wenn der aktive Plan nicht „Höchstleistung“
+ist. Begründung des Auftraggebers (13.11.2026): Die Praxisquellen beziehen sich ausdrücklich auf
+Citrix-Terminalserver und Betriebserfahrung, die Herstellerdokumentation nicht.
+
+- Praxisquellen: Carl Stalhood, „Citrix Health Check“ (oben); BIS-F stellt beim Versiegeln denselben Plan ein (oben).
+- Microsoft, „Overview about power and performance tuning for the Windows Server“,
+  https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning
+  (Abruf 2026-11-13): „Balanced (recommended)“ ist die Vorgabe; „High Performance“ nennt die Seite für Anwendungen,
+  die auf Verzögerungen empfindlich reagieren. Der Katalog nennt das im Text der Prüfung.
+- VMware, „Poor network performance or high network latency on Windows virtual machines“,
+  https://knowledge.broadcom.com/external/article/310350 (Abruf 2026-11-13): „High performance“ für die Zeit, in der
+  Leistungsprobleme untersucht werden. Der Artikel begründet das mit Beobachtungen unter älteren Windows-Versionen.
+- Andere Sicht aus der Praxis: GO-EUC, „Beyond Balanced: Benchmarking Windows 11 Power Plans“,
+  https://www.go-euc.com/beyond-balanced-benchmarking-windows-11-power-plans/, 2026-09-15: nur ein geringer
+  Unterschied zwischen „Balanced“ und „High performance“, für Benutzer kein spürbarer. Gemessen mit Windows 11 und
+  einer Sitzung je Maschine auf Azure, Defender abgeschaltet; die Leerlaufzustände der Prozessoren waren nicht Teil
+  der Messung. Der Katalog nennt die Messung mit diesen Bedingungen; sie ändert weder Regel noch Einstufung.
+
+### Herstellerquellen
+
+| Hersteller | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
+|---|---|---|---|---|---|
+| Microsoft | How to determine the appropriate page file size for 64-bit versions of Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/how-to-determine-the-appropriate-page-file-size-for-64-bit-versions-of-windows | 2026-02-12 | 2026-11-13 | `size.pagefilePresent` (`vendor`); als Beleg der Faustregeln `size.commitHeadroom` (Zusagegrenze = Arbeitsspeicher und alle Auslagerungsdateien) und `operation.diskFree` (eine vom System verwaltete Auslagerungsdatei wächst nur, solange Platz frei ist) |
+| Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens) |
+| Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; keine Zahl) |
+| Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (der Wert `PendingFileRenameOperations`) |
+| VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` |
+| VMware | Solutions for Memory Performance Problems | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-monitoring-and-performance/monitoring-inventory-objects/troubleshoot-and-enhance-performance/memory-performance-solutions.html | 2026-10-28 | 2026-11-13 | `size.balloonDriver` |
+| VMware | Poor network performance or high network latency on Windows virtual machines | https://knowledge.broadcom.com/external/article/310350 | 2025-07-21 | 2026-11-13 | `size.netAdapterType` (der Artikel setzt VMXNET3 voraus, bevor weiter gesucht wird; eine allgemeine Pflicht nennt er nicht; die Seite „Citrix Virtual Delivery Agent (VDA) 2411“ von Carl Stalhood nennt für vSphere ebenfalls VMXNET3) |
+| VMware | SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration.html | 2026-10-28 | 2026-11-13 | `size.storageController` (nur ein Hinweis: VMware knüpft den Vorteil an E/A-starke Last) |
+| Citrix | VDA registration | https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/manage-deployment/vda-registration.html | 2026-11-12 | 2026-11-13 | `vda.controllerCount`, `vda.controllerNotFqdn`, `vda.listOfSids` |
+| Citrix | WEM health check tool | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/wem-health-check-tool.html | 2026-11-12 | 2026-11-13 | `vda.wemServices` |
+| Citrix | Agent (install and configure) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-13 | `vda.wemCache` (Abschnitt „Prerequisites“), `vda.wemGpTimeout` (Abschnitt „System settings“) |
+| Citrix | Profile Management policy descriptions and defaults | https://docs.citrix.com/en-us/profile-management/current-release/settings/descriptions-and-defaults.html | 2026-10-29 | 2026-11-13 | als Beleg der Faustregel `profile.containerFull` (90 % ist die Vorgabe für die Belegung, ab der ein Container automatisch vergrößert wird; keine Empfehlung im engen Sinn) |
+
+Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (Abruf 2026-11-13):
+
+- Citrix, „What's new“ (Workspace Environment Management service),
+  https://docs.citrix.com/us/en/workspace-environment-management/service/whats-new.html: Der Agent des WEM-Dienstes
+  findet den beständigen Ort für seinen Cache ab Version 2408.1.0.1 selbst (`vda.wemCache`). Die Seiten für eigene
+  WEM-Server enthalten diese Aussage nicht.
+- Citrix, „Session limits policy settings“,
+  https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/policies/reference/ica-policy-settings/session-limits-policy-settings.html:
+  Citrix empfiehlt, die Zeitgeber nur auf einem der beiden Wege zu setzen (`sessions.disconnectLimit`,
+  `sessions.idleLimit`, im Vorschlag zum Vorgehen).
+- Citrix, „Set up profile containers“,
+  https://docs.citrix.com/us/en/profile-management/current-release/configure/citrix-profile-management-profile-container.html:
+  Mit einem Container für das ganze Profil gilt „Delete locally cached profiles on logoff“ nicht mehr
+  (`sessions.unloadedProfiles`, im Vorschlag zum Vorgehen; die Empfehlung der Einstellung für Terminalserver steht auf
+  der Seite „Profile Management policy descriptions and defaults“).
+- Citrix, „Agent (install and configure)“ (Tabelle oben), Abschnitt „Recommendations“: Die Dienste des WEM-Agenten
+  nicht per Skript beenden oder neu starten (`vda.wemServices`, im Vorschlag zum Vorgehen). Dieselbe Seite
+  beschreibt, dass der Agent auf bereitgestellten Maschinen die Cache-Dateien aus dem Abbild verwirft (`vda.wemCache`).
+- Microsoft, „Performance Tuning Remote Desktop Session Hosts“ (Tabelle oben): Eine zu kleine Auslagerungsdatei
+  lässt Speicheranforderungen von Programmen und Systemteilen scheitern (`size.commitHeadroom`).
+- VMware, „VMware Tools Device Drivers“,
+  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-device-drivers.html:
+  Der Treiber zur Speichersteuerung ist für das Ballooning nötig und unter vSphere empfohlen (`size.balloonDriver`);
+  die Treiber für VMXNET3 verbessern die Netzleistung (`size.netAdapterType`).
+- VMware, „Add a Paravirtualized SCSI Adapter“,
+  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration/add-a-paravirtualized-scsi-adapter-in-the-nextgen-client.html:
+  Der paravirtuelle SCSI-Adapter passt am besten zu E/A-starken Anwendungen, besonders in SAN-Umgebungen
+  (`size.storageController`).
+- VMware, „Configuring disks to use VMware Paravirtual SCSI (PVSCSI) controllers“,
+  https://knowledge.broadcom.com/external/article/313507: Ein Wechsel des Adapters am Startlaufwerk ohne den Treiber
+  lässt Windows nicht mehr starten (`size.storageController`, im Vorschlag zum Vorgehen).
+
+### Faustregeln
+
+Eine Faustregel ist eine Prüfung, für die es weder eine Empfehlung des Herstellers noch eine aus der Praxis gibt.
+Ihre Schwellen sind Vorschläge des Katalogs. Wo ein Dokument des Herstellers den Zusammenhang beschreibt, nennt die
+Prüfung dieses Dokument als Beleg (Tabelle „Herstellerquellen“). Die übrigen tragen die Quelle
+„WorkerPerf: Erfahrungswert des Katalogs ohne Herstellerdokument“ (Stand 2026-11-13): `sessions.disconnectedOld`,
+`sessions.unloadedProfiles`, `sessions.tempProfiles`, `vda.services`, `profile.containersPerUser`,
+`profile.serviceStopped`.
+
+### Schwellen
+
+Die Schwellen der fünf Bereiche mit ihrer Herkunft. Eine Schwelle lässt sich im Katalog ändern; der Bericht nennt im
+Kopf jede Abweichung vom ausgelieferten Wert.
+
+| Schwelle | Wert | Verwendet von | Herkunft der Zahl |
+|---|---|---|---|
+| `commitPeakPct` | 90 % | `size.commitHeadroom` | Vorschlag des Katalogs |
+| `commitNowPct` | 98 % | `size.commitHeadroom` | Vorschlag des Katalogs |
+| `memPerSessionMB` | 1024 MB | `size.memoryPerSession` | Vorschlag des Katalogs; Microsoft nennt für Edge 1 GB je Benutzer |
+| `sessionsPerCpu` | 8 Sitzungen | `size.cpuPerSession` | Vorschlag des Katalogs |
+| `workerCpuMin` | 8 Prozessoren | `size.workerCpu` | Carl Stalhood (Praxisquelle) |
+| `workerCpuMax` | 8 Prozessoren | `size.workerCpuMax` | Carl Stalhood, GO-EUC (Praxisquellen) |
+| `workerMemMinMB` | 24576 MB | `size.workerMemory` | Carl Stalhood (Praxisquelle) |
+| `uptimeDays` | 30 Tage | `operation.uptime` | Vorschlag des Katalogs |
+| `updateAgeDays` | 60 Tage | `operation.updateAge` | Carl Stalhood (Praxisquelle) |
+| `diskFreeGB` | 10 GB | `operation.diskFree` | Vorschlag des Katalogs |
+| `diskFreeHardGB` | 2 GB | `operation.diskFree` | Vorschlag des Katalogs |
+| `disconnectedHours` | 24 Stunden | `sessions.disconnectedOld` | Vorschlag des Katalogs |
+| `unloadedProfiles` | 20 Profile | `sessions.unloadedProfiles` | Vorschlag des Katalogs |
+| `containerUsedPct` | 90 % | `profile.containerFull` | Citrix: Vorgabe für die automatische Vergrößerung |
+| `containerUsedHardPct` | 95 % | `profile.containerFull` | Vorschlag des Katalogs |
+| `containersPerUser` | 3 Container | `profile.containersPerUser` | Vorschlag des Katalogs |
+| `workStartHour`, `workEndHour` | 7 und 18 Uhr | Arbeitszeit (Bereich Wartung in der Arbeitszeit) | Vorschlag des Katalogs |
+
+Feste Zahlen in Regeln, die aus dem Dokument des Herstellers stammen und deshalb keine Schwellen sind: 12
+(Hauptversion der VMware Tools), 30 (Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden).
