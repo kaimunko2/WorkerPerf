@@ -8,20 +8,22 @@
 /* Two views of the same data. Both use the same building blocks (status marks, buttons, cards, charts, tables) and differ
    only in the colour and spacing variables below: the guided view is light and roomy, the expert view dark and dense.
    The appearance follows the view (body[data-view]), not the colour scheme of the operating system. On paper both views
-   use the light colours. */
+   use the light colours. The colour scheme of the browser's own parts (scroll bars, canvas) sits on the root element. */
+html { color-scheme: light; }
+@media screen { html[data-view="expert"] { color-scheme: dark; } }
 body {
-  color-scheme: light;
   --page: #f2f4f7; --surface: #ffffff; --border: #d9dde3; --grid: #e8ebef;
   --text: #111418; --text2: #4b5360; --muted: #656d7a; --hover: #eef1f5; --sel: #e1ecfb;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --other: #b5b9c0; --bar: #9ec5f4;
   --warn: #f0a400; --warn-ink: #b97a00; --crit: #d03b3b; --good: #0c9a0c;
   --accent: #1f62c4; --on-accent: #ffffff;
+  --tint-crit: #fdeeee; --tint-crit-edge: #efc9c9; --tint-warn: #fff5d9; --tint-warn-edge: #ead9a4; --tint-good: #e9f6ea; --tint-good-edge: #bfdfc2;
+  --kpi: rgba(255, 255, 255, .78); --kpi-edge: rgba(17, 20, 24, .1);
   --fs: 15px; --gap: 20px; --pad: 18px 20px;
 }
 @media screen {
   body[data-view="expert"] {
-    color-scheme: dark;
     --page: #15171a; --surface: #1d2024; --border: #363a41; --grid: #2a2e34;
     --text: #eef0f3; --text2: #c0c5cd; --muted: #8e959f; --hover: #262a30; --sel: #1d3152;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
@@ -55,11 +57,11 @@ h3 { font-size: 13px; margin: 0; font-weight: 600; }
 .notmeasured .status { margin: 0 2px 0 0; }
 .notmeasured.inline { display: inline; padding: 0; border: 0; font-size: inherit; }
 .notmeasured.inline .status { font-size: inherit; }
-.notmeasured .opt { white-space: nowrap; }
+.opt { white-space: nowrap; }
 .toolbar[hidden], .seg[hidden] { display: none; }
 #tab-sessions > .notmeasured, #tab-apps > .notmeasured, #tab-procs > .notmeasured { margin-bottom: 10px; }
-.incident .patterns li.unchecked { color: var(--text2); }
-.incident .patterns li.unchecked .sym { font-style: normal; color: var(--muted); }
+.incdetail .patterns li.unchecked, .unchecked { color: var(--text2); }
+.incdetail .patterns li.unchecked .sym, .unchecked .sym { font-style: normal; color: var(--muted); }
 .tl-row .notmeasured { margin: 3px 0; padding: 3px 8px; font-size: 12px; }
 .note { color: var(--muted); font-size: 12px; }
 /* tab bar and zoom bar of the expert view stay under the head bar (--headh: its height, set by the script) */
@@ -114,6 +116,7 @@ section[hidden] { display: none; }
 .chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .chart .band-warn tspan.sym { fill: var(--warn-ink); } .chart .band-crit tspan.sym { fill: var(--crit); }
 .chart .selbox { fill: var(--s1); fill-opacity: .14; stroke: var(--s1); stroke-width: 1; }
+.chart .incband { fill: var(--s1); fill-opacity: .1; }
 .chart .hit { cursor: crosshair; }
 .chartnote { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; max-width: 420px; overflow: hidden; }
@@ -167,7 +170,6 @@ td .sig { margin-right: 4px; }
 .tl-tick { position: absolute; top: 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; transform: translateX(-50%); }
 .tl-tick.first { transform: none; } .tl-tick.last { transform: translateX(-100%); }
 .tl-overlay { position: absolute; left: 108px; right: 0; top: 0; bottom: 20px; pointer-events: none; z-index: 1; }
-.tl-zoom { position: absolute; top: 18px; bottom: 0; background: var(--s1); opacity: .12; border-left: 1px solid var(--s1); border-right: 1px solid var(--s1); }
 .reported { position: absolute; top: 14px; bottom: 0; border-left: 2px dashed var(--text); }
 .reported span { position: absolute; top: -15px; left: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--text); background: var(--surface); padding: 0 3px; }
 .reported.end span { left: auto; right: 4px; }
@@ -177,7 +179,6 @@ td .sig { margin-right: 4px; }
 .mark.sev1 { background: var(--warn); color: #1d1600; }
 .mark.sev2 { background: var(--crit); color: #fff; }
 .mark:hover { filter: brightness(1.08); }
-.mark.open { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
 .mark.chronic { height: 16px; background: none; color: var(--text); font-weight: 400; padding: 0; line-height: 16px; }
 .mark.chronic::before { content: ""; position: absolute; left: 0; right: 0; top: 7px; height: 3px; border-radius: 2px; }
 .mark.chronic.sev1::before { background: var(--warn); } .mark.chronic.sev2::before { background: var(--crit); }
@@ -214,8 +215,8 @@ td .sig { margin-right: 4px; }
 .incident .text:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
 .incident .detail { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
 .incident .detail[hidden] { display: none; }
-.incident h4 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
-.incident .detail > :first-child, .essentials h4 { margin-top: 0; }
+.incdetail h4 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+.incdetail > :first-child, .essentials h4 { margin-top: 0; }
 .essentials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 28px; margin-bottom: 4px; }
 ul.plain { list-style: none; margin: 0; padding: 0; }
 ul.plain li { padding: 2px 0; overflow-wrap: anywhere; }
@@ -258,11 +259,11 @@ body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 .quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } .quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }
 /* events, the days before the capture, printing */
 .ihead .inum { color: var(--text2); font-variant-numeric: tabular-nums; }
-.incident .patterns li { padding: 2px 0; }
-.incident .patterns li.none { color: var(--text2); }
-.incident .detail .kv { margin-bottom: 4px; }
-.incident .detail .kv > span, #before .kv > span { min-width: 0; overflow-wrap: anywhere; }
-.incident .detail .kv button.more { margin-left: 4px; }
+.incdetail .patterns li { padding: 2px 0; }
+.incdetail .patterns li.none { color: var(--text2); }
+.incdetail .kv { margin-bottom: 4px; }
+.incdetail .kv > span, #before .kv > span { min-width: 0; overflow-wrap: anywhere; }
+.incdetail .kv button.more { margin-left: 4px; }
 .evlist td.wrap { min-width: 260px; max-width: 520px; }
 .bnote { margin: 0 0 8px; font-weight: 600; }
 #before .incident + .incident { margin-top: 10px; }
@@ -286,15 +287,15 @@ body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 #guided h3 { font-size: 15px; }
 #guided section > h2 { margin: 8px 0 12px; }
 #band { --tint: var(--surface); --edge: var(--muted); background: var(--tint); border: 1px solid var(--border); border-left: 6px solid var(--edge); border-radius: 10px; padding: 20px 24px; }
-#band[data-state="red"] { --tint: #fdeeee; --edge: var(--crit); border-color: #efc9c9; border-left-color: var(--edge); }
-#band[data-state="yellow"] { --tint: #fff5d9; --edge: var(--warn); border-color: #ead9a4; border-left-color: var(--edge); }
-#band[data-state="green"] { --tint: #e9f6ea; --edge: var(--good); border-color: #bfdfc2; border-left-color: var(--edge); }
+#band[data-state="red"] { --tint: var(--tint-crit); --edge: var(--crit); border-color: var(--tint-crit-edge); border-left-color: var(--edge); }
+#band[data-state="yellow"] { --tint: var(--tint-warn); --edge: var(--warn); border-color: var(--tint-warn-edge); border-left-color: var(--edge); }
+#band[data-state="green"] { --tint: var(--tint-good); --edge: var(--good); border-color: var(--tint-good-edge); border-left-color: var(--edge); }
 .band-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
 #bandState { flex: none; display: flex; align-items: center; gap: 10px; margin: 0; font-size: 22px; font-weight: 700; }
 #bandState .sym { font-size: 34px; line-height: 1; }
 #guided #bandSentence { flex: 1 1 360px; min-width: 0; margin: 0; font-size: 20px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
 #kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
-.kpi { background: rgba(255, 255, 255, .78); border: 1px solid rgba(17, 20, 24, .1); border-radius: 8px; padding: 10px 14px; min-width: 0; }
+.kpi { background: var(--kpi); border: 1px solid var(--kpi-edge); border-radius: 8px; padding: 10px 14px; min-width: 0; }
 .kpi .num { display: block; font-size: 30px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums; }
 .kpi.zero .num { color: var(--muted); }
 .kpi .lbl { display: block; font-size: 13px; color: var(--text2); }
@@ -302,7 +303,7 @@ body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 .band-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 12px; margin-top: 18px; }
 .band-actions label.inline { color: var(--text); }
 #hints { display: flex; flex-direction: column; gap: 6px; margin-top: -8px; }
-.hint { background: #fff5d9; border: 1px solid #ead9a4; border-radius: 8px; padding: 8px 14px 8px 38px; position: relative; overflow-wrap: anywhere; }
+.hint { background: var(--tint-warn); border: 1px solid var(--tint-warn-edge); border-radius: 8px; padding: 8px 14px 8px 38px; position: relative; overflow-wrap: anywhere; }
 .hint .sym { position: absolute; left: 14px; font-style: normal; color: var(--warn-ink); }
 .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 .cards[hidden] { display: none; }
@@ -313,6 +314,10 @@ body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 .card-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; font-size: 13px; color: var(--text2); }
 .card-view { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 .card-when { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* a card of the days before the capture carries date and time span: they stand on a line of their own above the classification */
+#beforeG .card-top { flex-direction: column; }
+#beforeG .card-view { flex: none; }
+#beforeG .card-when { order: -1; margin-left: 0; white-space: normal; }
 .card-foot .status { margin: 0; font-size: 13px; }
 #guided .card-title { font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
 .card.inc .card-cause { color: var(--text2); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -325,15 +330,94 @@ body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 #more summary { cursor: pointer; padding: 10px 16px; font-weight: 600; overflow-wrap: anywhere; }
 #more details .row { border-top: 1px solid var(--grid); }
 .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 8px 16px; }
-.row .status { margin: 0; flex: none; }
+.row .status { margin: 0; flex: none; font-size: 13px; }
 .row-when { flex: none; color: var(--text2); font-variant-numeric: tabular-nums; }
 .row-title { flex: 1 1 240px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .row .btn { margin-left: auto; padding: 4px 12px; }
-details.fold > summary { cursor: pointer; font-size: 15px; font-weight: 600; }
+details.fold > summary { cursor: pointer; }
+#guided details.fold > summary h2 { display: inline; margin: 0; font-size: 15px; font-weight: 600; }
 details.fold[open] > summary { margin-bottom: 12px; }
 #aroundReported .grid3 { margin-top: 8px; }
 #aroundReported .chartbox { padding: 12px 14px; }
 .chart .repmark line { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 4; }
+/* incident view: it replaces the content of the guided view. Head with title, time and buttons, then what happened, the cause,
+   what to do, who was affected and, folded, the evidence */
+#guided.in-incident > :not(#incident) { display: none; }
+#incident { display: flex; flex-direction: column; gap: var(--gap); }
+#incident p { overflow-wrap: anywhere; }
+.iv-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.iv-head { border-left: 6px solid var(--border); padding: 20px 24px; }
+.iv-head.sev1 { border-left-color: var(--warn); } .iv-head.sev2 { border-left-color: var(--crit); }
+#guided .iv-title { font-size: 24px; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.iv-title:focus { outline: none; }
+.iv-tech { margin: 4px 0 0; color: var(--text2); font-size: 13px; }
+.iv-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin: 14px 0 0; }
+.iv-meta .status { margin: 0; font-size: 14px; }
+.iv-meta .inum, .iv-meta .iv-when { color: var(--text2); font-variant-numeric: tabular-nums; }
+.iv-meta .iv-view { font-weight: 600; min-width: 0; }
+.iv-meta .flag { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; font-size: 13px; }
+.iv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: 18px; }
+.iv-actions label.inline { color: var(--text); margin-right: 8px; }
+#incident section > h3 { font-size: 17px; margin: 0 0 12px; }
+.iv-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 28px; align-items: start; }
+.iv-cols.single { grid-template-columns: minmax(0, 1fr); }
+.iv-text p { margin: 0 0 10px; max-width: 78ch; }
+.iv-text p:last-child { margin-bottom: 0; }
+.iv-chart h4 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+.iv-chart .note { margin: 4px 0 0; }
+.iv-cause p { margin: 0; max-width: 100ch; }
+.iv-cause .notmeasured + p { margin-top: 10px; }
+.iv-todo p { margin: 0; }
+.iv-todo .fallback { margin-bottom: 14px; }
+ol.checks { margin: 0; padding-left: 28px; }
+ol.checks > li { padding: 0 0 14px 6px; }
+ol.checks > li + li { padding-top: 14px; border-top: 1px solid var(--grid); }
+ol.checks > li:last-child { padding-bottom: 0; }
+ol.checks > li::marker { font-weight: 700; }
+.iv-todo .step { font-weight: 600; }
+.how { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 6px 0 0; font-size: 14px; color: var(--text2); }
+.how > div { display: contents; }
+.how dt { font-weight: 600; }
+.how dd { margin: 0; overflow-wrap: anywhere; }
+.src { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.remedies, .contact { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.remedies h4, .contact h4 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+.remedies ul, .contact ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.remedies li { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+.remedies .pre { color: var(--text2); }
+.remedies .pre b, .remedies .act b { color: var(--text); font-weight: 600; }
+.contact li { padding-left: 14px; border-left: 3px solid var(--border); }
+.aff-head, ul.aff > li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1.5fr); gap: 2px 16px; padding: 6px 0; max-width: 820px; }
+.aff-head { font-size: 12px; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+ul.aff { list-style: none; margin: 0; padding: 0; }
+ul.aff > li { border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
+ul.aff .num { font-variant-numeric: tabular-nums; }
+.iv-affected > p { margin: 0; }
+details.iv-evidence > summary { cursor: pointer; }
+details.iv-evidence > summary h3 { display: inline; margin: 0; font-size: 17px; }
+details.iv-evidence[open] > summary { margin-bottom: 14px; }
+.iv-evbody { font-size: 14px; }
+.techtext { margin: 0 0 14px; padding: 10px 14px; background: var(--page); border-left: 3px solid var(--border); border-radius: 4px; }
+/* the rankings stand in the column of the guided view: the processes over the full width, applications and sessions under them */
+@media (min-width: 701px) { .iv-evbody .grid3.contrib { grid-template-columns: repeat(2, minmax(0, 1fr)); } .iv-evbody .grid3.contrib > :first-child { grid-column: 1 / -1; } }
+.iv-evbody .num .sig, ul.aff .num .sig { margin-right: 4px; }
+.chartbox h4 { margin: 0 0 4px; }
+.iv-notm ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.iv-notm li { margin: 2px 0; overflow-wrap: anywhere; }
+/* terms of the guidance explain themselves on hover, focus and tap */
+.term { background: var(--hover); border-radius: 3px; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: help; }
+.term:hover, .term:focus { background: var(--sel); }
+.term-pop { position: absolute; z-index: 40; max-width: min(360px, calc(100vw - 16px)); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.4; box-shadow: 0 4px 14px rgba(0, 0, 0, .18); overflow-wrap: anywhere; }
+.term-pop[hidden] { display: none; }
+.term-pop b { display: block; margin-bottom: 2px; }
+/* copying: the hidden field of the older copy command and the dialog that shows the text when nothing else works */
+.copy-field { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+#copyFallback { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgba(0, 0, 0, .3); }
+#copyFallback::backdrop { background: rgba(17, 20, 24, .45); }
+#copyFallback h2 { margin: 0 0 6px; }
+#copyFallback p { margin: 0 0 12px; color: var(--text2); font-size: 14px; }
+#copyFallback textarea { display: block; width: 100%; height: min(420px, 50vh); font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; overflow: auto; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--text); }
+#copyFallback .dlg-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 @media (min-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 899px) {
   header { position: static; padding: 10px 16px; }
@@ -342,9 +426,18 @@ details.fold[open] > summary { margin-bottom: 12px; }
   #band { padding: 16px; }
   #kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .band-actions { justify-content: flex-start; }
+  .iv-head { padding: 16px; }
+  .iv-cols { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 599px) {
+  .how, .how > div { display: block; }
+  .how > div + div { margin-top: 4px; }
+  .how dt, .how dd { display: inline; }
+  .how dt { margin-right: 6px; }
+}
+/* printing prints the view on screen (the script opens its folded areas); controls stay off the paper */
 @media print {
-  nav, .toolbar, .zoombar, #viewSwitch { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
+  nav, .toolbar, .zoombar, #viewSwitch, .iv-nav, .iv-actions, .term-pop, #copyFallback { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
   #guided > section[hidden] { display: none; }
 }
 </style>
@@ -374,8 +467,9 @@ details.fold[open] > summary { margin-bottom: 12px; }
   <div class="cards" id="cards" hidden></div>
   <section id="more" hidden></section>
   <section id="beforeG" hidden></section>
-  <details class="card fold" id="measured"><summary>Was wurde gemessen, was nicht</summary><div class="nofinding" id="measuredBody"></div></details>
-  <details class="card fold" id="qualityG"><summary>Messqualität</summary><div class="quality" id="qualityGBody"></div></details>
+  <details class="card fold" id="measured"><summary><h2>Was wurde gemessen, was nicht</h2></summary><div class="nofinding" id="measuredBody"></div></details>
+  <details class="card fold" id="qualityG"><summary><h2>Messqualität</h2></summary><div class="quality" id="qualityGBody"></div></details>
+  <article id="incident" aria-labelledby="ivTitle" hidden></article>
 </div>
 
 <div id="expert" hidden>
@@ -465,6 +559,13 @@ details.fold[open] > summary { margin-bottom: 12px; }
 </main>
 </div>
 <footer id="footer"></footer>
+<div id="termPop" class="term-pop" role="tooltip" hidden></div>
+<dialog id="copyFallback" aria-labelledby="copyFallbackHead">
+  <h2 id="copyFallbackHead">Text zum Kopieren</h2>
+  <p>Der Browser hat das Kopieren in die Zwischenablage nicht zugelassen. Der Text ist markiert: mit Strg+C kopieren.</p>
+  <textarea readonly aria-labelledby="copyFallbackHead"></textarea>
+  <div class="dlg-foot"><button type="button" class="btn primary">Schließen</button></div>
+</dialog>
 
 <script id="wp-data" type="application/json">null</script>
 <script>
@@ -553,7 +654,7 @@ window.WP = {
     if (!VIEWS.includes(name) || name === this.view) return;
     viewScroll[this.view] = window.scrollY;
     this.view = name;
-    document.body.dataset.view = name;
+    document.body.dataset.view = document.documentElement.dataset.view = name;
     for (const v of VIEWS) document.getElementById(v).hidden = v !== name;
     for (const b of document.querySelectorAll("#viewSwitch button")) b.setAttribute("aria-pressed", b.dataset.view === name ? "true" : "false");
     window.scrollTo(0, viewScroll[name]);
@@ -602,10 +703,11 @@ document.getElementById("zoomReset").addEventListener("click", () => window.WP.r
 }
 
 // ---------- chart ----------
-// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window, legend, mark, still })
+// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window, legend, mark, band, still })
 // legend: true names the series even when there is only one (charts of instances: which drive, share, endpoint, session).
 // window { t0, t1 } fixes the time range of a chart independent of the shared zoom (incident details).
 // mark { t, label } draws a dashed line with a label at a point in time (the reported time).
+// band { t0, t1 } tints a time span behind the lines (the window of an incident).
 // still: true leaves the shared zoom alone when the pointer is dragged over the chart (charts of the guided view).
 // A series is dense ({ values, o }) or sparse ({ t, v }). Sparse series with missing: 0 count absent points as 0 (input delay);
 // otherwise absent points are a gap (response times; dense series with resp: true drop their null values the same way).
@@ -777,6 +879,10 @@ function drawChart(host) {
   g += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--border)"/>`;
   g += xlab;
 
+  if (opt.band && opt.band.t1 >= z.t0 && opt.band.t0 <= z.t1) {
+    const a = X(Math.max(z.t0, opt.band.t0)), b = X(Math.min(z.t1, opt.band.t1));
+    g += `<rect class="incband" x="${f1(a)}" y="${m.t}" width="${f1(Math.max(2, b - a))}" height="${ph}"/>`;
+  }
   // marks
   const clip = "clip" + st.id;
   let marks = "";
@@ -1320,15 +1426,22 @@ function incWindow(inc) {
   const margin = Math.max(30000, (inc.end - inc.start) / 4);
   return { t0: Math.max(FULL.t0, inc.start - margin), t1: Math.min(FULL.t1, inc.end + margin) };
 }
-// span of an incident from events: each end in the local time of its own event (the first and the last kept event)
-function evIncRange(inc) {
-  const a = inc.events[0], b = inc.events[inc.events.length - 1], oa = a ? a.offsetMin : null, ob = b ? b.offsetMin : null;
+// Start and end of an incident, for the cards, the incident view and the entries of the expert view. An incident from events
+// shows each end in the local time of its own event (the first and the last kept event), a single point in time alone.
+// clock: the clock times without the date, with seconds only below a minute (cards and rows of the capture).
+function incRange(inc, clock) {
+  const ev = inc.type === "ereignis", a = ev ? inc.events[0] : null, b = ev ? inc.events[inc.events.length - 1] : null;
+  const oa = a ? a.offsetMin : null, ob = b ? b.offsetMin : null, span = inc.end - inc.start;
+  const sec = clock ? span > 0 && span < 60000 : ev || span < 3600000, t0 = evTime(inc.start, oa, sec), t1 = evTime(inc.end, ob, sec);
+  if (clock) return span > 0 ? `${t0}–${t1}` : t0;
   const da = evDate(inc.start, oa), db = evDate(inc.end, ob);
-  if (inc.end <= inc.start) return da + " " + evTime(inc.start, oa, true);
-  return da === db ? `${da} ${evTime(inc.start, oa, true)}–${evTime(inc.end, ob, true)}` : `${da} ${evTime(inc.start, oa, true)} bis ${db} ${evTime(inc.end, ob, true)}`;
+  return ev && span <= 0 ? `${da} ${t0}` : da === db ? `${da} ${t0}–${t1}` : `${da} ${t0} bis ${db} ${t1}`;
 }
-const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > inc.start ? " · " + fmtSpan(inc.end - inc.start) : "")
-  : rangeText({ t0: inc.start, t1: inc.end }, inc.end - inc.start < 3600000) + " · " + fmtSpan(Math.max(0, inc.end - inc.start));
+// The same with the duration behind it; a point in time has none.
+function incWhen(inc, clock) {
+  const span = inc.end - inc.start;
+  return incRange(inc, clock) + (span > 0 || (!clock && inc.type !== "ereignis") ? " · " + fmtSpan(Math.max(0, span)) : "");
+}
 
 // head sentence: number of incidents per type, singular and plural, zero counts left out
 {
@@ -1394,8 +1507,11 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
 // counts as unremarkable). Values that crossed a threshold without forming a finding (fewer points than the minimum) are
 // named, not denied. lead: the explicit statement of a capture without a finding stands before the lists. where: the place of
 // the target comparison as seen from the place of this text.
+const notMeasuredCount = () => SKIPPED.length + D.sollIst.filter((r) => !r.measured).length;
+const notMeasuredItems = () => SKIPPED.map((c) => `<li data-skip="${esc(c.id)}">${esc(c.label)} <span class="note">– ${esc(c.text)} <span class="opt">(-Skip ${esc(c.id)})</span></span></li>`).join("") +
+  D.sollIst.filter((r) => !r.measured).map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("");
 function measuredHtml(lead, where) {
-  const meas = D.sollIst.filter((r) => r.measured), notm = D.sollIst.filter((r) => !r.measured);
+  const meas = D.sollIst.filter((r) => r.measured);
   const lone = meas.filter((r) => lead ? r.exceeded : loneExceed(r)), below = (r) => (TH.get(r.id) || {}).direction === "low" ? "über" : "unter";
   const loneText = !lone.length ? "" : `
     <div>Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): ${lone.map((r) => `${esc(r.label)} Max ${fmtVal(r.max, r.unit)} (Soll ${below(r)} ${fmtLimit(r.warn, r.unit)})`).join("; ")}.</div>`;
@@ -1407,8 +1523,7 @@ function measuredHtml(lead, where) {
     <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. ${ref}</div>`) + `
     <div class="mcols">
       <div><h3>Gemessen (${meas.length})</h3><ul>${meas.map((r) => `<li>${esc(r.label)}: Max ${fmtVal(r.max, r.unit)} <span class="note">(Soll ${esc(r.ideal || "–")})</span></li>`).join("") || "<li>keine</li>"}</ul></div>
-      <div class="notm"><h3>Nicht gemessen (${SKIPPED.length + notm.length})</h3><ul>${SKIPPED.map((c) => `<li data-skip="${esc(c.id)}">${esc(c.label)} <span class="note">– ${esc(c.text)} (-Skip ${esc(c.id)})</span></li>`).join("") +
-        notm.map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("") || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
+      <div class="notm"><h3>Nicht gemessen (${notMeasuredCount()})</h3><ul>${notMeasuredItems() || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
     </div>`;
 }
 // no finding: explicit statement and what was (not) measured
@@ -1452,7 +1567,7 @@ function drawTimeline(force) {
   const host = document.getElementById("timeline");
   if (!isShown(host)) return;
   const W = host.clientWidth, pw = Math.max(200, W - 108);
-  if (!force && W === tlWidth) { updateTimelineZoom(); return; }
+  if (!force && W === tlWidth) return;
   tlWidth = W;
   const span = FULL.t1 - FULL.t0, X = (t) => ((t - FULL.t0) / span) * pw;
   // a mark runs from start to end (at least TL_MIN_W, so it can be hit); an incident from events has the word of its kind
@@ -1470,13 +1585,13 @@ function drawTimeline(force) {
   const chronic = INC.filter((i) => i.chronic).sort((a, b) => a.start - b.start).map(place);
   const nA = packLanes(acute, pw), nC = chronic.length ? packLanes(chronic, pw) : 0;
   const markHtml = (it, top) => {
-    const inc = it.inc, st = STATUS[sevKey(inc.severity)], open = document.querySelector(`#incidents .incident[data-id="${inc.id}"].open`) ? " open" : "";
-    const label = markLabel(inc), aria = `${st[1]}: ${typeText(inc)}, ${label}, ${incTime(inc)}`;
+    const inc = it.inc, st = STATUS[sevKey(inc.severity)];
+    const label = markLabel(inc), aria = `${st[1]}: ${typeText(inc)}, ${label}, ${incWhen(inc)}`;
     const ev = inc.type === "ereignis", narrow = it.w < 20, inner = inc.chronic
       ? `<span><i class="sym" aria-hidden="true">${st[0]}</i> <span class="lbl">${esc(label)}</span></span>`
       : (narrow || ev ? st[0] : `${st[0]}<span class="lbl"> ${esc(label)}</span>`);
     const word = ev ? `<span class="mark-word" data-incident="${inc.id}" aria-hidden="true" style="left:${it.wordX.toFixed(1)}px;top:${top}px">${esc(label)}</span>` : "";
-    return `<button type="button" class="mark sev${sevKey(inc.severity)} type-${inc.type}${inc.chronic ? " chronic" : ""}${narrow && !inc.chronic ? " narrow" : ""}${open}" data-incident="${inc.id}" ` +
+    return `<button type="button" class="mark sev${sevKey(inc.severity)} type-${inc.type}${inc.chronic ? " chronic" : ""}${narrow && !inc.chronic ? " narrow" : ""}" data-incident="${inc.id}" ` +
       `style="left:${it.x.toFixed(1)}px;width:${it.w.toFixed(1)}px;top:${top}px" aria-label="${esc(aria)}" title="${esc(inc.text)}">${inner}</button>` + word;
   };
   let h = `<div class="tl-row"><div class="tl-label">Vorfälle</div><div class="tl-track" style="height:${nA * TL_LANE + 4}px">` +
@@ -1495,7 +1610,7 @@ function drawTimeline(force) {
   for (const t of ticks.mid) { const x = X(t); if (x < 60 || x > pw - 60) continue; ax += `<span class="tl-tick" style="left:${x.toFixed(1)}px">${fmtTime(t, ticks.step < 60000)}</span>`; }
   ax += `<span class="tl-tick last" style="left:${pw}px">${fmtTime(FULL.t1)}</span>`;
   h += `<div class="tl-row tl-axis"><div class="tl-label"></div><div class="tl-track">${ax}</div></div>`;
-  let ov = '<div class="tl-zoom" hidden></div>';
+  let ov = "";
   if (FOCUS.reportedMs != null) {
     const x = X(Math.max(FULL.t0, Math.min(FULL.t1, FOCUS.reportedMs)));
     ov += `<div class="reported${x > pw - 120 ? " end" : ""}" style="left:${x.toFixed(1)}px"><span>gemeldet ${fmtTime(FOCUS.reportedMs)}</span></div>`;
@@ -1503,21 +1618,13 @@ function drawTimeline(force) {
   host.innerHTML = h + `<div class="tl-overlay">${ov}</div>`;
   // the word on a mark is shown only when it fits completely; it stays in the accessible name and tooltip
   for (const m of host.querySelectorAll(".mark")) if (m.scrollWidth > m.clientWidth) m.querySelector(".lbl")?.remove();
-  host._X = X;
-  updateTimelineZoom();
 }
-function updateTimelineZoom() {
-  const host = document.getElementById("timeline"), box = host.querySelector(".tl-zoom"), z = window.WP.zoom;
-  if (!box || !host._X) return;
-  box.hidden = !z;
-  if (z) { const a = host._X(z.t0), b = host._X(z.t1); box.style.left = a.toFixed(1) + "px"; box.style.width = Math.max(2, b - a).toFixed(1) + "px"; }
-}
+// the legend names only what the timeline shows: without an incident no severity and no click
 document.getElementById("tlLegend").innerHTML =
-  `<span class="st-crit"><i class="sym" aria-hidden="true">◆</i> kritisch</span><span class="st-warn"><i class="sym" aria-hidden="true">▲</i> auffällig</span>` +
+  (INC.length ? `<span class="st-crit"><i class="sym" aria-hidden="true">◆</i> kritisch</span><span class="st-warn"><i class="sym" aria-hidden="true">▲</i> auffällig</span>` : "") +
   (D.events.length ? `<span><i class="ev"></i>Ereignis (Tooltip mit Text und Uhrzeit in der Ortszeit des Ereignisses), eine Zeile je Gruppe: ${esc(EVENT_ROWS.map((g) => GROUP_WORD[g] || "Weitere Ereignisse").join(", "))}</span>` : "") +
   (FOCUS.reportedMs != null ? '<span><i class="rep"></i>gemeldete Uhrzeit</span>' : "") +
-  (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall in der Expertenansicht und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
-WP.onZoom(updateTimelineZoom);
+  (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall.</span>" : "");
 // a time cut leaves events of the capture out of every list
 if (D.eventsOutsideCut > 0) {
   const n = D.eventsOutsideCut, el = document.createElement("div");
@@ -1558,7 +1665,7 @@ function incArticle(inc) {
   return `<article class="${cls}" data-id="${inc.id}">
     <div class="ihead"><span class="badge st-${STATUS[k][2]}">${sevHtml(inc.severity)}</span><span class="inum">Vorfall ${inc.id}</span><span class="itype">${esc(typeText(inc))}</span>${flags}<span class="when">${when}</span></div>
     <p class="text" role="button" tabindex="0" aria-expanded="false" aria-controls="incd${inc.id}">${esc(inc.text)}</p>
-    <div class="detail" id="incd${inc.id}" hidden></div></article>`;
+    <div class="detail incdetail" id="incd${inc.id}" hidden></div></article>`;
 }
 document.getElementById("incidents").innerHTML = incOrder.map(incArticle).join("");
 
@@ -1613,9 +1720,9 @@ function contribTables(inc, u) {
     out[out.length - 1].build = () => {
       const growth = c.measure === "memory" ? [{ key: "growthMB", head: "Zuwachs", num: true, fmt: (v) => v == null ? "–" : fmtMB(v), title: "Höchster Stand des Working Set im Fenster gegenüber dem Stand davor" }] : [];
       table(id + "p", [{ key: "name", head: "Prozess", fmt: (v, r) => esc(v) + ` <span class="tag">${esc(r.pid)}</span>` + tag(r) }, { key: "s", head: "Sitzung", fmt: (v) => esc(sessName(v)) }, share, base, ...growth], c.procs,
-        { sort: null, id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => { activate("procs"); procTable.select(k); } });
-      table(id + "a", [{ key: "name", head: "Anwendung" }, share, base], c.apps, { sort: null, id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
-      table(id + "s", [{ key: "s", head: "Sitzung", fmt: (v) => esc(sessName(v)) }, share, base], c.sessions, { sort: null, id: (r) => r.s, text: () => "", onSelect: (s) => { activate("sessions"); sessTable.select(s); } });
+        { sort: null, id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", onSelect: (k) => toTable("procs", k) });
+      table(id + "a", [{ key: "name", head: "Anwendung" }, share, base], c.apps, { sort: null, id: (r) => r.a, text: () => "", onSelect: (a) => toTable("apps", a) });
+      table(id + "s", [{ key: "s", head: "Sitzung", fmt: (v) => esc(sessName(v)) }, share, base], c.sessions, { sort: null, id: (r) => r.s, text: () => "", onSelect: (s) => toTable("sessions", s) });
     };
   }
   return out;
@@ -1660,12 +1767,13 @@ const incLink = (id) => {
   const what = o.type === "ereignis" ? (EVINC_LONG[o.event.kind] || o.event.kind) + (o.event.key ? " – " + o.event.key : "")
     : o.type === "engpass" && SENT_RES[o.lead] ? SENT_RES[o.lead] + "-Engpass" + (o.chronic ? " als Dauerzustand" : "")
     : o.type === "ohne-engpass" ? (o.unverified ? "Eingabeverzögerung ohne erkannten Engpass" : "Eingabeverzögerung ohne Engpass") + (o.chronic ? " als Dauerzustand" : "") : typeText(o);
-  return `<li><button type="button" class="lnk" data-incident="${id}">Vorfall ${id}: ${esc(what)}</button> <span class="num">${esc(incTime(o))}</span></li>`;
+  return `<li><button type="button" class="lnk" data-incident="${id}">Vorfall ${id}: ${esc(what)}</button> <span class="num">${esc(incWhen(o))}</span></li>`;
 };
 // opened incident from events: count, span, users, module; then the patterns, the events and the overlapping incidents
-function renderEventDetail(inc, host) {
+// iv: as the evidence of the incident view (with the incident's sentence, without the button of the expert view)
+function renderEventDetail(inc, host, iv) {
   const ev = inc.event, u = ++uid, list = inc.events.map((e, k) => Object.assign({ k }, e));
-  const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(evIncRange(inc))}</b></span>`];
+  const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(incRange(inc))}</b></span>`];
   if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
   // the assignment to users and sessions not checked (without processes): no statement about the session, as in the sentence
   const unchecked = ev.unchecked || [], noAssign = unchecked.some((x) => x.id === "users");
@@ -1687,13 +1795,13 @@ function renderEventDetail(inc, host) {
   const patterns = ev.patterns.length || unchecked.length ? ev.patterns.map((p) => `<li>${esc(p.text)}</li>`).join("") +
     uncheckedLines.map((t) => `<li class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(t)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
   const shown = list.length - 1, withDate = ev.before;
-  host.innerHTML = `<div class="kv">${kv.join("")}</div>
+  host.innerHTML = `${iv ? `<p class="techtext">${esc(inc.text)}</p>` : ""}<div class="kv">${kv.join("")}</div>
     <h4>Muster</h4><ul class="plain patterns">${patterns}</ul>
     <div class="note">${ev.before ? "Für die Tage vor der Messung gelten nur die Muster, die keine Messwerte brauchen. " : ""}Ein Muster ist ein Hinweis auf eine Ursache, kein Nachweis.</div>
     ${ev.overlap.length ? `<h4>Zeitgleiche Leistungsvorfälle</h4><ul class="plain">${ev.overlap.map(incLink).join("")}</ul>` : ""}
-    <div class="evlist"><h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Ereignisse des Vorfalls (${fmt(ev.count, 0)})${ev.before ? "" : ` <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button>`}</h4>
+    <div class="evlist"><h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Ereignisse des Vorfalls (${fmt(ev.count, 0)})${ev.before || iv ? "" : ` <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button>`}</h4>
       <div class="tablewrap small" style="max-height:320px"><table id="iev${u}"></table></div>
-      ${ev.eventsTruncated ? `<div class="note">Aufgeführt sind die ersten ${fmt(shown, 0)} und das letzte der ${fmt(ev.count, 0)} Ereignisse.</div>` : ""}</div>`;
+      ${ev.eventsTruncated ? `<div class="note">Aufgeführt sind die ersten ${fmt(shown, 0)} und das letzte der ${fmt(ev.count, 0)} Ereignisse.</div>` : ""}</div>${iv && !ev.before ? notMeasuredBlock() : ""}`;
   table("iev" + u, [
     { key: "t", head: withDate ? "Datum und Zeit" : "Zeit", num: true, fmt: (v, r) => withDate ? evDT(r, true) : evTime(v, r.offsetMin, true) },
     { key: "kind", head: "Art", fmt: (v, r) => esc(kindWord(r)) },
@@ -1705,8 +1813,25 @@ function renderEventDetail(inc, host) {
     { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
   ], list, { sort: null, id: (r) => r.k, text: () => "" });
 }
-function renderDetail(inc, host) {
-  if (inc.type === "ereignis") { renderEventDetail(inc, host); return; }
+// why no session is listed as affected
+const noneAffected = (inc) => UNM.input ? "Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar."
+  : inc.type === "umfeld" ? "Keine Eingabeverzögerung über dem Soll in den Sitzungen dieses Befunds."
+  : inc.chronic ? "Keine Sitzung mit Eingabeverzögerung über dem Soll außerhalb der kurzen Vorfälle im selben Zeitraum."
+  : "Keine Sitzung mit Eingabeverzögerung über dem Soll.";
+// what the capture did not measure, at the end of the evidence of an incident
+const notMeasuredBlock = () => { const items = notMeasuredItems(); return items ? `<div class="iv-notm"><h4>Nicht gemessen</h4><ul>${items}</ul></div>` : ""; };
+// options of the chart of one signal kind of an incident in the window win
+const sigChartOpt = (c, win, more) => Object.assign({
+  axis: c.axis, series: c.series, window: win, unit: c.g.unit, decimals: decOf(c.g.unit), signal: c.g.id, agg: "max", label: c.title, legend: c.legend,
+  yMax: c.g.id === "cpu.host" || c.g.id === "mem.used" ? 100 : undefined, yMaxFixed: c.g.id === "cpu.host" || c.g.id === "mem.used",
+  empty: "Für diesen Messwert ist kein Verlauf gespeichert.",
+  note: c.total > 8 ? `Die ersten 8 von ${c.total} Messreihen.` : c.missing ? "Nicht für alle Messreihen ist ein Verlauf gespeichert." : ""
+}, more || {});
+// Detail of an incident: the unfolded entry of the expert view, or (iv) the evidence of the incident view. The evidence starts
+// with the incident's sentence, leaves out what the incident view shows in its own sections (who was affected) and the button
+// of the expert view, and ends with what was not measured; its charts leave the shared zoom alone.
+function renderDetail(inc, host, iv) {
+  if (inc.type === "ereignis") { renderEventDetail(inc, host, iv); return; }
   const u = ++uid, win = incWindow(inc);
   const affected = inc.affected.map((a) => `<li>${lnkS(a.s)} <span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span></li>`).join("");
   const charts = signalCharts(inc);
@@ -1752,26 +1877,18 @@ function renderDetail(inc, host) {
       `<div class="note">${c.explains ? "betrifft dieselbe Ressource und kann den Vorfall miterklären" : "erklärt den Vorfall nicht"}</div></li>`;
   }).join("")}</ul></div>`);
 
-  const noneAffected = UNM.input ? "Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar."
-    : inc.type === "umfeld" ? "Keine Eingabeverzögerung über dem Soll in den Sitzungen dieses Befunds."
-    : inc.chronic ? "Keine Sitzung mit Eingabeverzögerung über dem Soll außerhalb der kurzen Vorfälle im selben Zeitraum."
-    : "Keine Sitzung mit Eingabeverzögerung über dem Soll.";
-  host.innerHTML = `<div class="essentials">
-      <div><h4>Betroffen (${inc.affected.length})</h4>${inc.affected.length ? `<ul class="plain affected">${affected}</ul>` : `<ul class="plain affected"></ul><div class="note">${noneAffected}</div>`}</div>
-      <div class="causebox"><h4>${inc.main ? "Hauptverursacher" : "Verursacher"}</h4>${mainHtml(inc)}</div>
-    </div>
-    <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>
-      <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button></h4>
-    <div class="sigcharts">${charts.map((c, k) => `<div class="card chartbox"><h3>${esc(c.title)}</h3><div class="sc${k}"></div></div>`).join("")}</div>
+  const causeBox = `<div class="causebox"><h4>${inc.main ? "Hauptverursacher" : "Verursacher"}</h4>${mainHtml(inc)}</div>`, hc = iv ? "h4" : "h3";
+  host.innerHTML = (iv ? `<p class="techtext">${esc(inc.text)}</p>${causeBox}` : `<div class="essentials">
+      <div><h4>Betroffen (${inc.affected.length})</h4>${inc.affected.length ? `<ul class="plain affected">${affected}</ul>` : `<ul class="plain affected"></ul><div class="note">${noneAffected(inc)}</div>`}</div>
+      ${causeBox}
+    </div>`) + `
+    <h4 style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">Verlauf im Fenster <span class="note" style="font-weight:400">${rangeText(win, win.t1 - win.t0 < 3600000)}, Vorfall mit Rand</span>${iv ? "" : `
+      <button type="button" class="zoomto" data-incident="${inc.id}">Alle Diagramme auf diesen Zeitraum stellen</button>`}</h4>
+    <div class="sigcharts">${charts.map((c, k) => `<div class="card chartbox"><${hc}>${esc(c.title)}</${hc}><div class="sc${k}"></div></div>`).join("")}</div>
     ${skipContrib ? "" : contrib.length ? `<h4>Verursacher</h4><div class="contributors">${contrib.map((c) => c.html).join("")}</div>` : '<div class="contributors"></div>'}
     <div class="evidence">${evid.join("")}</div>
-    <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>`;
-  charts.forEach((c, k) => chart(host.querySelector(".sc" + k), {
-    axis: c.axis, series: c.series, window: win, unit: c.g.unit, decimals: decOf(c.g.unit), signal: c.g.id, agg: "max", label: c.title, legend: c.legend,
-    yMax: c.g.id === "cpu.host" || c.g.id === "mem.used" ? 100 : undefined, yMaxFixed: c.g.id === "cpu.host" || c.g.id === "mem.used",
-    empty: "Für diesen Messwert ist kein Verlauf gespeichert.",
-    note: c.total > 8 ? `Die ersten 8 von ${c.total} Messreihen.` : c.missing ? "Nicht für alle Messreihen ist ein Verlauf gespeichert." : ""
-  }));
+    <div class="signals"><h4>Beteiligte Messwerte</h4><div class="tablewrap small"><table id="isg${u}"></table></div></div>${iv ? notMeasuredBlock() : ""}`;
+  charts.forEach((c, k) => chart(host.querySelector(".sc" + k), sigChartOpt(c, win, iv ? { still: true, band: { t0: inc.start, t1: inc.end } } : null)));
   if (!skipContrib) contrib.forEach((c) => c.build());
   table("isg" + u, [
     { key: "id", head: "Messwert", fmt: (v) => esc(TH.get(v)?.label || v) },
@@ -1782,11 +1899,25 @@ function renderDetail(inc, host) {
     { key: "start", head: "Zeitraum", num: true, fmt: (v, r) => fmtTime(r.start, true) + "–" + fmtTime(r.end, true) }
   ], sigRows, { sort: null, id: (r) => r.k, text: () => "" });
 }
+// A session, an application or a process in its table of the expert view: the links and the ranking rows of an incident lead
+// there, from the expert view and from the incident view.
+function toTable(tab, id) {
+  showExpertView();
+  activate(tab);
+  ({ sessions: sessTable, apps: appTable, procs: procTable })[tab].select(id);
+}
+// link of an incident's detail to a session, an application or a process: true when the button was one
+function followLink(b) {
+  if (b.dataset.s != null) toTable("sessions", Number(b.dataset.s));
+  else if (b.dataset.a != null) toTable("apps", Number(b.dataset.a));
+  else if (b.dataset.k != null) toTable("procs", Number(b.dataset.k));
+  else return false;
+  return true;
+}
 function setIncidentOpen(entry, open) {
   const inc = incById.get(Number(entry.dataset.id)), det = entry.querySelector(".detail"), txt = entry.querySelector(".text");
   if (open && !det.dataset.done) { det.hidden = false; renderDetail(inc, det); det.dataset.done = "1"; }
   det.hidden = !open; entry.classList.toggle("open", open); txt.setAttribute("aria-expanded", open ? "true" : "false");
-  document.querySelector(`#timeline .mark[data-incident="${inc.id}"]`)?.classList.toggle("open", open);
   if (open) refreshCharts();
 }
 function showIncident(id, zoom) {
@@ -1805,10 +1936,7 @@ const onIncidentClick = (ev) => {
   const b = ev.target.closest("button.lnk, button.zoomto");
   if (b) {
     if (b.classList.contains("zoomto")) { const w = incWindow(incById.get(Number(b.dataset.incident))); window.WP.setZoom(w.t0, w.t1); return; }
-    if (b.dataset.s != null) { activate("sessions"); sessTable.select(Number(b.dataset.s)); }
-    else if (b.dataset.a != null) { activate("apps"); appTable.select(Number(b.dataset.a)); }
-    else if (b.dataset.k != null) { activate("procs"); procTable.select(Number(b.dataset.k)); }
-    else if (b.dataset.incident != null) showIncident(Number(b.dataset.incident), false);
+    if (!followLink(b) && b.dataset.incident != null) showIncident(Number(b.dataset.incident), false);
     return;
   }
   const t = ev.target.closest(".incident > .text");
@@ -1820,17 +1948,18 @@ const onIncidentKey = (ev) => {
   ev.preventDefault(); setIncidentOpen(t.parentNode, !t.parentNode.classList.contains("open"));
 };
 for (const id of ["incidents", "before"]) { document.getElementById(id).addEventListener("click", onIncidentClick); document.getElementById(id).addEventListener("keydown", onIncidentKey); }
-// An incident opens in the expert view: its entry unfolded, the charts set to its window. The marks of the timeline and the
-// buttons "Öffnen" of the guided view lead there.
+// An incident in the expert view: its entry unfolded, the charts set to its window with a margin ("In der Expertenansicht
+// zeigen" of the incident view).
 function openInExpert(id) {
   if (!incById.has(id)) return;
-  window.WP.showView("expert");
+  showExpertView();
   activate("findings");
   showIncident(id, true);
 }
+// a mark of the timeline opens its incident
 document.getElementById("timeline").addEventListener("click", (ev) => {
   const m = ev.target.closest(".mark[data-incident], .mark-word[data-incident]");
-  if (m) openInExpert(Number(m.dataset.incident));
+  if (m) window.WP.openIncident(Number(m.dataset.incident));
 });
 
 // ---------- findings: the days before the capture ----------
@@ -2001,8 +2130,9 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
       r.skipped ? `${plural(r.skipped, "Datensatz", "Datensätze")} nicht lesbar und übersprungen` : "", r.unformatted ? `${plural(r.unformatted, "Meldungstext", "Meldungstexte")} nicht lesbar` : ""].filter((x) => x);
     return `<li>${esc(r.label || r.log)}: ${parts.join(" · ")}</li>`;
   }).join("");
-  // the same content twice: in the expert view and, folded, in the guided view (there its ids carry the suffix G)
-  const renderQuality = (host, sfx, head) => {
+  // the same content twice: in the expert view and, folded, in the guided view (there its ids carry the suffix G and its
+  // headings the level under the heading of the folded area: sub)
+  const renderQuality = (host, sfx, head, sub) => {
     host.innerHTML = `${head}
       <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
         <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
@@ -2011,10 +2141,10 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
         <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)`}</span>` +
         (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable${sfx}">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
       (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped${sfx}"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
-      (reads ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</h4><ul class="errlist" id="eventReads${sfx}">${reads}</ul>` +
+      (reads ? `<${sub} style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</${sub}><ul class="errlist" id="eventReads${sfx}">${reads}</ul>` +
         '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>'
-        : notMeasured("events") ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</h4><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
-      (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors${sfx}">${srcErr.map((e) =>
+        : notMeasured("events") ? `<${sub} style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</${sub}><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
+      (srcErr.length ? `<${sub} style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</${sub}><ul class="errlist" id="sourceErrors${sfx}">${srcErr.map((e) =>
         `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
       `<div class="tablewrap small"><table id="tSources${sfx}"></table></div>`;
     table("tSources" + sfx, [
@@ -2026,21 +2156,20 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
       { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
     ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
   };
-  renderQuality(document.getElementById("quality"), "", '<h3 style="margin-bottom:8px">Messqualität</h3>');
-  renderQuality(document.getElementById("qualityGBody"), "G", "");
+  renderQuality(document.getElementById("quality"), "", '<h3 style="margin-bottom:8px">Messqualität</h3>', "h4");
+  renderQuality(document.getElementById("qualityGBody"), "G", "", "h3");
 }
+
+// The timeline and the zoom bar are drawn before the guided view is filled: they do not depend on its data.
+drawTimeline(true);
+updateZoomBar();
 
 // ---------- guided view ----------
 // State, sentence, key figures and hints of the situation summary, the ranking and the guidance of each incident come from the
-// report data; the page shows them as delivered and adds only the labels of its own elements. Every value is escaped.
+// report data; the page shows them as delivered and adds only the labels of its own elements. Every value is escaped. Parts
+// of the data that are missing leave their place empty.
 // Clock time and duration of an incident; an incident of the days before the capture with its date.
-function cardWhen(inc) {
-  if (inc.event && inc.event.before) return incTime(inc);
-  const ev = inc.type === "ereignis", a = ev ? inc.events[0] : null, b = ev ? inc.events[inc.events.length - 1] : null;
-  const span = inc.end - inc.start, sec = span > 0 && span < 60000;
-  const t0 = ev ? evTime(inc.start, a ? a.offsetMin : null, sec) : fmtTime(inc.start, sec), t1 = ev ? evTime(inc.end, b ? b.offsetMin : null, sec) : fmtTime(inc.end, sec);
-  return span > 0 ? `${t0}–${t1} · ${fmtSpan(span)}` : t0;
-}
+const cardWhen = (inc) => incWhen(inc, !(inc.event && inc.event.before));
 // The place of the page whose category decides whether the cause of a performance incident could be determined.
 const causePlace = (inc) => inc.type === "engpass" ? "incidents.contributors" : inc.type === "ohne-engpass" ? "incidents.delayProcs" : "";
 // A text without the sentence that ends with the reason of a category left out with -Skip.
@@ -2048,32 +2177,37 @@ function withoutReason(text, reason) {
   const at = text.indexOf(reason);
   return at < 0 ? text : (text.substring(0, text.lastIndexOf(". ", at) + 1) + text.substring(at + reason.length)).trim();
 }
+// The cause of an incident as the report data state it (full). Where it depends on a category left out with -Skip (skip, at
+// place), the page says "nicht gemessen" with the reason there, and text is the cause without the sentence of the same reason.
+function causeParts(inc) {
+  const full = inc.causeText || "", place = causePlace(inc), skip = SKIP_AT.get(place);
+  return { full, place, skip, text: skip ? withoutReason(full, skip.text) : full };
+}
 // Card of an incident: only its two buttons can be operated. The cause line is one line; its full text is the tooltip.
-// Where the cause depends on a category left out with -Skip, the card says "nicht gemessen" with the reason; the sentence
-// of the cause text that gives the same reason is then left out of the line (it stays in the tooltip).
 function cardHtml(inc) {
-  const g = inc.guide || {}, k = sevKey(inc.severity), first = (g.checks || [])[0], full = inc.causeText || "";
-  const place = causePlace(inc), skip = SKIP_AT.get(place), cause = skip ? withoutReason(full, skip.text) : full;
+  const g = inc.guide || {}, k = sevKey(inc.severity), first = (g.checks || [])[0], c = causeParts(inc);
   return `<article class="card inc sev${k}" data-id="${inc.id}">
     <div class="card-top"><span class="card-view">${esc(g.userView)}</span><span class="card-when">${esc(cardWhen(inc))}</span></div>
     <h3 class="card-title">${esc(g.title)}</h3>
-    <p class="card-impact">${esc(g.impact)}</p>${skip ? `
-    <p class="card-skip">${notMeasured(place, true)}</p>` : ""}${cause ? `
-    <p class="card-cause" title="${esc(full)}">${esc(cause)}</p>` : ""}${first ? `
+    <p class="card-impact">${esc(g.impact)}</p>${c.skip ? `
+    <p class="card-skip">${notMeasured(c.place, true)}</p>` : ""}${c.text ? `
+    <p class="card-cause" title="${esc(c.full)}">${esc(c.text)}</p>` : ""}${first ? `
     <p class="card-first"><b>Erster Schritt:</b> ${esc(first.text)}</p>` : ""}
     <div class="card-foot">${statusHtml(k)}<span class="card-short">${esc(g.short)}</span><span class="card-actions"><button type="button" class="btn primary card-open">Öffnen</button><button type="button" class="btn card-copy">Kopieren</button></span></div>
   </article>`;
 }
 // Line of an incident in the compact list after the cards.
 const rowHtml = (inc) => `<div class="row" data-id="${inc.id}">${statusHtml(sevKey(inc.severity))}<span class="row-when">${esc(cardWhen(inc))}</span><span class="row-title">${esc((inc.guide || {}).title)}</span><button type="button" class="btn row-open">Öffnen</button></div>`;
+// the incidents of the days before the capture in their own ranking
+const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start - b.start) || (a.id - b.id));
 {
-  const LB = D.lagebild, K = LB.kpis, hints = LB.hints || [];
+  const LB = D.lagebild || {}, K = LB.kpis || {}, hints = LB.hints || [];
   // band: the state as symbol and word, the sentence, five key figures, the buttons
-  document.getElementById("band").dataset.state = LB.state;
+  document.getElementById("band").dataset.state = LB.state || "";
   const state = document.getElementById("bandState");
   state.className = "status st-" + ({ red: "crit", yellow: "warn", green: "good" }[LB.state] || "na");
   state.innerHTML = `<i class="sym" aria-hidden="true">${esc(LB.symbol)}</i> ${esc(LB.word)}`;
-  document.getElementById("bandSentence").textContent = LB.sentence;
+  document.getElementById("bandSentence").textContent = LB.sentence || "";
   // without the events of the capture no incident from events can form: that figure is not a 0
   const kpi = (id, value, label, hint) => `<div class="kpi${!hint && !value ? " zero" : ""}" data-kpi="${id}"><span class="num">${hint ? "–" : fmt(value, Number.isInteger(value) ? 0 : 1)}</span><span class="lbl">${label}</span>${hint}</div>`;
   document.getElementById("kpis").innerHTML = kpi("bottlenecks", K.bottlenecks, "Engpässe auf dem Server", "") +
@@ -2088,30 +2222,36 @@ const rowHtml = (inc) => `<div class="row" data-id="${inc.id}">${statusHtml(sevK
   hintBox.innerHTML = hints.map((h) => `<div class="hint" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(h)}</div>`).join("");
   hintBox.hidden = !hints.length;
 
-  // cards of the most important incidents in their ranking, the others as a compact list of groups
-  const pick = (ids) => (ids || []).map((id) => incById.get(id)).filter(Boolean), cards = pick(D.cards);
+  // cards of the most important incidents in their ranking, the others as a compact list of groups (a group without a known
+  // incident is left out)
+  const pick = (ids) => [].concat(ids || []).map((id) => incById.get(id)).filter(Boolean), cards = pick(D.cards);
   const cardBox = document.getElementById("cards"), more = document.getElementById("more");
   cardBox.innerHTML = cards.map(cardHtml).join("");
   cardBox.hidden = document.getElementById("cardsHead").hidden = !cards.length;
-  more.innerHTML = "<h2>Weitere Vorfälle</h2>" + (D.more || []).map((grp) => {
-    const rows = pick(grp.ids).map(rowHtml).join("");
-    return grp.ids.length > 1 ? `<details class="group"><summary>${esc(grp.label)}</summary>${rows}</details>` : `<div class="group">${rows}</div>`;
+  const groups = (D.more || []).map((grp) => {
+    const list = pick(grp.ids), rows = list.map(rowHtml).join("");
+    return !list.length ? "" : list.length > 1 ? `<details class="group"><summary>${esc(grp.label)}</summary>${rows}</details>` : `<div class="group">${rows}</div>`;
   }).join("");
-  more.hidden = !(D.more || []).length;
+  more.innerHTML = "<h2>Weitere Vorfälle</h2>" + groups;
+  more.hidden = !groups;
 
   // the days before the capture: the same cards in their own ranking, a long list folded after ten
-  const FOLD = 10, lookback = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start - b.start) || (a.id - b.id)), beforeBox = document.getElementById("beforeG");
-  if (lookback.length || notMeasured("before")) {
-    beforeBox.innerHTML = "<h2>Vor der Messung</h2>" + notMeasured("before") + (!lookback.length ? "" : `<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
-      <div class="cards">${lookback.slice(0, FOLD).map(cardHtml).join("")}</div>` + (lookback.length <= FOLD ? "" : `<div class="cards" hidden>${lookback.slice(FOLD).map(cardHtml).join("")}</div>
-      <p><button type="button" class="lnk more" id="beforeMoreG">weitere ${fmt(lookback.length - FOLD, 0)} Vorfälle anzeigen</button></p>`));
+  const FOLD = 10, beforeBox = document.getElementById("beforeG");
+  if (LOOKBACK.length || notMeasured("before")) {
+    beforeBox.innerHTML = "<h2>Vor der Messung</h2>" + notMeasured("before") + (!LOOKBACK.length ? "" : `<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
+      <div class="cards">${LOOKBACK.slice(0, FOLD).map(cardHtml).join("")}</div>` + (LOOKBACK.length <= FOLD ? "" : `<div class="cards" hidden>${LOOKBACK.slice(FOLD).map(cardHtml).join("")}</div>
+      <p><button type="button" class="lnk more" id="beforeMoreG">weitere ${fmt(LOOKBACK.length - FOLD, 0)} Vorfälle anzeigen</button></p>`));
     beforeBox.hidden = false;
   }
+  // the buttons of band, cards and rows: open the incident view, copy the summary of the capture or of an incident
   document.getElementById("guided").addEventListener("click", (ev) => {
-    const b = ev.target.closest("button"); if (!b) return;
-    if (b.id === "beforeMoreG") { b.parentNode.previousElementSibling.hidden = false; b.parentNode.remove(); return; }
-    if (b.id === "openTop") openInExpert(LB.top);
-    else if (b.matches(".card-open, .row-open")) openInExpert(Number(b.closest("[data-id]").dataset.id));
+    const b = ev.target.closest("button"); if (!b || b.closest("#incident")) return;
+    const of = () => Number(b.closest("[data-id]").dataset.id);
+    if (b.id === "beforeMoreG") { b.parentNode.previousElementSibling.hidden = false; b.parentNode.remove(); }
+    else if (b.id === "openTop") window.WP.openIncident(LB.top);
+    else if (b.id === "copyAll") copyText(copyVersion(D.copyAll), b);
+    else if (b.matches(".card-open, .row-open")) window.WP.openIncident(of());
+    else if (b.matches(".card-copy")) copyText(copyVersion((incById.get(of()) || {}).copy), b);
   });
 
   // no incident: what was measured stands open; with a reported time the values around it
@@ -2128,8 +2268,262 @@ const rowHtml = (inc) => `<div class="row" data-id="${inc.id}">${statusHtml(sevK
     chart(box.querySelector(".ar-input"), Object.assign({ series: [{ name: "Eingabeverzögerung", values: H_.inputMax }], unit: "ms", decimals: 0, signal: "input.session", note: "Höchster Wert aller Sitzungen." }, common));
   }
 }
-drawTimeline(true);
-updateZoomBar();
+
+// ---------- copying ----------
+// The texts come complete from the report data (copy.named and copy.anonymous of an incident, copyAll of the capture) and are
+// handed over unchanged. A masked report has one version; elsewhere the switch "ohne Namen" (in the band and in the incident
+// view, both show the same choice) takes the version without names.
+const anonChosen = () => { const b = document.getElementById("anonSwitch"); return !!b && b.checked; };
+const copyVersion = (c) => !c ? "" : (anonChosen() && c.anonymous != null ? c.anonymous : c.named) || "";
+document.getElementById("guided").addEventListener("change", (ev) => {
+  if (ev.target.matches("#anonSwitch, #ivAnon")) for (const b of document.querySelectorAll("#anonSwitch, #ivAnon")) b.checked = ev.target.checked;
+});
+// the button says "Kopiert" for about 1.5 s and keeps its width
+function confirmCopy(button) {
+  if (!button) return;
+  if (button.dataset.label == null) { button.dataset.label = button.textContent; button.style.width = button.getBoundingClientRect().width + "px"; }
+  button.textContent = "✓ Kopiert";
+  clearTimeout(button._copied);
+  button._copied = setTimeout(() => { button.textContent = button.dataset.label; delete button.dataset.label; button.style.width = ""; }, 1500);
+}
+// the older copy command copies the selection of a hidden text field; a text field normalises line ends, so its copy event
+// hands over the text as delivered
+function commandCopy(text) {
+  const field = document.createElement("textarea"), back = document.activeElement;
+  field.className = "copy-field"; field.readOnly = true; field.setAttribute("aria-hidden", "true"); field.value = text;
+  field.addEventListener("copy", (ev) => { if (ev.clipboardData) { ev.clipboardData.setData("text/plain", text); ev.preventDefault(); } });
+  document.body.appendChild(field);
+  field.focus({ preventScroll: true }); field.select();
+  let done = false;
+  try { done = !!document.execCommand("copy"); } catch (e) { done = false; }
+  field.remove();
+  if (back && back.focus) back.focus({ preventScroll: true });
+  return done;
+}
+const copyDialog = document.getElementById("copyFallback");
+function showCopyFallback(text, button) {
+  const field = copyDialog.querySelector("textarea");
+  field.value = text; copyDialog._back = button || null;
+  if (copyDialog.showModal) { if (!copyDialog.open) copyDialog.showModal(); } else copyDialog.setAttribute("open", "");
+  field.focus(); field.select(); field.scrollTop = 0;
+}
+function closeCopyFallback() {
+  if (copyDialog.close) copyDialog.close(); else copyDialog.removeAttribute("open");
+  if (copyDialog._back && copyDialog._back.isConnected) copyDialog._back.focus();
+}
+copyDialog.querySelector("button").addEventListener("click", closeCopyFallback);
+// Three ways, in this order: the clipboard interface, the older copy command, the dialog with the text selected.
+function copyText(text, button) {
+  if (!text) return;
+  const older = () => { if (commandCopy(text)) confirmCopy(button); else showCopyFallback(text, button); };
+  let written = null;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) written = navigator.clipboard.writeText(text); } catch (e) { written = null; }
+  if (written && typeof written.then === "function") written.then(() => confirmCopy(button), older); else older();
+}
+
+// ---------- incident view ----------
+// One page per incident, also for the days before the capture: head, what happened with the chart of the triggering value,
+// the cause, what to do, who was affected and, folded, the evidence. Title, texts, steps and their sources come from the
+// report data (guide, causeText) and are inserted as text; the evidence is the detail of the incident's entry in the expert
+// view. The page adds the labels of its sections and buttons.
+const ivEl = document.getElementById("incident"), guidedEl = document.getElementById("guided"), termPop = document.getElementById("termPop");
+const TERMS = (D.guidance && D.guidance.terms) || {};
+const termText = (t) => Object.prototype.hasOwnProperty.call(TERMS, t) ? TERMS[t] : "";
+// A text with the terms of its guidance marked. A term starts a word and may carry an ending, as the report script finds it
+// (German inflects and compounds); each term is marked once per text, at its first place; a longer term goes before one it
+// contains.
+function termHtml(text, terms) {
+  text = String(text ?? "");
+  const hits = [];
+  for (const t of terms.slice().sort((a, b) => b.length - a.length)) {
+    const re = new RegExp("(?<![\\p{L}\\p{N}])" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[\\p{L}\\p{N}]*", "giu");
+    for (let m; (m = re.exec(text));) {
+      if (hits.some((h) => m.index < h.b && m.index + m[0].length > h.a)) continue;
+      hits.push({ a: m.index, b: m.index + m[0].length, t }); break;
+    }
+  }
+  hits.sort((x, y) => x.a - y.a);
+  let out = "", at = 0;
+  for (const h of hits) { out += esc(text.substring(at, h.a)) + `<span class="term" data-term="${esc(h.t)}" tabindex="0" aria-describedby="termPop">${esc(text.substring(h.a, h.b))}</span>`; at = h.b; }
+  return out + esc(text.substring(at));
+}
+function showTerm(el) {
+  const text = termText(el.dataset.term); if (!text) return;
+  const head = document.createElement("b"); head.textContent = el.dataset.term;
+  termPop.textContent = ""; termPop.append(head, document.createTextNode(text));
+  termPop.hidden = false;
+  // under the term, above it where there is no room below; never outside the window
+  const r = el.getBoundingClientRect(), w = termPop.offsetWidth, h = termPop.offsetHeight, vw = document.documentElement.clientWidth;
+  const below = r.bottom + 6 + h <= window.innerHeight || r.top - 6 - h < 0;
+  termPop.style.left = Math.max(8, Math.min(r.left, vw - w - 8)) + window.scrollX + "px";
+  termPop.style.top = (below ? r.bottom + 6 : r.top - 6 - h) + window.scrollY + "px";
+}
+const hideTerm = () => { termPop.hidden = true; };
+ivEl.addEventListener("mouseover", (ev) => { const t = ev.target.closest(".term"); if (t) showTerm(t); });
+ivEl.addEventListener("mouseout", (ev) => { const t = ev.target.closest(".term"); if (t && document.activeElement !== t) hideTerm(); });
+ivEl.addEventListener("focusin", (ev) => { const t = ev.target.closest(".term"); if (t) showTerm(t); });
+ivEl.addEventListener("focusout", (ev) => { if (ev.target.closest(".term")) hideTerm(); });
+document.addEventListener("click", (ev) => { const t = ev.target.closest(".term"); if (t) showTerm(t); else hideTerm(); });
+
+// the source of a step: its title and, where the catalogue gives an address, the address, as plain text
+function sourceHtml(src) {
+  const text = !src ? "" : typeof src === "string" ? src : [src.title, src.url].filter(Boolean).join(" – ");
+  return text ? `<p class="src">Quelle: ${esc(text)}</p>` : "";
+}
+// Who was affected: the sessions with user, client and highest input delay; for an incident from events the sessions and
+// users its events name. Where nobody can be listed, a sentence says why.
+function affectedHtml(inc) {
+  const list = (head, rows) => `<div class="aff-head" aria-hidden="true">${head.map((h) => `<span>${h}</span>`).join("")}</div><ul class="aff">${rows.join("")}</ul>`;
+  const session = (s, last) => `<li><span>${lnkS(s)}</span><span>${esc((sessByIdx.get(s) || {}).client || "–")}</span>${last}</li>`;
+  if (inc.type !== "ereignis") {
+    return inc.affected.length ? list(["Benutzer (Sitzung)", "Client", "Höchste Verzögerung"], inc.affected.map((a) => session(a.s, `<span class="num">${sigMark(a.peakMs, TH.get("input.session"))}${fmt(a.peakMs, 0)} ms</span>`)))
+      : `<p class="note">${noneAffected(inc)}</p>`;
+  }
+  const ev = inc.event, known = ev.sessions.filter((s) => sessByIdx.has(s)), named = new Set(known.map((s) => sessByIdx.get(s).user));
+  const rows = known.map((s) => session(s, "")).concat(ev.users.filter((u) => !named.has(u)).map((u) => `<li><span>${esc(u)}</span></li>`));
+  if (rows.length) return list(known.length ? ["Benutzer (Sitzung)", "Client"] : ["Benutzer"], rows);
+  // the assignment to users and sessions not checked (without processes): no statement about the session
+  const unchecked = (ev.unchecked || []).find((x) => x.id === "users");
+  return unchecked ? `<p class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(unchecked.text)}</p>`
+    : `<p class="note">${ev.sessionUnknown ? "Sitzung nicht ermittelt." : ev.noUserSession ? "Ohne Benutzersitzung." : "Die Ereignisse nennen keinen Benutzer."}</p>`;
+}
+// the incident after this one in its ranking (the capture and the days before it are ranked apart), or null
+function nextIncident(id) {
+  const list = LOOKBACK.some((i) => i.id === id) ? LOOKBACK.map((i) => i.id) : (D.order || []).filter((x) => incById.has(x)), k = list.indexOf(id);
+  return k >= 0 && k + 1 < list.length ? list[k + 1] : null;
+}
+function renderIncident(id) {
+  const inc = incById.get(id), g = inc.guide || {}, k = sevKey(inc.severity), terms = (g.terms || []).filter(termText);
+  // a paragraph of the guidance: its terms are marked once
+  const tx = (tag, cls, text) => `<${tag} class="tx${cls ? " " + cls : ""}">${termHtml(text, terms)}</${tag}>`;
+  const before = !!(inc.event && inc.event.before), charts = inc.type === "ereignis" ? [] : signalCharts(inc);
+  // the chart of the triggering value: the lead resource of a bottleneck, the input delay of a delay without one
+  const lead = (inc.type === "ohne-engpass" && charts.find((c) => c.g.resource === "input")) || charts[0], win = lead ? incWindow(inc) : null;
+  const flags = (inc.focus ? '<span class="flag">betrifft den gemeldeten Benutzer</span>' : "") + (inc.nearReported ? '<span class="flag">nahe der gemeldeten Uhrzeit</span>' : "");
+  const cause = causeParts(inc), checks = g.checks || [], remedies = g.remedies || [], contacts = g.contacts || [];
+  const how = (label, text) => text ? `<div><dt>${label}</dt>${tx("dd", "", text)}</div>` : "";
+  const note = g.fallback ? (D.guidance || {}).fallbackNote : "";
+  ivEl.dataset.id = id;
+  ivEl.innerHTML = `<div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> Zurück zum Lagebild</button>${nextIncident(id) == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div>
+    <div class="iv-head card sev${k}">
+      <h2 class="iv-title" id="ivTitle" tabindex="-1">${esc(g.title || typeText(inc))}</h2>
+      <p class="iv-tech">${esc(g.tech)}</p>
+      <p class="iv-meta">${statusHtml(k)}<span class="inum">Vorfall ${inc.id}</span><span class="iv-when">${esc(incWhen(inc))}</span><span class="iv-view">${esc(g.userView)}</span>${flags}</p>
+      <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button></div>
+    </div>
+    <section class="iv-what card"><h3>Was war los</h3>
+      <div class="iv-cols${lead ? "" : " single"}"><div class="iv-text">${before ? '<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>' : ""}${tx("p", "iv-meaning", g.meaning)}${tx("p", "iv-impact", g.impact)}</div>${lead ? `
+        <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: der Vorfall (getönt) mit Vor- und Nachlauf.</p></div>` : ""}</div></section>
+    <section class="iv-cause card"><h3>Wer oder was hat es verursacht</h3>${cause.skip ? notMeasured(cause.place) : ""}${cause.text ? tx("p", "causetext", cause.text) : ""}</section>
+    <section class="iv-todo card"><h3>Was ist zu tun</h3>${note ? `<p class="hint fallback" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(note)}</p>` : ""}
+      <ol class="checks">${checks.map((c) => `<li>${tx("p", "step", c.text)}${c.where || c.sign ? `<dl class="how">${how("Wo:", c.where)}${how("Woran erkennbar:", c.sign)}</dl>` : ""}${sourceHtml(c.source)}</li>`).join("")}</ol>${remedies.length ? `
+      <div class="remedies"><h4>Mögliche Abhilfe – Vorschlag</h4><ul>${remedies.map((r) => `<li>${r.precondition ? `<p class="tx pre"><b>Wenn</b> ${termHtml(r.precondition, terms)},</p>` : ""}<p class="tx act">${r.precondition ? "<b>dann:</b> " : ""}${termHtml(r.text, terms)}</p>${sourceHtml(r.source)}</li>`).join("")}</ul></div>` : ""}${contacts.length ? `
+      <div class="contact"><h4>An wen wenden</h4><ul>${contacts.map((c) => `<li>${tx("p", "", c.text)}${sourceHtml(c.source)}</li>`).join("")}</ul></div>` : ""}</section>
+    <section class="iv-affected card"><h3>Wer war betroffen</h3>${affectedHtml(inc)}</section>
+    <details class="iv-evidence card"><summary><h3>Belege</h3></summary><div class="iv-evbody incdetail"></div></details>`;
+  if (lead) chart(ivEl.querySelector(".iv-plot"), sigChartOpt(lead, win, { still: true, band: { t0: inc.start, t1: inc.end }, height: 200 }));
+  renderDetail(inc, ivEl.querySelector(".iv-evbody"), true);
+}
+// the charts of the evidence are drawn when it is unfolded
+ivEl.addEventListener("toggle", refreshCharts, true);
+ivEl.addEventListener("click", (ev) => {
+  const more = ev.target.closest("button.more");
+  if (more) { more.previousElementSibling.hidden = false; more.remove(); return; }
+  const b = ev.target.closest("button"), id = window.WP.incident; if (!b) return;
+  if (b.id === "ivBack") window.WP.closeIncident();
+  else if (b.id === "ivNext") window.WP.openIncident(nextIncident(id));
+  else if (b.id === "ivCopy") copyText(copyVersion(incById.get(id).copy), b);
+  else if (b.id === "ivExpert") openInExpert(id);
+  else if (b.classList.contains("lnk") && !followLink(b) && b.dataset.incident != null) window.WP.openIncident(Number(b.dataset.incident));
+});
+
+// ---------- incident view: opening and leaving ----------
+// The view replaces the content of the guided view; leaving it returns to the place the reader came from (scroll position and
+// the button that opened it). The history of the page holds one step for the incident view and one for the way from it into
+// the expert view, so the back button of the browser leads back the same way: state { wpIncident, wpView }.
+let ivFrom = null, leaving = false, reopened = null;
+const histState = () => { try { return history.state; } catch (e) { return null; } };
+// a page that may not write its history (some embedded viewers) works without the steps
+const histWrite = (push, state) => { try { history[push ? "pushState" : "replaceState"](state, ""); } catch (e) { /* no history */ } };
+function showIncidentView(id) {
+  if (window.WP.incident == null) ivFrom = { y: window.scrollY, el: document.activeElement };
+  window.WP.incident = id;
+  guidedEl.classList.add("in-incident"); ivEl.hidden = false;
+  hideTerm();
+  renderIncident(id);
+  window.scrollTo(0, 0);
+  document.getElementById("ivTitle").focus({ preventScroll: true });
+}
+function hideIncidentView() {
+  if (window.WP.incident == null) return;
+  const from = ivFrom || { y: 0, el: null };
+  window.WP.incident = null; ivFrom = null;
+  ivEl.hidden = true; ivEl.innerHTML = ""; delete ivEl.dataset.id; guidedEl.classList.remove("in-incident");
+  hideTerm();
+  if (window.WP.view !== "guided") { viewScroll.guided = from.y; return; }
+  drawTimeline(false); refreshCharts();
+  window.scrollTo(0, from.y);
+  if (from.el && from.el.isConnected && from.el.focus) from.el.focus({ preventScroll: true });
+}
+// into the expert view; from the incident view this is a step of the history
+function showExpertView() {
+  if (window.WP.view === "guided" && window.WP.incident != null) histWrite(true, { wpIncident: window.WP.incident, wpView: "expert" });
+  window.WP.showView("expert");
+}
+window.WP.incident = null;
+window.WP.openIncident = function (id) {
+  id = Number(id);
+  if (!incById.has(id)) return;
+  this.showView("guided");
+  // the step is written before the view scrolls to its top: the browser keeps the scroll position of the step it leaves.
+  // While the step back of closeIncident is still under way, the new step is written when it has arrived.
+  const st = histState(), inside = !!st && st.wpIncident != null;
+  if (leaving) reopened = id; else histWrite(!inside, Object.assign({}, inside ? st : null, { wpIncident: id }));
+  showIncidentView(id);
+};
+window.WP.closeIncident = function () {
+  if (this.incident == null) return;
+  hideIncidentView();
+  const st = histState();
+  if (st && st.wpIncident != null && !leaving) { leaving = true; reopened = null; history.go(st.wpView === "expert" ? -2 : -1); }
+};
+// the page as a step of its history describes it
+function applyHistory(st) {
+  const expert = !!st && st.wpView === "expert", id = st ? st.wpIncident : null;
+  if (!expert && id != null && incById.has(id)) { window.WP.showView("guided"); if (window.WP.incident !== id) showIncidentView(id); }
+  else if (!expert) { window.WP.showView("guided"); hideIncidentView(); }
+  else window.WP.showView("expert");
+}
+window.addEventListener("popstate", (ev) => {
+  const back = leaving; leaving = false;
+  if (back && reopened != null) { histWrite(true, { wpIncident: reopened }); reopened = null; return; }
+  applyHistory(ev.state);
+});
+// Esc closes what is open on top: the explanation of a term, then the incident view (the copy dialog closes itself)
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  if (copyDialog.hasAttribute("open")) { if (!copyDialog.showModal) closeCopyFallback(); return; }
+  if (!termPop.hidden) { hideTerm(); return; }
+  if (window.WP.view === "guided" && window.WP.incident != null) window.WP.closeIncident();
+});
+
+// ---------- printing ----------
+// Printing prints the view on screen. Its folded areas are opened for the print and folded again afterwards; charts and the
+// timeline are drawn in the width of the paper (the expert view prints every tab).
+{
+  let opened = null;
+  const printMode = (on) => {
+    if (on && !opened) { opened = [...document.querySelectorAll("#guided details:not([open])")].filter((d) => d.getClientRects().length); for (const d of opened) d.open = true; }
+    else if (!on && opened) { for (const d of opened) d.open = false; opened = null; }
+    drawTimeline(false); refreshCharts();
+  };
+  window.addEventListener("beforeprint", () => printMode(true));
+  window.addEventListener("afterprint", () => printMode(false));
+  const media = window.matchMedia ? window.matchMedia("print") : null;
+  if (media && media.addEventListener) media.addEventListener("change", () => printMode(media.matches));
+}
+// a page that is loaded again in a step of its history shows that step
+if (histState()) applyHistory(histState());
 </script>
 </body>
 </html>

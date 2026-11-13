@@ -1,4 +1,9 @@
-// Aufruf: node tests/report-browser.js <Ordner aus tests/New-TestReports.ps1>
+// Aufruf: node tests/report-browser.js <Ordner aus tests/New-TestReports.ps1> [--only <Pruefung,Pruefung,...>] [--scheme light|dark]
+// Ohne Optionen laufen alle Pruefungen: die meisten in beiden Farbschemata des Systems, einige nur im hellen. Die letzte
+// Zeile ist immer "browser checks passed: <n>".
+// --only nennt Pruefungen beim Namen ihrer Funktion (beim Arbeiten an einem Teil der Seite).
+// --scheme laesst nur ein Farbschema laufen: "--scheme light" und "--scheme dark" sind zusammen der ganze Lauf in zwei Teilen
+// (die Pruefungen fuer nur ein Schema laufen im hellen Teil), ihre Zahlen ergeben zusammen die des ganzen Laufs.
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
@@ -74,6 +79,7 @@ async function checkViews(browser, dir, scheme) {                   // zwei Ansi
   ok(await viewState(page) === 'expert | expert | guided:false expert:true', 'Umschalter und WP.view nennen die Expertenansicht: ' + await viewState(page));
   ok(await page.locator('#expert').isVisible() && !(await page.locator('#guided').isVisible()), 'Expertenansicht sichtbar, gefuehrte verborgen');
   ok(await pageLum(page) < 0.1, 'Expertenansicht dunkel, bei jedem Farbschema: ' + await pageLum(page));
+  ok(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme) === 'dark', 'Expertenansicht: auch Rollbalken und Grund des Fensters dunkel (Schema am Wurzelelement)');
   ok(await page.locator('#expert nav button[data-tab]').count() === 5 && await page.locator('#expert .zoombar #zoomInfo').count() === 1 && await page.locator('#expert main > section[role=tabpanel]').count() === 5, 'Expertenansicht mit Reiterleiste, Zoomleiste und fuenf Reitern');
   ok(await page.locator('header').isVisible() && await page.locator('footer').isVisible() && (await page.locator('footer').innerText()).includes('Bericht erstellt am'), 'Kopfleiste und Fuss in beiden Ansichten');
   ok(await page.evaluate(() => window.scrollY) === 0, 'Expertenansicht beginnt oben');
@@ -85,18 +91,30 @@ async function checkViews(browser, dir, scheme) {                   // zwei Ansi
   ok(await page.evaluate(() => window.scrollY) === 500, 'die gefuehrte Ansicht steht wieder an ihrer Stelle');
   await page.evaluate(() => window.WP.showView('nichts'));
   ok(await viewState(page) === 'guided | guided | guided:true expert:false', 'unbekannte Ansicht aendert nichts');
-  // "Oeffnen" leads to the incident in the expert view: its entry unfolded, the charts on its window
+  // "Oeffnen" leads to the incident view; from there "In der Expertenansicht zeigen" leads to the incident in the expert
+  // view: its entry unfolded, the charts on its window
+  const inView = async (id) => await page.evaluate(() => window.WP.view) === 'guided' && await page.locator(`#incident[data-id="${id}"]`).isVisible() && !(await page.locator('#expert').isVisible());
   const opened = async (list, id) => await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`${list} .incident[data-id="${id}"].open`).isVisible();
+  const leave = async () => { await showGuided(page); await page.click('#ivBack'); await page.waitForFunction(() => window.WP.incident === null && history.state === null); };
+  ok(await page.locator('#incident').isHidden() && await page.locator('#incidents .incident.open').count() === 0 && await page.evaluate(() => window.WP.zoom === null), 'vor dem Oeffnen: keine Vorfallsansicht, kein Eintrag aufgeklappt, kein Zeitraum');
   await page.click('#openTop');
+  ok(await inView(D.lagebild.top), 'Wichtigsten Vorfall oeffnen: Vorfallsansicht');
+  await page.click('#ivExpert');
   ok(await opened('#incidents', D.lagebild.top) && await page.evaluate(() => window.WP.zoom !== null), 'Wichtigsten Vorfall oeffnen');
-  await showGuided(page);
+  await leave();
   await page.click(`#cards .card.inc[data-id="${D.cards[2]}"] .card-open`);
+  ok(await inView(D.cards[2]), 'Karte oeffnet ihren Vorfall: Vorfallsansicht');
+  await page.click('#ivExpert');
   ok(await opened('#incidents', D.cards[2]), 'Karte oeffnet ihren Vorfall');
-  await showGuided(page);
+  await leave();
   await page.click(`#more .row[data-id="${D.more[0].ids[0]}"] .row-open`);
+  ok(await inView(D.more[0].ids[0]), 'Zeile der weiteren Vorfaelle oeffnet ihren Vorfall: Vorfallsansicht');
+  await page.click('#ivExpert');
   ok(await opened('#incidents', D.more[0].ids[0]), 'Zeile der weiteren Vorfaelle oeffnet ihren Vorfall');
-  await showGuided(page);
+  await leave();
   await page.click(`#beforeG .card.inc[data-id="${D.before.incidents[0].id}"] .card-open`);
+  ok(await inView(D.before.incidents[0].id), 'Karte vor der Messung oeffnet ihren Vorfall: Vorfallsansicht');
+  await page.click('#ivExpert');
   ok(await opened('#before', D.before.incidents[0].id), 'Karte vor der Messung oeffnet ihren Vorfall');
   ok(page.errors.length === 0, 'Skriptfehler Ansichten: ' + page.errors.join(' | '));
   await page.close();
@@ -120,7 +138,7 @@ async function checkCards(browser, dir, scheme) {                   // Karten, w
   ok(boxes[0][1] === boxes[1][1] && boxes[0][0] < boxes[1][0] && boxes[0][2] === boxes[1][2] && boxes[2][1] > boxes[0][1] && boxes[2][0] === boxes[0][0], 'Karten in zwei Spalten, in einer Zeile gleich hoch: ' + JSON.stringify(boxes));
   ok(await page.locator('#cards .card.inc a, #cards .card.inc[tabindex], #cards .card.inc[role]').count() === 0, 'die Karte selbst ist kein Link');
   await page.click(`#cards .card.inc[data-id="${D.cards[0]}"] .card-title`);
-  ok(await page.evaluate(() => window.WP.view) === 'guided', 'ein Klick auf die Karte neben den Knoepfen tut nichts');
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator('#incident').isHidden() && await page.locator('#cards').isVisible(), 'ein Klick auf die Karte neben den Knoepfen tut nichts');
   for (const g of D.more) {
     const inc = byId.get(g.ids[0]), row = page.locator(`#more > div.group .row[data-id="${inc.id}"]`), text = await row.innerText();
     ok(g.ids.length === 1 && text.includes(inc.guide.title) && text.includes(hhmm(inc.start, D.meta.offsetMin)) && text.includes(word(inc)) && await row.locator('.row-open').count() === 1, 'einzelner Vorfall als Zeile mit Schwere, Uhrzeit, Titel und Oeffnen: ' + text);
@@ -261,6 +279,10 @@ async function checkGuidedStates(browser, dir, scheme) {            // gefuehrte
   await g.page.close();
 }
 
+// the places of the incident view that depend on a category left out with -Skip, and the incidents that have each place
+const perfInc = (i) => i.type !== 'ereignis';
+const IV_PLACES = { 'incidents.contributors': (i) => perfInc(i) && i.type !== 'umfeld', 'incidents.delayProcs': (i) => perfInc(i) && i.type !== 'umfeld',
+  'incidents.ica': (i) => perfInc(i) && i.type !== 'engpass', 'incidents.endpoints': perfInc, 'incidents.events': (i) => perfInc(i) && i.type !== 'umfeld' && !i.chronic };
 // every report of tests/New-TestReports.ps1 (New-TestReports and New-SkipReports of tests/TestHelpers.ps1)
 const ALL_REPORTS = ['report', 'report-focus', 'report-none', 'report-none-reported', 'report-spike', 'report-nodata', 'report-cutrep', 'report-masked', 'report-masked-personen']
   .concat(['voll', 'prozesse', 'laufwerke', 'citrix', 'ereignisse', 'rueckblick', 'drucken', 'gegenstellen', 'alle', 'alle-masked', 'none-ereignisse', 'none-alle', 'focus-ereignisse', 'focus-prozesse', 'odd'].map((n) => 'report-skip-' + n));
@@ -276,8 +298,612 @@ async function checkOpens(browser, dir, scheme) {                   // jeder Ber
     ok(w[0] <= w[1], name + ': ohne seitliches Rollen: ' + w.join(' > '));
     await showExpert(page); await showGuided(page);
     ok(page.errors.length === 0, name + ': Skriptfehler: ' + page.errors.join(' | '));
+    // every incident opens in the incident view with its five sections; each place of the view that depends on a category
+    // left out with -Skip says "nicht gemessen" there, and only there
+    const byId = new Map(D.incidents.concat(D.before.incidents).map((i) => [i.id, i])), ids = D.order.concat(D.before.incidents.map((i) => i.id)), skipped = new Set(D.skipped.flatMap((x) => x.places));
+    const shown = await page.evaluate(([list, places]) => list.map((id) => {
+      window.WP.openIncident(id);
+      const iv = document.getElementById('incident'); iv.querySelector('details.iv-evidence').open = true;
+      return { id, open: !iv.hidden && iv.dataset.id === String(id) && window.WP.incident === id, title: iv.querySelector('.iv-title').textContent, sentence: iv.querySelector('.techtext').textContent,
+        sections: [...iv.querySelectorAll('section, details')].map((e) => e.className.split(' ').find((c) => c.startsWith('iv-'))).filter(Boolean).join(),
+        fits: document.documentElement.scrollWidth <= document.documentElement.clientWidth, text: iv.innerText,
+        places: places.filter((p) => [...iv.querySelectorAll('.notmeasured[data-place="' + p + '"]')].some((e) => e.getClientRects().length > 0)).join() };
+    }), [ids, Object.keys(IV_PLACES)]);
+    const wrong = [];
+    for (const v of shown) {
+      const inc = byId.get(v.id), want = Object.keys(IV_PLACES).filter((p) => skipped.has(p) && IV_PLACES[p](inc)).join();
+      if (!v.open || v.title !== inc.guide.title || v.sentence !== inc.text || v.sections !== IV_SECTIONS || !v.fits) wrong.push(v.id + ': Ansicht ' + JSON.stringify([v.open, v.title, v.sections, v.fits]));
+      if (v.places !== want) wrong.push(v.id + ': nicht gemessen an "' + v.places + '" statt "' + want + '"');
+      if (skipped.has('incidents.contributors') && /keine Prozessdaten|keine Prozesse mit der Rolle Sicherheit/.test(v.text)) wrong.push(v.id + ': "keine" fuer nicht gemessene Prozesse');
+      if (skipped.has('incidents.events') && inc.type !== 'ereignis' && (/Ereignisse im Fenster\s*keine/.test(v.text) || v.text.includes('lief ein Virenscan'))) wrong.push(v.id + ': Aussage ueber nicht gelesene Ereignisse');
+      if (inc.unverified && (v.text.includes('ohne Engpass') || !v.text.includes('ohne erkannten Engpass'))) wrong.push(v.id + ': "ohne Engpass" fuer einen ungeprueften Vorfall');
+    }
+    ok(shown.length === ids.length && wrong.length === 0, name + ': jeder Vorfall oeffnet in der Vorfallsansicht (' + ids.length + '), nicht Gemessenes steht an seiner Stelle: ' + wrong.join(' | '));
+    await page.evaluate(() => window.WP.closeIncident());
+    ok(await page.locator('#incident').isHidden() && await page.locator('#band').isVisible() && page.errors.length === 0, name + ': Vorfallsansicht ohne Skriptfehler, danach wieder das Lagebild: ' + page.errors.join(' | '));
     await page.close();
   }
+}
+
+// ---------- incident view and copying ----------
+// the three ways of copying made observable: the clipboard interface, the older command (which sees the hidden field and what
+// its copy event hands over), then the fallback dialog
+function watchCopy() {
+  window.__copied = []; window.__exec = 0;
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } });
+  document.execCommand = () => {
+    window.__exec++;
+    const field = document.activeElement, data = new DataTransfer();
+    field.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    window.__execData = data.getData('text/plain');
+    window.__execField = [field.tagName, field.value, field.selectionStart, field.selectionEnd];
+    return true;
+  };
+}
+async function openWatched(browser, file, scheme, more) {
+  const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 900 }, colorScheme: scheme }, more || {}));
+  await ctx.addInitScript(watchCopy);
+  const page = await ctx.newPage(); page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') page.errors.push(m.text()); });
+  page.requests = []; page.on('request', (r) => page.requests.push(r.url()));
+  await page.goto('file://' + file);
+  const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
+  return { ctx, page, D };
+}
+const ivOpen = async (page, id) => { await page.evaluate((i) => window.WP.openIncident(i), id); return page.locator('#incident'); };
+// leaving the incident view goes one step back in the history of the page: wait until that step is done
+const ivClosed = (page) => page.waitForFunction(() => window.WP.incident === null && (history.state === null || history.state.wpIncident == null));
+const ivSections = (page) => page.locator('#incident').locator('section, details').evaluateAll((els) => els.map((e) => e.className.split(' ').find((c) => c.startsWith('iv-'))).filter(Boolean).join());
+const IV_SECTIONS = 'iv-what,iv-cause,iv-todo,iv-affected,iv-evidence';
+const oneLine = (s) => s.replace(/\s+/g, ' ').trim();
+const deNum = (v) => v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+
+async function checkIncidentView(browser, dir, scheme) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
+  await ctx.addInitScript(() => {                                     // die drei Wege beobachtbar machen
+    window.__copied = []; window.__exec = 0;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } });
+    document.execCommand = () => { window.__exec++; return true; };
+  });
+  const page = await ctx.newPage(); page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  await page.goto('file://' + path.join(dir, 'report.html'));
+  const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
+  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  await page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-open`);
+  const iv = page.locator('#incident');
+  ok(await iv.getAttribute('data-id') === String(cpu.id) && (await iv.locator('.iv-title').innerText()) === cpu.guide.title, 'Vorfallsansicht ueber die Karte');
+  const order = await iv.locator('section, details').evaluateAll((els) => els.map((e) => e.className.split(' ').find((c) => c.startsWith('iv-'))));
+  ok(JSON.stringify(order.filter(Boolean)) === JSON.stringify(['iv-what', 'iv-cause', 'iv-todo', 'iv-affected', 'iv-evidence']), 'Abschnitte in fester Reihenfolge');
+  ok(await iv.locator('.iv-todo ol.checks li').count() === cpu.guide.checks.length && await iv.locator('.iv-chart svg path').count() > 0, 'Pruefschritte und Diagramm');
+  ok(await iv.locator('.iv-affected li').count() === cpu.affected.length, 'Betroffene aufgelistet');               // aus checkFindings
+  await iv.locator('details.iv-evidence summary').click();
+  ok((await iv.locator('.iv-evidence .contributors').innerText()).includes('EXCEL.EXE') && (await iv.locator('.iv-evidence').innerText()).includes(cpu.text), 'Belege mit Rangliste und Fachsatz');
+  if (cpu.guide.terms.length) { await iv.locator('.term').first().hover(); ok(await page.locator('.term-pop').isVisible(), 'Fachbegriff erklaert sich'); }
+  await page.click('#ivCopy');
+  ok(await page.evaluate(() => window.__copied.at(-1)) === cpu.copy.named && (await page.locator('#ivCopy').innerText()).includes('Kopiert'), 'Kopieren ueber die Zwischenablage');
+  await page.click('#ivBack'); await page.check('#anonSwitch'); await page.click('#copyAll');
+  ok(await page.evaluate(() => window.__copied.at(-1)) === D.copyAll.anonymous, 'Zusammenfassung ohne Namen');
+  await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }); });
+  await page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-copy`);
+  ok(await page.evaluate(() => window.__exec) === 1 && (await page.locator(`#cards .card.inc[data-id="${cpu.id}"] .card-copy`).innerText()).includes('Kopiert'), 'Kopieren ueber den aelteren Befehl');
+  await page.evaluate(() => { document.execCommand = () => false; });
+  await page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-copy`);
+  ok(await page.locator('#copyFallback textarea').isVisible() && await page.evaluate(() => { const t = document.querySelector('#copyFallback textarea'); return t.selectionStart === 0 && t.selectionEnd === t.value.length; }), 'Ausweichfeld mit markiertem Text');
+  await page.click('#copyFallback button');
+  const mark = D.incidents.find((i) => i.lead === 'memory');
+  await page.click(`#timeline .mark[data-incident="${mark.id}"]`);
+  ok(await iv.getAttribute('data-id') === String(mark.id), 'Vorfallsansicht ueber die Zeitleiste');
+  await page.click('#ivExpert');
+  const z = await page.evaluate(() => window.WP.zoom);
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && z && z.t0 < mark.start && z.t1 > mark.end, 'In der Expertenansicht zeigen setzt den Zeitraum');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await ctx.close();
+  const p = await open(browser, patched(dir, 'report.html', 'report-html-value.html', (J) => { const c = J.incidents.find((i) => i.lead === 'cpu'); c.guide.title = '<b>fett</b> {user}'; }), scheme);   // Review Focus 1
+  await p.page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-open`);
+  ok((await p.page.locator('#incident .iv-title').innerText()) === '<b>fett</b> {user}' && await p.page.locator('#incident .iv-title b').count() === 0, 'Werte nicht als HTML');
+  await p.page.close();
+}
+
+async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsansicht: Kopf und die fuenf Abschnitte gegen die Berichtsdaten
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  const off = D.meta.offsetMin, sess = new Map(D.sessions.map((s) => [s.i, s])), iv = page.locator('#incident');
+  ok(await iv.isHidden() && await page.evaluate(() => window.WP.incident) === null, 'Vorfallsansicht anfangs verborgen');
+  const cpu = D.incidents.find((i) => i.lead === 'cpu'), g = cpu.guide;
+  await page.evaluate(() => window.scrollTo(0, 400));
+  await ivOpen(page, cpu.id);
+  ok(await iv.isVisible() && await page.evaluate(() => window.WP.incident) === cpu.id && await page.evaluate(() => window.WP.view) === 'guided', 'WP.openIncident zeigt die Vorfallsansicht');
+  for (const sel of ['#band', '#tlCard', '#cardsHead', '#cards', '#more', '#beforeG', '#measured', '#qualityG']) ok(await page.locator(sel).isHidden(), 'die Vorfallsansicht ersetzt ' + sel);
+  ok(await page.locator('header #viewSwitch').isVisible() && await page.locator('header #title').isVisible() && await page.locator('footer').isVisible() && await page.evaluate(() => window.scrollY) === 0, 'Kopfleiste bleibt, die Ansicht beginnt oben');
+  ok(await iv.locator('h2.iv-title').count() === 1 && (await iv.locator('.iv-title').innerText()) === g.title && (await iv.locator('.iv-tech').innerText()) === g.tech, 'Titel als Ueberschrift, darunter die Fachbezeichnung');
+  const meta = oneLine(await iv.locator('.iv-meta').innerText());
+  ok(meta.includes('Vorfall ' + cpu.id) && meta.includes(ddmmyyyy(cpu.start, off) + ' ' + hhmm(cpu.start, off)) && meta.includes(hhmm(cpu.end, off)) && meta.includes(' min') && meta.includes(g.userView), 'Zeit, Dauer und Einordnung: ' + meta);
+  ok((await iv.locator('.iv-meta .status').innerText()).includes('kritisch') && (await iv.locator('.iv-meta .status .sym').innerText()) === '◆', 'Schwere als Symbol und Wort');
+  const label = async (sel) => oneLine(await page.locator(sel).innerText());
+  ok(await label('#ivCopy') === 'Zusammenfassung kopieren' && await label('#ivExpert') === 'In der Expertenansicht zeigen' && (await label('#ivBack')).includes('Zurück zum Lagebild') && (await label('#ivNext')).includes('Nächster Vorfall'), 'Knoepfe der Vorfallsansicht');
+  ok((await iv.locator('section > h3, details > summary h3').allInnerTexts()).join('|') === 'Was war los|Wer oder was hat es verursacht|Was ist zu tun|Wer war betroffen|Belege', 'Ueberschriften der Abschnitte');
+  // 1 what happened: meaning and impact on the left, the chart of the triggering value with its target line on the right
+  const what = await iv.locator('.iv-what').innerText();
+  ok(what.includes(g.meaning) && what.includes(g.impact), 'Was war los: Bedeutung und Wirkung');
+  const tb = await iv.locator('.iv-what .iv-text').boundingBox(), cb = await iv.locator('.iv-what .iv-chart').boundingBox();
+  ok(tb.x + tb.width <= cb.x && Math.abs(tb.y - cb.y) < 4 && cb.width >= 380, 'Diagramm rechts neben dem Text: ' + JSON.stringify([tb, cb]));
+  ok((await iv.locator('.iv-chart h4').innerText()).includes('CPU') && await iv.locator('.iv-chart .band-warn line').count() === 1 && await iv.locator('.iv-chart .incband').count() === 1, 'Diagramm des ausloesenden Messwerts mit Soll-Linie und dem Fenster des Vorfalls');
+  const ax = await iv.locator('.iv-chart svg text.xaxis').allTextContents();
+  ok(ax.length >= 2 && ax[0] < hhmm(cpu.start, off) + ':99' && ax[ax.length - 1] > hhmm(cpu.end, off) && await iv.locator('.iv-chart svg text.yaxis').count() >= 3, 'Diagramm mit Achsenbeschriftung, Vorfall mit Rand: ' + ax.join(' '));
+  const drag = await iv.locator('.iv-chart svg').boundingBox();
+  await page.mouse.move(drag.x + drag.width * 0.3, drag.y + 60); await page.mouse.down(); await page.mouse.move(drag.x + drag.width * 0.6, drag.y + 60); await page.mouse.up();
+  ok(await page.evaluate(() => window.WP.zoom === null), 'Ziehen im Diagramm der Vorfallsansicht stellt keinen Ausschnitt ein');
+  // 2 cause, as the report data say it (the same text as on the card and in the copy text)
+  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(cpu.causeText) && cpu.copy.named.replace(/\r\n\s*/g, ' ').includes(cpu.causeText), 'Ursache wie in den Berichtsdaten und im Kopiertext');
+  // 3 what to do: numbered steps with where and sign, remedies as proposals with their condition, sources with the step
+  const steps = iv.locator('.iv-todo ol.checks > li');
+  for (let k = 0; k < g.checks.length; k++) {
+    const c = g.checks[k], t = oneLine(await steps.nth(k).innerText());
+    ok(t.startsWith(c.text) && t.includes('Wo: ' + c.where) && t.includes('Woran erkennbar: ' + c.sign) && t.indexOf('Wo: ') < t.indexOf('Woran erkennbar: '), 'Schritt ' + (k + 1) + ' mit was, wo, woran erkennbar: ' + t);
+  }
+  ok(await steps.first().locator('.step').evaluate((e) => Number(getComputedStyle(e).fontWeight) >= 600) && await steps.first().evaluate((e) => getComputedStyle(e).listStyleType) === 'decimal', 'Schritte nummeriert, ihr Text fett');
+  const rem = iv.locator('.iv-todo .remedies li');
+  ok(await rem.count() === g.remedies.length && (await iv.locator('.iv-todo .remedies h4').innerText()) === 'Mögliche Abhilfe – Vorschlag', 'Abhilfe abgesetzt als Vorschlag');
+  for (let k = 0; k < g.remedies.length; k++) ok(oneLine(await rem.nth(k).innerText()) === 'Wenn ' + g.remedies[k].precondition + ', dann: ' + g.remedies[k].text, 'Abhilfe ' + (k + 1) + ': Bedingung vor dem Schritt: ' + oneLine(await rem.nth(k).innerText()));
+  const sb = await steps.last().boundingBox(), rb = await iv.locator('.iv-todo .remedies').boundingBox();
+  ok(rb.y >= sb.y + sb.height, 'Abhilfe steht unter den Schritten');
+  ok(g.contacts.length === 0 && await iv.locator('.iv-todo .contact').count() === 0 && await iv.locator('.iv-todo .src').count() === 0 && await iv.locator('.iv-todo .fallback').count() === 0, 'ohne Ansprechpartner, Quelle und Auffang-Eintrag kein leerer Bereich');
+  // 4 who was affected: user, client, highest delay
+  const aff = iv.locator('.iv-affected li');
+  for (let k = 0; k < cpu.affected.length; k++) {
+    const a = cpu.affected[k], s = sess.get(a.s), t = oneLine(await aff.nth(k).innerText());
+    ok(t.includes(s.user) && t.includes(s.client) && t.includes(deNum(a.peakMs) + ' ms'), 'Betroffene Sitzung mit Benutzer, Client und hoechster Verzoegerung: ' + t);
+  }
+  // 5 evidence, folded: the technical sentence, the charts of the window, the rankings, the measured values involved
+  ok(!(await iv.locator('details.iv-evidence').evaluate((d) => d.open)) && !(await iv.locator('.iv-evidence .techtext').isVisible()), 'Belege eingeklappt');
+  await iv.locator('details.iv-evidence > summary').click();
+  ok((await iv.locator('.iv-evidence .techtext').innerText()) === cpu.text, 'Belege: der Fachsatz des Vorfalls');
+  ok(await iv.locator('.iv-evidence .sigcharts svg path').count() > 0 && await iv.locator('.iv-evidence .contributors table').count() >= 3 && await iv.locator('.iv-evidence .signals tbody tr').count() === cpu.signals.length, 'Belege: Verlauf, Ranglisten, beteiligte Messwerte');
+  const ev = await iv.locator('.iv-evidence').innerText();
+  ok(ev.includes('Ereignisse im Fenster') && ev.includes('Schutzprodukte') && (await iv.locator('.iv-evidence .causebox').innerText()).includes('EXCEL.EXE'), 'Belege: Ereignisse, Schutzprodukte, Verursacher');
+  ok(await iv.locator('.iv-evidence .zoomto').count() === 0 && await iv.locator('.iv-evidence .essentials').count() === 0, 'Belege ohne die Knoepfe und Bloecke, die es in der Vorfallsansicht schon gibt');
+  const nm = D.sollIst.filter((r) => !r.measured);
+  ok(await iv.locator('.iv-evidence .iv-notm li').count() === nm.length && (nm.length > 0 || await iv.locator('.iv-evidence .iv-notm').count() === 0), 'Belege: nicht Gemessenes nur, wo etwas fehlt (keine leere Liste)');
+  // a link of the evidence leads to the table of the expert view
+  await iv.locator('.iv-evidence .causebox button.lnk[data-s]').click();
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator('#tab-sessions').isVisible() && await page.locator('#tSessions tbody tr.selected').count() === 1, 'Verweis aus den Belegen fuehrt in die Tabelle der Expertenansicht');
+  await showGuided(page);
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(cpu.id), 'zurueck in der gefuehrten Ansicht steht die Vorfallsansicht noch');
+  // "Naechster Vorfall" follows the ranking and is missing on the last incident
+  await ivOpen(page, D.order[0]);
+  for (let k = 1; k < D.order.length; k++) { await page.click('#ivNext'); ok(await iv.getAttribute('data-id') === String(D.order[k]) && await ivSections(page) === IV_SECTIONS, 'Naechster Vorfall nach Rang, Platz ' + (k + 1)); }
+  ok(await page.locator('#ivNext').count() === 0 && await page.locator('#ivBack').count() === 1, 'beim letzten Vorfall kein "Naechster Vorfall"');
+  // a delay without a bottleneck: the chart shows the input delay, the cause points outside the worker
+  const delay = D.incidents.find((i) => i.type === 'ohne-engpass' && i.affected.length > 1);
+  await ivOpen(page, delay.id);
+  ok((await iv.locator('.iv-chart h4').innerText()).includes('Eingabeverzögerung') && await iv.locator('.iv-chart svg path').count() > 0 && await iv.locator('.iv-chart .legend span').count() > 1, 'Verzoegerung ohne Engpass: Diagramm der Eingabeverzoegerung je Sitzung');
+  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(delay.causeText) && delay.causeText.includes('außerhalb des Workers'), 'Verzoegerung ohne Engpass: Hinweis auf eine Ursache ausserhalb');
+  ok(delay.guide.contacts.length > 0 && await iv.locator('.iv-todo .contact li').count() === delay.guide.contacts.length && (await iv.locator('.iv-todo .contact h4').innerText()) === 'An wen wenden' && (await iv.locator('.iv-todo .contact li').first().innerText()).includes(delay.guide.contacts[0].text), 'An wen wenden');
+  ok(await iv.locator('.iv-affected li').count() === delay.affected.length, 'Verzoegerung ohne Engpass: Betroffene');
+  // a chronic state: the same page; its first sentence says that it lasted
+  const chronic = D.incidents.find((i) => i.chronic);
+  await ivOpen(page, chronic.id);
+  ok(await ivSections(page) === IV_SECTIONS && (await iv.locator('.iv-what .iv-text p').first().innerText()) === chronic.guide.meaning && /ganze Messung/.test(chronic.guide.meaning), 'Dauerzustand: dieselbe Seite, der erste Satz nennt die Dauer');
+  ok(await iv.locator('.iv-affected li').count() === 0 && (await iv.locator('.iv-affected').innerText()).includes('Keine Eingabeverzögerung über dem Soll in den Sitzungen dieses Befunds.'), 'Dauerzustand im Umfeld: Satz statt leerer Liste');
+  // an incident from events: no chart of a measured value; every element of the print guidance names its source
+  const print = D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print'), pg = print.guide;
+  await ivOpen(page, print.id);
+  ok(await iv.locator('.iv-what .iv-chart').count() === 0 && await iv.locator('.iv-what svg').count() === 0 && (await iv.locator('.iv-what').innerText()).includes(pg.meaning), 'Vorfall aus Ereignissen: kein Diagramm eines Messwerts');
+  const psteps = iv.locator('.iv-todo ol.checks > li'), prem = iv.locator('.iv-todo .remedies li'), pcon = iv.locator('.iv-todo .contact li');
+  ok(await psteps.count() === pg.checks.length && await prem.count() === pg.remedies.length && await pcon.count() === pg.contacts.length && pg.checks.concat(pg.remedies, pg.contacts).every((x) => x.source), 'Druckproblem: Schritte, Abhilfe und Ansprechpartner');
+  for (let k = 0; k < pg.checks.length; k++) ok((await psteps.nth(k).locator('.src').innerText()) === 'Quelle: ' + pg.checks[k].source, 'Quelle steht beim Schritt ' + (k + 1));
+  for (let k = 0; k < pg.remedies.length; k++) ok((await prem.nth(k).locator('.src').innerText()) === 'Quelle: ' + pg.remedies[k].source, 'Quelle steht bei der Abhilfe ' + (k + 1));
+  for (let k = 0; k < pg.contacts.length; k++) ok((await pcon.nth(k).locator('.src').innerText()) === 'Quelle: ' + pg.contacts[k].source, 'Quelle steht beim Ansprechpartner ' + (k + 1));
+  ok(await iv.locator('.iv-todo a[href]').count() === 0, 'Quellen ohne Adresse sind kein Verweis');
+  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(print.causeText) && print.causeText.includes(print.event.patterns[0].text), 'Vorfall aus Ereignissen: Ursache mit den Aussagen der Muster');
+  ok(await iv.locator('.iv-affected li').count() === 0 && (await iv.locator('.iv-affected').innerText()).includes('Ohne Benutzersitzung'), 'Druckproblem ohne Benutzersitzung: Satz statt leerer Liste');
+  await iv.locator('details.iv-evidence > summary').click();
+  ok(await iv.locator('.iv-evidence .patterns li').count() === print.event.patterns.length && (await iv.locator('.iv-evidence .patterns').innerText()).includes(print.event.patterns[0].text) && await iv.locator('.iv-evidence .evlist tbody tr').count() === print.events.length, 'Belege: Muster und Ereignisse des Vorfalls');
+  ok((await iv.locator('.iv-evidence .techtext').innerText()) === print.text && (await iv.locator('.iv-evidence').innerText()).includes('hpsimgr.dll'), 'Belege: Fachsatz und fehlerhaftes Modul');
+  const crash = D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'crash' && i.event.sessions.length > 1);
+  await ivOpen(page, crash.id);
+  const cl = iv.locator('.iv-affected li');
+  ok(await cl.count() === crash.event.sessions.length, 'Absturz: betroffene Sitzungen');
+  for (let k = 0; k < crash.event.sessions.length; k++) { const s = sess.get(crash.event.sessions[k]), t = oneLine(await cl.nth(k).innerText()); ok(t.includes(s.user) && t.includes(s.client), 'Absturz: Sitzung mit Benutzer und Client: ' + t); }
+  // incidents of the days before the capture open in the same view: no chart, and the view says why
+  const lb = D.before.incidents.slice().sort((a, b) => a.rank - b.rank);
+  await page.evaluate(() => window.WP.closeIncident()); await ivClosed(page);
+  await page.click(`#beforeG .card.inc[data-id="${lb[0].id}"] .card-open`);
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(lb[0].id) && await ivSections(page) === IV_SECTIONS && (await iv.locator('.iv-title').innerText()) === lb[0].guide.title, 'Vorfall vor der Messung in derselben Ansicht');
+  ok((await iv.locator('.iv-what .bnote').innerText()) === 'Für diese Zeit liegen keine Messwerte vor.' && await iv.locator('.iv-chart').count() === 0 && await iv.locator('svg').count() === 0 && (await iv.locator('.iv-what').innerText()).includes(lb[0].guide.meaning), 'vor der Messung: Hinweis statt Diagramm');
+  ok(oneLine(await iv.locator('.iv-meta').innerText()).includes(ddmmyyyy(lb[0].events[0].t, lb[0].events[0].offsetMin)), 'vor der Messung: mit Datum');
+  ok(await iv.locator('.iv-affected li').count() === lb[0].event.users.length && (await iv.locator('.iv-affected li').first().innerText()).includes(lb[0].event.users[0]), 'vor der Messung: Benutzer aus den Ereignissen');
+  for (let k = 1; k < lb.length; k++) { await page.click('#ivNext'); ok(await iv.getAttribute('data-id') === String(lb[k].id), 'vor der Messung: naechster Vorfall nach Rang, Platz ' + (k + 1)); }
+  ok(await page.locator('#ivNext').count() === 0, 'vor der Messung: beim letzten kein "Naechster Vorfall"');
+  await iv.locator('details.iv-evidence > summary').click();
+  ok((await iv.locator('.iv-evidence').innerText()).includes('Für die Tage vor der Messung gelten nur die Muster, die keine Messwerte brauchen.') && await iv.locator('.iv-evidence .evlist tbody tr').count() === lb[lb.length - 1].events.length && await iv.locator('.iv-evidence .iv-notm').count() === 0, 'vor der Messung: Belege aus den Ereignissen');
+  await page.click('#ivExpert');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#before .incident[data-id="${lb[lb.length - 1].id}"].open`).isVisible() && await page.evaluate(() => window.WP.zoom === null), 'vor der Messung: in der Expertenansicht aufgeklappt, ohne Zeitraum');
+  ok(await page.evaluate(() => [...document.querySelectorAll('[id]')].map((e) => e.id).filter((id, k, a) => a.indexOf(id) !== k).length) === 0, 'keine Kennung doppelt, auch mit Vorfallsansicht');
+  ok(page.errors.length === 0, 'Skriptfehler Vorfallsansicht: ' + page.errors.join(' | '));
+  await page.close();
+}
+
+async function checkIncidentStates(browser, dir, scheme) {          // Vorfallsansicht: nicht gemessen, nicht geprueft, Auffang, Werte als Text
+  // without processes: the cause says "nicht gemessen" with the reason once; an incident from events says what was not checked
+  const p = await open(browser, path.join(dir, 'report-skip-prozesse.html'), scheme), iv = p.page.locator('#incident'), reason = p.D.skipped[0].text;
+  const cpu = p.D.incidents.find((i) => i.lead === 'cpu'), delay = p.D.incidents.find((i) => i.type === 'ohne-engpass');
+  await ivOpen(p.page, cpu.id);
+  let cause = await iv.locator('.iv-cause').innerText();
+  ok(await iv.locator('.iv-cause .notmeasured[data-place="incidents.contributors"]').isVisible() && cause.includes('nicht gemessen') && cause.split(reason).length === 2 && cause.includes('(-Skip Prozesse)'), 'ohne Prozesse: Ursache sagt "nicht gemessen" und nennt den Grund einmal: ' + cause);
+  await iv.locator('details.iv-evidence > summary').click();
+  ok(await iv.locator('.iv-evidence .notmeasured[data-place="incidents.contributors"]').first().isVisible() && await iv.locator('.iv-evidence .contributors table').count() === 0 && (await iv.locator('.iv-evidence .techtext').innerText()) === cpu.text, 'ohne Prozesse: Hinweis statt Rangliste, der Fachsatz bleibt');
+  await ivOpen(p.page, delay.id);
+  cause = oneLine(await iv.locator('.iv-cause').innerText());
+  const rest = delay.causeText.replace('Prozess mit der höchsten Verzögerung nicht ermittelt: ' + reason, '').trim();
+  ok(await iv.locator('.iv-cause .notmeasured[data-place="incidents.delayProcs"]').isVisible() && cause.split(reason).length === 2 && rest.length > 20 && cause.includes(rest), 'ohne Prozesse: Verzoegerung nennt den Grund einmal und den uebrigen Satz: ' + cause);
+  const ev = p.D.incidents.find((i) => i.type === 'ereignis' && i.event.unchecked.some((u) => u.id === 'users')), un = ev.event.unchecked.find((u) => u.id === 'users');
+  await ivOpen(p.page, ev.id);
+  const who = await iv.locator('.iv-affected').innerText();
+  ok(who.includes('nicht geprüft: ' + un.text) && !who.includes('Sitzung nicht ermittelt') && !who.includes('Ohne Benutzersitzung') && await iv.locator('.iv-affected li').count() === 0, 'ohne Prozesse: Betroffene eines Ereignisvorfalls nicht geprueft: ' + who);
+  ok(oneLine(await iv.locator('.iv-cause').innerText()).includes(ev.causeText) && ev.causeText.includes('Nicht geprüft'), 'ohne Prozesse: Ursache des Ereignisvorfalls wie geliefert');
+  await iv.locator('details.iv-evidence > summary').click();
+  ok((await iv.locator('.iv-evidence .patterns li.unchecked').allInnerTexts()).some((t) => t.includes('nicht geprüft: ' + un.text)) && !(await iv.locator('.iv-evidence').innerText()).includes('Sitzung nicht ermittelt'), 'ohne Prozesse: Muster "nicht geprueft" wie im Eintrag der Expertenansicht');
+  await p.page.close();
+  const d = await open(browser, path.join(dir, 'report-skip-drucken.html'), scheme);
+  await ivOpen(d.page, d.D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print').id);
+  await d.page.locator('#incident details.iv-evidence > summary').click();
+  const pat = await d.page.locator('#incident .iv-evidence .patterns').innerText();
+  ok(pat.includes('nicht geprüft: Bezug zu einem Druckertreiber (Drucken nicht gemessen)') && !pat.includes('Kein Muster erkannt'), 'ohne Drucken: Muster nicht geprueft statt "kein Muster"');
+  await d.page.close();
+  const a = await open(browser, path.join(dir, 'report-skip-alle.html'), scheme);
+  await ivOpen(a.page, a.D.incidents[0].id);
+  await a.page.locator('#incident details.iv-evidence > summary').click();
+  ok((await a.page.locator('#incident .iv-notm li').evaluateAll((l) => l.map((x) => x.dataset.skip || '').filter(Boolean))).join() === a.D.skipped.map((s) => s.id).join(), 'ohne alle: die Belege nennen die weggelassenen Kategorien');
+  await a.page.close();
+  // input delay not measured: who was affected cannot be told, and the view says so
+  const nd = await open(browser, path.join(dir, 'report-nodata.html'), scheme), nc = nd.D.incidents.find((i) => i.lead === 'cpu');
+  await ivOpen(nd.page, nc.id);
+  ok(await nd.page.locator('#incident .iv-affected li').count() === 0 && (await nd.page.locator('#incident .iv-affected').innerText()).includes('Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar.'), 'Eingabeverzoegerung nicht gemessen: Betroffene nicht bestimmbar');
+  ok(oneLine(await nd.page.locator('#incident .iv-cause').innerText()).includes(nc.causeText) && await nd.page.locator('#incident .iv-chart svg path').count() > 0, 'ohne Prozessdaten: Ursache wie geliefert, Diagramm bleibt');
+  await nd.page.locator('#incident details.iv-evidence > summary').click();
+  const nm = nd.D.sollIst.filter((r) => !r.measured), nt = await nd.page.locator('#incident .iv-evidence .iv-notm').innerText();
+  ok(nm.length > 0 && await nd.page.locator('#incident .iv-notm li').count() === nm.length && nm.every((r) => nt.includes(r.label)) && nt.includes('Nicht gemessen'), 'Belege: was nicht gemessen wurde: ' + oneLine(nt));
+  ok(nd.page.errors.length === 0, 'Skriptfehler ohne Daten: ' + nd.page.errors.join(' | '));
+  await nd.page.close();
+  // the fallback entry of the catalogue shows its note above the steps; a source with an address shows it as plain text
+  const fb = await open(browser, patched(dir, 'report.html', 'report-iv-fallback.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'); c.guide.fallback = true;
+    c.guide.checks[0].source = { title: 'Hersteller: Leitfaden', url: 'https://example.invalid/leitfaden' }; c.guide.checks[1].where = null; c.guide.checks[1].sign = null; c.guide.remedies[0].precondition = null;
+    J.incidents.find((i) => i.lead === 'memory').guide = null;
+  }), scheme), fc = fb.D.incidents.find((i) => i.lead === 'cpu');
+  await ivOpen(fb.page, fc.id);
+  const note = fb.page.locator('#incident .iv-todo .fallback'), nb = await note.boundingBox(), ob = await fb.page.locator('#incident .iv-todo ol.checks').boundingBox();
+  ok((await note.innerText()).includes(fb.D.guidance.fallbackNote) && nb.y + nb.height <= ob.y, 'Auffang-Eintrag: sichtbarer Hinweis ueber den Schritten');
+  const src = await fb.page.locator('#incident ol.checks > li').first().locator('.src').innerText();
+  ok(src === 'Quelle: Hersteller: Leitfaden – https://example.invalid/leitfaden' && await fb.page.locator('#incident .iv-todo a').count() === 0 && fb.page.requests.length === 1, 'Quelle mit Adresse als Text, ohne Abruf: ' + src);
+  const bare = oneLine(await fb.page.locator('#incident ol.checks > li').nth(1).innerText());
+  ok(bare === fc.guide.checks[1].text && oneLine(await fb.page.locator('#incident .remedies li').first().innerText()) === fc.guide.remedies[0].text, 'Schritt ohne Ort und Merkmal, Abhilfe ohne Bedingung: nur der Text');
+  await ivOpen(fb.page, fb.D.incidents.find((i) => i.lead === 'memory').id);
+  ok(await ivSections(fb.page) === IV_SECTIONS && await fb.page.locator('#incident ol.checks li').count() === 0 && fb.page.errors.length === 0, 'Vorfall ohne Anleitung: Ansicht ohne Skriptfehler: ' + fb.page.errors.join(' | '));
+  await fb.page.close();
+  // values of the report data are text, never markup
+  const bad = '<img src=x onerror="window.__xss=1">';
+  const x = await open(browser, patched(dir, 'report.html', 'report-iv-markup.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'), g = c.guide;
+    Object.assign(g, { title: 'Titel ' + bad, tech: 'Fach ' + bad, meaning: 'Bedeutung Engpass ' + bad, impact: 'Wirkung ' + bad, userView: 'Sicht ' + bad, fallback: true, contacts: [{ text: 'Kontakt ' + bad, source: 'Quelle3 ' + bad }] });
+    Object.assign(g.checks[0], { text: 'Schritt ' + bad, where: 'Ort ' + bad, sign: 'Merkmal ' + bad, source: 'Quelle1 ' + bad });
+    Object.assign(g.remedies[0], { text: 'Abhilfe ' + bad, precondition: 'Bedingung ' + bad, source: 'Quelle2 ' + bad });
+    c.causeText = 'Ursache ' + bad; c.text = 'Fachsatz ' + bad;
+    J.guidance.fallbackNote = 'Auffang ' + bad; J.guidance.terms.Engpass = 'Erklaerung ' + bad;
+  }), scheme), xc = x.D.incidents.find((i) => i.lead === 'cpu');
+  await ivOpen(x.page, xc.id);
+  await x.page.locator('#incident details.iv-evidence > summary').click();
+  await x.page.locator('#incident .iv-meaning .term').hover();
+  const xt = await x.page.locator('#incident').innerText();
+  ok(await x.page.evaluate(() => window.__xss === undefined) && await x.page.locator('#incident img, .term-pop img').count() === 0, 'Vorfallsansicht: Markup aus den Daten wird nicht ausgefuehrt');
+  for (const w of ['Titel', 'Fach', 'Bedeutung Engpass', 'Wirkung', 'Sicht', 'Kontakt', 'Quelle3', 'Schritt', 'Ort', 'Merkmal', 'Quelle1', 'Abhilfe', 'Bedingung', 'Quelle2', 'Ursache', 'Fachsatz', 'Auffang']) ok(xt.includes(w + ' ' + bad), 'Vorfallsansicht: Markup als Text: ' + w);
+  ok((await x.page.locator('.term-pop').innerText()).includes('Erklaerung ' + bad), 'Erklaerung eines Begriffs: Markup als Text');
+  ok(x.page.errors.length === 0, 'Skriptfehler Markup Vorfallsansicht: ' + x.page.errors.join(' | '));
+  await x.page.close();
+}
+
+async function checkTerms(browser, dir, scheme) {                   // Fachbegriffe erklaeren sich: Ueberfahren, Tastaturfokus, Antippen
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme), iv = page.locator('#incident'), pop = page.locator('.term-pop');
+  const mem = D.incidents.find((i) => i.lead === 'memory');
+  await ivOpen(page, mem.id);
+  const marked = await iv.locator('.term').evaluateAll((t) => t.map((x) => x.dataset.term));
+  ok(marked.length > 0 && marked.every((t) => mem.guide.terms.includes(t) && D.guidance.terms[t]) && mem.guide.terms.every((t) => marked.includes(t)), 'die Begriffe der Anleitung sind in den Texten unterlegt: ' + marked.join(', ') + ' / ' + mem.guide.terms.join(', '));
+  ok(await iv.evaluate((el) => [...el.querySelectorAll('.tx')].every((p) => { const t = [...p.querySelectorAll('.term')].map((x) => x.dataset.term); return new Set(t).size === t.length; })) && await iv.locator('.tx').count() > 10, 'je Absatz ist ein Begriff hoechstens einmal unterlegt');
+  ok(await iv.locator('.iv-title .term, .iv-tech .term, .iv-meta .term, .iv-evidence .term, .src .term').count() === 0, 'Titel, Kopfzeile, Quellen und Belege ohne Unterlegung');
+  const first = iv.locator('.term').first(), word = await first.getAttribute('data-term');
+  ok(await pop.isHidden() && await first.getAttribute('tabindex') === '0' && await first.getAttribute('aria-describedby') === await pop.getAttribute('id') && await pop.getAttribute('role') === 'tooltip', 'Begriff mit der Tastatur erreichbar, Erklaerung zunaechst verborgen');
+  await first.hover();
+  ok(await pop.isVisible() && (await pop.innerText()).includes(D.guidance.terms[word]) && (await pop.innerText()).includes(word), 'Ueberfahren zeigt die Erklaerung aus dem Katalog');
+  const pb = await pop.boundingBox(), fb = await first.boundingBox();
+  ok(pb.x >= 0 && pb.x + pb.width <= 1400 && (pb.y >= fb.y + fb.height - 1 || pb.y + pb.height <= fb.y + 1), 'Erklaerung steht am Begriff, ohne ihn zu verdecken: ' + JSON.stringify([pb, fb]));
+  await page.mouse.move(5, 5);
+  ok(await pop.isHidden(), 'Erklaerung verschwindet, wenn der Zeiger den Begriff verlaesst');
+  await first.focus();
+  ok(await pop.isVisible() && (await pop.innerText()).includes(D.guidance.terms[word]), 'Tastaturfokus zeigt die Erklaerung');
+  await page.keyboard.press('Escape');
+  ok(await pop.isHidden() && await iv.isVisible(), 'Esc schliesst zuerst die Erklaerung, nicht die Vorfallsansicht');
+  const other = iv.locator('.term:not([data-term="' + word + '"])').first(), word2 = await other.getAttribute('data-term');
+  await other.focus();
+  ok(await pop.isVisible() && (await pop.innerText()).includes(D.guidance.terms[word2]) && !(await pop.innerText()).includes(D.guidance.terms[word]), 'ein anderer Begriff zeigt seine eigene Erklaerung: ' + word2);
+  await page.locator('#ivBack').focus();
+  ok(await pop.isHidden(), 'Erklaerung verschwindet, wenn der Fokus den Begriff verlaesst');
+  await page.close();
+  // the same word twice in a paragraph, inflected, inside another word, and a term without an explanation
+  const v = await open(browser, patched(dir, 'report.html', 'report-iv-terms.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu');
+    c.guide.meaning = 'Ein Engpass, des Engpasses wegen, kein Dauerengpass; die vCPU zählt.'; c.guide.impact = 'Noch ein Engpass.';
+    c.guide.terms = ['Engpass', 'vCPU', 'Unbekannt']; c.guide.checks[0].text = 'Unbekannt bleibt Text, der Engpass nicht';
+  }), scheme), vc = v.D.incidents.find((i) => i.lead === 'cpu');
+  await ivOpen(v.page, vc.id);
+  const mt = await v.page.locator('#incident .iv-meaning .term').evaluateAll((t) => t.map((x) => x.dataset.term + '=' + x.textContent));
+  ok(mt.join() === 'Engpass=Engpass,vCPU=vCPU' && (await v.page.locator('#incident .iv-meaning').innerText()) === vc.guide.meaning, 'einmal je Absatz, am Wortanfang, der Text bleibt wie geliefert: ' + mt.join());
+  ok(await v.page.locator('#incident .iv-impact .term').count() === 1 && (await v.page.locator('#incident ol.checks > li').first().locator('.term').evaluateAll((t) => t.map((x) => x.dataset.term))).join() === 'Engpass', 'jeder Absatz fuer sich; ein Begriff ohne Erklaerung bleibt Text');
+  await v.page.close();
+  // touch: a tap shows the explanation, a tap beside it hides it
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, colorScheme: scheme }), touch = await ctx.newPage();
+  await touch.goto('file://' + path.join(dir, 'report.html'));
+  await touch.evaluate((i) => window.WP.openIncident(i), mem.id);
+  const t1 = touch.locator('#incident .term').first();
+  await t1.tap();
+  const tp = await touch.locator('.term-pop').boundingBox();
+  ok(await touch.locator('.term-pop').isVisible() && tp.x >= 0 && tp.x + tp.width <= 390, 'Antippen zeigt die Erklaerung, auch schmal im Bild: ' + JSON.stringify(tp));
+  await touch.locator('#incident .iv-title').tap();
+  ok(await touch.locator('.term-pop').isHidden(), 'Antippen daneben schliesst die Erklaerung');
+  await ctx.close();
+}
+
+async function checkCopy(browser, dir, scheme) {                    // Kopieren: Text wie geliefert, Schalter "ohne Namen", Bestaetigung, maskierter Bericht
+  const { ctx, page, D } = await openWatched(browser, path.join(dir, 'report.html'), scheme);
+  const byId = new Map(D.incidents.concat(D.before.incidents).map((i) => [i.id, i])), last = () => page.evaluate(() => window.__copied.at(-1)), iv = page.locator('#incident');
+  const first = byId.get(D.cards[0]), btn = page.locator(`#cards .card.inc[data-id="${first.id}"] .card-copy`);
+  const w0 = (await btn.boundingBox()).width;
+  await btn.click();
+  ok(await last() === first.copy.named && first.copy.named.includes('\r\n') && first.copy.named.split('\r\n').every((l) => l.length <= 78), 'Karte kopiert ihren Text wie geliefert, mit seinen Zeilenenden');
+  ok((await btn.innerText()).includes('Kopiert') && Math.abs((await btn.boundingBox()).width - w0) < 1, 'Bestaetigung am Knopf, ohne dass er springt');
+  await page.waitForTimeout(1900);
+  ok((await btn.innerText()) === 'Kopieren', 'nach etwa 1,5 s wieder die Beschriftung');
+  const lb = D.before.incidents[0];
+  await page.click(`#beforeG .card.inc[data-id="${lb.id}"] .card-copy`);
+  ok(await last() === lb.copy.named, 'Karte vor der Messung kopiert ihren Text');
+  await page.click('#copyAll');
+  ok(await last() === D.copyAll.named && (await page.locator('#copyAll').innerText()).includes('Kopiert'), 'Zusammenfassung der Messung mit Namen');
+  ok(await page.locator('#more .row button').count() === await page.locator('#more .row .row-open').count(), 'Zeilen der weiteren Vorfaelle haben nur "Oeffnen"');
+  // the switch "ohne Namen" chooses the second version, on the cards and in the incident view
+  await page.check('#anonSwitch');
+  await btn.click();
+  ok(await last() === first.copy.anonymous && first.copy.anonymous !== first.copy.named, 'ohne Namen: Karte');
+  await page.click(`#cards .card.inc[data-id="${first.id}"] .card-open`);
+  ok(await page.locator('#ivAnon').isChecked() && (await page.locator('label:has(#ivAnon)').innerText()).includes('ohne Namen'), 'der Schalter steht auch in der Vorfallsansicht und folgt dem des Lagebilds');
+  await page.click('#ivCopy');
+  ok(await last() === first.copy.anonymous, 'ohne Namen: Vorfallsansicht');
+  await page.uncheck('#ivAnon'); await page.click('#ivCopy');
+  ok(await last() === first.copy.named, 'mit Namen: Vorfallsansicht');
+  await page.click('#ivBack'); await ivClosed(page);
+  ok(!(await page.locator('#anonSwitch').isChecked()), 'der Schalter des Lagebilds folgt dem der Vorfallsansicht');
+  ok(await page.evaluate(() => window.__exec) === 0, 'mit Zwischenablage kein aelterer Befehl');
+  // the clipboard interface refuses: the older command through a hidden field hands over the text as delivered
+  await page.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('nicht erlaubt')); });
+  await btn.click();
+  await page.waitForFunction(() => window.__exec === 1);
+  const field = await page.evaluate(() => window.__execField);
+  ok(await page.evaluate(() => window.__execData) === first.copy.named, 'aelterer Befehl: der Text wie geliefert, mit CR LF');
+  ok(field[0] === 'TEXTAREA' && field[1] === first.copy.named.replace(/\r\n/g, '\n') && field[2] === 0 && field[3] === field[1].length, 'aelterer Befehl ueber ein Textfeld mit markiertem Text');
+  ok(await page.locator('textarea').count() === 1 && (await btn.innerText()).includes('Kopiert') && await page.evaluate(() => document.activeElement.className).then((c) => c.includes('card-copy')), 'das versteckte Feld ist wieder entfernt, der Fokus bleibt am Knopf');
+  // both ways fail: the dialog with the selected text; Esc closes the dialog, not the incident view
+  await page.evaluate(() => { document.execCommand = () => { throw new Error('nicht unterstuetzt'); }; });
+  await page.click(`#cards .card.inc[data-id="${first.id}"] .card-open`);
+  await page.click('#ivCopy');
+  const dlg = page.locator('#copyFallback');
+  await dlg.locator('textarea').waitFor();
+  ok(await dlg.isVisible() && await dlg.locator('textarea').evaluate((t) => t.value) === first.copy.named.replace(/\r\n/g, '\n') && (await dlg.locator('button').innerText()) === 'Schließen', 'Ausweichfeld mit dem Text und "Schliessen"');
+  ok(await dlg.locator('textarea').evaluate((t) => t === document.activeElement && t.selectionStart === 0 && t.selectionEnd === t.value.length && t.readOnly) && !(await page.locator('#ivCopy').innerText()).includes('Kopiert'), 'Text markiert und im Fokus, keine Bestaetigung am Knopf');
+  const db = await dlg.boundingBox();
+  ok(db.x >= 0 && db.y >= 0 && db.x + db.width <= 1400 && db.y + db.height <= 900, 'Ausweichfeld ganz im Bild: ' + JSON.stringify(db));
+  await page.keyboard.press('Escape');
+  ok(await dlg.isHidden() && await iv.isVisible(), 'Esc schliesst das Ausweichfeld, nicht die Vorfallsansicht');
+  await page.click('#ivCopy'); await dlg.locator('textarea').waitFor(); await dlg.locator('button').click();
+  ok(await dlg.isHidden() && await page.evaluate(() => document.activeElement.id) === 'ivCopy', '"Schliessen" schliesst das Ausweichfeld, der Fokus kehrt zum Knopf zurueck');
+  ok(page.requests.length === 1 && page.errors.length === 0, 'Kopieren ohne Abruf und ohne Skriptfehler: ' + page.errors.join(' | '));
+  await ctx.close();
+  // a masked report has one version of each text: no switch, every copy takes it
+  const m = await openWatched(browser, path.join(dir, 'report-masked.html'), scheme), mc = m.D.incidents.find((i) => i.lead === 'cpu'), mlast = () => m.page.evaluate(() => window.__copied.at(-1));
+  await m.page.click('#copyAll');
+  ok(await mlast() === m.D.copyAll.named && m.D.copyAll.anonymous === null, 'maskiert: Zusammenfassung');
+  await m.page.click(`#cards .card.inc[data-id="${mc.id}"] .card-copy`);
+  ok(await mlast() === mc.copy.named && mc.copy.anonymous === null, 'maskiert: Karte');
+  await m.page.click(`#cards .card.inc[data-id="${mc.id}"] .card-open`);
+  ok(await m.page.locator('#ivAnon').count() === 0 && await m.page.locator('#anonSwitch').count() === 0, 'maskiert: kein Schalter, auch nicht in der Vorfallsansicht');
+  await m.page.click('#ivCopy');
+  ok(await mlast() === mc.copy.named && !mc.copy.named.includes('user0') && m.page.errors.length === 0, 'maskiert: Vorfallsansicht kopiert den maskierten Text');
+  await m.ctx.close();
+}
+
+async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen und Verlassen der Vorfallsansicht: Zurueck, Esc, Zurueck-Taste des Browsers
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme), iv = page.locator('#incident');
+  // a card whose button is in the picture after scrolling, so that the click does not scroll
+  await page.evaluate(() => window.scrollTo(0, document.getElementById('cards').getBoundingClientRect().top + window.scrollY - 200));
+  const y0 = await page.evaluate(() => window.scrollY), id = D.cards[1], opener = `#cards .card.inc[data-id="${id}"] .card-open`;
+  const place = async () => [await page.evaluate(() => window.scrollY), await iv.isHidden(), await page.locator('#band').isVisible() || await page.locator('#cards').isVisible(), await page.evaluate(() => window.WP.incident)].join();
+  const home = [y0, true, true, ''].join();
+  ok(y0 > 300, 'Lagebild gescrollt: ' + y0);
+  await page.click(opener);
+  ok(await iv.isVisible() && await page.evaluate(() => window.scrollY) === 0 && await page.evaluate(() => document.activeElement.className).then((c) => c.includes('iv-title')), 'Vorfallsansicht oben, der Fokus steht auf ihrem Titel');
+  await page.click('#ivBack'); await ivClosed(page);
+  ok(await place() === home, '"Zurueck zum Lagebild" fuehrt an die Stelle zurueck: ' + await place());
+  ok(await page.evaluate((sel) => document.activeElement === document.querySelector(sel), opener), 'der Fokus steht wieder auf dem Knopf, der geoeffnet hat');
+  await page.keyboard.press('Enter');
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'Eingabetaste auf dem Knopf oeffnet wieder');
+  await page.keyboard.press('Escape'); await ivClosed(page);
+  ok(await place() === home, 'Esc schliesst die Vorfallsansicht: ' + await place());
+  await page.click(opener);
+  await page.goBack(); await ivClosed(page);
+  ok(await place() === home, 'die Zurueck-Taste des Browsers schliesst die Vorfallsansicht: ' + await place());
+  await page.goForward();
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id) && await page.evaluate(() => window.WP.incident) === id, 'Vorwaerts oeffnet sie wieder');
+  // "Naechster Vorfall" does not lengthen the way back
+  await page.click('#ivNext'); await page.click('#ivNext');
+  await page.goBack(); await ivClosed(page);
+  ok(await place() === home, 'nach "Naechster Vorfall" fuehrt ein Schritt zurueck zum Lagebild: ' + await place());
+  // from the incident view to the expert view and back with the browser
+  await page.click(opener); await page.click('#ivExpert');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#incidents .incident[data-id="${id}"].open`).isVisible(), 'In der Expertenansicht zeigen klappt den Vorfall dort auf');
+  await page.goBack();
+  await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'Zurueck-Taste: aus der Expertenansicht wieder in die Vorfallsansicht');
+  await page.goBack(); await ivClosed(page);
+  ok(await place() === home, 'Zurueck-Taste: dann zum Lagebild: ' + await place());
+  // the functions of the page
+  await page.evaluate((i) => window.WP.openIncident(i), id);
+  ok(await iv.isVisible() && await page.evaluate(() => window.WP.incident) === id, 'WP.openIncident');
+  await page.evaluate(() => window.WP.openIncident(987654));
+  ok(await iv.getAttribute('data-id') === String(id) && page.errors.length === 0, 'unbekannter Vorfall aendert nichts');
+  await page.evaluate(() => window.WP.closeIncident()); await ivClosed(page);
+  ok(await place() === home, 'WP.closeIncident: ' + await place());
+  await page.evaluate(() => window.WP.closeIncident());
+  ok(await place() === home && await page.evaluate(() => history.state === null), 'WP.closeIncident ohne offene Ansicht aendert nichts');
+  await showExpert(page);
+  await page.evaluate((i) => window.WP.openIncident(i), id);
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await iv.isVisible(), 'WP.openIncident aus der Expertenansicht wechselt in die gefuehrte');
+  await page.keyboard.press('Escape'); await ivClosed(page);
+  // Esc in the expert view does not close the incident view behind it
+  await page.click(opener); await showExpert(page); await page.keyboard.press('Escape'); await showGuided(page);
+  ok(await iv.isVisible(), 'Esc in der Expertenansicht laesst die Vorfallsansicht stehen');
+  // a reload keeps the place
+  await page.reload();
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'Neuladen zeigt dieselbe Vorfallsansicht');
+  await page.click('#ivBack'); await ivClosed(page);
+  ok(await iv.isHidden() && await page.locator('#band').isVisible(), 'und "Zurueck" fuehrt zum Lagebild');
+  // every way in: band, card, row of the further incidents, mark of the timeline and its word, card before the capture
+  const ways = [['#openTop', D.lagebild.top], [`#more .row[data-id="${D.more[0].ids[0]}"] .row-open`, D.more[0].ids[0]], [`#beforeG .card.inc[data-id="${D.before.incidents[1].id}"] .card-open`, D.before.incidents[1].id],
+    [`#timeline .mark-word[data-incident="${D.incidents.find((i) => i.type === 'ereignis').id}"]`, D.incidents.find((i) => i.type === 'ereignis').id]];
+  for (const [sel, wid] of ways) {
+    await page.click(sel);
+    ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(wid) && await page.evaluate(() => window.WP.view) === 'guided', 'oeffnet die Vorfallsansicht: ' + sel);
+    await page.click('#ivBack'); await ivClosed(page);
+  }
+  ok(page.errors.length === 0, 'Skriptfehler Oeffnen und Verlassen: ' + page.errors.join(' | '));
+  await page.close();
+  // narrow: one column without sideways scrolling, the chart under the text
+  const narrow = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+  await narrow.goto('file://' + path.join(dir, 'report.html'));
+  for (const nid of [D.incidents.find((i) => i.lead === 'cpu').id, D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print').id]) {
+    await narrow.evaluate((i) => { window.WP.openIncident(i); document.querySelector('#incident details.iv-evidence').open = true; }, nid);
+    const w = await narrow.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    ok(w[0] <= w[1], 'Vorfallsansicht schmal ohne seitliches Rollen: ' + w.join(' > '));
+  }
+  await narrow.evaluate((i) => window.WP.openIncident(i), D.incidents.find((i) => i.lead === 'cpu').id);
+  const nt = await narrow.locator('#incident .iv-text').boundingBox(), nc = await narrow.locator('#incident .iv-chart').boundingBox();
+  ok(nc.y >= nt.y + nt.height && nc.x + nc.width <= 390 && await narrow.locator('#incident .iv-chart svg path').count() > 0, 'schmal: Diagramm unter dem Text');
+  const nb = await narrow.locator('#incident .iv-actions, #incident .iv-nav').evaluateAll((els) => els.every((e) => e.getBoundingClientRect().right <= 390));
+  ok(nb, 'schmal: Knoepfe brechen um');
+  await narrow.close();
+}
+
+async function checkPrint(browser, dir, scheme) {                   // Drucken druckt die Ansicht auf dem Bildschirm (P3-R51)
+  const { page, D } = await open(browser, patched(dir, 'report.html', 'report-print-groups.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'), base = Math.max(...J.incidents.concat(J.before.incidents).map((i) => i.id)), ids = [1, 2, 3].map((k) => base + k);
+    ids.forEach((id, k) => J.incidents.push(Object.assign({}, c, { id, rank: 100 + k, start: c.start + (k + 1) * 600000, end: c.end + (k + 1) * 600000 })));
+    J.order = J.order.concat(ids); J.more.unshift({ label: '3-mal ' + c.guide.title, situation: 'cpu', ids });
+  }), scheme);
+  const folded = () => page.evaluate(() => [...document.querySelectorAll('#measured, #qualityG, #more details.group, #incident details.iv-evidence')].map((d) => d.open).join());
+  // the page learns of the medium with the next rendering
+  const media = async (m) => { await page.emulateMedia({ media: m }); await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))); };
+  // guided view: the folded areas are open on paper and folded again afterwards
+  ok(await folded() === 'false,false,false', 'gefuehrte Ansicht: Bereiche am Bildschirm eingeklappt');
+  await media('print');
+  ok(await folded() === 'true,true,true' && await page.locator('#measuredBody').isVisible() && await page.locator('#qualityGBody table').isVisible() && await page.locator('#more details.group .row:visible').count() === 3, 'gefuehrte Ansicht: im Druck sind die eingeklappten Bereiche offen');
+  ok(await page.locator('#band').isVisible() && await page.locator('#cards .card.inc').first().isVisible() && await page.locator('#expert').isHidden() && await page.locator('#viewSwitch').isHidden(), 'gefuehrte Ansicht: gedruckt wird die Ansicht auf dem Bildschirm, ohne Umschalter');
+  await media('screen');
+  ok(await folded() === 'false,false,false', 'gefuehrte Ansicht: nach dem Druck wieder eingeklappt');
+  await page.click('#measured > summary');
+  await media('print'); await media('screen');
+  ok(await folded() === 'false,true,false', 'ein vom Leser geoeffneter Bereich bleibt nach dem Druck offen: ' + await folded());
+  // incident view: the evidence is open on paper
+  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  await ivOpen(page, cpu.id);
+  ok((await folded()).endsWith(',false'), 'Vorfallsansicht: Belege am Bildschirm eingeklappt');
+  await media('print');
+  ok((await folded()).endsWith(',true') && (await page.locator('#incident .iv-evidence .contributors').innerText()).includes('EXCEL.EXE') && await page.locator('#incident .iv-evidence .sigcharts svg path').count() > 0, 'Vorfallsansicht: im Druck sind die Belege offen, mit Diagrammen');
+  ok(await page.locator('#incident .iv-title').isVisible() && await page.locator('#incident .iv-todo ol.checks').isVisible() && await page.locator('#band').isHidden() && await page.locator('#cards').isHidden() && await page.locator('#expert').isHidden(), 'Vorfallsansicht: gedruckt wird nur sie');
+  ok(await page.locator('#ivBack').isHidden() && await page.locator('#ivCopy').isHidden() && await page.locator('#ivExpert').isHidden(), 'Vorfallsansicht: Knoepfe werden nicht gedruckt');
+  await media('screen');
+  ok((await folded()).endsWith(',false') && await page.locator('#ivBack').isVisible(), 'Vorfallsansicht: nach dem Druck wieder eingeklappt');
+  // expert view: every tab, as before the two views
+  await showExpert(page);
+  await media('print');
+  for (const t of ['findings', 'overview', 'sessions', 'apps', 'procs']) ok(await page.locator('#tab-' + t).isVisible(), 'Expertenansicht: Reiter ' + t + ' wird gedruckt');
+  ok(await page.locator('#expert nav').isHidden() && await page.locator('#guided').isHidden() && await page.locator('#chCpu svg path').count() > 0 && await page.locator('#sollist tbody tr').first().isVisible(), 'Expertenansicht: ohne Reiterleiste, Diagramme gezeichnet, gefuehrte Ansicht nicht gedruckt');
+  await media('screen');
+  ok(await page.locator('#tab-findings').isVisible() && await page.locator('#tab-overview').isHidden(), 'Expertenansicht: nach dem Druck wieder ein Reiter');
+  ok(page.errors.length === 0, 'Skriptfehler Drucken: ' + page.errors.join(' | '));
+  await page.close();
+}
+
+// headings of the page that stand more than one level below the heading before them
+const headingJumps = (page) => page.evaluate(() => {
+  const bad = []; let last = 0;
+  for (const h of document.querySelectorAll('h1, h2, h3, h4, h5')) {
+    if (!h.getClientRects().length) continue;
+    const level = Number(h.tagName[1]);
+    if (level > last + 1) bad.push(h.tagName + ' ' + h.textContent.trim().substring(0, 40));
+    last = level;
+  }
+  return bad.join(' | ');
+});
+async function checkCarried(browser, dir, scheme) {                 // Punkte aus der Durchsicht der gefuehrten Ansicht (Task 8)
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  const scheme2 = () => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme + ' ' + getComputedStyle(document.body).colorScheme);
+  ok(await scheme2() === 'light light', 'gefuehrte Ansicht: helles Schema am Wurzelelement: ' + await scheme2());
+  // headings without a jump; the folded areas are sections of their own
+  await page.evaluate(() => { for (const d of document.querySelectorAll('#guided details')) d.open = true; });
+  ok(await headingJumps(page) === '', 'gefuehrte Ansicht: Ueberschriften ohne Sprung: ' + await headingJumps(page));
+  const outline = await page.evaluate(() => { let h2 = ''; const out = {}; for (const h of document.querySelectorAll('#guided h2, #guided h3')) { if (h.tagName === 'H2') h2 = h.textContent.trim(); else out[h.textContent.trim().replace(/ \(\d+\)$/, '')] = h2; } return out; });
+  ok(outline['Gemessen'] === 'Was wurde gemessen, was nicht' && outline['Nicht gemessen'] === 'Was wurde gemessen, was nicht' && await page.locator('#measured > summary h2').count() === 1 && (await page.locator('#qualityG > summary h2').innerText()) === 'Messqualität', 'die eingeklappten Bereiche haben eigene Ueberschriften: ' + JSON.stringify(outline));
+  ok(await page.locator('#qualityG h4').count() === 0 && await page.locator('#quality h4').count() === await page.locator('#qualityG h3').count(), 'Messqualitaet der gefuehrten Ansicht: Zwischenueberschriften eine Ebene unter ihrer Ueberschrift');
+  await ivOpen(page, D.incidents.find((i) => i.lead === 'cpu').id);
+  await page.locator('#incident details.iv-evidence > summary').click();
+  ok(await headingJumps(page) === '', 'Vorfallsansicht: Ueberschriften ohne Sprung: ' + await headingJumps(page));
+  // the timeline of the guided view shows the capture: no zoom band and no ring after the way through the expert view
+  await page.click('#ivExpert');
+  ok(await page.evaluate(() => window.WP.zoom !== null) && await scheme2() === 'dark dark', 'Expertenansicht: Zeitraum gesetzt, dunkles Schema am Wurzelelement: ' + await scheme2());
+  await showGuided(page); await page.click('#ivBack'); await ivClosed(page);
+  ok(await page.locator('#timeline').isVisible() && await page.locator('#timeline .mark.open').count() === 0 && await page.locator('#timeline .tl-zoom:visible').count() === 0, 'Zeitleiste nach der Rueckkehr ohne Zoomband und ohne Ring');
+  ok(await scheme2() === 'light light', 'zurueck in der gefuehrten Ansicht wieder hell');
+  ok((await page.locator('#tlLegend').innerText()).includes('kritisch') && (await page.locator('#tlLegend').innerText()).includes('Klick auf eine Markierung öffnet den Vorfall.'), 'Legende mit Vorfaellen nennt die Schwere und den Klick');
+  // the status mark of the compact rows has the size of the cards'
+  const sizes = await page.evaluate(() => [getComputedStyle(document.querySelector('#more .row .status')).fontSize, getComputedStyle(document.querySelector('#cards .card-foot .status')).fontSize]);
+  ok(sizes[0] === sizes[1] && sizes[0] === '13px', 'Statuskennzeichen der Zeilen so gross wie auf den Karten: ' + sizes.join(' '));
+  // a card before the capture: date and time on one line of their own, the classification under it, the same on every card
+  const tops = await page.locator('#beforeG .card.inc').evaluateAll((cards) => cards.map((c) => { const w = c.querySelector('.card-when'), v = c.querySelector('.card-view'), lh = parseFloat(getComputedStyle(v).lineHeight);
+    return [Math.round(w.getBoundingClientRect().height / lh), Math.round(v.getBoundingClientRect().height / lh), w.getBoundingClientRect().bottom <= v.getBoundingClientRect().top + 1]; }));
+  ok(tops.length === D.before.incidents.length && tops.every((t) => t[0] === 1 && t[1] <= 2 && t[2]) && D.before.incidents.some((i) => i.end > i.start), 'Karten vor der Messung: Zeit auf einer eigenen Zeile, Einordnung in hoechstens zwei: ' + JSON.stringify(tops));
+  // the colours of band, hints and key figures are variables of the view
+  const vars = await page.evaluate(() => { const b = getComputedStyle(document.body), g = (n) => b.getPropertyValue(n).trim(); return ['--tint-crit', '--tint-crit-edge', '--tint-warn', '--tint-warn-edge', '--tint-good', '--tint-good-edge', '--kpi', '--kpi-edge'].map(g); });
+  ok(vars.every((v) => v !== ''), 'Farben von Band, Hinweis und Kennzahl als Variablen der Ansicht: ' + vars.join(' '));
+  ok(page.errors.length === 0, 'Skriptfehler uebernommene Punkte: ' + page.errors.join(' | '));
+  await page.close();
+  const src = fs.readFileSync(path.join(dir, 'report.html'), 'utf8'), css = src.substring(src.indexOf('<style>'), src.indexOf('</style>'));
+  ok(!/#(band|hints|kpis)[^{]*\{[^}]*(#[0-9a-f]{3,8}|rgba?\()/i.test(css) && !/\.(hint|kpi)\b[^{]*\{[^}]*(#[0-9a-f]{3,8}|rgba?\()/i.test(css), 'Band, Hinweis und Kennzahl ohne feste Farbwerte neben den Variablen');
+  // no incident: the legend does not name marks that do not exist
+  for (const name of ['report-none.html', 'report-spike.html']) {
+    const n = await open(browser, path.join(dir, name), scheme), lg = await n.page.locator('#tlLegend').innerText();
+    ok(n.D.incidents.length === 0 && !lg.includes('kritisch') && !lg.includes('auffällig') && !lg.includes('Klick auf eine Markierung'), name + ': ohne Vorfall keine Legende der Schwere: ' + lg);
+    await n.page.close();
+  }
+  // "(-Skip …)" stays together in the list of what was not measured
+  const na = await open(browser, path.join(dir, 'report-skip-none-alle.html'), scheme);
+  const opts = await na.page.locator('#measured .notm li[data-skip] .opt').evaluateAll((o) => o.map((x) => [x.textContent, x.getClientRects().length, getComputedStyle(x).whiteSpace]));
+  ok(opts.length === na.D.skipped.length && opts.every((o) => /^\(-Skip \S+\)$/.test(o[0]) && o[1] === 1 && o[2] === 'nowrap'), '"(-Skip …)" bricht in der Liste nicht um: ' + JSON.stringify(opts));
+  await na.page.close();
+  // optional parts of the data missing: the guided view stays empty there, the expert view works, nothing throws
+  const r = await open(browser, patched(dir, 'report.html', 'report-guided-bare.html', (J) => { delete J.lagebild; delete J.cards; delete J.copyAll; delete J.guidance; J.more = [{ label: 'Gruppe ohne Kennungen' }, { label: 'Gruppe', ids: [J.order[0]] }]; J.incidents[0].guide = null; delete J.incidents[1].copy; }), scheme);
+  ok(r.page.errors.length === 0, 'ohne Lagebild, Karten, Kopiertexte und Katalog: kein Skriptfehler: ' + r.page.errors.join(' | '));
+  ok(await r.page.locator('#guided #timeline .mark').count() === r.D.incidents.length && await r.page.locator('#more > .group').count() === 1 && await r.page.locator('#more .row').count() === 1 && await r.page.locator('#kpis .kpi').count() === 5 && (await r.page.locator('#kpis .kpi .num').allInnerTexts()).every((t) => t === '–'), 'ohne Lagebild: Zeitleiste, Liste und Kennzahlen stehen, eine Gruppe ohne Kennungen entfaellt');
+  await r.page.click('#copyAll');
+  await ivOpen(r.page, r.D.incidents[0].id); await r.page.click('#ivCopy'); await ivOpen(r.page, r.D.incidents[1].id); await r.page.click('#ivCopy'); await r.page.click('#ivExpert');
+  ok(await r.page.evaluate(() => window.WP.view) === 'expert' && (await r.page.locator('#zoomInfo').innerText()).startsWith('Ausschnitt') && await r.page.locator('#incidents .incident').count() === r.D.incidents.length && await r.page.locator(`#incidents .incident[data-id="${r.D.incidents[1].id}"] .detail svg path`).count() > 0, 'ohne Lagebild: die Expertenansicht arbeitet');
+  ok(r.page.errors.length === 0, 'ohne optionale Teile: kein Skriptfehler: ' + r.page.errors.join(' | '));
+  await r.page.close();
 }
 
 async function checkPage(browser, dir, scheme) {                    // Task 13
@@ -327,10 +953,15 @@ async function checkFindings(browser, dir, scheme) {                // Task 14
   ok((await entry.locator('.detail .contributors').innerText()).includes('EXCEL.EXE'), 'Verursacher aufgelistet');
   ok(await entry.locator('.detail svg path').count() > 0, 'Verlauf im Vorfall');
   await showGuided(page);
-  await page.click(`#guided #timeline .mark[data-incident="${cpu.id}"]`);
+  // the mark of an incident that was not opened so far: nothing of what follows holds before the click
+  const disk = D.incidents.find((i) => i.lead === 'disk'), dEntry = page.locator(`#incidents .incident[data-id="${disk.id}"]`);
+  ok(await page.locator('#incident').isHidden() && !(await dEntry.getAttribute('class')).includes('open') && await page.evaluate(() => window.WP.zoom === null), 'vor dem Klick: keine Vorfallsansicht, Eintrag eingeklappt, kein Zeitraum');
+  await page.click(`#guided #timeline .mark[data-incident="${disk.id}"]`);
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator(`#incident[data-id="${disk.id}"]`).isVisible() && await page.locator('#incident .iv-chart svg path').count() > 0, 'Klick auf die Markierung oeffnet die Vorfallsansicht ihres Vorfalls');
+  await page.click('#ivExpert');
   const z = await page.evaluate(() => window.WP.zoom);
-  ok(await page.evaluate(() => window.WP.view) === 'expert' && await entry.locator('.detail').isVisible(), 'Klick auf die Markierung wechselt in die Expertenansicht zum aufgeklappten Vorfall');
-  ok(z && z.t0 < cpu.start && z.t1 > cpu.end && z.t1 - z.t0 < (cpu.end - cpu.start) * 3, 'Klick stellt die Diagramme auf das Fenster ein');
+  ok(await page.evaluate(() => window.WP.view) === 'expert' && await dEntry.locator('.detail').isVisible() && await dEntry.locator('.detail svg path').count() > 0, 'Klick auf die Markierung wechselt in die Expertenansicht zum aufgeklappten Vorfall');
+  ok(z && z.t0 < disk.start && z.t1 > disk.end && z.t1 - z.t0 < (disk.end - disk.start) * 3, 'Klick stellt die Diagramme auf das Fenster ein');
   ok(await page.locator('#sollist tbody tr').count() === D.sollIst.length, 'Soll-Ist-Tabelle vollstaendig');
   ok((await page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText()).includes('unter 75 %'), 'Idealbereich genannt');
   ok(await page.locator('#sollist tbody tr[data-id="cpu.host"] a[href]').count() === 1, 'Herkunft verlinkt');
@@ -1150,20 +1781,28 @@ async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlu
   await odd.page.close();
 }
 
+// every check function with the colour scheme of the system, then those that need one scheme only
+// (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
+// the incident view, of copying, of printing and of the points carried from the review run once)
+const PER_SCHEME = [checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkPage, checkFindings, checkFinalFix, checkEvents,
+  checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
+const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkPrint, checkCarried, checkMaskedPage, checkFixWave];
 (async () => {
-  const dir = path.resolve(process.argv[2]);
+  const args = process.argv.slice(2), option = (name) => { const k = args.indexOf(name); return k < 0 ? null : args.splice(k, 2)[1]; };
+  const only = option('--only'), oneScheme = option('--scheme'), dir = path.resolve(args[0]);
+  const names = only ? only.split(',') : null, known = PER_SCHEME.concat(ONCE).map((f) => f.name);
+  for (const n of names || []) assert.ok(known.includes(n), 'unbekannte Pruefung: ' + n + ' (bekannt: ' + known.join(', ') + ')');
   const browser = await chromium.launch();
-  for (const scheme of ['light', 'dark']) {
-    await checkGuided(browser, dir, scheme); await checkViews(browser, dir, scheme); await checkCards(browser, dir, scheme);
-    await checkGuidedStates(browser, dir, scheme); await checkOpens(browser, dir, scheme);
-    await checkPage(browser, dir, scheme); await checkFindings(browser, dir, scheme); await checkFinalFix(browser, dir, scheme);
-    await checkEvents(browser, dir, scheme); await checkEventDetails(browser, dir, scheme); await checkNarrow(browser, dir, scheme);
-    await checkFix1(browser, dir, scheme); await checkFix2(browser, dir, scheme); await checkLongNames(browser, dir, scheme);
-    await checkMask(browser, dir, scheme); await checkMaskedPersonen(browser, dir, scheme); await checkFinalWave(browser, dir, scheme);
-    await checkSkip(browser, dir, scheme);
-  }
-  await checkMaskedPage(browser, dir, 'light');
-  await checkFixWave(browser, dir, 'light');
+  const run = async (fn, scheme) => {
+    if (names && !names.includes(fn.name)) return;
+    const t = Date.now(), before = checks;
+    await fn(browser, dir, scheme);
+    if (names) console.log(`${fn.name} (${scheme}): ${checks - before} in ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  };
+  assert.ok(!oneScheme || ['light', 'dark'].includes(oneScheme), 'unbekanntes Farbschema: ' + oneScheme);
+  const schemes = oneScheme ? [oneScheme] : ['light', 'dark'];
+  for (const scheme of schemes) for (const fn of PER_SCHEME) await run(fn, scheme);
+  if (schemes.includes('light')) for (const fn of ONCE) await run(fn, 'light');
   console.log('browser checks passed: ' + checks);
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });
