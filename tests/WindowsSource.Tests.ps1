@@ -760,6 +760,28 @@ $tb = @($xb.QueryList.Query.Select)[0].InnerText; $te = @($xe.QueryList.Query.Se
         foreach ($alt in $Absent.Split('|')) { @($measured | Where-Object { $_ -match $alt }).Count | Should -BeGreaterThan 0 -Because "$Skip gemessen: $alt" }
         @(& $calls @($Skip) | Where-Object { $_ -match $Absent }) | Should -BeNullOrEmpty
     }
+    It 'oeffnet im Schnelllauf nichts von Prozessen, Laufwerken, Citrix, Ereignissen und Gegenstellen' {   # Task 9, Zusatz e
+        # die Kategorien, die der Collector mit -HealthOnly der Quelle als weggelassen gibt; gelesen werden danach nur
+        # Rueckblick und Treiberliste (und das Zustandsbild, das seine eigenen Werte liest)
+        $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
+        $calls = { param([string[]]$s)
+            Reset-WinStandIns; $script:WinProbe = $null
+            [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep -Skip $s 3>$null)
+            [void](Get-WorkerPerfEventsBefore -Days 7 -Until ([datetime]::Now) 3>$null); [void](Get-WorkerPerfPrintDrivers 3>$null)
+            @($script:WinFake.Calls.Keys) }
+        $absent = '^(check|open|perf):(LogicalDisk|SMB Client Shares|User Input Delay per Process|ICA Session)$|^cim:(Win32_Process|Win32_Service|MSFT_Disk|MSFT_Partition)$|Citrix_Euem'
+        # gemessen: Initialize oeffnet die Indikatoren der Kategorien, die Profilcontainer und die Citrix-Klasse
+        $measured = @(& $calls @())
+        foreach ($k in 'open:LogicalDisk', 'open:SMB Client Shares', 'open:User Input Delay per Process', 'open:ICA Session', 'cim:MSFT_Disk', 'cimclass:Citrix_Euem_RoundTrip') {
+            $measured | Should -Contain $k -Because "gemessen: $k" }
+        $quick = @(& $calls @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen'))
+        @($quick | Where-Object { $_ -match $absent }) | Should -BeNullOrEmpty
+        foreach ($k in 'winevent:read', 'cimclass:MSFT_PrinterDriver', 'cim:MSFT_PrinterDriver') { $quick | Should -Contain $k -Because "Schnelllauf liest $k" }
+        $st = $script:WinState
+        foreach ($k in 'volumes', 'shares', 'inputProcess') { $st.Categories.ContainsKey($k) | Should -BeFalse -Because $k }
+        $st.Ica | Should -BeNullOrEmpty; $st.Euem | Should -BeFalse; $st.ProfileMapOk | Should -BeFalse; @($script:WinEndpoints).Count | Should -Be 0
+        Start-WorkerPerfProbes -Endpoints $ep; $script:WinProbe | Should -BeNullOrEmpty
+    }
     It 'baut ohne Gegenstellen keine Verbindung auf, auch wenn Gegenstellen genannt sind' {   # Abschlussrunde (Task 2, geparkt)
         $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep 3>$null
@@ -928,6 +950,35 @@ Describe 'Collector mit der Windows-Datenquelle und nachgestellten Windows-Aufru
         # Aussage geaendert (M10): ein Protokoll ohne Eintraege im Katalog wird nicht geoeffnet und nicht genannt
         $Meta.Sources.PSObject.Properties.Name | Should -Not -Contain 'events.profileservice'
         @($Meta.LookbackCapped).Count | Should -Be 0
+    }
+}
+
+Describe 'Schnelllauf mit der Windows-Datenquelle und nachgestellten Windows-Aufrufen' {          # Task 9, Zusatz e
+    BeforeAll {
+        $dir = Join-Path $TestDrive 'src'; [void](New-Item -ItemType Directory -Path $dir -Force)
+        Copy-Item (Join-Path $PSScriptRoot '../src/*') $dir
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Common.ps1'), "`nfunction Test-WorkerPerfWindows { return `$true }`n")
+        [IO.File]::AppendAllText((Join-Path $dir 'WorkerPerf.Sources.Windows.ps1'),
+            "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n")
+        # nach dem Lauf: die Schluessel der nachgestellten Aufrufe in eine Datei
+        $script:CallFile = Join-Path $TestDrive 'calls.txt'
+        [IO.File]::AppendAllText((Join-Path $dir 'Start-WorkerPerfCapture.ps1'), "`n[IO.File]::WriteAllLines('$CallFile', [string[]]@(`$script:WinFake.Calls.Keys))`n")
+        [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+        $script:Run = (& (Join-Path $dir 'Start-WorkerPerfCapture.ps1') -HealthOnly -OutputPath (Join-Path $TestDrive 'out') 3>$null 6>$null) | Select-Object -Last 1
+        $script:Meta = Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json
+        $script:Calls = @(Get-Content $CallFile)
+    }
+    It 'schreibt Zustandsbild, Rueckblick und Treiberliste und endet ohne Messung' {
+        @(Get-ChildItem $Run | ForEach-Object Name | Sort-Object) | Should -Be @('apps.json', 'events_before.csv', 'health.json', 'meta.json', 'printdrivers.csv')
+        $Meta.EndReason | Should -Be 'healthonly'; $Meta.HealthOnly | Should -BeTrue; $Meta.Simulated | Should -BeFalse; $Meta.Ticks | Should -Be 0
+        @($Meta.SourceErrors.PSObject.Properties).Count | Should -Be 0
+        @(Import-Csv (Join-Path $Run 'printdrivers.csv')).Count | Should -Be 2; @(Import-Csv (Join-Path $Run 'events_before.csv')).Count | Should -BeGreaterThan 0
+    }
+    It 'liest keinen Leistungsindikator der Messung, keine Prozesse und keine Citrix-Werte der Messung' {
+        # Print Queue liest das Zustandsbild (Zahl der Warteschlangen); die Indikatoren der Basis werden nie gelesen
+        @($Calls | Where-Object { $_ -like 'perf:*' -and $_ -ne 'perf:Print Queue' }) | Should -BeNullOrEmpty
+        @($Calls | Where-Object { $_ -match '^(check|open|perf):(LogicalDisk|SMB Client Shares|User Input Delay per Process|ICA Session)$|^cim:Win32_Process$|Citrix_Euem' }) | Should -BeNullOrEmpty
+        $Calls | Should -Contain 'winevent:read'; $Calls | Should -Contain 'cim:MSFT_PrinterDriver'
     }
 }
 

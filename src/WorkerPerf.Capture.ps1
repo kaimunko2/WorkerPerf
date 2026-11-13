@@ -329,11 +329,20 @@ function Save-WorkerPerfMeta {
 function Save-WorkerPerfHealth {
     # Writes health.json (New-WorkerPerfHealth) the way Save-WorkerPerfMeta writes meta.json: UTF-8 without BOM, first
     # to a temporary file next to it, then delete and move.
+    # A write that fails (disk full, folder read-only) removes its temporary file before the error goes on: unlike
+    # meta.json.tmp, health.json.tmp is never read in place of health.json.
     param([string]$Path, $Health)
     $tmp = $Path + '.tmp'
-    [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $Health -Depth 10), (New-Object System.Text.UTF8Encoding $false))
-    if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
-    [IO.File]::Move($tmp, $Path)
+    $json = ConvertTo-Json -InputObject $Health -Depth 10
+    try {
+        [IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding $false))
+        if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
+        [IO.File]::Move($tmp, $Path)
+    }
+    catch {
+        try { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } } catch { Write-Verbose $_.Exception.Message }
+        throw
+    }
 }
 
 function Format-WorkerPerfHealthLine($Health) {
@@ -351,14 +360,16 @@ function Format-WorkerPerfHealthLine($Health) {
 
 function New-WorkerPerfWriters {
     # One writer per file of the format, without the files of the categories that -Skip leaves out; the result holds
-    # only the files that were created.
-    param([string]$RunDir, [string[]]$Skip = @())
+    # only the files that were created. With -Only just the files named there (the quick run: lookback and driver list).
+    param([string]$RunDir, [string[]]$Skip = @(), [string[]]$Only)
 
     $left = @(@($Skip) | Where-Object { $script:WorkerPerfCategories.Contains([string]$_) } | ForEach-Object { $script:WorkerPerfCategories[[string]$_].Files })
+    $limited = $PSBoundParameters.ContainsKey('Only')
+    $wanted = @($Only)
     $encoding = New-Object System.Text.UTF8Encoding($false)
     $writers = @{}
     try {
-        foreach ($name in @($script:WorkerPerfHeaders.Keys | Where-Object { $left -notcontains $_ })) {
+        foreach ($name in @($script:WorkerPerfHeaders.Keys | Where-Object { $left -notcontains $_ -and (-not $limited -or $wanted -contains $_) })) {
             $stream = New-Object System.IO.FileStream((Join-Path $RunDir $name), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
             $w = New-Object System.IO.StreamWriter($stream, $encoding)
             $w.AutoFlush = $false

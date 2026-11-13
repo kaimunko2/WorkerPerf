@@ -163,3 +163,15 @@ function New-TestAppFile([string]$Dir) {
     [IO.File]::WriteAllText($file, ($list | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
     $file
 }
+function Invoke-SimHealthOnly([string]$OutDir, [hashtable]$Extra = @{}, [string]$ConsoleFile = '') {
+    # Schnelllauf (-HealthOnly) der Simulation unter deutscher Kultur, sonst wie Invoke-SimCapture; liefert den
+    # Aufzeichnungsordner
+    [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+    $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
+    if (-not $ConsoleFile) { (& $capture -Simulate -HealthOnly -OutputPath $OutDir @Extra 6>$null) | Select-Object -Last 1 }
+    else {
+        $out = @(& $capture -Simulate -HealthOnly -OutputPath $OutDir @Extra 6>&1)
+        [IO.File]::WriteAllText($ConsoleFile, ($out | Out-String))
+        [string]$out[-1]
+    }
+}

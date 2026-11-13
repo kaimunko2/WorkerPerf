@@ -34,6 +34,10 @@
     -Skip leaves out single measurement categories: the collector makes none of their calls, and their
     files are missing from the run folder (meta.json lists the categories in Skip).
 
+    -HealthOnly is a quick run: it reads only the health picture (health.json), the events before the start
+    (events_before.csv) and the print driver list (printdrivers.csv), writes them with apps.json and meta.json
+    (EndReason 'healthonly') and ends, without any measurement.
+
     A call of the data source that fails does not end the capture: the tick or snapshot is
     skipped, one warning per source is shown, and meta.json counts the failures per source
     (SourceErrors). If the capture itself ends on an error, meta.json says so (EndReason
@@ -102,6 +106,11 @@
     The base is always measured: host signals, input delay per session, snapshots and sessions
     (ticks.csv, inputdelay.csv, snapshots.csv, sessions.csv, meta.json, thresholds.json).
 
+.PARAMETER HealthOnly
+    Reads only the health picture, the lookback and the print driver list and ends; no measurement. -Skip Rueckblick,
+    -Skip Drucken, -EventLookbackDays and -AppsFile apply; -Skip Zustand and the parameters of the measurement are
+    refused.
+
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
     between ticks, runs on any platform). Used for demos and tests.
@@ -111,6 +120,9 @@
 
 .EXAMPLE
     .\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPath .\demo
+
+.EXAMPLE
+    .\Start-WorkerPerfCapture.ps1 -HealthOnly -OutputPath D:\WorkerPerf
 #>
 [CmdletBinding()]
 param(
@@ -129,7 +141,8 @@ param(
     [string]$CitrixMetricFilter = 'Latency|Round|Bandwidth|FramesPerSecond|Fps',
     [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [string[]]$Skip = @(),
-    [switch]$Simulate
+    [switch]$Simulate,
+    [switch]$HealthOnly
 )
 
 # Where AppLocker or WDAC puts the console into ConstrainedLanguage, .NET types and Add-Type fail with errors that
@@ -148,6 +161,16 @@ $ErrorActionPreference = 'Stop'
 # the categories left out (resolved from -Skip, -NoCitrix and -EventLookbackDays), before anything is read or
 # created (an unknown value stops the start here)
 $leftOut = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
+# The quick run consists of the health picture and takes none of the settings of the measurement: refused here, before
+# anything is created.
+if ($HealthOnly) {
+    if ($leftOut -contains 'Zustand') { throw '-HealthOnly und -Skip Zustand schliessen sich aus: der Schnelllauf besteht aus dem Zustandsbild.' }
+    $measurementOnly = @(@('FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'DurationMinutes', 'MaxSizeMB', 'ThresholdFile',
+            'EndpointFile', 'IncludeCommandLine', 'NoCitrix', 'CitrixMetricFilter') | Where-Object { $PSBoundParameters.ContainsKey($_) })
+    if ($measurementOnly.Count -gt 0) {
+        throw ('-HealthOnly liest nur das Zustandsbild, den Rueckblick und die Treiberliste; nicht zusammen mit: {0}.' -f ((@($measurementOnly) | ForEach-Object { '-' + $_ }) -join ', '))
+    }
+}
 # -Skip Prozesse Rueckblick (a blank instead of a comma) binds the second value to the first positional parameter,
 # -OutputPath: stop before anything is created. A folder of that name can still be given as a path (.\Rueckblick).
 if ($PSBoundParameters.ContainsKey('Skip') -and $PSBoundParameters.ContainsKey('OutputPath') -and @($script:WorkerPerfCategories.Keys) -contains $OutputPath) {
@@ -159,7 +182,7 @@ $withCommandLine = ([bool]$IncludeCommandLine -and $leftOut -notcontains 'Prozes
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
 if ($Simulate) {
-    if ($DurationMinutes -lt 60) { throw '-Simulate erfordert -DurationMinutes von mindestens 60 (das Drehbuch dauert 60 Minuten).' }
+    if (-not $HealthOnly -and $DurationMinutes -lt 60) { throw '-Simulate erfordert -DurationMinutes von mindestens 60 (das Drehbuch dauert 60 Minuten).' }
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Simulation.ps1')
 }
 else {
@@ -170,22 +193,32 @@ else {
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $EndpointFile) { $EndpointFile = Join-Path $PSScriptRoot 'endpoints.json' }
 if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
+# A relative path is meant from the PowerShell location; the .NET file calls that read these files resolve it from the
+# process folder, which Set-Location does not move. Resolved once, so reading and copying use the same file.
+$ThresholdFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ThresholdFile)
+$EndpointFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EndpointFile)
+$AppsFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AppsFile)
 if (-not $OutputPath) {
     $OutputPath = $(if ($env:ProgramData) { Join-Path $env:ProgramData 'WorkerPerf' } else { Join-Path (Get-Location).Path 'WorkerPerfData' })
 }
 
 $inv = [Globalization.CultureInfo]::InvariantCulture
-$thresholds = Read-WorkerPerfThresholds $ThresholdFile
+# the quick run reads neither thresholds nor endpoints
+$thresholds = $null
+if (-not $HealthOnly) { $thresholds = Read-WorkerPerfThresholds $ThresholdFile }
 # the application list of the health picture: a missing or faulty list stops the start here, before anything is created
 $healthApps = @()
 if ($leftOut -notcontains 'Zustand') { $healthApps = @(Read-WorkerPerfHealthApps $AppsFile) }
 $endpoints = @()
-if ($leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile) }
+if (-not $HealthOnly -and $leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile) }
 # the event catalogue: which logs, providers and ids the source reads and how it reads their fields
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
+# The quick run passes the categories of the measurement as left out as well, so the source opens none of them.
+$sourceSkip = @($leftOut)
+if ($HealthOnly) { $sourceSkip = @($leftOut) + @(@('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen') | Where-Object { $leftOut -notcontains $_ }) }
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$withCommandLine -Skip $leftOut -EventConfig $eventConfig -Apps $healthApps
+    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -201,7 +234,9 @@ $guard = Test-WorkerPerfGuard -FreeMB (Get-WorkerPerfFreeSpaceMB -Path $runDir) 
 if ($guard) { throw "Aufzeichnung nicht gestartet: zu wenig freier Speicherplatz unter $runDir (unter 200 MB)." }
 
 # A writer that does not exist (its category left out) means: the calls behind it are not made, no row is written.
-$writers = New-WorkerPerfWriters -RunDir $runDir -Skip $leftOut
+# The quick run writes only the lookback and the driver list.
+if ($HealthOnly) { $writers = New-WorkerPerfWriters -RunDir $runDir -Skip $leftOut -Only @('events_before.csv', 'printdrivers.csv') }
+else { $writers = New-WorkerPerfWriters -RunDir $runDir -Skip $leftOut }
 $wTicks = $writers['ticks.csv']; $wVolumes = $writers['volumes.csv']; $wShares = $writers['shares.csv']
 $wInput = $writers['inputdelay.csv']; $wInputProc = $writers['inputdelay_proc.csv']; $wCitrix = $writers['citrix.csv']
 $wProbes = $writers['probes.csv']; $wEvents = $writers['events.csv']; $wSnaps = $writers['snapshots.csv']
@@ -232,6 +267,7 @@ $meta = [ordered]@{
     Snapshots            = 0
     SkippedTicks         = 0
     Simulated            = [bool]$Simulate
+    HealthOnly           = [bool]$HealthOnly
     IncludeCommandLine   = $withCommandLine
     EventLookbackDays    = $(if ($leftOut -contains 'Rueckblick') { 0 } else { $EventLookbackDays })
     LookbackCapped       = @()
@@ -295,12 +331,22 @@ function Write-WorkerPerfProbeRows([object[]]$Results, [int]$T) {
     }
 }
 
-Write-Host "WorkerPerf-Aufzeichnung laeuft: $runDir"
-Write-Host ('Gemessen: ' + ((@('Basis') + @(@($script:WorkerPerfCategories.Keys) | Where-Object { $script:WorkerPerfCategories[$_].Active -and $leftOut -notcontains $_ })) -join ', '))
-Write-Host ('Nicht gemessen (-Skip): ' + $(if ($leftOut.Count -gt 0) { $leftOut -join ', ' } else { 'keine' }))
-if ($IncludeCommandLine -and -not $withCommandLine) { Write-Host 'Befehlszeilen werden nicht aufgezeichnet: Prozesse ist weggelassen (-Skip Prozesse).' }
-Write-Host ("Schneller Takt {0} s, Schnappschuss alle {1} s{2}. Beenden mit Strg+C oder Datei 'stop.flag' im Ausgabeordner." -f `
-        $FastIntervalSeconds, $IntervalSeconds, $(if ($DurationMinutes -gt 0) { ", Dauer $DurationMinutes min" } else { '' }))
+if ($HealthOnly) {
+    Write-Host "WorkerPerf-Schnelllauf laeuft: $runDir"
+    $reads = @('Zustandsbild')
+    if ($leftOut -notcontains 'Rueckblick') { $reads += 'Rueckblick' }
+    if ($leftOut -notcontains 'Drucken') { $reads += 'Treiberliste' }
+    Write-Host ('Gelesen wird: ' + ($reads -join ', '))
+    Write-Host ('Nicht gelesen (-Skip): ' + $(if ($leftOut.Count -gt 0) { $leftOut -join ', ' } else { 'keine' }))
+}
+else {
+    Write-Host "WorkerPerf-Aufzeichnung laeuft: $runDir"
+    Write-Host ('Gemessen: ' + ((@('Basis') + @(@($script:WorkerPerfCategories.Keys) | Where-Object { $script:WorkerPerfCategories[$_].Active -and $leftOut -notcontains $_ })) -join ', '))
+    Write-Host ('Nicht gemessen (-Skip): ' + $(if ($leftOut.Count -gt 0) { $leftOut -join ', ' } else { 'keine' }))
+    if ($IncludeCommandLine -and -not $withCommandLine) { Write-Host 'Befehlszeilen werden nicht aufgezeichnet: Prozesse ist weggelassen (-Skip Prozesse).' }
+    Write-Host ("Schneller Takt {0} s, Schnappschuss alle {1} s{2}. Beenden mit Strg+C oder Datei 'stop.flag' im Ausgabeordner." -f `
+            $FastIntervalSeconds, $IntervalSeconds, $(if ($DurationMinutes -gt 0) { ", Dauer $DurationMinutes min" } else { '' }))
+}
 
 $endReason = $null
 $endMessage = $null
@@ -310,7 +356,7 @@ $regularCount = 0
 $skipped = 0
 $eventsReady = $false
 try {
-    [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json'))
+    if (-not $HealthOnly) { [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json')) }
     # the application list as given, so that the report rates with the list the health picture was read with
     if ($leftOut -notcontains 'Zustand') { [void](Copy-Item -LiteralPath $AppsFile -Destination (Join-Path $runDir 'apps.json')) }
     Save-Meta
@@ -349,230 +395,234 @@ try {
         }
         catch { Register-SourceError 'health' $_ }
     }
-    # The schedule starts after the start reads, so a slow lookback skips no tick and shortens no measurement; the
-    # event cursor stays at the start time, so no event between the two is lost.
-    $scheduleStart = Get-WorkerPerfNow
+    # The quick run ends here: baseline, schedule, loop and the tail of the probes belong to the measurement.
+    if ($HealthOnly) { $endReason = 'healthonly' }
+    else {
+        # The schedule starts after the start reads, so a slow lookback skips no tick and shortens no measurement; the
+        # event cursor stays at the start time, so no event between the two is lost.
+        $scheduleStart = Get-WorkerPerfNow
 
-    # Baseline: one fast sample to establish the cumulative counters, one snapshot to book every process.
-    $prevSample = Get-WorkerPerfFastSample
-    # Without Prozesse no service map, no process rows and no memory of processes (events then find no session through
-    # their process id).
-    $services = $null; $procState = $null; $procMemory = $null
-    if ($withProcesses) { $services = Get-WorkerPerfServices; $procState = New-WorkerPerfProcessState }
-    $base = Get-WorkerPerfSnapshot -Kind K
-    if ($withProcesses) {
-        [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
-                -IncludeCommandLine:$withCommandLine)
-    }
-    $prevSnapTime = [datetime]$base.Time
-    # The session of an event is found through its process id: in the processes of the recent snapshots (a crashed
-    # process is gone from the snapshot after its crash), and the user in the last snapshot that succeeded.
-    $lastSnap = $base
-    if ($withProcesses) {
-        $procMemory = New-WorkerPerfProcessMemory -KeepSeconds ([Math]::Max(600, 3 * $IntervalSeconds))
-        Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($base.Processes) -Time ([datetime]$base.Time)
-    }
-    # an event is logged at most one regular interval after the last snapshot that saw its process (plus slack)
-    $eventGapSeconds = 2 * $IntervalSeconds + 5
-
-    # Scheduling and durations are computed in UTC, so a step of the local clock (end of daylight saving time) neither
-    # stalls the capture nor distorts ElapsedSec. The source keeps its own local times: they go to the files, to
-    # Wait-WorkerPerfTick, to Get-WorkerPerfEvents and to the comparison with the start time of a process.
-    $prevSampleUtc = ConvertTo-WorkerPerfUtc ([datetime]$prevSample.Time)
-    $prevSnapUtc = ConvertTo-WorkerPerfUtc $prevSnapTime
-    $lastSnapTryUtc = $prevSnapUtc
-    $startUtc = ConvertTo-WorkerPerfUtc $scheduleStart
-    $burstState = New-WorkerPerfBurstState
-    $endAt = $(if ($DurationMinutes -gt 0) { $startUtc.AddMinutes($DurationMinutes) } else { [datetime]::MaxValue })
-    $scheduled = $startUtc.AddSeconds($FastIntervalSeconds)
-    $nextRegular = $startUtc.AddSeconds($IntervalSeconds)
-    $lastEvents = $startTime
-    $probeT = 0
-    $sw = New-Object System.Diagnostics.Stopwatch
-    # the last row written per print queue (its values without the time): a queue gets a row at its first appearance
-    # and when a value changes (M6)
-    $queueLast = @{}
-
-    # The events since the cursor up to Until: Windows makes an event visible up to about a second after its time stamp,
-    # so the regular reads end EventLagSeconds before now and the cursor moves to that bound (P1-R34); the read at the
-    # end of the capture runs without that lag. Run with '.' in this scope.
-    $eventLagSeconds = 5
-    $readEvents = {
-        param([datetime]$Until)
-        if ((ConvertTo-WorkerPerfUtc $Until) -gt (ConvertTo-WorkerPerfUtc $lastEvents)) {
-            try {
-                $newEvents = @(Select-WorkerPerfEventsInWindow -Events @(Get-WorkerPerfEvents -Since $lastEvents) -After $lastEvents -Until $Until)
-                if ($newEvents.Count -gt 0) {
-                    $known = @()
-                    if ($null -ne $procMemory) { $known = @(Get-WorkerPerfProcessMemoryEntries $procMemory) }
-                    foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes $known `
-                                -Sessions @($lastSnap.Sessions) -MaxGapSeconds $eventGapSeconds)) {
-                        $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
-                    }
-                }
-                $lastEvents = $Until
-            }
-            catch { Register-SourceError 'events' $_ }
+        # Baseline: one fast sample to establish the cumulative counters, one snapshot to book every process.
+        $prevSample = Get-WorkerPerfFastSample
+        # Without Prozesse no service map, no process rows and no memory of processes (events then find no session through
+        # their process id).
+        $services = $null; $procState = $null; $procMemory = $null
+        if ($withProcesses) { $services = Get-WorkerPerfServices; $procState = New-WorkerPerfProcessState }
+        $base = Get-WorkerPerfSnapshot -Kind K
+        if ($withProcesses) {
+            [void](Get-WorkerPerfProcessRows -State $procState -Processes @($base.Processes) -P -1 -PrevTime $base.Time -Services $services `
+                    -IncludeCommandLine:$withCommandLine)
         }
-        Register-SourceFailures
-    }
-    # The reads of the regular slot besides the snapshot: events since the cursor and the print queue counters. Run
-    # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
-    $readSlot = {
-        if ($null -ne $wEvents) { . $readEvents ((Get-WorkerPerfNow).AddSeconds(-$eventLagSeconds)) }
-        if ($null -ne $wQueues) {
-            try {
-                $queueTime = Get-WorkerPerfNow
-                foreach ($q in @(Get-WorkerPerfPrintQueues)) {
-                    if ($null -eq $q) { continue }
-                    $row = ConvertTo-WorkerPerfPrintQueueRow $q $queueTime
-                    $name = [string](Get-WorkerPerfField $q 'Queue')
-                    $values = $row.Substring($row.IndexOf([char]',') + 1)
-                    if ($queueLast.ContainsKey($name) -and $queueLast[$name] -eq $values) { continue }
-                    $queueLast[$name] = $values
-                    $wQueues.WriteLine($row)
-                }
-            }
-            catch { Register-SourceError 'printqueues' $_ }
+        $prevSnapTime = [datetime]$base.Time
+        # The session of an event is found through its process id: in the processes of the recent snapshots (a crashed
+        # process is gone from the snapshot after its crash), and the user in the last snapshot that succeeded.
+        $lastSnap = $base
+        if ($withProcesses) {
+            $procMemory = New-WorkerPerfProcessMemory -KeepSeconds ([Math]::Max(600, 3 * $IntervalSeconds))
+            Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($base.Processes) -Time ([datetime]$base.Time)
         }
-    }
-    $eventsReady = $true
+        # an event is logged at most one regular interval after the last snapshot that saw its process (plus slack)
+        $eventGapSeconds = 2 * $IntervalSeconds + 5
 
-    while ($true) {
-        if ($scheduled -gt $endAt) { $endReason = 'duration'; break }
-        if (Wait-WorkerPerfTick -Until $scheduled.ToLocalTime() -StopFlagPath $stopFlag) { $endReason = 'stopflag'; break }
+        # Scheduling and durations are computed in UTC, so a step of the local clock (end of daylight saving time) neither
+        # stalls the capture nor distorts ElapsedSec. The source keeps its own local times: they go to the files, to
+        # Wait-WorkerPerfTick, to Get-WorkerPerfEvents and to the comparison with the start time of a process.
+        $prevSampleUtc = ConvertTo-WorkerPerfUtc ([datetime]$prevSample.Time)
+        $prevSnapUtc = ConvertTo-WorkerPerfUtc $prevSnapTime
+        $lastSnapTryUtc = $prevSnapUtc
+        $startUtc = ConvertTo-WorkerPerfUtc $scheduleStart
+        $burstState = New-WorkerPerfBurstState
+        $endAt = $(if ($DurationMinutes -gt 0) { $startUtc.AddMinutes($DurationMinutes) } else { [datetime]::MaxValue })
+        $scheduled = $startUtc.AddSeconds($FastIntervalSeconds)
+        $nextRegular = $startUtc.AddSeconds($IntervalSeconds)
+        $lastEvents = $startTime
+        $probeT = 0
+        $sw = New-Object System.Diagnostics.Stopwatch
+        # the last row written per print queue (its values without the time): a queue gets a row at its first appearance
+        # and when a value changes (M6)
+        $queueLast = @{}
 
-        # ---- fast cadence ----
-        # A fast sample that fails is skipped: no row for this tick (the next one covers the longer interval), and the
-        # snapshot that was due waits for the next tick.
-        $sample = $null
-        $sw.Restart()
-        try { $sample = Get-WorkerPerfFastSample } catch { Register-SourceError 'fast' $_ }
-        $sw.Stop()
-        if ($null -ne $sample) {
-            $T = $tickCount
-            $now = ([datetime]$sample.Time).ToUniversalTime()       # as ConvertTo-WorkerPerfUtc, without a call per tick
-            $bad = @(Get-WorkerPerfTriggerSignals -Sample $sample -Thresholds $thresholds -LogicalProcessors $cores -PhysicalMemoryMB $ramMB)
-            $burstActive = Update-WorkerPerfBurstState -State $burstState -Now $now -BadSignals $bad -HoldSeconds $BurstHoldSeconds
-            $rows = ConvertTo-WorkerPerfFastRows -Sample $sample -T $T -ElapsedSec ($now - $prevSampleUtc).TotalSeconds -Burst $burstActive `
-                -CollectMs $sw.Elapsed.TotalMilliseconds
-            $wTicks.WriteLine($rows.Tick)
-            if ($null -ne $wVolumes) { foreach ($line in $rows.Volumes) { $wVolumes.WriteLine($line) } }
-            if ($null -ne $wShares) { foreach ($line in $rows.Shares) { $wShares.WriteLine($line) } }
-            foreach ($line in $rows.InputSessions) { $wInput.WriteLine($line) }
-            if ($null -ne $wInputProc) { foreach ($line in $rows.InputProcesses) { $wInputProc.WriteLine($line) } }
-            foreach ($w in $fastWriters) { $w.Flush() }
-            $prevSampleUtc = $now
-            $tickCount++
-
-            # Probe results carry the tick in which the probes were started.
-            if ($null -ne $wProbes) {
-                $probeResults = @()
-                try { $probeResults = @(Receive-WorkerPerfProbes) } catch { Register-SourceError 'probes' $_ }
-                Write-WorkerPerfProbeRows $probeResults $probeT
-            }
-
-            # ---- snapshot ----
-            # No burst snapshots before the first regular one: that one must be a keyframe.
-            $due = Get-WorkerPerfSnapshotDue -Now $now -NextRegular $nextRegular -LastSnapshot $lastSnapTryUtc `
-                -BurstActive ($burstActive -and $regularCount -gt 0) -BurstIntervalSeconds $BurstIntervalSeconds
-            if ($due -ne 'none') {
-                $regular = ($due -eq 'regular')
-                $keyframe = ($regular -and ($regularCount % 20) -eq 0)
-                $kind = $(if ($keyframe) { 'K' } elseif ($regular) { 'R' } else { 'B' })
-                $sw.Restart()
-                # A snapshot that fails is skipped; the next one comes at its usual time (a failed keyframe is made up
-                # for by the next regular snapshot). The service map of the last keyframe stays in use when its query fails.
-                if ($keyframe -and $withProcesses) { try { $services = Get-WorkerPerfServices } catch { Register-SourceError 'services' $_ } }
-                $snap = $null
-                try { $snap = Get-WorkerPerfSnapshot -Kind $kind } catch { Register-SourceError 'snapshot' $_ }
-                $lastSnapTryUtc = $now
-                if ($null -ne $snap) {
-                    $P = $snapCount
-                    # without Prozesse the columns Processes and RowsWritten of snapshots.csv stay empty
-                    $procTotal = ''; $procWritten = ''
-                    if ($withProcesses) {
-                        $res = Get-WorkerPerfProcessRows -State $procState -Processes @($snap.Processes) -P $P -PrevTime $prevSnapTime `
-                            -Keyframe:$keyframe -Services $services -IncludeCommandLine:$withCommandLine
-                        foreach ($line in $res.Info) { $wInfo.WriteLine($line) }
-                        foreach ($line in $res.Rows) { $wProcs.WriteLine($line) }
-                        foreach ($line in $res.Ended) { $wEnded.WriteLine($line) }
-                        $procTotal = $res.Total; $procWritten = $res.Rows.Count
-                    }
-
-                    $userSessions = 0; $activeSessions = 0
-                    foreach ($s in @($snap.Sessions)) {
-                        if ($null -eq $s) { continue }
-                        if (-not [string]::IsNullOrEmpty([string]$s.User)) {
-                            $userSessions++
-                            if ([string]$s.State -eq 'Active') { $activeSessions++ }
+        # The events since the cursor up to Until: Windows makes an event visible up to about a second after its time stamp,
+        # so the regular reads end EventLagSeconds before now and the cursor moves to that bound (P1-R34); the read at the
+        # end of the capture runs without that lag. Run with '.' in this scope.
+        $eventLagSeconds = 5
+        $readEvents = {
+            param([datetime]$Until)
+            if ((ConvertTo-WorkerPerfUtc $Until) -gt (ConvertTo-WorkerPerfUtc $lastEvents)) {
+                try {
+                    $newEvents = @(Select-WorkerPerfEventsInWindow -Events @(Get-WorkerPerfEvents -Since $lastEvents) -After $lastEvents -Until $Until)
+                    if ($newEvents.Count -gt 0) {
+                        $known = @()
+                        if ($null -ne $procMemory) { $known = @(Get-WorkerPerfProcessMemoryEntries $procMemory) }
+                        foreach ($ev in @(Complete-WorkerPerfEventSession -Events $newEvents -Processes $known `
+                                    -Sessions @($lastSnap.Sessions) -MaxGapSeconds $eventGapSeconds)) {
+                            $wEvents.WriteLine((ConvertTo-WorkerPerfEventRow $ev))
                         }
-                        $logon = ''
-                        if ($s.LogonTime -is [datetime] -and $s.LogonTime -gt [datetime]::MinValue) { $logon = $s.LogonTime.ToString('o', $inv) }
-                        $idle = ''
-                        if ($null -ne $s.IdleSec -and [double]$s.IdleSec -ge 0) { $idle = Format-WorkerPerfNumber $s.IdleSec 0 }
-                        $wSessions.WriteLine([string]::Concat($P, ',', $s.SessionId, ',', (Format-WorkerPerfCsvText ([string]$s.User)), ',',
-                                (Format-WorkerPerfCsvText ([string]$s.Domain)), ',', (Format-WorkerPerfCsvText ([string]$s.State)), ',',
-                                (Format-WorkerPerfCsvText ([string]$s.WinStation)), ',', (Format-WorkerPerfCsvText ([string]$s.ClientName)), ',', $logon, ',', $idle))
                     }
-                    foreach ($c in @($snap.Citrix)) {
-                        if ($null -eq $c -or $null -eq $wCitrix) { continue }
-                        $wCitrix.WriteLine([string]::Concat($T, ',', (Format-WorkerPerfCsvText ([string]$c.Source)), ',', (Format-WorkerPerfCsvText ([string]$c.SessionId)), ',',
-                                (Format-WorkerPerfCsvText ([string]$c.Instance)), ',', (Format-WorkerPerfCsvText ([string]$c.Metric)), ',', (Format-WorkerPerfNumber $c.Value 2)))
+                    $lastEvents = $Until
+                }
+                catch { Register-SourceError 'events' $_ }
+            }
+            Register-SourceFailures
+        }
+        # The reads of the regular slot besides the snapshot: events since the cursor and the print queue counters. Run
+        # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
+        $readSlot = {
+            if ($null -ne $wEvents) { . $readEvents ((Get-WorkerPerfNow).AddSeconds(-$eventLagSeconds)) }
+            if ($null -ne $wQueues) {
+                try {
+                    $queueTime = Get-WorkerPerfNow
+                    foreach ($q in @(Get-WorkerPerfPrintQueues)) {
+                        if ($null -eq $q) { continue }
+                        $row = ConvertTo-WorkerPerfPrintQueueRow $q $queueTime
+                        $name = [string](Get-WorkerPerfField $q 'Queue')
+                        $values = $row.Substring($row.IndexOf([char]',') + 1)
+                        if ($queueLast.ContainsKey($name) -and $queueLast[$name] -eq $values) { continue }
+                        $queueLast[$name] = $values
+                        $wQueues.WriteLine($row)
                     }
+                }
+                catch { Register-SourceError 'printqueues' $_ }
+            }
+        }
+        $eventsReady = $true
 
-                    $snapTime = [datetime]$snap.Time
-                    $snapUtc = $snapTime.ToUniversalTime()
-                    $lastSnap = $snap
-                    if ($withProcesses) { Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($snap.Processes) -Time $snapTime }
-                    if ($regular) { . $readSlot }
-                    $sw.Stop()
-                    $wSnaps.WriteLine([string]::Concat($P, ',', $T, ',', $snapTime.ToString('o', $inv), ',', (Format-WorkerPerfNumber ($snapUtc - $prevSnapUtc).TotalSeconds 3), ',',
-                            $kind, ',', $userSessions, ',', $activeSessions, ',', $procTotal, ',', $procWritten, ',', (Format-WorkerPerfNumber $sw.Elapsed.TotalMilliseconds 0)))
-                    $prevSnapTime = $snapTime
-                    $prevSnapUtc = $snapUtc
-                    $snapCount++
-                    if ($regular) { $regularCount++ }
+        while ($true) {
+            if ($scheduled -gt $endAt) { $endReason = 'duration'; break }
+            if (Wait-WorkerPerfTick -Until $scheduled.ToLocalTime() -StopFlagPath $stopFlag) { $endReason = 'stopflag'; break }
+
+            # ---- fast cadence ----
+            # A fast sample that fails is skipped: no row for this tick (the next one covers the longer interval), and the
+            # snapshot that was due waits for the next tick.
+            $sample = $null
+            $sw.Restart()
+            try { $sample = Get-WorkerPerfFastSample } catch { Register-SourceError 'fast' $_ }
+            $sw.Stop()
+            if ($null -ne $sample) {
+                $T = $tickCount
+                $now = ([datetime]$sample.Time).ToUniversalTime()       # as ConvertTo-WorkerPerfUtc, without a call per tick
+                $bad = @(Get-WorkerPerfTriggerSignals -Sample $sample -Thresholds $thresholds -LogicalProcessors $cores -PhysicalMemoryMB $ramMB)
+                $burstActive = Update-WorkerPerfBurstState -State $burstState -Now $now -BadSignals $bad -HoldSeconds $BurstHoldSeconds
+                $rows = ConvertTo-WorkerPerfFastRows -Sample $sample -T $T -ElapsedSec ($now - $prevSampleUtc).TotalSeconds -Burst $burstActive `
+                    -CollectMs $sw.Elapsed.TotalMilliseconds
+                $wTicks.WriteLine($rows.Tick)
+                if ($null -ne $wVolumes) { foreach ($line in $rows.Volumes) { $wVolumes.WriteLine($line) } }
+                if ($null -ne $wShares) { foreach ($line in $rows.Shares) { $wShares.WriteLine($line) } }
+                foreach ($line in $rows.InputSessions) { $wInput.WriteLine($line) }
+                if ($null -ne $wInputProc) { foreach ($line in $rows.InputProcesses) { $wInputProc.WriteLine($line) } }
+                foreach ($w in $fastWriters) { $w.Flush() }
+                $prevSampleUtc = $now
+                $tickCount++
+
+                # Probe results carry the tick in which the probes were started.
+                if ($null -ne $wProbes) {
+                    $probeResults = @()
+                    try { $probeResults = @(Receive-WorkerPerfProbes) } catch { Register-SourceError 'probes' $_ }
+                    Write-WorkerPerfProbeRows $probeResults $probeT
                 }
 
-                if ($regular) {
-                    # probes, events and print queues belong to the regular slot, with or without its snapshot (with it,
-                    # the events and queues were read above, inside its measured duration)
-                    if ($null -eq $snap) { . $readSlot }
-                    if ($null -ne $wProbes) { try { Start-WorkerPerfProbes; $probeT = $T } catch { Register-SourceError 'probes' $_ } }
-                    $nextRegular = (Get-WorkerPerfNextTick -Scheduled $nextRegular -Now $now -IntervalSeconds $IntervalSeconds).Next
-                }
-                foreach ($w in $allWriters) { $w.Flush() }
+                # ---- snapshot ----
+                # No burst snapshots before the first regular one: that one must be a keyframe.
+                $due = Get-WorkerPerfSnapshotDue -Now $now -NextRegular $nextRegular -LastSnapshot $lastSnapTryUtc `
+                    -BurstActive ($burstActive -and $regularCount -gt 0) -BurstIntervalSeconds $BurstIntervalSeconds
+                if ($due -ne 'none') {
+                    $regular = ($due -eq 'regular')
+                    $keyframe = ($regular -and ($regularCount % 20) -eq 0)
+                    $kind = $(if ($keyframe) { 'K' } elseif ($regular) { 'R' } else { 'B' })
+                    $sw.Restart()
+                    # A snapshot that fails is skipped; the next one comes at its usual time (a failed keyframe is made up
+                    # for by the next regular snapshot). The service map of the last keyframe stays in use when its query fails.
+                    if ($keyframe -and $withProcesses) { try { $services = Get-WorkerPerfServices } catch { Register-SourceError 'services' $_ } }
+                    $snap = $null
+                    try { $snap = Get-WorkerPerfSnapshot -Kind $kind } catch { Register-SourceError 'snapshot' $_ }
+                    $lastSnapTryUtc = $now
+                    if ($null -ne $snap) {
+                        $P = $snapCount
+                        # without Prozesse the columns Processes and RowsWritten of snapshots.csv stay empty
+                        $procTotal = ''; $procWritten = ''
+                        if ($withProcesses) {
+                            $res = Get-WorkerPerfProcessRows -State $procState -Processes @($snap.Processes) -P $P -PrevTime $prevSnapTime `
+                                -Keyframe:$keyframe -Services $services -IncludeCommandLine:$withCommandLine
+                            foreach ($line in $res.Info) { $wInfo.WriteLine($line) }
+                            foreach ($line in $res.Rows) { $wProcs.WriteLine($line) }
+                            foreach ($line in $res.Ended) { $wEnded.WriteLine($line) }
+                            $procTotal = $res.Total; $procWritten = $res.Rows.Count
+                        }
 
-                if ($regular) {
-                    # Folder size from the open streams; the other files (meta.json, thresholds.json) are small.
-                    $bytes = 0.0
-                    foreach ($w in $allWriters) { $bytes += [double]$w.BaseStream.Length }
-                    # without a reading of the free space only the size limit is checked
-                    $freeMB = [double]::MaxValue
-                    try { $freeMB = [double](Get-WorkerPerfFreeSpaceMB -Path $runDir) } catch { Register-SourceError 'diskspace' $_ }
-                    $guard = Test-WorkerPerfGuard -FreeMB $freeMB -SizeMB ($bytes / 1MB) -MaxSizeMB $MaxSizeMB -Phase run
-                    if ($guard) {
-                        $endReason = $guard
-                        Write-Warning $(if ($guard -eq 'maxsize') { "Aufzeichnung beendet: Ordnergroesse $MaxSizeMB MB erreicht." } else { 'Aufzeichnung beendet: weniger als 200 MB Speicherplatz frei.' })
-                        break
+                        $userSessions = 0; $activeSessions = 0
+                        foreach ($s in @($snap.Sessions)) {
+                            if ($null -eq $s) { continue }
+                            if (-not [string]::IsNullOrEmpty([string]$s.User)) {
+                                $userSessions++
+                                if ([string]$s.State -eq 'Active') { $activeSessions++ }
+                            }
+                            $logon = ''
+                            if ($s.LogonTime -is [datetime] -and $s.LogonTime -gt [datetime]::MinValue) { $logon = $s.LogonTime.ToString('o', $inv) }
+                            $idle = ''
+                            if ($null -ne $s.IdleSec -and [double]$s.IdleSec -ge 0) { $idle = Format-WorkerPerfNumber $s.IdleSec 0 }
+                            $wSessions.WriteLine([string]::Concat($P, ',', $s.SessionId, ',', (Format-WorkerPerfCsvText ([string]$s.User)), ',',
+                                    (Format-WorkerPerfCsvText ([string]$s.Domain)), ',', (Format-WorkerPerfCsvText ([string]$s.State)), ',',
+                                    (Format-WorkerPerfCsvText ([string]$s.WinStation)), ',', (Format-WorkerPerfCsvText ([string]$s.ClientName)), ',', $logon, ',', $idle))
+                        }
+                        foreach ($c in @($snap.Citrix)) {
+                            if ($null -eq $c -or $null -eq $wCitrix) { continue }
+                            $wCitrix.WriteLine([string]::Concat($T, ',', (Format-WorkerPerfCsvText ([string]$c.Source)), ',', (Format-WorkerPerfCsvText ([string]$c.SessionId)), ',',
+                                    (Format-WorkerPerfCsvText ([string]$c.Instance)), ',', (Format-WorkerPerfCsvText ([string]$c.Metric)), ',', (Format-WorkerPerfNumber $c.Value 2)))
+                        }
+
+                        $snapTime = [datetime]$snap.Time
+                        $snapUtc = $snapTime.ToUniversalTime()
+                        $lastSnap = $snap
+                        if ($withProcesses) { Update-WorkerPerfProcessMemory -Memory $procMemory -Processes @($snap.Processes) -Time $snapTime }
+                        if ($regular) { . $readSlot }
+                        $sw.Stop()
+                        $wSnaps.WriteLine([string]::Concat($P, ',', $T, ',', $snapTime.ToString('o', $inv), ',', (Format-WorkerPerfNumber ($snapUtc - $prevSnapUtc).TotalSeconds 3), ',',
+                                $kind, ',', $userSessions, ',', $activeSessions, ',', $procTotal, ',', $procWritten, ',', (Format-WorkerPerfNumber $sw.Elapsed.TotalMilliseconds 0)))
+                        $prevSnapTime = $snapTime
+                        $prevSnapUtc = $snapUtc
+                        $snapCount++
+                        if ($regular) { $regularCount++ }
+                    }
+
+                    if ($regular) {
+                        # probes, events and print queues belong to the regular slot, with or without its snapshot (with it,
+                        # the events and queues were read above, inside its measured duration)
+                        if ($null -eq $snap) { . $readSlot }
+                        if ($null -ne $wProbes) { try { Start-WorkerPerfProbes; $probeT = $T } catch { Register-SourceError 'probes' $_ } }
+                        $nextRegular = (Get-WorkerPerfNextTick -Scheduled $nextRegular -Now $now -IntervalSeconds $IntervalSeconds).Next
+                    }
+                    foreach ($w in $allWriters) { $w.Flush() }
+
+                    if ($regular) {
+                        # Folder size from the open streams; the other files (meta.json, thresholds.json) are small.
+                        $bytes = 0.0
+                        foreach ($w in $allWriters) { $bytes += [double]$w.BaseStream.Length }
+                        # without a reading of the free space only the size limit is checked
+                        $freeMB = [double]::MaxValue
+                        try { $freeMB = [double](Get-WorkerPerfFreeSpaceMB -Path $runDir) } catch { Register-SourceError 'diskspace' $_ }
+                        $guard = Test-WorkerPerfGuard -FreeMB $freeMB -SizeMB ($bytes / 1MB) -MaxSizeMB $MaxSizeMB -Phase run
+                        if ($guard) {
+                            $endReason = $guard
+                            Write-Warning $(if ($guard -eq 'maxsize') { "Aufzeichnung beendet: Ordnergroesse $MaxSizeMB MB erreicht." } else { 'Aufzeichnung beendet: weniger als 200 MB Speicherplatz frei.' })
+                            break
+                        }
                     }
                 }
             }
+
+            $next = Get-WorkerPerfNextTick -Scheduled $scheduled -Now (Get-WorkerPerfNow).ToUniversalTime() -IntervalSeconds $FastIntervalSeconds
+            $skipped += $next.Skipped
+            $scheduled = $next.Next
         }
 
-        $next = Get-WorkerPerfNextTick -Scheduled $scheduled -Now (Get-WorkerPerfNow).ToUniversalTime() -IntervalSeconds $FastIntervalSeconds
-        $skipped += $next.Skipped
-        $scheduled = $next.Next
-    }
-
-    # Give the probes started last one more fast tick so that their results are not lost. The wait exists only for the
-    # probes: without Gegenstellen the capture ends one fast interval earlier, on purpose.
-    if ($null -ne $wProbes) {
-        [void](Wait-WorkerPerfTick -Until (ConvertTo-WorkerPerfUtc (Get-WorkerPerfNow)).AddSeconds($FastIntervalSeconds).ToLocalTime() -StopFlagPath '')
-        $probeResults = @()
-        try { $probeResults = @(Receive-WorkerPerfProbes) } catch { Register-SourceError 'probes' $_ }
-        Write-WorkerPerfProbeRows $probeResults $probeT
+        # Give the probes started last one more fast tick so that their results are not lost. The wait exists only for the
+        # probes: without Gegenstellen the capture ends one fast interval earlier, on purpose.
+        if ($null -ne $wProbes) {
+            [void](Wait-WorkerPerfTick -Until (ConvertTo-WorkerPerfUtc (Get-WorkerPerfNow)).AddSeconds($FastIntervalSeconds).ToLocalTime() -StopFlagPath '')
+            $probeResults = @()
+            try { $probeResults = @(Receive-WorkerPerfProbes) } catch { Register-SourceError 'probes' $_ }
+            Write-WorkerPerfProbeRows $probeResults $probeT
+        }
     }
 }
 catch {
@@ -608,7 +658,7 @@ finally {
         Save-Meta
     }
     catch { $problems.Add('meta.json konnte nicht abgeschlossen werden: ' + $_.Exception.Message) }
-    if ($Simulate) {
+    if ($Simulate -and -not $HealthOnly) {
         try {
             $expected = @(Get-WorkerPerfExpected)
             [IO.File]::WriteAllText((Join-Path $runDir 'expected.json'), (ConvertTo-Json -InputObject $expected -Depth 4), $utf8)
@@ -617,7 +667,8 @@ finally {
     }
     if (Test-Path -LiteralPath $stopFlag) { Remove-Item -LiteralPath $stopFlag -Force -ErrorAction SilentlyContinue }
     foreach ($p in $problems) { Write-Warning "Abschluss der Aufzeichnung unvollstaendig: $p" }
-    Write-Host "Aufzeichnung beendet ($endReason): $tickCount Takte, $snapCount Schnappschuesse in $runDir"
+    if ($HealthOnly) { Write-Host "Schnelllauf beendet: $runDir" }
+    else { Write-Host "Aufzeichnung beendet ($endReason): $tickCount Takte, $snapCount Schnappschuesse in $runDir" }
 }
 
 #endregion

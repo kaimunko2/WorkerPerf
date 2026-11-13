@@ -371,3 +371,21 @@ function Wait-WorkerPerfTick { param([datetime]$Until, [string]$StopFlagPath)
         @($LateEvents | Group-Object { $_.Timestamp + '|' + $_.App + '|' + $_.EventId } | Where-Object Count -gt 1).Count | Should -Be 0
     }
 }
+Describe 'Relativ angegebene Dateien' {                                                # Review Task 8, Punkt 1
+    It 'liest und kopiert -ThresholdFile und liest -EndpointFile aus dem Ordner der PowerShell' {
+        $here = Join-Path $TestDrive 'rel'; [void](New-Item -ItemType Directory -Path $here -Force)
+        $th = Join-Path $here 'schwellen.json'; Copy-Item (Join-Path $PSScriptRoot '../src/thresholds.json') $th
+        Copy-Item (Join-Path $PSScriptRoot '../src/endpoints.example.json') (Join-Path $here 'gegenstellen.json')
+        $oldCwd = [Environment]::CurrentDirectory
+        Push-Location $here
+        try {
+            # der Prozess steht anderswo als die PowerShell: ein relativer Pfad gilt fuer den Ordner der PowerShell
+            [Environment]::CurrentDirectory = $PSScriptRoot
+            $run = Invoke-SimCapture 'out' @{ ThresholdFile = 'schwellen.json'; EndpointFile = 'gegenstellen.json' }
+        }
+        finally { Pop-Location; [Environment]::CurrentDirectory = $oldCwd }
+        $run | Should -BeLike (Join-Path $here 'out*')
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $run 'thresholds.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($th)))
+        (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EndReason | Should -Be 'duration'
+    }
+}

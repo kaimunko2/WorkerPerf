@@ -111,8 +111,9 @@ Describe 'Aufzeichnung mit -Skip' {
         Get-CsvNames $Runs.Voll | Should -Be @($WorkerPerfHeaders.Keys | Sort-Object)
         # Aussage angepasst: EventReadCounts und LookbackReadCounts kamen nach dem Plan dazu; Skip steht hinter ihnen
         $names | Should -Be @('SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'MaxSizeMB',
-            'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'Ticks', 'Snapshots', 'SkippedTicks', 'Simulated', 'IncludeCommandLine', 'EventLookbackDays', 'LookbackCapped', 'EventReadCounts', 'LookbackReadCounts', 'Skip', 'CollectorPid', 'Endpoints', 'Sources', 'SourceErrors')
+            'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'Ticks', 'Snapshots', 'SkippedTicks', 'Simulated', 'HealthOnly', 'IncludeCommandLine', 'EventLookbackDays', 'LookbackCapped', 'EventReadCounts', 'LookbackReadCounts', 'Skip', 'CollectorPid', 'Endpoints', 'Sources', 'SourceErrors')
         @($m.Skip).Count | Should -Be 0; $m.EventLookbackDays | Should -Be 7; @($m.Endpoints).Count | Should -Be 3
+        $m.HealthOnly | Should -BeFalse
         @($m.Sources.PSObject.Properties | Where-Object { -not $_.Value.Available -or $_.Value.Detail -notlike 'Simulation*' }).Count | Should -Be 0
     }
     It 'nennt beim Start die gemessenen und die weggelassenen Kategorien' {
@@ -139,7 +140,7 @@ Describe 'Zustandsbild in der Aufzeichnung' {
     }
     It 'liest die Anwendungsliste beim Start, kopiert sie und lehnt eine fehlerhafte ab, bevor etwas angelegt ist' {
         $shipped = Join-Path $PSScriptRoot '../src/apps.json'
-        (Get-Content (Join-Path $Runs.Voll 'apps.json') -Raw) | Should -Be (Get-Content $shipped -Raw); Test-Path (Join-Path $Runs.Zustand 'apps.json') | Should -BeFalse
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $Runs.Voll 'apps.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($shipped))); Test-Path (Join-Path $Runs.Zustand 'apps.json') | Should -BeFalse
         $rows = @((Get-Content (Join-Path $Runs.Voll 'health.json') -Raw | ConvertFrom-Json).Areas.apps.Values.'apps.probes'.Value)
         @(($rows | Where-Object Id -eq 'installed').App | Sort-Object) | Should -Be @('edge', 'office', 'teams'); @($rows | Where-Object { $_.Id -eq 'installed' -and -not $_.Value }).Count | Should -Be 0
         $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'; $dir = Join-Path $TestDrive 'badapps'; $bad = Join-Path $TestDrive 'apps.bad.json'

@@ -214,10 +214,37 @@ Describe 'Zustandsbild schreiben' {
         $file = Join-Path $TestDrive 'health.json'; Save-WorkerPerfHealth -Path $file -Health $h; Save-WorkerPerfHealth -Path $file -Health $h
         $j = Get-Content $file -Raw | ConvertFrom-Json
         $j.Areas.profile.Values.'profile.containers'.Value[0].UsedPct | Should -Be 96.5; $j.Areas.profile.Values.'profile.containers'.Value[0].Location | Should -Be '\\fs01\profile$\a.vhdx'
+        $j.Areas.profile.Values.'profile.containers'.Value -is [array] | Should -BeTrue                  # Review Task 8, Punkt 3: [0] traefe auch einen Einzelwert
         [IO.File]::ReadAllBytes($file)[0] | Should -Be ([byte][char]'{'); Test-Path ($file + '.tmp') | Should -BeFalse
         Format-WorkerPerfHealthLine $h | Should -Be 'Zustandsbild: 0 Bereiche gelesen, 11 unvollstaendig (size, operation, sessions, vda, profile, print, security, network, events, maintenance, apps), 4.2 s'
         $all = @{}; foreach ($a in $WorkerPerfHealthAreas) { $vals = @{}; foreach ($id in @($WorkerPerfHealthValues.Keys | Where-Object { $WorkerPerfHealthValues[$_].Area -eq $a })) { $vals[$id] = New-WorkerPerfHealthValue 'absent' }
             $all[$a] = Complete-WorkerPerfHealthArea $a $vals 1 }
         Format-WorkerPerfHealthLine (New-WorkerPerfHealth ([datetime]::Now) 0 $all) | Should -Be 'Zustandsbild: 11 Bereiche gelesen, 0.0 s'
+    }
+    It 'laesst nach einem gescheiterten Schreiben keine health.json.tmp zurueck' {                  # Review Task 8, Punkt 2
+        $h = New-WorkerPerfHealth ([datetime]::Now) 10 @{}
+        # ein Ordner mit dem Namen der Zieldatei: die Zwischendatei ist geschrieben, das Verschieben scheitert
+        $dir = Join-Path $TestDrive 'blocked'; $file = Join-Path $dir 'health.json'; [void](New-Item -ItemType Directory -Path $file -Force)
+        { Save-WorkerPerfHealth -Path $file -Health $h } | Should -Throw
+        Test-Path ($file + '.tmp') | Should -BeFalse
+        # ein Ordner mit dem Namen der Zwischendatei: schon das Schreiben scheitert, der Ordner bleibt unberuehrt
+        $dir2 = Join-Path $TestDrive 'blocked2'; $file2 = Join-Path $dir2 'health.json'; [void](New-Item -ItemType Directory -Path ($file2 + '.tmp') -Force)
+        { Save-WorkerPerfHealth -Path $file2 -Health $h } | Should -Throw
+        Test-Path ($file2 + '.tmp') -PathType Container | Should -BeTrue; Test-Path $file2 | Should -BeFalse
+    }
+}
+Describe 'New-WorkerPerfWriters -Only' {
+    It 'legt nur die genannten Dateien an, ohne die weggelassener Kategorien' {
+        $dir = Join-Path $TestDrive 'only'; [void](New-Item -ItemType Directory $dir)
+        $w = New-WorkerPerfWriters -RunDir $dir -Skip @() -Only @('events_before.csv', 'printdrivers.csv'); foreach ($x in $w.Values) { $x.Dispose() }
+        @($w.Keys | Sort-Object) | Should -Be @('events_before.csv', 'printdrivers.csv')
+        @(Get-ChildItem $dir | ForEach-Object Name | Sort-Object) | Should -Be @('events_before.csv', 'printdrivers.csv')
+        Get-Content (Join-Path $dir 'printdrivers.csv') -TotalCount 1 | Should -Be $WorkerPerfHeaders['printdrivers.csv']
+        $dir2 = Join-Path $TestDrive 'only2'; [void](New-Item -ItemType Directory $dir2)
+        $w = New-WorkerPerfWriters -RunDir $dir2 -Skip @('Rueckblick') -Only @('events_before.csv', 'printdrivers.csv'); foreach ($x in $w.Values) { $x.Dispose() }
+        @(Get-ChildItem $dir2 | ForEach-Object Name) | Should -Be @('printdrivers.csv')
+        $dir3 = Join-Path $TestDrive 'only3'; [void](New-Item -ItemType Directory $dir3)
+        $w = New-WorkerPerfWriters -RunDir $dir3 -Skip @('Rueckblick', 'Drucken') -Only @('events_before.csv', 'printdrivers.csv')
+        $w.Count | Should -Be 0; @(Get-ChildItem $dir3).Count | Should -Be 0
     }
 }
