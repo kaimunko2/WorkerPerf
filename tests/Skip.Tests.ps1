@@ -147,7 +147,9 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         $out = Join-Path $TestDrive 'alt.html'; [void](& $Report -Path $old -OutFile $out -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') 6>$null)
         $norm = { param($file) [IO.File]::ReadAllText($file) -replace '"generated":\d+', '"generated":0' }
         & $norm $out | Should -BeExactly (& $norm $Rep.Voll.Report)
-        @($D.Voll.skipped).Count | Should -Be 0; @($D.Voll.PSObject.Properties.Name)[-1] | Should -Be 'skipped'   # das neue Feld der Berichtsdaten, leer
+        # das neue Feld der Berichtsdaten, leer; Aussage angepasst (Gefuehrter Bericht, Task 7): nach ihm folgen die Felder des gefuehrten Berichts
+        $fields = @($D.Voll.PSObject.Properties.Name)
+        @($D.Voll.skipped).Count | Should -Be 0; @($fields[($fields.IndexOf('skipped') + 1)..($fields.Count - 1)]) | Should -Be @('guidance', 'lagebild', 'order', 'cards', 'more', 'copyAll')
     }
     It 'nennt fuer weggelassene Ereignisse keine Zaehler der Messung und laesst den Rueckblick leer, wenn er weggelassen ist' {
         # ohne Ereignisse: die Zaehler der Messung fehlen (die Seite sagt dann nichts ueber sie, skipped nennt den Grund);
@@ -188,10 +190,12 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         }
     }
     It 'ordnet die Felder von skipped im Bestand tests/MaskCensus.json ein' {
-        $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
+        $file = Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $census = $file.fields
+        $whole = [string[]]@($file.subtrees)                                                     # ein Eintrag je Teilbaum (P3-R10)
         $paths = New-Object System.Collections.Generic.SortedSet[string] ([StringComparer]::Ordinal)
         $walk = { param($v, [string]$p)
             if ($null -eq $v -or $v -is [ValueType]) { return }
+            if ($whole -ccontains $p) { [void]$paths.Add($p); return }
             if ($v -is [string]) { [void]$paths.Add($p); return }
             if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { if ($null -ne $x -and $x -isnot [ValueType]) { & $walk $x "$p[]" } }; return }   # Zahlenreihen ohne Aufruf je Wert
             foreach ($q in $v.PSObject.Properties) { & $walk $q.Value $(if ($p) { "$p.$($q.Name)" } else { $q.Name }) } }
@@ -203,6 +207,10 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         foreach ($k in @('Voll') + $Names + 'Alle') { & $walk $D[$k] '' }
         @($paths | Where-Object { $null -eq $census.PSObject.Properties[$_] } | ForEach-Object { "neues Textfeld $_ : in tests/MaskCensus.json einordnen" }) | Should -BeNullOrEmpty
         $census.'unmeasured.worker[]' | Should -Be 'composed'; @($D.Laufwerke.unmeasured.worker).Count | Should -Be 2; @($D.Voll.unmeasured.worker).Count | Should -Be 0
+    }
+    It 'nennt die Quellen der Treiberspalte "An einem Vorfall beteiligt"' {   # Ergaenzung Task 7 (Gefuehrter Bericht)
+        @('Voll', 'Ereignisse', 'Rueckblick', 'Alle', 'Drucken' | ForEach-Object { $D[$_].print.involvedFrom }) | Should -Be @('both', 'lookback', 'capture', 'none', 'both')
+        (Get-ReportData $Rep.AlleMasked.Report).print.involvedFrom | Should -Be 'none'
     }
     It 'liest die Dateien einer Kategorie nicht, die Skip nennt, auch wenn die Aufzeichnung sie hat' {   # Abschlussrunde (Minor 6, MK-R20)
         # eine Kopie des vollen Laufs mit "Skip": "Prozesse" (New-SkipReports, Odd) und mit "Skip": ["Prozesse"]: der Bericht
@@ -305,10 +313,12 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
         '{0}|{1}|{2}' -f $u[0].id, $u[0].category, $u[0].text | Should -Be 'printdriver|Drucken|Bezug zu einem Druckertreiber (Drucken nicht gemessen)'
     }
     It 'ordnet die Felder von unchecked im Bestand tests/MaskCensus.json ein' {
-        $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
+        $file = Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $census = $file.fields
+        $whole = [string[]]@($file.subtrees)                                                     # ein Eintrag je Teilbaum (P3-R10)
         $paths = New-Object System.Collections.Generic.SortedSet[string] ([StringComparer]::Ordinal)
         $walk = { param($v, [string]$p)
             if ($null -eq $v -or $v -is [ValueType]) { return }
+            if ($whole -ccontains $p) { [void]$paths.Add($p); return }
             if ($v -is [string]) { [void]$paths.Add($p); return }
             if ($v -is [System.Collections.IEnumerable]) { foreach ($x in $v) { & $walk $x "$p[]" }; return }
             foreach ($q in $v.PSObject.Properties) { & $walk $q.Value $(if ($p) { "$p.$($q.Name)" } else { $q.Name }) } }

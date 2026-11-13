@@ -106,6 +106,7 @@ function New-TestReports([string]$OutDir) {
     $cpu = @(Get-Content (Join-Path $run 'expected.json') -Raw | ConvertFrom-Json) | Where-Object Key -eq 'cpu'
     $startMs = $cpu.StartMs - 300000
     $r = @{ Run = $run; StartMs = $startMs; Report = (Join-Path $OutDir 'report.html'); Focus = (Join-Path $OutDir 'report-focus.html'); None = (Join-Path $OutDir 'report-none.html')
+            NoneReported = (Join-Path $OutDir 'report-none-reported.html')
             Spike = (Join-Path $OutDir 'report-spike.html'); NoData = (Join-Path $OutDir 'report-nodata.html'); CutRep = (Join-Path $OutDir 'report-cutrep.html')
             Masked = (Join-Path $OutDir 'report-masked.html'); MaskedP = (Join-Path $OutDir 'report-masked-personen.html') }
     # a cut that starts 10 min after the first event of the capture, with a reported time 1 min after that event: the reported
@@ -117,7 +118,11 @@ function New-TestReports([string]$OutDir) {
     [void](& $report -Path $run -OutFile $r.Focus -RoleFile $roles -FocusUser 'user003' -ReportedTime $reported 6>$null)
     # ohne Ereignisse: der Bericht ohne Befund zeigte sonst die Ereignisvorfaelle der Simulation
     $quiet = Copy-SimRun $run (Join-Path $OutDir 'none') @('events.csv', 'events_before.csv')
-    [void](& $report -Path $quiet -OutFile $r.None -RoleFile $roles -ThresholdFile (New-NoFindingThresholdFile (Join-Path $OutDir 'none.json')) 6>$null)
+    $noneThresholds = New-NoFindingThresholdFile (Join-Path $OutDir 'none.json')
+    [void](& $report -Path $quiet -OutFile $r.None -RoleFile $roles -ThresholdFile $noneThresholds 6>$null)
+    # derselbe Bericht ohne Befund mit einer gemeldeten Uhrzeit in der Mitte der Messung
+    $firstTick = [DateTimeOffset]::Parse((Get-Content (Join-Path $run 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture).ToUnixTimeMilliseconds()
+    [void](& $report -Path $quiet -OutFile $r.NoneReported -RoleFile $roles -ThresholdFile $noneThresholds -ReportedTime (Get-ServerTime $run ($firstTick + 1800000)) 6>$null)
     # die ersten dreieinhalb ruhigen Minuten mit zwei kritischen CPU-Takten: kein Vorfall, aber einzelne Ueberschreitungen
     $spike = New-SpikeRun $run (Join-Path $OutDir 'spike')
     [void](& $report -Path $spike -OutFile $r.Spike -RoleFile $roles -To (Get-ServerTime $run ($startMs + 208000)) 6>$null)

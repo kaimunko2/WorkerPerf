@@ -611,9 +611,13 @@ Describe 'Simulierte Stunde, maskiert' {
                 }
                 , $left.ToArray()
             }
+            # the subtrees of tests/MaskCensus.json: one entry of class composed each, whatever keys they hold (P3-R10)
+            $script:CensusWhole = [string[]]@((Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).subtrees)
             function Get-Shape($Value, [string]$Path, [string]$Holder, [string]$Field, $Paths, $Keywords) {
-                # every key path of the data, and path=value of every string of a keyword field (rule of WorkerPerfMaskKeywordFields)
+                # every key path of the data, and path=value of every string of a keyword field (rule of WorkerPerfMaskKeywordFields);
+                # a subtree of the census holds no keyword field
                 if ($null -eq $Value -or $Value -is [System.Text.StringBuilder] -or $Value -is [ValueType]) { return }
+                if ($CensusWhole -ccontains $Path.TrimStart('.')) { $Keywords = New-Object System.Collections.Generic.List[string] }
                 if ($Value -is [string]) {
                     if ($WorkerPerfMaskKeywordFields -contains $Field -or $WorkerPerfMaskKeywordFields -contains "$Holder.$Field") { $Keywords.Add("$Path=$Value") }
                     return
@@ -635,11 +639,13 @@ Describe 'Simulierte Stunde, maskiert' {
                 if ($Value -is [System.Collections.IDictionary]) { foreach ($k in $Value.Keys) { $List.Add([string]$k); Get-Strings $Value[$k] $List }; return }
                 foreach ($x in $Value) { Get-Strings $x $List }
             }
-            function Get-StringPaths($Value) {
-                # every path of the data that holds a string (list levels as []), with the number of its strings
+            function Get-StringPaths($Value, [string[]]$Whole = @()) {
+                # every path of the data that holds a string (list levels as []), with the number of its strings; a path of
+                # Whole (subtrees of tests/MaskCensus.json) is one entry, whatever it holds
                 $out = New-Object System.Collections.Hashtable ([StringComparer]::Ordinal)
                 $walk = { param($v, [string]$p)
                     if ($null -eq $v -or $v -is [System.Text.StringBuilder] -or $v -is [ValueType]) { return }
+                    if ($Whole -ccontains $p) { $out[$p] = 1 + [int]$out[$p]; return }
                     if ($v -is [string]) { $out[$p] = 1 + [int]$out[$p]; return }
                     if ($v -is [System.Collections.IDictionary]) { foreach ($k in @($v.Keys)) { & $walk $v[$k] $(if ($p) { "$p.$k" } else { [string]$k }) }; return }
                     foreach ($x in $v) { & $walk $x "$p[]" } }
@@ -709,10 +715,13 @@ Describe 'Simulierte Stunde, maskiert' {
             foreach ($m in $Sim.Mask, $Sim.MaskP) { @($kw | Where-Object { $m.Regex.IsMatch($_.Substring($_.IndexOf('=') + 1)) }) | Should -BeNullOrEmpty }
         }
         It 'ordnet jedes Textfeld der Berichtsdaten im Bestand tests/MaskCensus.json ein' {                       # P2-R15
-            $census = (Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json).fields
+            $file = Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $census = $file.fields
             $marks = @{}; foreach ($p in $census.PSObject.Properties) { $marks[$p.Name] = [string]$p.Value }
             @($marks.Values | Where-Object { @('name', 'keyword', 'composed', 'copied') -notcontains $_ }) | Should -BeNullOrEmpty
-            $values = Get-StringPaths $Sim.Data
+            # the catalogue in the data (guidance) is one entry: a catalogue edited by the customer has other keys (P3-R10)
+            @($file.subtrees) | Should -Be @('guidance'); $marks['guidance'] | Should -Be 'composed'
+            $values = Get-StringPaths $Sim.Data ([string[]]@($file.subtrees))
+            $values['guidance'] | Should -Be 1
             $values.Count | Should -BeGreaterThan 150
             @($values.Keys | Where-Object { -not $marks.ContainsKey($_) } | ForEach-Object { "neues Textfeld $_ : in tests/MaskCensus.json einordnen" }) | Should -BeNullOrEmpty
             foreach ($path in $values.Keys) {
@@ -873,10 +882,16 @@ Describe 'Simulierte Stunde, maskiert' {
             $plain = [IO.File]::ReadAllText((New-Masked 'canary-plain' @{ ReportedTime = $at } -Run $canary))
             # every token the report shows unmasked; the probe error only decides whether a probe failed
             foreach ($t in 'CANARYEVT', 'CANARYBEF', 'CANARYCMD', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { $plain | Should -Match $t }
+            # the end message reaches the situation summary and the summary to copy of an unmasked report (P3-R9)
+            $pd = Get-ReportData (Join-Path $TestDrive 'canary-plain.html')
+            @($pd.lagebild.hints) -join ' ' | Should -Match 'CANARYEND'; $pd.copyAll.named | Should -Match 'CANARYEND'
             foreach ($level in 'Personen', 'Alles') {
                 $file = New-Masked "canary-$level" @{ Mask = $level; ReportedTime = $at; FocusUser = 'user003' } -Run $canary
                 [IO.File]::ReadAllText($file) | Should -Not -Match 'CANARY' -Because $level
-                @((Get-ReportData $file).procs | Where-Object { $_.cmd -ne '' }).Count | Should -Be 0
+                $md = Get-ReportData $file
+                @($md.procs | Where-Object { $_.cmd -ne '' }).Count | Should -Be 0
+                # the free texts were cleared before the summary was built: the hint without a message (P3-R9)
+                @($md.lagebild.hints) | Should -Contain $md.guidance.hints.errorNoMessage -Because $level
             }
         }
         It 'nennt auf der Konsole die Ersatznamen der Namen, die Woertern des Berichts gleichen' {                   # P2-R12
@@ -886,13 +901,19 @@ Describe 'Simulierte Stunde, maskiert' {
             $text | Should -Match 'Hinweis: 1 Name gleicht einem Wort des Berichts \(Benutzer 02\); Saetze mit diesem Wort'
             $text | Should -Not -Match '(?i)\bsoll\b'
         }
-        It 'bleibt ohne -Mask bytegleich zum Bericht ohne Maskierungscode' {
+        It 'bleibt ohne -Mask bytegleich zum Bericht ohne Maskierungscode, bis auf die Fassungen ohne Namen' {   # Aussage geaendert (P3-R8)
+            # without -Mask the report uses the masking code only for the copy texts without names: one mask of level Alles
+            # and its replacing; Protect and Clear are never called. Stand-ins: the mask is empty, replacing changes nothing.
             $src = Join-Path $TestDrive 'nomask-src'; [void](New-Item -ItemType Directory $src); Copy-Item (Join-Path $PSScriptRoot '../src/*') $src
-            [IO.File]::WriteAllText((Join-Path $src 'WorkerPerf.Mask.ps1'), "#Requires -Version 5.1`nfunction New-WorkerPerfMask { throw 'aufgerufen' }`nfunction Protect-WorkerPerfReportData { throw 'aufgerufen' }`nfunction Clear-WorkerPerfReportFreeText { throw 'aufgerufen' }`n")
+            [IO.File]::WriteAllText((Join-Path $src 'WorkerPerf.Mask.ps1'), "#Requires -Version 5.1`nfunction New-WorkerPerfMask { param([string]`$Path, [string]`$Level, `$Texts, `$RoleLabels, `$EventConfig) if (`$Level -ne 'Alles') { throw 'Stufe' }; @{ Level = `$Level } }`nfunction Hide-WorkerPerfReportText(`$Text, `$Mask) { `$Text }`nfunction Protect-WorkerPerfReportData { throw 'aufgerufen' }`nfunction Clear-WorkerPerfReportFreeText { throw 'aufgerufen' }`n")
             $a = Join-Path $TestDrive 'plain-a.html'; $b = Join-Path $TestDrive 'plain-b.html'
             [void](& $Report -Path $R.Run -OutFile $a 6>$null); [void](& (Join-Path $src 'New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $b 6>$null)
-            $norm = { param($f) [IO.File]::ReadAllText($f) -replace '"generated":\d+', '"generated":0' }
+            $norm = { param($f) [IO.File]::ReadAllText($f) -replace '"generated":\d+', '"generated":0' -replace '"anonymous":"(?:[^"\\]|\\.)*"', '"anonymous":0' }
             & $norm $a | Should -BeExactly (& $norm $b); (Get-ReportData $a).meta.PSObject.Properties.Name | Should -Not -Contain 'mask'
+            # the fields without names are there (16 incidents and the summary) and differ from the named version only by the mask
+            $da = Get-ReportData $a; $db = Get-ReportData $b
+            @([regex]::Matches([IO.File]::ReadAllText($a), '"anonymous":"').Count) | Should -Be 17
+            $db.copyAll.anonymous | Should -BeExactly $db.copyAll.named; $da.copyAll.anonymous | Should -Not -BeExactly $da.copyAll.named
         }
         It 'maskiert die simulierte Stunde, ohne die Laufzeit zu verdoppeln' {                        # Review Focus 5
             $t0 = [Diagnostics.Stopwatch]::StartNew(); [void](New-Masked 'tp'); $plain = $t0.Elapsed.TotalSeconds

@@ -257,7 +257,8 @@ Describe 'Ereignisvorfaelle im Bericht' {
         $f = Join-Path $dir 'events.csv'; $lines = [IO.File]::ReadAllLines($f)
         [IO.File]::WriteAllLines($f, @($lines[0]) + @($lines | Select-Object -Skip 1 | Where-Object { (Split-WorkerPerfCsvLine $_)[5] -eq 'security' }))
         $out = Join-Path $TestDrive 'onlysec.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $dir -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') 6>$null)
-        $strip = { param($i) $c = $i.PSObject.Copy(); $c.PSObject.Properties.Remove('eventIncidents'); $c.PSObject.Properties.Remove('events'); $c | ConvertTo-Json -Depth 8 }
+        # erweitert (Gefuehrter Bericht, Task 7): Rang, Anleitung und Kopiertext haengen von allen Vorfaellen der Messung ab
+        $strip = { param($i) $c = $i.PSObject.Copy(); foreach ($f in 'eventIncidents', 'events', 'guide', 'rank', 'copy') { $c.PSObject.Properties.Remove($f) }; $c | ConvertTo-Json -Depth 8 }
         $a = @($D.incidents | Where-Object type -ne 'ereignis'); $b = @((Get-ReportData $out).incidents)
         $b.Count | Should -Be 8; for ($k = 0; $k -lt 8; $k++) { & $strip $a[$k] | Should -Be (& $strip $b[$k]) }
     }
@@ -485,5 +486,111 @@ Describe 'Ereignisdaten im Einzelnen' {
         $out = Join-Path $TestDrive 'tocut.html'; [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -To $to 6>$null)
         $c = Get-ReportData $out
         $c.before.captureEnd | Should -Be $D.before.captureEnd; $c.before.captureEnd | Should -BeGreaterThan $c.tickT[-1]
+    }
+}
+Describe 'Gefuehrter Bericht: simulierte Stunde' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
+        # the catalogue as the report reads it ($Catalogue, not $G: variable names ignore case)
+        $script:Catalogue = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json')
+        function Get-ByKey([string]$Key) { $e = $Exp | Where-Object Key -eq $Key; if ($e.Type -eq 'ereignis') { $D.incidents | Where-Object { $_.type -eq 'ereignis' -and [Math]::Abs($_.start - $e.StartMs) -le 20000 } } else { Get-Hit $Key } }
+        $script:Situation = @{ homeoffice = 'chronic.network'; cpu = 'cpu'; memory = 'memory'; disk = 'disk'; share = 'share'; profile = 'profile'; backend = 'delay.many'
+            hang = 'delay.single'; 'crash.memory' = 'crash'; 'profile.logon' = 'profileerror'; 'crash.manyusers' = 'crash'; 'print.spooler' = 'print' }
+        function Get-LongLines([string]$Text) { @($Text -split "`r`n" | Where-Object { $_.Length -gt 78 }) }
+        function Get-CopyTexts($Data) {
+            # every copy text of a report: per incident (capture and lookback) both versions, and the summary
+            foreach ($i in @($Data.incidents) + @($Data.before.incidents)) { if ($null -ne $i) { $i.copy.named; $i.copy.anonymous } }
+            $Data.copyAll.named; $Data.copyAll.anonymous
+        }
+    }
+    It 'bestimmt Kennung, Titel, Wirkung und ersten Schritt jedes Vorfalls' {
+        foreach ($k in $Situation.Keys) {
+            $i = Get-ByKey $k; $s = $Situation[$k]
+            $i.guide.situation | Should -Be $s -Because $k; $i.guide.title | Should -Be $Catalogue.situations.$s.title -Because $k
+            $i.guide.impact | Should -Not -BeNullOrEmpty -Because $k; @($i.guide.checks).Count | Should -BeGreaterThan 0 -Because $k
+        }
+        (Get-ByKey 'cpu').guide.checks[0].text | Should -Match 'EXCEL\.EXE'                         # die gestuetzte Variante cause.app steht vorn
+        @($D.before.incidents | ForEach-Object { $_.guide.conditions -contains 'before' }) | Should -Not -Contain $false
+    }
+    It 'ordnet die Vorfaelle' {
+        $rank = @{}; foreach ($k in $Situation.Keys) { $rank[$k] = (Get-ByKey $k).rank }
+        $rank.backend | Should -Be 1; $rank.cpu | Should -Be 2; $rank.memory | Should -Be 3; $rank['crash.manyusers'] | Should -Be 4
+        $rank.homeoffice | Should -Be 12; $rank['print.spooler'] | Should -Be 11
+        foreach ($k in 'disk', 'share', 'profile', 'hang', 'crash.memory', 'profile.logon') { $rank[$k] | Should -BeIn (5..10) -Because $k }
+        @($D.order).Count | Should -Be 12; @($D.cards).Count | Should -Be 10; @($D.more).Count | Should -Be 2
+    }
+    It 'nennt Rangfolge, Karten und weitere Vorfaelle mit denselben Ids' {
+        for ($n = 0; $n -lt @($D.order).Count; $n++) { ($D.incidents | Where-Object id -eq $D.order[$n]).rank | Should -Be ($n + 1) }
+        @($D.cards) | Should -Be @($D.order[0..9])
+        @($D.more | ForEach-Object { $_.ids }) | Should -Be @($D.order[10..11])
+        foreach ($m in $D.more) { $m.label | Should -Not -BeNullOrEmpty; $m.situation | Should -Be ($D.incidents | Where-Object id -eq $m.ids[0]).guide.situation }
+        # der Rueckblick in seiner eigenen Liste, nach der Zeit
+        $before = @($D.before.incidents | Sort-Object start, id)
+        $before.Count | Should -Be 4; @($before | ForEach-Object { $_.rank }) | Should -Be @(1..4)
+    }
+    It 'nennt im Lagebild die erwarteten Kennzahlen' {
+        $D.lagebild.state | Should -Be 'red'; $D.lagebild.kpis.bottlenecks | Should -Be 5; $D.lagebild.kpis.delays | Should -Be 2
+        $D.lagebild.kpis.events | Should -Be 4; $D.lagebild.kpis.chronic | Should -Be 1; $D.lagebild.kpis.minutes | Should -BeGreaterThan 12; $D.lagebild.kpis.minutes | Should -BeLessThan 14
+        $D.lagebild.top | Should -Be (Get-ByKey 'backend').id
+    }
+    It 'liefert Kopiertexte mit und ohne Namen' {
+        foreach ($k in $Situation.Keys) {
+            $c = (Get-ByKey $k).copy
+            @($c.named -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0 -Because $k
+            ($c.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape((Get-ByKey $k).guide.title)) -Because $k
+            foreach ($n in @(2..26 | ForEach-Object { 'user{0:d3}' -f ($_ - 1) }) + 'WS-\d{4}', 'SIM-VDA01', 'fs01', 'CONTOSO') { $c.anonymous | Should -Not -Match $n -Because $k }
+        }
+        (Get-ByKey 'cpu').copy.anonymous | Should -Match 'EXCEL\.EXE'                                 # Anwendungsnamen bleiben
+        $D.copyAll.named | Should -Match 'SIM-VDA01'; @($D.copyAll.named -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        (Get-ByKey 'cpu').copy.named | Should -Match 'user003'; $D.copyAll.anonymous | Should -Match 'Server 01'
+        # jeder Kopiertext des Berichts, auch des Rueckblicks und die Zusammenfassung ohne Namen, mit Zeilen bis 78 Zeichen
+        $all = @(Get-CopyTexts $D); $all.Count | Should -Be (2 * (12 + 4) + 2)
+        foreach ($t in $all) { $t | Should -Not -BeNullOrEmpty; Get-LongLines $t | Should -BeNullOrEmpty }
+    }
+    It 'maskiert Anleitung und Kopiertexte im maskierten Bericht und laesst die Fassung ohne Namen weg' {
+        $m = Get-ReportData $R.Masked
+        $m.copyAll.anonymous | Should -BeNullOrEmpty; $m.copyAll.named | Should -Not -Match 'SIM-VDA01'; (($m.incidents | Where-Object lead -eq 'cpu').copy.named) | Should -Not -Match 'user003'
+        # beide Stufen: keine Zeile ueber 78 Zeichen, nachdem die Namen ersetzt wurden; kein Name ist zerteilt
+        foreach ($f in $R.Masked, $R.MaskedP) {
+            $x = Get-ReportData $f
+            foreach ($i in @($x.incidents) + @($x.before.incidents)) { $i.copy.anonymous | Should -BeNullOrEmpty }
+            $named = @(Get-CopyTexts $x | Where-Object { $null -ne $_ }); $named.Count | Should -Be (12 + 4 + 1)
+            foreach ($t in $named) { Get-LongLines $t | Should -BeNullOrEmpty -Because $f; $t | Should -Not -Match 'user0\d\d|WS-\d{4}' }
+            ($x.incidents | Where-Object lead -eq 'cpu').copy.named | Should -Match 'Benutzer \d\d'
+            @($x.order) | Should -Be @($D.order); $x.lagebild.state | Should -Be $D.lagebild.state
+        }
+        (Get-ReportData $R.MaskedP).copyAll.named | Should -Match 'SIM-VDA01'                         # Server ersetzt erst Alles
+    }
+    It 'traegt den Katalog wie gelesen in die Berichtsdaten' {
+        ($D.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($Catalogue | ConvertTo-Json -Depth 20 -Compress)
+    }
+    It 'maskiert den Katalog als einen gebildeten Text, auch unter Schluesseln wie Schluesselwortfelder' {   # P3-R10
+        $file = Join-Path $TestDrive 'g-named.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
+        $j.copy.measure = 'Auf SIM-VDA01 gemessen: {value} (Soll: {target})'; $j.terms | Add-Member -NotePropertyName 'SIM-VDA01' -NotePropertyValue 'Server von user003'
+        [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 10))
+        $out = Join-Path $TestDrive 'g-named.html'
+        [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile $out -RoleFile (Join-Path $TestDrive 'r/roles.sim.json') -GuidanceFile $file -Mask Alles 6>$null)
+        $x = Get-ReportData $out
+        $x.guidance.copy.measure | Should -Be 'Auf Server 01 gemessen: {value} (Soll: {target})'
+        $x.guidance.terms.'SIM-VDA01' | Should -Be 'Server von Benutzer 03'                                  # Schluessel bleiben, wie im ganzen Bericht
+        ($x.incidents | Where-Object lead -eq 'cpu').copy.named | Should -Match 'Auf Server 01 gemessen: \d+ %'
+    }
+    It 'nennt die Quellen der Treiberspalte' { $D.print.involvedFrom | Should -Be 'both' }
+    It 'liefert ohne Befund ein gruenes Lagebild, keine Karten und eine Zusammenfassung' {
+        $n = Get-ReportData $R.NoneReported
+        $n.noFinding | Should -BeTrue; $n.meta.focus.reportedMs | Should -BeGreaterThan $n.meta.start; $n.meta.focus.reportedMs | Should -BeLessThan $n.meta.end
+        $n.lagebild.state | Should -Be 'green'; $n.lagebild.top | Should -BeNullOrEmpty
+        @($n.order).Count | Should -Be 0; @($n.cards).Count | Should -Be 0; @($n.more).Count | Should -Be 0
+        $n.copyAll.named | Should -Not -BeNullOrEmpty; Get-LongLines $n.copyAll.named | Should -BeNullOrEmpty
+    }
+    It 'bricht bei einem fehlerhaften Katalog mit Eintrag und Feld ab' {
+        $bad = Join-Path $TestDrive 'g.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
+        $j.situations.cpu.PSObject.Properties.Remove('impact'); [IO.File]::WriteAllText($bad, ($j | ConvertTo-Json -Depth 10))
+        { & (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile (Join-Path $TestDrive 'g.html') -GuidanceFile $bad 6>$null } | Should -Throw "*Eintrag 'cpu'*Feld 'impact'*"
+        # vor dem Lesen der Aufzeichnung
+        $said = New-Object System.Collections.Generic.List[string]
+        try { & (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile (Join-Path $TestDrive 'g.html') -GuidanceFile $bad 6>&1 | ForEach-Object { $said.Add([string]$_) } } catch { }
+        ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'g.html') | Should -BeFalse
     }
 }

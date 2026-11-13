@@ -30,6 +30,10 @@
 .PARAMETER RoleFile
     Role file. Default: roles.json next to this script.
 
+.PARAMETER GuidanceFile
+    Guidance catalogue (situations, checks, remedies, texts of the guided report). Default: guidance.de.json next to
+    this script. It is checked before the capture is read; an error names the entry and the field.
+
 .PARAMETER FocusUser
     User who reported the problem (User or Domain\User, case-insensitive).
 
@@ -70,6 +74,7 @@ param(
     [datetime]$To = [datetime]::MaxValue,
     [string]$ThresholdFile,
     [string]$RoleFile,
+    [string]$GuidanceFile,
     [string]$FocusUser,
     [datetime]$ReportedTime,
     [ValidateRange(10, 2000)][int]$TopProcesses = 150,
@@ -94,11 +99,13 @@ $nan = [double]::NaN
 . (Join-Path $PSScriptRoot 'WorkerPerf.Events.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
-# the masking only in a masked run: without -Mask the report does not depend on it. The level in the spelling of the
-# set (ValidateSet takes any case), as the report data carries it.
+. (Join-Path $PSScriptRoot 'WorkerPerf.Guidance.ps1')
+# the masking: a masked run masks the report data; without -Mask the report uses it only for the copy texts without names
+# (one mask of level Alles and its replacing, never Protect-WorkerPerfReportData or Clear-WorkerPerfReportFreeText).
+. (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
+# The level in the spelling of the set (ValidateSet takes any case), as the report data carries it.
 if ($Mask) {
     if ($Mask -eq 'Alles') { $Mask = 'Alles' } else { $Mask = 'Personen' }
-    . (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
 }
 
 #region ---------- helpers ----------------------------------------------------------------
@@ -260,6 +267,25 @@ function Get-EntitySummary($Entity) {
     }
 }
 
+function ConvertTo-PlainData($Value, $Mask = $null) {
+    # A JSON object as read (custom objects, lists, values) as ordered dictionaries and arrays with the same content and
+    # order, which the report's JSON writer can write. With Mask every string value has the names of the mask replaced
+    # (keys stay): the whole tree counts as composed text, whatever its keys are called.
+    if ($Value -is [string]) { if ($null -ne $Mask) { return (Hide-WorkerPerfReportText $Value $Mask) }; return $Value }
+    if ($null -eq $Value -or $Value -is [ValueType]) { return $Value }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $o = [ordered]@{}
+        foreach ($p in $Value.PSObject.Properties) { $o[$p.Name] = ConvertTo-PlainData $p.Value $Mask }
+        return $o
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $list = New-Object System.Collections.Generic.List[object]
+        foreach ($x in $Value) { $list.Add((ConvertTo-PlainData $x $Mask)) }
+        return , $list.ToArray()
+    }
+    return $Value
+}
+
 function Get-TopIndices([double[]]$Keys, [int[]]$Items, [int]$Count) {
     # The $Count items with the largest keys.
     $k = [double[]]$Keys.Clone(); $it = [int[]]$Items.Clone()
@@ -279,6 +305,7 @@ $Path = (Resolve-Path -LiteralPath $Path).Path
 if (-not $OutFile) { $OutFile = Join-Path $Path 'report.html' }
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
+if (-not $GuidanceFile) { $GuidanceFile = Join-Path $PSScriptRoot 'guidance.de.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
 if (-not (Test-Path -LiteralPath $templateFile)) { throw "Vorlage nicht gefunden: $templateFile" }
 $OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
@@ -315,6 +342,8 @@ if ($Mask -eq 'Alles') {
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $roles = @(Read-WorkerPerfRoles $RoleFile)
 $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
+# an error in the catalogue stops before the capture is read
+$guidance = Read-WorkerPerfGuidance $GuidanceFile
 
 Write-Host 'Lese Aufzeichnung ...'
 $model = Import-WorkerPerfRun -Path $Path -From $From -To $To -Thresholds $thresholds -Roles $roles
@@ -1099,7 +1128,13 @@ foreach ($p in @($printState.Processes)) {
     if ($null -ne $ws) { $wsStart = $ws.Start; $wsEnd = $ws.End }
     $printProcsOut.Add([ordered]@{ k = [int]$p.K; name = [string]$p.Name; cpuMax = (Get-Round $p.CpuMaxPct 2); wsStartMB = $wsStart; wsEndMB = $wsEnd; wsMaxMB = (Get-Round $p.WsMaxMB 1) })
 }
-$printOut = [ordered]@{ drivers = $driversOut.ToArray(); queues = $queuesOut.ToArray(); processes = $printProcsOut.ToArray() }
+# the sources of the driver column "An einem Vorfall beteiligt": the event incidents of the capture (Ereignisse not left
+# out) and of the lookback (read or partly read); "nein" holds only when both were read
+$involvedCapture = @($model.Skip) -notcontains 'Ereignisse'
+$involvedLookback = $lookbackStatus -eq 'read' -or $lookbackStatus -eq 'partial'
+if ($involvedCapture -and $involvedLookback) { $involvedFrom = 'both' } elseif ($involvedCapture) { $involvedFrom = 'capture' }
+elseif ($involvedLookback) { $involvedFrom = 'lookback' } else { $involvedFrom = 'none' }
+$printOut = [ordered]@{ drivers = $driversOut.ToArray(); queues = $queuesOut.ToArray(); processes = $printProcsOut.ToArray(); involvedFrom = $involvedFrom }
 
 #endregion
 
@@ -1120,24 +1155,90 @@ $data = [ordered]@{
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
 }
 
+function New-ReportMask([string]$Level) {
+    # The names of the whole capture and their replacements: the same arguments for the masked report and for the copy
+    # texts without names of an unmasked one (ruling P3-R8).
+    return (New-WorkerPerfMask -Path $Path -Level $Level -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig)
+}
+
+# The guided report (rulings P3-R8, P3-R9): guidance, ranking, situation summary, groups and copy texts are built from the
+# report data before the names are replaced; with -Mask the free texts are cleared first (a hint of the situation summary
+# may quote meta.endMessage), and every new field is masked with all other data. The copy texts are wrapped last, after
+# the names in their paragraphs were replaced: a replacement has another length, and a name split by the wrapper would
+# not be found.
 $maskObj = $null
 if ($Mask) {
-    # The free texts go first, in place: nothing of the uncleared data is written anywhere after this. The names come
-    # from the whole capture (not the cut), built once. The level is set on the masked result, so that no replacement
-    # can touch it.
+    # The free texts go first, in place: nothing of the uncleared data is written anywhere after this.
     Write-Host 'Maskiere Namen ...'
     Clear-WorkerPerfReportFreeText $data
-    $maskObj = New-WorkerPerfMask -Path $Path -Level $Mask -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig
+}
+
+$captureInc = @($data['incidents'])
+$beforeInc = @($data['before']['incidents'])
+$allInc = @($captureInc + $beforeInc)
+$guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts }
+foreach ($inc in $allInc) {
+    $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
+    $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
+}
+# rank: 1-based in its own list; the capture's incidents by importance, the lookback's by time
+$order = [int[]]@(Get-WorkerPerfIncidentRanking -Incidents $captureInc)
+$incById = @{}
+foreach ($inc in $captureInc) { $incById[[int]$inc['id']] = $inc }
+for ($n = 0; $n -lt $order.Length; $n++) { $incById[$order[$n]]['rank'] = $n + 1 }
+$beforeByTime = @($beforeInc | Sort-Object -Property @{ Expression = { [double]$_['start'] } }, @{ Expression = { [int]$_['id'] } })
+for ($n = 0; $n -lt $beforeByTime.Count; $n++) { $beforeByTime[$n]['rank'] = $n + 1 }
+$lagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue $guidance -Texts $texts
+$cardCount = 10
+$more = @(Get-WorkerPerfIncidentGroups -Incidents $captureInc -Order $order -Cards $cardCount -OffsetMinutes $eventOffset -Texts $texts)
+# the copy texts as unwrapped paragraphs, one list per incident of allInc
+$copyParagraphs = New-Object System.Collections.Generic.List[object]
+foreach ($inc in $allInc) {
+    $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $data -Catalogue $guidance -Texts $texts))
+}
+$summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+# the catalogue as read (like thresholds): set below, masked as one composed text in a masked run (ruling P3-R10)
+$data['guidance'] = $null
+$data['lagebild'] = $lagebild
+$data['order'] = $order
+$data['cards'] = [int[]]@($order | Select-Object -First $cardCount)
+$data['more'] = $more
+
+if ($Mask) {
+    # The paragraphs go into the data as they are and are masked with it; they are wrapped after that. The version without
+    # names is not needed: the named version has none. The names come from the whole capture (not the cut), built once.
+    # The level is set on the masked result, so that no replacement can touch it.
+    for ($n = 0; $n -lt $allInc.Count; $n++) { $allInc[$n]['copy'] = [ordered]@{ named = $copyParagraphs[$n]; anonymous = $null } }
+    $data['copyAll'] = [ordered]@{ named = $summaryParagraphs; anonymous = $null }
+    $maskObj = New-ReportMask $Mask
     # a reported user typed by the caller that is no name of the capture is removed (P2-R11); one the capture names (a
     # session in the cut or anywhere in the capture) is replaced like every name
     if ($null -ne $focusOut.user -and -not $focusOut.found -and -not (Test-WorkerPerfMaskKnownAccount $maskObj ([string]$focusOut.user))) {
         $focusOut.user = [string]$texts['mask.other']
     }
     $data = Protect-WorkerPerfReportData $data $maskObj
+    # the catalogue is composed text throughout: a key of it named like a keyword field (copy.measure) is no keyword
+    $data['guidance'] = ConvertTo-PlainData $guidance $maskObj
+    foreach ($inc in @($data['incidents']) + @($data['before']['incidents'])) {
+        $inc['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($inc['copy']['named']))
+    }
+    $data['copyAll']['named'] = Format-WorkerPerfCopyLines ([string[]]@($data['copyAll']['named']))
     $data['meta']['mask'] = $Mask
     # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
     # replacement, never by the real name
     $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $texts -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
+}
+else {
+    $data['guidance'] = ConvertTo-PlainData $guidance
+    # the version without names: the replacements of a masked report of level Alles, in the paragraphs before wrapping
+    $anonymousMask = New-ReportMask 'Alles'
+    for ($n = 0; $n -lt $allInc.Count; $n++) {
+        $p = $copyParagraphs[$n]
+        $allInc[$n]['copy'] = [ordered]@{ named = Format-WorkerPerfCopyLines $p
+            anonymous = Format-WorkerPerfCopyLines ([string[]]@($p | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
+    }
+    $data['copyAll'] = [ordered]@{ named = Format-WorkerPerfCopyLines $summaryParagraphs
+        anonymous = Format-WorkerPerfCopyLines ([string[]]@($summaryParagraphs | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
 }
 
 Write-Host 'Schreibe Bericht ...'
