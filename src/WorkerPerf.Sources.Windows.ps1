@@ -7,6 +7,8 @@
 # the tests replace (Open-/Read-WorkerPerfWinCategory, Get-WorkerPerfWinSampleValue, Get-CimInstance, Get-WinEvent -ListLog,
 # Open-WorkerPerfEventReader, Get-WinSessionRaw, Get-WorkerPerfSidAccount and the registry readers of printing). The events come from the logs,
 # providers and ids of the event catalogue (events.json, WorkerPerf.EventConfig.ps1 must be dot-sourced before).
+# The health picture (Get-WorkerPerfHealth) reads only, within a time budget, through further thin calls
+# (Get-WorkerPerfRegistryValues, Get-WorkerPerfPerformanceInfo, Get-WorkerPerfActivePowerScheme, Get-WorkerPerfLogOldestTime).
 
 # C# source of the WTS session wrapper (load with Add-Type -TypeDefinition $script:WorkerPerfWtsSource).
 $script:WorkerPerfWtsSource = @'
@@ -163,6 +165,76 @@ namespace WorkerPerf
             if (!GetDiskFreeSpaceExW(directory, out freeForCaller, out total, out totalFree))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             return (double)freeForCaller;
+        }
+    }
+}
+'@
+
+# C# source of the native reads of the health picture: the commit charge (GetPerformanceInfo, psapi.dll; the
+# PERFORMANCE_INFORMATION structure counts in pages of PageSize, its SIZE_T fields are UIntPtr) and the active power
+# scheme (PowerGetActiveScheme, powrprof.dll; the GUID it allocates is freed with LocalFree). A failed call throws a
+# Win32Exception with the error code.
+$script:WorkerPerfHealthNativeSource = @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+namespace WorkerPerf
+{
+    public static class HealthNative
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PERFORMANCE_INFORMATION
+        {
+            public uint cb;
+            public UIntPtr CommitTotal;
+            public UIntPtr CommitLimit;
+            public UIntPtr CommitPeak;
+            public UIntPtr PhysicalTotal;
+            public UIntPtr PhysicalAvailable;
+            public UIntPtr SystemCache;
+            public UIntPtr KernelTotal;
+            public UIntPtr KernelPaged;
+            public UIntPtr KernelNonpaged;
+            public UIntPtr PageSize;
+            public uint HandleCount;
+            public uint ProcessCount;
+            public uint ThreadCount;
+        }
+
+        [DllImport("psapi.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetPerformanceInfo(out PERFORMANCE_INFORMATION pPerformanceInformation, int cb);
+
+        [DllImport("powrprof.dll")]
+        private static extern uint PowerGetActiveScheme(IntPtr UserRootPowerKey, out IntPtr ActivePolicyGuid);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr LocalFree(IntPtr hMem);
+
+        // Commit charge, commit limit and commit peak in bytes.
+        public static long[] GetCommit()
+        {
+            PERFORMANCE_INFORMATION info;
+            int size = Marshal.SizeOf(typeof(PERFORMANCE_INFORMATION));
+            if (!GetPerformanceInfo(out info, size)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            ulong page = info.PageSize.ToUInt64();
+            return new long[] {
+                (long)(info.CommitTotal.ToUInt64() * page),
+                (long)(info.CommitLimit.ToUInt64() * page),
+                (long)(info.CommitPeak.ToUInt64() * page)
+            };
+        }
+
+        // The GUID of the active power scheme.
+        public static Guid GetActivePowerScheme()
+        {
+            IntPtr scheme = IntPtr.Zero;
+            uint rc = PowerGetActiveScheme(IntPtr.Zero, out scheme);
+            if (rc != 0) throw new Win32Exception((int)rc);
+            if (scheme == IntPtr.Zero) throw new Win32Exception(87);
+            try { return (Guid)Marshal.PtrToStructure(scheme, typeof(Guid)); }
+            finally { LocalFree(scheme); }
         }
     }
 }
@@ -433,6 +505,24 @@ $script:WorkerPerfWinProbeTimeoutMs = 2000
 # Timeout of the storage queries of the profile container map (they run in a snapshot, so a hanging storage provider
 # delays one snapshot by at most twice this time).
 $script:WorkerPerfWinStorageTimeoutSec = 10
+
+# Health picture: time budget per area and in total (seconds), checked before every value; each CIM query gets the rest
+# as its time limit. The readers per area, in the order of $script:WorkerPerfHealthAreas (an area without one is noted
+# as 'noReader'). The uninstall keys of both registry views; the documented GUIDs of the power schemes.
+$script:WorkerPerfWinHealthAreaBudgetSec = 10
+$script:WorkerPerfWinHealthTotalBudgetSec = 60
+$script:WorkerPerfWinHealthReaders = [ordered]@{
+    size = 'Read-WorkerPerfWinHealthSize'; operation = 'Read-WorkerPerfWinHealthOperation'; events = 'Read-WorkerPerfWinHealthEvents'
+}
+$script:WorkerPerfWinUninstallKeys = @('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
+$script:WorkerPerfWinPowerPlans = @{
+    '381b4222-f694-41f0-9685-ff5bb260df2e' = 'balanced'; '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' = 'highPerformance'
+    'a1841308-3541-4fab-bc81-f71556f20b4a' = 'powerSaver'
+}
+# HRESULTs of denied access: E_ACCESSDENIED (0x80070005) and WBEM_E_ACCESS_DENIED (0x80041003)
+$script:WorkerPerfWinDeniedHResults = @(-2147024891, -2147217405)
+# The error of compiling WorkerPerf.HealthNative, once it failed (the values that need it are then unreadable).
+$script:WorkerPerfHealthTypeError = $null
 
 # State of a capture (set by Initialize-WorkerPerfSource).
 $script:WinState = $null
@@ -1109,6 +1199,52 @@ function ConvertTo-WorkerPerfUtcTime([datetime]$Time) {
     return $Time.ToUniversalTime()
 }
 
+function ConvertTo-WorkerPerfLogInfo($Info) {
+    # The state of an event log from the object of Get-WinEvent -ListLog: Mode is the name of LogMode, not its number
+    # (ConvertTo-Json would write the number); a field the object lacks is $null.
+    $mb = { param($v) if ($null -eq $v) { $null } else { [Math]::Round([double]$v / 1048576.0, 1) } }
+    $enabled = Get-WorkerPerfField $Info 'IsEnabled'; $records = Get-WorkerPerfField $Info 'RecordCount'
+    $mode = Get-WorkerPerfField $Info 'LogMode'; $full = Get-WorkerPerfField $Info 'IsLogFull'
+    return [ordered]@{
+        Enabled = $(if ($null -ne $enabled) { [bool]$enabled } else { $null })
+        MaxSizeMB = (& $mb (Get-WorkerPerfField $Info 'MaximumSizeInBytes'))
+        FileSizeMB = (& $mb (Get-WorkerPerfField $Info 'FileSize'))
+        Records = $(if ($null -ne $records) { [long]$records } else { $null })
+        Mode = $(if ($null -ne $mode) { [string]$mode } else { $null })
+        Full = $(if ($null -ne $full) { [bool]$full } else { $null })
+    }
+}
+
+function ConvertTo-WorkerPerfPowerPlan([string]$Guid) {
+    # balanced, highPerformance, powerSaver for the documented GUIDs, else other.
+    $key = $Guid.Trim().Trim('{', '}').ToLowerInvariant()
+    if ($script:WorkerPerfWinPowerPlans.ContainsKey($key)) { return $script:WorkerPerfWinPowerPlans[$key] }
+    return 'other'
+}
+
+function ConvertFrom-WorkerPerfHotFixDate($Value) {
+    # InstalledOn of Win32_QuickFixEngineering: a DateTime as it is, a text only in the form M/d/yyyy (invariant
+    # culture); any other form (a local date, a hexadecimal FILETIME, empty) gives $null.
+    if ($Value -is [datetime]) { return $Value }
+    if ($null -eq $Value) { return $null }
+    $parsed = [datetime]::MinValue
+    if ([datetime]::TryParseExact(([string]$Value).Trim(), 'M/d/yyyy', [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function Select-WorkerPerfLatestHotFix([object[]]$HotFixes) {
+    # The update with the newest readable installation date: @{ Id; InstalledOn }, or $null without a readable date.
+    $best = $null
+    foreach ($hf in @($HotFixes)) {
+        if ($null -eq $hf) { continue }
+        $on = ConvertFrom-WorkerPerfHotFixDate (Get-WorkerPerfField $hf 'InstalledOn')
+        if ($null -eq $on) { continue }
+        if ($null -eq $best -or $on -gt $best.InstalledOn) { $best = @{ Id = [string](Get-WorkerPerfField $hf 'HotFixID'); InstalledOn = $on } }
+    }
+    return $best
+}
+
 #endregion
 
 #region ---------- Windows calls (thin; replaced by stand-ins in the tests) --------------------------------------------
@@ -1210,6 +1346,61 @@ function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
 function Open-WorkerPerfRegistryKey([string]$SubKey) {
     # A key below HKLM, read only; $null when it does not exist. Unlike the registry provider, a '/' stays part of a name.
     return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($SubKey, $false)
+}
+
+function Get-WorkerPerfRegistryValues([string]$SubKey) {
+    # The values (name -> value) and the names of the subkeys of a key below HKLM, read only; $null when it is missing.
+    $key = Open-WorkerPerfRegistryKey $SubKey
+    if ($null -eq $key) { return $null }
+    try {
+        $values = [ordered]@{}
+        foreach ($name in @($key.GetValueNames())) { $values[[string]$name] = $key.GetValue($name) }
+        return @{ Values = $values; SubKeys = [string[]]@($key.GetSubKeyNames()) }
+    }
+    finally { $key.Close() }
+}
+
+function Register-WorkerPerfHealthType {
+    # Compiles WorkerPerf.HealthNative once per process, at its first use; a failed compile throws again at every use.
+    if ('WorkerPerf.HealthNative' -as [type]) { return }
+    if ($null -ne $script:WorkerPerfHealthTypeError) { throw $script:WorkerPerfHealthTypeError }
+    try { Add-Type -TypeDefinition $script:WorkerPerfHealthNativeSource -Language CSharp }
+    catch {
+        $script:WorkerPerfHealthTypeError = $_.Exception
+        throw
+    }
+}
+
+function Get-WorkerPerfPerformanceInfo {
+    # Commit charge, limit and peak in MB (GetPerformanceInfo).
+    Register-WorkerPerfHealthType
+    $c = [WorkerPerf.HealthNative]::GetCommit()
+    return @{ CommitTotalMB = [Math]::Round($c[0] / 1048576.0); CommitLimitMB = [Math]::Round($c[1] / 1048576.0); CommitPeakMB = [Math]::Round($c[2] / 1048576.0) }
+}
+
+function Get-WorkerPerfActivePowerScheme {
+    # The GUID of the active power scheme in lower case (PowerGetActiveScheme).
+    Register-WorkerPerfHealthType
+    return ([WorkerPerf.HealthNative]::GetActivePowerScheme()).ToString().ToLowerInvariant()
+}
+
+function Get-WorkerPerfLogOldestTime([string]$LogName) {
+    # The time of the oldest entry of a log (the first record of a reader in ascending direction; its message is not
+    # formatted), or $null when the log is empty.
+    $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery -ArgumentList $LogName, ([System.Diagnostics.Eventing.Reader.PathType]::LogName)
+    $query.ReverseDirection = $false
+    $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader -ArgumentList $query
+    try {
+        $record = $reader.ReadEvent()
+        if ($null -eq $record) { return $null }
+        try {
+            $created = $record.TimeCreated
+            if ($null -eq $created) { return $null }
+            return [datetime]$created
+        }
+        finally { $record.Dispose() }
+    }
+    finally { $reader.Dispose() }
 }
 
 function Get-WorkerPerfPrintIsolationGroups {
@@ -1376,12 +1567,14 @@ function Test-WorkerPerfWinMeasured([string]$Category) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null)
+          [object]$EventConfig = $null, [object[]]$Apps = @())
     # StartTime exists for the common interface: the clock of this source is the system clock. EventConfig: the event
     # catalogue (Read-WorkerPerfEventConfig); without it the source reads events.json next to this file.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). For them the source checks and opens nothing, makes no
     # Windows call later and writes no entry into Sources (the collector notes them). The logs events.<id> belong to
     # Ereignisse and Rueckblick together: they are checked while either of the two is measured.
+    # The health picture (Get-WorkerPerfHealth) reuses what is read here: the two CIM objects, the objects of
+    # Get-WinEvent -ListLog (LogInfo) and the application list given in Apps (as Read-WorkerPerfHealthApps returns it).
 
     $leftOut = [string[]]@($Skip | Where-Object { $_ })
     $withEventLogs = ($leftOut -notcontains 'Ereignisse' -or $leftOut -notcontains 'Rueckblick')
@@ -1403,6 +1596,7 @@ function Initialize-WorkerPerfSource {
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
         EventConfig = $null; SidCache = @{}; SidPauseUntil = [datetime]::MinValue; PrintDrivers = $false; PrintQueue = $null
         LogErrors = (New-Object System.Collections.Generic.List[object]); LogErrorsSeen = @{}; EventCounts = [ordered]@{}
+        ComputerSystem = $cs; OperatingSystem = $os; LogInfo = @{}; Apps = [object[]]@($Apps | Where-Object { $null -ne $_ })
     }
 
     # ---- performance counters: one status per counter group ----
@@ -1496,6 +1690,7 @@ function Initialize-WorkerPerfSource {
             try {
                 $info = Get-WinEvent -ListLog $name -ErrorAction Stop
                 if ($null -ne $info) {
+                    $state.LogInfo[$name] = $info
                     $present.Add($name)
                     if ([bool]$info.IsEnabled) { $readable.Add($name) }
                 }
@@ -1985,6 +2180,296 @@ function Get-WorkerPerfFreeSpaceMB {
     }
     $drive = New-Object System.IO.DriveInfo -ArgumentList ([IO.Path]::GetPathRoot($full))
     return [double]$drive.AvailableFreeSpace / 1048576.0
+}
+
+#endregion
+
+#region ---------- health picture (read once before the first tick, within a time budget) ----------------------------
+# A reader per area sets each value of its area through Set-WorkerPerfWinHealthValue. The scriptblocks a reader passes
+# run inside that function and see the reader's variables; the helpers below therefore name their own variables with
+# a prefix (sv, sh, fr, hc), so that they never hide a variable of a reader.
+
+function Test-WorkerPerfWinHealthTimeUp($Ctx) {
+    return ($Ctx.Clock.Elapsed.TotalMilliseconds -ge $Ctx.BudgetMs)
+}
+
+function Get-WorkerPerfWinHealthFailReason($Ctx, $ErrorRecord) {
+    # rights, timeout or error for a failed read: rights for denied access in each form Windows reports it, else
+    # timeout when the limit of the area is reached, else error. A failure that Get-WorkerPerfWinHealthShared passes on
+    # keeps the reason it got where it fell.
+    $frEx = $ErrorRecord
+    if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) { $frEx = $ErrorRecord.Exception }
+    if ($null -ne $Ctx.Shared) {
+        foreach ($frEntry in @($Ctx.Shared.Values)) {
+            if ($null -ne $frEntry -and $null -ne $frEntry.Exception -and [object]::ReferenceEquals($frEntry.Exception, $frEx)) { return $frEntry.Reason }
+        }
+    }
+    # without the wrappers PowerShell puts around a method that threw (as Get-WorkerPerfErrorClass)
+    $frGuard = 0
+    while ($null -ne $frEx -and $null -ne $frEx.InnerException -and $frGuard -lt 5 -and
+        ($frEx -is [System.Management.Automation.MethodException] -or $frEx.GetType() -eq [System.Management.Automation.RuntimeException])) { $frEx = $frEx.InnerException; $frGuard++ }
+    if ($null -ne $frEx) {
+        if ($frEx -is [System.UnauthorizedAccessException] -or $frEx -is [System.Security.SecurityException]) { return 'rights' }
+        if ($script:WorkerPerfWinDeniedHResults -contains [int]$frEx.HResult) { return 'rights' }
+        if ($frEx -is [System.ComponentModel.Win32Exception] -and $frEx.NativeErrorCode -eq 5) { return 'rights' }
+        # a CimException reports denied access in NativeErrorCode
+        $frCode = $frEx.PSObject.Properties['NativeErrorCode']
+        if ($null -ne $frCode -and [string]$frCode.Value -eq 'AccessDenied') { return 'rights' }
+    }
+    if (Test-WorkerPerfWinHealthTimeUp $Ctx) { return 'timeout' }
+    return 'error'
+}
+
+function Set-WorkerPerfWinHealthValue($Ctx, [string]$Id, [scriptblock]$Read) {
+    # Reads one value into $Ctx.Values, unless the limit of the area is reached (then unreadable/timeout). A single
+    # result that is a value record of New-WorkerPerfHealthValue is taken as it is; else a list value is read with all
+    # results (none: an empty list), any other value is absent without a result and read with one. $null results are
+    # dropped. A failure makes the value unreadable with its reason.
+    $svDef = $script:WorkerPerfHealthValues[$Id]
+    if ($null -eq $svDef) { throw "Zustandsbild: unbekannter Wert '$Id'." }
+    if (Test-WorkerPerfWinHealthTimeUp $Ctx) { $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'unreadable' 'timeout'; return }
+    $svResults = $null
+    try { $svResults = @(& $Read | Where-Object { $null -ne $_ }) }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch {
+        $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'unreadable' (Get-WorkerPerfWinHealthFailReason $Ctx $_)
+        return
+    }
+    if ($svResults.Count -eq 1 -and $svResults[0] -is [System.Collections.Specialized.OrderedDictionary] -and $svResults[0].Count -eq 3 -and
+        $svResults[0].Contains('State') -and $svResults[0].Contains('Reason') -and $svResults[0].Contains('Value')) {
+        $Ctx.Values[$Id] = $svResults[0]
+        return
+    }
+    if ($svDef.Type -eq 'list') { $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'read' '' ([object[]]$svResults); return }
+    switch ($svResults.Count) {
+        0 { $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'absent' }
+        1 { $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'read' '' $svResults[0] }
+        default { $Ctx.Values[$Id] = New-WorkerPerfHealthValue 'unreadable' 'error' }   # a reader that gives several results for one value
+    }
+}
+
+function Get-WorkerPerfWinHealthShared($Ctx, [string]$Key, [scriptblock]$Read) {
+    # Runs $Read once per call of Get-WorkerPerfHealth and gives every later caller the same result (plain pipeline
+    # output). A failure is remembered with its reason and its area and thrown again to a later caller in the same area,
+    # and to one in another area unless the reason is timeout: then $Read runs again within that area's own limit.
+    $shEntry = $null
+    if ($Ctx.Shared.ContainsKey($Key)) { $shEntry = $Ctx.Shared[$Key] }
+    if ($null -ne $shEntry) {
+        if ($null -eq $shEntry.Exception) { $shEntry.Result; return }
+        if ($shEntry.Area -ceq $Ctx.Area -or $shEntry.Reason -ne 'timeout') { throw $shEntry.Error }
+    }
+    $shResult = $null
+    try { $shResult = @(& $Read) }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch {
+        $Ctx.Shared[$Key] = @{ Area = $Ctx.Area; Error = $_; Exception = $_.Exception; Reason = (Get-WorkerPerfWinHealthFailReason $Ctx $_); Result = $null }
+        throw
+    }
+    $Ctx.Shared[$Key] = @{ Area = $Ctx.Area; Error = $null; Exception = $null; Reason = ''; Result = $shResult }
+    $shResult
+}
+
+function Get-WorkerPerfWinHealthCim($Ctx, [string]$ClassName, [string]$Namespace = 'root\cimv2', [string]$Filter = '', [string[]]$Property = @()) {
+    # A local CIM query with the rest of the area's limit as its time limit (whole seconds, at least 1).
+    $hcRest = [Math]::Max(1, [int][Math]::Floor(($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0))
+    $hcArgs = @{ ClassName = $ClassName; Namespace = $Namespace; OperationTimeoutSec = $hcRest; ErrorAction = 'Stop' }
+    if ($Filter) { $hcArgs['Filter'] = $Filter }
+    if (@($Property).Count -gt 0) { $hcArgs['Property'] = [string[]]$Property }
+    Get-CimInstance @hcArgs
+}
+
+function Get-WorkerPerfWinHealthLog($Ctx, [string]$Name) {
+    # The object of Get-WinEvent -ListLog for a log: kept from Initialize-WorkerPerfSource, else read now. $null only
+    # when the log does not exist; any other failure is thrown.
+    $hcState = $Ctx.State
+    if ($null -ne $hcState -and $null -ne $hcState.LogInfo -and $hcState.LogInfo.ContainsKey($Name)) { return $hcState.LogInfo[$Name] }
+    try { return (Get-WinEvent -ListLog $Name -ErrorAction Stop) }
+    catch {
+        if ([string]$_.FullyQualifiedErrorId -like 'NoMatchingLogsFound*') { return $null }
+        if ($null -ne $_.Exception -and $_.Exception.GetType().FullName -eq 'System.Diagnostics.Eventing.Reader.EventLogNotFoundException') { return $null }
+        throw
+    }
+}
+
+# The shared queries of the areas (one per call of Get-WorkerPerfHealth); each gives plain pipeline output.
+function Get-WorkerPerfWinHealthServices($Ctx) {
+    Get-WorkerPerfWinHealthShared $Ctx 'services' { Get-WorkerPerfWinHealthCim $Ctx 'Win32_Service' -Property Name, DisplayName, State, StartMode, PathName }
+}
+
+function Get-WorkerPerfWinHealthUninstall($Ctx) {
+    # The entries of both uninstall keys: Key, DisplayName, DisplayVersion.
+    Get-WorkerPerfWinHealthShared $Ctx 'uninstall' {
+        foreach ($hcRoot in $script:WorkerPerfWinUninstallKeys) {
+            $hcKey = Get-WorkerPerfRegistryValues $hcRoot
+            if ($null -eq $hcKey) { continue }
+            foreach ($hcSub in @($hcKey['SubKeys'])) {
+                $hcEntry = Get-WorkerPerfRegistryValues ($hcRoot + '\' + $hcSub)
+                if ($null -eq $hcEntry) { continue }
+                $hcValues = $hcEntry['Values']
+                [pscustomobject]@{ Key = [string]$hcSub; DisplayName = [string]$hcValues['DisplayName']; DisplayVersion = [string]$hcValues['DisplayVersion'] }
+            }
+        }
+    }
+}
+
+function Get-WorkerPerfWinHealthPagefiles($Ctx) {
+    Get-WorkerPerfWinHealthShared $Ctx 'pagefiles' { Get-WorkerPerfWinHealthCim $Ctx 'Win32_PageFileUsage' -Property Name, AllocatedBaseSize, PeakUsage, TempPageFile }
+}
+
+function Get-WorkerPerfWinHealthSystemDrivers($Ctx) {
+    # The system drivers the areas read (each reader picks its driver by name).
+    Get-WorkerPerfWinHealthShared $Ctx 'systemdrivers' {
+        Get-WorkerPerfWinHealthCim $Ctx 'Win32_SystemDriver' -Filter "Name = 'vmmemctl' OR Name = 'mrxsmb10'" -Property Name, State, StartMode
+    }
+}
+
+function ConvertTo-WorkerPerfWinHealthNumber($Value, [double]$Divisor = 1, [int]$Decimals = 0) {
+    # A number for health.json, rounded; nothing for $null (the value is then absent).
+    if ($null -eq $Value) { return }
+    return [Math]::Round([double]$Value / $Divisor, $Decimals)
+}
+
+function ConvertTo-WorkerPerfWinHealthBool($Value) {
+    if ($null -eq $Value) { return }
+    return [bool]$Value
+}
+
+function Read-WorkerPerfWinHealthSize($Ctx) {
+    $cs = $Ctx.State.ComputerSystem
+    Set-WorkerPerfWinHealthValue $Ctx 'size.cpuLogical' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $cs 'NumberOfLogicalProcessors') }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.cpuSockets' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $cs 'NumberOfProcessors') }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.memTotalMB' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $cs 'TotalPhysicalMemory') 1048576 }
+    $commit = { param([string]$Field) ConvertTo-WorkerPerfWinHealthNumber (@(Get-WorkerPerfWinHealthShared $Ctx 'perfinfo' { Get-WorkerPerfPerformanceInfo })[0][$Field]) }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.commitTotalMB' { & $commit 'CommitTotalMB' }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.commitLimitMB' { & $commit 'CommitLimitMB' }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.commitPeakMB' { & $commit 'CommitPeakMB' }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.pagefiles' {
+        foreach ($pf in @(Get-WorkerPerfWinHealthPagefiles $Ctx)) {
+            [ordered]@{ Path = [string](Get-WorkerPerfField $pf 'Name'); AllocatedMB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $pf 'AllocatedBaseSize'))
+                PeakUsageMB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $pf 'PeakUsage')); Temporary = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $pf 'TempPageFile')) }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.pagefileManaged' { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $cs 'AutomaticManagedPagefile') }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.hypervisor' { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $cs 'HypervisorPresent') }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.model' {
+        $model = ('{0} {1}' -f [string](Get-WorkerPerfField $cs 'Manufacturer'), [string](Get-WorkerPerfField $cs 'Model')).Trim()
+        if ($model) { $model }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.vmtoolsPresent' { $null -ne (Get-WorkerPerfRegistryValues 'SOFTWARE\VMware, Inc.\VMware Tools') }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.vmtoolsService' {
+        $svc = @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'Name') -eq 'VMTools' })
+        if ($svc.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { [string](Get-WorkerPerfField $svc[0] 'State') }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.vmtoolsVersion' {
+        $entry = @(Get-WorkerPerfWinHealthUninstall $Ctx | Where-Object { $_.DisplayName -eq 'VMware Tools' })
+        if ($entry.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { $entry[0].DisplayVersion }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.netAdapters' {
+        foreach ($na in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_NetworkAdapter' -Filter 'PhysicalAdapter = TRUE' -Property Name, ServiceName, Speed, NetEnabled)) {
+            [ordered]@{ Name = [string](Get-WorkerPerfField $na 'Name'); Service = [string](Get-WorkerPerfField $na 'ServiceName')
+                SpeedMbit = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $na 'Speed') 1000000 1); Enabled = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $na 'NetEnabled')) }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.storageControllers' {
+        foreach ($sc in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_SCSIController' -Property Name, DriverName)) {
+            [ordered]@{ Name = [string](Get-WorkerPerfField $sc 'Name'); Driver = [string](Get-WorkerPerfField $sc 'DriverName') }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'size.balloonDriver' {
+        $drv = @(Get-WorkerPerfWinHealthSystemDrivers $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'Name') -eq 'vmmemctl' })
+        if ($drv.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { [string](Get-WorkerPerfField $drv[0] 'State') }
+    }
+}
+
+function Read-WorkerPerfWinHealthOperation($Ctx) {
+    $os = $Ctx.State.OperatingSystem
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.lastBoot' {
+        $boot = Get-WorkerPerfField $os 'LastBootUpTime'
+        if ($boot -is [datetime]) { ConvertTo-WorkerPerfHealthTime $boot }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingRename' {
+        # pairs of source and target; the paths are not kept. An odd count (a list that ends in an empty target) still
+        # counts its last pair.
+        $sm = Get-WorkerPerfRegistryValues 'SYSTEM\CurrentControlSet\Control\Session Manager'
+        $entries = 0
+        if ($null -ne $sm -and $sm['Values'].Contains('PendingFileRenameOperations')) { $entries = @($sm['Values']['PendingFileRenameOperations']).Count }
+        [Math]::Ceiling($entries / 2.0)
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingServicing' {
+        $null -ne (Get-WorkerPerfRegistryValues 'SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingUpdate' {
+        $null -ne (Get-WorkerPerfRegistryValues 'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')
+    }
+    $latest = { Select-WorkerPerfLatestHotFix @(Get-WorkerPerfWinHealthShared $Ctx 'hotfixes' { Get-WorkerPerfWinHealthCim $Ctx 'Win32_QuickFixEngineering' -Property HotFixID, InstalledOn }) }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.lastUpdate' { $hf = & $latest; if ($null -ne $hf) { ConvertTo-WorkerPerfHealthTime $hf.InstalledOn } }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.lastUpdateId' { $hf = & $latest; if ($null -ne $hf) { $hf.Id } }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.powerPlan' { ConvertTo-WorkerPerfPowerPlan (Get-WorkerPerfActivePowerScheme) }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.volumes' {
+        # the drives first; without the list of page files the value stays read and PageFile is unknown
+        $disks = @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_LogicalDisk' -Filter 'DriveType = 3' -Property DeviceID, Size, FreeSpace, FileSystem)
+        $pfPaths = $null
+        try { $pfPaths = @(@(Get-WorkerPerfWinHealthPagefiles $Ctx) | ForEach-Object { [string](Get-WorkerPerfField $_ 'Name') }) }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { $pfPaths = $null }
+        $systemDrive = [string](Get-WorkerPerfField $os 'SystemDrive')
+        foreach ($disk in $disks) {
+            $drive = [string](Get-WorkerPerfField $disk 'DeviceID')
+            $onDrive = $null
+            if ($null -ne $pfPaths) { $onDrive = (@($pfPaths | Where-Object { $drive -and $_.StartsWith($drive, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) }
+            [ordered]@{ Drive = $drive; SizeGB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $disk 'Size') 1073741824 1)
+                FreeGB = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $disk 'FreeSpace') 1073741824 1)
+                FileSystem = [string](Get-WorkerPerfField $disk 'FileSystem'); System = ($systemDrive -ne '' -and $drive -eq $systemDrive); PageFile = $onDrive }
+        }
+    }
+}
+
+function Read-WorkerPerfWinHealthEvents($Ctx) {
+    Set-WorkerPerfWinHealthValue $Ctx 'events.logs' {
+        # every log name the event catalogue reads; a missing log has Present false and empty fields
+        foreach ($evLog in @(Get-WorkerPerfEventReadLogs $Ctx.State.EventConfig)) {
+            foreach ($evName in @($evLog.Names)) {
+                $evInfo = Get-WorkerPerfWinHealthLog $Ctx ([string]$evName)
+                $evItem = [ordered]@{ Log = [string]$evName; Present = ($null -ne $evInfo) }
+                $evState = ConvertTo-WorkerPerfLogInfo $evInfo
+                foreach ($k in @($evState.Keys)) { $evItem[$k] = $evState[$k] }
+                $evItem['Oldest'] = $null
+                if ($null -ne $evInfo) {
+                    $oldest = Get-WorkerPerfLogOldestTime ([string]$evName)
+                    if ($oldest -is [datetime]) { $evItem['Oldest'] = ConvertTo-WorkerPerfHealthTime $oldest }
+                }
+                $evItem
+            }
+        }
+    }
+}
+
+function Get-WorkerPerfHealth {
+    # The health picture (New-WorkerPerfHealth), read area by area in fixed order within the time budget; $null without
+    # a Windows call when -Skip left out Zustand. A reader that throws keeps the values it set; the area then carries
+    # the message of the exception.
+    $st = $script:WinState
+    if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
+    if (-not (Test-WorkerPerfWinMeasured 'Zustand')) { return $null }
+    $total = [System.Diagnostics.Stopwatch]::StartNew()
+    $totalMs = [double]$script:WorkerPerfWinHealthTotalBudgetSec * 1000
+    $shared = @{}
+    $areas = [ordered]@{}
+    foreach ($area in $script:WorkerPerfHealthAreas) {
+        $restMs = $totalMs - $total.Elapsed.TotalMilliseconds
+        if ($restMs -le 0) { $areas[$area] = Complete-WorkerPerfHealthArea $area @{} 0 'budget' $true; continue }
+        $readers = $script:WorkerPerfWinHealthReaders
+        if (-not $readers.Contains($area)) { $areas[$area] = Complete-WorkerPerfHealthArea $area @{} 0 'noReader'; continue }
+        $ctx = @{ Area = $area; State = $st; Clock = [System.Diagnostics.Stopwatch]::StartNew()
+            BudgetMs = [Math]::Min([double]$script:WorkerPerfWinHealthAreaBudgetSec * 1000, $restMs); Shared = $shared; Values = [ordered]@{} }
+        $errorText = ''
+        try { $null = & ([string]$readers[$area]) $ctx }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { $errorText = Get-WorkerPerfErrorText $_.Exception }
+        $ms = $ctx.Clock.Elapsed.TotalMilliseconds
+        $areas[$area] = Complete-WorkerPerfHealthArea $area $ctx.Values ([Math]::Round($ms)) $errorText ($ms -ge $ctx.BudgetMs)
+    }
+    return (New-WorkerPerfHealth (Get-WorkerPerfNow) ([Math]::Round($total.Elapsed.TotalMilliseconds)) $areas)
 }
 
 #endregion

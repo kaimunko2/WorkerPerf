@@ -19,7 +19,8 @@ function Reset-WinStandIns {
         FailLogs = @{}; ReadFailOnce = [System.Collections.Generic.List[long]]::new(); ReadFailAlways = @(); Unformattable = @()
         OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
         # Calls: every stand-in counts its call by key (check:/open:/perf:<category>, cim:/cimclass:<class>, winevent:list,
-        # winevent:read, wts, registry:print), so a test can see which Windows calls a source made
+        # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power), so a test
+        # can see which Windows calls a source made
         Calls = @{}
         Events = [System.Collections.Generic.List[object]]::new()
         # SID -> account as Windows translates it; SidTimeout: SIDs whose lookup runs into the time limit
@@ -60,6 +61,52 @@ function Reset-WinStandIns {
         Sessions = [System.Collections.Generic.List[object]]::new()
         Disks = [System.Collections.Generic.List[object]]::new()
         Devices = @{}
+        # health picture: Delay/DelayOnce: call key -> milliseconds the stand-in waits before the call (DelayOnce only
+        # for the next call); RegistryFail/CimFail/LogFail: registry key, CIM class or log name -> exception thrown
+        Delay = @{}; DelayOnce = @{}; RegistryFail = @{}; CimFail = @{}; LogFail = @{}
+        # registry below HKLM: key -> values (hashtables ignore case); the subkeys of a key are the keys listed directly below it
+        Registry = @{
+            'SOFTWARE\VMware, Inc.\VMware Tools' = [ordered]@{}
+            'SYSTEM\CurrentControlSet\Control\Session Manager' = [ordered]@{
+                PendingFileRenameOperations = [string[]]@('\??\C:\Sim\alt.dll', '', '\??\C:\Sim\neu.tmp', '\??\C:\Sim\neu.dll') }
+            'SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' = [ordered]@{}
+            'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' = [ordered]@{}
+            'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1}' = [ordered]@{ DisplayName = 'VMware Tools'; DisplayVersion = '12.3.5.22544099' }
+            'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B2}' = [ordered]@{
+                DisplayName = 'Citrix Virtual Apps and Desktops 7 2203 LTSR CU4 - Virtual Delivery Agent'; DisplayVersion = '2203.0.4000.4033' }
+            'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{C3}' = [ordered]@{ DisplayName = 'PrinTaurus SmartSpread Client'; DisplayVersion = '6.2.1' }
+        }
+        # CIM classes besides the fixed ones of Get-CimInstance: class -> objects
+        Cim = @{
+            'Win32_PageFileUsage' = @([pscustomobject]@{ Name = 'C:\pagefile.sys'; AllocatedBaseSize = [uint32]16384; PeakUsage = [uint32]2100; TempPageFile = $false })
+            'Win32_NetworkAdapter' = @([pscustomobject]@{ Name = 'vmxnet3 Ethernet Adapter'; ServiceName = 'vmxnet3ndis6'; Speed = [uint64]10000000000; NetEnabled = $true })
+            'Win32_SCSIController' = @([pscustomobject]@{ Name = 'VMware PVSCSI Controller'; DriverName = 'pvscsi' })
+            'Win32_SystemDriver' = @([pscustomobject]@{ Name = 'vmmemctl'; State = 'Running'; StartMode = 'System' })
+            'Win32_QuickFixEngineering' = @([pscustomobject]@{ HotFixID = 'KB5000001'; InstalledOn = [datetime]'2026-09-10' },
+                [pscustomobject]@{ HotFixID = 'KB5000002'; InstalledOn = [datetime]'2026-10-14' })
+            'Win32_LogicalDisk' = @([pscustomobject]@{ DeviceID = 'C:'; Size = [uint64]100GB; FreeSpace = [uint64]8GB; FileSystem = 'NTFS' },
+                [pscustomobject]@{ DeviceID = 'D:'; Size = [uint64]200GB; FreeSpace = [uint64]150GB; FileSystem = 'NTFS' })
+        }
+        # Win32_Service: every service carries all six properties (the readers run under strict mode)
+        Services = @(
+            @('RpcSs', 900, 'Running', 'Auto', '', ''), @('Spooler', 0, 'Running', 'Auto', '', ''),
+            @('VMTools', 0, 'Running', 'Auto', '', ''), @('WinDefend', 0, 'Running', 'Auto', '', ''), @('Sense', 0, 'Running', 'Auto', '', ''),
+            @('AppIDSvc', 0, 'Running', 'Auto', '', ''), @('W32Time', 0, 'Running', 'Auto', '', ''),
+            @('BrokerAgent', 0, 'Running', 'Auto', 'Citrix Desktop Service', '"C:\Program Files\Citrix\Virtual Desktop Agent\BrokerAgent.exe"'),
+            @('ctxProfile', 0, 'Running', 'Auto', '', '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe"')
+        ) | ForEach-Object {
+            $display = $(if ($_[4]) { $_[4] } else { $_[0] })
+            [pscustomobject]@{ Name = $_[0]; DisplayName = $display; State = $_[2]; StartMode = $_[3]; PathName = $_[5]; ProcessId = [uint32]$_[1] }
+        }
+        PerformanceInfo = @{ CommitTotalMB = 36864; CommitLimitMB = 81920; CommitPeakMB = 60000 }
+        PowerScheme = '381b4222-f694-41f0-9685-ff5bb260df2e'
+        # per log of events.json: what Get-WinEvent -ListLog adds, and the time of the oldest entry
+        LogInfo = @{}; LogOldest = @{}
+    }
+    foreach ($name in $script:WinFake.Logs) {
+        $script:WinFake.LogInfo[$name] = @{ MaximumSizeInBytes = [long]20971520; FileSize = [long]12582912; RecordCount = [long]30000
+            LogMode = [WinStandInLogMode]::Circular; IsLogFull = $false }
+        $script:WinFake.LogOldest[$name] = [datetime]::Now.AddDays(-30)
     }
     $script:WinFake.Sessions.Add([pscustomobject]@{ SessionId = 0; State = 'Disconnected'; WinStation = 'Services'; User = ''; Domain = ''; ClientName = ''
             LogonTime = [datetime]::MinValue; IdleSec = -1 })
@@ -148,8 +195,31 @@ function Add-WinStandInUser([int]$SessionId, [string]$User, [string]$Volume) {
 }
 
 function Add-WinStandInCall([string]$Key) {
+    # counts the call; for every key but cim:<class> (Get-CimInstance waits itself, within its time limit) the stand-in
+    # then waits Delay[key], or once DelayOnce[key]
     $c = $script:WinFake.Calls
     if ($c.ContainsKey($Key)) { $c[$Key]++ } else { $c[$Key] = 1 }
+    if ($Key.StartsWith('cim:')) { return }
+    $wait = Get-WinStandInDelay $Key
+    if ($wait -gt 0) { Start-Sleep -Milliseconds $wait }
+}
+
+function Get-WinStandInDelay([string]$Key) {
+    # the milliseconds to wait before the call with this key; a DelayOnce entry is used up
+    $wait = 0
+    if ($script:WinFake.Delay.ContainsKey($Key)) { $wait = [int]$script:WinFake.Delay[$Key] }
+    if ($script:WinFake.DelayOnce.ContainsKey($Key)) { $wait = [int]$script:WinFake.DelayOnce[$Key]; $script:WinFake.DelayOnce.Remove($Key) }
+    return $wait
+}
+
+function New-WinStandInDenied([string]$Kind) {
+    # denied access in the form Windows reports it: 'cim' as Get-CimInstance does (NativeErrorCode AccessDenied),
+    # 'win32' as a Win32Exception with code 5
+    switch ($Kind) {
+        'cim' { return (New-Object WinStandInCimException 'Zugriff verweigert') }
+        'win32' { return (New-Object System.ComponentModel.Win32Exception -ArgumentList 5) }
+    }
+    throw "Stand-in kennt die Art '$Kind' nicht"
 }
 
 function Test-WorkerPerfElevated { return $true }
@@ -203,9 +273,23 @@ function Get-CimClass {
 function Get-CimInstance {
     [CmdletBinding()] param([string]$ClassName, [string]$Namespace, [string]$Filter, [string[]]$Property, [int]$OperationTimeoutSec)
     Add-WinStandInCall ('cim:' + $ClassName)
+    # a delay longer than the time limit of the call ends at the limit, as on Windows
+    $wait = Get-WinStandInDelay ('cim:' + $ClassName)
+    if ($wait -gt 0) {
+        $limit = $wait
+        if ($OperationTimeoutSec -gt 0) { $limit = [Math]::Min($wait, $OperationTimeoutSec * 1000) }
+        Start-Sleep -Milliseconds $limit
+        if ($limit -lt $wait) { throw (New-Object System.TimeoutException "Zeitlimit der Abfrage von $ClassName ueberschritten") }
+    }
+    if ($script:WinFake.CimFail.ContainsKey($ClassName)) { throw $script:WinFake.CimFail[$ClassName] }
     switch ($ClassName) {
-        'Win32_ComputerSystem' { [pscustomobject]@{ Name = 'VDA-TEST'; NumberOfLogicalProcessors = 6; TotalPhysicalMemory = [uint64]62277025792 } }
-        'Win32_OperatingSystem' { [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348' } }
+        'Win32_ComputerSystem' {
+            [pscustomobject]@{ Name = 'VDA-TEST'; NumberOfLogicalProcessors = 6; TotalPhysicalMemory = [uint64]62277025792; NumberOfProcessors = 2
+                AutomaticManagedPagefile = $false; HypervisorPresent = $true; Manufacturer = 'VMware, Inc.'; Model = 'VMware7,1'; PartOfDomain = $true }
+        }
+        'Win32_OperatingSystem' {
+            [pscustomobject]@{ Caption = 'Microsoft Windows Server 2022 Standard'; Version = '10.0.20348'; LastBootUpTime = [datetime]::Now.AddDays(-2); SystemDrive = 'C:' }
+        }
         'Win32_Process' {
             $start = [datetime]::Now.AddHours(-2)
             foreach ($p in @(@(900, 'svchost.exe', 0), @(7964, 'EXCEL.EXE', 2))) {
@@ -216,7 +300,12 @@ function Get-CimInstance {
                     CreationDate = $start; ExecutablePath = 'C:\Programme\' + $p[1]; CommandLine = $null }
             }
         }
-        'Win32_Service' { [pscustomobject]@{ Name = 'RpcSs'; ProcessId = [uint32]900 }; [pscustomobject]@{ Name = 'Spooler'; ProcessId = [uint32]0 } }
+        'Win32_Service' {
+            # without a filter every service; with the filter of Get-WorkerPerfServices exactly RpcSs and Spooler, as before
+            if (-not $Filter) { $script:WinFake.Services }
+            elseif ($Filter -eq 'ProcessId > 0') { $script:WinFake.Services | Where-Object { @('RpcSs', 'Spooler') -contains $_.Name } }
+            else { throw "Stand-in kennt den Filter $Filter nicht" }
+        }
         'MSFT_PrinterDriver' { if (-not $script:WinFake.PrintDriverClass) { throw 'Klasse MSFT_PrinterDriver nicht gefunden' }; $script:WinFake.Drivers }
         'MSFT_Disk' { $script:WinFake.DiskQueries++; if ($script:WinFake.FailStorage) { throw 'Zeitlimit der Speicherabfrage' }; $script:WinFake.Disks.ToArray() }
         'MSFT_Partition' { foreach ($d in $script:WinFake.Disks) { $d.Partitions } }
@@ -224,7 +313,11 @@ function Get-CimInstance {
             if ($script:WinFake.FailCitrix) { throw 'Citrix-WMI antwortet nicht' }
             [pscustomobject]@{ SessionID = [uint32]2; RoundtripTime = [uint32]40; NetworkLatency = [uint32]20; InstanceId = 'a'; ProcessId = '1' }
         }
-        default { throw "Stand-in kennt $ClassName nicht" }
+        default {
+            # any other class from Cim, without regard to the filter
+            if (-not $script:WinFake.Cim.ContainsKey($ClassName)) { throw "Stand-in kennt $ClassName nicht" }
+            $script:WinFake.Cim[$ClassName]
+        }
     }
 }
 
@@ -254,12 +347,22 @@ function ConvertFrom-WinStandInQuery([xml]$Xml) {
 }
 
 function Get-WinEvent {
-    # like Get-WinEvent -ListLog (IsEnabled); the source reads events through Open-WorkerPerfEventReader, anything else fails
+    # like Get-WinEvent -ListLog (IsEnabled and the sizes, record count, mode and full flag from LogInfo); the source reads
+    # events through Open-WorkerPerfEventReader, anything else fails. A missing log is reported with the error id of
+    # Windows (NoMatchingLogsFound), a log in LogFail with its exception.
     [CmdletBinding()] param([string]$ListLog, [hashtable]$FilterHashtable, [xml]$FilterXml, [long]$MaxEvents = -1, [switch]$Oldest)
     Add-WinStandInCall $(if ($ListLog) { 'winevent:list' } else { 'winevent:read' })
     if (-not $ListLog) { throw 'Stand-in: Ereignisse liest die Quelle ueber Open-WorkerPerfEventReader, nicht ueber Get-WinEvent' }
-    if ($script:WinFake.Logs -contains $ListLog) { return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog) } }
-    throw "Protokoll $ListLog nicht vorhanden"
+    if ($script:WinFake.LogFail.ContainsKey($ListLog)) { throw $script:WinFake.LogFail[$ListLog] }
+    if ($script:WinFake.Logs -contains $ListLog) {
+        $info = $script:WinFake.LogInfo[$ListLog]
+        $field = { param($n) if ($null -ne $info -and $info.ContainsKey($n)) { $info[$n] } else { $null } }
+        return [pscustomobject]@{ LogName = $ListLog; IsEnabled = ($script:WinFake.DisabledLogs -notcontains $ListLog)
+            MaximumSizeInBytes = (& $field 'MaximumSizeInBytes'); FileSize = (& $field 'FileSize'); RecordCount = (& $field 'RecordCount')
+            LogMode = (& $field 'LogMode'); IsLogFull = (& $field 'IsLogFull') }
+    }
+    $PSCmdlet.ThrowTerminatingError((New-Object System.Management.Automation.ErrorRecord ((New-Object System.Exception "Protokoll $ListLog nicht vorhanden"),
+                'NoMatchingLogsFound', ([System.Management.Automation.ErrorCategory]::ObjectNotFound), $ListLog)))
 }
 
 function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
@@ -326,3 +429,43 @@ function Get-WorkerPerfSidAccount([string]$Sid) {
 function Get-WorkerPerfPrintIsolationGroups { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationGroups }
 function Get-WorkerPerfPrintIsolationPolicy { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationPolicy }
 function Get-WorkerPerfPrintDriverAttribute($Driver) { Add-WinStandInCall 'registry:print'; return $script:WinFake.DriverAttributes[[string]$Driver.Name] }
+
+# health picture: registry, native calls and the oldest entry of a log
+function Get-WorkerPerfRegistryValues([string]$SubKey) {
+    Add-WinStandInCall ('registry:' + $SubKey)
+    if ($script:WinFake.RegistryFail.ContainsKey($SubKey)) { throw $script:WinFake.RegistryFail[$SubKey] }
+    if (-not $script:WinFake.Registry.ContainsKey($SubKey)) { return $null }
+    $prefix = $SubKey.TrimEnd('\') + '\'
+    $subs = @(foreach ($k in @($script:WinFake.Registry.Keys)) {
+            if (([string]$k).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                $rest = ([string]$k).Substring($prefix.Length)
+                if ($rest.Length -gt 0 -and -not $rest.Contains('\')) { $rest }
+            }
+        })
+    $values = [ordered]@{}
+    foreach ($n in @($script:WinFake.Registry[$SubKey].Keys)) { $values[$n] = $script:WinFake.Registry[$SubKey][$n] }
+    return @{ Values = $values; SubKeys = [string[]]@($subs | Sort-Object) }
+}
+
+function Get-WorkerPerfPerformanceInfo { Add-WinStandInCall 'native:perfinfo'; return $script:WinFake.PerformanceInfo.Clone() }
+function Get-WorkerPerfActivePowerScheme { Add-WinStandInCall 'native:power'; return [string]$script:WinFake.PowerScheme }
+
+function Get-WorkerPerfLogOldestTime([string]$LogName) {
+    Add-WinStandInCall 'winevent:oldest'
+    if ($script:WinFake.Logs -notcontains $LogName) { throw (New-Object System.IO.FileNotFoundException "Protokoll $LogName nicht vorhanden") }
+    if ($script:WinFake.LogOldest.ContainsKey($LogName)) { return $script:WinFake.LogOldest[$LogName] }
+    return $null
+}
+
+# Test types: the log mode as Windows gives it (an enumeration), and an exception that reports denied access the way a
+# CimException does (NativeErrorCode AccessDenied).
+if (-not ('WinStandInLogMode' -as [type])) {
+    Add-Type -TypeDefinition @'
+public enum WinStandInLogMode { Circular = 0, AutoBackup = 1, Retain = 2 }
+public class WinStandInCimException : System.Exception
+{
+    public WinStandInCimException(string message) : base(message) { }
+    public string NativeErrorCode { get { return "AccessDenied"; } }
+}
+'@
+}
