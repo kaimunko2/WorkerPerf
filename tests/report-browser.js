@@ -671,7 +671,7 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
       for (const p of s.places) ok(await page.locator(`.notmeasured[data-place="${p}"]`).count() > 0, n + ': Stelle ' + p + ' sagt "nicht gemessen"');
     }
     // every location of a place in the brief's table shows its hint, visibly, on the tab where it stands
-    for (const s of D.skipped) for (const p of s.places) for (const [tab, sel] of SKIP_LOCATIONS[p]) {
+    for (const s of D.skipped) for (const p of s.places) for (const [tab, sel] of (ok(SKIP_LOCATIONS[p], n + ': Stelle ' + p + ' fehlt in SKIP_LOCATIONS (tests/report-browser.js)'), SKIP_LOCATIONS[p])) {
       await page.click(`nav button[data-tab=${tab}]`);
       ok(await page.locator(sel).first().isVisible(), n + ': Stelle ' + p + ' sichtbar an ' + sel);
     }
@@ -717,14 +717,17 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
   ok(!(await d.page.locator('#print').innerText()).includes('Keine Treiberliste aufgezeichnet'), 'Drucken: nicht "keine Treiberliste"');
   await d.page.close();
   const r = await open(browser, path.join(dir, 'report-skip-rueckblick.html'), scheme);
-  ok((await r.page.locator('#before').innerText()).includes('Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0).'), 'Rueckblick abgeschaltet');
+  // Aussage geaendert (Abschlussrunde, Minor 5): der Hinweis nennt den Grund, der Satz zum Zustand sagt dasselbe nicht noch einmal
+  const rbt = await r.page.locator('#before').innerText();
+  ok(rbt.includes('nicht gemessen – Ereignisse der Tage vor der Messung wurden nicht erfasst. (-Skip Rueckblick)') && !rbt.includes('Der Rückblick war abgeschaltet'), 'Rueckblick abgeschaltet, einmal gesagt: ' + rbt);
   await r.page.close();
   const e = await open(browser, path.join(dir, 'report-skip-ereignisse.html'), scheme);
   ok(e.D.quality.eventReads.length === 0 && await e.page.locator('#quality .notmeasured[data-place="events"]').count() === 1, 'Messqualitaet: Ereignisprotokolle nicht gemessen');
   // driver involvement draws on the incidents from events: without the events of the capture never "nein"
   const cellsOf = async (page) => (await page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
   let drv = await cellsOf(e.page);
-  ok(drv.length === 3 && drv.every((t) => t === '–') && await e.page.locator('#print .notmeasured[data-place="events"]').isVisible(), 'Ereignisse: Treiber ohne "nein", mit Grund: ' + drv.join(' / '));
+  // Aussage geaendert (Abschlussrunde, Minor 10): der Rueckblick ist gelesen, "nein" gilt fuer die Tage vor der Messung
+  ok(e.D.before.status === 'read' && drv.length === 3 && drv.every((t, k) => t === (e.D.print.drivers[k].involved ? 'beteiligt' : 'nein (vor der Messung)')) && await e.page.locator('#print .notmeasured[data-place="events"]').isVisible(), 'Ereignisse: Treiber "nein" nur vor der Messung, mit Grund: ' + drv.join(' / '));
   await e.page.close();
   const a = await open(browser, path.join(dir, 'report-skip-alle.html'), scheme);
   ok(await a.page.locator('#tPrintDrivers').count() === 0 && !(await a.page.locator('#print').innerText()).match(/\bnein\b/), 'alle: keine Treibertabelle, kein "nein"');
@@ -739,6 +742,99 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
   await f.page.close();
 }
 
+async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlussrunde
+  const txt = async (page, sel) => (await page.locator(sel).innerText()).replace(/\s+/g, ' ').trim();
+  // I1: a capture without findings names every category left out and never says that everything was measured
+  const ne = await open(browser, path.join(dir, 'report-skip-none-ereignisse.html'), scheme);
+  ok(ne.D.noFinding && ne.D.skipped.length === 1, 'ohne Ereignisse ohne Befund: Daten');
+  ok(await txt(ne.page, '#findHead') === 'Keine Vorfälle aus den gemessenen Werten; Vorfälle aus Ereignissen wurden nicht erfasst (-Skip Ereignisse).', 'Kopf ohne Ereignisse: ' + await txt(ne.page, '#findHead'));
+  let nf = await txt(ne.page, '#noFinding');
+  ok(nf.includes('Nicht gemessen (1) Ereignisse – Ereignisse während der Messung wurden nicht erfasst. (-Skip Ereignisse)') && !nf.includes('alle Messwerte wurden erfasst'), 'ohne Befund ohne Ereignisse: ' + nf);
+  ok(ne.page.errors.length === 0, 'Skriptfehler none-ereignisse: ' + ne.page.errors.join(' | '));
+  await ne.page.close();
+  const na = await open(browser, path.join(dir, 'report-skip-none-alle.html'), scheme);
+  nf = await txt(na.page, '#noFinding');
+  const listed = await na.page.locator('#noFinding li[data-skip]').evaluateAll((l) => l.map((x) => x.dataset.skip));
+  ok(na.D.noFinding && listed.join(',') === na.D.skipped.map((x) => x.id).join(',') && listed.length === 7, 'ohne Befund ohne alle: jede Kategorie genannt: ' + listed.join(','));
+  ok(na.D.skipped.every((x) => nf.includes(x.label + ' – ' + x.text + ' (-Skip ' + x.id + ')')) && nf.includes('Nicht gemessen (' + (7 + na.D.sollIst.filter((r) => !r.measured).length) + ')') && !nf.includes('alle Messwerte wurden erfasst'), 'ohne alle: Liste: ' + nf);
+  ok((await txt(na.page, '#findHead')).startsWith('Keine Vorfälle aus den gemessenen Werten;'), 'Kopf ohne alle');
+  ok(na.page.errors.length === 0, 'Skriptfehler none-alle: ' + na.page.errors.join(' | '));
+  await na.page.close();
+  const n0 = await open(browser, path.join(dir, 'report-none.html'), scheme);
+  ok(await txt(n0.page, '#findHead') === 'Keine Vorfälle im Messzeitraum.' && (await txt(n0.page, '#noFinding')).includes('Nicht gemessen (0) keine: alle Messwerte wurden erfasst') && await n0.page.locator('#noFinding li[data-skip]').count() === 0, 'ohne -Skip ohne Befund: wie bisher');
+  await n0.page.close();
+  // the count of a capture with incidents without the events of the capture says that incidents from events were not recorded
+  for (const [file, want] of [['report-skip-ereignisse.html', true], ['report-skip-alle.html', true], ['report-skip-prozesse.html', false], ['report.html', false]]) {
+    const r = await open(browser, path.join(dir, file), scheme), h = await txt(r.page, '#findHead');
+    ok(h.endsWith(' Vorfälle aus Ereignissen wurden nicht erfasst (-Skip Ereignisse).') === want && /^\d+ Vorf/.test(h), file + ': Kopf: ' + h);
+    await r.page.close();
+  }
+  // I2: the sentence for the reported user says what it does not count
+  const fe = await open(browser, path.join(dir, 'report-skip-focus-ereignisse.html'), scheme);
+  ok(await txt(fe.page, '#focusInfo') === 'Gemeldeter Benutzer user008, Sitzung #9. 1 Vorfall betrifft den Benutzer. Abstürze und Hänger sind dabei nicht gezählt: Ereignisse während der Messung wurden nicht erfasst (-Skip Ereignisse).', 'Fokus ohne Ereignisse: ' + await txt(fe.page, '#focusInfo'));
+  await fe.page.close();
+  const fp = await open(browser, path.join(dir, 'report-skip-focus-prozesse.html'), scheme);
+  ok(await txt(fp.page, '#focusInfo') === 'Gemeldeter Benutzer user008, Sitzung #9. 1 Vorfall betrifft den Benutzer. Abstürze und Hänger sind dabei nicht gezählt: Prozesse wurden bei dieser Messung nicht erfasst (-Skip Prozesse).', 'Fokus ohne Prozesse: ' + await txt(fp.page, '#focusInfo'));
+  await fp.page.close();
+  const fb = await open(browser, patched(dir, 'report-skip-focus-prozesse.html', 'report-skip-focus-beide.html', (J) => {
+    J.skipped.splice(1, 0, { id: 'Ereignisse', label: 'Ereignisse', text: 'Ereignisse während der Messung wurden nicht erfasst.', places: ['events', 'sessions.events', 'incidents.events'] });
+    J.meta.focus.reportedMs = J.meta.start + 600000;
+  }), scheme);
+  const fbt = await txt(fb.page, '#focusInfo');
+  ok(fbt.endsWith('Abstürze und Hänger sind dabei nicht gezählt: Ereignisse während der Messung wurden nicht erfasst (-Skip Ereignisse); Prozesse wurden bei dieser Messung nicht erfasst (-Skip Prozesse).'), 'Fokus ohne beide: ' + fbt);
+  ok(fb.page.errors.length === 0, 'Skriptfehler Fokus beide: ' + fb.page.errors.join(' | '));
+  await fb.page.close();
+  const ft = await open(browser, patched(dir, 'report-skip-focus-prozesse.html', 'report-skip-focus-zeit.html', (J) => { J.meta.focus.reportedMs = J.meta.start + 600000; }), scheme);
+  ok((await txt(ft.page, '#focusInfo')).includes(' Abstürze und Hänger sind beim Benutzer nicht gezählt: Prozesse wurden bei dieser Messung nicht erfasst (-Skip Prozesse).'), 'Fokus ohne Prozesse mit Uhrzeit: nur beim Benutzer: ' + await txt(ft.page, '#focusInfo'));
+  await ft.page.close();
+  const ff = await open(browser, path.join(dir, 'report-focus.html'), scheme);
+  ok(!(await txt(ff.page, '#focusInfo')).includes('nicht gezählt'), 'voller Lauf: Fokus wie bisher');
+  await ff.page.close();
+  // Minor 1: without the events of the capture a scan is unknown, not absent
+  const sec = (J) => { const i = J.incidents.find((x) => x.type === 'engpass' && x.cause && x.cause.kind === 'main'); i.cause = Object.assign({}, i.cause, { kind: 'security', security: { label: 'Microsoft Defender', sharePct: 74 }, scan: false, other: null }); J.secId = i.id; };
+  for (const [base, want] of [['report-skip-ereignisse.html', 'Ob im Fenster ein Virenscan lief, ist nicht erfasst (Ereignisse nicht gemessen); Zeitplan des Scans und Scan-Ausschlüsse prüfen.'], ['report.html', 'Scan-Ausschlüsse prüfen.']]) {
+    const q = await open(browser, patched(dir, base, 'scan-' + base, sec), scheme), id = q.D.secId;
+    const box = await (await openIncident(q.page, id)).locator('.causebox').innerText();
+    ok(box.includes('Microsoft Defender mit 74 %') && box.includes(want) && (base === 'report.html') === !box.includes('nicht erfasst'), base + ': Schutzsoftware ohne Scan: ' + box);
+    await q.page.close();
+  }
+  // Minor 3: several categories of the overlap left out make one line
+  const g = await open(browser, patched(dir, 'report-skip-gegenstellen.html', 'report-skip-overlap3.html', (J) => {
+    const i = J.incidents.find((x) => x.type === 'ereignis' && x.event.unchecked.length === 1 && x.event.unchecked[0].id === 'overlap');
+    i.event.unchecked = ['Laufwerke', 'Citrix', 'Gegenstellen'].map((c) => ({ id: 'overlap', category: c, text: `Zusammentreffen mit einem Vorfall der Kategorie ${c} (${c} nicht gemessen)` }));
+    J.overlapId = i.id;
+  }), scheme);
+  let pats = await (await openIncident(g.page, g.D.overlapId)).locator('.patterns li.unchecked').allInnerTexts();
+  ok(pats.length === 1 && pats[0].includes('nicht geprüft: Zusammentreffen mit Vorfällen der Kategorien Laufwerke, Citrix, Gegenstellen (nicht gemessen)'), 'drei Kategorien in einer Zeile: ' + pats.join(' / '));
+  await g.page.close();
+  const g1 = await open(browser, path.join(dir, 'report-skip-gegenstellen.html'), scheme);
+  const one = g1.D.incidents.find((x) => x.type === 'ereignis' && x.event.unchecked.length === 1);
+  pats = await (await openIncident(g1.page, one.id)).locator('.patterns li.unchecked').allInnerTexts();
+  ok(pats.length === 1 && pats[0].includes('nicht geprüft: Zusammentreffen mit einem Vorfall der Kategorie Gegenstellen (Gegenstellen nicht gemessen)'), 'eine Kategorie wie bisher: ' + pats.join(' / '));
+  await g1.page.close();
+  // Minor 4: the limits of a category left out are no limits of the capture
+  const IO = 'Bei Datenträgern und Freigaben ist sichtbar', SHORT = 'Prozesse, die zwischen zwei Schnappschüssen starten';
+  for (const [file, io, short] of [['report.html', true, true], ['report-skip-laufwerke.html', false, true], ['report-skip-prozesse.html', false, false], ['report-skip-alle.html', false, false], ['report-skip-citrix.html', true, true]]) {
+    const r = await open(browser, path.join(dir, file), scheme), l = await r.page.locator('#limits').innerText();
+    ok(l.includes(IO) === io && l.includes(SHORT) === short && l.includes('Die Eingabeverzögerung enthält keine Prozesse, die als SYSTEM laufen.'), file + ': Grenzen der Aussage: ' + l);
+    await r.page.close();
+  }
+  // Minor 10: neither the capture nor the lookback read: "–" and "nicht geprueft"
+  const both = await open(browser, patched(dir, 'report-skip-ereignisse.html', 'report-skip-ereignisse-rueckblick.html', (J) => {
+    J.skipped.push({ id: 'Rueckblick', label: 'Rückblick', text: 'Ereignisse der Tage vor der Messung wurden nicht erfasst.', places: ['before'] });
+    Object.assign(J.before, { status: 'off', days: 0, eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [] });
+  }), scheme);
+  const cells = (await both.page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.trim());
+  ok(cells.length === 3 && cells.every((t) => t === '–') && (await both.page.locator('#print').innerText()).includes('„An einem Vorfall beteiligt“: nicht geprüft.'), 'Ereignisse und Rueckblick weggelassen: ' + cells.join(' / '));
+  ok(both.page.errors.length === 0, 'Skriptfehler beide weggelassen: ' + both.page.errors.join(' | '));
+  await both.page.close();
+  // Minor 6: a capture whose Skip contradicts its files gives the page of its Skip, without a script error
+  const odd = await open(browser, path.join(dir, 'report-skip-odd.html'), scheme);
+  for (const t of ['overview', 'apps', 'procs', 'sessions', 'findings']) await odd.page.click(`nav button[data-tab=${t}]`);
+  ok(odd.page.errors.length === 0 && odd.D.procs.length === 0 && (await odd.page.locator('header #skipInfo').innerText()).includes('Nicht gemessen (-Skip): Prozesse') && (await odd.page.locator('#print').innerText()).includes('Drucken') && (await odd.page.locator('#quality').innerText()).length > 0, 'Skip gegen die Dateien: Seite ohne Fehler: ' + odd.page.errors.join(' | '));
+  await odd.page.close();
+}
+
 (async () => {
   const dir = path.resolve(process.argv[2]);
   const browser = await chromium.launch();
@@ -750,6 +846,7 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
     await checkSkip(browser, dir, scheme);
   }
   await checkMaskedPage(browser, dir, 'light');
+  await checkFixWave(browser, dir, 'light');
   console.log('browser checks passed: ' + checks);
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });

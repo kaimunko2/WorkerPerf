@@ -1197,7 +1197,10 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
     [(i) => i.chronic && i.type === "umfeld", "Dauerzustand im Umfeld", "Dauerzustände im Umfeld"],
     [(i) => i.type === "ereignis", "Vorfall aus Ereignissen", "Vorfälle aus Ereignissen"]];
   const parts = KINDS.map(([f, one, many]) => [INC.filter(f).length, one, many]).filter((k) => k[0] > 0).map((k) => plural(k[0], k[1], k[2]));
-  document.getElementById("findHead").textContent = INC.length ? `${plural(INC.length, "Vorfall", "Vorfälle")}: ${parts.join(", ")}.` : "Keine Vorfälle im Messzeitraum.";
+  // without the events of the capture no incident from events can form: the count says so, never "Keine Vorfälle" alone
+  const evSkip = SKIP_AT.get("events"), evNote = evSkip ? `Vorfälle aus Ereignissen wurden nicht erfasst (-Skip ${evSkip.id}).` : "";
+  document.getElementById("findHead").textContent = INC.length ? `${plural(INC.length, "Vorfall", "Vorfälle")}: ${parts.join(", ")}.` + (evNote ? " " + evNote : "")
+    : evNote ? "Keine Vorfälle aus den gemessenen Werten; " + evNote : "Keine Vorfälle im Messzeitraum.";
 }
 
 // focus: reported user and time
@@ -1230,12 +1233,19 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
     const cutOut = FOCUS.reportedMs != null && FOCUS.reportedMs >= capS && FOCUS.reportedMs <= capE && (FOCUS.reportedMs < FULL.t0 || FOCUS.reportedMs > FULL.t1) && n > 0;
     const cutText = !cutOut ? "" : " Ereignisse um die gemeldete Uhrzeit zeigt der Bericht nicht: " +
       (n === 1 ? "1 Ereignis der Aufzeichnung liegt außerhalb des gewählten Zeitraums." : `${fmt(n, 0)} Ereignisse der Aufzeichnung liegen außerhalb des gewählten Zeitraums.`);
-    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "") + cutText;
+    // without the events of the capture no crash or hang is in the counts; without processes none is assigned to a user
+    const evS = SKIP_AT.get("events"), prS = SKIP_AT.get("incidents.contributors"), userCount = FOCUS.user && FOCUS.found;
+    const why = (s) => `${esc(s.text.replace(/\.$/, ""))} (-Skip ${esc(s.id)})`, reasons = [];
+    if (evS && counts.length) reasons.push(why(evS));
+    if (prS && userCount) reasons.push(why(prS));
+    const notCounted = !reasons.length ? "" : ` Abstürze und Hänger sind ${!evS && FOCUS.reportedMs != null ? "beim Benutzer" : "dabei"} nicht gezählt: ${reasons.join("; ")}.`;
+    el.innerHTML = parts.join(", ") + "." + (counts.length ? " " + counts.join(", ") + "." : "") + notCounted + (bcounts.length ? " Vor der Messung: " + bcounts.join(", ") + "." : "") + cutText;
     el.hidden = false;
   }
 }
 
-// no finding: explicit statement and what was (not) measured
+// no finding: explicit statement and what was (not) measured; the categories left out with -Skip come first under
+// "Nicht gemessen" (nothing of them counts as unremarkable)
 if (D.noFinding) {
   const el = document.getElementById("noFinding"), meas = D.sollIst.filter((r) => r.measured), notm = D.sollIst.filter((r) => !r.measured);
   // values that crossed a threshold without forming a finding (fewer points than the minimum) are named, not denied
@@ -1248,7 +1258,8 @@ if (D.noFinding) {
     <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. Die Werte stehen im Soll-Ist-Vergleich unten.</div>`) + `
     <div class="grid2" style="margin:10px 0 0">
       <div><h3>Gemessen (${meas.length})</h3><ul>${meas.map((r) => `<li>${esc(r.label)}: Max ${fmtVal(r.max, r.unit)} <span class="note">(Soll ${esc(r.ideal || "–")})</span></li>`).join("") || "<li>keine</li>"}</ul></div>
-      <div><h3>Nicht gemessen (${notm.length})</h3><ul>${notm.map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("") || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
+      <div><h3>Nicht gemessen (${SKIPPED.length + notm.length})</h3><ul>${SKIPPED.map((c) => `<li data-skip="${esc(c.id)}">${esc(c.label)} <span class="note">– ${esc(c.text)} (-Skip ${esc(c.id)})</span></li>`).join("") +
+        notm.map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("") || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
     </div>`;
   el.hidden = false;
 }
@@ -1414,7 +1425,9 @@ function mainHtml(inc) {
     if (c.kind === "main" && inc.main) return `<div class="mainline">${mainEntryHtml(inc.main, measure)}</div>`;
     if (c.kind === "security" && c.security) {
       return `<div class="mainline">Größter Verbraucher: ${esc(c.security.label || "Schutzsoftware")} mit <b>${pct(c.security.sharePct)}</b> <span class="num">${measure}</span>. ` +
-        (c.scan ? "Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen." : "Scan-Ausschlüsse prüfen.") + "</div>" +
+        (c.scan ? "Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen."
+          : SKIPPED.some((x) => x.id === "Ereignisse") ? "Ob im Fenster ein Virenscan lief, ist nicht erfasst (Ereignisse nicht gemessen); Zeitplan des Scans und Scan-Ausschlüsse prüfen."
+          : "Scan-Ausschlüsse prüfen.") + "</div>" +
         (c.other ? `<div class="mainline">Größter Anteil außerhalb der Schutzsoftware: ${mainEntryHtml(c.other, measure)}</div>` : "");
     }
     if (c.kind === "nodata") return '<div class="mainline">Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor.</div>';
@@ -1513,8 +1526,12 @@ function renderEventDetail(inc, host) {
   if (ev.codes.length) kv.push(`<span>Fehlercode <b>${ev.codes.map((c) => esc(c.code) + (c.text ? " (" + esc(c.text) + ")" : "") + ' <span style="white-space:nowrap">' + fmt(c.count, 0) + "-mal</span>").join(", ")}</b></span>`);
   kv.push(`<span>Quelle <b>${esc(ev.source || "–")}</b></span>`);
   // a pattern that would need a category left out with -Skip: "nicht geprüft", never "Kein Muster erkannt"
+  // several categories of the overlap left out: one line for them, as in the incident's sentence (MK-R21)
+  const overlaps = unchecked.filter((x) => x.id === "overlap"), catLabel = (id) => (SKIPPED.find((c) => c.id === id) || { label: id }).label;
+  const uncheckedLines = overlaps.length < 2 ? unchecked.map((x) => x.text)
+    : unchecked.filter((x) => x.id !== "overlap" || x === overlaps[0]).map((x) => x.id !== "overlap" ? x.text : `Zusammentreffen mit Vorfällen der Kategorien ${overlaps.map((o) => catLabel(o.category)).join(", ")} (nicht gemessen)`);
   const patterns = ev.patterns.length || unchecked.length ? ev.patterns.map((p) => `<li>${esc(p.text)}</li>`).join("") +
-    unchecked.map((x) => `<li class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(x.text)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
+    uncheckedLines.map((t) => `<li class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(t)}</li>`).join("") : '<li class="none">Kein Muster erkannt</li>';
   const shown = list.length - 1, withDate = ev.before;
   host.innerHTML = `<div class="kv">${kv.join("")}</div>
     <h4>Muster</h4><ul class="plain patterns">${patterns}</ul>
@@ -1695,7 +1712,8 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
     `Nicht gelesen: ${esc(logs.filter((l) => !l.available).map((l) => l.label).join(", ") || "–")}.</p>`;
   const summary = (BEFORE_STATUS === "read" || partial) && (BEFORE.eventCount > 0 || BEFORE.capped.length);
   if (!summary) {
-    const state = BEFORE_STATUS === "off" ? "Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0)."
+    // with the hint of -Skip Rueckblick the state sentence would say the same once more
+    const state = BEFORE_STATUS === "off" ? (notMeasured("before") ? "" : "Der Rückblick war abgeschaltet (-Skip Rueckblick oder -EventLookbackDays 0).")
       : BEFORE_STATUS === "missingFile" ? "Für die Tage vor der Messung liegt keine Ereignisdatei vor (events_before.csv fehlt)."
       : BEFORE_STATUS === "unavailable" ? "Für die Tage vor der Messung wurden keine Ereignisse gelesen: die Ereignisquellen waren nicht verfügbar."
       : partial ? (BEFORE.days === 1 ? "In den gelesenen Protokollen stehen für den Tag vor der Messung keine Ereignisse der erfassten Arten."
@@ -1740,7 +1758,9 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
   const involvedNote = !(evSkip || lbSkip) ? "" : `<div class="note" style="margin-top:4px">„An einem Vorfall beteiligt“: ${evSkip && lbSkip ? "nicht geprüft."
     : evSkip ? "nur aus den Vorfällen vor der Messung; ob ein Treiber an einem Vorfall während der Messung beteiligt war, ist nicht geprüft."
     : "nur aus den Vorfällen während der Messung; die Tage vor der Messung sind nicht geprüft."}</div>` + evSkip + lbSkip;
-  const involvedNo = evSkip ? "–" : lbSkip ? 'nein <span class="note">(während der Messung)</span>' : "nein";
+  // "nein" for the part that was read: the lookback (without Ereignisse) or the capture (without Rueckblick); "–" when neither
+  const lbRead = BEFORE_STATUS === "read" || BEFORE_STATUS === "partial";
+  const involvedNo = evSkip ? (!lbSkip && lbRead ? 'nein <span class="note">(vor der Messung)</span>' : "–") : lbSkip ? 'nein <span class="note">(während der Messung)</span>' : "nein";
   el.innerHTML = `<div class="cardhead"><h3>Drucken</h3></div>
     <h4>Druckertreiber${notMeasured("print.drivers") ? "" : ` (${PRINT.drivers.length})`}</h4>${notMeasured("print.drivers") || (PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' + involvedNote : '<div class="note">Keine Treiberliste aufgezeichnet.</div>')}
     <h4>Druckwarteschlangen${notMeasured("print.queues") ? "" : ` (${PRINT.queues.length})`}</h4>${notMeasured("print.queues") || (PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>')}
@@ -1795,11 +1815,14 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
       (r.source ? `<span class="note">${isWebUrl(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.source)}</a>` : esc(r.source)}</span>` : "") }
   ], D.sollIst, { sort: null, id: (r) => r.id, text: () => "", rowAttr: (r) => `data-measured="${r.measured ? "true" : "false"}"` });
 
-  document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>
-    <li>Bei Datenträgern und Freigaben ist sichtbar, dass ein Ziel langsam antwortet und welche Prozesse viel I/O erzeugen, nicht aber, welcher Prozess auf welche Datei wartet.</li>
+  // a limit of a category left out with -Skip is no limit of this capture: its line stays out
+  const noDrives = notMeasured("volumes"), noProcs = notMeasured("procs");
+  document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>` +
+    (noDrives || noProcs ? "" : `
+    <li>Bei Datenträgern und Freigaben ist sichtbar, dass ein Ziel langsam antwortet und welche Prozesse viel I/O erzeugen, nicht aber, welcher Prozess auf welche Datei wartet.</li>`) + `
     <li>Die Eingabeverzögerung enthält keine Prozesse, die als SYSTEM laufen.</li>
-    <li>Entzogene CPU-Zeit ist nur verfügbar, wenn die VMware Tools den Zähler bereitstellen.</li>
-    <li>Prozesse, die zwischen zwei Schnappschüssen starten und wieder enden, werden nicht erfasst; für einen beendeten Prozess fehlt der Verbrauch seit dem letzten Schnappschuss.</li></ul>`;
+    <li>Entzogene CPU-Zeit ist nur verfügbar, wenn die VMware Tools den Zähler bereitstellen.</li>` + (noProcs ? "" : `
+    <li>Prozesse, die zwischen zwei Schnappschüssen starten und wieder enden, werden nicht erfasst; für einen beendeten Prozess fehlt der Verbrauch seit dem letzten Schnappschuss.</li>`) + `</ul>`;
 
   // burst mode: its duration from the tick flags, the spacing of its snapshots as measured
   const burstText = !Q.burstTicks ? "nicht aktiv" : `${fmtSpan((Q.burstMin || 0) * 60000)} (${fmt(Q.burstTicks, 0)} Takte), ${fmt(Q.burstSnapshots, 0)} zusätzliche Schnappschüsse` +
