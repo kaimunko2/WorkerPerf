@@ -165,9 +165,11 @@ Texte können Platzhalter enthalten: Benutzer, Anwendung, Anteil, üblicher Wert
 
 Die Situation `print` und die Varianten zu `pattern.printdriver` enthalten die Empfehlungen zum Drucken in Citrix-Umgebungen von Microsoft, Citrix, HP, Kyocera und Brother. Sie werden für den Katalog recherchiert. Jedes Element nennt in einem Feld `source` den Hersteller und den Titel der Quelle; der Bericht zeigt die Quelle beim Element. Eine Empfehlung ohne belegbare Quelle wird nicht aufgenommen. Herstellerspezifische Elemente hängen an `driver.vendor.<Hersteller>` und erscheinen nur, wenn ein Treiber dieses Herstellers beteiligt war.
 
+Ergänzt am 13.11.2026 auf Wunsch des Auftraggebers: Neben den Quellen der Hersteller dürfen in allen Situationen Empfehlungen aus zwei Quellen der Praxis aufgenommen werden, dem Base Image Script Framework (BIS-F) und den Anleitungen von Carl Stalhood (carlstalhood.com). Ein solches Element nennt in `source` die Quelle mit dem Zusatz „Empfehlung aus der Praxis" und den Titel, wird nie als Empfehlung des Herstellers formuliert und steht mit Adresse und Abrufdatum im Nachweis `docs/guidance/quellen.md`. Widerspricht eine Quelle aus der Praxis dem Hersteller, gilt der Hersteller.
+
 ### 5.8 Inhalt
 
-Die Texte entstehen auf Grundlage der Herstellerempfehlungen von Microsoft und Citrix und der Eigenheiten der Zielumgebung (Citrix-Profilcontainer, Schutzsoftware, AppLocker, Proxy, Fachanwendung mit Datenbank). Der fertige Katalog wird dem Auftraggeber vor der Übernahme gesondert zur fachlichen Durchsicht vorgelegt. Nach den ersten realen Messungen wird er einmal nachgeschärft.
+Die Texte entstehen auf Grundlage der Herstellerempfehlungen von Microsoft und Citrix und der Eigenheiten der Zielumgebung (Citrix-Profilcontainer, Schutzsoftware, AppLocker, Proxy, Fachanwendung mit Datenbank; seit 13.11.2026 festgehalten: ausschließlich über Machine Creation Services bereitgestellte, nicht persistente Shared-Session-Worker, deren Ereignisprotokolle einen Neustart nicht überdauern). Vorschläge, die eine Einstellung ändern, nennen deshalb das Master-Image oder die Richtlinie als Ort der Änderung. Der fertige Katalog wird dem Auftraggeber vor der Übernahme gesondert zur fachlichen Durchsicht vorgelegt. Nach den ersten realen Messungen wird er einmal nachgeschärft.
 
 ## 6. Zusammenfassung zum Kopieren
 
