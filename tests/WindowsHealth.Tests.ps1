@@ -371,7 +371,8 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         ($c | Where-Object Share -eq '\\fs01\upm$').Connections | Should -Be 2; ($c | Where-Object Share -eq '\\alt01\archiv').Dialect | Should -Be '2.1'; ($c | Where-Object Share -eq '\\alt01\archiv').Signed | Should -BeFalse
         (Get-V $h 'network.smb1').State | Should -Be 'absent'; (Get-V $h 'network.smb1').Reason | Should -Be ''
         (Get-V $h 'network.smbDirectoryCache').Value | Should -Be 16; (Get-V $h 'network.smbRequireSigning').Value | Should -BeFalse; (Get-V $h 'network.domainMember').Value | Should -BeTrue
-        @((Get-V $h 'network.dnsServers').Value | ForEach-Object { $_.Address }) | Should -Be @('10.1.0.10')   # .Address alone would name the method Address of the array; (Get-V $h 'network.dnsServers').Value[0].Interface | Should -Be 4
+        @((Get-V $h 'network.dnsServers').Value | ForEach-Object { $_.Address }) | Should -Be @('10.1.0.10')   # .Address alone would name the method Address of the array
+        (Get-V $h 'network.dnsServers').Value[0].Interface | Should -Be 4
         (Get-V $h 'network.timeType').Value | Should -Be 'NTP'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit01.klinik.example 10.1.0.20'; (Get-V $h 'network.timeService').Value | Should -Be 'Running'
         $rss = @((Get-V $h 'network.rss').Value); $rss.Count | Should -Be 1; $rss[0].Description | Should -Be 'vmxnet3 Ethernet Adapter'; $rss[0].Enabled | Should -BeTrue
         ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'Ethernet0'                                 # der Verbindungsname eines Adapters wird nicht gespeichert
@@ -463,9 +464,104 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         $script:WinFake.Registry['SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'].AUOptions = '4'
         foreach ($k in @($script:WinFake.Registry.Keys)) { if ($k -like 'SOFTWARE\Policies\Microsoft\Windows\SrpV2*') { $script:WinFake.Registry.Remove($k) } }
         $h = Read-Health
-        (Get-V $h 'network.timeType').Value | Should -Be 'NT5DS'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit01.klinik.example 10.1.0.20'
+        (Get-V $h 'network.timeType').Value | Should -Be 'NT5DS'
+        (Get-V $h 'network.timeServers').State | Should -Be 'absent'                                   # Fix-Runde 1, Punkt 4: die Server stammen aus dem Schluessel der Art, nicht aus dem des Dienstes
         (Get-V $h 'maintenance.updateOptions').State | Should -Be 'unreadable'; (Get-V $h 'maintenance.updateOptions').Reason | Should -Be 'error'; (Get-V $h 'maintenance.updateHour').Value | Should -Be 10
         (Get-V $h 'security.applockerCollections').State | Should -Be 'read'; @((Get-V $h 'security.applockerCollections').Value).Count | Should -Be 0
+    }
+    It 'waehlt aus einer Aufgabe die Ausloeser, die kuerzeste Wiederholung und das erste Programm' {   # Fix-Runde 1, Punkt 3
+        $trigger = { param([int]$Type, $Interval) [pscustomobject]@{ Type = $Type; Repetition = [pscustomobject]@{ Interval = $Interval } } }
+        $exec = { param($Path) [pscustomobject]@{ Type = 0; Path = $Path } }
+        $handler = [pscustomobject]@{ Type = 5; ClassId = '{00000000-0000-0000-0000-0000000000c1}' }             # ohne Path: wird nicht gelesen
+        $task = { param($Triggers, $Actions) [pscustomobject]@{ Path = '\Sim\Wartung'; Enabled = $true; State = 3; NextRunTime = [datetime]'2026-11-14T10:00:00'
+                LastRunTime = [datetime]'1899-12-30'; Definition = [pscustomobject]@{ Triggers = @($Triggers); Actions = @($Actions) } } }
+        $triggers = @((& $trigger 2 'PT30M'), (& $trigger 9 ''), (& $trigger 1 'PT10M'), (& $trigger 8 'P1D'), (& $trigger 2 'PT5S'))
+        $actions = @($handler, (& $exec ''), (& $exec 'C:\Tools\wartung.exe'), (& $exec 'C:\Tools\zweites.exe'))
+        $t = ConvertFrom-WorkerPerfComTask (& $task $triggers $actions)
+        @($t.TriggerTypes) | Should -Be @(2, 9, 1, 8, 2); $t.RepeatMinutes | Should -Be 0.1                     # die kuerzeste positive Wiederholung aller Ausloeser
+        $t.Action | Should -Be 'C:\Tools\wartung.exe'                                                          # das erste Programm, das einen Befehl nennt
+        $t.Path | Should -Be '\Sim\Wartung'; $t.Enabled | Should -BeTrue; $t.State | Should -Be 3; $t.NextRun | Should -Be ([datetime]'2026-11-14T10:00:00')
+        $t = ConvertFrom-WorkerPerfComTask (& $task @((& $trigger 9 $null), [pscustomobject]@{ Type = 6; Repetition = $null }) @($handler))
+        @($t.TriggerTypes) | Should -Be @(9, 6); $t.RepeatMinutes | Should -Be 0; $t.Action | Should -Be ''
+        $t = ConvertFrom-WorkerPerfComTask (& $task @() @((& $exec 'C:\Tools\ohne.exe')))
+        @($t.TriggerTypes).Count | Should -Be 0; $t.RepeatMinutes | Should -Be 0; $t.Action | Should -Be 'C:\Tools\ohne.exe'
+    }
+    It 'zaehlt die Aufgaben aller Ordner und listet nur die ausserhalb von \Microsoft' {   # Fix-Runde 1, Punkt 3
+        Test-WorkerPerfMicrosoftTaskFolder '\Microsoft' | Should -BeTrue; Test-WorkerPerfMicrosoftTaskFolder '\Microsoft\Windows\x' | Should -BeTrue
+        Test-WorkerPerfMicrosoftTaskFolder '\microsoft\Windows' | Should -BeTrue
+        Test-WorkerPerfMicrosoftTaskFolder '\MicrosoftEdgeUpdate' | Should -BeFalse; Test-WorkerPerfMicrosoftTaskFolder '\' | Should -BeFalse
+        Test-WorkerPerfMicrosoftTaskFolder '\Sim\Microsoft' | Should -BeFalse
+        $task = { param([string]$Path) [pscustomobject]@{ Path = $Path; Enabled = $true; State = 3; NextRunTime = [datetime]'1899-12-30'; LastRunTime = [datetime]'1899-12-30'
+                Definition = [pscustomobject]@{ Triggers = @(); Actions = @() } } }
+        $folder = { param([string]$Path, [object[]]$Tasks, [object[]]$Subs)
+            [pscustomobject]@{ Path = $Path; Tasks = $Tasks; Subs = $Subs } | Add-Member -PassThru ScriptMethod GetTasks { param($Flags) $this.Tasks } |
+                Add-Member -PassThru ScriptMethod GetFolders { param($Flags) $this.Subs } }
+        $x = & $folder '\Microsoft\Windows\x' @((& $task '\Microsoft\Windows\x\Sim1'), (& $task '\Microsoft\Windows\x\Sim2')) @()
+        $ms = & $folder '\Microsoft' @((& $task '\Microsoft\SimOben')) @((& $folder '\Microsoft\Windows' @() @($x)))
+        $edge = & $folder '\MicrosoftEdgeUpdate' @((& $task '\MicrosoftEdgeUpdate\SimUpdate')) @()
+        $root = & $folder '\' @((& $task '\SimWurzel')) @($ms, $edge, (& $folder '\Leer' @() @()))
+        $walk = Get-WorkerPerfTaskWalk $root
+        $walk.Count | Should -Be 5; @($walk.Tasks | ForEach-Object { $_.Path } | Sort-Object) | Should -Be @('\MicrosoftEdgeUpdate\SimUpdate', '\SimWurzel')
+        { Get-WorkerPerfTaskWalk $root 0.000001 } | Should -Throw -ExceptionType ([System.TimeoutException])
+    }
+    It 'zaehlt und listet eine Aufgabe, die sich nicht lesen laesst' {   # Fix-Runde 1, Punkt 2
+        $broken = New-Object WinStandInTask '\Sim\Kaputt', 'Definition'                                       # der Getter der Definition wirft (beschaedigtes Abbild) ...
+        { [WinStandInTask].GetProperty('Definition').GetValue($broken) } | Should -Throw                      # ... PowerShell liefert dafuer $null
+        $empty = New-Object WinStandInTask '\Sim\OhneDefinition', ''                                         # die Definition ist $null
+        $plain = { param([string]$Path, $Definition) [pscustomobject]@{ Path = $Path; Enabled = $true; State = 3; NextRunTime = [datetime]'1899-12-30'
+                LastRunTime = [datetime]'1899-12-30'; Definition = $Definition } }
+        $failing = & $plain '\Sim\Ausloeser' ([pscustomobject]@{ Triggers = (New-Object WinStandInBrokenList); Actions = @([pscustomobject]@{ Type = 0; Path = 'C:\Tools\a.exe' }) })
+        $state = [pscustomobject]@{ Path = '\Sim\OhneZustand'; Definition = $null }                         # liest sich ausserhalb der Definition nicht (Zugriff wirft)
+        $good = & $plain '\Sim\Gut' ([pscustomobject]@{ Triggers = @([pscustomobject]@{ Type = 9; Repetition = $null }); Actions = @() })
+        $root = [pscustomobject]@{ Path = '\'; Tasks = @($broken, $empty, $failing, $state, $good) } | Add-Member -PassThru ScriptMethod GetTasks { param($Flags) $this.Tasks } |
+            Add-Member -PassThru ScriptMethod GetFolders { param($Flags) }
+        $walk = Get-WorkerPerfTaskWalk $root
+        $walk.Count | Should -Be 5; @($walk.Tasks | ForEach-Object { $_.Path }) | Should -Be @('\Sim\Kaputt', '\Sim\OhneDefinition', '\Sim\Ausloeser', '\Sim\OhneZustand', '\Sim\Gut')
+        foreach ($t in @($walk.Tasks)[0..2]) {
+            $t.Enabled | Should -BeTrue -Because $t.Path; $t.State | Should -Be 3 -Because $t.Path                    # was sich lesen liess, bleibt
+            @($t.TriggerTypes).Count | Should -Be 0 -Because $t.Path; $t.RepeatMinutes | Should -Be 0 -Because $t.Path; $t.Action | Should -Be '' -Because $t.Path }
+        $t = @($walk.Tasks)[3]; $t.Enabled | Should -BeNullOrEmpty; $t.State | Should -BeNullOrEmpty; $t.Action | Should -Be ''; @($t.TriggerTypes).Count | Should -Be 0
+        @(@($walk.Tasks)[4].TriggerTypes) | Should -Be @(9)
+        # im Bericht: die Aufgabe steht mit ihrem Pfad, die nicht lesbaren Felder leer
+        $script:WinFake.Tasks = $walk; $h = Read-Health; $v = Get-V $h 'maintenance.tasks'; $v.State | Should -Be 'read'; (Get-V $h 'maintenance.taskCount').Value | Should -Be 5
+        $row = $v.Value | Where-Object Path -eq '\Sim\OhneZustand'
+        $row.Enabled | Should -BeNullOrEmpty; $row.State | Should -Be ''; $row.NextRun | Should -Be 0; $row.LastRun | Should -Be 0; $row.Triggers | Should -Be ''; $row.RepeatMinutes | Should -Be 0; $row.Action | Should -Be ''
+        ($v.Value | Where-Object Path -eq '\Sim\Kaputt').State | Should -Be 'Ready'
+    }
+    It 'nimmt die Zeitquellen aus dem Schluessel, aus dem die Art stammt' {   # Fix-Runde 1, Punkt 4
+        $script:WinFake.Registry['SOFTWARE\Policies\Microsoft\W32Time\Parameters'] = [ordered]@{ Type = 'NTP'; NtpServer = 'zeit09.klinik.example,0x9' }
+        $h = Read-Health; (Get-V $h 'network.timeType').Value | Should -Be 'NTP'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit09.klinik.example'
+        $script:WinFake.Registry['SOFTWARE\Policies\Microsoft\W32Time\Parameters'] = [ordered]@{ NtpServer = 'zeit09.klinik.example,0x9' }   # die Richtlinie setzt nur die Server
+        $h = Read-Health; (Get-V $h 'network.timeType').Value | Should -Be 'NTP'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit01.klinik.example 10.1.0.20'
+    }
+    It 'nennt die Ausschluesse nicht vorhanden, wenn Defender keine Einstellungen liefert' {   # Fix-Runde 1, Punkt 5
+        $script:WinFake.Cim['MSFT_MpPreference'] = @()
+        $h = Read-Health
+        foreach ($id in 'security.defenderExclusionPaths', 'security.defenderExclusionProcesses', 'security.defenderExclusionExtensions', 'maintenance.scanDay') {
+            (Get-V $h $id).State | Should -Be 'absent' -Because $id; (Get-V $h $id).Reason | Should -Be '' -Because $id }
+    }
+    It 'liest die DNS-Server beider Adressfamilien je Schnittstelle' {   # Fix-Runde 1, Punkt 6 (ZB-R26)
+        $dns = { param([int]$Index, [int]$Family, [string[]]$Servers) [pscustomobject]@{ InterfaceAlias = 'Ethernet0'; InterfaceIndex = [uint32]$Index; AddressFamily = [uint16]$Family; ServerAddresses = $Servers } }
+        $rows = { param($H) @((Get-V $H 'network.dnsServers').Value | ForEach-Object { '{0} {1}' -f $_.Interface, $_.Address }) }
+        # Vorgabe: IPv4 an Schnittstelle 4; die Platzhalter fec0:0:0:ffff::1 bis ::3 (ohne eingetragenen IPv6-Server) und eine Schnittstelle ohne Server fehlen
+        $h = Read-Health; & $rows $h | Should -Be @('4 10.1.0.10'); $script:WinFake.Calls.Keys | Should -Not -Contain 'cim:Win32_NetworkAdapterConfiguration'
+        ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'Ethernet0'
+        $script:WinFake.Cim['MSFT_DNSClientServerAddress'] = @((& $dns 6 23 @('fd00:10::53', 'FD00:10::53', 'fd00:10::54')), (& $dns 6 2 @()))     # nur IPv6
+        & $rows (Read-Health) | Should -Be @('6 fd00:10::53', '6 fd00:10::54')
+        $script:WinFake.Cim['MSFT_DNSClientServerAddress'] = @((& $dns 4 2 @('10.1.0.10', '10.1.0.11', '10.1.0.10')), (& $dns 4 23 @('fd00:10::53', 'fec0:0:0:ffff::1')),
+            (& $dns 7 2 @('10.1.0.10')))                                                                    # beide Familien; derselbe Server an einer anderen Schnittstelle bleibt
+        & $rows (Read-Health) | Should -Be @('4 10.1.0.10', '4 10.1.0.11', '4 fd00:10::53', '7 10.1.0.10')
+        $script:WinFake.Cim['MSFT_DNSClientServerAddress'] = @((& $dns 4 2 @()), (& $dns 5 23 $null))       # Schnittstellen ohne Server
+        $v = Get-V (Read-Health) 'network.dnsServers'; $v.State | Should -Be 'read'; @($v.Value).Count | Should -Be 0
+        foreach ($missing in @((New-WinStandInMissingClass), (New-WinStandInMissingNamespace))) {           # ohne die Klasse: die Klasse des Plans (nur IPv4)
+            Reset-WinStandIns; $script:WinFake.CimFail['MSFT_DNSClientServerAddress'] = $missing
+            & $rows (Read-Health) | Should -Be @('4 10.1.0.10') -Because $missing.Message; $script:WinFake.Calls['cim:Win32_NetworkAdapterConfiguration'] | Should -Be 1
+        }
+        Reset-WinStandIns; $script:WinFake.CimFail['MSFT_DNSClientServerAddress'] = New-WinStandInDenied 'cim'
+        $v = Get-V (Read-Health) 'network.dnsServers'; $v.State | Should -Be 'unreadable'; $v.Reason | Should -Be 'rights'; $script:WinFake.Calls.Keys | Should -Not -Contain 'cim:Win32_NetworkAdapterConfiguration'
+        Test-WorkerPerfDnsPlaceholder 'fec0:0:0:ffff::3' | Should -BeTrue; Test-WorkerPerfDnsPlaceholder 'FEC0:0:0:FFFF:0:0:0:1' | Should -BeTrue
+Test-WorkerPerfDnsPlaceholder 'FEC0::FFFF:0:0:2' | Should -BeFalse; Test-WorkerPerfDnsPlaceholder 'fec0:0:0:ffff::4' | Should -BeFalse
+        Test-WorkerPerfDnsPlaceholder '10.1.0.10' | Should -BeFalse; Test-WorkerPerfDnsPlaceholder 'kein Server' | Should -BeFalse
     }
     It 'enthaelt keinen Aufruf, der etwas aendert, startet oder einen anderen Rechner anspricht' {
         $src = Get-Content (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1') -Raw

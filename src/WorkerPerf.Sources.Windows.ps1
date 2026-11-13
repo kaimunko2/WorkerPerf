@@ -625,8 +625,14 @@ $script:WorkerPerfWinUpdatePolicyKey = 'SOFTWARE\Policies\Microsoft\Windows\Wind
 $script:WorkerPerfWinTriggerWords = @{ 0 = 'event'; 1 = 'time'; 2 = 'daily'; 3 = 'weekly'; 4 = 'monthly'; 5 = 'monthly'; 6 = 'idle'; 7 = 'registration'
     8 = 'boot'; 9 = 'logon'; 11 = 'session' }
 $script:WorkerPerfWinTaskStates = @{ 0 = 'Unknown'; 1 = 'Disabled'; 2 = 'Queued'; 3 = 'Ready'; 4 = 'Running' }
-# HRESULT of a CIM namespace that does not exist: WBEM_E_INVALID_NAMESPACE (0x8004100E)
+# HRESULT of a CIM namespace that does not exist: WBEM_E_INVALID_NAMESPACE (0x8004100E); of a class that does not exist
+# in its namespace: WBEM_E_INVALID_CLASS (0x80041010)
 $script:WorkerPerfWinInvalidNamespace = -2147217394
+$script:WorkerPerfWinInvalidClass = -2147217392
+# DNS: the placeholders Windows shows as the IPv6 DNS servers of an interface without a configured one (fec0:0:0:ffff::1
+# to ::3), as the bytes of the address.
+$script:WorkerPerfWinDnsPlaceholders = @('fec0:0:0:ffff::1', 'fec0:0:0:ffff::2', 'fec0:0:0:ffff::3') |
+    ForEach-Object { [System.BitConverter]::ToString([System.Net.IPAddress]::Parse($_).GetAddressBytes()) }
 # HRESULTs of denied access: E_ACCESSDENIED (0x80070005) and WBEM_E_ACCESS_DENIED (0x80041003)
 $script:WorkerPerfWinDeniedHResults = @(-2147024891, -2147217405)
 # Native error codes of an operation that timed out (unsigned): WBEM_E_TIMED_OUT (0x80041069), WBEM_E_PROVIDER_TIMED_OUT
@@ -1814,84 +1820,131 @@ function Close-WorkerPerfComObject($Object) {
 }
 
 function ConvertFrom-WorkerPerfComTask($Task) {
-    # One registered task: Path, Enabled, State, NextRun, LastRun, TriggerTypes, RepeatMinutes (the shortest repetition of
-    # its triggers, 0 for none), Action (the program of the first action that starts one). Arguments, author and accounts
-    # are not read. Every COM object it opens is released.
+    # One registered task: Path, Enabled, State, NextRun, LastRun, TriggerTypes, RepeatMinutes (the shortest positive
+    # repetition of its triggers, 0 for none), Action (the program of the first action that starts one and names it).
+    # Arguments, author and accounts are not read. A definition that is $null or does not load (a corrupt image) leaves
+    # TriggerTypes, RepeatMinutes and Action empty; the other fields stay. Every COM object it opens is released.
+    $record = @{ Path = [string]$Task.Path; Enabled = [bool]$Task.Enabled; State = $Task.State; NextRun = $Task.NextRunTime; LastRun = $Task.LastRunTime }
     $types = New-Object System.Collections.Generic.List[int]
     $repeat = 0.0
     $action = ''
-    $definition = $Task.Definition
+    $definition = $null
     try {
-        $triggers = $definition.Triggers
-        try {
-            foreach ($trigger in $triggers) {
-                try {
-                    $types.Add([int]$trigger.Type)
-                    $repetition = $trigger.Repetition
-                    try { $minutes = ConvertFrom-WorkerPerfTaskInterval ([string]$repetition.Interval) } finally { Close-WorkerPerfComObject $repetition }
-                    if ($null -ne $minutes -and $minutes -gt 0 -and ($repeat -eq 0 -or $minutes -lt $repeat)) { $repeat = $minutes }
+        $definition = $Task.Definition
+        if ($null -ne $definition) {
+            $triggers = $definition.Triggers
+            try {
+                foreach ($trigger in @($triggers)) {
+                    if ($null -eq $trigger) { continue }
+                    try {
+                        $types.Add([int]$trigger.Type)
+                        $repetition = $trigger.Repetition
+                        if ($null -eq $repetition) { continue }
+                        try { $minutes = ConvertFrom-WorkerPerfTaskInterval ([string]$repetition.Interval) } finally { Close-WorkerPerfComObject $repetition }
+                        if ($null -ne $minutes -and $minutes -gt 0 -and ($repeat -eq 0 -or $minutes -lt $repeat)) { $repeat = $minutes }
+                    }
+                    finally { Close-WorkerPerfComObject $trigger }
                 }
-                finally { Close-WorkerPerfComObject $trigger }
             }
-        }
-        finally { Close-WorkerPerfComObject $triggers }
-        $actions = $definition.Actions
-        try {
-            foreach ($item in $actions) {
-                try { if (-not $action -and [int]$item.Type -eq 0) { $action = [string]$item.Path } }   # TASK_ACTION_EXEC
-                finally { Close-WorkerPerfComObject $item }
+            finally { Close-WorkerPerfComObject $triggers }
+            $actions = $definition.Actions
+            try {
+                foreach ($item in @($actions)) {
+                    if ($null -eq $item) { continue }
+                    try { if (-not $action -and [int]$item.Type -eq 0) { $action = [string]$item.Path } }   # TASK_ACTION_EXEC
+                    finally { Close-WorkerPerfComObject $item }
+                }
             }
+            finally { Close-WorkerPerfComObject $actions }
         }
-        finally { Close-WorkerPerfComObject $actions }
     }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch [System.TimeoutException] { throw }
+    catch { $types.Clear(); $repeat = 0.0; $action = '' }
     finally { Close-WorkerPerfComObject $definition }
-    return @{ Path = [string]$Task.Path; Enabled = [bool]$Task.Enabled; State = $Task.State; NextRun = $Task.NextRunTime; LastRun = $Task.LastRunTime
-        TriggerTypes = [int[]]$types.ToArray(); RepeatMinutes = $repeat; Action = $action }
+    $record['TriggerTypes'] = [int[]]$types.ToArray(); $record['RepeatMinutes'] = $repeat; $record['Action'] = $action
+    return $record
 }
 
-function Get-WorkerPerfTaskRaw([double]$DeadlineSec = 0) {
-    # The scheduled tasks through the local object Schedule.Service (Connect without a server name; folders walked with
-    # GetFolders, tasks with GetTasks(1), hidden ones included): Count of all tasks, Tasks only outside the folder
-    # \Microsoft\. NextRun and LastRun as the Task Scheduler gives them. With DeadlineSec > 0 the walk ends after that many
-    # seconds as a timeout (TimeoutException). Every COM object is released.
+function New-WorkerPerfUnreadableTask($Task) {
+    # A task the walk could not read: its path (empty when not even that can be read), every other field empty.
+    $path = ''
+    try { $path = [string]$Task.Path }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch { $path = '' }
+    return @{ Path = $path; Enabled = $null; State = $null; NextRun = $null; LastRun = $null; TriggerTypes = [int[]]@(); RepeatMinutes = 0.0; Action = '' }
+}
+
+function Test-WorkerPerfMicrosoftTaskFolder([string]$Path) {
+    # true for the folder \Microsoft of the Task Scheduler and every folder below it (their tasks are counted, not
+    # listed); false for the root, for \MicrosoftEdgeUpdate and any other folder.
+    return ($Path -eq '\Microsoft' -or $Path.StartsWith('\Microsoft\', [StringComparison]::OrdinalIgnoreCase))
+}
+
+function Get-WorkerPerfTaskWalk($Root, [double]$DeadlineSec = 0) {
+    # The walk of Get-WorkerPerfTaskRaw from a root folder (an object with Path, GetTasks and GetFolders): folders with
+    # GetFolders(0), tasks with GetTasks(1) (hidden ones included). Count of all tasks; Tasks only outside the folder
+    # \Microsoft (Test-WorkerPerfMicrosoftTaskFolder). A task that cannot be read is counted and listed with its path and
+    # empty fields (New-WorkerPerfUnreadableTask). With DeadlineSec > 0 the walk ends after that many seconds as a
+    # timeout (TimeoutException), checked per folder and per task. Every COM object, the root included, is released.
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $timeUp = { if ($DeadlineSec -gt 0 -and $clock.Elapsed.TotalSeconds -ge $DeadlineSec) { throw (New-Object System.TimeoutException 'Zeitlimit des Bereichs erreicht.') } }
     $tasks = New-Object System.Collections.Generic.List[object]
     $count = 0
     $pending = New-Object System.Collections.Generic.Stack[object]
-    $service = New-Object -ComObject 'Schedule.Service'
+    $pending.Push($Root)
     try {
-        $service.Connect()
-        $pending.Push($service.GetFolder('\'))
         while ($pending.Count -gt 0) {
             & $timeUp
             $folder = $pending.Pop()
             try {
-                $folderPath = [string]$folder.Path
-                $inMicrosoft = ($folderPath -eq '\Microsoft' -or $folderPath.StartsWith('\Microsoft\', [StringComparison]::OrdinalIgnoreCase))
+                $inMicrosoft = Test-WorkerPerfMicrosoftTaskFolder ([string]$folder.Path)
                 $collection = $folder.GetTasks(1)
                 try {
-                    foreach ($task in $collection) {
+                    foreach ($task in @($collection)) {
+                        if ($null -eq $task) { continue }
                         try {
                             & $timeUp
                             $count++
-                            if (-not $inMicrosoft) { $tasks.Add((ConvertFrom-WorkerPerfComTask $task)) }
+                            if ($inMicrosoft) { continue }
+                            try { $tasks.Add((ConvertFrom-WorkerPerfComTask $task)) }
+                            catch [System.Management.Automation.PipelineStoppedException] { throw }
+                            catch [System.TimeoutException] { throw }
+                            catch { $tasks.Add((New-WorkerPerfUnreadableTask $task)) }
                         }
                         finally { Close-WorkerPerfComObject $task }
                     }
                 }
                 finally { Close-WorkerPerfComObject $collection }
                 $subFolders = $folder.GetFolders(0)
-                try { foreach ($sub in $subFolders) { $pending.Push($sub) } } finally { Close-WorkerPerfComObject $subFolders }
+                try { foreach ($sub in @($subFolders)) { if ($null -ne $sub) { $pending.Push($sub) } } } finally { Close-WorkerPerfComObject $subFolders }
             }
             finally { Close-WorkerPerfComObject $folder }
         }
     }
     finally {
         while ($pending.Count -gt 0) { Close-WorkerPerfComObject $pending.Pop() }
-        Close-WorkerPerfComObject $service
     }
     return @{ Count = $count; Tasks = $tasks.ToArray() }
+}
+
+function Get-WorkerPerfTaskRaw([double]$DeadlineSec = 0) {
+    # The scheduled tasks through the local object Schedule.Service (Connect without a server name), walked from its
+    # root folder by Get-WorkerPerfTaskWalk: Count of all tasks, Tasks only outside the folder \Microsoft\. NextRun and
+    # LastRun as the Task Scheduler gives them. With DeadlineSec > 0 the call ends after that many seconds as a timeout
+    # (TimeoutException). Every COM object is released.
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $service = New-Object -ComObject 'Schedule.Service'
+    try {
+        $service.Connect()
+        $rest = 0
+        if ($DeadlineSec -gt 0) {
+            $rest = $DeadlineSec - $clock.Elapsed.TotalSeconds
+            if ($rest -le 0) { throw (New-Object System.TimeoutException 'Zeitlimit des Bereichs erreicht.') }
+        }
+        return (Get-WorkerPerfTaskWalk $service.GetFolder('\') $rest)
+    }
+    finally { Close-WorkerPerfComObject $service }
 }
 
 function Get-WinCitrixRaw([object[]]$Sessions) {
@@ -2888,14 +2941,14 @@ function ConvertTo-WorkerPerfSmbConnectionRows([object[]]$Connections, $Ctx = $n
     foreach ($hcRow in $hcRows.Values) { $hcRow }
 }
 
-function Test-WorkerPerfWinMissingNamespace($Exception) {
-    # true for a CIM query whose namespace does not exist: NativeErrorCode InvalidNamespace (CimException), or the
-    # HRESULT WBEM_E_INVALID_NAMESPACE in the exception or in error_Code of its ErrorData
+function Test-WorkerPerfWinCimError($Exception, [string]$Name, [int]$HResult) {
+    # true for a failed CIM query with this error: NativeErrorCode $Name (CimException), or the HRESULT $HResult in the
+    # exception or in error_Code of its ErrorData
     $hcEx = Get-WorkerPerfInnerException $Exception
     if ($null -eq $hcEx) { return $false }
     $hcCode = $hcEx.PSObject.Properties['NativeErrorCode']
-    if ($null -ne $hcCode -and [string]$hcCode.Value -eq 'InvalidNamespace') { return $true }
-    if ([int]$hcEx.HResult -eq $script:WorkerPerfWinInvalidNamespace) { return $true }
+    if ($null -ne $hcCode -and [string]$hcCode.Value -eq $Name) { return $true }
+    if ([int]$hcEx.HResult -eq $HResult) { return $true }
     $hcData = $hcEx.PSObject.Properties['ErrorData']
     if ($null -ne $hcData -and $null -ne $hcData.Value) {
         $hcProps = $hcData.Value.PSObject.Properties['CimInstanceProperties']
@@ -2904,11 +2957,49 @@ function Test-WorkerPerfWinMissingNamespace($Exception) {
             $hcN = 0L
             if ($null -ne $hcNative -and [long]::TryParse([string]$hcNative.Value, [ref]$hcN)) {
                 if ($hcN -gt [int]::MaxValue) { $hcN -= 4294967296L }
-                if ($hcN -eq $script:WorkerPerfWinInvalidNamespace) { return $true }
+                if ($hcN -eq $HResult) { return $true }
             }
         }
     }
     return $false
+}
+
+function Test-WorkerPerfWinMissingNamespace($Exception) {
+    # true for a CIM query whose namespace does not exist (InvalidNamespace, WBEM_E_INVALID_NAMESPACE)
+    return (Test-WorkerPerfWinCimError $Exception 'InvalidNamespace' $script:WorkerPerfWinInvalidNamespace)
+}
+
+function Test-WorkerPerfWinMissingClass($Exception) {
+    # true for a CIM query whose namespace or class does not exist (InvalidClass, WBEM_E_INVALID_CLASS)
+    if (Test-WorkerPerfWinMissingNamespace $Exception) { return $true }
+    return (Test-WorkerPerfWinCimError $Exception 'InvalidClass' $script:WorkerPerfWinInvalidClass)
+}
+
+function Test-WorkerPerfDnsPlaceholder([string]$Address) {
+    # true for one of the placeholders fec0:0:0:ffff::1 to ::3 that Windows shows as the IPv6 DNS servers of an interface
+    # without a configured one, in any spelling and with or without a zone index
+    $hcIp = $null
+    if (-not [System.Net.IPAddress]::TryParse($Address, [ref]$hcIp)) { return $false }
+    return ($script:WorkerPerfWinDnsPlaceholders -contains [System.BitConverter]::ToString($hcIp.GetAddressBytes()))
+}
+
+function ConvertTo-WorkerPerfDnsServerRows([object[]]$Entries, $Ctx = $null) {
+    # The DNS servers of MSFT_DNSClientServerAddress (one entry per interface and address family) as rows Interface,
+    # Address in the order of the entries: the same server on one interface once, the placeholders
+    # (Test-WorkerPerfDnsPlaceholder) and empty entries left out. The name of an interface is not kept. With the context
+    # of an area, the loop ends as a timeout when its limit is reached.
+    $hcSeen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($hcEntry in @($Entries)) {
+        if ($null -eq $hcEntry) { continue }
+        $hcIndex = ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $hcEntry 'InterfaceIndex')
+        foreach ($hcAddress in @(Get-WorkerPerfField $hcEntry 'ServerAddresses')) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            $hcText = [string]$hcAddress
+            if ([string]::IsNullOrEmpty($hcText) -or (Test-WorkerPerfDnsPlaceholder $hcText)) { continue }
+            if (-not $hcSeen.Add(([string]$hcIndex) + '|' + $hcText)) { continue }
+            [ordered]@{ Interface = $hcIndex; Address = $hcText }
+        }
+    }
 }
 
 function Get-WorkerPerfRegistryTree([string]$SubKey, [string[]]$Without = @(), [int]$MaxValues = 2000, [int]$MaxDepth = 6, $Ctx = $null,
@@ -3252,7 +3343,9 @@ function Read-WorkerPerfWinHealthSecurity($Ctx) {
     $defenderValue = { param([scriptblock]$Value) if (-not (Test-WorkerPerfWinHealthDefender $Ctx)) { & $notInstalled; return }; & $Value }
     $exclusions = { param([string]$Field, [string]$Key)
         if (-not (Test-WorkerPerfWinHealthDefender $Ctx)) { & $notInstalled; return }
-        $entries = @(Get-WorkerPerfField (& $preference) $Field | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
+        $found = & $preference
+        if ($null -eq $found) { New-WorkerPerfHealthValue 'absent'; return }   # no preferences: absent as the scan values, not an empty list
+        $entries = @(Get-WorkerPerfField $found $Field | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
         if (@($entries | Where-Object { $_.StartsWith('N/A', [StringComparison]::Ordinal) }).Count -gt 0) { New-WorkerPerfHealthValue 'unreadable' 'rights'; return }
         foreach ($entry in $entries) { Assert-WorkerPerfWinHealthTimeLeft $Ctx; [ordered]@{ $Key = $entry } } }
 
@@ -3306,15 +3399,15 @@ function Read-WorkerPerfWinHealthSecurity($Ctx) {
 }
 
 function Read-WorkerPerfWinHealthNetwork($Ctx) {
-    # Accounts of SMB connections and connection names of adapters are not kept; the time values come from the policy of
-    # the time service when it sets them, else from the service's own key.
+    # Accounts of SMB connections and names of adapters and interfaces are not kept; the time type and the time servers
+    # come from one key: the policy of the time service when it sets Type, else the service's own key.
     $smbClient = { $found = @(Get-WorkerPerfWinHealthShared $Ctx 'smbclient' {
                 Get-WorkerPerfWinHealthCim $Ctx 'MSFT_SmbClientConfiguration' $script:WorkerPerfWinSmbNamespace -Property RequireSecuritySignature, DirectoryCacheEntriesMax, FileInfoCacheEntriesMax, FileNotFoundCacheEntriesMax })
         if ($found.Count -gt 0) { $found[0] } }
-    $timeValue = { param([string]$Name)
+    $timeKey = {   # the values of the key that sets Type: the policy, else the service's own key; nothing without Type
         foreach ($key in $script:WorkerPerfWinTimeKeys) {
-            $values = $null; $regKey = Get-WorkerPerfRegistryValues $key; if ($null -ne $regKey) { $values = $regKey['Values'] }
-            if (Test-WorkerPerfRegistryValueSet $values $Name) { , $values[$Name]; return }
+            $regKey = Get-WorkerPerfRegistryValues $key
+            if ($null -ne $regKey -and (Test-WorkerPerfRegistryValueSet $regKey['Values'] 'Type')) { , $regKey['Values']; return }
         } }
 
     Set-WorkerPerfWinHealthValue $Ctx 'network.domainMember' { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $Ctx.State.ComputerSystem 'PartOfDomain') }
@@ -3332,6 +3425,13 @@ function Read-WorkerPerfWinHealthNetwork($Ctx) {
         ConvertTo-WorkerPerfSmbConnectionRows @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_SmbConnection' $script:WorkerPerfWinSmbNamespace) $Ctx
     }
     Set-WorkerPerfWinHealthValue $Ctx 'network.dnsServers' {
+        # both address families from MSFT_DNSClientServerAddress (ruling ZB-R26); without its namespace or class the
+        # class of the plan, which carries only IPv4
+        $entries = $null
+        try { $entries = @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_DNSClientServerAddress' 'root\StandardCimv2' -Property InterfaceIndex, AddressFamily, ServerAddresses) }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { if (-not (Test-WorkerPerfWinMissingClass $_.Exception)) { throw } }
+        if ($null -ne $entries) { ConvertTo-WorkerPerfDnsServerRows $entries $Ctx; return }
         foreach ($adapter in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_NetworkAdapterConfiguration' -Filter 'IPEnabled = TRUE' -Property Index, DNSServerSearchOrder)) {
             $index = Get-WorkerPerfField $adapter 'Index'
             foreach ($address in @(Get-WorkerPerfField $adapter 'DNSServerSearchOrder')) {
@@ -3347,12 +3447,13 @@ function Read-WorkerPerfWinHealthNetwork($Ctx) {
         }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'network.timeType' {
-        $type = & $timeValue 'Type'
-        if ($null -ne $type) { ConvertTo-WorkerPerfRegistrySingleText $type }
+        $values = & $timeKey
+        if ($null -ne $values) { ConvertTo-WorkerPerfRegistrySingleText $values['Type'] }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'network.timeServers' {
-        $servers = & $timeValue 'NtpServer'
-        if ($null -ne $servers) { $text = ConvertTo-WorkerPerfTimeServers (ConvertTo-WorkerPerfRegistrySingleText $servers); if ($text) { $text } }
+        # NtpServer of the same key as Type (the plan's table), never of the other key
+        $values = & $timeKey
+        if (Test-WorkerPerfRegistryValueSet $values 'NtpServer') { $text = ConvertTo-WorkerPerfTimeServers (ConvertTo-WorkerPerfRegistrySingleText $values['NtpServer']); if ($text) { $text } }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'network.timeService' { Get-WorkerPerfWinHealthServiceField $Ctx 'W32Time' 'State' }
 }

@@ -152,6 +152,15 @@ function Reset-WinStandIns {
                 [pscustomobject]@{ ServerName = 'fs01'; ShareName = 'upm$'; Dialect = '3.1.1'; Signed = $true; Encrypted = $false; UserName = 'KLINIK\gast' }
                 [pscustomobject]@{ ServerName = 'alt01'; ShareName = 'archiv'; Dialect = '2.1'; Signed = $false; Encrypted = $false; UserName = 'KLINIK\mueller' })
             'Win32_NetworkAdapterConfiguration' = @([pscustomobject]@{ Index = [uint32]4; DNSServerSearchOrder = [string[]]@('10.1.0.10') })
+            # DNS servers per interface and address family (2 IPv4, 23 IPv6); without a configured IPv6 server Windows shows
+            # the placeholders fec0:0:0:ffff::1 to ::3; interface 9 has no server; InterfaceAlias is not stored
+            'MSFT_DNSClientServerAddress' = @(
+                [pscustomobject]@{ InterfaceAlias = 'Ethernet0'; InterfaceIndex = [uint32]4; AddressFamily = [uint16]2; ServerAddresses = [string[]]@('10.1.0.10') }
+                [pscustomobject]@{ InterfaceAlias = 'Ethernet0'; InterfaceIndex = [uint32]4; AddressFamily = [uint16]23
+                    ServerAddresses = [string[]]@('fec0:0:0:ffff::1', 'fec0:0:0:ffff::2', 'fec0:0:0:ffff::3') }
+                [pscustomobject]@{ InterfaceAlias = 'Loopback Pseudo-Interface 1'; InterfaceIndex = [uint32]1; AddressFamily = [uint16]23
+                    ServerAddresses = [string[]]@('fec0:0:0:ffff::1', 'fec0:0:0:ffff::2', 'fec0:0:0:ffff::3') }
+                [pscustomobject]@{ InterfaceAlias = 'Ethernet1'; InterfaceIndex = [uint32]9; AddressFamily = [uint16]2; ServerAddresses = [string[]]@() })
             # Name is the connection name of the adapter, which is not stored
             'MSFT_NetAdapterRssSettingData' = @([pscustomobject]@{ Name = 'Ethernet0'; InterfaceDescription = 'vmxnet3 Ethernet Adapter'; Enabled = $true })
         }
@@ -303,6 +312,11 @@ function New-WinStandInDenied([string]$Kind) {
 function New-WinStandInMissingNamespace {
     # a CIM query into a namespace that does not exist, as Get-CimInstance reports it (NativeErrorCode InvalidNamespace)
     return (New-Object WinStandInCimException -ArgumentList 'Ungueltiger Namespace', 'InvalidNamespace')
+}
+
+function New-WinStandInMissingClass {
+    # a CIM query for a class that does not exist in its namespace, as Get-CimInstance reports it (NativeErrorCode InvalidClass)
+    return (New-Object WinStandInCimException -ArgumentList 'Ungueltige Klasse', 'InvalidClass')
 }
 
 function New-WinStandInTimedOut([uint32]$Code) {
@@ -602,6 +616,37 @@ public class WinStandInCimErrorException : System.Exception
 {
     public WinStandInCimErrorException(string message) : base(message) { }
     public object ErrorData { get; set; }
+}
+'@
+}
+# A registered task of the Task Scheduler whose property named in the second argument cannot be read, as a COM task
+# reports a corrupt image or a definition that does not load (a property getter that throws; PowerShell hands such a
+# property to a script as $null). Without a broken property its Definition is $null. WinStandInBrokenList: a collection
+# whose enumeration fails, as the trigger collection of a definition that does not load.
+if (-not ('WinStandInTask' -as [type])) {
+    Add-Type -TypeDefinition @'
+public class WinStandInTask
+{
+    private readonly string path;
+    private readonly string broken;
+    public WinStandInTask(string path, string broken) { this.path = path; this.broken = broken; }
+    private void Check(string name)
+    {
+        if (broken == name) { throw new System.Runtime.InteropServices.COMException("Das Abbild der Aufgabe ist beschaedigt.", unchecked((int)0x80041321)); }
+    }
+    public string Path { get { Check("Path"); return path; } }
+    public bool Enabled { get { Check("Enabled"); return true; } }
+    public int State { get { Check("State"); return 3; } }
+    public System.DateTime NextRunTime { get { Check("NextRunTime"); return new System.DateTime(1899, 12, 30); } }
+    public System.DateTime LastRunTime { get { Check("LastRunTime"); return new System.DateTime(1899, 12, 30); } }
+    public object Definition { get { Check("Definition"); return null; } }
+}
+public class WinStandInBrokenList : System.Collections.IEnumerable
+{
+    public System.Collections.IEnumerator GetEnumerator()
+    {
+        throw new System.Runtime.InteropServices.COMException("Die Definition der Aufgabe laesst sich nicht laden.", unchecked((int)0x80041321));
+    }
 }
 '@
 }
