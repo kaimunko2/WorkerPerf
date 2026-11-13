@@ -87,6 +87,15 @@ Describe 'Schnelllauf -HealthOnly' {
         }
         else { @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0 }
     }
+    It 'meldet eine gescheiterte Konsolenzeile nicht als fehlende health.json' {                  # Nachpruefung Task 9, Lader Task 10 (f)
+        $cap = New-PatchedSource (Join-Path $TestDrive 'srcline') "function Format-WorkerPerfHealthLine { throw 'Testfehler Zeile' }"
+        $out = @(& $cap -Simulate -HealthOnly -OutputPath (Join-Path $TestDrive 'line') 3>&1 6>&1 | ForEach-Object { [string]$_ })
+        $run = $out[-1]
+        Test-Path -LiteralPath (Join-Path $run 'health.json') -PathType Leaf | Should -BeTrue
+        $out[-2] | Should -Be "Schnelllauf beendet: $run"; $out | Should -Contain 'Zustandsbild: Testfehler Zeile'
+        @($out | Where-Object { $_ -like '*konnte nicht geschrieben werden*' -or $_ -like '*ohne Zustandsbild*' }) | Should -BeNullOrEmpty
+        $m = Get-Meta $run; [string]$m.EndMessage | Should -Be ''; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
+    }
     It 'nennt nach Strg+C den Grund des Endes in der letzten Zeile' {                       # Fix-Runde 1, Punkt 1
         # Strg+C erscheint als PipelineStoppedException im Lesen des Zustandsbilds; sie beendet auch den Aufrufer, darum
         # laeuft der Schnelllauf in einem eigenen Prozess

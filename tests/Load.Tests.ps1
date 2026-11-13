@@ -233,3 +233,163 @@ Describe 'Import-WorkerPerfRun: unlesbare Zeilen der Ereignis- und Druckdateien 
         $ok.Unreadable.Events | Should -Be 0; $ok.Unreadable.EventsBefore | Should -Be 0; $ok.Unreadable.PrintQueues | Should -Be 0
     }
 }
+Describe 'Import-WorkerPerfRun: Zustandsbild' {
+    BeforeAll {
+        # Ein Schnelllauf im Ordner <Name>: meta.json, Rueckblick, Treiberliste und, wenn angegeben, health.json
+        function Write-QuickRun([string]$Name, [string]$HealthText, [string]$MetaExtra = '') {
+            $dir = Join-Path $TestDrive $Name; [void](New-Item -ItemType Directory $dir -Force)
+            [IO.File]::WriteAllText((Join-Path $dir 'meta.json'), '{"SchemaVersion":3,"Computer":"T1","OS":"x","LogicalProcessors":4,"PhysicalMemoryMB":16384,"FastIntervalSeconds":2,"IntervalSeconds":15,' +
+                '"StartTime":"2026-01-15T08:00:00.0000000+02:00","EndTime":"2026-01-15T08:00:05.0000000+02:00","EndReason":"healthonly","Ticks":0,"Snapshots":0,"Simulated":false,"HealthOnly":true,' +
+                '"EventLookbackDays":7,"Skip":[],' + $MetaExtra + '"Sources":{"print.drivers":{"Available":true,"Detail":""},"health":{"Available":true,"Detail":""}}}')
+            [IO.File]::WriteAllLines((Join-Path $dir 'events_before.csv'), [string[]]@($WorkerPerfHeaders['events_before.csv']))
+            [IO.File]::WriteAllLines((Join-Path $dir 'printdrivers.csv'), [string[]]@($WorkerPerfHeaders['printdrivers.csv']))
+            if ($HealthText) { [IO.File]::WriteAllText((Join-Path $dir 'health.json'), $HealthText) }
+            $dir
+        }
+        # $true, wenn irgendwo im Wert ein pscustomobject steckt
+        function Test-HasPsObject($Value) {
+            if ($null -eq $Value -or $Value -is [string] -or $Value -is [ValueType]) { return $false }
+            if ($Value -is [System.Management.Automation.PSCustomObject]) { return $true }
+            if ($Value -is [System.Collections.IDictionary]) { foreach ($k in @($Value.Keys)) { if (Test-HasPsObject $Value[$k]) { return $true } }; return $false }
+            foreach ($item in $Value) { if (Test-HasPsObject $item) { return $true } }
+            return $false
+        }
+    }
+    It 'liest health.json in das Modell' {
+        $dir = Write-TestRun 'h1' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        [IO.File]::WriteAllText((Join-Path $dir 'health.json'), '{"FormatVersion":1,"ReadAt":"2026-01-15T07:59:50.0000000+02:00","DurationMs":1200,"Areas":{"operation":{"Status":"partial","DurationMs":300,"Error":"","Values":{' +
+            '"operation.pendingRename":{"State":"read","Reason":"","Value":2},"operation.lastBoot":{"State":"unreadable","Reason":"rights","Value":null},"operation.unbekannt":{"State":"read","Reason":"","Value":1},' +
+            '"operation.pendingUpdate":{"State":"gelesen","Reason":"","Value":true},' +
+            '"print.spooler":{"State":"read","Reason":"","Value":"Running"},' +
+            '"operation.volumes":{"State":"read","Reason":"","Value":[{"Drive":"C:","SizeGB":100,"FreeGB":8.5,"FileSystem":"NTFS","System":true,"PageFile":true}]}}}}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.HealthState | Should -Be 'read'; $m.Health.DurationMs | Should -Be 1200; $m.Health.OffsetMinutes | Should -Be 120
+        $m.Health.ReadAtMs | Should -Be ([DateTimeOffset]'2026-01-15T07:59:50+02:00').ToUnixTimeMilliseconds()
+        $o = $m.Health.Areas['operation']; $o.Status | Should -Be 'partial'; $o.DurationMs | Should -Be 300; $o.Values['operation.pendingRename'].Value | Should -Be 2
+        $o.Values['operation.lastBoot'].Reason | Should -Be 'rights'; $o.Values.Contains('operation.unbekannt') | Should -BeFalse; $o.Values['operation.powerPlan'].State | Should -Be 'unreadable'
+        $o.Values['operation.pendingUpdate'].State | Should -Be 'unreadable'; $o.Values['operation.pendingUpdate'].Reason | Should -Be 'error'      # ein Zustand, den das Format nicht kennt
+        $o.Values.Contains('print.spooler') | Should -BeFalse; $m.Health.Areas['print'].Values['print.spooler'].State | Should -Be 'unreadable'      # eine Kennung unter dem falschen Bereich wird uebergangen, die Datei bleibt lesbar
+        $vol = @($o.Values['operation.volumes'].Value); $vol[0] | Should -BeOfType [System.Collections.IDictionary]; $vol[0]['FreeGB'] | Should -Be 8.5; $vol[0]['System'] | Should -BeTrue
+        @($m.Health.Areas.Keys) | Should -Be $WorkerPerfHealthAreas; $m.Health.Areas['size'].Status | Should -Be 'failed'; $m.Health.Areas['size'].Error | Should -Be 'notInFile'
+        $m.Meta.HealthOnly | Should -BeFalse; $m.Recorded.EventsBefore | Should -BeFalse; $m.Recorded.PrintDrivers | Should -BeFalse     # Format 2: beide Dateien gibt es nicht
+    }
+    It 'unterscheidet nicht erfasst, weggelassen und nicht lesbar' {   # Review Focus 2
+        $dir = Write-TestRun 'h2' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'; $file = Join-Path $dir 'health.json'
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.HealthState | Should -Be 'notRecorded'; $m.Health | Should -BeNullOrEmpty; @($m.Skip) | Should -Not -Contain 'Zustand'
+        [IO.File]::WriteAllText($file, '{"FormatVersion":2,"Areas":{}}')
+        $w = @(Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+        $w.Count | Should -Be 1; $w[0].Message | Should -Match 'health\.json'; $w[0].Message | Should -Match 'Format 2'
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>$null).HealthState | Should -Be 'unreadable'
+        [IO.File]::WriteAllText($file, '{ kein json'); (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>$null).HealthState | Should -Be 'unreadable'
+        # Skip gewinnt gegen die Datei: eine lesbare Datei wird nicht gelesen
+        [IO.File]::WriteAllText($file, '{"FormatVersion":1,"ReadAt":"2026-01-15T07:59:50.0000000+01:00","DurationMs":1,"Areas":{}}')
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"Simulated":false,', '"Simulated":false,"Skip":["Zustand"],'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.HealthState | Should -Be 'skipped'; $m.Health | Should -BeNullOrEmpty; $m.Sources['health'].Detail | Should -Be 'abgeschaltet (-Skip Zustand)'
+    }
+    It 'liest einen Schnelllauf ohne Takte und Schnappschuesse' {   # Review Focus 5
+        $dir = Join-Path $TestDrive 'ho'; [void](New-Item -ItemType Directory $dir); $meta = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($meta, '{"SchemaVersion":3,"Computer":"T1","OS":"x","LogicalProcessors":4,"PhysicalMemoryMB":16384,"FastIntervalSeconds":2,"IntervalSeconds":15,' +
+            '"StartTime":"2026-01-15T08:00:00.0000000+02:00","EndTime":"2026-01-15T08:00:05.0000000+02:00","EndReason":"healthonly","Ticks":0,"Snapshots":0,"Simulated":false,"HealthOnly":true,"EventLookbackDays":7,"Skip":[],"Sources":{}}')
+        [IO.File]::WriteAllLines((Join-Path $dir 'events_before.csv'), [string[]]@($WorkerPerfHeaders['events_before.csv'], ('2026-01-14T09:00:00.0000000+02:00,application,Application Error,1000,2,app,crash,EXCEL.EXE' + (',' * 12) + 'x')))
+        [IO.File]::WriteAllLines((Join-Path $dir 'printdrivers.csv'), [string[]]@($WorkerPerfHeaders['printdrivers.csv'], 'Sim PCL 6,HP,1.0,3,none,a.dll'))
+        [IO.File]::WriteAllText((Join-Path $dir 'health.json'), '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Meta.HealthOnly | Should -BeTrue; $m.Tick.N | Should -Be 0; $m.Snap.N | Should -Be 0; $m.Meta.OffsetMinutes | Should -Be 120; $m.HealthState | Should -Be 'read'
+        $m.CaptureStartMs | Should -Be ([DateTimeOffset]'2026-01-15T08:00:00+02:00').ToUnixTimeMilliseconds()
+        @($m.EventsBefore).Count | Should -Be 1; @($m.PrintDrivers).Count | Should -Be 1; @($m.Events).Count | Should -Be 0; @($m.Sessions).Count | Should -Be 0; $m.Rows.K.Length | Should -Be 0
+        $m.Recorded.EventsBefore | Should -BeTrue; $m.Recorded.PrintDrivers | Should -BeTrue; @($m.EventsAll).Count | Should -Be 0
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles -From ([datetime]'2026-01-15T08:00:00') } | Should -Throw '*Schnelllauf*-From*'
+        # ohne das Feld bleibt eine Aufzeichnung ohne Takte ein Fehler
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"HealthOnly":true,', ''))
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles } | Should -Throw '*keine Messung*'
+    }
+    It 'haelt die Ereignisse der ganzen Messung neben dem Ausschnitt' {
+        $ev = @("$(Get-Ts 3),Sim,1,crash,a", "$(Get-Ts 13),Sim,1,crash,b")
+        $m = Import-TestRun 'hcut' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = $ev } @{ From = $Base.AddSeconds(9).DateTime }
+        @($m.Events).Count | Should -Be 1; @($m.EventsAll).Count | Should -Be 2; $m.EventsOutsideCut | Should -Be 1
+    }
+    It 'verwirft einen Wert, der nicht zu seinem Typ passt, und behaelt den Rest der Datei' {   # ZB-R27
+        $values = @{
+            size = '"size.cpuLogical":{"State":"read","Reason":"","Value":4},"size.memTotalMB":{"State":"read","Reason":"","Value":16384.5},' +
+                '"size.cpuSockets":2,' +                                                                               # kein Objekt
+                '"size.commitTotalMB":{"State":"read","Reason":"","Value":"viel"},' +                                  # number als Text
+                '"size.hypervisor":{"State":"read","Reason":"","Value":1},' +                                          # bool als Zahl
+                '"size.pageFileManaged":{"State":"read","Reason":"","Value":true},' +                                  # falsche Schreibweise der Kennung
+                '"size.model":{"State":"read","Reason":"","Value":"2026-11-13T10:00:00"},' +                           # Text, der wie eine Zeit aussieht
+                '"size.balloonDriver":{"State":"read","Reason":"","Value":"\/Date(1234)\/"},' +
+                '"size.vmtoolsService":{"State":"read","Reason":"","Value":5},' +                                      # text als Zahl
+                '"size.pagefiles":{"State":"read","Reason":"","Value":"C:\\pagefile.sys"},' +                          # list als Text
+                '"size.netAdapters":{"State":"read","Reason":"","Value":[1,2]},' +                                     # Eintraege keine Datensaetze
+                '"size.storageControllers":{"State":"read","Reason":"","Value":null},' +                               # list ohne Inhalt
+                '"size.vmtoolsPresent":{"State":"absent","Reason":"notInstalled","Value":null}'
+            operation = '"operation.lastBoot":{"State":"read","Reason":"","Value":1.5},"operation.lastUpdate":{"State":"read","Reason":"","Value":1768460390000},' +
+                '"operation.pendingRename":{"State":"read","Reason":"vielleicht","Value":1},' +                         # unbekannter Grund
+                '"operation.volumes":{"State":"read","Reason":"","Value":{"Drive":"C:","SizeGB":100,"FreeGB":8.5,"FileSystem":"NTFS","System":true,"PageFile":true}}'   # ein Datensatz statt einer Liste
+            apps = '"apps.probes":{"State":"read","Reason":"","Value":[{"App":"simapp","Id":"stand","Kind":"registryValue","Read":"value","State":"read","Reason":"","Value":"2026-11-13T10:00:00","Names":""}]}'
+        }
+        $areas = (@($values.Keys) | ForEach-Object { '"{0}":{{"Status":"read","DurationMs":5,"Error":"","Values":{{{1}}}}}' -f $_, $values[$_] }) -join ','
+        $dir = Write-QuickRun 'hr27' ('{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000-07:00","DurationMs":900,"Areas":{' + $areas + ',"unbekannt":{"Values":{}},"vda":17}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.HealthState | Should -Be 'read'; $m.Health.OffsetMinutes | Should -Be -420; $m.Health.FormatVersion | Should -Be 1
+        $s = $m.Health.Areas['size'].Values
+        $s['size.cpuLogical'].Value | Should -Be 4; $s['size.memTotalMB'].Value | Should -Be 16384.5; $s['size.vmtoolsPresent'].State | Should -Be 'absent'
+        foreach ($id in 'size.cpuSockets', 'size.commitTotalMB', 'size.hypervisor', 'size.pagefileManaged', 'size.vmtoolsService', 'size.pagefiles', 'size.netAdapters', 'size.storageControllers') {
+            $s[$id].State | Should -Be 'unreadable' -Because $id; $s[$id].Reason | Should -Be 'error' -Because $id; $s[$id].Value | Should -BeNullOrEmpty -Because $id
+        }
+        (@($s.Keys) -ccontains 'size.pageFileManaged') | Should -BeFalse
+        # ein Text, der wie eine Zeit aussieht, kommt unter beiden Shells als derselbe Text an
+        $s['size.model'].Value | Should -BeOfType [string]; $s['size.model'].Value | Should -BeExactly '2026-11-13T10:00:00'; $s['size.balloonDriver'].Value | Should -BeExactly '/Date(1234)/'
+        $o = $m.Health.Areas['operation'].Values
+        $o['operation.lastBoot'].State | Should -Be 'unreadable'; $o['operation.lastBoot'].Reason | Should -Be 'error'; $o['operation.lastUpdate'].Value | Should -Be 1768460390000
+        $o['operation.pendingRename'].State | Should -Be 'unreadable'; $o['operation.pendingRename'].Reason | Should -Be 'error'
+        , $o['operation.volumes'].Value | Should -BeOfType [object[]]; $o['operation.volumes'].Value.Count | Should -Be 1; $o['operation.volumes'].Value[0]['Drive'] | Should -Be 'C:'
+        $rows = $m.Health.Areas['apps'].Values['apps.probes'].Value
+        , $rows | Should -BeOfType [object[]]; $rows.Count | Should -Be 1; $rows[0] | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]
+        $rows[0]['Value'] | Should -BeOfType [string]; $rows[0]['Value'] | Should -BeExactly '2026-11-13T10:00:00'
+        $m.Health.Areas['vda'].Status | Should -Be 'failed'; $m.Health.Areas['vda'].Error | Should -Be 'notInFile'   # ein Bereich, der kein Objekt ist
+        $m.Health.Areas['size'].Status | Should -Be 'partial'; $m.Health.Areas['size'].DurationMs | Should -Be 5
+        Test-HasPsObject $m.Health | Should -BeFalse
+    }
+    It 'nimmt die Zeit eines Felds der obersten Ebene mit ihrem Versatz aus dem Text' {
+        $text = '{"Areas":{"x":{"ReadAt":"2020-01-01T00:00:00+00:00"}},"Text":"\"ReadAt\":\"2021-01-01T00:00:00+00:00\"", "ReadAt" : "2026-01-15T08:00:01.0000000-07:00"}'
+        $t = Get-WorkerPerfJsonTimeText $text 'ReadAt'
+        $t | Should -BeOfType [DateTimeOffset]; $t.Offset.TotalMinutes | Should -Be -420; $t.ToUnixTimeMilliseconds() | Should -Be ([DateTimeOffset]'2026-01-15T15:00:01Z').ToUnixTimeMilliseconds()
+        Get-WorkerPerfJsonTimeText $text 'StartTime' | Should -BeNullOrEmpty
+        Get-WorkerPerfJsonTimeText '{"ReadAt":"keine Zeit"}' 'ReadAt' | Should -BeNullOrEmpty
+        $f = Read-WorkerPerfHealthFile (Join-Path (Write-QuickRun 'hnoat' '{"FormatVersion":1,"Areas":{}}') 'health.json')
+        $f.State | Should -Be 'read'; $f.Health.ReadAtMs | Should -BeNullOrEmpty; $f.Health.OffsetMinutes | Should -BeNullOrEmpty
+        foreach ($case in @(@('[1,2]', 'kein gueltiges JSON'), @('{"FormatVersion":1}', 'Areas fehlt'), @('{"FormatVersion":1,"Areas":[]}', 'Areas fehlt'), @('{"FormatVersion":"1","Areas":{}}', 'Format 1 unbekannt'))) {
+            $f = Read-WorkerPerfHealthFile (Join-Path (Write-QuickRun 'hbad' $case[0]) 'health.json')
+            $f.State | Should -Be 'unreadable' -Because $case[0]; $f.Message | Should -Be $case[1] -Because $case[0]
+        }
+    }
+    It 'fuehrt einen Schnelllauf ohne Zustandsbild als nicht erfasst und liest keine Zwischendatei' {   # Ergaenzung e
+        $dir = Write-QuickRun 'hnone' '' '"EndMessage":"Das Lesen des Zustandsbilds ist gescheitert (RuntimeException).","SourceErrors":{"health":{"Count":1,"FirstTime":"2026-01-15T08:00:01.0000000+02:00","FirstMessage":"Testfehler"}},'
+        [IO.File]::WriteAllText((Join-Path $dir 'health.json.tmp'), '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>$null
+        $m.HealthState | Should -Be 'notRecorded'; $m.Health | Should -BeNullOrEmpty
+        @($m.SourceErrors | ForEach-Object { $_.Source }) | Should -Be @('health'); $m.Meta.EndMessage | Should -Match 'Zustandsbild'
+    }
+    It 'gibt einem Schnelllauf dieselben Schluessel wie einer Messung' {   # Ergaenzung g
+        $c = Import-TestRun 'hkeys' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        $q = Import-WorkerPerfRun -Path (Write-QuickRun 'qkeys' '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}') -Thresholds $Th -Roles $Roles
+        @($q.Keys | Sort-Object) | Should -Be @($c.Keys | Sort-Object)
+        foreach ($part in 'Tick', 'Snap', 'Rows', 'InputProc', 'Carried', 'Unreadable', 'Recorded') {
+            @($q[$part].Keys | Sort-Object) | Should -Be @($c[$part].Keys | Sort-Object) -Because $part
+            foreach ($k in @($c[$part].Keys)) {
+                if ($c[$part][$k] -is [array]) { $q[$part][$k].GetType() | Should -Be $c[$part][$k].GetType() -Because "$part.$k" }
+            }
+        }
+        foreach ($part in 'Raw', 'Signal') { @($q.Tick[$part].Keys | Sort-Object) | Should -Be @($c.Tick[$part].Keys | Sort-Object) -Because $part }
+        foreach ($k in 'Cores', 'RamMB', 'OffsetMinutes', 'FastSec', 'SnapSec', 'HealthOnly', 'EventLookbackDays', 'LookbackCapped', 'EventReadCounts', 'LookbackReadCounts', 'Computer') {
+            $q.Meta.ContainsKey($k) | Should -BeTrue -Because $k; $c.Meta.ContainsKey($k) | Should -BeTrue -Because $k
+        }
+        foreach ($k in @($c.Keys)) {
+            if ($c[$k] -is [array]) { $q[$k].GetType() | Should -Be $c[$k].GetType() -Because $k; $q[$k].Length | Should -Be 0 -Because $k }
+        }
+        $q.MainApp | Should -BeNullOrEmpty; $q.TotalCpuMs | Should -Be 0; $q.EventsOutsideCut | Should -Be 0; $q.CaptureEndMs | Should -Be $q.CaptureStartMs
+        $q.Rows.Start | Should -Be @(0); $q.Pairs.Count | Should -Be 0
+    }
+}

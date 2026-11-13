@@ -127,6 +127,144 @@ function ConvertTo-WorkerPerfReadCounts($Value) {
     return $out
 }
 
+function Get-WorkerPerfJsonTimeText([string]$JsonText, [string]$Name) {
+    # The time of a top-level field ("<Name>": "...") read from the text of a JSON file, as DateTimeOffset with the
+    # offset the text names; $null when the field is missing or no time. Read from the text because PowerShell 7 turns
+    # such a text into a DateTime in the offset of the reading machine, Windows PowerShell 5.1 does not.
+    if ([string]::IsNullOrEmpty($JsonText)) { return $null }
+    $found = [regex]::Matches($JsonText, '"' + [regex]::Escape($Name) + '"\s*:\s*"([^"\\]*)"')
+    if ($found.Count -eq 0) { return $null }
+    # depth of each match: count the braces and brackets outside strings up to its position (1 = top level)
+    $depth = 0; $inString = $false; $pos = 0
+    foreach ($m in $found) {
+        for (; $pos -lt $m.Index; $pos++) {
+            $c = $JsonText[$pos]
+            if ($inString) {
+                if ($c -eq '\') { $pos++ } elseif ($c -eq '"') { $inString = $false }
+            }
+            elseif ($c -eq '"') { $inString = $true }
+            elseif ($c -eq '{' -or $c -eq '[') { $depth++ }
+            elseif ($c -eq '}' -or $c -eq ']') { $depth-- }
+        }
+        if ($inString -or $depth -ne 1) { continue }
+        return (ConvertTo-WorkerPerfTimestamp $m.Groups[1].Value)
+    }
+    return $null
+}
+
+function ConvertFrom-WorkerPerfHealthJsonText([string]$Text) {
+    # The parsed JSON text with every object as an ordered table and every array as [object[]], at any depth; throws on
+    # invalid JSON. Every string of the text gets a leading U+0001 before parsing, which is removed again afterwards: so
+    # neither PowerShell 7 (ISO times) nor Windows PowerShell 5.1 ("\/Date(...)\/") turns a text into a DateTime, and a
+    # text arrives as the same text on both shells.
+    $marked = [regex]::Replace($Text, '"((?:[^"\\]|\\.)*)"', '"\u0001${1}"')
+    $parsed = $marked | ConvertFrom-Json
+    return , (ConvertTo-WorkerPerfHealthJsonValue $parsed)
+}
+
+function ConvertTo-WorkerPerfHealthJsonValue($Value) {
+    # See ConvertFrom-WorkerPerfHealthJsonText: removes the marks and replaces pscustomobjects by ordered tables.
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) {
+        if ($Value.Length -gt 0 -and $Value[0] -eq [char]1) { return $Value.Substring(1) }
+        return $Value
+    }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $out = [ordered]@{}
+        foreach ($p in $Value.PSObject.Properties) { $out[(ConvertTo-WorkerPerfHealthJsonValue $p.Name)] = ConvertTo-WorkerPerfHealthJsonValue $p.Value }
+        return $out
+    }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $out = [ordered]@{}
+        foreach ($k in @($Value.Keys)) { $out[(ConvertTo-WorkerPerfHealthJsonValue ([string]$k))] = ConvertTo-WorkerPerfHealthJsonValue $Value[$k] }
+        return $out
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $items = @(foreach ($item in $Value) { , (ConvertTo-WorkerPerfHealthJsonValue $item) })
+        return , ([object[]]$items)
+    }
+    return $Value
+}
+
+function Test-WorkerPerfHealthContent([string]$Type, $Value) {
+    # $true when the content of a value of health.json fits the type of the value list (ZB-R27): number, bool, time (a
+    # whole number), text*, list (an array of records, or one record). $null fits every type here (a read list without
+    # content is caught by Complete-WorkerPerfHealthArea).
+    if ($null -eq $Value) { return $true }
+    $isNumber = ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal] -or $Value -is [single] -or
+        $Value -is [int16] -or $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [uint16] -or $Value -is [uint32] -or $Value -is [uint64])
+    if ($Type -eq 'number') { return $isNumber }
+    if ($Type -eq 'bool') { return ($Value -is [bool]) }
+    if ($Type -eq 'time') { return ($isNumber -and [Math]::Floor([decimal]$Value) -eq [decimal]$Value) }
+    if ($Type -eq 'list') {
+        if ($Value -is [System.Collections.IDictionary]) { return $true }
+        if ($Value -isnot [object[]]) { return $false }
+        foreach ($item in $Value) { if ($item -isnot [System.Collections.IDictionary]) { return $false } }
+        return $true
+    }
+    if ($Type.StartsWith('text')) { return ($Value -is [string]) }
+    return $false
+}
+
+function Read-WorkerPerfHealthFile([string]$File) {
+    # health.json as @{ State = 'read'; Health = @{ FormatVersion; ReadAtMs; OffsetMinutes; DurationMs; Areas }; Message = '' }
+    # or @{ State = 'unreadable'; Health = $null; Message }. Areas in the order of WorkerPerfHealthAreas, each built by
+    # Complete-WorkerPerfHealthArea from the values of the file (Status anew, DurationMs and Error from the file); an
+    # area the file does not name (or that is no object) is failed with 'notInFile'. A value under an id the value list
+    # does not know or that belongs to another area, with an unknown State or Reason, or whose content does not fit its
+    # type is passed over (it is then unreadable with error); the file stays readable.
+    $unreadable = { param([string]$Message) @{ State = 'unreadable'; Health = $null; Message = $Message } }
+    try { $text = [IO.File]::ReadAllText($File, [Text.Encoding]::UTF8) }
+    catch { return (& $unreadable $_.Exception.Message) }
+    try { $root = ConvertFrom-WorkerPerfHealthJsonText $text }
+    catch { return (& $unreadable 'kein gueltiges JSON') }
+    if ($root -isnot [System.Collections.IDictionary]) { return (& $unreadable 'kein gueltiges JSON') }
+    $version = $null; if ($root.Contains('FormatVersion')) { $version = $root['FormatVersion'] }
+    if ($null -eq $version -or -not (Test-WorkerPerfHealthContent 'number' $version) -or $version -ne $script:WorkerPerfHealthFormatVersion) {
+        return (& $unreadable (('Format ' + [string]$version + ' unbekannt') -replace '  ', ' '))
+    }
+    if (-not $root.Contains('Areas') -or $root['Areas'] -isnot [System.Collections.IDictionary]) { return (& $unreadable 'Areas fehlt') }
+    $fileAreas = $root['Areas']
+    # ids and area names compared with case, like Complete-WorkerPerfHealthArea (the tables of the parsed text are not)
+    $knownIds = @($script:WorkerPerfHealthValues.Keys)
+    $areas = [ordered]@{}
+    foreach ($area in $script:WorkerPerfHealthAreas) {
+        $given = $null
+        foreach ($key in @($fileAreas.Keys)) { if ($key -ceq $area) { $given = $fileAreas[$key] } }
+        if ($given -isnot [System.Collections.IDictionary]) { $areas[$area] = Complete-WorkerPerfHealthArea $area @{} 0 'notInFile'; continue }
+        $duration = 0.0
+        if ($given.Contains('DurationMs') -and (Test-WorkerPerfHealthContent 'number' $given['DurationMs']) -and $null -ne $given['DurationMs']) { $duration = [double]$given['DurationMs'] }
+        $errorText = ''; if ($given.Contains('Error') -and $given['Error'] -is [string]) { $errorText = $given['Error'] }
+        $values = @{}
+        if ($given.Contains('Values') -and $given['Values'] -is [System.Collections.IDictionary]) {
+            $fileValues = $given['Values']
+            foreach ($id in @($fileValues.Keys)) {
+                if ($knownIds -cnotcontains $id -or $script:WorkerPerfHealthValues[$id].Area -cne $area) { continue }
+                $entry = $fileValues[$id]
+                if ($entry -isnot [System.Collections.IDictionary]) { continue }
+                $state = $null; if ($entry.Contains('State')) { $state = $entry['State'] }
+                $reason = ''; if ($entry.Contains('Reason')) { $reason = $entry['Reason'] }
+                if ($state -isnot [string] -or @('read', 'absent', 'unreadable') -cnotcontains $state) { continue }
+                if ($reason -isnot [string] -or @('', 'rights', 'notInstalled', 'timeout', 'error') -cnotcontains $reason) { continue }
+                $content = $null; if ($entry.Contains('Value')) { $content = $entry['Value'] }
+                $type = $script:WorkerPerfHealthValues[$id].Type
+                if (-not (Test-WorkerPerfHealthContent $type $content)) { continue }
+                # a list read as one record is a list of one
+                if ($type -eq 'list' -and $content -is [System.Collections.IDictionary]) { $content = [object[]]@(, $content) }
+                $values[$id] = [ordered]@{ State = $state; Reason = $reason; Value = $content }
+            }
+        }
+        $areas[$area] = Complete-WorkerPerfHealthArea $area $values $duration $errorText
+    }
+    $readAtMs = $null; $offset = $null
+    $readAt = Get-WorkerPerfJsonTimeText $text 'ReadAt'
+    if ($null -ne $readAt) { $readAtMs = $readAt.ToUnixTimeMilliseconds(); $offset = $readAt.Offset.TotalMinutes }
+    $duration = 0.0
+    if ($root.Contains('DurationMs') -and $null -ne $root['DurationMs'] -and (Test-WorkerPerfHealthContent 'number' $root['DurationMs'])) { $duration = [double]$root['DurationMs'] }
+    return @{ State = 'read'; Message = ''
+        Health = @{ FormatVersion = $script:WorkerPerfHealthFormatVersion; ReadAtMs = $readAtMs; OffsetMinutes = $offset; DurationMs = $duration; Areas = $areas } }
+}
+
 function Import-WorkerPerfRun {
     # -From / -To: local time of the measured server (the clock time the tick timestamps carry), like every time the
     # report shows; the Kind of the values is ignored.
@@ -216,9 +354,77 @@ function Import-WorkerPerfRun {
         }
     }
 
+    # the health picture: left out by Skip (the file is not read), not recorded (no health.json; a health.json.tmp is
+    # never read in its place), or the result of reading the file
+    $health = $null; $healthState = 'notRecorded'
+    $healthFile = Join-Path $Path 'health.json'
+    if ($recordedSkip -contains 'Zustand') { $healthState = 'skipped' }
+    elseif (Test-WorkerPerfRunFile $healthFile) {
+        $read = Read-WorkerPerfHealthFile $healthFile
+        $healthState = $read.State; $health = $read.Health
+        if ($read.State -eq 'unreadable') { Write-Warning ('health.json ist nicht lesbar ({0}); der Bericht zeigt kein Zustandsbild.' -f $read.Message) }
+    }
+    # whether the lookback and the driver list are in the capture (and not left out by Skip)
+    $recorded = @{ EventsBefore = (Test-WorkerPerfRunFile (Join-Path $Path 'events_before.csv')); PrintDrivers = (Test-WorkerPerfRunFile (Join-Path $Path 'printdrivers.csv')) }
+    $meta['HealthOnly'] = ($true -eq (Get-WorkerPerfField $metaJson 'HealthOnly'))
+
     # time range: clock time of the measured server. A tick is in the range when its own clock time (timestamp with
     # its own offset) is; the limits as epoch milliseconds for the other files follow from the ticks in the range.
     $hasFrom = ($From -gt [datetime]::MinValue); $hasTo = ($To -lt [datetime]::MaxValue)
+    if ($meta['HealthOnly']) {
+        # A quick run holds only the health picture, the lookback and the driver list: a model with the keys of a
+        # measurement, its series and lists empty.
+        if ($hasFrom -or $hasTo) { throw 'Die Aufzeichnung ist ein Schnelllauf ohne Messung; -From und -To gelten nicht.' }
+        $start = Get-WorkerPerfJsonTimeText ([IO.File]::ReadAllText($metaPath, [Text.Encoding]::UTF8)) 'StartTime'
+        $startMs = $null; $offsetMinutes = 0.0
+        if ($null -ne $start) { $startMs = $start.ToUnixTimeMilliseconds(); $offsetMinutes = $start.Offset.TotalMinutes }
+        $skipBefore = 0; $skipDrivers = 0
+        $eventsBefore = @(Read-WorkerPerfEventCsv $Path 'events_before.csv' ([ref]$skipBefore))
+        $printDrivers = @(Read-WorkerPerfPrintDrivers $Path ([ref]$skipDrivers))
+        $raw = @{}
+        foreach ($name in $script:WorkerPerfHeaders['ticks.csv'].Split(',')) { if ($name -ne 'T' -and $name -ne 'Timestamp') { $raw[$name] = [double[]]@() } }
+        $signal = @{}
+        foreach ($id in 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin') { $signal[$id] = [double[]]@() }
+        $meta['Cores'] = $cores; $meta['RamMB'] = $ramMb; $meta['OffsetMinutes'] = $offsetMinutes
+        $meta['FastSec'] = $fastSec; $meta['SnapSec'] = $snapSec
+        return @{
+            Meta = $meta
+            Skip = $recordedSkip
+            Sources = $sources
+            Tick = @{ N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); Burst = [bool[]]@(); CollectMs = [double[]]@(); Raw = $raw; Signal = $signal }
+            Snap = @{
+                N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); Kind = [string[]]@(); TickPos = [int[]]@()
+                Sessions = [double[]]@(); ActiveSessions = [double[]]@(); Processes = [double[]]@(); RowsWritten = [double[]]@(); CollectMs = [double[]]@()
+            }
+            Sessions = [object[]]@()
+            Volumes = [object[]]@()
+            Shares = [object[]]@()
+            Probes = [object[]]@()
+            Events = [object[]]@()
+            EventsAll = [object[]]@()
+            EventsOutsideCut = 0
+            CaptureStartMs = $startMs
+            CaptureEndMs = $startMs
+            EventsBefore = $eventsBefore
+            PrintDrivers = $printDrivers
+            PrintQueues = [object[]]@()
+            Scans = [object[]]@()
+            InputProc = @{ TickPos = [int[]]@(); SessionIndex = [int[]]@(); Pid = [int[]]@(); Name = [string[]]@(); DelayMs = [double[]]@(); K = [int[]]@() }
+            Apps = [object[]]@()
+            Proc = [object[]]@()
+            Pairs = @{}
+            Rows = @{ Start = [int[]]@(0); K = [int[]]@(); CpuMs = [double[]]@(); Io = [double[]]@(); WsKB = [double[]]@() }
+            Carried = @{ K = [int[]]@(); WsKB = [double[]]@() }
+            Unreadable = @{ Ticks = 0; Snapshots = 0; Events = 0; EventsBefore = $skipBefore; PrintDrivers = $skipDrivers; PrintQueues = 0 }
+            SourceErrors = $sourceErrors.ToArray()
+            TotalCpuMs = 0.0
+            MainApp = $null
+            Citrix = [object[]]@()
+            Health = $health
+            HealthState = $healthState
+            Recorded = $recorded
+        }
+    }
     $fromTicks = [long]::MinValue; $toTicks = [long]::MaxValue
     if ($hasFrom) { $fromTicks = $From.Ticks }
     if ($hasTo) { $toTicks = $To.Ticks }
@@ -1199,6 +1405,7 @@ function Import-WorkerPerfRun {
         Shares = $shares.ToArray()
         Probes = $probes.ToArray()
         Events = $events.ToArray()
+        EventsAll = [object[]]$sortedEvents
         EventsOutsideCut = $sortedEvents.Count - $events.Count
         CaptureStartMs = $captureStartMs
         CaptureEndMs = $(if ($null -ne $lastDto) { $lastDto.ToUnixTimeMilliseconds() } else { $null })
@@ -1217,6 +1424,9 @@ function Import-WorkerPerfRun {
         TotalCpuMs = $totalCpuMs
         MainApp = $mainApp
         Citrix = $citrix.ToArray()
+        Health = $health
+        HealthState = $healthState
+        Recorded = $recorded
     }
 }
 

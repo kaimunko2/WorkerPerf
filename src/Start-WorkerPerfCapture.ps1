@@ -410,14 +410,22 @@ try {
             if ($null -ne $health) {
                 $healthStep = 'write'
                 Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $health
+                $healthStep = 'line'
                 Write-Host (Format-WorkerPerfHealthLine $health)
             }
             else { $noHealth = 'Die Datenquelle hat kein Zustandsbild geliefert.' }
         }
         catch {
-            Register-SourceError 'health' $_
-            if ($healthStep -eq 'write') { $noHealth = 'health.json konnte nicht geschrieben werden ({0}).' -f $_.Exception.GetType().Name }
-            else { $noHealth = 'Das Lesen des Zustandsbilds ist gescheitert ({0}).' -f $_.Exception.GetType().Name }
+            if ($healthStep -eq 'line') {
+                # health.json is written; only the console line failed: nothing is missing (Ctrl+C still ends the run)
+                if ($_.Exception -is [System.Management.Automation.PipelineStoppedException]) { throw }
+                Write-Warning ('Zustandsbild: ' + $_.Exception.Message)
+            }
+            else {
+                Register-SourceError 'health' $_
+                if ($healthStep -eq 'write') { $noHealth = 'health.json konnte nicht geschrieben werden ({0}).' -f $_.Exception.GetType().Name }
+                else { $noHealth = 'Das Lesen des Zustandsbilds ist gescheitert ({0}).' -f $_.Exception.GetType().Name }
+            }
         }
     }
     # The quick run ends here: baseline, schedule, loop and the tail of the probes belong to the measurement.
