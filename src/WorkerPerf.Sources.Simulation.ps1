@@ -11,6 +11,10 @@ $script:WorkerPerfSimEventFile = Join-Path $PSScriptRoot 'events.json'
 $script:WorkerPerfSimCores = 8
 $script:WorkerPerfSimRamMB = 65536
 $script:WorkerPerfSimCommitLimitMB = 98304
+# Committed memory at rest (MB): the base of the fast sample and the commit charge of the health picture.
+$script:WorkerPerfSimBaseCommitMB = 40000
+# The one Teams installation of the simulated worker: the running ms-teams.exe and the installed file of the health picture.
+$script:WorkerPerfSimTeamsPath = 'C:\Program Files\WindowsApps\MSTeams_24277.3502.3161.3007_x64__8wekyb3d8bbwe\ms-teams.exe'
 $script:WorkerPerfSimCollectorPid = 4242
 $script:WorkerPerfSimDomain = 'CONTOSO'
 
@@ -230,7 +234,7 @@ function Initialize-WorkerPerfSource {
         @('svchost.exe', 'LanmanWorkstation', 0.02, 4KB, 2KB, 16, 500, 18), @('svchost.exe', 'Schedule', 0, 0, 0, 18, 520, 10),
         @('svchost.exe', 'Winmgmt', 0.03, 1KB, 1KB, 30, 900, 16), @('svchost.exe', 'TermService', 0.04, 1KB, 1KB, 40, 1500, 30),
         @('svchost.exe', 'gpsvc', 0, 0, 0, 12, 330, 8), @('svchost.exe', 'BITS', 0, 0, 0, 13, 300, 6),
-        @('svchost.exe', 'wuauserv', 0, 0, 0, 20, 450, 9), @('spoolsv.exe', 'Spooler', 0, 0, 0, 16, 480, 11),
+        @('svchost.exe', 'SENS', 0, 0, 0, 20, 450, 9), @('spoolsv.exe', 'Spooler', 0, 0, 0, 16, 480, 11),
         @('MsMpEng.exe', 'WinDefend', 0.25, 300KB, 20KB, 260, 1300, 45), @('NisSrv.exe', 'WdNisSvc', 0, 0, 0, 12, 250, 7),
         @('BrokerAgent.exe', 'BrokerAgent', 0.03, 2KB, 2KB, 70, 800, 25), @('picaSvc2.exe', 'PorticaService', 0.02, 0, 0, 25, 400, 14),
         @('CtxSvcHost.exe', 'CitrixHealthMon', 0, 0, 0, 20, 300, 9), @('UserProfileManager.exe', 'ctxProfile', 0.01, 8KB, 4KB, 35, 600, 20),
@@ -270,7 +274,7 @@ function Initialize-WorkerPerfSource {
         @('OUTLOOK.EXE', ($office + 'OUTLOOK.EXE'), 0.01, 15KB, 8KB, 200, 2500, 50),
         @('WINWORD.EXE', ($office + 'WINWORD.EXE'), 0, 0, 0, 90, 1100, 25),
         @('EXCEL.EXE', ($office + 'EXCEL.EXE'), 0, 0, 0, 100, 1000, 24),
-        @('ms-teams.exe', 'C:\Program Files\WindowsApps\MSTeams_x64\ms-teams.exe', 0.035, 10KB, 10KB, 300, 1500, 45))
+        @('ms-teams.exe', $script:WorkerPerfSimTeamsPath, 0.035, 10KB, 10KB, 300, 1500, 45))
     $pidOf = @{}
     foreach ($s in $script:WorkerPerfSimSessions) {
         $sid = [int]$s.Sid
@@ -389,12 +393,12 @@ function Initialize-WorkerPerfSource {
     # Values: registry path + '|' + value name -> value; Keys: path -> counts; Services: name -> state; Tasks: path ->
     # state ([datetime]::MinValue = no run); Files: path -> version ('' for a folder). Anything not listed does not exist.
     $script:WorkerPerfSimApps = [object[]]@($Apps | Where-Object { $null -ne $_ })
-    $edgeUpdate = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    $webView2Client = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
     $c2r = 'HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
     $officePolicy = 'HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate'
     $script:WorkerPerfSimAppState = @{
         Values   = @{
-            ($edgeUpdate + '|pv') = '130.0.2849.80'
+            ($webView2Client + '|pv') = '130.0.2849.80'
             'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate|UpdateDefault' = 0
             'HKLM\SOFTWARE\Policies\Microsoft\Edge|StartupBoostEnabled' = 0
             'HKLM\SOFTWARE\Policies\Microsoft\Edge|BackgroundModeEnabled' = 1
@@ -412,7 +416,7 @@ function Initialize-WorkerPerfSource {
         Tasks    = @{ '\Microsoft\Office\Office Automatic Updates 2.0' = @{ Enabled = $false; LastRun = [datetime]::MinValue; NextRun = [datetime]::MinValue } }
         Files    = @{
             'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' = '130.0.2849.80'
-            'C:\Program Files\WindowsApps\MSTeams_24277.3502.3161.3007_x64__8wekyb3d8bbwe\ms-teams.exe' = '24277.3502.3161.3007'
+            $script:WorkerPerfSimTeamsPath = '24277.3502.3161.3007'
             'C:\Program Files (x86)\Microsoft\TeamsMeetingAdd-in' = ''
         }
     }
@@ -476,7 +480,7 @@ function Get-WorkerPerfFastSample {
     $ramPct = $script:WorkerPerfSimBaseRamPct + (3 * $nz[3] - 1.5)
     if ($inMemory) { $ramPct = $script:WorkerPerfSimBaseRamPct + 100.0 * $growthMB / $script:WorkerPerfSimRamMB }
     $availMB = [Math]::Round($script:WorkerPerfSimRamMB * (1 - $ramPct / 100.0))
-    $committedMB = [Math]::Round(40000 + (1600 * $nz[4] - 800) + $growthMB)
+    $committedMB = [Math]::Round($script:WorkerPerfSimBaseCommitMB + (1600 * $nz[4] - 800) + $growthMB)
     $pagesIn = 4 * $nz[5]
     if ($inMemory -and $e -gt $script:WorkerPerfSimPagesFrom) { $pagesIn = 390 + 20 * $nz[5] }
 
@@ -722,7 +726,8 @@ function Get-WorkerPerfSimAppReaders {
         registryKey   = {
             param([string]$Path)
             if ($state['Keys'].ContainsKey($Path)) { $k = $state['Keys'][$Path]; return @{ ValueCount = [int]$k.ValueCount; SubKeyCount = [int]$k.SubKeyCount } }
-            # a key under which Values names a value exists, with those values and no subkey
+            # derived from Values: a key exists only when Values names a value directly under it (a parent of such a
+            # key does not exist), and a derived key has those values and no subkeys
             $prefix = $Path + '|'
             $count = @($state['Values'].Keys | Where-Object { ([string]$_).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }).Count
             if ($count -gt 0) { return @{ ValueCount = [int]$count; SubKeyCount = 0 } }
@@ -768,8 +773,8 @@ function Get-WorkerPerfHealth {
     $areas = [ordered]@{}
 
     $areas['size'] = Complete-WorkerPerfHealthArea 'size' ([ordered]@{
-            'size.cpuLogical' = & $ok 8; 'size.cpuSockets' = & $ok 2; 'size.memTotalMB' = & $ok 65536
-            'size.commitTotalMB' = & $ok 38000; 'size.commitLimitMB' = & $ok 98304; 'size.commitPeakMB' = & $ok 61000
+            'size.cpuLogical' = & $ok $script:WorkerPerfSimCores; 'size.cpuSockets' = & $ok 2; 'size.memTotalMB' = & $ok $script:WorkerPerfSimRamMB
+            'size.commitTotalMB' = & $ok $script:WorkerPerfSimBaseCommitMB; 'size.commitLimitMB' = & $ok $script:WorkerPerfSimCommitLimitMB; 'size.commitPeakMB' = & $ok 61000
             'size.pagefiles' = & $ok @([ordered]@{ Path = 'C:\pagefile.sys'; AllocatedMB = 32768; PeakUsageMB = 5200; Temporary = $false })
             'size.pagefileManaged' = & $ok $false; 'size.hypervisor' = & $ok $true; 'size.model' = & $ok 'VMware, Inc. VMware7,1'
             'size.vmtoolsPresent' = & $ok $true; 'size.vmtoolsService' = & $ok 'Running'; 'size.vmtoolsVersion' = & $ok '12.3.5'
@@ -791,13 +796,13 @@ function Get-WorkerPerfHealth {
     # sessions: session 0 as in the snapshot (no user, idle time unknown) and the 25 user sessions
     $list = New-Object System.Collections.Generic.List[object]
     $list.Add([ordered]@{ Id = 0; State = 'Disconnected'; WinStation = 'Services'; User = ''; Domain = ''; Client = ''
-            LogonTime = (& $time ([datetime]::MinValue)); ConnectTime = (& $time ([datetime]::MinValue)); DisconnectTime = 0; IdleMinutes = -1 })
+            LogonTime = (& $time ([datetime]::MinValue)); ConnectTime = (& $time ([datetime]::MinValue)); DisconnectTime = (& $time ([datetime]::MinValue)); IdleMinutes = -1 })
     $containers = New-Object System.Collections.Generic.List[object]
     $profiles = New-Object System.Collections.Generic.List[object]
     foreach ($ses in $script:WorkerPerfSimSessions) {
         $logon = & $time $s.AddSeconds($ses.LogonSec)
         $list.Add([ordered]@{ Id = [int]$ses.Sid; State = 'Active'; WinStation = $ses.WinStation; User = $ses.User; Domain = $script:WorkerPerfSimDomain
-                Client = $ses.Client; LogonTime = $logon; ConnectTime = $logon; DisconnectTime = 0; IdleMinutes = 0 })
+                Client = $ses.Client; LogonTime = $logon; ConnectTime = $logon; DisconnectTime = (& $time ([datetime]::MinValue)); IdleMinutes = 0 })
         $full = ($ses.User -eq 'user009')
         $containers.Add([ordered]@{ Location = ('\\fs01\profile$\{0}.{1}\Win2022\ProfileContainer.vhdx' -f $ses.User, $script:WorkerPerfSimDomain)
                 Mount = ('C:\Users\{0}_UPM_local\UpmTempMount' -f $ses.User); Owner = $ses.User; SessionId = [int]$ses.Sid; SizeGB = 50
@@ -822,6 +827,7 @@ function Get-WorkerPerfHealth {
                 [ordered]@{ Key = 'ICAPolicies'; Name = 'SimSitzungslimit'; Value = '1' }
                 [ordered]@{ Key = 'ICAPolicies'; Name = 'SimDruckerzuweisung'; Value = '\\prn01\Etage2' })
             'vda.persistentDataLocation' = & $ok 'D:\PersistentData'; 'vda.wemService' = & $ok 'Running'
+            # the simulation has no process entries for the two WEM services; SENS runs in a svchost.exe of the process list
             'vda.wemServices' = & $ok @(foreach ($n in 'Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'System Event Notification Service') { & $running $n })
             'vda.wemVersion' = & $ok '2407.1.0.1'; 'vda.wemServer' = & $ok 'wem01.sim.local'; 'vda.wemCacheLocation' = & $ok 'D:\WEMCache'
             'vda.wemGpNetworkTimeout' = & $ok 120; 'vda.teamsService' = & $ok 'Running'; 'vda.webSocketService' = & $ok 'Running'
@@ -841,16 +847,16 @@ function Get-WorkerPerfHealth {
             'print.operationalLog' = & $ok $false; 'print.mappingClientVersion' = & $ok '6.4.1'
         }) 0
 
-    # every service of the processes in the order of their PIDs, plus the services that run without a process of their own
+    # every service of the processes in the order of their PIDs (all running), then the services the simulated process
+    # list has no process entries for: Sense, W32Time, VMTools and CpSvc running, and the Windows Update service stopped
+    # and disabled, as maintenance.updateService says (no process hosts it)
     $services = New-Object System.Collections.Generic.List[object]
     foreach ($procId in @($script:WorkerPerfSimServices.Keys | Sort-Object)) {
-        foreach ($n in ([string]$script:WorkerPerfSimServices[$procId]).Split(';')) {
-            if (-not $n) { continue }
-            if ($n -eq 'wuauserv') { $services.Add((& $running $n 'Stopped' 'Disabled')) } else { $services.Add((& $running $n)) }
-        }
+        foreach ($n in ([string]$script:WorkerPerfSimServices[$procId]).Split(';')) { if ($n) { $services.Add((& $running $n)) } }
     }
     $services.Add((& $running 'Sense' 'Running' 'Manual'))
     foreach ($n in 'W32Time', 'VMTools', 'CpSvc') { $services.Add((& $running $n)) }
+    $services.Add((& $running 'wuauserv' 'Stopped' 'Disabled'))
     $areas['security'] = Complete-WorkerPerfHealthArea 'security' ([ordered]@{
             'security.services' = & $ok $services.ToArray(); 'security.defenderService' = & $ok 'Running'; 'security.defenderMode' = & $ok 'Normal'
             'security.defenderRealTime' = & $ok $true; 'security.defenderTamper' = & $ok $true; 'security.defenderSignatureAgeDays' = & $ok 1

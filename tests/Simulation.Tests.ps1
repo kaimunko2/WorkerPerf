@@ -233,6 +233,66 @@ Describe 'Simuliertes Zustandsbild' {
         $wu = (Get-V 'security.services').Value | Where-Object Name -eq 'wuauserv'; $wu.State | Should -Be 'Stopped'; $wu.StartMode | Should -Be 'Disabled'      # das Drehbuch widerspricht sich nicht
         ((Get-V 'security.services').Value | Where-Object Name -eq 'CpSvc').State | Should -Be 'Running'
     }
+    It 'hat die Form des Wertverzeichnisses' {
+        # every value that is read: a list is an array of entries with exactly the fields of the value list, in order;
+        # a number is a number, a bool a bool, a time a long, a text a string (in a list entry as in a scalar); only the
+        # rows of apps.probes leave Value and Names empty by design (Get-WorkerPerfAppRows)
+        $numberTypes = @('Byte', 'Int16', 'Int32', 'Int64', 'UInt16', 'UInt32', 'UInt64', 'Single', 'Double', 'Decimal')
+        $test = {
+            param($Value, [string]$Type, [string]$Because)
+            switch -Regex ($Type) {
+                '^number$' { $Value | Should -Not -BeNullOrEmpty -Because $Because; $numberTypes | Should -Contain $Value.GetType().Name -Because $Because }
+                '^bool$' { ($Value -is [bool]) | Should -BeTrue -Because $Because }
+                '^time$' { ($Value -is [long]) | Should -BeTrue -Because $Because }
+                '^text' { ($Value -is [string]) | Should -BeTrue -Because $Because }
+            }
+        }
+        $checked = 0
+        foreach ($id in $WorkerPerfHealthValues.Keys) {
+            $def = $WorkerPerfHealthValues[$id]; $v = Get-V $id
+            if ($v.State -ne 'read') { continue }
+            $checked++
+            if ($def.Type -eq 'list') {
+                ($v.Value -is [array]) | Should -BeTrue -Because $id
+                foreach ($entry in $v.Value) {
+                    @($entry.Keys) | Should -Be @($def.Fields.Keys) -Because $id
+                    foreach ($f in $def.Fields.Keys) {
+                        if ($id -eq 'apps.probes' -and $null -eq $entry[$f] -and @('Value', 'Names') -contains $f) { continue }
+                        & $test $entry[$f] $def.Fields[$f] "$id.$f"
+                    }
+                }
+            }
+            else { & $test $v.Value $def.Type $id }
+        }
+        $checked | Should -Be 91      # 103 values less the twelve absent and unreadable ones
+    }
+    It 'passt zur simulierten Stunde' {
+        # size from the simulation's constants, as Initialize-WorkerPerfSource reports it, and the first tick
+        Set-SimTime 0; $f = Get-WorkerPerfFastSample
+        (Get-V 'size.cpuLogical').Value | Should -Be $Info.LogicalProcessors; (Get-V 'size.memTotalMB').Value | Should -Be $Info.PhysicalMemoryMB
+        (Get-V 'size.commitLimitMB').Value | Should -Be $f.MemCommitLimitMB
+        [Math]::Abs((Get-V 'size.commitTotalMB').Value - $f.MemCommittedMB) | Should -BeLessOrEqual 800
+        # volumes and shares of the picture occur in the fast sample; the file server of every share path of the picture
+        # serves a measured share
+        foreach ($vol in @((Get-V 'operation.volumes').Value)) { @($f.Volumes.Volume) | Should -Contain $vol.Drive }
+        foreach ($con in @((Get-V 'network.smbConnections').Value)) { @($f.Shares.Share) | Should -Contain $con.Share }
+        $servers = @($f.Shares | ForEach-Object { $_.Share.Split('\')[2] })
+        $paths = @(@((Get-V 'profile.containers').Value | ForEach-Object { $_.Location }) + (Get-V 'security.defenderSharedSignatures').Value +
+            @((Get-V 'profile.policyGpo').Value | Where-Object Name -eq 'PathToUserStore' | ForEach-Object { $_.Value }))
+        foreach ($p in $paths) { $servers | Should -Contain $p.Split('\')[2] -Because $p }
+        foreach ($c in @((Get-V 'profile.containers').Value)) { $c.Location.StartsWith('\\fs01\profile$\') | Should -BeTrue -Because $c.Location }
+        # domain and users of the sessions are those of the simulation
+        $users = @((Get-V 'sessions.list').Value | Where-Object { $_.User })
+        @($users | ForEach-Object { $_.User }) | Should -Be @($WorkerPerfSimSessions | ForEach-Object { $_.User })
+        @($users | Where-Object { $_.Domain -ne $WorkerPerfSimDomain }).Count | Should -Be 0
+        # the process view agrees: the service that is stopped has no process, every Teams process runs the installed Teams
+        $snap = Get-WorkerPerfSnapshot -Kind K
+        $svc = Get-WorkerPerfServices; $svc.Count | Should -BeGreaterThan 0
+        @(@($svc.Values) | Where-Object { ([string]$_).Split(';') -contains 'wuauserv' }).Count | Should -Be 0
+        $teamsPath = ($TestApps | Where-Object { $_.key -eq 'teams' }).installed.path
+        $teams = @($snap.Processes | Where-Object Name -eq 'ms-teams.exe'); $teams.Count | Should -BeGreaterThan 0
+        foreach ($p in $teams) { $p.ExecutablePath | Should -BeLike $teamsPath; $WorkerPerfSimAppState['Files'].ContainsKey($p.ExecutablePath) | Should -BeTrue }
+    }
     It 'liest die Anwendungen der Liste: zwei auffaellig, eine in Ordnung, eine nicht installiert' {   # Review Focus 3
         $rows = @((Get-V 'apps.probes').Value); $rows.Count | Should -Be 42                                    # 16 Edge, 14 Office, 8 Teams, 4 simapp
         foreach ($k in 'edge', 'office', 'teams') { (Get-Row $k 'installed').Value | Should -BeTrue -Because $k }
