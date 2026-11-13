@@ -634,11 +634,11 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
             New-Inc @{ id = $Id; type = $Type; severity = $Sev; chronic = [bool]$Chronic; start = [long](1e12 + $StartSec * 1000); end = [long](1e12 + ($StartSec + $DurSec) * 1000)
                 affected = @(1..$Sessions | Where-Object { $Sessions -gt 0 } | ForEach-Object { @{ s = $_ } }); event = @{ sessions = @(); inSession = $false; key = '' } }
         }
-        function New-Ev([int]$Id, [int]$Sessions, [double]$StartSec, [hashtable]$Event = @{}) {
+        function New-Ev([int]$Id, [int]$Sessions, [double]$StartSec, [hashtable]$EventFields = @{}) {
             # an event incident without duration; Sessions numbers in event.sessions
             $i = New-R $Id 'ereignis' 0 0 $StartSec
             $i.event.kind = 'crash'; $i.event.sessions = @(1..$Sessions | Where-Object { $Sessions -gt 0 })
-            foreach ($k in $Event.Keys) { $i.event[$k] = $Event[$k] }
+            foreach ($k in $EventFields.Keys) { $i.event[$k] = $EventFields[$k] }
             $i
         }
     }
@@ -660,67 +660,78 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
     }
     It 'fasst nach den zehn Karten gleiche Situation und gleichen Verursacher zusammen' {
         $list = @(1..14 | ForEach-Object { $i = New-R $_ 'engpass' 1 60 ($_ * 100); $i.main = @{ app = $(if ($_ -le 12) { 'EXCEL.EXE' } else { 'WINWORD.EXE' }); user = 'user003' }; $i.guide = @{ situation = 'cpu'; title = 'CPU ausgelastet' }; $i })
-        $g = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order (1..14) -Cards 10)
+        $g = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order (1..14) -Cards 10 -OffsetMinutes 0 -Texts $Texts)
         $g.Count | Should -Be 2; $g[0].ids | Should -Be @(11, 12); $g[0].label | Should -Be '2-mal CPU ausgelastet durch EXCEL.EXE von user003'
     }
     It 'fasst Vorfaelle ohne Verursacher und Ereignisvorfaelle nach ihrem Schluessel zusammen und benennt einzelne mit Titel und Uhrzeit' {   # addition f)
         $list = @(
             (New-R 1 'engpass' 1 60 0)                                                                    # a card
-            $(foreach ($n in 2..4) { $i = New-R $n 'engpass' 1 60 ($n * 100); $i.cause = @{ kind = @('none', 'nodata', 'notmeasured')[$n - 2] }; $i.guide = @{ situation = 'cpu'; title = 'CPU ausgelastet' }; $i })
+            $(foreach ($n in 2..4) { $i = New-R $n 'engpass' 1 60 ($n * 100); $i.cause = @{ kind = @('none', 'nodata', 'notmeasured')[$n - 2] }
+                    # a main of its own each: only the cause kind can put them in one group
+                    $i.main = @{ app = 'X{0}.EXE' -f $n; user = 'user00' + $n }; $i.guide = @{ situation = 'cpu'; title = 'CPU ausgelastet' }; $i })
             $(foreach ($n in 5, 6) { $i = New-Ev $n 1 ($n * 100) @{ key = 'EXCEL.EXE' }; $i.guide = @{ situation = 'crash'; title = 'Programm abgestuerzt' }; $i })
             $(& { $i = New-Ev 7 1 700 @{ key = 'WINWORD.EXE' }; $i.guide = @{ situation = 'crash'; title = 'Programm abgestuerzt' }; $i })
             $(& { $i = New-R 8 'engpass' 1 60 800; $i.main = @{ app = 'EXCEL.EXE'; user = 'user003' }; $i.guide = @{ situation = 'memory'; title = 'Speicher knapp' }; $i })
             $(& { $i = New-R 9 'engpass' 1 60 900; $i.main = @{ app = 'EXCEL.EXE' }; $i.guide = @{ situation = 'memory'; title = 'Speicher knapp' }; $i }))
         $list[0].guide = @{ situation = 'cpu'; title = 'CPU ausgelastet' }
-        $g = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 1)
+        $g = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 1 -OffsetMinutes 0 -Texts $Texts)
         @($g | ForEach-Object { , @($_.ids) }) | ForEach-Object { $_ -join ',' } | Should -Be @('8', '2,3,4', '5,6', '7', '9')
         @($g.situation) | Should -Be @('memory', 'cpu', 'crash', 'crash', 'memory')
         # 1e12 ms is 01:46:40 UTC; without an offset the clock time is UTC, with one the server's
         @($g.label) | Should -Be @('Speicher knapp, 02:00', '3-mal CPU ausgelastet', '2-mal Programm abgestuerzt durch EXCEL.EXE', 'Programm abgestuerzt, 01:58', 'Speicher knapp, 02:01')
-        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 1 -OffsetMinutes 60)[0].label | Should -Be 'Speicher knapp, 03:00'
+        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 1 -OffsetMinutes 60 -Texts $Texts)[0].label | Should -Be 'Speicher knapp, 03:00'
         # all on cards, or no incident: no group
-        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 10).Count | Should -Be 0
-        @(Get-WorkerPerfIncidentGroups -Incidents @() -Order @() -Cards 10).Count | Should -Be 0
-        $one = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 8)
+        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 10 -OffsetMinutes 0 -Texts $Texts).Count | Should -Be 0
+        @(Get-WorkerPerfIncidentGroups -Incidents @() -Order @() -Cards 10 -OffsetMinutes 0 -Texts $Texts).Count | Should -Be 0
+        $one = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 8, 2, 5, 3, 7, 6, 4, 9) -Cards 8 -OffsetMinutes 0 -Texts $Texts)
         $one.Count | Should -Be 1; , $one[0].ids | Should -BeOfType [object[]]; $one[0].ids | Should -Be @(9); @($one[0].Keys) | Should -Be @('label', 'situation', 'ids')
     }
+    It 'nimmt ein doppeltes Id der Rangfolge einmal und die Woerter der Bezeichnung aus den Texten' {    # carried c1, c4
+        $list = @(1..4 | ForEach-Object { $i = New-R $_ 'engpass' 1 60 ($_ * 100); $i.main = @{ app = 'EXCEL.EXE'; user = 'user003' }; $i.guide = @{ situation = 'cpu'; title = 'CPU ausgelastet' }; $i })
+        $g = @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 2, 2, 3, 1, 3) -Cards 1 -OffsetMinutes 0 -Texts $Texts)
+        $g.Count | Should -Be 1; $g[0].ids | Should -Be @(2, 3); $g[0].label | Should -Be '2-mal CPU ausgelastet durch EXCEL.EXE von user003'
+        $t = $Texts.Clone(); $t['group.times'] = '{0}x {1}'; $t['group.by'] = ' wegen {0}'; $t['group.of'] = ' bei {0}'; $t['group.at'] = '{0} um {1}'
+        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 2, 3) -Cards 1 -OffsetMinutes 0 -Texts $t)[0].label | Should -Be '2x CPU ausgelastet wegen EXCEL.EXE bei user003'
+        @(Get-WorkerPerfIncidentGroups -Incidents $list -Order @(1, 2, 3, 4) -Cards 3 -OffsetMinutes 0 -Texts $t)[0].label | Should -Be 'CPU ausgelastet um 01:53'
+    }
     It 'bildet Zustand und Kennzahlen; ueberlappende Fenster zaehlen einmal, ein Ereignis ohne Dauer mit 0' {   # Review Focus 5
-        $e = New-R 7 'ereignis' 0 0 130; $e.event.inSession = $true
-        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 60), $e, (New-R 1 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat
+        # the event without duration lies outside every other window: it adds nothing (not a lead or lag of its own)
+        $e = New-R 7 'ereignis' 0 0 600; $e.event.inSession = $true
+        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 60), $e, (New-R 1 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $l.state | Should -Be 'red'; $l.word | Should -Be 'kritisch'; $l.kpis.bottlenecks | Should -Be 1; $l.kpis.delays | Should -Be 1; $l.kpis.events | Should -Be 1
         $l.kpis.chronic | Should -Be 1; $l.kpis.minutes | Should -Be 3; $l.top | Should -Be 3                     # die kritische Verzoegerung mit zwei Sitzungen steht vorn
-        (Get-WorkerPerfLagebild -Incidents @((New-R 1 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat).state | Should -Be 'yellow'
-        $g = Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat; $g.state | Should -Be 'green'; $g.sentence | Should -Be 'Keine Störung erkannt.'
+        (Get-WorkerPerfLagebild -Incidents @((New-R 1 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).state | Should -Be 'yellow'
+        $g = Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts; $g.state | Should -Be 'green'; $g.sentence | Should -Be 'Keine Störung erkannt.'
     }
     It 'gibt Symbol, Wort und Satz je Zustand und alle Felder' {
-        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600)) -Data (New-Ctx).Data -Catalogue $Cat
+        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         @($l.Keys) | Should -Be @('state', 'symbol', 'word', 'sentence', 'kpis', 'hints', 'top')
         @($l.kpis.Keys) | Should -Be @('bottlenecks', 'delays', 'delaysUnverified', 'events', 'chronic', 'minutes')
         $l.symbol | Should -Be ([string][char]0x25C6); $l.sentence | Should -Be '1 Engpaesse.'; $l.kpis.minutes | Should -Be 4; $l.kpis.minutes | Should -BeOfType [double]
         , $l.hints | Should -BeOfType [string[]]; $l.hints.Count | Should -Be 0
         # yellow: a delay of severity 1, an event outside a session, a chronic bottleneck
         $ev = New-Ev 4 0 10; $ev.severity = 1
-        $y = Get-WorkerPerfLagebild -Incidents @((New-R 1 'ohne-engpass' 1 90 0 -Sev 1), $ev, (New-R 5 'engpass' 3 600 0 -Chronic), (New-R 6 'umfeld' 1 30 100)) -Data (New-Ctx).Data -Catalogue $Cat
+        $y = Get-WorkerPerfLagebild -Incidents @((New-R 1 'ohne-engpass' 1 90 0 -Sev 1), $ev, (New-R 5 'engpass' 3 600 0 -Chronic), (New-R 6 'umfeld' 1 30 100)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $y.state | Should -Be 'yellow'; $y.symbol | Should -Be ([string][char]0x25B2); $y.word | Should -Be ('auff' + [char]0xE4 + 'llig'); $y.sentence | Should -Be '2 Verzoegerungen.'
         $y.kpis.bottlenecks | Should -Be 0; $y.kpis.delays | Should -Be 2; $y.kpis.events | Should -Be 1; $y.kpis.chronic | Should -Be 1; $y.kpis.minutes | Should -Be 2
         $y.top | Should -Be 4                                                                     # an event incident stands in the first class
-        $g = Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat
+        $g = Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $g.symbol | Should -Be ([string][char]0x25CF); $g.word | Should -Be 'normal'; $null -eq $g.top | Should -BeTrue; $g.kpis.minutes | Should -Be 0
         # minutes on one decimal
-        (Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data (New-Ctx).Data -Catalogue $Cat).kpis.minutes | Should -Be 1.3
+        (Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).kpis.minutes | Should -Be 1.3
     }
     It 'zaehlt die Verzoegerungen ohne erkannten Engpass' {                                           # addition d)
         $a = New-R 1 'ohne-engpass' 1 60 0; $a.unverified = $true
         $b = New-R 2 'umfeld' 1 60 100; $b.unverified = $true
         $c2 = New-R 3 'ohne-engpass' 1 60 200 -Chronic; $c2.unverified = $true
-        $l = Get-WorkerPerfLagebild -Incidents @($a, $b, $c2, (New-R 4 'ohne-engpass' 1 60 300)) -Data (New-Ctx).Data -Catalogue $Cat
+        $l = Get-WorkerPerfLagebild -Incidents @($a, $b, $c2, (New-R 4 'ohne-engpass' 1 60 300)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $l.kpis.delays | Should -Be 3; $l.kpis.delaysUnverified | Should -Be 2
     }
     It 'nennt im gruenen Zustand ohne Ereignisse den Vorbehalt' {                                     # addition c)
         $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() }, [ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
-        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).sentence | Should -Be 'Keine Störung erkannt; nicht erfasst: Laufwerke, Ereignisse.'
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Keine Störung erkannt; nicht erfasst: Laufwerke, Ereignisse.'
         $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() })
-        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).sentence | Should -Be 'Keine Störung erkannt.'
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Keine Störung erkannt.'
     }
     It 'gibt die Hinweise zur Messung in ihrer Reihenfolge' {                                          # addition b)
         $ctx = New-Ctx
@@ -730,25 +741,60 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
             [ordered]@{ id = 'input.session'; label = 'Eingabeverzoegerung'; measured = $false; detail = '' })
         $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() }, [ordered]@{ id = 'Drucken'; label = 'Drucken'; text = ''; places = @() })
         $ctx.Data.meta.endReason = 'error'; $ctx.Data.meta.endMessage = 'Platte voll'
-        $l = Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat
-        $l.hints | Should -Be @('Nicht gemessen: ICA Round Trip, Eingabeverzoegerung.', 'Abgeschaltet: Laufwerke, Drucken.', 'Fehler: Platte voll')
+        $l = Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        # what was left out on purpose before what could not be measured (ruling P3-R28)
+        $l.hints | Should -Be @('Abgeschaltet: Laufwerke, Drucken.', 'Nicht gemessen: ICA Round Trip, Eingabeverzoegerung.', 'Fehler: Platte voll')
         $ctx.Data.meta.endMessage = ''
-        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).hints[-1] | Should -Be 'Fehler.'
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints[-1] | Should -Be 'Fehler.'
         $ctx.Data.meta.Remove('endMessage')
-        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).hints[-1] | Should -Be 'Fehler.'
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints[-1] | Should -Be 'Fehler.'
         # only skipped signals missing: no unmeasured hint
         $ctx = New-Ctx; $ctx.Data.sollIst = @([ordered]@{ id = 'disk.latency'; label = 'Latenz'; measured = $false; detail = (Get-WorkerPerfSkipDetail @('Laufwerke')) })
         $ctx.Data.skipped = @([ordered]@{ id = 'Laufwerke'; label = 'Laufwerke'; text = ''; places = @() })
-        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).hints | Should -Be @('Abgeschaltet: Laufwerke.')
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints | Should -Be @('Abgeschaltet: Laufwerke.')
     }
-    It 'nennt fuer das Ende <Reason> die Hinweise <Want>' -TestCases @(
-        @{ Reason = 'duration'; Want = @() }; @{ Reason = 'interrupted'; Want = @() }; @{ Reason = 'stopflag'; Want = @() }
-        @{ Reason = 'diskspace'; Want = @('Angehalten.') }; @{ Reason = 'maxsize'; Want = @('Angehalten.') }
-        @{ Reason = ''; Want = @('Nicht beendet.') }; @{ Reason = $null; Want = @('Nicht beendet.') }; @{ Reason = '-'; Want = @('Nicht beendet.') }
+    It 'nennt eine nicht gemessene Zeile ohne Beschriftung mit ihrer Kennung' {                       # carried c6
+        $ctx = New-Ctx; $ctx.Data.sollIst = @([ordered]@{ id = 'x.signal'; measured = $false; detail = 'Zaehler fehlt' }, [ordered]@{ id = 'y.signal'; label = ''; measured = $false; detail = '' })
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints | Should -Be @('Nicht gemessen: x.signal, y.signal.')
+    }
+    It 'wird rot durch <Name> allein' -TestCases @(                                                  # carried c7
+        @{ Name = 'einen Ereignisvorfall in einer Sitzung'; Make = { $e = New-Ev 1 1 0; $e.event.inSession = $true; $e }; Want = 'red' }
+        @{ Name = 'eine kritische Verzoegerung'; Make = { New-R 1 'ohne-engpass' 1 60 0 -Sev 2 }; Want = 'red' }
+        @{ Name = 'nichts: Ereignisvorfall ausserhalb einer Sitzung'; Make = { New-Ev 1 0 0 }; Want = 'yellow' }
+        @{ Name = 'nichts: Verzoegerung der Stufe 1'; Make = { New-R 1 'ohne-engpass' 1 60 0 -Sev 1 }; Want = 'yellow' }
+    ) {
+        (Get-WorkerPerfLagebild -Incidents @(& $Make) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).state | Should -Be $Want
+    }
+    It 'nimmt Zustandswort und Symbol aus den Texten und verlangt sie' {                              # carried c1
+        $t = $Texts.Clone(); $t['state.red.word'] = 'ROT'; $t['state.red.symbol'] = '#'; $t['state.green.word'] = 'GRUEN'
+        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 60 0)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $t
+        $l.word | Should -Be 'ROT'; $l.symbol | Should -Be '#'
+        (Get-WorkerPerfLagebild -Incidents @() -Data (New-Ctx).Data -Catalogue $Cat -Texts $t).word | Should -Be 'GRUEN'
+        $Texts['state.red.symbol'] | Should -Be ([string][char]0x25C6); $Texts['state.yellow.symbol'] | Should -Be ([string][char]0x25B2); $Texts['state.green.symbol'] | Should -Be ([string][char]0x25CF)
+        $Texts['state.red.word'] | Should -Be 'kritisch'; $Texts['state.yellow.word'] | Should -Be ('auff' + [char]0xE4 + 'llig'); $Texts['state.green.word'] | Should -Be 'normal'
+        $t.Remove('state.yellow.word')
+        { Get-WorkerPerfLagebild -Incidents @((New-R 2 'umfeld' 1 60 0)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $t } | Should -Throw "*'state.yellow.word'*"
+        foreach ($f in 'Get-WorkerPerfLagebild', 'Get-WorkerPerfIncidentGroups') {
+            @((Get-Command $f).Parameters['Texts'].Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count | Should -Be 1 -Because $f
+        }
+        @((Get-Command Get-WorkerPerfIncidentGroups).Parameters['OffsetMinutes'].Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count | Should -Be 1   # carried c3
+    }
+    It 'haelt deutsche Woerter und Zustandssymbole aus dem Code' {                                    # carried c1, ruling P3-R27
+        $src = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1'))
+        foreach ($p in '0x25C6', '0x25B2', '0x25CF', '0x00E4', "'kritisch'", "'normal'", '-mal', "' durch '", "' von '") { $src.Contains($p) | Should -BeFalse -Because $p }
+    }
+    It 'nennt im Fehler den Teil des Katalogs, dessen Text sie fuellt' {                             # carried c5
+        { Format-WorkerPerfGuidancePart $Cat 'hints' 'error' @{} } | Should -Throw "Catalogue text 'hints.error' has no value for the placeholder '{message}'."
+        { Format-WorkerPerfGuidancePart $Cat 'copy' 'fehlt' @{} } | Should -Throw "Catalogue text 'copy.fehlt' is missing."
+    }
+    It 'nennt fuer das Ende <Name> die Hinweise <Want>' -TestCases @(
+        @{ Name = 'duration'; Reason = 'duration'; Want = @() }; @{ Name = 'interrupted'; Reason = 'interrupted'; Want = @() }; @{ Name = 'stopflag'; Reason = 'stopflag'; Want = @() }
+        @{ Name = 'diskspace'; Reason = 'diskspace'; Want = @('Angehalten.') }; @{ Name = 'maxsize'; Reason = 'maxsize'; Want = @('Angehalten.') }
+        @{ Name = '(leer)'; Reason = ''; Want = @('Nicht beendet.') }; @{ Name = '(null)'; Reason = $null; Want = @('Nicht beendet.') }; @{ Name = '(fehlt)'; Reason = '-'; Want = @('Nicht beendet.') }
     ) {                                                                                                # rulings P3-R5, P3-R6
         $ctx = New-Ctx
         if ($Reason -eq '-') { $ctx.Data.meta.Remove('endReason') } else { $ctx.Data.meta.endReason = $Reason }
-        $h = (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat).hints
+        $h = (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints
         , $h | Should -BeOfType [string[]]; @($h) | Should -Be $Want
     }
     It 'fuellt Satz und Hinweise mit den Platzhaltern des Lagebilds und meldet einen fehlenden Wert' {   # addition e)
@@ -756,13 +802,13 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
                 $c.lagebild.red = '{incidents} Vorfaelle auf {server} am {date}: {bottlenecks}/{delays}/{events}/{chronic}, {minutes} min.'
                 $c.lagebild.yellow = 'Gelb auf {server}, {skipped}.'; $c.hints.notFinished = 'Auf {server} nicht beendet ({message}).' })
         $ctx = New-Ctx
-        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0), (New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat
+        $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0), (New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts
         $l.sentence | Should -Be '2 Vorfaelle auf SIM-VDA01 am 09.09.2001: 1/0/0/1, 1,3 min.'
-        { Get-WorkerPerfLagebild -Incidents @((New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat } | Should -Throw "*'lagebild.yellow'*'{skipped}'*"
+        { Get-WorkerPerfLagebild -Incidents @((New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'lagebild.yellow'*'{skipped}'*"
         $ctx.Data.meta.endReason = ''
-        { Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $cat } | Should -Throw "*'hints.notFinished'*'{message}'*"
+        { Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'hints.notFinished'*'{message}'*"
         $ctx = New-Ctx; $ctx.Data.meta.computer = ''
-        { Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data $ctx.Data -Catalogue $cat } | Should -Throw "*'lagebild.red'*'{server}'*"
+        { Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data $ctx.Data -Catalogue $cat -Texts $Texts } | Should -Throw "*'lagebild.red'*'{server}'*"
     }
 }
 Describe 'Situation und Bedingungen der simulierten Stunde' {
@@ -841,10 +887,10 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $order.Count | Should -Be 12
         $order[0..3] | Should -Be @($backend, $cpu, $memory, $manyUsers)
         $order[10..11] | Should -Be @($spooler, $homeOffice)
-        @(Get-WorkerPerfIncidentGroups -Incidents $capture -Order $order -Cards 10).Count | Should -Be 2
-        $l = Get-WorkerPerfLagebild -Incidents @($SimData.incidents) -Data $SimData -Catalogue $Cat
+        @(Get-WorkerPerfIncidentGroups -Incidents $capture -Order $order -Cards 10 -OffsetMinutes $SimCtx.OffsetMinutes -Texts $Texts).Count | Should -Be 2
+        $l = Get-WorkerPerfLagebild -Incidents @($SimData.incidents) -Data $SimData -Catalogue $Cat -Texts $Texts
         $l.kpis.bottlenecks | Should -Be 5; $l.kpis.delays | Should -Be 2; $l.kpis.events | Should -Be 4; $l.kpis.chronic | Should -Be 1
-        $l.kpis.minutes | Should -BeGreaterThan 12; $l.kpis.minutes | Should -BeLessThan 14
+        $l.kpis.minutes | Should -Be 12.9
         $l.state | Should -Be 'red'; $l.top | Should -Be $backend
     }
 }

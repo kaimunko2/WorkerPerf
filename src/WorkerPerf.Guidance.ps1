@@ -704,15 +704,21 @@ function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
 
 # ---------- ranking, groups and the situation summary of the capture (spec 3.1, 8) ----------
 
-# the state of the capture: symbol and word as the report shows every status (the words of the plan, ASCII-escaped here)
-$script:WorkerPerfGuidanceStates = @{
-    red    = @{ Symbol = [string][char]0x25C6; Word = 'kritisch' }
-    yellow = @{ Symbol = [string][char]0x25B2; Word = ('auff' + [char]0x00E4 + 'llig') }
-    green  = @{ Symbol = [string][char]0x25CF; Word = 'normal' }
-}
-# the words of a group label: '6-mal <title> durch <app> von <user>'
-$script:WorkerPerfGuidanceGroupWords = @{ Times = '{0}-mal {1}'; By = ' durch '; Of = ' von ' }
+# the symbol and word of a state (state.<state>.symbol / .word) and the words of a group label (group.times, group.by,
+# group.of, group.at) come from the texts (texts.de.json, ruling P3-R27)
 $script:WorkerPerfGuidanceNoCause = @('none', 'nodata', 'notmeasured')
+
+function Get-WorkerPerfGuidanceWord($Texts, [string]$Key) {
+    # A text of texts.de.json the guidance cannot do without; a missing or empty one stops with its key.
+    $t = [string](Get-WorkerPerfField $Texts $Key)
+    if (-not $t) { throw "The texts have no '$Key'." }
+    return $t
+}
+
+function Format-WorkerPerfGuidanceWord($Texts, [string]$Key, [object[]]$Values) {
+    # A text of texts.de.json with its numbered places {0}, {1} filled (independent of the installed culture).
+    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, (Get-WorkerPerfGuidanceWord $Texts $Key), $Values)
+}
 
 function Get-WorkerPerfGuidanceSessionCount($Incident) {
     # The number of affected sessions: event.sessions of an event incident, affected of a performance incident.
@@ -782,15 +788,18 @@ function Get-WorkerPerfGuidanceCause($Incident) {
 function Get-WorkerPerfIncidentGroups {
     # The incidents after the first Cards of Order (spec 8): incidents of the same situation (guide.situation) and the
     # same cause (Get-WorkerPerfGuidanceCause) form one group, in the order of their first incident; ids in rank order.
-    # Label of several: '<n>-mal <guide.title>' with ' durch <app> von <user>' (an event incident: ' durch <event.key>')
-    # where the cause names them; of one: '<guide.title>, HH:mm' (the start in the server's time: OffsetMinutes, an
-    # event incident the offset of its first record). Plain pipeline output (the caller writes @(...)).
-    param([object[]]$Incidents = @(), [int[]]$Order = @(), [int]$Cards = 10, [int]$OffsetMinutes = 0)
+    # Label of several: the text group.times (number, guide.title) with group.by (main.app, of an event incident
+    # event.key) and group.of (main.user) where the cause names them; of one: group.at (guide.title, start as HH:mm in
+    # the server's time: OffsetMinutes, an event incident the offset of its first record). An id that occurs twice in Order is used once. Texts: Read-WorkerPerfTexts. Plain pipeline output (the
+    # caller writes @(...)).
+    param([object[]]$Incidents = @(), [int[]]$Order = @(), [int]$Cards = 10,
+        [Parameter(Mandatory = $true)][int]$OffsetMinutes, [Parameter(Mandatory = $true)]$Texts)
     $byId = @{}
     foreach ($inc in @($Incidents)) { if ($null -ne $inc) { $byId[[int](Get-WorkerPerfField $inc 'id')] = $inc } }
     $groups = New-Object System.Collections.Generic.List[object]
     $index = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
-    $ids = @($Order)
+    $ids = New-Object System.Collections.Generic.List[int]
+    foreach ($id in @($Order)) { if (-not $ids.Contains([int]$id)) { $ids.Add([int]$id) } }
     for ($n = [Math]::Max(0, $Cards); $n -lt $ids.Count; $n++) {
         $id = [int]$ids[$n]
         if (-not $byId.ContainsKey($id)) { throw "Get-WorkerPerfIncidentGroups: id $id of the order is not among the incidents." }
@@ -808,10 +817,10 @@ function Get-WorkerPerfIncidentGroups {
     }
     foreach ($g in $groups) {
         if ($g.Ids.Count -gt 1) {
-            $label = [string]::Format($script:WorkerPerfGuidanceGroupWords.Times, $g.Ids.Count, $g.Title)
+            $label = Format-WorkerPerfGuidanceWord $Texts 'group.times' @($g.Ids.Count, $g.Title)
             $by = $g.Cause.Key; if (-not $by) { $by = $g.Cause.App }
-            if ($by) { $label += $script:WorkerPerfGuidanceGroupWords.By + $by }
-            if ($g.Cause.User) { $label += $script:WorkerPerfGuidanceGroupWords.Of + $g.Cause.User }
+            if ($by) { $label += Format-WorkerPerfGuidanceWord $Texts 'group.by' @($by) }
+            if ($g.Cause.User) { $label += Format-WorkerPerfGuidanceWord $Texts 'group.of' @($g.Cause.User) }
         }
         else {
             $label = $g.Title
@@ -822,7 +831,7 @@ function Get-WorkerPerfIncidentGroups {
                 if ([string](Get-WorkerPerfField $g.First 'type') -eq 'ereignis' -and $records.Count -gt 0) {
                     $o = Get-WorkerPerfField $records[0] 'offsetMin'; if ($null -ne $o) { $offset = [int]$o }
                 }
-                $label += ', ' + (Format-WorkerPerfClock ([long]$start) $offset).Substring(0, 5)
+                $label = Format-WorkerPerfGuidanceWord $Texts 'group.at' @($g.Title, (Format-WorkerPerfClock ([long]$start) $offset).Substring(0, 5))
             }
         }
         [ordered]@{ label = $label; situation = $g.Situation; ids = $g.Ids.ToArray() }
@@ -830,27 +839,28 @@ function Get-WorkerPerfIncidentGroups {
 }
 
 function Format-WorkerPerfGuidancePart($Catalogue, [string]$Part, [string]$Key, [hashtable]$Values) {
-    # A text of the catalogue part (lagebild, hints) filled with Values; a placeholder without a value is an error of the
-    # caller: it stops with the name of the text and the placeholder.
+    # A text of a catalogue part outside the situations (lagebild, hints, copy, userView) filled with Values; a
+    # placeholder without a value is an error of the caller: it stops with the name of the text and the placeholder.
     $template = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue $Part) $Key
-    if ($null -eq $template) { throw "Lagebild: the catalogue has no text '$Part.$Key'." }
+    if ($null -eq $template) { throw "Catalogue text '$Part.$Key' is missing." }
     $text = Format-WorkerPerfGuidanceText ([string]$template) $Values
     if ($null -ne $text) { return $text }
     foreach ($m in [regex]::Matches([string]$template, '\{(\w+)\}')) {
         $name = $m.Groups[1].Value
         if (-not $Values.ContainsKey($name) -or [string]::IsNullOrEmpty([string]$Values[$name])) {
-            throw "Lagebild: the text '$Part.$Key' has no value for the placeholder '{$name}'."
+            throw "Catalogue text '$Part.$Key' has no value for the placeholder '{$name}'."
         }
     }
-    throw "Lagebild: the text '$Part.$Key' could not be filled."
+    throw "Catalogue text '$Part.$Key' could not be filled."
 }
 
 function Get-WorkerPerfLagebild {
     # The situation summary of the capture (spec 3.1): state with symbol and word, sentence (catalogue part lagebild),
     # key figures, hints on the capture (catalogue part hints) and the id of the most important incident.
     # Incidents: the capture's incidents only (Data.incidents). Incidents of the lookback (Data.before) count nowhere; the
-    # caller does not pass them, and nothing is filtered here. Data: the report data (meta, sollIst, skipped).
-    param([object[]]$Incidents = @(), $Data, $Catalogue)
+    # caller does not pass them, and nothing is filtered here. Data: the report data (meta, sollIst, skipped). Texts:
+    # Read-WorkerPerfTexts (symbol and word of the state).
+    param([object[]]$Incidents = @(), $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts)
     $list = @(@($Incidents) | Where-Object { $null -ne $_ })
     $bottlenecks = 0; $delays = 0; $unverified = 0; $events = 0; $chronic = 0; $red = $false
     $spans = New-Object System.Collections.Generic.List[object]
@@ -902,7 +912,9 @@ function Get-WorkerPerfLagebild {
         $m = Get-WorkerPerfField $row 'measured'
         if ($null -eq $m -or [bool]$m) { continue }
         if (Test-WorkerPerfSkipDetail ([string](Get-WorkerPerfField $row 'detail'))) { continue }
+        # a row without a label is named by its id: an unmeasured signal never vanishes from the hint
         $label = [string](Get-WorkerPerfField $row 'label')
+        if (-not $label) { $label = [string](Get-WorkerPerfField $row 'id') }
         if ($label -and -not $signals.Contains($label)) { $signals.Add($label) }
     }
     if ($signals.Count -gt 0) { $v['signals'] = $signals.ToArray() -join ', ' }
@@ -911,10 +923,11 @@ function Get-WorkerPerfLagebild {
     if ($state -eq 'green' -and @($skipped | Where-Object { [string](Get-WorkerPerfField $_ 'id') -ceq 'Ereignisse' }).Count -gt 0) { $sentenceKey = 'greenSkipped' }
     $sentence = Format-WorkerPerfGuidancePart $Catalogue 'lagebild' $sentenceKey $v
 
-    # hints, in the order of the catalogue part; duration, interrupted and stopflag give none (ruling P3-R5)
+    # hints: what was left out on purpose before what could not be measured (ruling P3-R28); duration, interrupted and
+    # stopflag give none (ruling P3-R5)
     $hints = New-Object System.Collections.Generic.List[string]
-    if ($signals.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'unmeasured' $v)) }
     if ($skipped.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'skipped' $v)) }
+    if ($signals.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'unmeasured' $v)) }
     $reason = [string](Get-WorkerPerfField $meta 'endReason')
     if (-not $reason) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'notFinished' $v)) }
     elseif ($reason -eq 'error') {
@@ -927,8 +940,8 @@ function Get-WorkerPerfLagebild {
     $top = $null; if ($order.Count -gt 0) { $top = $order[0] }
     return [ordered]@{
         state    = $state
-        symbol   = $script:WorkerPerfGuidanceStates[$state].Symbol
-        word     = $script:WorkerPerfGuidanceStates[$state].Word
+        symbol   = Get-WorkerPerfGuidanceWord $Texts "state.$state.symbol"
+        word     = Get-WorkerPerfGuidanceWord $Texts "state.$state.word"
         sentence = $sentence
         kpis     = [ordered]@{ bottlenecks = $bottlenecks; delays = $delays; delaysUnverified = $unverified; events = $events; chronic = $chronic; minutes = $minutes }
         hints    = [string[]]$hints.ToArray()

@@ -99,5 +99,8 @@
   "type.engpass": "Engpass", "type.ohne-engpass": "Verzögerung ohne Engpass", "type.ohne-engpass.unverified": "Verzögerung ohne erkannten Engpass",
   "type.umfeld": "Umfeld", "type.ereignis": "Vorfall aus Ereignissen", "type.chronic": "Dauerzustand",
   "kind.crash": "Anwendungsabsturz", "kind.hang": "Anwendungshänger", "kind.service": "Dienstausfall", "kind.print": "Druckproblem",
-  "kind.profileerror": "Profilproblem", "kind.system": "Systemfehler", "tech.separator": " · "
+  "kind.profileerror": "Profilproblem", "kind.system": "Systemfehler", "tech.separator": " · ",
+  "state.red.symbol": "◆", "state.red.word": "kritisch", "state.yellow.symbol": "▲", "state.yellow.word": "auffällig",
+  "state.green.symbol": "●", "state.green.word": "normal",
+  "group.times": "{0}-mal {1}", "group.by": " durch {0}", "group.of": " von {0}", "group.at": "{0}, {1}"
 }
