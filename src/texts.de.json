@@ -95,5 +95,9 @@
   "skip.text.Drucken": "Treiberliste und Zähler der Druckwarteschlangen wurden bei dieser Messung nicht erfasst.",
   "skip.text.Gegenstellen": "Gegenstellen wurden bei dieser Messung nicht geprüft.",
   "duration.second": "Sekunde", "duration.seconds": "Sekunden", "duration.minute": "Minute", "duration.minutes": "Minuten",
-  "duration.hour": "Stunde", "duration.hours": "Stunden"
+  "duration.hour": "Stunde", "duration.hours": "Stunden",
+  "type.engpass": "Engpass", "type.ohne-engpass": "Verzögerung ohne Engpass", "type.ohne-engpass.unverified": "Verzögerung ohne erkannten Engpass",
+  "type.umfeld": "Umfeld", "type.ereignis": "Vorfall aus Ereignissen", "type.chronic": "Dauerzustand",
+  "kind.crash": "Anwendungsabsturz", "kind.hang": "Anwendungshänger", "kind.service": "Dienstausfall", "kind.print": "Druckproblem",
+  "kind.profileerror": "Profilproblem", "kind.system": "Systemfehler"
 }

@@ -512,3 +512,156 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
 
     return @{ Situation = $situation; Conditions = [string[]]$c.ToArray(); Values = $v }
 }
+
+# ---------- the guidance of one incident (spec 4, 5.3 to 5.6) ----------
+
+# list of a situation -> fields of its elements in the guidance (source is optional in the catalogue)
+$script:WorkerPerfGuidanceOutputFields = [ordered]@{
+    'checks'   = @('text', 'where', 'sign', 'source')
+    'remedies' = @('text', 'precondition', 'source')
+    'contacts' = @('text')
+}
+# the separator of the parts of the technical name, a middle dot between spaces as on the page (the file stays ASCII)
+$script:WorkerPerfGuidanceTechSeparator = ' ' + [char]0x00B7 + ' '
+
+function Format-WorkerPerfGuidanceText([string]$Template, [hashtable]$Values) {
+    # Replaces every placeholder {name} in one pass: an inserted value is not read again, so braces or markup in a value
+    # stay as they are. $null when a placeholder has no value (or an empty one); the report shows no text with a gap.
+    $state = @{ Missing = $false }
+    $evaluator = {
+        param($m)
+        $name = $m.Groups[1].Value
+        $value = $null
+        if ($null -ne $Values -and $Values.ContainsKey($name)) { $value = [string]$Values[$name] }
+        if ([string]::IsNullOrEmpty($value)) { $state.Missing = $true; return '' }
+        return $value
+    }
+    $text = [regex]::Replace($Template, '\{(\w+)\}', [System.Text.RegularExpressions.MatchEvaluator]$evaluator)
+    if ($state.Missing) { return $null }
+    return $text
+}
+
+function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values) {
+    # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
+    # text can be filled. Elements with a condition first, otherwise the order of the file.
+    $withCondition = New-Object System.Collections.Generic.List[object]
+    $general = New-Object System.Collections.Generic.List[object]
+    foreach ($el in (Get-WorkerPerfGuidanceList $Entry $ListName)) {
+        $when = Get-WorkerPerfGuidanceList $el 'when'
+        if (@($when | Where-Object { $Conditions -cnotcontains [string]$_ }).Count -gt 0) { continue }
+        $item = [ordered]@{}
+        $complete = $true
+        foreach ($f in $script:WorkerPerfGuidanceOutputFields[$ListName]) {
+            $template = Get-WorkerPerfField $el $f
+            if ($null -eq $template) { $item[$f] = $null; continue }
+            $text = Format-WorkerPerfGuidanceText ([string]$template) $Values
+            if ($null -eq $text) { $complete = $false; break }
+            $item[$f] = $text
+        }
+        if (-not $complete) { continue }
+        if ($when.Count -gt 0) { $withCondition.Add($item) } else { $general.Add($item) }
+    }
+    return , @(@($withCondition.ToArray()) + @($general.ToArray()))
+}
+
+function Get-WorkerPerfGuidanceTech($Incident, $Texts) {
+    # The technical name of an incident: type and lead resource or kind of event, joined with a middle dot (from texts.de.json).
+    # A delay whose bottleneck check was incomplete never reads "without bottleneck".
+    $type = [string](Get-WorkerPerfField $Incident 'type')
+    $parts = New-Object System.Collections.Generic.List[string]
+    if ($type -ne 'ereignis' -and [bool](Get-WorkerPerfField $Incident 'chronic')) { $parts.Add([string](Get-WorkerPerfField $Texts 'type.chronic')) }
+    $typeKey = 'type.' + $type
+    if ($type -eq 'ohne-engpass' -and [bool](Get-WorkerPerfField $Incident 'unverified')) { $typeKey = 'type.ohne-engpass.unverified' }
+    $parts.Add([string](Get-WorkerPerfField $Texts $typeKey))
+    if ($type -eq 'ereignis') { $parts.Add([string](Get-WorkerPerfField $Texts ('kind.' + [string](Get-WorkerPerfField (Get-WorkerPerfField $Incident 'event') 'kind')))) }
+    else {
+        $lead = [string](Get-WorkerPerfField $Incident 'lead')
+        if ($lead) { $parts.Add([string](Get-WorkerPerfField $Texts ('resource.' + $lead))) }
+    }
+    return (@($parts | Where-Object { $_ }) -join $script:WorkerPerfGuidanceTechSeparator)
+}
+
+function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Conditions, [hashtable]$Values) {
+    # The sentence of the user's view: before, chronic, then the number of affected sessions of an event or performance
+    # incident. A text whose placeholders cannot be filled gives userView.unknown.
+    $isEvent = [string](Get-WorkerPerfField $Incident 'type') -eq 'ereignis'
+    if ($Conditions -ccontains 'before') { $key = 'before' }
+    elseif ($Conditions -ccontains 'chronic') { $key = 'chronic' }
+    elseif ($Conditions -ccontains 'affected.many') { $key = if ($isEvent) { 'eventMany' } else { 'many' } }
+    elseif ($Conditions -ccontains 'affected.one') { $key = if ($isEvent) { 'eventOne' } else { 'one' } }
+    elseif ($Conditions -ccontains 'affected.unknown') { $key = 'unknown' }
+    else { $key = if ($isEvent) { 'eventNone' } else { 'none' } }
+    $views = Get-WorkerPerfField $Catalogue 'userView'
+    $text = $null
+    $template = Get-WorkerPerfField $views $key
+    if ($null -ne $template) { $text = Format-WorkerPerfGuidanceText ([string]$template) $Values }
+    if ($null -eq $text -and $key -ne 'unknown') {
+        $template = Get-WorkerPerfField $views 'unknown'
+        if ($null -ne $template) { $text = Format-WorkerPerfGuidanceText ([string]$template) $Values }
+    }
+    return $text
+}
+
+function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
+    # The guidance of one incident: the catalogue entry of its situation (the fallback entry, marked, when the catalogue
+    # has none), filled with the values of the facts (Get-WorkerPerfGuidanceFacts), with only the elements the facts
+    # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts.
+    $situation = [string](Get-WorkerPerfField $Facts 'Situation')
+    $conditions = [string[]](Get-WorkerPerfGuidanceList $Facts 'Conditions')
+    $values = Get-WorkerPerfField $Facts 'Values'
+    if ($values -isnot [hashtable]) { $values = @{} }
+    $situations = Get-WorkerPerfField $Catalogue 'situations'
+    $entry = $null
+    if ($situation) { $entry = Get-WorkerPerfField $situations $situation }
+    if ($null -eq $entry -or $situation -eq 'fallback') { $situation = 'fallback'; $entry = Get-WorkerPerfField $situations 'fallback' }
+    $isFallback = $situation -eq 'fallback'
+
+    $filled = @{}
+    foreach ($f in 'title', 'meaning', 'impact', 'short') {
+        $filled[$f] = $null
+        $template = Get-WorkerPerfField $entry $f
+        if ($null -ne $template) { $filled[$f] = Format-WorkerPerfGuidanceText ([string]$template) $values }
+    }
+    if ($isFallback) {
+        $template = Get-WorkerPerfField $Catalogue 'fallbackNote'
+        $note = $null
+        if ($null -ne $template) { $note = Format-WorkerPerfGuidanceText ([string]$template) $values }
+        $filled['meaning'] = (@($note, $filled['meaning']) | Where-Object { $_ }) -join ' '
+    }
+
+    $g = [ordered]@{
+        situation  = $situation
+        fallback   = $isFallback
+        title      = $filled['title']
+        tech       = Get-WorkerPerfGuidanceTech $Incident $Texts
+        meaning    = $filled['meaning']
+        impact     = $filled['impact']
+        userView   = Get-WorkerPerfGuidanceUserView $Catalogue $Incident $conditions $values
+        checks     = Get-WorkerPerfGuidanceItems $entry 'checks' $conditions $values
+        remedies   = Get-WorkerPerfGuidanceItems $entry 'remedies' $conditions $values
+        contacts   = Get-WorkerPerfGuidanceItems $entry 'contacts' $conditions $values
+        short      = $filled['short']
+        terms      = @()
+        conditions = $conditions
+    }
+
+    # the texts of the guidance (not the sources), searched for the catalogue's terms ignoring case
+    $all = New-Object System.Collections.Generic.List[string]
+    foreach ($k in 'title', 'meaning', 'impact', 'userView', 'short') { if ($g[$k]) { $all.Add([string]$g[$k]) } }
+    foreach ($list in 'checks', 'remedies', 'contacts') {
+        foreach ($item in $g[$list]) {
+            foreach ($f in $item.Keys) { if ($f -ne 'source' -and $item[$f]) { $all.Add([string]$item[$f]) } }
+        }
+    }
+    $haystack = ($all.ToArray() -join "`n")
+    $terms = Get-WorkerPerfField $Catalogue 'terms'
+    $found = New-Object System.Collections.Generic.List[string]
+    if (Test-WorkerPerfGuidanceObject $terms) { $names = @($terms.PSObject.Properties | ForEach-Object { $_.Name }) }
+    elseif ($terms -is [System.Collections.IDictionary]) { $names = @($terms.Keys) }
+    else { $names = @() }
+    foreach ($n in $names) {
+        if ($haystack.IndexOf([string]$n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $found.Add([string]$n) }
+    }
+    $g['terms'] = @($found.ToArray())
+    return $g
+}
