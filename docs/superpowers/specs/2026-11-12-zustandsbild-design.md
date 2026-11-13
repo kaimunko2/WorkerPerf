@@ -98,6 +98,15 @@ Jeder Bereich trägt die Einstufung seiner auffälligsten Prüfung; „nicht pr�
 - Eine Schwelle lässt sich im Katalog ändern; der Bericht vermerkt im Kopf, dass Schwellen vom ausgelieferten Stand abweichen.
 - Ein Katalogeintrag, dem Quelle, Art oder Texte fehlen oder der einen unbekannten Wert verlangt, wird beim Laden mit einer verständlichen Meldung abgelehnt.
 
+### 4.4 Zielumgebung
+
+Ergänzt am 13.11.2026 nach Angabe des Auftraggebers: Die Worker werden ausschließlich über Machine Creation Services (MCS) bereitgestellt, sind nicht persistent und sind Shared-Session-Desktops (Multi-Session). Daraus folgt für den Katalog:
+
+- Empfehlungen, die für nicht persistente, über MCS bereitgestellte Multi-Session-Worker gelten, werden ohne weitere Voraussetzung aufgenommen. Empfehlungen, die nur für Provisioning Services, für persistente Maschinen oder für Single-Session-Desktops gelten, werden nicht aufgenommen.
+- Vorschläge zum Vorgehen nennen das Master-Image oder die Richtlinie als Ort der Änderung. Eine Änderung am einzelnen Worker geht beim nächsten Neustart verloren.
+- Was auf einem nicht persistenten Worker nur bis zum letzten Start zurückreicht (Ereignisprotokolle und damit das Ereignisbild, lokale Profile, Dateien auf dem Systemlaufwerk), wird so eingeordnet: Die Prüfung nennt den letzten Start als Grenze ihrer Aussage. Der Stand der Updates ist der Stand des Abbilds.
+- Der Katalog bleibt allgemein formuliert („bei nicht persistenten Workern im Master-Image"); er nennt keine Systeme des Auftraggebers.
+
 ## 5. Darstellung
 
 ### 5.1 Geführte Ansicht
