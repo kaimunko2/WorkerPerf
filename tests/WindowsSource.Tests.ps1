@@ -782,6 +782,47 @@ $tb = @($xb.QueryList.Query.Select)[0].InnerText; $te = @($xe.QueryList.Query.Se
         $st.Ica | Should -BeNullOrEmpty; $st.Euem | Should -BeFalse; $st.ProfileMapOk | Should -BeFalse; @($script:WinEndpoints).Count | Should -Be 0
         Start-WorkerPerfProbes -Endpoints $ep; $script:WinProbe | Should -BeNullOrEmpty
     }
+    It 'oeffnet mit -HealthOnly keinen Leistungsindikator und liest trotzdem ein vollstaendiges Zustandsbild' {   # Fix-Runde 1, Punkt 2
+        $quickSkip = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen')
+        # die Werte des Zustandsbilds ohne Zeiten: Zustand und Fehler je Bereich, Zustand, Grund und Wert je Wert; Zeitpunkte
+        # (Millisekunden seit 1970) haengen am Zeitpunkt von Reset-WinStandIns und werden ersetzt
+        $picture = { param($H) foreach ($a in @($H.Areas.Keys)) { '{0}|{1}|{2}' -f $a, $H.Areas[$a].Status, $H.Areas[$a].Error
+                foreach ($v in @($H.Areas[$a].Values.Keys)) { $x = $H.Areas[$a].Values[$v]
+                    '{0}|{1}|{2}|{3}' -f $v, $x.State, $x.Reason, ((ConvertTo-Json -InputObject $x.Value -Depth 6 -Compress) -replace '\d{13}', 'T') } } }
+        # Vergleich: das Zustandsbild nach der Initialisierung mit den Kategorien des Schnelllaufs, aber mit Indikatoren
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $quickSkip 3>$null)
+        $want = @(& $picture (Get-WorkerPerfHealth 3>$null))
+        # die Funktionen der Leistungsindikatoren werfen und zaehlen ihre Aufrufe (die Initialisierung finge den Fehler ab)
+        Reset-WinStandIns
+        $script:CounterCalls = New-Object System.Collections.Generic.List[string]
+        $info = & {
+            function Test-WorkerPerfWinCounter([string]$Category, [string]$Counter) { $script:CounterCalls.Add('check:' + $Category); throw "Testaufruf Test-WorkerPerfWinCounter $Category" }
+            function Open-WorkerPerfWinCategory([string]$Name) { $script:CounterCalls.Add('open:' + $Name); throw "Testaufruf Open-WorkerPerfWinCategory $Name" }
+            function Read-WorkerPerfWinCategory($Category) { $script:CounterCalls.Add('read'); throw 'Testaufruf Read-WorkerPerfWinCategory' }
+            # Gegenprobe: ohne -HealthOnly prueft dieselbe Initialisierung die Indikatoren der Basis
+            [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $quickSkip 3>$null)
+            $script:CounterCalls.Count | Should -BeGreaterThan 0
+            $script:CounterCalls.Clear()
+            Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Skip $quickSkip -HealthOnly 3>$null
+        }
+        @($script:CounterCalls) | Should -BeNullOrEmpty
+        @($script:WinFake.Calls.Keys | Where-Object { $_ -match '^(check|open|perf):' }) | Should -BeNullOrEmpty
+        # Sources nennt nur, was der Schnelllauf liest
+        @($info.Sources.Keys | Where-Object { $_ -notlike 'events.*' }) | Should -Be @('print.drivers', 'health')
+        @($info.Sources.Keys | Where-Object { $_ -like 'events.*' }).Count | Should -BeGreaterThan 0
+        $script:WinState.Categories.Count | Should -Be 0; $script:WinState.PrintQueue | Should -BeNullOrEmpty
+        # das Zustandsbild ist dasselbe; die Zahl der Warteschlangen liest es mit selbst geoeffneten Indikatoren
+        $got = @(& $picture (Get-WorkerPerfHealth 3>$null))
+        $got | Should -Be $want
+        @($got | Where-Object { $_ -like 'print.queueCount|read|*' }).Count | Should -Be 1
+    }
+    It 'sagt im Schnelllauf ohne erhoehte Rechte, was das fuer das Zustandsbild heisst' {          # Fix-Runde 1, Punkt 3
+        $warn = { param([switch]$Quick)
+            & { function Test-WorkerPerfElevated { return $false }
+                @(Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -HealthOnly:$Quick 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { [string]$_ }) } }
+        @(& $warn -Quick) | Should -Be @('Der Schnelllauf laeuft ohne erhoehte Rechte: Werte, die sie brauchen, zeigt das Zustandsbild als nicht pruefbar (fehlende Rechte).')
+        @(& $warn) | Should -Be @('WorkerPerf laeuft ohne erhoehte Rechte: Prozesse anderer Benutzer, Profilcontainer und Ereignisprotokolle koennen fehlen.')
+    }
     It 'baut ohne Gegenstellen keine Verbindung auf, auch wenn Gegenstellen genannt sind' {   # Abschlussrunde (Task 2, geparkt)
         $ep = @([pscustomobject]@{ name = 'DB'; host = '127.0.0.1'; port = 1; role = 'Datenbank' })
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg -Endpoints $ep 3>$null
@@ -979,6 +1020,12 @@ Describe 'Schnelllauf mit der Windows-Datenquelle und nachgestellten Windows-Auf
         @($Calls | Where-Object { $_ -like 'perf:*' -and $_ -ne 'perf:Print Queue' }) | Should -BeNullOrEmpty
         @($Calls | Where-Object { $_ -match '^(check|open|perf):(LogicalDisk|SMB Client Shares|User Input Delay per Process|ICA Session)$|^cim:Win32_Process$|Citrix_Euem' }) | Should -BeNullOrEmpty
         $Calls | Should -Contain 'winevent:read'; $Calls | Should -Contain 'cim:MSFT_PrinterDriver'
+    }
+    It 'prueft und oeffnet keine Indikatoren der Messung und nennt in Sources nur, was er liest' {   # Fix-Runde 1, Punkt 2
+        # einzig Print Queue oeffnet das Zustandsbild selbst (Zahl der Warteschlangen)
+        @($Calls | Where-Object { $_ -match '^(check|open):' }) | Should -Be @('open:Print Queue')
+        $names = @($Meta.Sources.PSObject.Properties.Name)
+        @($names | Where-Object { $_ -notlike 'events.*' }) | Should -Be @('print.drivers', 'health'); @($names | Where-Object { $_ -like 'events.*' }).Count | Should -BeGreaterThan 0
     }
 }
 

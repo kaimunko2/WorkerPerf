@@ -15,6 +15,10 @@ Describe 'Schnelllauf -HealthOnly' {
         $out = Get-Content $Console -Raw
         $out | Should -Match 'WorkerPerf-Schnelllauf laeuft: [^\r\n]+\r?\nGelesen wird: Zustandsbild, Rueckblick, Treiberliste\r?\nNicht gelesen \(-Skip\): keine\r?\n'
         $out | Should -Match 'Zustandsbild: 10 Bereiche gelesen'; $out | Should -Match 'Schnelllauf beendet: '; $out | Should -Not -Match 'Takt'
+        $out | Should -Not -Match 'ohne Zustandsbild'; [string]$m.EndMessage | Should -Be ''
+        # Sources nennt nur, was der Schnelllauf liest: die Protokolle des Rueckblicks, die Treiberliste, das Zustandsbild (Fix-Runde 1, Punkt 2)
+        $names = @($m.Sources.PSObject.Properties.Name)
+        @($names | Where-Object { $_ -notlike 'events.*' }) | Should -Be @('print.drivers', 'health'); @($names | Where-Object { $_ -like 'events.*' }).Count | Should -BeGreaterThan 0
     }
     It 'ruft die Quelle fuer nichts auf, was zur Messung gehoert' {
         $throwing = (@('Get-WorkerPerfFastSample', 'Get-WorkerPerfSnapshot', 'Get-WorkerPerfServices', 'Get-WorkerPerfEvents', 'Get-WorkerPerfPrintQueues', 'Start-WorkerPerfProbes',
@@ -30,9 +34,12 @@ Describe 'Schnelllauf -HealthOnly' {
     }
     It 'lehnt -Skip Zustand und die Parameter der Messung ab, bevor etwas angelegt wird' {
         $dir = Join-Path $TestDrive 'no'
-        { & $Capture -Simulate -HealthOnly -Skip Zustand -OutputPath $dir 6>$null } | Should -Throw '-HealthOnly und -Skip Zustand schliessen sich aus*'
-        { & $Capture -Simulate -HealthOnly -DurationMinutes 60 -IntervalSeconds 30 -OutputPath $dir 6>$null } | Should -Throw '*nicht zusammen mit: -IntervalSeconds, -DurationMinutes.'
-        { & $Capture -Simulate -HealthOnly -NoCitrix -OutputPath $dir 6>$null } | Should -Throw '*nicht zusammen mit: -NoCitrix.'
+        # die vollen Meldungen (Fix-Runde 1, Punkt 5); -NoCitrix:$false ist angegeben und wird darum abgelehnt
+        $refused = '-HealthOnly liest nur das Zustandsbild, den Rueckblick und die Treiberliste; nicht zusammen mit: '
+        { & $Capture -Simulate -HealthOnly -Skip Zustand -OutputPath $dir 6>$null } | Should -Throw '-HealthOnly und -Skip Zustand schliessen sich aus: der Schnelllauf besteht aus dem Zustandsbild.'
+        { & $Capture -Simulate -HealthOnly -DurationMinutes 60 -IntervalSeconds 30 -OutputPath $dir 6>$null } | Should -Throw ($refused + '-IntervalSeconds, -DurationMinutes.')
+        { & $Capture -Simulate -HealthOnly -NoCitrix -OutputPath $dir 6>$null } | Should -Throw ($refused + '-NoCitrix.')
+        { & $Capture -Simulate -HealthOnly -NoCitrix:$false -OutputPath $dir 6>$null } | Should -Throw ($refused + '-NoCitrix.')
         Test-Path $dir | Should -BeFalse
     }
     It 'nimmt eine andere Anwendungsliste an und liest deren vierte Anwendung ohne Aenderung am Code' {
@@ -57,6 +64,50 @@ Describe 'Schnelllauf -HealthOnly' {
         }
         finally { Pop-Location; [Environment]::CurrentDirectory = $oldCwd }
         $run | Should -BeLike (Join-Path $here 'out*')
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $run 'apps.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($apps)))
+        $rows = @((Get-Content (Join-Path $run 'health.json') -Raw | ConvertFrom-Json).Areas.apps.Values.'apps.probes'.Value)
+        @($rows | Where-Object App -eq 'simapp').Count | Should -Be 4
+    }
+    It 'sagt, wenn das Zustandsbild fehlt (<Name>)' -TestCases @(                         # Fix-Runde 1, Punkt 1
+        @{ Name = 'Lesen wirft'; Code = "function Get-WorkerPerfHealth { throw 'Testfehler Zustandsbild' }"; Reason = 'Das Lesen des Zustandsbilds ist gescheitert (RuntimeException).' }
+        @{ Name = 'nichts geliefert'; Code = 'function Get-WorkerPerfHealth { $null }'; Reason = 'Die Datenquelle hat kein Zustandsbild geliefert.' }
+    ) {
+        $key = $Name.Replace(' ', '')
+        $cap = New-PatchedSource (Join-Path $TestDrive "src$key") $Code
+        $out = @(& $cap -Simulate -HealthOnly -OutputPath (Join-Path $TestDrive "ohne$key") 3>&1 6>&1 | ForEach-Object { [string]$_ })
+        $run = $out[-1]
+        Test-Path -LiteralPath (Join-Path $run 'meta.json') | Should -BeTrue                    # der Ordner wird ausgegeben wie bisher
+        $out[-2] | Should -Be "Schnelllauf beendet ohne Zustandsbild: $run"; $out[-3] | Should -Be $Reason
+        @($out | Where-Object { $_ -like '*laeuft weiter*' }) | Should -BeNullOrEmpty
+        @(Get-ChildItem $run | ForEach-Object Name | Sort-Object) | Should -Be @('apps.json', 'events_before.csv', 'meta.json', 'printdrivers.csv')
+        $m = Get-Meta $run; $m.EndReason | Should -Be 'healthonly'; $m.EndMessage | Should -Be $Reason
+        if ($Name -eq 'Lesen wirft') {
+            $m.SourceErrors.health.FirstMessage | Should -Be 'Testfehler Zustandsbild'
+            $out | Should -Contain "Datenquelle 'Zustandsbild' meldet einen Fehler; der Schnelllauf liest den Rest: Testfehler Zustandsbild"
+        }
+        else { @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0 }
+    }
+    It 'nennt nach Strg+C den Grund des Endes in der letzten Zeile' {                       # Fix-Runde 1, Punkt 1
+        # Strg+C erscheint als PipelineStoppedException im Lesen des Zustandsbilds; sie beendet auch den Aufrufer, darum
+        # laeuft der Schnelllauf in einem eigenen Prozess
+        $cap = New-PatchedSource (Join-Path $TestDrive 'srcstop') 'function Get-WorkerPerfHealth { throw (New-Object System.Management.Automation.PipelineStoppedException) }'
+        $dir = Join-Path $TestDrive 'stop'
+        $out = @(& (Get-Process -Id $PID).Path -NoProfile -Command "& '$cap' -Simulate -HealthOnly -OutputPath '$dir' 3>&1 6>&1 | ForEach-Object { [string]`$_ }")
+        $run = @(Get-ChildItem $dir -Directory)[0].FullName
+        $out[-1] | Should -Be "Schnelllauf beendet (interrupted): $run"
+        (Get-Meta $run).EndReason | Should -Be 'interrupted'
+    }
+    It 'liest eine relativ angegebene Anwendungsliste aus dem Dateisystem, auch wenn die PowerShell auf Env: steht' {   # Fix-Runde 1, Punkt 7
+        $here = Join-Path $TestDrive 'relenv'; [void](New-Item -ItemType Directory -Path $here -Force)
+        $apps = New-TestAppFile $here
+        $oldCwd = [Environment]::CurrentDirectory
+        Push-Location $here
+        try {
+            [Environment]::CurrentDirectory = $PSScriptRoot
+            Set-Location Env:
+            $run = Invoke-SimHealthOnly (Join-Path $TestDrive 'relenvout') @{ AppsFile = 'apps.test.json' }
+        }
+        finally { Pop-Location; [Environment]::CurrentDirectory = $oldCwd }
         [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $run 'apps.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($apps)))
         $rows = @((Get-Content (Join-Path $run 'health.json') -Raw | ConvertFrom-Json).Areas.apps.Values.'apps.probes'.Value)
         @($rows | Where-Object App -eq 'simapp').Count | Should -Be 4

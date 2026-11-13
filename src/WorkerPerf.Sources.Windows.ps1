@@ -2198,7 +2198,7 @@ function Test-WorkerPerfWinMeasured([string]$Category) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null, [object[]]$Apps = @())
+          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly)
     # StartTime exists for the common interface: the clock of this source is the system clock. EventConfig: the event
     # catalogue (Read-WorkerPerfEventConfig); without it the source reads events.json next to this file.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). For them the source checks and opens nothing, makes no
@@ -2206,12 +2206,23 @@ function Initialize-WorkerPerfSource {
     # Ereignisse and Rueckblick together: they are checked while either of the two is measured.
     # The health picture (Get-WorkerPerfHealth) reuses what is read here: the two CIM objects, the objects of
     # Get-WinEvent -ListLog (LogInfo) and the application list given in Apps (as Read-WorkerPerfHealthApps returns it).
+    # HealthOnly: the quick run reads only the health picture, the lookback and the driver list. The source then checks
+    # and opens no performance counter category at all (the health picture opens the print queue counters itself) and
+    # writes no entry of a measured signal into Sources (base signals, sessions, print queues); the categories of the
+    # measurement count as left out. What the health picture, the lookback and the driver list need stays: the native
+    # types of the session list, the event configuration and logs, the CIM objects.
 
     $leftOut = [string[]]@($Skip | Where-Object { $_ })
+    if ($HealthOnly) {
+        $leftOut = [string[]](@($leftOut) + @(@('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen') | Where-Object { $leftOut -notcontains $_ }))
+    }
     $withEventLogs = ($leftOut -notcontains 'Ereignisse' -or $leftOut -notcontains 'Rueckblick')
     $script:WarnedOnce = @{}
     if (-not (Test-WorkerPerfElevated)) {
-        Write-Warning 'WorkerPerf laeuft ohne erhoehte Rechte: Prozesse anderer Benutzer, Profilcontainer und Ereignisprotokolle koennen fehlen.'
+        if ($HealthOnly) {
+            Write-Warning 'Der Schnelllauf laeuft ohne erhoehte Rechte: Werte, die sie brauchen, zeigt das Zustandsbild als nicht pruefbar (fehlende Rechte).'
+        }
+        else { Write-Warning 'WorkerPerf laeuft ohne erhoehte Rechte: Prozesse anderer Benutzer, Profilcontainer und Ereignisprotokolle koennen fehlen.' }
     }
     $wtsError = Register-WorkerPerfNativeTypes
     if ($leftOut -notcontains 'Gegenstellen') { Register-WorkerPerfProbeType }
@@ -2230,9 +2241,11 @@ function Initialize-WorkerPerfSource {
         ComputerSystem = $cs; OperatingSystem = $os; LogInfo = @{}; Apps = [object[]]@($Apps | Where-Object { $null -ne $_ })
     }
 
-    # ---- performance counters: one status per counter group ----
+    # ---- performance counters: one status per counter group (none in the quick run) ----
     $groupStatus = @{}
-    foreach ($key in $script:WorkerPerfWinCounters.Keys) {
+    $counterKeys = @()
+    if (-not $HealthOnly) { $counterKeys = @($script:WorkerPerfWinCounters.Keys) }
+    foreach ($key in $counterKeys) {
         if ($leftOut -contains $script:WorkerPerfWinCounterCategories[$key]) { continue }
         $def = $script:WorkerPerfWinCounters[$key]
         $reason = ''
@@ -2250,7 +2263,7 @@ function Initialize-WorkerPerfSource {
         if ($reason) { $groupStatus[$key] = @{ Available = $false; Detail = ('{0}: {1}' -f $def.Category, $reason) } }
         else { $groupStatus[$key] = @{ Available = $true; Detail = ('{0} / {1}' -f $def.Category, ($def.Counters -join ', ')) } }
     }
-    if ($groupStatus['steal'].Available) {
+    if ($groupStatus.ContainsKey('steal') -and $groupStatus['steal'].Available) {
         $groupStatus['steal'].Detail += ' (Rohwert als Millisekunden gelesen, Einheit auf dem VDA nicht bestaetigt; je vCPU: _Total geteilt durch die logischen Prozessoren)'
     }
 
@@ -2291,8 +2304,11 @@ function Initialize-WorkerPerfSource {
     }
 
     if ($leftOut -notcontains 'Prozesse') { $sources['process'] = @{ Available = $true; Detail = 'Win32_Process' } }
-    if ($script:WtsAvailable) { $sources['sessions'] = @{ Available = $true; Detail = 'WTS-Schnittstelle' } }
-    else { $sources['sessions'] = @{ Available = $false; Detail = ('WTS-Schnittstelle nicht verfuegbar: {0}' -f $wtsError) } }
+    # the sessions are a signal of the measurement: the quick run writes no entry (the health picture has its own)
+    if (-not $HealthOnly) {
+        if ($script:WtsAvailable) { $sources['sessions'] = @{ Available = $true; Detail = 'WTS-Schnittstelle' } }
+        else { $sources['sessions'] = @{ Available = $false; Detail = ('WTS-Schnittstelle nicht verfuegbar: {0}' -f $wtsError) } }
+    }
     $g = $groupStatus['inputProcess']
     if ($null -ne $g) { $sources['input.process'] = @{ Available = $g.Available; Detail = $g.Detail } }
 
@@ -2345,7 +2361,8 @@ function Initialize-WorkerPerfSource {
         else { $sources[$id] = @{ Available = $false; Detail = 'Protokoll nicht vorhanden oder abgeschaltet' } }
     }
 
-    # ---- printing: driver list and queue counters (without Drucken PrintDrivers stays off and PrintQueue empty) ----
+    # ---- printing: driver list and queue counters (without Drucken PrintDrivers stays off and PrintQueue empty; the
+    # quick run opens no queue counters) ----
     if ($leftOut -notcontains 'Drucken') {
         try {
             [void](Get-CimClass -Namespace $script:WorkerPerfWinDriverNamespace -ClassName $script:WorkerPerfWinDriverClass -OperationTimeoutSec $script:WorkerPerfWinCimTimeoutSec -ErrorAction Stop)
@@ -2353,21 +2370,24 @@ function Initialize-WorkerPerfSource {
             $sources['print.drivers'] = @{ Available = $true; Detail = ('{0}: {1}' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) }
         }
         catch { $sources['print.drivers'] = @{ Available = $false; Detail = ('{0}: Klasse {1} nicht vorhanden' -f $script:WorkerPerfWinDriverNamespace, $script:WorkerPerfWinDriverClass) } }
-        $reason = ''
-        try {
-            foreach ($c in $script:WorkerPerfWinPrintQueueCounters) {
-                $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinPrintQueueCategory $c)
-                if ($reason) { break }
+        # the queue counters belong to the measurement; the quick run's health picture opens them itself
+        if (-not $HealthOnly) {
+            $reason = ''
+            try {
+                foreach ($c in $script:WorkerPerfWinPrintQueueCounters) {
+                    $reason = [string](Test-WorkerPerfWinCounter $script:WorkerPerfWinPrintQueueCategory $c)
+                    if ($reason) { break }
+                }
+                if (-not $reason) {
+                    $state.PrintQueue = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory
+                    if ($null -eq $state.PrintQueue) { $reason = 'Kategorie nicht vorhanden' }
+                }
             }
-            if (-not $reason) {
-                $state.PrintQueue = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory
-                if ($null -eq $state.PrintQueue) { $reason = 'Kategorie nicht vorhanden' }
+            catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.PrintQueue = $null }
+            if ($reason) { $sources['print.queues'] = @{ Available = $false; Detail = ('{0}: {1}' -f $script:WorkerPerfWinPrintQueueCategory, $reason) } }
+            else {
+                $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
             }
-        }
-        catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message; $state.PrintQueue = $null }
-        if ($reason) { $sources['print.queues'] = @{ Available = $false; Detail = ('{0}: {1}' -f $script:WorkerPerfWinPrintQueueCategory, $reason) } }
-        else {
-            $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
         }
     }
 

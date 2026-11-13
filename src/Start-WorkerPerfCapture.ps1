@@ -107,9 +107,12 @@
     (ticks.csv, inputdelay.csv, snapshots.csv, sessions.csv, meta.json, thresholds.json).
 
 .PARAMETER HealthOnly
-    Reads only the health picture, the lookback and the print driver list and ends; no measurement. -Skip Rueckblick,
-    -Skip Drucken, -EventLookbackDays and -AppsFile apply; -Skip Zustand and the parameters of the measurement are
-    refused.
+    Reads only the health picture, the lookback and the print driver list and ends; no measurement. With it apply
+    -OutputPath, -AppsFile, -EventLookbackDays and -Skip: -Skip Rueckblick and -Skip Drucken shorten the run, the other
+    categories are accepted and have no effect. -Skip Zustand and the parameters of the measurement (-FastIntervalSeconds,
+    -IntervalSeconds, -BurstIntervalSeconds, -BurstHoldSeconds, -DurationMinutes, -MaxSizeMB, -ThresholdFile,
+    -EndpointFile, -IncludeCommandLine, -NoCitrix, -CitrixMetricFilter) are refused. When the health picture could not be
+    read or written, the last line says so: Schnelllauf beendet ohne Zustandsbild.
 
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
@@ -194,10 +197,17 @@ if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.
 if (-not $EndpointFile) { $EndpointFile = Join-Path $PSScriptRoot 'endpoints.json' }
 if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
 # A relative path is meant from the PowerShell location; the .NET file calls that read these files resolve it from the
-# process folder, which Set-Location does not move. Resolved once, so reading and copying use the same file.
-$ThresholdFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ThresholdFile)
-$EndpointFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EndpointFile)
-$AppsFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AppsFile)
+# process folder, which Set-Location does not move. Resolved once, so reading and copying use the same file. While the
+# location is on another provider (Env:, HKLM:), a relative path is meant from the file system location.
+function Resolve-InputFile([string]$Path) {
+    if ((Get-Location).Provider.Name -ne 'FileSystem' -and -not [IO.Path]::IsPathRooted($Path) -and -not $Path.Contains(':')) {
+        $Path = Join-Path (Get-Location -PSProvider FileSystem).ProviderPath $Path
+    }
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+$ThresholdFile = Resolve-InputFile $ThresholdFile
+$EndpointFile = Resolve-InputFile $EndpointFile
+$AppsFile = Resolve-InputFile $AppsFile
 if (-not $OutputPath) {
     $OutputPath = $(if ($env:ProgramData) { Join-Path $env:ProgramData 'WorkerPerf' } else { Join-Path (Get-Location).Path 'WorkerPerfData' })
 }
@@ -217,8 +227,11 @@ $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json'
 # The quick run passes the categories of the measurement as left out as well, so the source opens none of them.
 $sourceSkip = @($leftOut)
 if ($HealthOnly) { $sourceSkip = @($leftOut) + @(@('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen') | Where-Object { $leftOut -notcontains $_ }) }
+# -HealthOnly only in the quick run: the source then opens no performance counter and lists no measured signal in Sources
+$quickArgs = @{}
+if ($HealthOnly) { $quickArgs['HealthOnly'] = $true }
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps
+    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps @quickArgs
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -305,7 +318,9 @@ function Register-SourceMessage([string]$Source, [string]$message) {
         if ($entry -is [System.Collections.IDictionary] -and -not $entry.Contains('ReadFailed')) { $entry['ReadFailed'] = $true }
     }
     if (Add-WorkerPerfSourceError -Errors $meta.SourceErrors -Source $Source -Time (Get-WorkerPerfNow) -Message $message) {
-        Write-Warning ("Datenquelle '{0}' meldet einen Fehler; die Aufzeichnung laeuft weiter, weitere Fehler dieser Quelle werden nur gezaehlt: {1}" -f $name, $message)
+        # the quick run has no capture that goes on
+        if ($HealthOnly) { Write-Warning ("Datenquelle '{0}' meldet einen Fehler; der Schnelllauf liest den Rest: {1}" -f $name, $message) }
+        else { Write-Warning ("Datenquelle '{0}' meldet einen Fehler; die Aufzeichnung laeuft weiter, weitere Fehler dieser Quelle werden nur gezaehlt: {1}" -f $name, $message) }
         # saved at once, so the failure is on record even if the capture is killed later
         try { Save-Meta } catch { Write-Verbose $_.Exception.Message }
     }
@@ -350,6 +365,9 @@ else {
 
 $endReason = $null
 $endMessage = $null
+# Without health.json the quick run has nothing: why, in one sentence without server data (the class of the error), for
+# the console and meta.json (EndMessage)
+$noHealth = ''
 $tickCount = 0
 $snapCount = 0
 $regularCount = 0
@@ -386,17 +404,27 @@ try {
     # The health picture, read once before the first tick. It may carry names of servers, shares and accounts: it goes
     # only into the run folder, the console line names areas and seconds.
     if ($leftOut -notcontains 'Zustand') {
+        $healthStep = 'read'
         try {
             $health = Get-WorkerPerfHealth
             if ($null -ne $health) {
+                $healthStep = 'write'
                 Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $health
                 Write-Host (Format-WorkerPerfHealthLine $health)
             }
+            else { $noHealth = 'Die Datenquelle hat kein Zustandsbild geliefert.' }
         }
-        catch { Register-SourceError 'health' $_ }
+        catch {
+            Register-SourceError 'health' $_
+            if ($healthStep -eq 'write') { $noHealth = 'health.json konnte nicht geschrieben werden ({0}).' -f $_.Exception.GetType().Name }
+            else { $noHealth = 'Das Lesen des Zustandsbilds ist gescheitert ({0}).' -f $_.Exception.GetType().Name }
+        }
     }
     # The quick run ends here: baseline, schedule, loop and the tail of the probes belong to the measurement.
-    if ($HealthOnly) { $endReason = 'healthonly' }
+    if ($HealthOnly) {
+        $endReason = 'healthonly'
+        if ($noHealth) { $endMessage = $noHealth }
+    }
     else {
         # The schedule starts after the start reads, so a slow lookback skips no tick and shortens no measurement; the
         # event cursor stays at the start time, so no event between the two is lost.
@@ -667,7 +695,15 @@ finally {
     }
     if (Test-Path -LiteralPath $stopFlag) { Remove-Item -LiteralPath $stopFlag -Force -ErrorAction SilentlyContinue }
     foreach ($p in $problems) { Write-Warning "Abschluss der Aufzeichnung unvollstaendig: $p" }
-    if ($HealthOnly) { Write-Host "Schnelllauf beendet: $runDir" }
+    if ($HealthOnly) {
+        # the end reason as in the capture's last line when the quick run did not end by itself
+        if ($endReason -ne 'healthonly') { Write-Host "Schnelllauf beendet ($endReason): $runDir" }
+        elseif ($noHealth) {
+            Write-Warning $noHealth
+            Write-Host "Schnelllauf beendet ohne Zustandsbild: $runDir"
+        }
+        else { Write-Host "Schnelllauf beendet: $runDir" }
+    }
     else { Write-Host "Aufzeichnung beendet ($endReason): $tickCount Takte, $snapCount Schnappschuesse in $runDir" }
 }
 

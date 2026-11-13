@@ -376,16 +376,26 @@ Describe 'Relativ angegebene Dateien' {                                         
         $here = Join-Path $TestDrive 'rel'; [void](New-Item -ItemType Directory -Path $here -Force)
         $th = Join-Path $here 'schwellen.json'; Copy-Item (Join-Path $PSScriptRoot '../src/thresholds.json') $th
         Copy-Item (Join-Path $PSScriptRoot '../src/endpoints.example.json') (Join-Path $here 'gegenstellen.json')
+        # Die Simulation nimmt ihre eigenen Gegenstellen: was der Collector aus der Datei gelesen hat, schreibt eine
+        # umhuellte Initialize-WorkerPerfSource in eine Datei (Fix-Runde 1, Punkt 6: eine still leere Liste faellt auf).
+        $seen = Join-Path $TestDrive 'endpoints.seen.txt'
+        $wrap = "`${function:Initialize-WorkerPerfSourceSim} = `${function:Initialize-WorkerPerfSource}`n" +
+            "function Initialize-WorkerPerfSource { param([datetime]`$StartTime, [object[]]`$Endpoints = @(), [string]`$CitrixMetricFilter = '', [switch]`$IncludeCommandLine, " +
+            "[string[]]`$Skip = @(), [object]`$EventConfig = `$null, [object[]]`$Apps = @(), [switch]`$HealthOnly)`n" +
+            "[IO.File]::WriteAllLines('$seen', [string[]]@(@(`$Endpoints) | ForEach-Object { [string](Get-WorkerPerfField `$_ 'name') })); Initialize-WorkerPerfSourceSim @PSBoundParameters }"
+        $cap = New-PatchedSource (Join-Path $TestDrive 'srcrel') $wrap
         $oldCwd = [Environment]::CurrentDirectory
         Push-Location $here
         try {
             # der Prozess steht anderswo als die PowerShell: ein relativer Pfad gilt fuer den Ordner der PowerShell
             [Environment]::CurrentDirectory = $PSScriptRoot
-            $run = Invoke-SimCapture 'out' @{ ThresholdFile = 'schwellen.json'; EndpointFile = 'gegenstellen.json' }
+            [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+            $run = (& $cap -Simulate -DurationMinutes 60 -OutputPath 'out' -ThresholdFile 'schwellen.json' -EndpointFile 'gegenstellen.json' 6>$null) | Select-Object -Last 1
         }
         finally { Pop-Location; [Environment]::CurrentDirectory = $oldCwd }
         $run | Should -BeLike (Join-Path $here 'out*')
         [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $run 'thresholds.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($th)))
         (Get-Content (Join-Path $run 'meta.json') -Raw | ConvertFrom-Json).EndReason | Should -Be 'duration'
+        @(Get-Content $seen) | Should -Be @('Oracle-Listener', 'FortiGate-Proxy', 'Dateiserver')
     }
 }

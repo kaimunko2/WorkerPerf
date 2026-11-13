@@ -186,11 +186,13 @@ function Add-WorkerPerfSimRead([string]$Kind) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null, [object[]]$Apps = @())
+          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly)
     # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
     # Apps: the application list of the health picture (Read-WorkerPerfHealthApps); without it the area apps is empty.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). The source reads nothing of them and writes no entry of
     # theirs into Sources (the collector notes them); the base values stay the same.
+    # HealthOnly: the quick run; the categories of the measurement count as left out, and Sources holds only what it
+    # reads (the logs of the lookback, the driver list and the health picture), no entry of a measured signal.
 
     if ($null -eq $StartTime -or $StartTime -eq [datetime]::MinValue) {
         $n = [datetime]::Now
@@ -200,6 +202,10 @@ function Initialize-WorkerPerfSource {
     $script:WorkerPerfSimNow = $StartTime
     $script:WorkerPerfSimProbe = $null
     $script:WorkerPerfSimSkip = @($Skip | Where-Object { $_ })
+    # the quick run: the categories of the measurement count as left out, as in the Windows source
+    if ($HealthOnly) {
+        $script:WorkerPerfSimSkip = @($script:WorkerPerfSimSkip) + @(@('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Gegenstellen') | Where-Object { $script:WorkerPerfSimSkip -notcontains $_ })
+    }
     $script:WorkerPerfSimReads = @{}
     Initialize-WorkerPerfSimNoise
     $script:WorkerPerfSimIncludeCommandLine = [bool]$IncludeCommandLine
@@ -430,6 +436,7 @@ function Initialize-WorkerPerfSource {
     if ((Test-WorkerPerfSimMeasured 'Ereignisse') -or (Test-WorkerPerfSimMeasured 'Rueckblick')) { $logIds = @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) }
     $sources = [ordered]@{}
     $ids = @($script:WorkerPerfSimSignalIds) + @('process', 'sessions', 'input.process', 'profile.map') + $logIds + @('print.drivers', 'print.queues', 'health')
+    if ($HealthOnly) { $ids = @($logIds) + @('print.drivers', 'health') }
     foreach ($id in $ids) { if (-not $leftOutIds.ContainsKey($id)) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } } }
     if ($sources.Contains('probe.connect')) { $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen' }
 
