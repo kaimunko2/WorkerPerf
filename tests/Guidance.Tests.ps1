@@ -24,7 +24,7 @@ BeforeAll {
                 unmeasured = @{ input = $false; worker = @() }; skipped = @()
                 print = @{ drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'HP'; type = 3; isolation = 'none' }); queues = @(@{ name = 'Q1'; maxJobs = 3; jobErrors = 1; notReadyErrors = 0 }) }
                 meta = @{ computer = 'SIM-VDA01'; offsetMin = 60; endReason = 'duration'; start = 1e12; end = 1e12 + 3600000 } }
-            Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = 60 }
+            Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = 60; Texts = $script:Texts }
     }
     function New-Catalogue([scriptblock]$Change = {}) {
         # a complete small catalogue: every situation with one check, one remedy and one contact without condition
@@ -104,6 +104,8 @@ Describe 'Katalog laden und pruefen' {
         @{ Change = { $c.situations.memory.remedies[0].precondition = 3 }; Msg = "*Eintrag 'memory', remedies``[0``]: Feld 'precondition' ist kein Text*" }
         @{ Change = { $c.situations.cpu = 'CPU' }; Msg = "*Eintrag 'cpu' ist kein Objekt*" }
         @{ Change = { $c.situations.cpu.checks = @() }; Msg = "*Eintrag 'cpu': Feld 'checks' braucht mindestens einen Pruefschritt ohne Bedingung*" }
+        # a vendor pattern that is no valid wildcard pattern fails at loading, not at the first print incident
+        @{ Change = { $c.vendors[1].match = @('Kyocera*', 'HP [') }; Msg = "Katalog '*': Eintrag 'vendors', vendors``[1``]: Feld 'match' enthaelt das ungueltige Muster 'HP ``['." }
     ) { { Read-WorkerPerfGuidance (New-Catalogue $Change) } | Should -Throw $Msg }
     It 'verlangt den Schluessel <Key> im Teil <Part>' -TestCases @(
         @(foreach ($k in 'many', 'one', 'none', 'unknown', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { @{ Part = 'userView'; Key = $k } })
@@ -173,6 +175,11 @@ Describe 'Situation und Bedingungen' {
         @{ I = @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }, @{ s = 2 }) }; S = 'delay.many' }; @{ I = @{ type = 'ohne-engpass'; affected = @(@{ s = 1 }) }; S = 'delay.single' }
         @{ I = @{ type = 'umfeld'; chronic = $true; signals = @(@{ resource = 'network' }) }; S = 'chronic.network' }; @{ I = @{ type = 'engpass'; chronic = $true; lead = 'memory' }; S = 'chronic.resource' }
         @{ I = @{ type = 'ereignis'; event = @{ kind = 'print' } }; S = 'print' }; @{ I = @{ type = 'umfeld'; signals = @(@{ resource = 'endpoint' }) }; S = 'fallback' }
+    ) { Get-WorkerPerfSituation (New-Inc $I) | Should -Be $S }
+    It 'ordnet die Ereignisart <S> ihrer Situation zu' -TestCases @(
+        @{ I = @{ type = 'ereignis'; event = @{ kind = 'crash' } }; S = 'crash' }; @{ I = @{ type = 'ereignis'; event = @{ kind = 'hang' } }; S = 'hang' }
+        @{ I = @{ type = 'ereignis'; event = @{ kind = 'service' } }; S = 'service' }; @{ I = @{ type = 'ereignis'; event = @{ kind = 'print' } }; S = 'print' }
+        @{ I = @{ type = 'ereignis'; event = @{ kind = 'profileerror' } }; S = 'profileerror' }; @{ I = @{ type = 'ereignis'; event = @{ kind = 'system' } }; S = 'system' }
     ) { Get-WorkerPerfSituation (New-Inc $I) | Should -Be $S }
     It 'gibt allem anderen den Auffang-Eintrag' -TestCases @(
         @{ I = @{ type = 'umfeld'; chronic = $true; signals = @(@{ resource = 'endpoint' }) }; S = 'fallback' }
@@ -278,6 +285,22 @@ Describe 'Situation und Bedingungen' {
         $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
         $f.Conditions | Should -Be @()
         $f.Values.endpoint | Should -Be 'DB'; $f.Values.endpointValue | Should -Be '49 ms'
+        # a probe that only failed has no maxMs in the report data: the endpoint, but no value
+        $i = New-Inc @{ type = 'ohne-engpass'; endpoints = @(@{ name = 'DB'; maxMs = 30; failed = $false }, @{ name = 'Web'; maxMs = $null; failed = $true }) }
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Be @('endpoint.slow')
+        $f.Values.endpoint | Should -Be 'Web'; $f.Values.ContainsKey('endpointValue') | Should -BeFalse
+    }
+    It 'liest den Kontext ohne Schwellen, ohne Texte und als Objekt' {
+        $i = New-Inc @{ type = 'ohne-engpass'; endpoints = @(@{ name = 'DB'; maxMs = 340; failed = $false }, @{ name = 'Web'; maxMs = $null; failed = $true }) }
+        $ctx = New-Ctx; $ctx.Remove('Thresholds'); $ctx.Remove('Texts')
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context $ctx -Catalogue $Cat
+        $f.Conditions | Should -Be @('endpoint.slow'); $f.Values.from | Should -Be '02:56'; $f.Values.ContainsKey('duration') | Should -BeFalse
+        # only the slow one without a threshold to compare with
+        $i.endpoints = @(@{ name = 'DB'; maxMs = 340; failed = $false })
+        (Get-WorkerPerfGuidanceFacts -Incident $i -Context ([pscustomobject]$ctx) -Catalogue $Cat).Conditions | Should -Be @()
+        $f = Get-WorkerPerfGuidanceFacts -Incident $i -Context ([pscustomobject](New-Ctx)) -Catalogue $Cat
+        $f.Conditions | Should -Be @('endpoint.slow'); $f.Values.duration | Should -Be '2 Minuten'
     }
     It 'nennt nicht gemessene Signale, abgeschaltete Kategorien, Dauerzustand und unbestaetigte Verzoegerung in ihrer Reihenfolge' {
         $ctx = New-Ctx; $ctx.Data.sollIst = @(@{ id = 'cpu.host'; measured = $true }, @{ id = 'disk.latency'; measured = $false }, @{ id = 'input.session'; measured = $false })
@@ -353,11 +376,22 @@ Describe 'Platzhalterwerte' {
     }
     It 'schreibt die Dauer <Sec> s als <Want>' -TestCases @(
         @{ Sec = 45; Want = '45 Sekunden' }; @{ Sec = 1; Want = '1 Sekunde' }; @{ Sec = 2.5; Want = '2,5 Sekunden' }; @{ Sec = 59.6; Want = '1 Minute' }
-        @{ Sec = 120; Want = '2 Minuten' }; @{ Sec = 228; Want = '3,8 Minuten' }; @{ Sec = 90; Want = '1,5 Minuten' }; @{ Sec = 3570; Want = '1 Stunde' }
-        @{ Sec = 5400; Want = '1,5 Stunden' }; @{ Sec = 36000; Want = '10 Stunden' }
+        @{ Sec = 120; Want = '2 Minuten' }; @{ Sec = 228; Want = '3,8 Minuten' }; @{ Sec = 3570; Want = '1 Stunde' }
+        @{ Sec = 36000; Want = '10 Stunden' }
+        # the boundaries of the units (fix round 1, item 7)
+        @{ Sec = 59.4; Want = '59 Sekunden' }; @{ Sec = 59.5; Want = '1 Minute' }; @{ Sec = 60; Want = '1 Minute' }; @{ Sec = 90; Want = '1,5 Minuten' }
+        @{ Sec = 3599; Want = '1 Stunde' }; @{ Sec = 3600; Want = '1 Stunde' }; @{ Sec = 5400; Want = '1,5 Stunden' }
     ) {
         $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ start = [long]1e12; end = [long](1e12 + $Sec * 1000) }) -Context (New-Ctx) -Catalogue $Cat
         $f.Values.duration | Should -Be $Want
+        $f.Values.duration | Should -Not -Match '^60 '
+    }
+    It 'schreibt keine Dauer ohne Dauer und nimmt die Einheiten aus den Texten' {
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ start = [long]1e12; end = [long]1e12 }) -Context (New-Ctx) -Catalogue $Cat).Values.ContainsKey('duration') | Should -BeFalse
+        $ctx = New-Ctx; $ctx.Texts = $script:Texts.Clone(); $ctx.Texts['duration.minutes'] = 'min'; $ctx.Texts['duration.hour'] = 'h'
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ start = [long]1e12; end = [long](1e12 + 228000) }) -Context $ctx -Catalogue $Cat).Values.duration | Should -Be '3,8 min'
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ start = [long]1e12; end = [long](1e12 + 3600000) }) -Context $ctx -Catalogue $Cat).Values.duration | Should -Be '1 h'
+        foreach ($k in 'duration.second', 'duration.seconds', 'duration.minute', 'duration.minutes', 'duration.hour', 'duration.hours') { $script:Texts.ContainsKey($k) | Should -BeTrue -Because $k }
     }
     It 'nennt Modul, Zahl und Betroffene eines Ereignisvorfalls' {
         $i = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; count = 4; sessions = @(1, 2, 3)
@@ -369,6 +403,35 @@ Describe 'Platzhalterwerte' {
         $i = New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessionUnknown = $true } }
         (Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat).Values.ContainsKey('affected') | Should -BeFalse
     }
+    It 'nennt Anwendung und Benutzer eines Ereignisvorfalls' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; users = @('user004'); sessions = @(2) } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.user | Should -Be 'user004'
+        foreach ($k in 'share', 'baseline') { $f.Values.ContainsKey($k) | Should -BeFalse -Because $k }
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; users = @('user004', 'user005', 'user006'); sessions = @(2, 3, 4) } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.ContainsKey('user') | Should -BeFalse
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; app = 'spoolsv.exe'; key = 'Sim PCL 6'; noUserSession = $true } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.app | Should -Be 'spoolsv.exe'; $f.Values.ContainsKey('user') | Should -BeFalse
+        foreach ($k in 'share', 'baseline') { $f.Values.ContainsKey($k) | Should -BeFalse -Because $k }
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'system' } }) -Context (New-Ctx) -Catalogue $Cat).Values.ContainsKey('app') | Should -BeFalse
+    }
+    It 'nennt bei einem Vorfall vor der Messung ohne Sitzungen keine Zahl der Betroffenen' {
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; users = @('user004'); sessions = @(); before = $true } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.ContainsKey('affected') | Should -BeFalse; $f.Values.user | Should -Be 'user004'
+        $f.Conditions | Should -Be @('pattern.none', 'before')
+        # during the capture an incident without sessions keeps its 0
+        (Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; noUserSession = $true } }) -Context (New-Ctx) -Catalogue $Cat).Values.affected | Should -Be '0'
+    }
+    It 'nimmt die Ortszeit eines Ereignisvorfalls aus seinen Aufzeichnungen' {
+        # capture offset 60; the lookback reaches back over the end of daylight-saving time: first record +120, last +60
+        $start = (New-Object DateTimeOffset 2001, 9, 8, 22, 30, 0, ([TimeSpan]::Zero)).ToUnixTimeMilliseconds(); $end = $start + 7200000
+        $rec = @([ordered]@{ t = $start; offsetMin = 120; kind = 'crash'; s = -1; text = '' }, [ordered]@{ t = $end; offsetMin = 60; kind = 'crash'; s = -1; text = '' })
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; start = $start; end = $end; events = $rec; event = @{ kind = 'crash'; before = $true } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.from | Should -Be '00:30'; $f.Values.date | Should -Be '09.09.2001'; $f.Values.to | Should -Be '01:30'
+        # records without their own offset: the capture's
+        $rec = @([ordered]@{ t = $start; kind = 'crash'; s = -1; text = '' })
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ereignis'; start = $start; end = $end; events = $rec; event = @{ kind = 'crash'; before = $true } }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Values.from | Should -Be '23:30'; $f.Values.date | Should -Be '08.09.2001'; $f.Values.to | Should -Be '01:30'
+    }
 }
 Describe 'Situation und Bedingungen der simulierten Stunde' {
     BeforeAll {
@@ -379,7 +442,7 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $guideSimRoles = New-SimRoleFile (Join-Path $TestDrive 'roles.sim.json')
         $guideSimReport = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
         $script:SimData = & { $null = . $guideSimReport -Path $guideSimRun -OutFile (Join-Path $TestDrive 'report.html') -RoleFile $guideSimRoles 6>$null; $data }
-        $script:SimCtx = @{ Data = $SimData; Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = [int]$SimData.meta.offsetMin }
+        $script:SimCtx = @{ Data = $SimData; Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = [int]$SimData.meta.offsetMin; Texts = $script:Texts }
         $script:SimIncidents = @(@($SimData.incidents) + @($SimData.before.incidents))
         $script:SimFacts = @{}
         foreach ($inc in $SimIncidents) { $SimFacts[[int]$inc.id] = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $SimCtx -Catalogue $Cat }
@@ -405,5 +468,7 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $SimFacts[12].Conditions | Should -Contain 'role.Drucken'; $SimFacts[12].Values.driver | Should -Be 'HP Universal Printing PCL 6 (Sim)'
         $SimFacts[16].Conditions | Should -Contain 'affected.unknown'; $SimFacts[16].Conditions | Should -Contain 'before'
         foreach ($id in 2..6) { $SimFacts[$id].Conditions | Should -Contain 'cause.app' -Because "Vorfall $id"; $SimFacts[$id].Values.Keys | Should -Contain 'app' }
+        # lookback crashes: the application and their one user, no number of affected sessions (P3-R16, P3-R17)
+        foreach ($id in 13..15) { $SimFacts[$id].Values.ContainsKey('affected') | Should -BeFalse -Because "Vorfall $id"; $SimFacts[$id].Values.Keys | Should -Contain 'app' -Because "Vorfall $id" }
     }
 }

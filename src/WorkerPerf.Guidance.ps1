@@ -4,7 +4,7 @@
 # WorkerPerf.Common.ps1 (ConvertFrom-WorkerPerfJsonFile, Read-WorkerPerfThresholds, Get-WorkerPerfField,
 # $script:WorkerPerfRoleNames, $script:WorkerPerfCategories), WorkerPerf.Events.ps1 ($script:WorkerPerfPatternOrder,
 # Format-WorkerPerfEventDate, Test-WorkerPerfAccountPattern) and WorkerPerf.Findings.ps1 (Format-WorkerPerfTextNumber,
-# Format-WorkerPerfValue).
+# Format-WorkerPerfValue, Format-WorkerPerfClock). The unit words of a duration come from the texts (texts.de.json).
 
 $script:WorkerPerfSituations = @('cpu', 'memory', 'disk', 'share', 'profile', 'delay.many', 'delay.single', 'chronic.network', 'chronic.resource',
     'crash', 'hang', 'service', 'print', 'profileerror', 'system', 'fallback')
@@ -154,6 +154,14 @@ function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, 
     }
 }
 
+function Test-WorkerPerfGuidanceWildcard([string]$Pattern) {
+    # Whether a vendor pattern is a valid wildcard pattern, with the options Test-WorkerPerfAccountPattern matches it with
+    # (an invalid one such as 'HP [' only fails when it is matched).
+    $opt = [System.Management.Automation.WildcardOptions]::IgnoreCase -bor [System.Management.Automation.WildcardOptions]::CultureInvariant
+    try { $null = (New-Object System.Management.Automation.WildcardPattern $Pattern, $opt).IsMatch(''); return $true }
+    catch { return $false }
+}
+
 function Read-WorkerPerfGuidance([string]$Path) {
     # Reads the guidance catalogue and checks structure, required fields, conditions and placeholders (spec 5.6).
     # Returns the catalogue as read; the first error stops with a message that names entry and field.
@@ -191,6 +199,7 @@ function Read-WorkerPerfGuidance([string]$Path) {
         if ($match.Value -isnot [array] -or @($match.Value).Count -eq 0) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'match' 'ist keine Liste mit Mustern' }
         foreach ($m in @($match.Value)) {
             if ($m -isnot [string] -or [string]::IsNullOrWhiteSpace($m)) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'match' 'enthaelt ein leeres Muster' }
+            if (-not (Test-WorkerPerfGuidanceWildcard $m)) { Stop-WorkerPerfGuidance $Path 'vendors' $item 'match' "enthaelt das ungueltige Muster '$m'" }
         }
     }
 
@@ -215,11 +224,11 @@ $script:WorkerPerfGuidanceEventKinds = @('crash', 'hang', 'service', 'print', 'p
 # the lead resources whose signal label names the resource (drive, share, profile container)
 $script:WorkerPerfGuidanceNamedResources = @('disk', 'share', 'profile')
 $script:WorkerPerfGuidanceSpoolerApps = @('spoolsv.exe', 'PrintIsolationHost.exe')
-# unit words of a duration: limit in seconds below which the unit is used, seconds per unit, singular, plural
+# units of a duration: limit in seconds below which the unit is used, seconds per unit, text keys of singular and plural
 $script:WorkerPerfGuidanceDurationUnits = @(
-    @{ Below = 60; Per = 1; One = 'Sekunde'; Many = 'Sekunden' }
-    @{ Below = 3600; Per = 60; One = 'Minute'; Many = 'Minuten' }
-    @{ Below = [double]::PositiveInfinity; Per = 3600; One = 'Stunde'; Many = 'Stunden' })
+    @{ Below = 60; Per = 1; One = 'duration.second'; Many = 'duration.seconds' }
+    @{ Below = 3600; Per = 60; One = 'duration.minute'; Many = 'duration.minutes' }
+    @{ Below = [double]::PositiveInfinity; Per = 3600; One = 'duration.hour'; Many = 'duration.hours' })
 
 function Get-WorkerPerfGuidanceList($Object, [string]$Name) {
     # A list field of report data (hashtable, ordered dictionary or JSON object) as an array; empty when missing or null.
@@ -232,29 +241,23 @@ function Test-WorkerPerfGuidanceSame([string]$A, [string]$B) {
     return [string]::Equals($A, $B, [StringComparison]::OrdinalIgnoreCase)
 }
 
-function Get-WorkerPerfGuidanceRounded([double]$Value) {
-    # the number Format-WorkerPerfTextNumber writes for Value
-    if ([Math]::Abs($Value) -lt 10) { return [Math]::Round($Value, 1, [MidpointRounding]::AwayFromZero) }
-    return [Math]::Round($Value, 0, [MidpointRounding]::AwayFromZero)
-}
-
-function Format-WorkerPerfGuidanceDuration([double]$Seconds) {
-    # '45 Sekunden', '2 Minuten', '3,8 Minuten', '1,5 Stunden': the smallest unit whose written number stays below the next
+function Format-WorkerPerfGuidanceDuration([double]$Seconds, $Texts) {
+    # The number in the smallest unit whose written number stays below the next unit (45 s, 2 min, 3,8 min, 1,5 h), and
+    # the unit word of Texts (duration.*, singular for 1). The unit is chosen from the number Format-WorkerPerfTextNumber
+    # writes, so a duration is never written as 60 of a unit. $null when a word is missing.
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
     $units = $script:WorkerPerfGuidanceDurationUnits
     for ($k = 0; $k -lt $units.Count; $k++) {
         $u = $units[$k]
-        $n = Get-WorkerPerfGuidanceRounded ($Seconds / $u.Per)
+        $written = Format-WorkerPerfTextNumber ($Seconds / $u.Per)
+        $n = [double]::Parse($written.Replace(',', '.'), $inv)
         if ($k -lt $units.Count - 1 -and $n * $u.Per -ge $u.Below) { continue }
-        $word = $u.Many
-        if ($n -eq 1) { $word = $u.One }
-        return ((Format-WorkerPerfTextNumber $n) + ' ' + $word)
+        $key = $u.Many
+        if ($written -eq '1') { $key = $u.One }
+        $word = [string](Get-WorkerPerfField $Texts $key)
+        if (-not $word) { return $null }
+        return ($written + ' ' + $word)
     }
-}
-
-function Format-WorkerPerfGuidanceClock([long]$Ms, [int]$OffsetMinutes) {
-    # 'HH:mm' in the local time of the server
-    $t = [DateTimeOffset]::FromUnixTimeMilliseconds($Ms).UtcDateTime.AddMinutes($OffsetMinutes)
-    return $t.ToString('HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Get-WorkerPerfGuidanceLeadSignal($Incident) {
@@ -332,9 +335,12 @@ function Get-WorkerPerfGuidanceDriver($Event, $Print) {
 
 function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     # Situation, conditions (spec 5.4, in the order of its table) and placeholder values (spec 5.5) of one incident of
-    # the report data. Context: @{ Data; Thresholds; OffsetMinutes }. A value the incident does not have is left out.
-    $data = $Context.Data
-    $offset = [int]$Context.OffsetMinutes
+    # the report data. Context: @{ Data; Thresholds; OffsetMinutes; Texts } (Texts from Read-WorkerPerfTexts). A value
+    # the incident does not have is left out.
+    $data = Get-WorkerPerfField $Context 'Data'
+    $offset = [int](Get-WorkerPerfField $Context 'OffsetMinutes')
+    $thresholds = Get-WorkerPerfField $Context 'Thresholds'
+    $texts = Get-WorkerPerfField $Context 'Texts'
     $situation = Get-WorkerPerfSituation $Incident
     $type = [string](Get-WorkerPerfField $Incident 'type')
     $ev = Get-WorkerPerfField $Incident 'event'
@@ -366,7 +372,8 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     # endpoints in the window
     $endpoints = Get-WorkerPerfGuidanceList $Incident 'endpoints'
     $warn = $null
-    if ($null -ne $Context.Thresholds -and $Context.Thresholds.Contains('probe.connect')) { $warn = [double]$Context.Thresholds['probe.connect'].warn }
+    $connect = Get-WorkerPerfField (Get-WorkerPerfField $thresholds 'probe.connect') 'warn'
+    if ($null -ne $connect) { $warn = [double]$connect }
     $slow = @($endpoints | Where-Object { [bool](Get-WorkerPerfField $_ 'failed') -or ($null -ne $warn -and [double](Get-WorkerPerfField $_ 'maxMs') -ge $warn) })
     if ($slow.Count -gt 0) { $c.Add('endpoint.slow') }
 
@@ -395,7 +402,9 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     if ($n -ge 2) { $c.Add('affected.many') }
     elseif ($n -eq 1) { $c.Add('affected.one') }
     elseif ($unknown) { $c.Add('affected.unknown') }
-    if (-not $unknown) { $v['affected'] = [string]$n }
+    # a lookback incident cannot map its users to sessions: no number then ('0' would read as nobody)
+    $lookbackNoSessions = $isEvent -and $n -eq 0 -and [bool](Get-WorkerPerfField $ev 'before')
+    if (-not $unknown -and -not $lookbackNoSessions) { $v['affected'] = [string]$n }
 
     if ([bool](Get-WorkerPerfField $Incident 'chronic')) { $c.Add('chronic') }
     if ([bool](Get-WorkerPerfField $Incident 'unverified')) { $c.Add('incident.unverified') }
@@ -458,14 +467,24 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
         }
     }
 
-    # values: time
+    # values: time; an event incident uses the UTC offset of its first and last record (events[] keeps both), as its own
+    # sentence does: a lookback can cross the end of daylight-saving time
+    $startOffset = $offset; $endOffset = $offset
+    if ($isEvent -and $events.Count -gt 0) {
+        $o = Get-WorkerPerfField $events[0] 'offsetMin'; if ($null -ne $o) { $startOffset = [int]$o }
+        $o = Get-WorkerPerfField $events[$events.Count - 1] 'offsetMin'; if ($null -ne $o) { $endOffset = [int]$o }
+    }
     $start = Get-WorkerPerfField $Incident 'start'; $end = Get-WorkerPerfField $Incident 'end'
     if ($null -ne $start) {
-        $v['from'] = Format-WorkerPerfGuidanceClock ([long]$start) $offset
-        $v['date'] = Format-WorkerPerfEventDate ([long]$start) $offset
+        # 'HH:mm': the clock time of Format-WorkerPerfClock ('HH:mm:ss') without seconds
+        $v['from'] = (Format-WorkerPerfClock ([long]$start) $startOffset).Substring(0, 5)
+        $v['date'] = Format-WorkerPerfEventDate ([long]$start) $startOffset
     }
-    if ($null -ne $end) { $v['to'] = Format-WorkerPerfGuidanceClock ([long]$end) $offset }
-    if ($null -ne $start -and $null -ne $end -and [long]$end -gt [long]$start) { $v['duration'] = Format-WorkerPerfGuidanceDuration (([long]$end - [long]$start) / 1000.0) }
+    if ($null -ne $end) { $v['to'] = (Format-WorkerPerfClock ([long]$end) $endOffset).Substring(0, 5) }
+    if ($null -ne $start -and $null -ne $end -and [long]$end -gt [long]$start) {
+        $t = Format-WorkerPerfGuidanceDuration (([long]$end - [long]$start) / 1000.0) $texts
+        if ($t) { $v['duration'] = $t }
+    }
 
     # values: slowest endpoint (a failed one first)
     if ($endpoints.Count -gt 0) {
@@ -480,6 +499,9 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
 
     # values: event incident
     if ($isEvent) {
+        $t = [string](Get-WorkerPerfField $ev 'app'); if ($t) { $v['app'] = $t }
+        $users = Get-WorkerPerfGuidanceList $ev 'users'
+        if ($users.Count -eq 1 -and [string]$users[0]) { $v['user'] = [string]$users[0] }
         $top = $null
         foreach ($m in (Get-WorkerPerfGuidanceList $ev 'modules')) { if ($null -eq $top -or [int](Get-WorkerPerfField $m 'count') -gt [int](Get-WorkerPerfField $top 'count')) { $top = $m } }
         $t = [string](Get-WorkerPerfField $top 'name'); if ($t) { $v['module'] = $t }

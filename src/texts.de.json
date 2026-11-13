@@ -93,5 +93,7 @@
   "skip.text.Ereignisse": "Ereignisse während der Messung wurden nicht erfasst.",
   "skip.text.Rueckblick": "Ereignisse der Tage vor der Messung wurden nicht erfasst.",
   "skip.text.Drucken": "Treiberliste und Zähler der Druckwarteschlangen wurden bei dieser Messung nicht erfasst.",
-  "skip.text.Gegenstellen": "Gegenstellen wurden bei dieser Messung nicht geprüft."
+  "skip.text.Gegenstellen": "Gegenstellen wurden bei dieser Messung nicht geprüft.",
+  "duration.second": "Sekunde", "duration.seconds": "Sekunden", "duration.minute": "Minute", "duration.minutes": "Minuten",
+  "duration.hour": "Stunde", "duration.hours": "Stunden"
 }
