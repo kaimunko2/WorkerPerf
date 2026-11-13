@@ -40,8 +40,19 @@ Die Aufzeichnung speichert Fakten, keine Bewertung. Der Collector schreibt die g
 | Netz und Dateiserver | SMB-Einstellungen des Workers, bestehende SMB-Verbindungen mit Protokollstand, Signierung und Verschlüsselung, DNS-Server, Netzwerkadapter, Zeitquelle |
 | Ereignisbild | Zählungen aus dem Rückblick (Abstürze, Hänger, Dienst-, Datenträger-, Druck- und Dateiserver-Ereignisse je Tag), Größe und ältester Eintrag je Protokoll |
 | Wartung in der Arbeitszeit | geplante Aufgaben mit Zeitplan, Zeitpläne für Scans und Updates, Zustand des Suchdienstes |
+| Anwendungen | je Standardanwendung aus der Anwendungsliste (zum Start: Microsoft Edge, Microsoft Office, Microsoft Teams): installierte Version, maschinenweite Richtlinien und Einstellungen, zugehörige Dienste und geplante Aufgaben |
 
 Die genaue Liste der Werte je Bereich steht im Umsetzungsplan. Maßgeblich ist: Jeder Wert wird aus einer Quelle gelesen, die Windows oder das Produkt dokumentiert.
+
+### 3.2a Anwendungsliste
+
+Ergänzt am 13.11.2026 auf Wunsch des Auftraggebers. Der Bereich „Anwendungen" ist so gebaut, dass er um weitere Standardanwendungen wachsen kann, ohne dass Code geändert wird:
+
+- Eine Datei `src/apps.json` beschreibt je Anwendung: Kennung, Bezeichnung, die Namen ihrer Prozesse und die Werte, die das Zustandsbild für sie liest.
+- Ein Wert wird über eine von wenigen festen Lesearten beschrieben: ein Wert oder ein Schlüssel der Registrierung unter `HKLM`, Zustand und Startart eines Dienstes, Zustand einer geplanten Aufgabe, Vorhandensein und Version einer Datei. Andere Lesearten gibt es nicht; die Datei kann keine Befehle ausführen lassen. Einstellungen je Benutzer (`HKCU`) werden nicht gelesen.
+- Eine neue Anwendung kommt hinzu, indem sie in `src/apps.json` eingetragen wird und der Katalog Prüfungen für ihre Werte erhält. Eine fehlerhafte Datei wird beim Start mit einer verständlichen Meldung abgelehnt.
+- Ist eine Anwendung nicht installiert, erscheint sie im Bereich als „nicht installiert" und zählt nicht in die Einstufung.
+- Die Prozessnamen derselben Datei nutzt der geführte Bericht, um bei einem Vorfall die Anleitung zur verursachenden Anwendung zu wählen. Eine Anwendung wird also an einer Stelle beschrieben.
 
 ### 3.3 Robustheit
 
@@ -112,7 +123,7 @@ Ergänzt am 13.11.2026 nach Angabe des Auftraggebers: Die Worker werden ausschli
 
 ### 5.1 Geführte Ansicht
 
-- **Zeile „Zustand des Workers"** auf der Startseite unter dem Lagebild: die zehn Bereiche als Kacheln mit ihrer Einstufung in fester Reihenfolge, darüber eine Zusammenfassung („1 Bereich zum Handeln, 4 zum Prüfen, 5 in Ordnung").
+- **Zeile „Zustand des Workers"** auf der Startseite unter dem Lagebild: die elf Bereiche als Kacheln mit ihrer Einstufung in fester Reihenfolge, darüber eine Zusammenfassung („1 Bereich zum Handeln, 4 zum Prüfen, 6 in Ordnung").
 - **Bereichsansicht:** die Prüfungen des Bereichs, auffällige zuerst, je Prüfung Befund, Einstufung, „Was bedeutet das?", „Was tun?", Quelle.
 - **Verweis im Vorfall:** fester Abschnitt „Dazu im Zustandsbild" mit den Prüfungen, deren Bezug zur Art oder zu einem Muster des Vorfalls passt und die nicht „in Ordnung" sind. Formulierung: „kann beitragen", nie „ist die Ursache". Passt keine, entfällt der Abschnitt.
 - **Text kopieren:** Jede Prüfung und jeder Bereich hat den Kopierknopf des geführten Berichts mit dem Schalter „ohne Namen".

@@ -135,6 +135,7 @@ Schritte, Vorschläge und Kontakte können an Bedingungen hängen. Eine Bedingun
 | `scan` | im Fenster lief ein Virenscan |
 | `companion.security` | Schutzsoftware ist Begleiter |
 | `role.<Rolle>` | der Verursacher gehört laut Rollenliste zu dieser Rolle |
+| `app.<Anwendung>` | der Verursacher (bei Ereignisvorfällen die betroffene Anwendung) gehört zu dieser Standardanwendung aus `src/apps.json` (ergänzt am 13.11.2026; zum Start Microsoft Edge, Microsoft Office, Microsoft Teams) |
 | `endpoint.slow` | eine Gegenstelle antwortete im Fenster über ihrer Schwelle |
 | `event.applocker`, `event.defender` | ein solches Ereignis liegt im Fenster |
 | `unmeasured.<Signal>` | dieses Signal war nicht gemessen |
