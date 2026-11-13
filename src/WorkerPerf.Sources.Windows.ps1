@@ -9,7 +9,7 @@
 # providers and ids of the event catalogue (events.json, WorkerPerf.EventConfig.ps1 must be dot-sourced before).
 # The health picture (Get-WorkerPerfHealth) reads only, within a time budget, through further thin calls
 # (Get-WorkerPerfRegistryValues, Get-WorkerPerfPerformanceInfo, Get-WorkerPerfActivePowerScheme, Get-WorkerPerfLogOldestTime,
-# Get-WorkerPerfHealthSessions, Get-WorkerPerfFileVersion).
+# Get-WorkerPerfHealthSessions, Get-WorkerPerfFileVersion, Get-WorkerPerfFilterRaw, Get-WorkerPerfTaskRaw).
 
 # C# source of the WTS session wrapper (load with Add-Type -TypeDefinition $script:WorkerPerfWtsSource).
 $script:WorkerPerfWtsSource = @'
@@ -183,6 +183,7 @@ namespace WorkerPerf
 # Win32Exception with the error code.
 $script:WorkerPerfHealthNativeSource = @'
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
@@ -219,6 +220,21 @@ namespace WorkerPerf
         [DllImport("kernel32.dll")]
         private static extern IntPtr LocalFree(IntPtr hMem);
 
+        // fltlib.dll: the loaded file system filters, one entry per call; each returns an HRESULT and does not throw.
+        [DllImport("fltlib.dll")]
+        private static extern int FilterFindFirst(int dwInformationClass, IntPtr lpBuffer, int dwBufferSize, out int lpBytesReturned, out IntPtr lpFilterFind);
+
+        [DllImport("fltlib.dll")]
+        private static extern int FilterFindNext(IntPtr hFilterFind, int dwInformationClass, IntPtr lpBuffer, int dwBufferSize, out int lpBytesReturned);
+
+        [DllImport("fltlib.dll")]
+        private static extern int FilterFindClose(IntPtr hFilterFind);
+
+        private const int FilterAggregateStandardInformation = 2;
+        private const int NoMoreItems = unchecked((int)0x80070103);
+        private const int InsufficientBuffer = unchecked((int)0x8007007A);
+        private const int MaxFilters = 4096;
+
         // Commit charge, commit limit and commit peak in bytes.
         public static long[] GetCommit()
         {
@@ -242,6 +258,58 @@ namespace WorkerPerf
             if (scheme == IntPtr.Zero) throw new Win32Exception(87);
             try { return (Guid)Marshal.PtrToStructure(scheme, typeof(Guid)); }
             finally { LocalFree(scheme); }
+        }
+
+        // The filled part of the buffer of each FilterFindFirst/FilterFindNext call (FilterAggregateStandardInformation),
+        // in the order Windows lists the filters. A buffer that is too small is enlarged to the reported size and the call
+        // repeated; no more entries ends the list; any other HRESULT becomes an exception (denied access:
+        // UnauthorizedAccessException). The search handle is closed in any case.
+        public static byte[][] GetFilterBuffers()
+        {
+            List<byte[]> result = new List<byte[]>();
+            int size = 1024;
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            IntPtr find = IntPtr.Zero;
+            try
+            {
+                while (result.Count < MaxFilters)
+                {
+                    int returned = 0;
+                    int hr;
+                    if (find == IntPtr.Zero)
+                    {
+                        IntPtr handle;
+                        hr = FilterFindFirst(FilterAggregateStandardInformation, buffer, size, out returned, out handle);
+                        if (hr == 0) find = handle;
+                    }
+                    else
+                    {
+                        hr = FilterFindNext(find, FilterAggregateStandardInformation, buffer, size, out returned);
+                    }
+                    if (hr == NoMoreItems) break;
+                    if (hr == InsufficientBuffer)
+                    {
+                        int needed = returned > size ? returned : size * 2;
+                        if (needed > 1048576) Marshal.ThrowExceptionForHR(hr);
+                        Marshal.FreeHGlobal(buffer);
+                        buffer = IntPtr.Zero;
+                        buffer = Marshal.AllocHGlobal(needed);
+                        size = needed;
+                        continue;
+                    }
+                    if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+                    if (returned < 0 || returned > size) returned = size;
+                    byte[] copy = new byte[returned];
+                    Marshal.Copy(buffer, copy, 0, returned);
+                    result.Add(copy);
+                }
+            }
+            finally
+            {
+                if (find != IntPtr.Zero) FilterFindClose(find);
+                if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            }
+            return result.ToArray();
         }
     }
 }
@@ -520,7 +588,9 @@ $script:WorkerPerfWinHealthAreaBudgetSec = 10
 $script:WorkerPerfWinHealthTotalBudgetSec = 60
 $script:WorkerPerfWinHealthReaders = [ordered]@{
     size = 'Read-WorkerPerfWinHealthSize'; operation = 'Read-WorkerPerfWinHealthOperation'; sessions = 'Read-WorkerPerfWinHealthSessions'
-    vda = 'Read-WorkerPerfWinHealthVda'; profile = 'Read-WorkerPerfWinHealthProfile'; events = 'Read-WorkerPerfWinHealthEvents'
+    vda = 'Read-WorkerPerfWinHealthVda'; profile = 'Read-WorkerPerfWinHealthProfile'; print = 'Read-WorkerPerfWinHealthPrint'
+    security = 'Read-WorkerPerfWinHealthSecurity'; network = 'Read-WorkerPerfWinHealthNetwork'; events = 'Read-WorkerPerfWinHealthEvents'
+    maintenance = 'Read-WorkerPerfWinHealthMaintenance'
 }
 $script:WorkerPerfWinUninstallKeys = @('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
 $script:WorkerPerfWinPowerPlans = @{
@@ -536,6 +606,25 @@ $script:WorkerPerfWinCitrixPolicySkip = @('UserProfileManager', 'UserProfileMana
 $script:WorkerPerfWinWemPolicyKey = 'SOFTWARE\Policies\Norskale\Agent Host'
 $script:WorkerPerfWinWemAgentKey = 'SYSTEM\CurrentControlSet\Control\Norskale\Agent Host'
 $script:WorkerPerfWinWinlogonKey = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+# Printing: the operational log of the spooler and the display name of the Citrix print service.
+$script:WorkerPerfWinPrintOperationalLog = 'Microsoft-Windows-PrintService/Operational'
+$script:WorkerPerfWinCitrixPrintService = 'Citrix Print Manager Service'
+# Security products: the CIM namespace of Defender, the keys of Defender for Endpoint, the AppLocker policy and its
+# rule collections (only the enforcement mode and the number of rules are read, never a rule).
+$script:WorkerPerfWinDefenderNamespace = 'root\Microsoft\Windows\Defender'
+$script:WorkerPerfWinMdeStatusKey = 'SOFTWARE\Microsoft\Windows Advanced Threat Protection\Status'
+$script:WorkerPerfWinMdePolicyKey = 'SOFTWARE\Policies\Microsoft\Windows Advanced Threat Protection'
+$script:WorkerPerfWinAppLockerKey = 'SOFTWARE\Policies\Microsoft\Windows\SrpV2'
+$script:WorkerPerfWinAppLockerCollections = @('Exe', 'Msi', 'Script', 'Dll', 'Appx')
+# Network: the CIM namespace of the SMB client and the keys of the time service (the policy first).
+$script:WorkerPerfWinSmbNamespace = 'root\Microsoft\Windows\SMB'
+$script:WorkerPerfWinTimeKeys = @('SOFTWARE\Policies\Microsoft\W32Time\Parameters', 'SYSTEM\CurrentControlSet\Services\W32Time\Parameters')
+# Maintenance: the policy of automatic updates; the trigger types of the Task Scheduler (TASK_TRIGGER_TYPE2) as words,
+# and the task states (TASK_STATE).
+$script:WorkerPerfWinUpdatePolicyKey = 'SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+$script:WorkerPerfWinTriggerWords = @{ 0 = 'event'; 1 = 'time'; 2 = 'daily'; 3 = 'weekly'; 4 = 'monthly'; 5 = 'monthly'; 6 = 'idle'; 7 = 'registration'
+    8 = 'boot'; 9 = 'logon'; 11 = 'session' }
+$script:WorkerPerfWinTaskStates = @{ 0 = 'Unknown'; 1 = 'Disabled'; 2 = 'Queued'; 3 = 'Ready'; 4 = 'Running' }
 # HRESULT of a CIM namespace that does not exist: WBEM_E_INVALID_NAMESPACE (0x8004100E)
 $script:WorkerPerfWinInvalidNamespace = -2147217394
 # HRESULTs of denied access: E_ACCESSDENIED (0x80070005) and WBEM_E_ACCESS_DENIED (0x80041003)
@@ -1384,6 +1473,100 @@ function ConvertTo-WorkerPerfProfileContainer($Disk, [object[]]$Sessions, $Index
         UsedPct = $usedPct }
 }
 
+function ConvertTo-WorkerPerfRegistryNumber($Value) {
+    # A registry value that must be a number (REG_DWORD, REG_QWORD) as an unsigned number; nothing for $null. A text,
+    # multi-string or binary value is not turned into a number but thrown as an error.
+    if ($null -eq $Value) { return }
+    if ($Value -is [string] -or $Value -is [System.Collections.IEnumerable] -or -not $Value.GetType().IsPrimitive -or $Value -is [bool]) {
+        throw (New-Object System.IO.InvalidDataException 'Registrierungswert hat nicht den Typ Zahl.')
+    }
+    return (ConvertTo-WorkerPerfDword $Value)
+}
+
+function ConvertTo-WorkerPerfClockText($Value) {
+    # A time of day as 'HH:mm' from a TimeSpan or a DateTime (the scan times of Defender come as either, depending on the
+    # version of the platform); nothing for $null; any other type is an error.
+    if ($null -eq $Value) { return }
+    if ($Value -is [timespan]) { return ('{0:00}:{1:00}' -f $Value.Hours, $Value.Minutes) }
+    if ($Value -is [datetime]) { return $Value.ToString('HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) }
+    throw (New-Object System.IO.InvalidDataException 'Uhrzeit hat keinen bekannten Typ.')
+}
+
+function ConvertTo-WorkerPerfTimeServers([string]$Value) {
+    # The time sources of NtpServer ('name,0x8 name2,0x9') without the flags behind the comma, separated by spaces.
+    $names = foreach ($entry in $Value.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)) {
+        $name = $entry.Split(',')[0].Trim()
+        if ($name) { $name }
+    }
+    return (@($names) -join ' ')
+}
+
+function ConvertTo-WorkerPerfTriggerWords([int[]]$Types) {
+    # The trigger types of a task (TASK_TRIGGER_TYPE2) as words, each once in the order it first occurs, joined with ", ".
+    $words = New-Object System.Collections.Generic.List[string]
+    foreach ($type in @($Types)) {
+        $word = 'other'
+        if ($script:WorkerPerfWinTriggerWords.ContainsKey([int]$type)) { $word = $script:WorkerPerfWinTriggerWords[[int]$type] }
+        if (-not $words.Contains($word)) { $words.Add($word) }
+    }
+    return ($words.ToArray() -join ', ')
+}
+
+function ConvertTo-WorkerPerfTaskTime([datetime]$Time) {
+    # The Task Scheduler reports "no last run" and "no next run" as 1899-12-30; a time before 1900-01-02 is unknown
+    # (DateTime.MinValue), every other time stays.
+    if ($Time -lt (New-Object datetime 1900, 1, 2)) { return [datetime]::MinValue }
+    return $Time
+}
+
+function ConvertTo-WorkerPerfTaskState($State) {
+    # The state of a task as a word: a number of TASK_STATE becomes its name, a text stays, $null is ''.
+    if ($null -eq $State) { return '' }
+    if ($State -is [string]) { return $State }
+    $n = 0
+    if ([int]::TryParse([string]$State, [ref]$n) -and $script:WorkerPerfWinTaskStates.ContainsKey($n)) { return $script:WorkerPerfWinTaskStates[$n] }
+    return [string]$State
+}
+
+function ConvertFrom-WorkerPerfTaskInterval([string]$Interval) {
+    # The repetition interval of a trigger (an XML duration such as 'PT15M') in minutes; 0 for none, $null when the text
+    # is no duration.
+    if ([string]::IsNullOrEmpty($Interval)) { return 0 }
+    try { return [Math]::Round([System.Xml.XmlConvert]::ToTimeSpan($Interval).TotalMinutes, 1) }
+    catch { return $null }
+}
+
+function ConvertFrom-WorkerPerfFilterBuffer([byte[]]$Buffer) {
+    # The entries FILTER_AGGREGATE_STANDARD_INFORMATION of one buffer of the filter query, chained by NextEntryOffset
+    # (0: the last). Flags 1: a minifilter (Flags, FrameID, NumberOfInstances, then the four name and altitude fields at
+    # offset 20); Flags 2: a legacy filter (Flags, then the four fields at offset 12; no instances). Name and altitude
+    # are UTF-16 at an offset from the start of the entry, with a length in bytes, not null-terminated. An entry of
+    # another kind is passed over; a field outside the buffer is an error.
+    if ($null -eq $Buffer -or $Buffer.Length -eq 0) { return }
+    $bad = { throw (New-Object System.IO.InvalidDataException 'Puffer der Filterabfrage ist beschaedigt.') }
+    $text = { param([long]$Entry, [int]$LengthAt)
+        $length = [int][BitConverter]::ToUInt16($Buffer, $LengthAt); $offset = [int][BitConverter]::ToUInt16($Buffer, $LengthAt + 2)
+        if ($Entry + $offset + $length -gt $Buffer.Length) { & $bad }
+        [Text.Encoding]::Unicode.GetString($Buffer, [int]($Entry + $offset), $length) }
+    [long]$pos = 0
+    while ($true) {
+        if ($pos + 8 -gt $Buffer.Length) { & $bad }
+        $next = [long][BitConverter]::ToUInt32($Buffer, [int]$pos)
+        $flags = [BitConverter]::ToUInt32($Buffer, [int]($pos + 4))
+        if ($flags -eq 1 -or $flags -eq 2) {
+            $legacy = ($flags -eq 2)
+            $fieldsAt = $pos + 20
+            if ($legacy) { $fieldsAt = $pos + 12 }
+            if ($fieldsAt + 8 -gt $Buffer.Length) { & $bad }
+            $instances = 0
+            if (-not $legacy) { $instances = [int][BitConverter]::ToUInt32($Buffer, [int]($pos + 16)) }
+            [ordered]@{ Name = (& $text $pos ([int]$fieldsAt)); Altitude = (& $text $pos ([int]($fieldsAt + 4))); Instances = $instances; Legacy = $legacy }
+        }
+        if ($next -eq 0) { break }
+        $pos += $next
+    }
+}
+
 #endregion
 
 #region ---------- Windows calls (thin; replaced by stand-ins in the tests) --------------------------------------------
@@ -1610,6 +1793,105 @@ function Get-WorkerPerfFileVersion([string]$Path) {
     # The product version of a file (FileVersionInfo.ProductVersion); $null when the file does not exist.
     if ([string]::IsNullOrEmpty($Path) -or -not [System.IO.File]::Exists($Path)) { return $null }
     return [string][System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductVersion
+}
+
+function Get-WorkerPerfFilterRaw {
+    # The loaded file system filters (FilterFindFirst/FilterFindNext of fltlib.dll through WorkerPerf.HealthNative), one
+    # record Name, Altitude, Instances, Legacy per filter. A console that compiled an older WorkerPerf.HealthNative keeps it
+    # (Add-Type loads a type once per process); then the query is not available.
+    Register-WorkerPerfHealthType
+    if ($null -eq ('WorkerPerf.HealthNative' -as [type]).GetMethod('GetFilterBuffers')) {
+        throw (New-Object System.InvalidOperationException 'Filterabfrage veraltet: bitte eine neue Konsole starten')
+    }
+    foreach ($buffer in @([WorkerPerf.HealthNative]::GetFilterBuffers())) { ConvertFrom-WorkerPerfFilterBuffer $buffer }
+}
+
+function Close-WorkerPerfComObject($Object) {
+    # Releases a COM object of the Task Scheduler at once instead of at the next garbage collection.
+    if ($null -ne $Object -and [System.Runtime.InteropServices.Marshal]::IsComObject($Object)) {
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($Object)
+    }
+}
+
+function ConvertFrom-WorkerPerfComTask($Task) {
+    # One registered task: Path, Enabled, State, NextRun, LastRun, TriggerTypes, RepeatMinutes (the shortest repetition of
+    # its triggers, 0 for none), Action (the program of the first action that starts one). Arguments, author and accounts
+    # are not read. Every COM object it opens is released.
+    $types = New-Object System.Collections.Generic.List[int]
+    $repeat = 0.0
+    $action = ''
+    $definition = $Task.Definition
+    try {
+        $triggers = $definition.Triggers
+        try {
+            foreach ($trigger in $triggers) {
+                try {
+                    $types.Add([int]$trigger.Type)
+                    $repetition = $trigger.Repetition
+                    try { $minutes = ConvertFrom-WorkerPerfTaskInterval ([string]$repetition.Interval) } finally { Close-WorkerPerfComObject $repetition }
+                    if ($null -ne $minutes -and $minutes -gt 0 -and ($repeat -eq 0 -or $minutes -lt $repeat)) { $repeat = $minutes }
+                }
+                finally { Close-WorkerPerfComObject $trigger }
+            }
+        }
+        finally { Close-WorkerPerfComObject $triggers }
+        $actions = $definition.Actions
+        try {
+            foreach ($item in $actions) {
+                try { if (-not $action -and [int]$item.Type -eq 0) { $action = [string]$item.Path } }   # TASK_ACTION_EXEC
+                finally { Close-WorkerPerfComObject $item }
+            }
+        }
+        finally { Close-WorkerPerfComObject $actions }
+    }
+    finally { Close-WorkerPerfComObject $definition }
+    return @{ Path = [string]$Task.Path; Enabled = [bool]$Task.Enabled; State = $Task.State; NextRun = $Task.NextRunTime; LastRun = $Task.LastRunTime
+        TriggerTypes = [int[]]$types.ToArray(); RepeatMinutes = $repeat; Action = $action }
+}
+
+function Get-WorkerPerfTaskRaw([double]$DeadlineSec = 0) {
+    # The scheduled tasks through the local object Schedule.Service (Connect without a server name; folders walked with
+    # GetFolders, tasks with GetTasks(1), hidden ones included): Count of all tasks, Tasks only outside the folder
+    # \Microsoft\. NextRun and LastRun as the Task Scheduler gives them. With DeadlineSec > 0 the walk ends after that many
+    # seconds as a timeout (TimeoutException). Every COM object is released.
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeUp = { if ($DeadlineSec -gt 0 -and $clock.Elapsed.TotalSeconds -ge $DeadlineSec) { throw (New-Object System.TimeoutException 'Zeitlimit des Bereichs erreicht.') } }
+    $tasks = New-Object System.Collections.Generic.List[object]
+    $count = 0
+    $pending = New-Object System.Collections.Generic.Stack[object]
+    $service = New-Object -ComObject 'Schedule.Service'
+    try {
+        $service.Connect()
+        $pending.Push($service.GetFolder('\'))
+        while ($pending.Count -gt 0) {
+            & $timeUp
+            $folder = $pending.Pop()
+            try {
+                $folderPath = [string]$folder.Path
+                $inMicrosoft = ($folderPath -eq '\Microsoft' -or $folderPath.StartsWith('\Microsoft\', [StringComparison]::OrdinalIgnoreCase))
+                $collection = $folder.GetTasks(1)
+                try {
+                    foreach ($task in $collection) {
+                        try {
+                            & $timeUp
+                            $count++
+                            if (-not $inMicrosoft) { $tasks.Add((ConvertFrom-WorkerPerfComTask $task)) }
+                        }
+                        finally { Close-WorkerPerfComObject $task }
+                    }
+                }
+                finally { Close-WorkerPerfComObject $collection }
+                $subFolders = $folder.GetFolders(0)
+                try { foreach ($sub in $subFolders) { $pending.Push($sub) } } finally { Close-WorkerPerfComObject $subFolders }
+            }
+            finally { Close-WorkerPerfComObject $folder }
+        }
+    }
+    finally {
+        while ($pending.Count -gt 0) { Close-WorkerPerfComObject $pending.Pop() }
+        Close-WorkerPerfComObject $service
+    }
+    return @{ Count = $count; Tasks = $tasks.ToArray() }
 }
 
 function Get-WinCitrixRaw([object[]]$Sessions) {
@@ -2324,6 +2606,7 @@ function Get-WorkerPerfEventsBefore {
 function Get-WorkerPerfPrintDrivers {
     # The printer drivers (MSFT_PrinterDriver) with their effective isolation; no output when the class was missing at
     # the start. The isolation settings are read once per call; an unreadable one leaves the isolation to the others.
+    # The policies are kept in the state (PrintIsolationPolicy) for the health picture, only when their read succeeded.
     $st = $script:WinState
     if ($null -eq $st) { throw 'Die Windows-Datenquelle ist nicht initialisiert.' }
     if (-not $st.PrintDrivers) { return }
@@ -2334,8 +2617,14 @@ function Get-WorkerPerfPrintDrivers {
     catch { Write-WarningOnce 'print.groups' "PrintDriverIsolationGroups nicht lesbar: $($_.Exception.Message)" }
     $map = ConvertFrom-WorkerPerfIsolationGroups ((@($groups) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ }) -join '\\')
     $policy = @{}
-    try { $p = Get-WorkerPerfPrintIsolationPolicy; if ($null -ne $p) { $policy = $p } }
-    catch { Write-WarningOnce 'print.policy' "Richtlinien der Treiberisolierung nicht lesbar: $($_.Exception.Message)" }
+    try {
+        $p = Get-WorkerPerfPrintIsolationPolicy; if ($null -ne $p) { $policy = $p }
+        $st['PrintIsolationPolicy'] = $policy
+    }
+    catch {
+        $st.Remove('PrintIsolationPolicy')
+        Write-WarningOnce 'print.policy' "Richtlinien der Treiberisolierung nicht lesbar: $($_.Exception.Message)"
+    }
     foreach ($d in $drivers) {
         if ($null -eq $d) { continue }
         $attribute = $null
@@ -2543,6 +2832,60 @@ function Get-WorkerPerfWinHealthSystemDrivers($Ctx) {
 
 function Get-WorkerPerfWinHealthSessions($Ctx) {
     Get-WorkerPerfWinHealthShared $Ctx 'sessions' { Get-WorkerPerfHealthSessions }
+}
+
+function Get-WorkerPerfWinHealthServiceField($Ctx, [string]$Name, [string]$Field) {
+    # A field (State, StartMode) of the service with this short name; absent/notInstalled without the service. A failed
+    # query of the services is thrown (the value is then unreadable with its reason).
+    $hcFound = @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'Name') -eq $Name })
+    if ($hcFound.Count -eq 0) { return (New-WorkerPerfHealthValue 'absent' 'notInstalled') }
+    return [string](Get-WorkerPerfField $hcFound[0] $Field)
+}
+
+function Test-WorkerPerfWinHealthDefender($Ctx) {
+    # true when the service WinDefend exists; without it Defender is not installed and its CIM classes are not queried.
+    return (@(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'Name') -eq 'WinDefend' }).Count -gt 0)
+}
+
+function Get-WorkerPerfWinHealthMpPreference($Ctx) {
+    # The preferences of Defender (MSFT_MpPreference), one query for security and maintenance; nothing without WinDefend.
+    # No property list: a property that an older platform lacks would fail the whole query.
+    Get-WorkerPerfWinHealthShared $Ctx 'mppreference' {
+        if (Test-WorkerPerfWinHealthDefender $Ctx) { Get-WorkerPerfWinHealthCim $Ctx 'MSFT_MpPreference' $script:WorkerPerfWinDefenderNamespace }
+    }
+}
+
+function Get-WorkerPerfWinHealthRegistryNumber([string]$SubKey, [string]$Name) {
+    # A number from the registry (ConvertTo-WorkerPerfRegistryNumber); nothing without the key or the value.
+    $hcKey = Get-WorkerPerfRegistryValues $SubKey
+    if ($null -eq $hcKey -or -not $hcKey['Values'].Contains($Name)) { return }
+    ConvertTo-WorkerPerfRegistryNumber $hcKey['Values'][$Name]
+}
+
+function ConvertTo-WorkerPerfSmbConnectionRows([object[]]$Connections, $Ctx = $null) {
+    # The SMB connections (MSFT_SmbConnection) summed up: one row per \\server\share and dialect, in the order of the
+    # first connection, with the number of connections. Signed and Encrypted: false when one connection of the row is
+    # not, empty when one does not tell, else true. The account of a connection is not kept. With the context of an
+    # area, the loop ends as a timeout when its limit is reached.
+    $hcRows = New-Object System.Collections.Specialized.OrderedDictionary
+    $hcJoin = { param($Old, $New) if ($Old -eq $false -or $New -eq $false) { $false } elseif ($null -eq $Old -or $null -eq $New) { $null } else { $true } }
+    foreach ($hcConn in @($Connections)) {
+        Assert-WorkerPerfWinHealthTimeLeft $Ctx
+        if ($null -eq $hcConn) { continue }
+        $hcPath = '\\{0}\{1}' -f [string](Get-WorkerPerfField $hcConn 'ServerName'), [string](Get-WorkerPerfField $hcConn 'ShareName')
+        $hcDialect = [string](Get-WorkerPerfField $hcConn 'Dialect')
+        $hcSigned = ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $hcConn 'Signed')
+        $hcEncrypted = ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $hcConn 'Encrypted')
+        $hcKey = $hcPath + '|' + $hcDialect
+        if ($hcRows.Contains($hcKey)) {
+            $hcRow = $hcRows[$hcKey]
+            $hcRow.Signed = & $hcJoin $hcRow.Signed $hcSigned
+            $hcRow.Encrypted = & $hcJoin $hcRow.Encrypted $hcEncrypted
+            $hcRow.Connections++
+        }
+        else { $hcRows[$hcKey] = [ordered]@{ Share = $hcPath; Dialect = $hcDialect; Signed = $hcSigned; Encrypted = $hcEncrypted; Connections = 1 } }
+    }
+    foreach ($hcRow in $hcRows.Values) { $hcRow }
 }
 
 function Test-WorkerPerfWinMissingNamespace($Exception) {
@@ -2862,6 +3205,158 @@ function Read-WorkerPerfWinHealthProfile($Ctx) {
     }
 }
 
+function Read-WorkerPerfWinHealthPrint($Ctx) {
+    # The isolation policies come from the driver reader when it read them (PrintIsolationPolicy in the state), else from
+    # one read here; a failed read makes both values unreadable, not "not set". The queue category is the one the source
+    # opened for Drucken, else (Drucken left out) opened here.
+    $st = $Ctx.State
+    $policy = { @(Get-WorkerPerfWinHealthShared $Ctx 'printpolicy' {
+                if ($null -ne $st -and $st.ContainsKey('PrintIsolationPolicy')) { , $st['PrintIsolationPolicy'] } else { , (Get-WorkerPerfPrintIsolationPolicy) } }) }
+    $policyValue = { param([string]$Name)
+        $set = @(& $policy | Where-Object { $null -ne $_ })
+        if ($set.Count -gt 0 -and $set[0].Contains($Name)) { ConvertTo-WorkerPerfRegistryNumber $set[0][$Name] } }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.isolationExecution' { & $policyValue 'PrintDriverIsolationExecutionPolicy' }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.isolationOverride' { & $policyValue 'PrintDriverIsolationOverrideCompat' }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.queueCount' {
+        $category = $null
+        if ($null -ne $st) { $category = $st.PrintQueue }
+        if ($null -eq $category) { $category = Open-WorkerPerfWinCategory $script:WorkerPerfWinPrintQueueCategory }
+        if ($null -eq $category) { return }
+        $values = Get-WorkerPerfWinInstantValues -Current (Read-WorkerPerfWinCategory $category) -Counters $script:WorkerPerfWinPrintQueueCounters
+        @(ConvertTo-WorkerPerfPrintQueueRows $values).Count
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.spooler' { Get-WorkerPerfWinHealthServiceField $Ctx 'Spooler' 'State' }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.spoolerStartMode' { Get-WorkerPerfWinHealthServiceField $Ctx 'Spooler' 'StartMode' }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.citrixPrintService' {
+        $svc = @(Get-WorkerPerfWinHealthServices $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'DisplayName') -eq $script:WorkerPerfWinCitrixPrintService })
+        if ($svc.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } else { [string](Get-WorkerPerfField $svc[0] 'State') }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.operationalLog' {
+        $log = Get-WorkerPerfWinHealthLog $Ctx $script:WorkerPerfWinPrintOperationalLog
+        if ($null -ne $log) { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $log 'IsEnabled') }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'print.mappingClientVersion' {
+        $entry = @(Get-WorkerPerfWinHealthUninstall $Ctx | Where-Object { $_.DisplayName -like '*SmartSpread Client*' })
+        if ($entry.Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled' } elseif ($entry[0].DisplayVersion) { $entry[0].DisplayVersion }
+    }
+}
+
+function Read-WorkerPerfWinHealthSecurity($Ctx) {
+    # Without the service WinDefend every value security.defender* is not installed and the Defender classes are not
+    # queried. A list of exclusions that Defender hides from a user without rights (an entry beginning with "N/A") is
+    # unreadable/rights.
+    $notInstalled = { New-WorkerPerfHealthValue 'absent' 'notInstalled' }
+    $status = { $found = @(Get-WorkerPerfWinHealthShared $Ctx 'mpstatus' { Get-WorkerPerfWinHealthCim $Ctx 'MSFT_MpComputerStatus' $script:WorkerPerfWinDefenderNamespace })
+        if ($found.Count -gt 0) { $found[0] } }
+    $preference = { $found = @(Get-WorkerPerfWinHealthMpPreference $Ctx); if ($found.Count -gt 0) { $found[0] } }
+    $defenderValue = { param([scriptblock]$Value) if (-not (Test-WorkerPerfWinHealthDefender $Ctx)) { & $notInstalled; return }; & $Value }
+    $exclusions = { param([string]$Field, [string]$Key)
+        if (-not (Test-WorkerPerfWinHealthDefender $Ctx)) { & $notInstalled; return }
+        $entries = @(Get-WorkerPerfField (& $preference) $Field | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
+        if (@($entries | Where-Object { $_.StartsWith('N/A', [StringComparison]::Ordinal) }).Count -gt 0) { New-WorkerPerfHealthValue 'unreadable' 'rights'; return }
+        foreach ($entry in $entries) { Assert-WorkerPerfWinHealthTimeLeft $Ctx; [ordered]@{ $Key = $entry } } }
+
+    Set-WorkerPerfWinHealthValue $Ctx 'security.services' {
+        foreach ($svc in @(Get-WorkerPerfWinHealthServices $Ctx)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            [ordered]@{ Name = [string](Get-WorkerPerfField $svc 'Name'); State = [string](Get-WorkerPerfField $svc 'State'); StartMode = [string](Get-WorkerPerfField $svc 'StartMode') }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderService' { Get-WorkerPerfWinHealthServiceField $Ctx 'WinDefend' 'State' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderMode' { & $defenderValue { $mode = [string](Get-WorkerPerfField (& $status) 'AMRunningMode'); if ($mode) { $mode } } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderRealTime' { & $defenderValue { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField (& $status) 'RealTimeProtectionEnabled') } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderTamper' { & $defenderValue { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField (& $status) 'IsTamperProtected') } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderSignatureAgeDays' { & $defenderValue { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $status) 'AntivirusSignatureAge') } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderSignaturesOutOfDate' { & $defenderValue { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField (& $status) 'DefenderSignaturesOutOfDate') } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderVersion' { & $defenderValue { $version = [string](Get-WorkerPerfField (& $status) 'AMProductVersion'); if ($version) { $version } } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderExclusionPaths' { & $exclusions 'ExclusionPath' 'Path' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderExclusionProcesses' { & $exclusions 'ExclusionProcess' 'Path' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderExclusionExtensions' { & $exclusions 'ExclusionExtension' 'Extension' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderSharedSignatures' {
+        & $defenderValue { $location = [string](Get-WorkerPerfField (& $preference) 'SharedSignaturesPath'); if ($location) { $location } }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderNetworkProtection' { & $defenderValue { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $preference) 'EnableNetworkProtection') } }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.defenderForcePassive' {
+        & $defenderValue { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinMdePolicyKey 'ForceDefenderPassiveMode' }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.mdeOnboarding' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinMdeStatusKey 'OnboardingState' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.mdeService' { Get-WorkerPerfWinHealthServiceField $Ctx 'Sense' 'State' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.filters' {
+        foreach ($filter in @(Get-WorkerPerfFilterRaw)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            [ordered]@{ Name = [string](Get-WorkerPerfField $filter 'Name'); Altitude = [string](Get-WorkerPerfField $filter 'Altitude')
+                Instances = [int](Get-WorkerPerfField $filter 'Instances'); Legacy = [bool](Get-WorkerPerfField $filter 'Legacy') }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.applockerService' { Get-WorkerPerfWinHealthServiceField $Ctx 'AppIDSvc' 'State' }
+    Set-WorkerPerfWinHealthValue $Ctx 'security.applockerCollections' {
+        # per rule collection: the enforcement mode (empty: not set) and the number of rules; the rules are not read
+        $root = Get-WorkerPerfRegistryValues $script:WorkerPerfWinAppLockerKey
+        if ($null -eq $root) { return }
+        foreach ($collection in $script:WorkerPerfWinAppLockerCollections) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            if (@($root['SubKeys']) -notcontains $collection) { continue }
+            $rules = Get-WorkerPerfRegistryValues ($script:WorkerPerfWinAppLockerKey + '\' + $collection)
+            if ($null -eq $rules) { continue }
+            $enforcement = $null
+            if ($rules['Values'].Contains('EnforcementMode')) { $enforcement = ConvertTo-WorkerPerfRegistryNumber $rules['Values']['EnforcementMode'] }
+            [ordered]@{ Collection = $collection; Enforcement = $enforcement; Rules = @($rules['SubKeys']).Count }
+        }
+    }
+}
+
+function Read-WorkerPerfWinHealthNetwork($Ctx) {
+    # Accounts of SMB connections and connection names of adapters are not kept; the time values come from the policy of
+    # the time service when it sets them, else from the service's own key.
+    $smbClient = { $found = @(Get-WorkerPerfWinHealthShared $Ctx 'smbclient' {
+                Get-WorkerPerfWinHealthCim $Ctx 'MSFT_SmbClientConfiguration' $script:WorkerPerfWinSmbNamespace -Property RequireSecuritySignature, DirectoryCacheEntriesMax, FileInfoCacheEntriesMax, FileNotFoundCacheEntriesMax })
+        if ($found.Count -gt 0) { $found[0] } }
+    $timeValue = { param([string]$Name)
+        foreach ($key in $script:WorkerPerfWinTimeKeys) {
+            $values = $null; $regKey = Get-WorkerPerfRegistryValues $key; if ($null -ne $regKey) { $values = $regKey['Values'] }
+            if (Test-WorkerPerfRegistryValueSet $values $Name) { , $values[$Name]; return }
+        } }
+
+    Set-WorkerPerfWinHealthValue $Ctx 'network.domainMember' { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $Ctx.State.ComputerSystem 'PartOfDomain') }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smbRequireSigning' { ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField (& $smbClient) 'RequireSecuritySignature') }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smbDirectoryCache' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $smbClient) 'DirectoryCacheEntriesMax') }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smbFileInfoCache' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $smbClient) 'FileInfoCacheEntriesMax') }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smbFileNotFoundCache' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $smbClient) 'FileNotFoundCacheEntriesMax') }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smb1' {
+        # without the driver (the normal case) the value is absent
+        $drv = @(Get-WorkerPerfWinHealthSystemDrivers $Ctx | Where-Object { [string](Get-WorkerPerfField $_ 'Name') -eq 'mrxsmb10' })
+        if ($drv.Count -gt 0) { [string](Get-WorkerPerfField $drv[0] 'StartMode') }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.smbConnections' {
+        # no property list: Signed is missing on older versions and would fail the whole query
+        ConvertTo-WorkerPerfSmbConnectionRows @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_SmbConnection' $script:WorkerPerfWinSmbNamespace) $Ctx
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.dnsServers' {
+        foreach ($adapter in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_NetworkAdapterConfiguration' -Filter 'IPEnabled = TRUE' -Property Index, DNSServerSearchOrder)) {
+            $index = Get-WorkerPerfField $adapter 'Index'
+            foreach ($address in @(Get-WorkerPerfField $adapter 'DNSServerSearchOrder')) {
+                Assert-WorkerPerfWinHealthTimeLeft $Ctx
+                if (-not [string]::IsNullOrEmpty([string]$address)) { [ordered]@{ Interface = (ConvertTo-WorkerPerfWinHealthNumber $index); Address = [string]$address } }
+            }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.rss' {
+        foreach ($rss in @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_NetAdapterRssSettingData' 'root\StandardCimv2' -Property InterfaceDescription, Enabled)) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
+            [ordered]@{ Description = [string](Get-WorkerPerfField $rss 'InterfaceDescription'); Enabled = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $rss 'Enabled')) }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.timeType' {
+        $type = & $timeValue 'Type'
+        if ($null -ne $type) { ConvertTo-WorkerPerfRegistrySingleText $type }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.timeServers' {
+        $servers = & $timeValue 'NtpServer'
+        if ($null -ne $servers) { $text = ConvertTo-WorkerPerfTimeServers (ConvertTo-WorkerPerfRegistrySingleText $servers); if ($text) { $text } }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.timeService' { Get-WorkerPerfWinHealthServiceField $Ctx 'W32Time' 'State' }
+}
+
 function Read-WorkerPerfWinHealthEvents($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'events.logs' {
         # every log name the event catalogue reads; a missing log has Present false and empty fields
@@ -2880,6 +3375,45 @@ function Read-WorkerPerfWinHealthEvents($Ctx) {
             }
         }
     }
+}
+
+function Read-WorkerPerfWinHealthMaintenance($Ctx) {
+    # The tasks come from one walk of the Task Scheduler; its times "no run" (1899-12-30) become 0. Converting the list
+    # that the walk returned has no time check of its own: the walk checks the area's limit itself (Get-WorkerPerfTaskRaw
+    # -DeadlineSec), and a result that has arrived is kept. Without WinDefend the scan values are not installed.
+    $taskRaw = { $found = @(Get-WorkerPerfWinHealthShared $Ctx 'tasks' {
+                Get-WorkerPerfTaskRaw -DeadlineSec ([Math]::Max(0.001, ($Ctx.BudgetMs - $Ctx.Clock.Elapsed.TotalMilliseconds) / 1000.0)) })
+        if ($found.Count -gt 0) { $found[0] } }
+    $taskTime = { param($Time) if ($Time -is [datetime]) { ConvertTo-WorkerPerfHealthTime (ConvertTo-WorkerPerfTaskTime $Time) } else { [long]0 } }
+    $scan = { param([string]$Name, [scriptblock]$Convert)
+        if (-not (Test-WorkerPerfWinHealthDefender $Ctx)) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
+        $found = @(Get-WorkerPerfWinHealthMpPreference $Ctx)
+        if ($found.Count -gt 0) { & $Convert (Get-WorkerPerfField $found[0] $Name) } }
+    $number = { param($Raw) ConvertTo-WorkerPerfWinHealthNumber $Raw }
+
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.tasks' {
+        foreach ($task in @(Get-WorkerPerfField (& $taskRaw) 'Tasks')) {
+            if ($null -eq $task) { continue }
+            [ordered]@{ Path = [string](Get-WorkerPerfField $task 'Path'); Enabled = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $task 'Enabled'))
+                State = (ConvertTo-WorkerPerfTaskState (Get-WorkerPerfField $task 'State')); NextRun = (& $taskTime (Get-WorkerPerfField $task 'NextRun'))
+                LastRun = (& $taskTime (Get-WorkerPerfField $task 'LastRun'))
+                Triggers = (ConvertTo-WorkerPerfTriggerWords ([int[]]@(Get-WorkerPerfField $task 'TriggerTypes' | Where-Object { $null -ne $_ })))
+                RepeatMinutes = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $task 'RepeatMinutes') 1 1); Action = [string](Get-WorkerPerfField $task 'Action') }
+        }
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.taskCount' { ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField (& $taskRaw) 'Count') }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanDay' { & $scan 'ScanScheduleDay' $number }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanTime' { & $scan 'ScanScheduleTime' { param($Raw) ConvertTo-WorkerPerfClockText $Raw } }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.quickScanTime' { & $scan 'ScanScheduleQuickScanTime' { param($Raw) ConvertTo-WorkerPerfClockText $Raw } }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanType' { & $scan 'ScanParameters' $number }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanRandomize' { & $scan 'RandomizeScheduleTaskTimes' { param($Raw) ConvertTo-WorkerPerfWinHealthBool $Raw } }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanCpuLoad' { & $scan 'ScanAvgCPULoadFactor' $number }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateOptions' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'AUOptions' }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateDay' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'ScheduledInstallDay' }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateHour' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'ScheduledInstallTime' }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateNoRebootWithUsers' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'NoAutoRebootWithLoggedOnUsers' }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.searchService' { Get-WorkerPerfWinHealthServiceField $Ctx 'WSearch' 'State' }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateService' { Get-WorkerPerfWinHealthServiceField $Ctx 'wuauserv' 'StartMode' }
 }
 
 function Get-WorkerPerfHealth {

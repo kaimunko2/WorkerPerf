@@ -19,7 +19,8 @@ function Reset-WinStandIns {
         FailLogs = @{}; ReadFailOnce = [System.Collections.Generic.List[long]]::new(); ReadFailAlways = @(); Unformattable = @()
         OpenReaders = 0; OpenRecords = 0; ReadCalls = 0
         # Calls: every stand-in counts its call by key (check:/open:/perf:<category>, cim:/cimclass:<class>, winevent:list,
-        # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power, file:version), so a test
+        # winevent:read, winevent:oldest, wts, registry:print, registry:<key>, native:perfinfo, native:power, native:filters,
+        # com:tasks, file:version), so a test
         # can see which Windows calls a source made
         Calls = @{}
         Events = [System.Collections.Generic.List[object]]::new()
@@ -33,7 +34,8 @@ function Reset-WinStandIns {
                 DataFile = 'C:\Windows\System32\spool\DRIVERS\x64\3\HPSIMUI.DLL'; DependentFiles = [string[]]@('C:\Windows\System32\spool\DRIVERS\x64\3\hpsimgr.dll') }
             [pscustomobject]@{ Name = 'Sim Klasse v4'; Manufacturer = 'Sim'; MajorVersion = [uint16]4; DriverVersion = ([uint64]10 -shl 48) + 20348
                 PrinterEnvironment = 'Windows x64'; Path = 'C:\Windows\System32\DriverStore\simklasse.dll'; ConfigFile = $null; DataFile = 'simklasse.gpd'; DependentFiles = $null })
-        PrintDriverClass = $true; IsolationGroups = $null; IsolationPolicy = @{ PrintDriverIsolationExecutionPolicy = 1 }
+        # IsolationPolicyFail: exception the read of the isolation policies throws
+        PrintDriverClass = $true; IsolationGroups = $null; IsolationPolicy = @{ PrintDriverIsolationExecutionPolicy = 1 }; IsolationPolicyFail = $null
         DriverAttributes = @{ 'Sim PCL 6' = 0x2; 'Sim Klasse v4' = 0x4 }
         Perf = @{
             'Processor Information' = @{ '% Processor Time' = @{ '_Total' = 27.5; '0,_Total' = 30.0; '0,0' = 31.0 } }
@@ -86,7 +88,29 @@ function Reset-WinStandIns {
             'SOFTWARE\Policies\Norskale\Agent Host' = [ordered]@{ BrokerSvcName = 'wem01.klinik.example' }
             'SYSTEM\CurrentControlSet\Control\Norskale\Agent Host' = [ordered]@{ AgentCacheAlternateLocation = 'D:\WEMCache' }
             'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' = [ordered]@{ GpNetworkStartTimeoutPolicyValue = 120 }
+            # security products, time source, update policy; AppLocker: only the number of rule subkeys is read
+            'SOFTWARE\Microsoft\Windows Advanced Threat Protection\Status' = [ordered]@{ OnboardingState = 1 }
+            'SYSTEM\CurrentControlSet\Services\W32Time\Parameters' = [ordered]@{ Type = 'NTP'; NtpServer = 'zeit01.klinik.example,0x8 10.1.0.20,0x8' }
+            'SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' = [ordered]@{ AUOptions = 4; ScheduledInstallDay = 0; ScheduledInstallTime = 10; NoAutoRebootWithLoggedOnUsers = 0 }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2' = [ordered]@{}
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Exe' = [ordered]@{ EnforcementMode = 1 }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Exe\{00000000-0000-0000-0000-00000000e001}' = [ordered]@{ Value = '<SimRegel/>' }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Exe\{00000000-0000-0000-0000-00000000e002}' = [ordered]@{ Value = '<SimRegel/>' }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Exe\{00000000-0000-0000-0000-00000000e003}' = [ordered]@{ Value = '<SimRegel/>' }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Dll' = [ordered]@{ EnforcementMode = 1 }
+            'SOFTWARE\Policies\Microsoft\Windows\SrpV2\Dll\{00000000-0000-0000-0000-00000000d001}' = [ordered]@{ Value = '<SimRegel/>' }
         }
+        # loaded file system filters (Get-WorkerPerfFilterRaw); FiltersFail: exception the filter query throws
+        Filters = @(@('WdFilter', '328010', 4), @('upmjit', '182400', 2), @('FileInfo', '45000', 5)) | ForEach-Object {
+            [ordered]@{ Name = $_[0]; Altitude = $_[1]; Instances = [int]$_[2]; Legacy = $false } }
+        FiltersFail = $null
+        # scheduled tasks (Get-WorkerPerfTaskRaw): Count of all, Tasks outside \Microsoft\; times as the Task Scheduler gives
+        # them ("no run" is 1899-12-30)
+        Tasks = @{ Count = 150; Tasks = @(
+                @{ Path = '\Sim\Inventarlauf'; Enabled = $true; State = 'Ready'; NextRun = [datetime]::Today.AddDays(1).AddHours(10); LastRun = [datetime]'1899-12-30'
+                    TriggerTypes = [int[]]@(2); RepeatMinutes = 0; Action = 'C:\Tools\inventar.exe' }
+                @{ Path = '\Sim\Anmeldeskript'; Enabled = $true; State = 'Ready'; NextRun = [datetime]'1899-12-30'; LastRun = [datetime]'1899-12-30'
+                    TriggerTypes = [int[]]@(9); RepeatMinutes = 0; Action = 'C:\Tools\logon.cmd' }) }
         # product versions of files (Get-WorkerPerfFileVersion): path -> version
         FileVersions = @{
             'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe' = '22.3.0.4000'
@@ -113,6 +137,23 @@ function Reset-WinStandIns {
                 [pscustomobject]@{ HotFixID = 'KB5000002'; InstalledOn = [datetime]'2026-10-14' })
             'Win32_LogicalDisk' = @([pscustomobject]@{ DeviceID = 'C:'; Size = [uint64]100GB; FreeSpace = [uint64]8GB; FileSystem = 'NTFS' },
                 [pscustomobject]@{ DeviceID = 'D:'; Size = [uint64]200GB; FreeSpace = [uint64]150GB; FileSystem = 'NTFS' })
+            # Defender: status and preferences (the scan times as a TimeSpan, as newer platforms give them)
+            'MSFT_MpComputerStatus' = @([pscustomobject]@{ AMRunningMode = 'Normal'; RealTimeProtectionEnabled = $true; IsTamperProtected = $true
+                    AntivirusSignatureAge = [uint32]1; DefenderSignaturesOutOfDate = $false; AMProductVersion = '4.18.24090.11' })
+            'MSFT_MpPreference' = @([pscustomobject]@{ ExclusionPath = [string[]]@('C:\Program Files\Citrix')
+                    ExclusionProcess = [string[]]@('C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'); ExclusionExtension = [string[]]@('.vhdx')
+                    SharedSignaturesPath = ''; ScanScheduleDay = [byte]0; ScanScheduleTime = [timespan]'02:00:00'; ScanScheduleQuickScanTime = [timespan]'02:00:00'
+                    ScanParameters = [byte]1; RandomizeScheduleTaskTimes = $true; ScanAvgCPULoadFactor = [byte]50; EnableNetworkProtection = [byte]0 })
+            # SMB client: its configuration and the open connections (with the account, which is not stored)
+            'MSFT_SmbClientConfiguration' = @([pscustomobject]@{ RequireSecuritySignature = $false; DirectoryCacheEntriesMax = [uint32]16
+                    FileInfoCacheEntriesMax = [uint32]64; FileNotFoundCacheEntriesMax = [uint32]128 })
+            'MSFT_SmbConnection' = @(
+                [pscustomobject]@{ ServerName = 'fs01'; ShareName = 'upm$'; Dialect = '3.1.1'; Signed = $true; Encrypted = $false; UserName = 'KLINIK\mueller' }
+                [pscustomobject]@{ ServerName = 'fs01'; ShareName = 'upm$'; Dialect = '3.1.1'; Signed = $true; Encrypted = $false; UserName = 'KLINIK\gast' }
+                [pscustomobject]@{ ServerName = 'alt01'; ShareName = 'archiv'; Dialect = '2.1'; Signed = $false; Encrypted = $false; UserName = 'KLINIK\mueller' })
+            'Win32_NetworkAdapterConfiguration' = @([pscustomobject]@{ Index = [uint32]4; DNSServerSearchOrder = [string[]]@('10.1.0.10') })
+            # Name is the connection name of the adapter, which is not stored
+            'MSFT_NetAdapterRssSettingData' = @([pscustomobject]@{ Name = 'Ethernet0'; InterfaceDescription = 'vmxnet3 Ethernet Adapter'; Enabled = $true })
         }
         # Win32_Service: every service carries all six properties (the readers run under strict mode)
         Services = @(
@@ -485,7 +526,11 @@ function Get-WorkerPerfSidAccount([string]$Sid) {
 }
 
 function Get-WorkerPerfPrintIsolationGroups { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationGroups }
-function Get-WorkerPerfPrintIsolationPolicy { Add-WinStandInCall 'registry:print'; return $script:WinFake.IsolationPolicy }
+function Get-WorkerPerfPrintIsolationPolicy {
+    Add-WinStandInCall 'registry:print'
+    if ($null -ne $script:WinFake.IsolationPolicyFail) { throw $script:WinFake.IsolationPolicyFail }
+    return $script:WinFake.IsolationPolicy
+}
 function Get-WorkerPerfPrintDriverAttribute($Driver) { Add-WinStandInCall 'registry:print'; return $script:WinFake.DriverAttributes[[string]$Driver.Name] }
 
 # health picture: registry, native calls and the oldest entry of a log
@@ -510,6 +555,20 @@ function Get-WorkerPerfFileVersion([string]$Path) {
     Add-WinStandInCall 'file:version'
     if ($script:WinFake.FileVersions.ContainsKey($Path)) { return [string]$script:WinFake.FileVersions[$Path] }
     return $null
+}
+
+function Get-WorkerPerfFilterRaw {
+    # the filters as ConvertFrom-WorkerPerfFilterBuffer gives them, one record per filter
+    Add-WinStandInCall 'native:filters'
+    if ($null -ne $script:WinFake.FiltersFail) { throw $script:WinFake.FiltersFail }
+    foreach ($f in @($script:WinFake.Filters)) { [ordered]@{ Name = $f.Name; Altitude = $f.Altitude; Instances = $f.Instances; Legacy = $f.Legacy } }
+}
+
+function Get-WorkerPerfTaskRaw([double]$DeadlineSec = 0) {
+    # the walk of the Task Scheduler as one call: Delay['com:tasks'] makes it slow as a whole (a hanging COM call)
+    Add-WinStandInCall 'com:tasks'
+    $raw = $script:WinFake.Tasks
+    return @{ Count = $raw.Count; Tasks = [object[]]@(foreach ($t in @($raw.Tasks)) { $t.Clone() }) }
 }
 
 function Get-WorkerPerfPerformanceInfo { Add-WinStandInCall 'native:perfinfo'; return $script:WinFake.PerformanceInfo.Clone() }

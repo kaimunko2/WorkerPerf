@@ -320,3 +320,159 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
         $v = Get-V (Read-Health) 'vda.persistentDataLocation'; $v.State | Should -Be 'unreadable'; $v.Reason | Should -Be 'rights'
     }
 }
+Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartung' {
+    BeforeEach { Reset-WinStandIns }
+    It 'liest den Bereich Drucken auch ohne die Kategorie Drucken' {
+        $script:WinFake.Logs += 'Microsoft-Windows-PrintService/Operational'; $script:WinFake.DisabledLogs += 'Microsoft-Windows-PrintService/Operational'
+        foreach ($skip in @(), @('Drucken')) {
+            $h = Read-Health $skip; $h.Areas['print'].Status | Should -Be 'read' -Because "$skip"
+            (Get-V $h 'print.isolationExecution').Value | Should -Be 1; (Get-V $h 'print.isolationOverride').State | Should -Be 'absent'
+            (Get-V $h 'print.queueCount').Value | Should -Be 1; (Get-V $h 'print.spooler').Value | Should -Be 'Running'; (Get-V $h 'print.spoolerStartMode').Value | Should -Be 'Auto'
+            (Get-V $h 'print.operationalLog').Value | Should -BeFalse; (Get-V $h 'print.citrixPrintService').Value | Should -Be 'Running'; (Get-V $h 'print.mappingClientVersion').Value | Should -Be '6.2.1'
+        }
+        $script:WinFake.Logs = @($script:WinFake.Logs | Where-Object { $_ -ne 'Microsoft-Windows-PrintService/Operational' })
+        (Get-V (Read-Health) 'print.operationalLog').State | Should -Be 'absent'
+        $script:WinFake.Registry.Remove('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{C3}')                  # Review Focus 3: kein Client des Zuordnungswerkzeugs
+        $m = Get-V (Read-Health) 'print.mappingClientVersion'; $m.State | Should -Be 'absent'; $m.Reason | Should -Be 'notInstalled'
+    }
+    It 'nennt die Richtlinie der Treiberisolierung nicht lesbar, wenn schon der Treiberleser sie nicht lesen konnte' {
+        $script:WinFake.IsolationPolicyFail = New-Object System.Security.SecurityException 'kein Zugriff'
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null); [void]@(Get-WorkerPerfPrintDrivers 3>$null); $h = Get-WorkerPerfHealth 3>$null
+        foreach ($id in 'print.isolationExecution', 'print.isolationOverride') { (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'rights' -Because $id }
+        (Get-V $h 'print.spooler').State | Should -Be 'read'
+    }
+    It 'liest Defender, Filtertreiber, Dienste und AppLocker' {
+        $h = Read-Health; $h.Areas['security'].Status | Should -Be 'read'
+        (Get-V $h 'security.defenderMode').Value | Should -Be 'Normal'; (Get-V $h 'security.defenderSignatureAgeDays').Value | Should -Be 1; (Get-V $h 'security.defenderService').Value | Should -Be 'Running'
+        (Get-V $h 'security.defenderExclusionProcesses').Value[0].Path | Should -Be 'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'
+        (Get-V $h 'security.defenderExclusionExtensions').Value[0].Extension | Should -Be '.vhdx'; (Get-V $h 'security.defenderSharedSignatures').State | Should -Be 'absent'
+        (Get-V $h 'security.mdeOnboarding').Value | Should -Be 1; (Get-V $h 'security.mdeService').Value | Should -Be 'Running'; (Get-V $h 'security.defenderForcePassive').State | Should -Be 'absent'
+        @((Get-V $h 'security.filters').Value.Name) | Should -Be @('WdFilter', 'upmjit', 'FileInfo'); (Get-V $h 'security.filters').Value[0].Altitude | Should -Be '328010'
+        @((Get-V $h 'security.services').Value).Count | Should -Be @($script:WinFake.Services).Count; ((Get-V $h 'security.services').Value | Where-Object Name -eq 'WinDefend').State | Should -Be 'Running'
+        @((Get-V $h 'security.applockerCollections').Value.Collection) | Should -Be @('Exe', 'Dll')
+        $dll = (Get-V $h 'security.applockerCollections').Value | Where-Object Collection -eq 'Dll'; $dll.Enforcement | Should -Be 1; $dll.Rules | Should -Be 1
+        (Get-V $h 'security.defenderNetworkProtection').Value | Should -Be 0
+    }
+    It 'nennt verborgene Ausschluesse nicht lesbar und einen fehlenden Defender nicht installiert' {   # Review Focus 3
+        $script:WinFake.Cim['MSFT_MpPreference'][0].ExclusionPath = @('N/A: Must be an administrator to view exclusions')
+        $h = Read-Health; (Get-V $h 'security.defenderExclusionPaths').State | Should -Be 'unreadable'; (Get-V $h 'security.defenderExclusionPaths').Reason | Should -Be 'rights'
+        (Get-V $h 'security.defenderExclusionProcesses').State | Should -Be 'read'; $h.Areas['security'].Status | Should -Be 'partial'
+        $script:WinFake.FiltersFail = New-Object System.UnauthorizedAccessException 'Zugriff verweigert'
+        (Get-V (Read-Health) 'security.filters').Reason | Should -Be 'rights'
+        Reset-WinStandIns; $script:WinFake.Services = @($script:WinFake.Services | Where-Object Name -ne 'WinDefend')
+        $h = Read-Health
+        foreach ($id in 'security.defenderService', 'security.defenderMode', 'security.defenderExclusionPaths', 'maintenance.scanDay', 'maintenance.scanRandomize') {
+            (Get-V $h $id).State | Should -Be 'absent' -Because $id; (Get-V $h $id).Reason | Should -Be 'notInstalled' -Because $id }
+        @($script:WinFake.Calls.Keys | Where-Object { $_ -match 'MSFT_Mp' }) | Should -BeNullOrEmpty; (Get-V $h 'security.filters').State | Should -Be 'read'
+    }
+    It 'liest SMB, DNS und Zeitquelle und fasst die Verbindungen zusammen' {
+        $h = Read-Health; $h.Areas['network'].Status | Should -Be 'read'
+        $c = (Get-V $h 'network.smbConnections').Value; @($c).Count | Should -Be 2
+        ($c | Where-Object Share -eq '\\fs01\upm$').Connections | Should -Be 2; ($c | Where-Object Share -eq '\\alt01\archiv').Dialect | Should -Be '2.1'; ($c | Where-Object Share -eq '\\alt01\archiv').Signed | Should -BeFalse
+        (Get-V $h 'network.smb1').State | Should -Be 'absent'; (Get-V $h 'network.smb1').Reason | Should -Be ''
+        (Get-V $h 'network.smbDirectoryCache').Value | Should -Be 16; (Get-V $h 'network.smbRequireSigning').Value | Should -BeFalse; (Get-V $h 'network.domainMember').Value | Should -BeTrue
+        @((Get-V $h 'network.dnsServers').Value | ForEach-Object { $_.Address }) | Should -Be @('10.1.0.10')   # .Address alone would name the method Address of the array; (Get-V $h 'network.dnsServers').Value[0].Interface | Should -Be 4
+        (Get-V $h 'network.timeType').Value | Should -Be 'NTP'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit01.klinik.example 10.1.0.20'; (Get-V $h 'network.timeService').Value | Should -Be 'Running'
+        $rss = @((Get-V $h 'network.rss').Value); $rss.Count | Should -Be 1; $rss[0].Description | Should -Be 'vmxnet3 Ethernet Adapter'; $rss[0].Enabled | Should -BeTrue
+        ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'Ethernet0'                                 # der Verbindungsname eines Adapters wird nicht gespeichert
+        ($h | ConvertTo-Json -Depth 12) | Should -Not -Match 'KLINIK\\\\(mueller|gast)"'              # das Konto einer Verbindung wird nicht gespeichert
+        $script:WinFake.Cim['Win32_SystemDriver'] = @([pscustomobject]@{ Name = 'mrxsmb10'; State = 'Running'; StartMode = 'Auto' })
+        (Get-V (Read-Health) 'network.smb1').Value | Should -Be 'Auto'
+    }
+    It 'liest geplante Aufgaben, Scan- und Update-Zeitplaene' {
+        $h = Read-Health; $h.Areas['maintenance'].Status | Should -Be 'read'
+        $t = (Get-V $h 'maintenance.tasks').Value; @($t.Path) | Should -Be @('\Sim\Inventarlauf', '\Sim\Anmeldeskript')
+        $t[0].Triggers | Should -Be 'daily'; $t[1].Triggers | Should -Be 'logon'; $t[1].NextRun | Should -Be 0; $t[0].Action | Should -Be 'C:\Tools\inventar.exe'
+        [DateTimeOffset]::FromUnixTimeMilliseconds($t[0].NextRun).LocalDateTime.Hour | Should -Be 10
+        (Get-V $h 'maintenance.taskCount').Value | Should -Be 150; ConvertTo-WorkerPerfTriggerWords @(9, 6, 9, 42) | Should -Be 'logon, idle, other'
+        ConvertTo-WorkerPerfTaskTime ([datetime]'1899-12-30') | Should -Be ([datetime]::MinValue); ConvertTo-WorkerPerfTaskTime ([datetime]'2026-11-13T10:00:00') | Should -Be ([datetime]'2026-11-13T10:00:00')
+        $t[0].LastRun | Should -Be 0; $t[1].LastRun | Should -Be 0                                    # der 30.12.1899 der Aufgabenplanung heisst: kein Lauf
+        (Get-V $h 'maintenance.scanDay').Value | Should -Be 0; (Get-V $h 'maintenance.scanTime').Value | Should -Be '02:00'; (Get-V $h 'maintenance.scanRandomize').Value | Should -BeTrue
+        (Get-V $h 'maintenance.updateOptions').Value | Should -Be 4; (Get-V $h 'maintenance.updateHour').Value | Should -Be 10
+        (Get-V $h 'maintenance.searchService').State | Should -Be 'absent'; (Get-V $h 'maintenance.searchService').Reason | Should -Be 'notInstalled'
+        (Get-V $h 'maintenance.updateService').Value | Should -Be 'Manual'
+        $script:WinFake.Registry.Remove('SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU')
+        (Get-V (Read-Health) 'maintenance.updateOptions').State | Should -Be 'absent'; (Get-V (Read-Health) 'maintenance.updateOptions').Reason | Should -Be ''
+    }
+    It 'liest Dienste, Sitzungen und Defender-Einstellungen fuer alle Bereiche einmal und die Richtlinie des Treiberlesers nicht noch einmal' {
+        [void](Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -EventConfig $Cfg 3>$null); [void]@(Get-WorkerPerfPrintDrivers)
+        $before = $script:WinFake.Calls.Clone(); $h = Get-WorkerPerfHealth
+        foreach ($k in 'cim:Win32_Service', 'cim:Win32_SystemDriver', 'wts', 'cim:MSFT_MpPreference', 'cim:MSFT_MpComputerStatus', 'com:tasks', 'native:filters') { [int]$script:WinFake.Calls[$k] - [int]$before[$k] | Should -Be 1 -Because $k }
+        [int]$script:WinFake.Calls['registry:print'] - [int]$before['registry:print'] | Should -Be 0
+        @($h.Areas.Keys | Where-Object { $h.Areas[$_].Status -ne 'read' }) | Should -Be @('apps'); $h.DurationMs | Should -BeLessThan 60000      # apps hat bis Task 7 keinen Leser
+        ($h.Areas.Values | ForEach-Object { $_.DurationMs } | Measure-Object -Sum).Sum | Should -BeLessOrEqual ($h.DurationMs + 1)
+    }
+    It 'haelt das Zeitlimit auch bei einem langsamen Aufruf ohne eigenes Zeitlimit ein' {   # Review Focus 1
+        $script:WinFake.Delay['com:tasks'] = 1500; $script:WorkerPerfWinHealthAreaBudgetSec = 1
+        try { $h = Read-Health } finally { $script:WorkerPerfWinHealthAreaBudgetSec = 10 }
+        (Get-V $h 'maintenance.tasks').State | Should -Be 'read'                                 # der Aufruf lief schon; sein Ergebnis bleibt
+        foreach ($id in 'maintenance.taskCount', 'maintenance.scanDay', 'maintenance.searchService') {
+            (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'timeout' -Because $id }
+        $h.Areas['maintenance'].Status | Should -Be 'partial'; foreach ($a in 'security', 'network', 'events') { $h.Areas[$a].Status | Should -Be 'read' -Because $a }
+    }
+    It 'speichert nur Zahlen, Wahrheitswerte, Texte und Listen daraus' {
+        $script:WinFake.Cim['MSFT_MpPreference'][0].ScanScheduleQuickScanTime = [datetime]'2026-01-01T03:30:00'       # je nach Fassung der Plattform Zeitspanne oder Zeitpunkt
+        $h = Read-Health; $bad = New-Object System.Collections.Generic.List[string]
+        $plain = { param($x) $null -eq $x -or $x -is [string] -or $x -is [decimal] -or $x.GetType().IsPrimitive }
+        foreach ($id in $WorkerPerfHealthValues.Keys) {
+            $v = Get-V $h $id; if ($v.State -ne 'read') { continue }
+            if ($WorkerPerfHealthValues[$id].Type -ne 'list') { if (-not (& $plain $v.Value)) { $bad.Add($id) }; continue }
+            if ($v.Value -isnot [array]) { $bad.Add($id); continue }
+            foreach ($item in $v.Value) { foreach ($k in @($item.Keys)) { if (-not (& $plain $item[$k])) { $bad.Add("$id.$k") } } }
+        }
+        $bad | Should -BeNullOrEmpty                                                             # keine Aufzaehlung, kein DateTime, keine Zeitspanne
+        (Get-V $h 'maintenance.scanTime').Value | Should -Be '02:00'; (Get-V $h 'maintenance.quickScanTime').Value | Should -Be '03:30'
+    }
+    It 'zerlegt den Puffer der Filterabfrage und uebersetzt die Filterabfrage' {
+        function New-FilterEntry([string]$Name, [string]$Altitude, [int]$Instances, [bool]$Legacy, [bool]$Last) {
+            # FILTER_AGGREGATE_STANDARD_INFORMATION: NextEntryOffset (Byte 0), Flags (4: 1 Minifilter, 2 alter Filter). Minifilter: Flags (8), FrameID (12),
+            # NumberOfInstances (16), dann je 2 Byte Namenslaenge, Namensoffset, Hoehenlaenge, Hoehenoffset (ab 20). Alter Filter: Flags (8), dieselben vier (ab 12).
+            $n = [Text.Encoding]::Unicode.GetBytes($Name); $a = [Text.Encoding]::Unicode.GetBytes($Altitude); $head = $(if ($Legacy) { 20 } else { 28 })
+            $size = [int]([Math]::Ceiling(($head + $n.Length + $a.Length) / 8) * 8) + 8; $b = New-Object byte[] $size
+            for ($i = $head + $n.Length + $a.Length; $i -lt $size; $i++) { $b[$i] = 0x41 }                     # hinter den Zeichenketten steht keine Null
+            $at = $(if ($Legacy) { 12 } else { 20 })
+            [BitConverter]::GetBytes([uint32]$(if ($Last) { 0 } else { $size })).CopyTo($b, 0); [BitConverter]::GetBytes([uint32]$(if ($Legacy) { 2 } else { 1 })).CopyTo($b, 4)
+            if (-not $Legacy) { [BitConverter]::GetBytes([uint32]$Instances).CopyTo($b, 16) }
+            [BitConverter]::GetBytes([uint16]$n.Length).CopyTo($b, $at); [BitConverter]::GetBytes([uint16]$head).CopyTo($b, $at + 2)
+            [BitConverter]::GetBytes([uint16]$a.Length).CopyTo($b, $at + 4); [BitConverter]::GetBytes([uint16]($head + $n.Length)).CopyTo($b, $at + 6)
+            $n.CopyTo($b, $head); $a.CopyTo($b, $head + $n.Length); , $b
+        }
+        $buf = [byte[]]((New-FilterEntry 'WdFilter' '328010' 4 $false $false) + (New-FilterEntry 'upmAction' '265650.5' 2 $false $false) + (New-FilterEntry 'AltFilter' '45000' 0 $true $true))
+        $f = @(ConvertFrom-WorkerPerfFilterBuffer $buf)
+        @($f.Name) | Should -Be @('WdFilter', 'upmAction', 'AltFilter'); @($f.Altitude) | Should -Be @('328010', '265650.5', '45000')
+        @($f.Instances) | Should -Be @(4, 2, 0); @($f.Legacy) | Should -Be @($false, $false, $true)
+        @(ConvertFrom-WorkerPerfFilterBuffer ([byte[]]@())).Count | Should -Be 0
+        Register-WorkerPerfHealthType; ('WorkerPerf.HealthNative' -as [type]).GetMethod('GetFilterBuffers') | Should -Not -BeNullOrEmpty
+    }
+    It 'wandelt Registrierungszahlen, Zeitquellen, Aufgaben und SMB-Verbindungen um und nimmt die Richtlinie der Zeitquelle vor dem Dienst' {
+        ConvertTo-WorkerPerfRegistryNumber 4 | Should -Be 4; ConvertTo-WorkerPerfRegistryNumber (-1) | Should -Be 4294967295; ConvertTo-WorkerPerfRegistryNumber $null | Should -BeNullOrEmpty
+        foreach ($wrong in @('4', [byte[]](4, 0), [string[]]@('4'))) { { ConvertTo-WorkerPerfRegistryNumber $wrong } | Should -Throw -Because "$wrong" }
+        ConvertTo-WorkerPerfTimeServers 'zeit01.klinik.example,0x9  10.1.0.20' | Should -Be 'zeit01.klinik.example 10.1.0.20'
+        ConvertTo-WorkerPerfClockText ([timespan]'1.07:05:00') | Should -Be '07:05'; { ConvertTo-WorkerPerfClockText '02:00' } | Should -Throw
+        ConvertTo-WorkerPerfTaskState 3 | Should -Be 'Ready'; ConvertTo-WorkerPerfTaskState 'Running' | Should -Be 'Running'; ConvertTo-WorkerPerfTaskState 9 | Should -Be '9'
+        ConvertFrom-WorkerPerfTaskInterval '' | Should -Be 0; ConvertFrom-WorkerPerfTaskInterval 'PT15M' | Should -Be 15; ConvertFrom-WorkerPerfTaskInterval 'P1DT1H' | Should -Be 1500
+        ConvertFrom-WorkerPerfTaskInterval 'jede Stunde' | Should -BeNullOrEmpty
+        $conn = { param($sig) [pscustomobject]@{ ServerName = 'fs02'; ShareName = 'daten'; Dialect = '3.0'; Signed = $sig; Encrypted = $false } }
+        $rows = @(ConvertTo-WorkerPerfSmbConnectionRows @((& $conn $true), (& $conn $null)))
+        $rows.Count | Should -Be 1; $rows[0].Signed | Should -BeNullOrEmpty; $rows[0].Connections | Should -Be 2
+        @(ConvertTo-WorkerPerfSmbConnectionRows @((& $conn $true), (& $conn $null), (& $conn $false)))[0].Signed | Should -BeFalse
+        $late = @{ Area = 'network'; State = $null; Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 0; Shared = @{}; Values = [ordered]@{} }
+        { ConvertTo-WorkerPerfSmbConnectionRows @((& $conn $true)) $late } | Should -Throw -ExceptionType ([System.TimeoutException])
+        # Leser: die Richtlinie der Zeitquelle geht vor, ein Registrierungswert vom falschen Typ ist nicht lesbar, ohne AppLocker eine leere Liste
+        $script:WinFake.Registry['SOFTWARE\Policies\Microsoft\W32Time\Parameters'] = [ordered]@{ Type = 'NT5DS' }
+        $script:WinFake.Registry['SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'].AUOptions = '4'
+        foreach ($k in @($script:WinFake.Registry.Keys)) { if ($k -like 'SOFTWARE\Policies\Microsoft\Windows\SrpV2*') { $script:WinFake.Registry.Remove($k) } }
+        $h = Read-Health
+        (Get-V $h 'network.timeType').Value | Should -Be 'NT5DS'; (Get-V $h 'network.timeServers').Value | Should -Be 'zeit01.klinik.example 10.1.0.20'
+        (Get-V $h 'maintenance.updateOptions').State | Should -Be 'unreadable'; (Get-V $h 'maintenance.updateOptions').Reason | Should -Be 'error'; (Get-V $h 'maintenance.updateHour').Value | Should -Be 10
+        (Get-V $h 'security.applockerCollections').State | Should -Be 'read'; @((Get-V $h 'security.applockerCollections').Value).Count | Should -Be 0
+    }
+    It 'enthaelt keinen Aufruf, der etwas aendert, startet oder einen anderen Rechner anspricht' {
+        $src = Get-Content (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1') -Raw
+        foreach ($bad in 'Microsoft\.Update\.', 'w32tm', 'powercfg', 'fltmc', 'Win32_Product\b', 'Get-MpPreference', 'Get-MpComputerStatus', 'Get-SmbConnection', 'Get-ScheduledTask',
+            'Get-AppLockerPolicy', 'Get-Printer\b', 'Get-AppxPackage', 'Get-NetAdapterRss', 'Get-ScheduledTaskInfo', 'VMwareToolboxCmd', 'cscript', 'HKEY_USERS', 'HKCU', 'Start-Process', 'Start-Service', 'Invoke-CimMethod', '-ComputerName', 'New-CimSession') { $src | Should -Not -Match $bad -Because $bad }
+        # nichts wird geschrieben, geloescht, angehalten oder ausgefuehrt (Entwurf 3.4)
+        foreach ($bad in 'CreateSubKey', 'SetValue', 'DeleteValue', 'DeleteSubKey', 'OpenSubKey\([^)]*\$true', 'Set-ItemProperty', 'New-ItemProperty', 'Remove-ItemProperty', 'Remove-Item\b',
+            'Stop-Service', 'Set-Service', 'Stop-Process', '\.Run\(') { $src | Should -Not -Match $bad -Because $bad }
+    }
+}
