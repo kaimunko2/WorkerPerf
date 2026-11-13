@@ -390,8 +390,9 @@ Describe 'Vermerk einer weggelassenen Kategorie' {                              
     It 'laesst nur den festen Vermerk des Collectors stehen, nie einen Text der Quelle, der ihn enthaelt' {
         $src = { param($id, $detail) [ordered]@{ id = $id; available = $false; detail = $detail } }
         # Fix-Runde 1 (Minor 3): auch falsche Schreibweise, eine nicht aktive Kategorie, doppelte Namen und eine andere Reihenfolge
-        $good = @('abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Ereignisse,Rueckblick)', 'abgeschaltet (-Skip Gegenstellen)')
-        $texts = $good + @('abgeschaltet (-Skip prozesse)', 'abgeschaltet (-Skip Zustand)', 'abgeschaltet (-Skip Prozesse,Prozesse)', 'abgeschaltet (-Skip Rueckblick,Ereignisse)',
+        # Aussage angepasst (Zustandsbild, Task 8): Zustand ist aktiv, sein Vermerk ist gueltig
+        $good = @('abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Ereignisse,Rueckblick)', 'abgeschaltet (-Skip Gegenstellen)', 'abgeschaltet (-Skip Zustand)')
+        $texts = $good + @('abgeschaltet (-Skip prozesse)', 'abgeschaltet (-Skip Prozesse,Prozesse)', 'abgeschaltet (-Skip Rueckblick,Ereignisse)',
             'abgeschaltet (-Skip Ereignisse,Rueckblick,Rueckblick)', 'abgeschaltet (-Skip GEGENSTELLEN)',
             'Zugriff verweigert fuer geheim01: abgeschaltet (-Skip Prozesse)', 'abgeschaltet (-Skip Prozesse) von geheim02', 'Abgeschaltet (-Skip Prozesse)',
             "abgeschaltet (-Skip Prozesse)`ngeheim03", "abgeschaltet (-Skip Prozesse)`n", 'abgeschaltet (-Skip Geheimname)', 'abgeschaltet (-Skip Prozesse,Geheimname)')

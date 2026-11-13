@@ -213,9 +213,9 @@ Describe 'Import-WorkerPerfRun: Ereignisse und Drucken (Format 3)' {
         $dir = Write-TestRun 'skip' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
         @((Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Skip).Count | Should -Be 0
         [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"Simulated":false,', '"Simulated":false,"Skip":["rueckblick","Netz","Zustand","Prozesse"],'))
-        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Skip | Should -Be @('Prozesse', 'Rueckblick')
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Skip | Should -Be @('Prozesse', 'Rueckblick', 'Zustand')   # Aussage angepasst (Zustandsbild, Task 8): Zustand ist aktiv
         # ein beschaedigtes Feld bricht nichts: kein Text, kein Wert, ein einzelner Text, eine Zahl
-        @(Get-WorkerPerfRecordedSkip $null).Count | Should -Be 0; @(Get-WorkerPerfRecordedSkip @($null, 5, '', 'Zustand')).Count | Should -Be 0
+        @(Get-WorkerPerfRecordedSkip $null).Count | Should -Be 0; Get-WorkerPerfRecordedSkip @($null, 5, '', 'Zustand') | Should -Be @('Zustand')
         Get-WorkerPerfRecordedSkip 'CITRIX' | Should -Be @('Citrix'); @(Get-WorkerPerfRecordedSkip ([pscustomobject]@{ a = 'Citrix' })).Count | Should -Be 0
     }
 }

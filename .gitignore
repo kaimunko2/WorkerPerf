@@ -7,6 +7,8 @@ demo/
 *.csv
 meta.json
 meta.json.tmp
+health.json
+health.json.tmp
 expected.json
 *.flag
 *.html

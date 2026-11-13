@@ -17,14 +17,16 @@
           queues (printqueues.csv, a row only when a value changes)
 
     At the start the events of the last -EventLookbackDays days go to events_before.csv and the
-    installed print drivers to printdrivers.csv.
+    installed print drivers to printdrivers.csv. Before the first tick the health picture of the
+    server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).
 
     While a trigger signal of thresholds.json is over its threshold (and -BurstHoldSeconds
     afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
     is a keyframe that lists every process; the others only list active processes.
 
-    The run folder also holds a copy of thresholds.json and meta.json (host facts, settings,
-    end reason); in the simulation additionally expected.json (the expected analysis result).
+    The run folder also holds a copy of thresholds.json, a copy of the application list (apps.json,
+    without -Skip Zustand) and meta.json (host facts, settings, end reason); in the simulation
+    additionally expected.json (the expected analysis result).
 
     Stop the capture with Ctrl+C, by -DurationMinutes, by -MaxSizeMB, or by creating a file
     named 'stop.flag' inside the run folder. Analyse the result with New-WorkerPerfReport.ps1.
@@ -68,6 +70,9 @@
     Endpoints for the connect probes. Default: endpoints.json next to this script; without
     this file no probes are made (see endpoints.example.json).
 
+.PARAMETER AppsFile
+    Application list for the health picture (area Anwendungen). Default: apps.json next to this script.
+
 .PARAMETER IncludeCommandLine
     Also store process command lines (may contain sensitive data such as file names or URLs). Without Prozesse
     (-Skip Prozesse) no command line is recorded and meta.json says IncludeCommandLine false.
@@ -93,7 +98,7 @@
       Rueckblick    events before the start (events_before.csv)
       Drucken       print drivers and print queues (printdrivers.csv, printqueues.csv)
       Gegenstellen  endpoint probes (probes.csv)
-      Zustand       accepted, no effect yet
+      Zustand       the health picture of the server, read once at the start (health.json)
     The base is always measured: host signals, input delay per session, snapshots and sessions
     (ticks.csv, inputdelay.csv, snapshots.csv, sessions.csv, meta.json, thresholds.json).
 
@@ -118,6 +123,7 @@ param(
     [ValidateRange(1, 1000000)][double]$MaxSizeMB = 500,
     [string]$ThresholdFile,
     [string]$EndpointFile,
+    [string]$AppsFile,
     [switch]$IncludeCommandLine,
     [switch]$NoCitrix,
     [string]$CitrixMetricFilter = 'Latency|Round|Bandwidth|FramesPerSecond|Fps',
@@ -163,19 +169,23 @@ else {
 
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $EndpointFile) { $EndpointFile = Join-Path $PSScriptRoot 'endpoints.json' }
+if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
 if (-not $OutputPath) {
     $OutputPath = $(if ($env:ProgramData) { Join-Path $env:ProgramData 'WorkerPerf' } else { Join-Path (Get-Location).Path 'WorkerPerfData' })
 }
 
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
+# the application list of the health picture: a missing or faulty list stops the start here, before anything is created
+$healthApps = @()
+if ($leftOut -notcontains 'Zustand') { $healthApps = @(Read-WorkerPerfHealthApps $AppsFile) }
 $endpoints = @()
 if ($leftOut -notcontains 'Gegenstellen') { $endpoints = @(Read-WorkerPerfEndpoints $EndpointFile) }
 # the event catalogue: which logs, providers and ids the source reads and how it reads their fields
 $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
 
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$withCommandLine -Skip $leftOut -EventConfig $eventConfig
+    -IncludeCommandLine:$withCommandLine -Skip $leftOut -EventConfig $eventConfig -Apps $healthApps
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -241,7 +251,7 @@ function Save-Meta {
 # A failing call of the data source: counted per source in meta.json, one warning per source, the capture goes on.
 $sourceNames = @{ fast = 'schneller Takt'; snapshot = 'Prozess-Schnappschuss'; services = 'Dienste'; probes = 'Antwortzeit-Proben'
     events = 'Ereignisprotokoll'; diskspace = 'freier Speicherplatz'; eventsbefore = 'Ereignisse vor der Messung'
-    printdrivers = 'Druckertreiber'; printqueues = 'Druckwarteschlangen' }
+    printdrivers = 'Druckertreiber'; printqueues = 'Druckwarteschlangen'; health = 'Zustandsbild' }
 function Register-SourceError([string]$Source, $ErrorRecord) {
     # Ctrl+C is not a failure of the source
     if ($ErrorRecord.Exception -is [System.Management.Automation.PipelineStoppedException]) { throw $ErrorRecord.Exception }
@@ -301,6 +311,8 @@ $skipped = 0
 $eventsReady = $false
 try {
     [void](Copy-Item -LiteralPath $ThresholdFile -Destination (Join-Path $runDir 'thresholds.json'))
+    # the application list as given, so that the report rates with the list the health picture was read with
+    if ($leftOut -notcontains 'Zustand') { [void](Copy-Item -LiteralPath $AppsFile -Destination (Join-Path $runDir 'apps.json')) }
     Save-Meta
 
     # Lookback up to the start: events after the start belong to the measurement (its reads begin after the start),
@@ -324,6 +336,18 @@ try {
         try { foreach ($d in @(Get-WorkerPerfPrintDrivers)) { if ($null -ne $d) { $wDrivers.WriteLine((ConvertTo-WorkerPerfPrintDriverRow $d)) } } }
         catch { Register-SourceError 'printdrivers' $_ }
         $wDrivers.Flush()
+    }
+    # The health picture, read once before the first tick. It may carry names of servers, shares and accounts: it goes
+    # only into the run folder, the console line names areas and seconds.
+    if ($leftOut -notcontains 'Zustand') {
+        try {
+            $health = Get-WorkerPerfHealth
+            if ($null -ne $health) {
+                Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $health
+                Write-Host (Format-WorkerPerfHealthLine $health)
+            }
+        }
+        catch { Register-SourceError 'health' $_ }
     }
     # The schedule starts after the start reads, so a slow lookback skips no tick and shortens no measurement; the
     # event cursor stays at the start time, so no event between the two is lost.

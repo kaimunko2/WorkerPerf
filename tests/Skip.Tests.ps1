@@ -7,14 +7,14 @@ BeforeAll {
     $script:Rep = New-SkipReports (Join-Path $TestDrive 'rep')
     $script:Names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
     $script:Runs = [ordered]@{}; $script:D = @{}
-    foreach ($k in @('Voll') + $Names + 'Alle') { $Runs[$k] = $Rep[$k].Run; $D[$k] = Get-ReportData $Rep[$k].Report }
+    foreach ($k in @('Voll') + $Names + 'Zustand' + 'Alle') { $Runs[$k] = $Rep[$k].Run; $D[$k] = Get-ReportData $Rep[$k].Report }
     $script:Places = @{ Prozesse = @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes'); Laufwerke = @('volumes', 'shares', 'sessions.profile')
         Citrix = @('citrix', 'sessions.rtt', 'incidents.ica'); Ereignisse = @('events', 'sessions.events', 'incidents.events'); Rueckblick = @('before'); Drucken = @('print.drivers', 'print.queues')
-        Gegenstellen = @('probes', 'incidents.endpoints') }
+        Gegenstellen = @('probes', 'incidents.endpoints'); Zustand = @() }
     $script:Files = @{ Prozesse = @('processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv'); Laufwerke = @('volumes.csv', 'shares.csv'); Citrix = @('citrix.csv')
-        Ereignisse = @('events.csv'); Rueckblick = @('events_before.csv'); Drucken = @('printdrivers.csv', 'printqueues.csv'); Gegenstellen = @('probes.csv') }
+        Ereignisse = @('events.csv'); Rueckblick = @('events_before.csv'); Drucken = @('printdrivers.csv', 'printqueues.csv'); Gegenstellen = @('probes.csv'); Zustand = @('health.json') }
     $script:Ids = @{ Prozesse = @('process', 'input.process'); Laufwerke = @('disk.latency', 'smb.latency', 'profile.map'); Citrix = @('ica.rtt', 'ica.latency'); Ereignisse = @(); Rueckblick = @()
-        Drucken = @('print.drivers', 'print.queues'); Gegenstellen = @('probe.connect') }
+        Drucken = @('print.drivers', 'print.queues'); Gegenstellen = @('probe.connect'); Zustand = @('health') }
     function Get-Meta([string]$Run) { Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json }
     function Get-CsvNames([string]$Run) { Get-ChildItem $Run -Filter *.csv | ForEach-Object Name | Sort-Object }   # schlichte Pipeline-Ausgabe: Should -Be vergleicht die Elemente
     function Get-LineCounts([string]$Run) { $c = [ordered]@{}; foreach ($f in Get-ChildItem $Run -Filter *.csv | Sort-Object Name) { $c[$f.Name] = @(Get-Content $f.FullName).Count }; $c }
@@ -25,7 +25,7 @@ BeforeAll {
     }
 }
 Describe 'Aufzeichnung mit -Skip' {
-    It 'legt die Dateien von <_> nicht an, vermerkt ihre Quellen und laesst alles andere stehen' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen' {
+    It 'legt die Dateien von <_> nicht an, vermerkt ihre Quellen und laesst alles andere stehen' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand' {
         $cat = $_; $m = Get-Meta $Runs[$cat]
         Get-CsvNames $Runs[$cat] | Should -Be @($WorkerPerfHeaders.Keys | Where-Object { $Files[$cat] -notcontains $_ } | Sort-Object)
         @($m.Skip) | Should -Be @($cat); $m.Ticks | Should -Be 1800; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
@@ -61,8 +61,8 @@ Describe 'Aufzeichnung mit -Skip' {
         # Aufzeichnung); die Zaehler der Ereignis-Abrufe sind nie leer
         $counts = 'function Get-WorkerPerfEventCounts { [ordered]@{ application = [ordered]@{ Skipped = 1 } } }'
         $throwing = $counts + "`n" + (@('Get-WorkerPerfServices', 'Get-WorkerPerfEvents', 'Get-WorkerPerfEventsBefore', 'Get-WorkerPerfPrintDrivers', 'Get-WorkerPerfPrintQueues',
-                'Start-WorkerPerfProbes', 'Receive-WorkerPerfProbes') | ForEach-Object { "function $_ { throw 'Testaufruf $_' }" }) -join "`n"
-        $none = (& (New-PatchedSource (Join-Path $TestDrive 'srcthrow') $throwing) -Simulate -DurationMinutes 60 -Skip $Names -OutputPath (Join-Path $TestDrive 'throw') 6>$null 3>$null) | Select-Object -Last 1
+                'Start-WorkerPerfProbes', 'Receive-WorkerPerfProbes', 'Get-WorkerPerfHealth') | ForEach-Object { "function $_ { throw 'Testaufruf $_' }" }) -join "`n"
+        $none = (& (New-PatchedSource (Join-Path $TestDrive 'srcthrow') $throwing) -Simulate -DurationMinutes 60 -Skip ($Names + 'Zustand') -OutputPath (Join-Path $TestDrive 'throw') 6>$null 3>$null) | Select-Object -Last 1
         $m = Get-Meta $none
         $m.EndReason | Should -Be 'duration'; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
         @($m.EventReadCounts.PSObject.Properties).Count | Should -Be 0; @($m.LookbackReadCounts.PSObject.Properties).Count | Should -Be 0
@@ -75,12 +75,13 @@ Describe 'Aufzeichnung mit -Skip' {
     }
     It 'ergibt mit den alten Schaltern, doppelt, in anderer Schreibweise und als eine Zeichenkette dieselbe Aufzeichnung' {   # Review Focus 4 und 5
         $a = @(& $Capture -Simulate -DurationMinutes 60 -NoCitrix -OutputPath (Join-Path $TestDrive 'a') 6>&1)
-        ($a | Out-String) | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Ereignisse, Rueckblick, Drucken, Gegenstellen\s+Nicht gemessen \(-Skip\): Citrix'
+        ($a | Out-String) | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\s+Nicht gemessen \(-Skip\): Citrix'
         Get-Shape ([string]$a[-1]) | Should -BeExactly (Get-Shape $Runs.Citrix)
-        $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK', 'Zustand' -OutputPath (Join-Path $TestDrive 'b') 6>&1)
-        Get-Shape ([string]$b[-1]) | Should -BeExactly (Get-Shape $Runs.Rueckblick)   # Zustand: angenommen, ohne Wirkung, auch auf der Konsole
+        # Aussage angepasst (Zustandsbild, Task 8): Zustand ist aktiv, der Lauf laesst den Wert 'Zustand' und die Aussagen dazu weg
+        $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK' -OutputPath (Join-Path $TestDrive 'b') 6>&1)
+        Get-Shape ([string]$b[-1]) | Should -BeExactly (Get-Shape $Runs.Rueckblick)
         $console = $b | Out-String
-        $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'; $console | Should -Not -Match 'Zustand'
+        $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'
     }
     It 'lehnt einen unbekannten Wert ab, bevor etwas angelegt wird' {
         $dir = Join-Path $TestDrive 'x'
@@ -117,11 +118,47 @@ Describe 'Aufzeichnung mit -Skip' {
     It 'nennt beim Start die gemessenen und die weggelassenen Kategorien' {
         # die Konsolenausgabe des vollen Laufs: New-SkipRuns legt sie neben den Ordner Voll, der die Aufzeichnung enthaelt
         $out = Get-Content (Join-Path (Split-Path (Split-Path $Runs.Voll -Parent) -Parent) 'Voll.console.txt') -Raw
-        $out | Should -Match 'laeuft: [^\r\n]+\r?\nGemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen\r?\nNicht gemessen \(-Skip\): keine\r?\n'
+        $out | Should -Match 'laeuft: [^\r\n]+\r?\nGemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\r?\nNicht gemessen \(-Skip\): keine\r?\n'
+    }
+}
+Describe 'Zustandsbild in der Aufzeichnung' {
+    It 'schreibt health.json einmal beim Start und nennt es auf der Konsole' {
+        $h = Get-Content (Join-Path $Runs.Voll 'health.json') -Raw | ConvertFrom-Json
+        $h.FormatVersion | Should -Be 1; @($h.Areas.PSObject.Properties.Name) | Should -Be $WorkerPerfHealthAreas
+        @($h.Areas.profile.Values.'profile.containers'.Value).Count | Should -Be 25; $h.Areas.security.Values.'security.defenderExclusionPaths'.Reason | Should -Be 'rights'
+        Test-Path (Join-Path $Runs.Voll 'health.json.tmp') | Should -BeFalse
+        $out = Get-Content (Join-Path (Split-Path (Split-Path $Runs.Voll -Parent) -Parent) 'Voll.console.txt') -Raw
+        $out | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\r?\nNicht gemessen \(-Skip\): keine\r?\n'
+        $out | Should -Match 'Zustandsbild: 10 Bereiche gelesen, 1 unvollstaendig \(security\), 0\.0 s\r?\n'
+        $m = Get-Meta $Runs.Voll; $m.Sources.health.Available | Should -BeTrue; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
+        $m.Ticks | Should -Be 1800                                                          # das Lesen kostet keinen Takt
+    }
+    It 'legt mit -Skip Zustand keine health.json an' {
+        Test-Path (Join-Path $Runs.Zustand 'health.json') | Should -BeFalse; (Get-Meta $Runs.Zustand).Sources.health.Detail | Should -Be 'abgeschaltet (-Skip Zustand)'
+        @($D.Zustand.skipped.id) | Should -Be @('Zustand'); $D.Zustand.skipped[0].text | Should -Be 'Das Zustandsbild des Servers wurde bei dieser Messung nicht gelesen.'
+    }
+    It 'liest die Anwendungsliste beim Start, kopiert sie und lehnt eine fehlerhafte ab, bevor etwas angelegt ist' {
+        $shipped = Join-Path $PSScriptRoot '../src/apps.json'
+        (Get-Content (Join-Path $Runs.Voll 'apps.json') -Raw) | Should -Be (Get-Content $shipped -Raw); Test-Path (Join-Path $Runs.Zustand 'apps.json') | Should -BeFalse
+        $rows = @((Get-Content (Join-Path $Runs.Voll 'health.json') -Raw | ConvertFrom-Json).Areas.apps.Values.'apps.probes'.Value)
+        @(($rows | Where-Object Id -eq 'installed').App | Sort-Object) | Should -Be @('edge', 'office', 'teams'); @($rows | Where-Object { $_.Id -eq 'installed' -and -not $_.Value }).Count | Should -Be 0
+        $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'; $dir = Join-Path $TestDrive 'badapps'; $bad = Join-Path $TestDrive 'apps.bad.json'
+        [IO.File]::WriteAllText($bad, (Get-Content $shipped -Raw).Replace('HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge"', 'HKCU\\SOFTWARE\\Policies\\Microsoft\\Edge"'))
+        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile $bad 6>$null } | Should -Throw "*Anwendung 'edge': Probe '*':*HKLM*"
+        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw "Anwendungsliste '*keine.json' fehlt."
+        Test-Path $dir | Should -BeFalse
+    }
+    It 'zeichnet weiter auf, wenn das Lesen als Ganzes scheitert' {   # Review Focus 1
+        $src = New-PatchedSource (Join-Path $TestDrive 'srchealth') "function Get-WorkerPerfHealth { throw 'Testfehler Zustandsbild' }"
+        $out = @(& $src -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'failhealth') 6>$null 3>&1)
+        $run = [string]$out[-1]; $m = Get-Meta $run
+        $m.EndReason | Should -Be 'duration'; $m.Ticks | Should -Be 1800; $m.SourceErrors.health.Count | Should -Be 1; $m.SourceErrors.health.FirstMessage | Should -Be 'Testfehler Zustandsbild'
+        Test-Path (Join-Path $run 'health.json') | Should -BeFalse
+        @($out | Where-Object { $_ -is [System.Management.Automation.WarningRecord] -and $_.Message -match "Datenquelle 'Zustandsbild'" }).Count | Should -Be 1
     }
 }
 Describe 'Berichtsdaten mit weggelassenen Kategorien' {
-    It 'nennt fuer <_> Kategorie, Grund und abhaengige Stellen' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen' {
+    It 'nennt fuer <_> Kategorie, Grund und abhaengige Stellen' -ForEach 'Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand' {
         $s = @($D[$_].skipped); $s.Count | Should -Be 1
         $s[0].id | Should -Be $_; $s[0].label | Should -Be $Texts["skip.label.$_"]; $s[0].text | Should -Be $Texts["skip.text.$_"]; @($s[0].places) | Should -Be $Places[$_]
     }

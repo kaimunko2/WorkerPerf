@@ -207,3 +207,17 @@ Describe 'Gedaechtnis der Prozesse und Fenster der Ereignisse (Fix-Runde 1)' {
         ConvertTo-WorkerPerfPrintQueueRow $q $t | Should -Be ($t.ToString('o') + ',Drucker 1,,7,')
     }
 }
+Describe 'Zustandsbild schreiben' {
+    It 'schreibt geschachtelte Werte vollstaendig, ueber eine temporaere Datei, und fasst das Lesen in einer Zeile zusammen' {
+        $v = @{ 'profile.containers' = (New-WorkerPerfHealthValue 'read' '' @([ordered]@{ Location = '\\fs01\profile$\a.vhdx'; UsedPct = 96.5 })) }
+        $h = New-WorkerPerfHealth ([datetime]::Now) 4210 @{ profile = (Complete-WorkerPerfHealthArea 'profile' $v 5) }
+        $file = Join-Path $TestDrive 'health.json'; Save-WorkerPerfHealth -Path $file -Health $h; Save-WorkerPerfHealth -Path $file -Health $h
+        $j = Get-Content $file -Raw | ConvertFrom-Json
+        $j.Areas.profile.Values.'profile.containers'.Value[0].UsedPct | Should -Be 96.5; $j.Areas.profile.Values.'profile.containers'.Value[0].Location | Should -Be '\\fs01\profile$\a.vhdx'
+        [IO.File]::ReadAllBytes($file)[0] | Should -Be ([byte][char]'{'); Test-Path ($file + '.tmp') | Should -BeFalse
+        Format-WorkerPerfHealthLine $h | Should -Be 'Zustandsbild: 0 Bereiche gelesen, 11 unvollstaendig (size, operation, sessions, vda, profile, print, security, network, events, maintenance, apps), 4.2 s'
+        $all = @{}; foreach ($a in $WorkerPerfHealthAreas) { $vals = @{}; foreach ($id in @($WorkerPerfHealthValues.Keys | Where-Object { $WorkerPerfHealthValues[$_].Area -eq $a })) { $vals[$id] = New-WorkerPerfHealthValue 'absent' }
+            $all[$a] = Complete-WorkerPerfHealthArea $a $vals 1 }
+        Format-WorkerPerfHealthLine (New-WorkerPerfHealth ([datetime]::Now) 0 $all) | Should -Be 'Zustandsbild: 11 Bereiche gelesen, 0.0 s'
+    }
+}

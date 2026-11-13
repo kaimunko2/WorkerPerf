@@ -708,6 +708,44 @@ Describe 'Zustandsbild unter Windows: Anwendungen' {
         & $body 'Get-WorkerPerfDirectoryMatches' | Should -Match 'GetDirectories'
         & $body 'Get-WorkerPerfTaskInfo' | Should -Match 'Connect\(\)'                                                   # ohne Servernamen
     }
+    It 'nennt eine Laufzeit der Aufgabe, die keine Zeitangabe ist, nicht lesbar' {   # Zustandsbild Task 8, Zusatz c1
+        $file = Join-Path $TestDrive 'apps.aufgabe.json'
+        $tool = [ordered]@{ key = 'simtask'; label = 'Sim-Aufgabe'; processes = @('simtask.exe'); installed = [ordered]@{ kind = 'scheduledTask'; path = '\Sim\Aufgabe' }
+            probes = @(
+                [ordered]@{ id = 'enabled'; kind = 'scheduledTask'; path = '\Sim\Aufgabe' }
+                [ordered]@{ id = 'lastRun'; kind = 'scheduledTask'; path = '\Sim\Aufgabe'; read = 'lastRun' }
+                [ordered]@{ id = 'nextRun'; kind = 'scheduledTask'; path = '\Sim\Aufgabe'; read = 'nextRun' }) }
+        [IO.File]::WriteAllText($file, ([ordered]@{ version = 'test'; apps = @($tool) } | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+        $taskApps = @(Read-WorkerPerfHealthApps $file)
+        $script:WinFake.TaskByPath['\Sim\Aufgabe'] = @{ Enabled = $true; LastRun = 'gestern'; NextRun = $null }
+        $rows = @{}; foreach ($row in @((Get-V (Read-Health @() $taskApps) 'apps.probes').Value)) { $rows[$row.Id] = $row }
+        $rows['enabled'].State | Should -Be 'read'; $rows['enabled'].Value | Should -BeTrue
+        foreach ($id in 'lastRun', 'nextRun') { $rows[$id].State | Should -Be 'unreadable' -Because $id; $rows[$id].Reason | Should -Be 'error' -Because $id }   # nicht 0 (kein Lauf)
+        $script:WinFake.TaskByPath['\Sim\Aufgabe'] = @{ Enabled = $true; LastRun = [datetime]'1899-12-30'; NextRun = [datetime]'2026-11-14T03:00:00' }
+        $rows = @{}; foreach ($row in @((Get-V (Read-Health @() $taskApps) 'apps.probes').Value)) { $rows[$row.Id] = $row }
+        $rows['lastRun'].Value | Should -Be 0; $rows['nextRun'].Value | Should -Be (ConvertTo-WorkerPerfHealthTime ([datetime]'2026-11-14T03:00:00'))
+    }
+    It 'haelt das Zeitlimit des Bereichs auch in der Schleife ueber die Ordner einer Dateiprobe ein' {   # Zustandsbild Task 8, Zusatz c2
+        $base = 'C:\Program Files\SimApps'
+        $script:WinFake.FileVersions = @{ "$base\SimApp_1.0_x64\sim.exe" = '1.0'; "$base\SimApp_2.0_x64\sim.exe" = '2.0'; "$base\SimApp_3.0_x64\sim.exe" = '3.0' }
+        $over = @{ Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 0 }
+        { Get-WorkerPerfFileProbe "$base\SimApp_*_x64\sim.exe" $over } | Should -Throw -ExceptionType ([System.TimeoutException])
+        [int]$script:WinFake.Calls['file:probe'] | Should -Be 0                                                    # kein Ordner mehr nach dem Limit
+        $left = @{ Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 60000 }
+        (Get-WorkerPerfFileProbe "$base\SimApp_*_x64\sim.exe" $left).Version | Should -Be '3.0'; [int]$script:WinFake.Calls['file:probe'] | Should -Be 3
+        $script:WinFake.Delay['file:probe'] = 400; $slow = @{ Clock = [System.Diagnostics.Stopwatch]::StartNew(); BudgetMs = 600 }
+        { Get-WorkerPerfFileProbe "$base\SimApp_*_x64\sim.exe" $slow } | Should -Throw -ExceptionType ([System.TimeoutException])
+        [int]$script:WinFake.Calls['file:probe'] | Should -Be 5                                                    # zwei der drei Ordner, dann das Limit
+    }
+    It 'oeffnet die Registrierung ausdruecklich in der 64-Bit-Ansicht' {   # Zustandsbild Task 8, Zusatz c3 (ZB-R29); nur ein echter Server fuehrt den Aufruf aus
+        $text = Get-Content (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1') -Raw
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1'), [ref]$null, [ref]$null)
+        $open = ($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Open-WorkerPerfRegistryKey' }, $true) | Select-Object -First 1).Body.Extent.Text
+        $open | Should -Match ([regex]::Escape('[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)'))
+        $open | Should -Match 'OpenSubKey\(\$SubKey, \$false\)'; $open | Should -Match 'finally \{ \$base\.Dispose\(\) \}'
+        $text | Should -Not -Match '\[Microsoft\.Win32\.Registry\]::LocalMachine'                                  # kein anderer Weg nach HKLM
+        @([regex]::Matches($text, 'OpenBaseKey\(')).Count | Should -Be 1
+    }
     It 'erkennt eine fehlende Aufgabe oder einen fehlenden Ordner der Aufgabenplanung am HRESULT' {
         foreach ($code in -2147024894, -2147024893) {
             $com = New-Object System.Runtime.InteropServices.COMException -ArgumentList 'Sim', $code

@@ -146,7 +146,8 @@ Describe 'Formatkonstanten' {
 Describe 'Messkategorien' {
     It 'liefert die Kategorien in der Reihenfolge der Tabelle, jede einmal, ohne Ruecksicht auf die Schreibweise' {   # Review Focus 4
         Resolve-WorkerPerfSkip @('rueckblick', 'PROZESSE', 'Prozesse') | Should -Be @('Prozesse', 'Rueckblick')
-        Resolve-WorkerPerfSkip @('Drucken,citrix', ' Zustand ', '') | Should -Be @('Citrix', 'Drucken')   # eine Zeichenkette mit Kommas; Zustand: angenommen, ohne Wirkung
+        # Aussage angepasst (Zustandsbild, Task 8): Zustand ist aktiv
+        Resolve-WorkerPerfSkip @('Drucken,citrix', ' Zustand ', '') | Should -Be @('Citrix', 'Drucken', 'Zustand')   # eine Zeichenkette mit Kommas
         @(Resolve-WorkerPerfSkip @()).Count | Should -Be 0
     }
     It 'bildet die alten Schalter auf dieselbe Liste ab' {   # Review Focus 5
@@ -158,7 +159,8 @@ Describe 'Messkategorien' {
     }
     It 'fuehrt die acht Kategorien mit Dateien, Quellen und Stellen der Tabelle' {
         @($WorkerPerfCategories.Keys) | Should -Be @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
-        @($WorkerPerfCategories.Keys | Where-Object { -not $WorkerPerfCategories[$_].Active }) | Should -Be @('Zustand')
+        @($WorkerPerfCategories.Keys | Where-Object { -not $WorkerPerfCategories[$_].Active }) | Should -BeNullOrEmpty   # Aussage angepasst (Zustandsbild, Task 8)
+        $WorkerPerfCategories.Zustand.Files | Should -Be @('health.json'); $WorkerPerfCategories.Zustand.Sources | Should -Be @('health')
         $WorkerPerfCategories.Prozesse.Places | Should -Be @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes')
         @($WorkerPerfCategories.Ereignisse.Sources).Count | Should -Be 0; $WorkerPerfCategories.Rueckblick.Files | Should -Be @('events_before.csv')
         # jede Datei gehoert hoechstens einer Kategorie; die Basis bleibt uebrig

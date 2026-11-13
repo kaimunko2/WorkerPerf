@@ -12,7 +12,8 @@ function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}, [string]$Co
     }
 }
 function New-SkipRuns([string]$OutDir) {
-    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Alle (alle sieben); Name -> Aufzeichnungsordner.
+    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Zustand (-Skip Zustand), Alle (die sieben
+    # Kategorien ohne Zustand); Name -> Aufzeichnungsordner.
     # Die Konsolenausgabe des vollen Laufs steht in <OutDir>/Voll.console.txt (neben den Aufzeichnungen). Der Lauf
     # Prozesse hat dazu -IncludeCommandLine (ohne Prozesse ohne Wirkung), seine Konsolenausgabe in <OutDir>/Prozesse.console.txt.
     $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
@@ -22,6 +23,7 @@ function New-SkipRuns([string]$OutDir) {
         if ($n -eq 'Prozesse') { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n); IncludeCommandLine = $true } (Join-Path $OutDir 'Prozesse.console.txt') }
         else { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
     }
+    $runs['Zustand'] = Invoke-SimCapture (Join-Path $OutDir 'Zustand') @{ Skip = @('Zustand') }
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs
 }

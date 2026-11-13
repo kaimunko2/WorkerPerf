@@ -1721,7 +1721,11 @@ function Open-WorkerPerfEventReader([string]$QueryXml, [bool]$Oldest) {
 
 function Open-WorkerPerfRegistryKey([string]$SubKey) {
     # A key below HKLM, read only; $null when it does not exist. Unlike the registry provider, a '/' stays part of a name.
-    return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($SubKey, $false)
+    # Opened in the 64-bit view, so that a 32-bit host is not redirected to WOW6432Node (on a 32-bit system Windows
+    # gives the 32-bit view); the base key is disposed, the subkey keeps its own handle.
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+    try { return $base.OpenSubKey($SubKey, $false) }
+    finally { $base.Dispose() }
 }
 
 function Get-WorkerPerfRegistryValues([string]$SubKey) {
@@ -2366,6 +2370,9 @@ function Initialize-WorkerPerfSource {
             $sources['print.queues'] = @{ Available = $true; Detail = ('{0} / {1}' -f $script:WorkerPerfWinPrintQueueCategory, ($script:WorkerPerfWinPrintQueueCounters -join ', ')) }
         }
     }
+
+    # ---- health picture: read once at the start (Get-WorkerPerfHealth) ----
+    if ($leftOut -notcontains 'Zustand') { $sources['health'] = @{ Available = $true; Detail = 'einmal beim Start gelesen' } }
 
     $state.LogicalProcessors = [Math]::Max(1, [int]$cs.NumberOfLogicalProcessors)
     $script:WinState = $state
@@ -3627,11 +3634,12 @@ function Read-WorkerPerfWinHealthMaintenance($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateService' { Get-WorkerPerfWinHealthServiceField $Ctx 'wuauserv' 'StartMode' }
 }
 
-function Get-WorkerPerfFileProbe([string]$Path) {
+function Get-WorkerPerfFileProbe([string]$Path, $Ctx = $null) {
     # One file or folder of a probe of kind file: @{ Version } (the product version of a file, '' for a folder or a file
     # without one), $null when nothing is there. A '*' in one folder name is resolved by listing the folder before it
     # (Get-WorkerPerfDirectoryMatches); of the matches under which the rest of the path exists, the one with the highest
-    # version counts (Select-WorkerPerfProbeMatch).
+    # version counts (Select-WorkerPerfProbeMatch). With $Ctx the loop over the matches stops at the area's time limit
+    # (TimeoutException).
     $parts = $Path.Split('\')
     $star = -1
     for ($i = 0; $i -lt $parts.Count; $i++) { if ($parts[$i].Contains('*')) { $star = $i; break } }
@@ -3645,6 +3653,7 @@ function Get-WorkerPerfFileProbe([string]$Path) {
         $rest = $parts[($star + 1)..($parts.Count - 1)] -join '\'
         $kinds = @{}
         foreach ($name in @(Get-WorkerPerfDirectoryMatches $folder $parts[$star])) {
+            Assert-WorkerPerfWinHealthTimeLeft $Ctx
             $found = Get-WorkerPerfPathKind ($folder.TrimEnd('\') + '\' + $name + '\' + $rest)
             if ($found) { $kinds[[string]$name] = $found }
         }
@@ -3690,11 +3699,12 @@ function Read-WorkerPerfWinHealthApps($Ctx) {
         scheduledTask = { param([string]$apPath)
             $apTask = & $apShared ('task:' + $apPath) { Get-WorkerPerfTaskInfo $apPath }
             if ($null -eq $apTask) { return }
-            # the Task Scheduler's "no run" (1899-12-30) becomes MinValue; a missing time as well
-            $apTime = { param($apAt) if ($apAt -is [datetime]) { ConvertTo-WorkerPerfTaskTime $apAt } else { [datetime]::MinValue } }
+            # the Task Scheduler's "no run" (1899-12-30) becomes MinValue; anything that is not a time stays as it is, so
+            # that the row is unreadable instead of "no run"
+            $apTime = { param($apAt) if ($apAt -is [datetime]) { ConvertTo-WorkerPerfTaskTime $apAt } else { $apAt } }
             @{ Enabled = (Get-WorkerPerfField $apTask 'Enabled'); LastRun = (& $apTime (Get-WorkerPerfField $apTask 'LastRun'))
                 NextRun = (& $apTime (Get-WorkerPerfField $apTask 'NextRun')) } }
-        file = { param([string]$apPath) & $apShared ('file:' + $apPath) { Get-WorkerPerfFileProbe $apPath } }
+        file = { param([string]$apPath) & $apShared ('file:' + $apPath) { Get-WorkerPerfFileProbe $apPath $Ctx } }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'apps.probes' {
         Get-WorkerPerfAppRows -Apps @($Ctx.State.Apps) -Read $apReaders -FailReason { param($apError) Get-WorkerPerfWinHealthFailReason $Ctx $apError } `

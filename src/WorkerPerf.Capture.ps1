@@ -326,6 +326,29 @@ function Save-WorkerPerfMeta {
     [IO.File]::Move($tmp, $Path)
 }
 
+function Save-WorkerPerfHealth {
+    # Writes health.json (New-WorkerPerfHealth) the way Save-WorkerPerfMeta writes meta.json: UTF-8 without BOM, first
+    # to a temporary file next to it, then delete and move.
+    param([string]$Path, $Health)
+    $tmp = $Path + '.tmp'
+    [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $Health -Depth 10), (New-Object System.Text.UTF8Encoding $false))
+    if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
+    [IO.File]::Move($tmp, $Path)
+}
+
+function Format-WorkerPerfHealthLine($Health) {
+    # The console line after reading the health picture: the areas read (Status read), the incomplete ones by id and the
+    # duration in seconds with one decimal. Names only areas, never a value.
+    $read = 0
+    $incomplete = New-Object System.Collections.Generic.List[string]
+    foreach ($id in @($Health.Areas.Keys)) {
+        if ([string](Get-WorkerPerfField $Health.Areas[$id] 'Status') -eq 'read') { $read++ } else { $incomplete.Add([string]$id) }
+    }
+    $seconds = ([double]$Health.DurationMs / 1000.0).ToString('0.0', [Globalization.CultureInfo]::InvariantCulture)
+    if ($incomplete.Count -eq 0) { return ('Zustandsbild: {0} Bereiche gelesen, {1} s' -f $read, $seconds) }
+    return ('Zustandsbild: {0} Bereiche gelesen, {1} unvollstaendig ({2}), {3} s' -f $read, $incomplete.Count, ($incomplete.ToArray() -join ', '), $seconds)
+}
+
 function New-WorkerPerfWriters {
     # One writer per file of the format, without the files of the categories that -Skip leaves out; the result holds
     # only the files that were created.

@@ -29,8 +29,9 @@ $script:WorkerPerfHeaders = [ordered]@{
 
 # Measurement categories that -Skip leaves out, in this order: name -> files, sources (ids in meta.json Sources) and
 # places of the report. The sources events.<id> belong to Ereignisse and Rueckblick together. A category that is not
-# active is accepted by -Skip and has no effect. Everything else is the base: ticks.csv, inputdelay.csv, snapshots.csv,
-# sessions.csv, meta.json and thresholds.json.
+# active is accepted by -Skip and has no effect. Files may name a file that is not a CSV file (health.json); the writers
+# come only from WorkerPerfHeaders. Everything else is the base: ticks.csv, inputdelay.csv, snapshots.csv, sessions.csv,
+# meta.json and thresholds.json (apps.json, the copy of the application list, goes with Zustand without being its file).
 $script:WorkerPerfCategories = [ordered]@{
     'Prozesse'     = @{ Files = @('processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv'); Sources = @('process', 'input.process')
         Places = @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes'); Active = $true }
@@ -42,7 +43,7 @@ $script:WorkerPerfCategories = [ordered]@{
     'Drucken'      = @{ Files = @('printdrivers.csv', 'printqueues.csv'); Sources = @('print.drivers', 'print.queues')
         Places = @('print.drivers', 'print.queues'); Active = $true }
     'Gegenstellen' = @{ Files = @('probes.csv'); Sources = @('probe.connect'); Places = @('probes', 'incidents.endpoints'); Active = $true }
-    'Zustand'      = @{ Files = @(); Sources = @(); Places = @(); Active = $false }
+    'Zustand'      = @{ Files = @('health.json'); Sources = @('health'); Places = @(); Active = $true }
 }
 # The note in Sources of a source that -Skip left out
 $script:WorkerPerfSkipDetailPattern = '^abgeschaltet \(-Skip [A-Za-z]+(,[A-Za-z]+)*\)$'

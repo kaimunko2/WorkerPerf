@@ -429,7 +429,7 @@ function Initialize-WorkerPerfSource {
     $logIds = @()
     if ((Test-WorkerPerfSimMeasured 'Ereignisse') -or (Test-WorkerPerfSimMeasured 'Rueckblick')) { $logIds = @(@(Get-WorkerPerfEventReadLogs $cfg) | ForEach-Object { 'events.' + $_.Id }) }
     $sources = [ordered]@{}
-    $ids = @($script:WorkerPerfSimSignalIds) + @('process', 'sessions', 'input.process', 'profile.map') + $logIds + @('print.drivers', 'print.queues')
+    $ids = @($script:WorkerPerfSimSignalIds) + @('process', 'sessions', 'input.process', 'profile.map') + $logIds + @('print.drivers', 'print.queues', 'health')
     foreach ($id in $ids) { if (-not $leftOutIds.ContainsKey($id)) { $sources[$id] = @{ Available = $true; Detail = 'Simulation' } } }
     if ($sources.Contains('probe.connect')) { $sources['probe.connect'].Detail = 'Simulation, 3 Gegenstellen' }
 
