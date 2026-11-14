@@ -17,7 +17,7 @@ body {
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --other: #b5b9c0; --bar: #9ec5f4;
   --warn: #f0a400; --warn-ink: #b97a00; --crit: #d03b3b; --good: #0c9a0c;
-  --accent: #1f62c4; --on-accent: #ffffff;
+  --accent: #1f62c4; --on-accent: #ffffff; --link: var(--s1);
   --tint-crit: #fdeeee; --tint-crit-edge: #efc9c9; --tint-warn: #fff5d9; --tint-warn-edge: #ead9a4; --tint-good: #e9f6ea; --tint-good-edge: #bfdfc2;
   --kpi: rgba(255, 255, 255, .78); --kpi-edge: rgba(17, 20, 24, .1);
   --fs: 15px; --gap: 20px; --pad: 18px 20px;
@@ -27,9 +27,9 @@ body {
     --page: #15171a; --surface: #1d2024; --border: #363a41; --grid: #2a2e34;
     --text: #eef0f3; --text2: #c0c5cd; --muted: #8e959f; --hover: #262a30; --sel: #1d3152;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --other: #5c616a; --bar: #184f95;
+    --other: #5c616a; --bar: #4a84c9;
     --warn: #fab219; --warn-ink: #fab219; --crit: #d03b3b; --good: #0ca30c;
-    --accent: #3987e5; --on-accent: #0b1220;
+    --accent: #3987e5; --on-accent: #0b1220; --link: #74aef3;
   }
 }
 body[data-view="expert"] { --fs: 13px; --gap: 10px; --pad: 10px 12px; }
@@ -68,13 +68,18 @@ h3 { font-size: 13px; margin: 0; font-weight: 600; }
    script); under it the incident column (it scrolls in itself and stays in the picture, --barh: the height of the range bar)
    beside the tiles, the charts and the tables with their tabs. */
 .topbar { position: sticky; top: var(--headh, 0px); z-index: 20; background: var(--page); }
-#rangeBar { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 6px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2); min-height: 40px; }
+/* The range bar is one line of a fixed height, so nothing below it moves when an incident is chosen: the text of the range is
+   cut with an ellipsis where it does not fit (its full text is the tooltip), the hint on how to choose a range is left out
+   where it finds no room (class tight, set by the script). */
+#rangeBar { display: flex; align-items: center; gap: 6px 14px; flex-wrap: nowrap; padding: 6px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text2); height: 40px; }
+#rangeInfo { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rangeInfo b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-#rangeBar .btn { font-size: 12px; padding: 3px 12px; }
-#rangeSnaps { color: var(--text); font-weight: 600; }
+#rangeBar .btn { flex: none; font-size: 12px; padding: 3px 12px; }
+#rangeSnaps { flex: none; white-space: nowrap; color: var(--text); font-weight: 600; }
 #rangeSnaps .sym { font-style: normal; color: var(--warn-ink); margin-right: 4px; }
 #rangeSnaps[hidden] { display: none; }
-#rangeBar .note { margin-left: auto; }
+#rangeBar .note { flex: none; white-space: nowrap; margin-left: auto; }
+#rangeBar.tight .note { display: none; }
 .xcols { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 16px; }
 #expert main { min-width: 0; }
 #incCol { position: sticky; top: calc(var(--headh, 0px) + var(--barh, 40px) + 10px); max-height: calc(100vh - var(--headh, 0px) - var(--barh, 40px) - 20px); display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
@@ -127,6 +132,8 @@ section[hidden] { display: none; }
 .tile .value small { font-size: 12px; font-weight: 400; color: var(--text2); }
 .tile .extra { color: var(--text2); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .tile .extra + .extra { color: var(--muted); margin-top: 1px; }
+.tile .status .pct { white-space: nowrap; }
+.tile.whole .status .pct { white-space: normal; }
 .tile .status { margin: 2px 0 1px; }
 .status { display: inline-block; margin: 4px 0 2px; font-size: 12px; font-weight: 600; color: var(--text); }
 .status .sym, .sig { font-style: normal; }
@@ -135,8 +142,19 @@ section[hidden] { display: none; }
 .status .pct { font-weight: 400; color: var(--text2); }
 .tile.info .value small { color: var(--text2); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
-/* the charts of the expert view: two beside each other on a usual screen, three on a wide one */
-#charts .grid2 { grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr)); }
+/* the charts of the expert view: two beside each other on a usual screen, three on a wide one. There the two stacked charts
+   (they are higher: switch and legend) share a row of their own, so every row holds charts of one height. */
+#charts .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1544px) {
+  #charts .grid2 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #charts .grid2 > .card { grid-column: span 2; }
+  #charts .grid2 > .card.stack { grid-column: span 3; }
+}
+@media (min-width: 2400px) {
+  #charts .grid2 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #charts .grid2 > .card { grid-column: span 1; }
+  #charts .grid2 > .card.stack { grid-column: span 2; }
+}
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: var(--pad); min-width: 0; }
 .card.wide { margin-bottom: var(--gap); }
 .btn { font: inherit; font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
@@ -161,8 +179,14 @@ section[hidden] { display: none; }
 .chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .chart .band-warn tspan.sym { fill: var(--warn-ink); } .chart .band-crit tspan.sym { fill: var(--crit); }
 .chart .selbox { fill: var(--s1); fill-opacity: .14; stroke: var(--s1); stroke-width: 1; }
-.chart .incband { fill: var(--s1); fill-opacity: .1; }
+/* the time of the chosen incident: a tinted span behind the lines; in a stacked chart above its opaque areas, with a veil
+   and two edges; a span of a few pixels (an incident without duration) as a mark of its own, a line with a cap above the plot */
+.chart .incband { fill: var(--s1); fill-opacity: .1; pointer-events: none; }
 body[data-view="expert"] .chart .incband { fill-opacity: .16; }
+.chart .incveil { fill: var(--text); fill-opacity: .07; pointer-events: none; }
+.chart .incedge { fill: none; stroke: var(--text); stroke-width: 1; stroke-opacity: .85; pointer-events: none; }
+.chart .incband.incmark, body[data-view="expert"] .chart .incband.incmark { fill-opacity: 1; stroke: var(--s1); stroke-width: 2; stroke-linejoin: round; }
+.chart .inchalo { fill: none; stroke: var(--surface); stroke-width: 5; pointer-events: none; }
 .chart .hit { cursor: crosshair; }
 .chartnote { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; max-width: 420px; overflow: hidden; }
@@ -190,6 +214,20 @@ td .cellbar { display: inline-block; height: 8px; border-radius: 2px; background
 td .tag { color: var(--text2); font-size: 12px; }
 td .svc { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--muted); font-size: 12px; margin-left: 6px; }
 td .sig { margin-right: 4px; }
+/* The tables of sessions, applications and processes have many columns: they stand close, their heads wrap, and the first
+   column (whose row it is) stays in place while the table scrolls sideways, with the background of its row. */
+:is(#tSessions, #tApps, #tProcs) :is(th, td) { padding: 4px 7px; }
+:is(#tSessions, #tApps, #tProcs) th { white-space: normal; vertical-align: bottom; z-index: 2; }
+:is(#tSessions, #tApps, #tProcs) :is(th, td):first-child { position: sticky; left: 0; }
+:is(#tSessions, #tApps, #tProcs) th:first-child { z-index: 3; box-shadow: 0 1px 0 var(--border), 1px 0 0 var(--border); }
+:is(#tSessions, #tApps, #tProcs) td:first-child { z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--border); }
+:is(#tSessions, #tApps, #tProcs) tbody tr:hover td:first-child { background: var(--hover); }
+:is(#tSessions, #tApps, #tProcs) tbody tr.selected td:first-child { background: var(--sel); }
+:is(#tSessions, #tApps, #tProcs) tbody tr.collector td:first-child { box-shadow: inset 3px 0 var(--s7), 1px 0 0 var(--border); }
+:is(#tSessions, #tApps, #tProcs) td .cellbar { margin-right: 4px; }
+#tProcs td .svc { max-width: 150px; }
+/* a long name of a printer driver wraps, so the columns behind it stay in the picture */
+#tPrintDrivers td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 160px; }
 .detail { margin-top: 16px; scroll-margin-top: calc(var(--headh, 0px) + var(--barh, 40px) + 10px); }
 .detail > .cardhead h2 { margin: 0; }
 .kv { display: flex; flex-wrap: wrap; gap: 4px 22px; color: var(--text2); font-size: 13px; margin-bottom: 12px; }
@@ -252,7 +290,7 @@ ul.plain { list-style: none; margin: 0; padding: 0; }
 ul.plain li { padding: 2px 0; overflow-wrap: anywhere; }
 ul.plain .num, .mainline .num { font-variant-numeric: tabular-nums; color: var(--text2); }
 ul.plain .num { white-space: nowrap; }
-.lnk { font: inherit; color: var(--s1); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.lnk { font: inherit; color: var(--link); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .lnk:hover { text-decoration: underline; }
 .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 10px; }
 @media (min-width: 1300px) { .grid3.contrib { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); } }
@@ -278,6 +316,7 @@ td.wrap .note { display: block; }
 .sharebar i { display: block; height: 100%; }
 .sharebar .b0 { background: var(--good); } .sharebar .b1 { background: var(--warn); } .sharebar .b2 { background: var(--crit); }
 .shares { font-variant-numeric: tabular-nums; color: var(--text2); font-size: 12px; }
+.shares > span { white-space: nowrap; }
 .shares .sym { font-style: normal; } .shares .st-good { color: var(--good); } .shares .st-warn { color: var(--warn-ink); } .shares .st-crit { color: var(--crit); }
 #limits ul { margin: 0; padding-left: 18px; } #limits li { margin: 4px 0; }
 .quality .kv { margin-bottom: 10px; }
@@ -471,22 +510,44 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 #copyFallback textarea { display: block; width: 100%; height: min(420px, 50vh); font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; overflow: auto; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--text); }
 #copyFallback .dlg-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 @media (min-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-/* a smaller screen: tiles and charts stand closer, so that two charts still fit beside the incident column */
-@media (max-width: 1199px) {
-  .tiles { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); }
-  #charts .grid2 { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+/* a usual screen (below about 1500 px): the tiles stand closer and are smaller, so that they need one row less and more of
+   the charts is in the first screen */
+@media (max-width: 1499px) {
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .tile { padding: 6px 8px; }
+  .tile .value { font-size: 18px; }
+  /* mean and percentile, the target with who is hit hardest, and the lines of a tile without a rating: one line each, cut
+     with an ellipsis; the tooltip of the tile holds the full text */
+  .tile .extra.stat, .tile .extra.goal, .tile.info .extra { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .extra.stat { font-size: 11px; }
+  /* why a tile holds no value for the range: two lines */
+  .tile .extra.why { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 }
-@media (max-width: 899px) {
-  header { position: static; padding: 10px 16px; }
-  .topbar { top: 0; }
-  #rangeBar { padding: 6px 12px; }
-  #rangeBar .note { display: none; }
-  /* one column: the incident column is a list that unfolds, over the tiles */
+/* the target table fits its box down to 1000 px: the time shares wrap, the columns of text get narrower */
+@media (max-width: 1399px) {
+  #sollist th, #sollist td { padding: 4px 6px; }
+  #sollist .shares { white-space: normal; }
+  #sollist .sharebar { width: 110px; }
+  #sollist td.wrap { min-width: 80px; }
+  #sollist td.src { min-width: 120px; }
+  #sollist td:first-child { min-width: 110px; }
+}
+/* below 1180 px the incident column is a list that unfolds, over the tiles: tiles, charts and tables get the full width
+   (the target table needs 835 px) */
+@media (max-width: 1179px) {
   .xcols { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
   #incCol { position: static; max-height: none; }
   #incToggle { display: inline-block; }
   #incCol:not(.unfolded) #incList { display: none; }
   #incList { max-height: 60vh; }
+}
+@media (max-width: 899px) {
+  header { position: static; padding: 10px 16px; }
+  .topbar { top: 0; }
+  #rangeBar { flex-wrap: wrap; height: auto; min-height: 40px; padding: 6px 12px; }
+  #rangeInfo, #rangeSnaps { white-space: normal; overflow: visible; }
+  #rangeBar .note { display: none; }
+  #charts .grid2 { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
   #guided { padding: 16px 16px 32px; }
   #band { padding: 16px; }
   #kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
@@ -504,7 +565,9 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 @media print {
   #xtabs, .toolbar, #rangeBar .btn, #rangeBar .note, #incToggle, .inc-guided, #viewSwitch, .iv-nav, .iv-actions, .term-pop, #copyFallback { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
   #guided > section[hidden] { display: none; }
-  /* the expert view on paper: one column, the whole incident list, every tab under its name */
+  /* the expert view on paper: one column, the whole incident list, every tab under its name; the range in full */
+  #rangeBar { flex-wrap: wrap; height: auto; }
+  #rangeInfo, #rangeSnaps { white-space: normal; overflow: visible; }
   .xcols { display: block; }
   #incCol { position: static; max-height: none; margin-bottom: 10px; }
   #incCol #incList, #incCol:not(.unfolded) #incList { display: block; max-height: none; overflow: visible; }
@@ -565,19 +628,19 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
     <section id="xtiles" aria-label="Messwerte im Zeitraum"><div class="tiles" id="tiles"></div></section>
     <section id="charts" aria-label="Verläufe im Zeitraum">
       <div class="grid2">
-        <div class="card">
-          <div class="cardhead"><h3>CPU-Auslastung nach Verursacher (% des Hosts)</h3>
-            <div class="seg" id="segCpu" role="group" aria-label="CPU-Auslastung aufteilen"><button type="button" data-by="host" aria-pressed="false">Host</button><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+        <div class="card stack">
+          <div class="cardhead"><h3>CPU-Auslastung nach Verursacher (% des Servers)</h3>
+            <div class="seg" id="segCpu" role="group" aria-label="CPU-Auslastung aufteilen"><button type="button" data-by="host" aria-pressed="false">Server</button><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
           <div id="chCpuStack"></div>
         </div>
-        <div class="card">
+        <div class="card stack">
           <div class="cardhead"><h3>Arbeitsspeicher nach Verursacher (Working Set, GB)</h3>
-            <div class="seg" id="segMem" role="group" aria-label="Arbeitsspeicher aufteilen"><button type="button" data-by="host" aria-pressed="false">Host</button><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
+            <div class="seg" id="segMem" role="group" aria-label="Arbeitsspeicher aufteilen"><button type="button" data-by="host" aria-pressed="false">Server</button><button type="button" data-by="sessions" aria-pressed="true">nach Sitzung</button><button type="button" data-by="apps" aria-pressed="false">nach Anwendung</button></div></div>
           <div id="chMemStack"></div>
         </div>
-        <div class="card"><div class="cardhead"><h3>CPU-Auslastung des Hosts (%)</h3></div><div id="chCpu"></div></div>
+        <div class="card"><div class="cardhead"><h3>CPU-Auslastung des Servers (%)</h3></div><div id="chCpu"></div></div>
         <div class="card"><div class="cardhead"><h3>Prozessor-Warteschlange je logischer CPU</h3></div><div id="chQueue"></div></div>
-        <div class="card"><div class="cardhead"><h3>Arbeitsspeicher des Hosts (% des RAM)</h3></div><div id="chMem"></div></div>
+        <div class="card"><div class="cardhead"><h3>Arbeitsspeicher des Servers (% des RAM)</h3></div><div id="chMem"></div></div>
         <div class="card"><div class="cardhead"><h3>Eingabeverzögerung, höchster Wert aller Sitzungen (ms)</h3></div><div id="chInput"></div></div>
         <div class="card" id="cardMainApp"><div class="cardhead"><h3 id="hMainApp">Eingabeverzögerung der Hauptanwendung (ms)</h3></div><div id="chMainApp"></div></div>
         <div class="card"><div class="cardhead"><h3>Datenträger-Antwortzeit, fünf Laufwerke mit der höchsten Spitze (ms)</h3></div><div id="chVolumes"></div></div>
@@ -607,7 +670,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
           Die Bewertung folgt den Befunden: Überschreitungen, die kürzer als die Mindestdauer eines Befunds sind, ändern sie nicht und stehen als „einzelne Überschreitungen“ dabei.</p>
       </section>
       <section id="xt-sessions" role="tabpanel" aria-label="Sitzungen" hidden>
-        <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …" aria-label="Sitzungen filtern"><span class="note">Zeile anklicken oder mit Eingabetaste öffnen. <span id="sessCpuNote">CPU-Werte in % der gesamten Host-Kapazität; </span>Eingabeverzögerung über Takte mit Verzögerung.</span></div>
+        <div class="toolbar"><input type="search" id="fSessions" placeholder="Benutzer, Client oder Sitzungs-ID filtern …" aria-label="Sitzungen filtern"><span class="note">Zeile anklicken oder mit Eingabetaste öffnen. <span id="sessCpuNote">CPU-Werte in % der gesamten Server-Kapazität; </span>Eingabeverzögerung über Takte mit Verzögerung.</span></div>
         <p class="note rangenote" id="sessRange" hidden></p>
         <div class="tablewrap"><table id="tSessions"></table></div>
         <div class="detail" id="dSessions"></div>
@@ -707,6 +770,13 @@ const fmtVal = (v, unit) => fmt(v, autoDec(v, unit)) + (v == null ? "" : withUni
 const fmtLimit = (v, unit) => Number.isInteger(v) ? fmt(v, 0) + withUnit(unit) : fmtVal(v, unit);
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"];
 const sessLabel = (s) => !s ? "–" : (s.user ? s.user : (s.id === 0 ? "Dienste/System" : "unbekannt")) + " (#" + s.id + ")";
+// The page's own label before a value of the report data, with the blank between them ("Client " before "PC-0815"). A masked
+// report replaces a name by its designation and a number ("Client 03"): where the value begins with the word the label ends
+// with, that word is not said twice ("Client 03", "Gemeldeter Benutzer 03").
+function labelFor(label, value) {
+  const word = label.split(" ").pop();
+  return String(value ?? "").startsWith(word + " ") ? label.slice(0, label.length - word.length) : label + " ";
+}
 const sessByIdx = new Map(D.sessions.map((s) => [s.i, s]));
 const appByIdx = new Map(D.apps.map((a) => [a.i, a]));
 const TH = new Map(D.thresholds.map((t) => [t.id, t]));
@@ -728,6 +798,11 @@ const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.w
 const sigMark = (v, th) => { const l = levelOf(v, th); return l ? `<i class="sig st-${STATUS[l][2]}" title="${STATUS[l][1]}">${STATUS[l][0]}</i>` : ""; };
 // The same as symbol and word, before a value of the guided view ("◆ kritisch 598 ms").
 const sigWord = (v, th) => { const l = levelOf(v, th); return l ? statusHtml(String(l)) + " " : ""; };
+// What does not follow the range of the expert view says so while a range is set (the marks show only then): the figures and
+// tables of a detail that the report data hold for the whole capture only, the statement of a capture without a finding, the
+// tabs of printing and of the quality of the capture; the tab of the days before the capture lies outside every range.
+const WHOLE_KV = '<span class="whole-tag">Gesamte Messung:</span>', WHOLE_H = ' <span class="whole-tag">· gesamte Messung</span>', RANGE_H = ' <span class="whole-tag">· im gewählten Zeitraum</span>';
+const NO_RANGE_H = ' <span class="whole-tag">· unabhängig vom gewählten Zeitraum</span>';
 // The page scrolls smoothly to what was chosen, except where the reader asked for reduced motion.
 const scrollMode = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
@@ -762,6 +837,7 @@ window.WP = {
     const foot = document.getElementById("footer");
     if (name === "expert") document.querySelector("#expert main").appendChild(foot); else document.getElementById("expert").after(foot);
     for (const b of document.querySelectorAll("#viewSwitch button")) b.setAttribute("aria-pressed", b.dataset.view === name ? "true" : "false");
+    syncBars();
     window.scrollTo(0, viewScroll[name]);
     // what was hidden so far is drawn now, in the width it has now
     refreshCharts(); drawTimeline(false);
@@ -791,19 +867,27 @@ function rangeText(r, sec) {
 // applications and processes and the event list follow it (refreshRange, further down).
 function zoomChanged() { refreshRange(); for (const fn of zoomFns) fn(window.WP.zoom); }
 document.getElementById("rangeAll").addEventListener("click", () => window.WP.resetZoom());
+// The range bar sticks under the head bar and the incident column under both: the height of the head bar while it sticks
+// (wide page), else none, and the height of the range bar while it is shown. The hint of the range bar on how to choose a
+// range is shown only where it fits beside the range on the one line of the bar. Called whenever the bars or their content
+// change, so that what is placed under them (the chosen entry of the incident column) finds their final heights.
+function syncBars() {
+  const head = document.querySelector("header"), bar = document.getElementById("rangeBar");
+  document.documentElement.style.setProperty("--headh", (getComputedStyle(head).position === "sticky" ? head.offsetHeight : 0) + "px");
+  if (!bar.offsetHeight) return;
+  // the hint goes before the text of the range is cut
+  const info = document.getElementById("rangeInfo");
+  bar.classList.remove("tight");
+  if (bar.scrollWidth > bar.clientWidth || info.scrollWidth > info.clientWidth) bar.classList.add("tight");
+  document.documentElement.style.setProperty("--barh", bar.offsetHeight + "px");
+}
 {
-  const sw = document.getElementById("viewSwitch"), head = document.querySelector("header"), bar = document.getElementById("rangeBar");
+  const sw = document.getElementById("viewSwitch");
   sw.addEventListener("click", (ev) => { const b = ev.target.closest("button[data-view]"); if (b) window.WP.showView(b.dataset.view); });
   sw.hidden = false;
-  // the range bar sticks under the head bar and the incident column under both: the height of the head bar while it sticks
-  // (wide page), else none, and the height of the range bar while it is shown
-  const barHeights = () => {
-    document.documentElement.style.setProperty("--headh", (getComputedStyle(head).position === "sticky" ? head.offsetHeight : 0) + "px");
-    if (bar.offsetHeight) document.documentElement.style.setProperty("--barh", bar.offsetHeight + "px");
-  };
-  if (window.ResizeObserver) { const ro = new ResizeObserver(barHeights); ro.observe(head); ro.observe(bar); }
-  window.addEventListener("resize", barHeights);
-  barHeights();
+  if (window.ResizeObserver) { const ro = new ResizeObserver(syncBars); ro.observe(document.querySelector("header")); ro.observe(document.getElementById("rangeBar")); }
+  window.addEventListener("resize", syncBars);
+  syncBars();
 }
 
 // ---------- chart ----------
@@ -811,14 +895,15 @@ document.getElementById("rangeAll").addEventListener("click", () => window.WP.re
 // legend: true names the series even when there is only one (charts of instances: which drive, share, endpoint, session).
 // window { t0, t1 } fixes the time range of a chart independent of the shared zoom (incident details).
 // mark { t, label } draws a dashed line with a label at a point in time (the reported time).
-// band { t0, t1 } tints a time span behind the lines (the window of an incident).
+// band { t0, t1 } tints a time span (the time of an incident): behind the lines, in a stacked chart above its areas; a span
+// of a few pixels is drawn as a mark of its own.
 // still: true leaves the shared zoom alone when the pointer is dragged over the chart (charts of the guided view).
 // A series is dense ({ values, o }) or sparse ({ t, v }). Sparse series with missing: 0 count absent points as 0 (input delay);
 // otherwise absent points are a gap (response times; dense series with resp: true drop their null values the same way).
 // Charts are drawn only while visible and redrawn when the zoom or the width changes.
 const GRID = { tick: D.tickT || [], snap: D.snapT || [] };
 const CHARTS = new Set();
-const MAX_POINTS = 1200, BUCKETS = 600;
+const MAX_POINTS = 1200, BUCKETS = 600, BAND_MIN = 12, LABEL_MARGIN_MIN = 240;
 let uid = 0;
 const lowerBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < v) lo = m + 1; else hi = m; } return lo; };
 const upperBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= v) lo = m + 1; else hi = m; } return lo; };
@@ -951,7 +1036,7 @@ function drawChart(host) {
   if (!st.series.length) { host.innerHTML = `<div class="empty">${esc(opt.empty || "Keine Daten vorhanden.")}</div>`; return; }
   const stacked = !!opt.stacked, agg = stacked ? "mean" : (opt.agg || "mean");
   const red = st.series.map((s) => reduceSeries(s, z, agg));
-  if (!red.some((r) => r.visible)) { host.innerHTML = `<div class="empty">Keine Messwerte im gewählten Ausschnitt.</div>`; return; }
+  if (!red.some((r) => r.visible)) { host.innerHTML = `<div class="empty">Keine Messwerte im gewählten Zeitraum.</div>`; return; }
   // the charts of the expert view stand close together: lower than a chart of a detail
   const W = Math.max(280, Math.floor(host.clientWidth)); let H = opt.height || (host.closest("#charts") ? 150 : 190);
   const unit = opt.unit || "", tdec = opt.decimals ?? 1;
@@ -988,11 +1073,84 @@ function drawChart(host) {
   // a mark with its label (the reported time) gets a line of its own above the plot, so the label covers no measured line
   const marked = !!opt.mark && opt.mark.t >= z.t0 && opt.mark.t <= z.t1, m = { l: Math.round(yw), r: 12, t: marked ? 24 : 10, b: 22 };
   if (marked) H += 14;
-  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  let pw = W - m.l - m.r;
+  const ph = H - m.t - m.b;
   const span = z.t1 - z.t0, sec = span < 600000;
   const X = (t) => m.l + ((t - z.t0) / span) * pw;
   const Y = (v) => m.t + ph - (Math.min(v, yMax * 1.5) / yMax) * ph;
   const f1 = (n) => n.toFixed(1);
+
+  // Target lines: labels in text colour with the status symbol. The label of a target line stands at the right end of its
+  // line, over it (under it near the top edge). Where the measured lines or the other label run through it there, it goes
+  // under its line or left along it, to the first place that is free. The width of a label is measured; two labels never
+  // overlap. Where a label finds no free place on its line (the curve runs along the line or crosses it again and again), both
+  // labels stand in the right margin beside their lines, which is widened for them. A chart too narrow for that keeps its
+  // labels in the plot, shortened to symbol and value ("▲ ab 150 ms") where the lines cross them least; the note under the
+  // chart then names the target lines in full. The labels are placed before the grid is drawn: they may change the margin.
+  const through = (x0, x1, y0, y1) => {
+    if (stacked) return 0;
+    let n = 0;
+    for (const r of red) {
+      let px = null, py = 0;
+      for (let k = 0; k < r.xs.length; k++) {
+        if (r.ys[k] == null) { px = null; continue; }
+        const x = X(r.xs[k]), y = Y(r.ys[k]), ax = px == null ? x : px, ay = px == null ? y : py;
+        px = x; py = y;
+        if (Math.max(ax, x) < x0 || Math.min(ax, x) > x1 || Math.max(ay, y) < y0 || Math.min(ay, y) > y1) continue;
+        // the part of the segment inside the box (Liang-Barsky)
+        let a = 0, b = 1, inside = true;
+        for (const [d, q] of [[ax - x, ax - x0], [x - ax, x1 - ax], [ay - y, ay - y0], [y - ay, y1 - ay]]) {
+          if (d === 0) { if (q < 0) inside = false; } else if (d < 0) a = Math.max(a, q / d); else b = Math.min(b, q / d);
+        }
+        if (inside && a <= b) n++;
+      }
+    }
+    return n;
+  };
+  // the unit goes through withUnit as HTML; a label is measured as the text it shows
+  const labelWidth = (v, sym, word) => textWidth(`${sym} ${word ? word + " " : ""}ab ${fmtLimit(v, "")}${th.unit ? (th.unit === "%" ? " %" : " " + th.unit) : ""}`) + 4;
+  // the place of the label of one target line beside the labels already placed: { n: measured lines through it (1e6 and more:
+  // it touches another label), x1, ty, box }
+  const placeLabel = (v, sym, word, placed) => {
+    const y = Y(v), tw = labelWidth(v, sym, word);
+    // over its line or under it, close to it; a little further from it where that keeps it clear (two lines close together)
+    const over = [y - 4, y - 7], under = [y + 13, y + 16], tys = y - m.t < 14 ? under : m.t + ph - y < 18 ? over : [over[0], under[0], over[1], under[1]], xr = W - m.r - 4;
+    // a measured line counts where it runs through the letters; another label is never touched (its whole line of text counts)
+    const crossed = (x1, ty) => through(x1 - tw, x1 + 2, ty - 10, ty + 3) + (placed.some((b) => x1 - tw < b.x1 + 2 && x1 + 2 > b.x0 - 2 && ty - TEXT_UP < b.y1 && ty + TEXT_DOWN > b.y0) ? 1e6 : 0);
+    let best = null;
+    for (let x1 = xr; (!best || best.n > 0) && (x1 === xr || x1 - tw >= m.l + 2); x1 -= 4) {
+      for (const ty of tys) { const n = crossed(x1, ty); if (!best || n < best.n) best = { n, x1, ty }; }
+    }
+    return Object.assign(best, { v, sym, word, box: { x0: best.x1 - tw, x1: best.x1 + 2, y0: best.ty - TEXT_UP, y1: best.ty + TEXT_DOWN } });
+  };
+  // The two labels in the plot, with their words or shortened. The label of the critical line finds its place first. Where
+  // that leaves no room for the other label (two lines close together in a narrow chart), the label of the warn line goes first.
+  const placeLines = (short) => {
+    const warnOf = (placed) => placeLabel(th.warn, "▲", short ? "" : "auffällig", placed), critOf = (placed) => placeLabel(th.crit, "◆", short ? "" : "kritisch", placed);
+    let crit = showCrit ? critOf([]) : null, warn = warnOf(crit ? [crit.box] : []);
+    if (crit && warn.n >= 1e6) { const w2 = warnOf([]), c2 = critOf([w2.box]); if (w2.n + c2.n < warn.n + crit.n) { warn = w2; crit = c2; } }
+    return { warn, crit, n: warn.n + (crit ? crit.n : 0) };
+  };
+  let lines = null;
+  if (showWarn) {
+    lines = placeLines(false);
+    if (lines.n > 0) {
+      const wide = Math.ceil(Math.max(labelWidth(th.warn, "▲", "auffällig"), showCrit ? labelWidth(th.crit, "◆", "kritisch") : 0)) + 6;
+      if (W - m.l - m.r - wide >= LABEL_MARGIN_MIN) {
+        // beside their lines in the right margin, at least a line of text apart
+        m.r += wide; pw = W - m.l - m.r;
+        const side = (l) => Object.assign(l, { side: true, n: 0, ty: Y(l.v) + 4 }), w = side(lines.warn), c = lines.crit ? side(lines.crit) : null;
+        if (c && w.ty - c.ty < 14) { c.ty = w.ty - 14; if (c.ty < m.t + 9) { c.ty = m.t + 9; w.ty = c.ty + 14; } }
+      } else {
+        const short = placeLines(true);
+        if (short.n < lines.n) lines = short;
+        // a shortened label shows the symbol without its word: the note under the chart says what the lines are
+        if (!lines.warn.word) bandNote = `Soll-Linien: ▲ auffällig ab ${fmtLimit(th.warn, th.unit)}` + (lines.crit ? `, ◆ kritisch ab ${fmtLimit(th.crit, th.unit)}.` : ".") + (bandNote ? " " + bandNote : "");
+      }
+    }
+  }
+  const bandLine = (cls, l) => `<g class="${cls}"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(l.v))}" y2="${f1(Y(l.v))}" stroke-width="1.5" stroke-dasharray="6 4"/>` +
+    `<text x="${f1(l.side ? W - m.r + 5 : l.x1)}" y="${f1(l.ty)}" text-anchor="${l.side ? "start" : "end"}"><tspan class="sym">${l.sym}</tspan> ${l.word ? l.word + " " : ""}ab ${fmtLimit(l.v, th.unit)}</text></g>`;
 
   let g = "";
   for (const v of yLabels) {
@@ -1014,11 +1172,24 @@ function drawChart(host) {
   g += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--border)"/>`;
   g += xlab;
 
+  // The time of the incident: a tinted span behind the lines. The areas of a stacked chart are opaque: there the span is
+  // drawn above them, with a veil and its two edges. A span narrower than BAND_MIN px (an incident without duration: a crash,
+  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own above the measured marks, a line
+  // with a cap over the plot. None of them catches the pointer.
   const band = chartBand(opt, z);
+  let bandUnder = "", bandOver = "";
   if (band) {
     const a = X(Math.max(z.t0, band.t0)), b = X(Math.min(z.t1, band.t1));
-    g += `<rect class="incband" x="${f1(Math.min(a, m.l + pw - 2))}" y="${m.t}" width="${f1(Math.max(2, b - a))}" height="${ph}"/>`;
+    if (b - a < BAND_MIN) {
+      const x = f1(Math.max(m.l + 1, Math.min(m.l + pw - 1, (a + b) / 2))), line = `M${x} ${m.t}V${m.t + ph}`;
+      bandOver = `<path class="inchalo" d="${line}"/><path class="incband incmark" d="${line}M${x} ${m.t - 1}l-5 -7h10z"/>`;
+    } else {
+      const rect = (cls) => `<rect class="${cls}" x="${f1(a)}" y="${m.t}" width="${f1(b - a)}" height="${ph}"/>`;
+      if (stacked) bandOver = rect("incveil") + rect("incband") + `<path class="incedge" d="M${f1(a)} ${m.t}V${m.t + ph}M${f1(b)} ${m.t}V${m.t + ph}"/>`;
+      else bandUnder = rect("incband");
+    }
   }
+  g += bandUnder;
   // marks
   const clip = "clip" + st.id;
   let marks = "";
@@ -1045,57 +1216,10 @@ function drawChart(host) {
       if (r.failT.length) marks += `<path class="fail" d="${r.failT.map((t) => "M" + f1(X(t)) + " " + m.t + "v8").join("")}" stroke="var(--crit)" stroke-width="2"/>`;
     }
   }
-  g += `<g clip-path="url(#${clip})">${marks}</g>`;
+  g += `<g clip-path="url(#${clip})">${marks}</g>` + bandOver;
 
-  // target bands and limit line, labels in text colour with the status symbol. The label of a target line stands at the right
-  // end of its line, over it (under it near the top edge). Where the measured lines or the other label run through it there, it
-  // goes under its line or left along it, to the first place that is free (or to the place the lines cross least). The width
-  // of a label is measured; two labels never overlap.
-  const through = (x0, x1, y0, y1) => {
-    if (stacked) return 0;
-    let n = 0;
-    for (const r of red) {
-      let px = null, py = 0;
-      for (let k = 0; k < r.xs.length; k++) {
-        if (r.ys[k] == null) { px = null; continue; }
-        const x = X(r.xs[k]), y = Y(r.ys[k]), ax = px == null ? x : px, ay = px == null ? y : py;
-        px = x; py = y;
-        if (Math.max(ax, x) < x0 || Math.min(ax, x) > x1 || Math.max(ay, y) < y0 || Math.min(ay, y) > y1) continue;
-        // the part of the segment inside the box (Liang-Barsky)
-        let a = 0, b = 1, inside = true;
-        for (const [d, q] of [[ax - x, ax - x0], [x - ax, x1 - ax], [ay - y, ay - y0], [y - ay, y1 - ay]]) {
-          if (d === 0) { if (q < 0) inside = false; } else if (d < 0) a = Math.max(a, q / d); else b = Math.min(b, q / d);
-        }
-        if (inside && a <= b) n++;
-      }
-    }
-    return n;
-  };
-  // the place of the label of one target line beside the labels already placed: { n: measured lines through it (1e6 and more:
-  // it touches another label), x1, ty, box }
-  const placeLabel = (v, sym, word, placed) => {
-    // the unit goes through withUnit as HTML; the label is measured as the text it shows
-    const y = Y(v), tw = textWidth(`${sym} ${word} ab ${fmtLimit(v, "")}${th.unit ? (th.unit === "%" ? " %" : " " + th.unit) : ""}`) + 4;
-    // over its line or under it, close to it; a little further from it where that keeps it clear (two lines close together)
-    const over = [y - 4, y - 7], under = [y + 13, y + 16], tys = y - m.t < 14 ? under : m.t + ph - y < 18 ? over : [over[0], under[0], over[1], under[1]], xr = W - m.r - 4;
-    // a measured line counts where it runs through the letters; another label is never touched (its whole line of text counts)
-    const crossed = (x1, ty) => through(x1 - tw, x1 + 2, ty - 10, ty + 3) + (placed.some((b) => x1 - tw < b.x1 + 2 && x1 + 2 > b.x0 - 2 && ty - TEXT_UP < b.y1 && ty + TEXT_DOWN > b.y0) ? 1e6 : 0);
-    let best = null;
-    for (let x1 = xr; (!best || best.n > 0) && (x1 === xr || x1 - tw >= m.l + 2); x1 -= 4) {
-      for (const ty of tys) { const n = crossed(x1, ty); if (!best || n < best.n) best = { n, x1, ty }; }
-    }
-    return Object.assign(best, { v, sym, word, box: { x0: best.x1 - tw, x1: best.x1 + 2, y0: best.ty - TEXT_UP, y1: best.ty + TEXT_DOWN } });
-  };
-  const bandLine = (cls, l) => `<g class="${cls}"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(l.v))}" y2="${f1(Y(l.v))}" stroke-width="1.5" stroke-dasharray="6 4"/>` +
-    `<text x="${f1(l.x1)}" y="${f1(l.ty)}" text-anchor="end"><tspan class="sym">${l.sym}</tspan> ${l.word} ab ${fmtLimit(l.v, th.unit)}</text></g>`;
-  if (showWarn) {
-    // The label of the critical line finds its place first. Where that leaves no room for the other label (two lines close
-    // together in a narrow chart), the label of the warn line goes first.
-    const warnOf = (placed) => placeLabel(th.warn, "▲", "auffällig", placed), critOf = (placed) => placeLabel(th.crit, "◆", "kritisch", placed);
-    let crit = showCrit ? critOf([]) : null, warn = warnOf(crit ? [crit.box] : []);
-    if (crit && warn.n >= 1e6) { const w2 = warnOf([]), c2 = critOf([w2.box]); if (w2.n + c2.n < warn.n + crit.n) { warn = w2; crit = c2; } }
-    g += bandLine("band-warn", warn) + (crit ? bandLine("band-crit", crit) : "");
-  }
+  // target lines with their labels (placed above, before the grid) and the limit line
+  if (lines) g += bandLine("band-warn", lines.warn) + (lines.crit ? bandLine("band-crit", lines.crit) : "");
   if (opt.limit != null && opt.limit <= yMax) {
     g += `<g class="limit"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(opt.limit))}" y2="${f1(Y(opt.limit))}" stroke="var(--text2)" stroke-width="1" stroke-dasharray="2 3"/>`;
     g += `<text x="${m.l + 6}" y="${f1(Y(opt.limit) + (Y(opt.limit) - m.t < 14 ? 13 : -4))}">${esc(opt.limitLabel || "")}</text></g>`;
@@ -1185,9 +1309,9 @@ function stackSeries(items, key, label, scale) {
 }
 
 // ---------- sortable table ----------
-// cols: { key, head, num, cls, fmt(v, row), sortVal(row), bar, title }; opt: { sort, id, text, filterInput, roleSelect, rowClass, rowAttr, onSelect, empty }
+// cols: { key, head, num, cls, fmt(v, row), sortVal(row), bar, title }; opt: { sort, id, text, filterInput, roleSelect, rowClass, rowAttr, onSelect, empty, barW }
 // sort: null keeps the order of rows until a column head is clicked; rowAttr(row) returns extra HTML attributes of a row;
-// empty: the text of a table without rows (or a function that returns it).
+// empty: the text of a table without rows (or a function that returns it); barW: the width of the longest cell bar (48 px).
 // Returns { select(id), setRows(rows), has(id) }: setRows replaces the rows (the values of another time range) and keeps
 // sorting, filters and the selected row.
 function table(id, cols, rows, opt) {
@@ -1215,7 +1339,7 @@ function table(id, cols, rows, opt) {
       const cls = [opt.rowClass ? opt.rowClass(r) : "", st.selected === opt.id(r) ? "selected" : ""].filter(Boolean).join(" ");
       h += `<tr data-id="${esc(opt.id(r))}"${cls ? ` class="${cls}"` : ""}${opt.rowAttr ? " " + opt.rowAttr(r) : ""}${opt.onSelect ? ' tabindex="0"' : ""}>` + cols.map((c) => {
         const txt = c.fmt ? c.fmt(r[c.key], r) : esc(r[c.key]);
-        const bar = c.bar ? `<span class="cellbar" style="width:${Math.round(((r[c.key] || 0) / maxOf[c.key]) * 48)}px"></span>` : "";
+        const bar = c.bar ? `<span class="cellbar" style="width:${Math.round(((r[c.key] || 0) / maxOf[c.key]) * (opt.barW || 48))}px"></span>` : "";
         const tc = [c.num ? "num" : "", c.cls || ""].filter(Boolean).join(" ");
         return `<td${tc ? ` class="${tc}"` : ""}>${bar}${txt}</td>`;
       }).join("") + "</tr>";
@@ -1298,9 +1422,9 @@ if (SKIPPED.length) {
 // without process data the counts of processes and the share of WorkerPerf itself are 0 only because nothing was measured
 document.getElementById("footer").innerHTML = `${fmt(M.ticks, 0)} Takte, ` +
   (notMeasured("procs") ? `${fmt(M.snapshots, 0)} Schnappschüsse, Prozessdaten: ${notMeasured("procs", true)} Messaufwand: ` :
-    `${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts), `) +
+    `${fmt(M.snapshots, 0)} Prozess-Schnappschüsse, ${fmt(M.processRows, 0)} Prozess-Messwerte von ${fmt(M.processCount, 0)} Prozessen. Messaufwand: WorkerPerf selbst ${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Servers), `) +
   `${fmt(Q.skippedTicks, 0)} verspätete Takte. ` +
-  `Diagramme zeigen die volle Auflösung; mit mehr als ${fmt(MAX_POINTS, 0)} Punkten im Ausschnitt werden sie auf ${fmt(BUCKETS, 0)} Abschnitte verdichtet. Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated)}.`;
+  `Diagramme zeigen die volle Auflösung; mit mehr als ${fmt(MAX_POINTS, 0)} Punkten im Zeitraum werden sie auf ${fmt(BUCKETS, 0)} Abschnitte verdichtet. Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated)}.`;
 
 // ---------- expert view: tiles ----------
 // Status of a measured value, one rule for tiles, target table and incidents: from the findings of the signal (kritisch with a
@@ -1309,17 +1433,20 @@ document.getElementById("footer").innerHTML = `${fmt(M.ticks, 0)} Takte, ` +
 // intersect the range, and a row without a measured point there says so (empty).
 const sollStatus = (r) => !r.measured || r.status === "na" ? "na" : String(r.status || 0);
 const loneExceed = (r) => !!r.measured && !r.status && !!r.exceeded;
-const LONE = "einzelne Überschreitungen";
+const LONE = "einzelne Überschreitungen", WHOLE_STATUS = "in der gesamten Messung";
 function sollTile(r) {
   const st = sollStatus(r);
-  const title = [r.ideal ? "Soll " + r.ideal : "", r.origin, r.source, r.note].filter(Boolean).join(" · ");
-  const head = `<div class="tile" data-signal="${esc(r.id)}" data-status="${st}" title="${esc(title)}"><div class="label">${esc(r.label)}</div>`;
+  // mean and percentile on one line: the unit stands once, behind the second value
+  const stat = r.measured && !r.empty ? `Ø ${fmt(r.avg, autoDec(r.avg, r.unit))} · P95 ${fmtVal(r.p95, r.unit)}` : "";
+  const title = [stat.replace(/&[^;]+;/g, ""), r.ideal ? "Soll " + r.ideal : "", r.worstInstance ? "am stärksten: " + r.worstInstance : "", r.origin, r.source, r.note].filter(Boolean).join(" · ");
+  const head = `<div class="tile${r.wholeStatus ? " whole" : ""}" data-signal="${esc(r.id)}" data-status="${st}" title="${esc([r.empty, title].filter(Boolean).join(" · "))}"><div class="label">${esc(r.label)}</div>`;
   if (!r.measured) return `${head}<div class="value">–</div>${statusHtml("na")}<div class="extra">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</div></div>`;
-  if (r.empty) return `${head}<div class="value">–</div>${statusHtml(st)}<div class="extra">${esc(r.empty)}</div><div class="extra">Soll ${esc(r.ideal || "–")}</div></div>`;
+  // a status that holds for the whole capture only (a signal without a series in the report data) says so
+  if (r.empty) return `${head}<div class="value">–</div>${statusHtml(st, r.wholeStatus ? WHOLE_STATUS : "")}<div class="extra why">${esc(r.empty)}</div><div class="extra goal">Soll ${esc(r.ideal || "–")}</div></div>`;
   const share = st === "2" ? `${fmt(r.pctCrit, 1)} % der Zeit` : st === "1" ? `${fmt((r.pctWarn || 0) + (r.pctCrit || 0), 1)} % der Zeit` : loneExceed(r) ? LONE : "";
   return `${head}<div class="value">${fmt(r.max, autoDec(r.max, r.unit))}<small>${withUnit(r.unit)} Max</small></div>` +
-    `<div class="extra">Ø ${fmtVal(r.avg, r.unit)} · P95 ${fmtVal(r.p95, r.unit)}</div>${statusHtml(st, share)}` +
-    `<div class="extra">Soll ${esc(r.ideal || "–")}${r.worstInstance ? " · am stärksten: " + esc(r.worstInstance) : ""}</div></div>`;
+    `<div class="extra stat">${stat}</div>${statusHtml(st, share)}` +
+    `<div class="extra goal">Soll ${esc(r.ideal || "–")}${r.worstInstance ? " · am stärksten: " + esc(r.worstInstance) : ""}</div></div>`;
 }
 // The input delay of the main application: its values in the range. Its findings are not part of the report data: a range
 // without a value over the target is normal (no finding can lie there); else the status is the one of the whole capture and
@@ -1329,9 +1456,10 @@ function mainAppTile(a, z) {
   const max = v.length ? v[v.length - 1] : null, avg = v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
   const p95 = v.length ? v[Math.min(v.length - 1, Math.ceil(0.95 * v.length) - 1)] : null;
   const whole = String(a.status || 0), st = z && !levelOf(max, th) ? "0" : whole, lone = whole === "0" && levelOf(max, th) > 0;
-  return `<div class="tile" data-signal="mainapp" data-status="${st}"><div class="label">Eingabeverzögerung ${esc(a.label)}</div>` +
-    `<div class="value">${fmt(max, autoDec(max, "ms"))}<small> ms Max</small></div><div class="extra">Ø ${fmtVal(avg, "ms")} · P95 ${fmtVal(p95, "ms")} (${fmt(v.length, 0)} Takte mit Verzögerung)</div>` +
-    `${statusHtml(st, z && st !== "0" ? "in der gesamten Messung" : lone ? LONE : "")}<div class="extra">Soll ${esc(th ? th.ideal : "–")}</div></div>`;
+  const stat = `Ø ${fmt(avg, autoDec(avg, "ms"))} · P95 ${fmtVal(p95, "ms")}`, n = `${fmt(v.length, 0)} Takte mit Verzögerung`;
+  return `<div class="tile${z && st !== "0" ? " whole" : ""}" data-signal="mainapp" data-status="${st}" title="${esc(stat + " · " + n + " · Soll " + (th ? th.ideal : "–"))}"><div class="label">Eingabeverzögerung ${esc(a.label)}</div>` +
+    `<div class="value">${fmt(max, autoDec(max, "ms"))}<small> ms Max</small></div><div class="extra stat">${stat}</div><div class="extra goal">${n}</div>` +
+    `${statusHtml(st, z && st !== "0" ? WHOLE_STATUS : lone ? LONE : "")}<div class="extra goal">Soll ${esc(th ? th.ideal : "–")}</div></div>`;
 }
 // Users per logical CPU: the highest number of user sessions at the same time, in the range.
 function usersTile(z) {
@@ -1340,8 +1468,9 @@ function usersTile(z) {
   let top = null;
   if (z) for (let i = lo; i < hi; i++) { const n = (D.host.sessions || [])[i]; if (n != null && (top == null || n > top)) top = n; }
   const value = !z ? M.usersPerCore : top == null || !M.cores ? null : top / M.cores;
-  return `<div class="tile info" data-info="userspercore"><div class="label">Benutzer je logischer CPU</div><div class="value">${fmt(value, 2)}</div>` +
-    `<div class="extra">höchste Zahl gleichzeitiger Benutzersitzungen, ${M.cores} CPUs</div><div class="extra">ohne Bewertung · ${users} Benutzersitzungen im Zeitraum</div></div>`;
+  const what = `höchste Zahl gleichzeitiger Benutzersitzungen, ${M.cores} CPUs`, who = `${users} Benutzersitzungen im Zeitraum · ohne Bewertung`;
+  return `<div class="tile info" data-info="userspercore" title="${esc(what + " · " + who)}"><div class="label">Benutzer je logischer CPU</div><div class="value">${fmt(value, 2)}</div>` +
+    `<div class="extra">${who}</div><div class="extra">${what}</div></div>`;
 }
 // rows: the rows of the target comparison for the range in force
 function renderTiles(rows) {
@@ -1357,11 +1486,11 @@ function drawStacks() {
     for (const id of ["segCpu", "segMem"]) document.getElementById(id).hidden = true;
     return;
   }
-  // split by session or by application, or not split: the host as the sum of all sessions
+  // split by session or by application, or not split: the server as the sum of all sessions
   const by = (id) => document.querySelector("#" + id + " button[aria-pressed=true]").dataset.by;
   const series = (b, key, scale) => b === "apps" ? stackSeries(D.apps, key, (a) => a.name, scale) : b === "sessions" ? stackSeries(D.sessions, key, sessLabel, scale)
     : [{ name: "alle Prozesse", color: "--s1", values: GRID.snap.map((t, i) => D.sessions.reduce((sum, x) => sum + ((x[key] || [])[i] || 0) * scale, 0)) }];
-  chart("chCpuStack", { axis: "snap", series: series(by("segCpu"), "cpu", 1), stacked: true, unit: "%", decimals: 2, yMax: 100, limit: 100, limitLabel: "100 % des Hosts", height: 200, legend: true });
+  chart("chCpuStack", { axis: "snap", series: series(by("segCpu"), "cpu", 1), stacked: true, unit: "%", decimals: 2, yMax: 100, limit: 100, limitLabel: "100 % des Servers", height: 200, legend: true });
   chart("chMemStack", { axis: "snap", series: series(by("segMem"), "ws", 1 / 1024), stacked: true, unit: "GB", decimals: 2, limit: M.ramGB, limitLabel: "physischer RAM", height: 200, legend: true });
 }
 for (const id of ["segCpu", "segMem"]) document.getElementById(id).addEventListener("click", (ev) => {
@@ -1400,6 +1529,8 @@ chart("chSess", { axis: "snap", series: [{ name: "aktiv", color: "--s3", values:
 
 // ---------- sessions ----------
 const anyRtt = D.sessions.some((s) => s.rttAvg != null);
+// the 95th percentile of the CPU load is taken over the snapshots, the means over time (see snapUse)
+const P95_TITLE = "95. Perzentil der Schnappschüsse (während eines Vorfalls folgen sie dichter aufeinander)";
 const sessCols = [
   { key: "user", head: "Benutzer", fmt: (v, r) => esc(sessLabel(r)), sortVal: (r) => sessLabel(r) },
   { key: "client", head: "Client", fmt: (v) => esc(v || "–") },
@@ -1407,10 +1538,10 @@ const sessCols = [
   cNum("activePct", "Aktiv %", 0, "Anteil der Messungen im Zustand 'Active' (Rest: getrennt)"),
   cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
   cNum("cpuSec", "CPU-Zeit s", 0, "verbrauchte CPU-Sekunden"),
-  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert, % der Host-Kapazität"),
-  cNum("cpuP95", "CPU P95 %", 2),
+  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert über die Zeit der Anwesenheit, % der Server-Kapazität"),
+  cNum("cpuP95", "CPU P95 %", 2, P95_TITLE),
   cNum("cpuMax", "CPU Max %", 1),
-  cNum("wsAvg", "RAM Ø", 0, "Summe Working Set aller Prozesse", { fmt: fmtMB, bar: true }),
+  cNum("wsAvg", "RAM Ø", 0, "Summe Working Set aller Prozesse, Mittelwert über die Zeit", { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("privMax", "Commit Max", 0, "Private Bytes (zugesicherter Speicher)", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0, "gelesene + geschriebene Daten aller Prozesse (Datei, Netzwerk, Geräte)"),
@@ -1443,9 +1574,9 @@ const procCols = (withUser) => [
   ...(withUser ? [{ key: "s", head: "Sitzung", fmt: (v) => esc(sessLabel(sessByIdx.get(v))), sortVal: (r) => sessLabel(sessByIdx.get(r.s)) }] : []),
   cNum("start", "Gestartet", 0, "", { fmt: (v) => fmtDT(v) }),
   cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
-  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert über die Laufzeit im Messzeitraum, % der Host-Kapazität"),
+  cNum("cpuAvg", "CPU Ø %", 2, "Mittelwert über die Laufzeit im Messzeitraum, % der Server-Kapazität"),
   cNum("cpuMax", "CPU Max %", 1),
-  cNum("wsAvg", "RAM Ø", 0, "", { fmt: fmtMB }),
+  cNum("wsAvg", "RAM Ø", 0, "Mittelwert über die Laufzeit im Messzeitraum", { fmt: fmtMB }),
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB, bar: true }),
   cNum("privMax", "Commit Max", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 1),
@@ -1454,9 +1585,6 @@ const procCols = (withUser) => [
 const procText = (r) => [r.name, r.pid, r.services, r.role, r.roleLabel, sessLabel(sessByIdx.get(r.s))].join(" ");
 
 const chartBox = (title, cls) => `<div class="card chartbox"><h3>${esc(title)}</h3><div class="${cls}"></div></div>`;
-// The detail of a session, an application or a process under a range: its charts show the range; the figures and tables the
-// report data hold for the whole capture only are marked as such (the marks show while a range is set).
-const WHOLE_KV = '<span class="whole-tag">Gesamte Messung:</span>', WHOLE_H = ' <span class="whole-tag">· gesamte Messung</span>', RANGE_H = ' <span class="whole-tag">· im gewählten Zeitraum</span>';
 // what a detail refreshes when the range changes, per place of the detail
 const rangeFollow = new Map();
 function procDetail(host, p) {
@@ -1465,7 +1593,7 @@ function procDetail(host, p) {
     <div class="kv">${WHOLE_KV}<span>Sitzung <b>${esc(sessLabel(s))}</b></span>${p.role ? `<span>Rolle <b>${esc(p.role)}${p.roleLabel ? " · " + esc(p.roleLabel) : ""}</b></span>` : ""}<span>Gestartet <b>${fmtDT(p.start)}</b></span><span>Beobachtet <b>${fmtTime(p.first)}–${fmtTime(p.last)}</b></span><span>CPU-Zeit <b>${fmt(p.cpuSec, 1)} s</b></span><span>RAM Max <b>${fmtMB(p.wsMax)}</b></span></div>
     ${p.services ? `<div class="pathline">Dienste: ${esc(p.services.split(";").join(", "))}</div>` : ""}
     <div class="pathline">${esc(p.path || "–")}${p.cmd ? "<br>" + esc(p.cmd) : ""}</div>
-    <div class="grid2">${chartBox("CPU (% des Hosts)", "c1")}${chartBox("Working Set (MB)", "c2")}</div></div>`;
+    <div class="grid2">${chartBox("CPU (% des Servers)", "c1")}${chartBox("Working Set (MB)", "c2")}</div></div>`;
   chart(host.querySelector(".c1"), { axis: "snap", series: [{ name: "CPU", values: p.cpu, o: p.o }], unit: "%", decimals: 2, agg: "max" });
   chart(host.querySelector(".c2"), { axis: "snap", series: [{ name: "RAM", values: p.ws, o: p.o }], unit: "MB", decimals: 0 });
 }
@@ -1477,11 +1605,11 @@ function showSession(i) {
   const sev = (s.events || []).map((k) => D.events[k]).filter(Boolean);
   const res = { procs: notMeasured("sessions.resources"), ev: notMeasured("sessions.events"), rtt: notMeasured("sessions.rtt"), profile: notMeasured("sessions.profile"), citrix: notMeasured("citrix") };
   host.innerHTML = `<div class="cardhead"><h2>${esc(sessLabel(s))}</h2></div>
-    <div class="kv">${WHOLE_KV}<span>Domäne <b>${esc(s.domain || "–")}</b></span><span>Client <b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${notMeasured("sessions.resources") ? "–" : fmt(s.cpuShare, 1) + " %"}</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
+    <div class="kv">${WHOLE_KV}<span>${labelFor("Domäne", s.domain)}<b>${esc(s.domain || "–")}</b></span><span>${labelFor("Client", s.client)}<b>${esc(s.client || "–")}</b></span><span>Anmeldung <b>${fmtDT(s.logon)}</b></span><span>Im Messzeitraum <b>${fmtTime(s.first)}–${fmtTime(s.last)} (${fmtDur(s.durMin)})</b></span><span>Aktiv <b>${fmt(s.activePct, 0)} %</b></span><span>Längste Leerlaufzeit <b>${fmtDur(s.idleMaxMin)}</b></span><span>CPU-Anteil <b>${notMeasured("sessions.resources") ? "–" : fmt(s.cpuShare, 1) + " %"}</b></span><span>Eingabeverzögerung P95 / Max <b>${fmt(s.inP95, 0)} / ${fmt(s.inMax, 0)} ms</b></span></div>
     ${sev.length ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3><ul class="plain">${sev.map((e) => `<li><span class="num">${evTime(e.t, e.offsetMin, true)}</span><span>${esc(kindWord(e))}</span></li>`).join("")}</ul></div>`
       : res.ev ? `<div class="sess-events"><h3 style="margin-bottom:4px">Sitzungsereignisse</h3>${res.ev}</div>` : ""}
     <div class="grid2">
-      ${chartBox("CPU (% des Hosts)", "chart-cpu")}
+      ${chartBox("CPU (% des Servers)", "chart-cpu")}
       ${chartBox("Working Set (MB)", "chart-ws")}
       ${chartBox("I/O (KB/s)", "chart-io")}
       ${chartBox("Eingabeverzögerung (ms)", "chart-input")}
@@ -1506,7 +1634,7 @@ function showSession(i) {
   if (!res.procs) table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v)?.name), sortVal: (r) => appByIdx.get(r.a)?.name || "" }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
   if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1, "Mittelwert über die Schnappschüsse mit einem Wert: Bandbreiten von 0 zeichnet der Collector nicht auf, ihr Mittel gilt nur für die Zeit mit Datenverkehr"), cNum("max", "Max", 1), cNum("n", "Messungen", 0, "Schnappschüsse mit einem Wert")], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
   // the processes of the session follow the range
-  const procs = D.procs.filter((p) => p.s === i), inRange = () => { const z = window.WP.zoom; return z ? rangeRows("procs", z.t0, z.t1).filter((p) => p.s === i) : procs; };
+  const procs = wholeRows("procs").filter((p) => p.s === i), inRange = () => { const z = window.WP.zoom; return z ? rangeRows("procs", z.t0, z.t1).filter((p) => p.s === i) : procs; };
   rangeFollow.delete("dSessions");
   if (!res.procs) {
     const pt = table("sp" + u, procCols(false), inRange(), { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", empty: NONE_ACTIVE,
@@ -1515,9 +1643,11 @@ function showSession(i) {
   }
   host.scrollIntoView({ behavior: scrollMode(), block: "start" });
 }
-// a table of a range without anyone in it says so
-const NONE_ACTIVE = () => window.WP.zoom ? "Im gewählten Zeitraum ohne Last." : "Keine Einträge.";
-const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession, empty: NONE_ACTIVE });
+// A table of a range without anyone in it says so. A range without a snapshot (shorter than the time between two of them)
+// holds no value of an application or a process: nothing was sampled there, so nobody is "ohne Last".
+const NO_SNAPSHOT = "Im gewählten Zeitraum liegt kein Schnappschuss: Anwendungen und Prozesse sind für ihn nicht auswertbar.";
+const NONE_ACTIVE = () => { const z = window.WP.zoom; return !z ? "Keine Einträge." : snapsIn(z.t0, z.t1) ? "Im gewählten Zeitraum ohne Last." : NO_SNAPSHOT; };
+const sessTable = table("tSessions", sessCols, D.sessions, { sort: "cpuShare", id: (r) => r.i, text: (r) => sessLabel(r) + " " + r.client + " " + r.domain, filterInput: "fSessions", onSelect: showSession, empty: NONE_ACTIVE, barW: 32 });
 
 // ---------- applications ----------
 function showApp(i) {
@@ -1526,7 +1656,7 @@ function showApp(i) {
   host.innerHTML = `<div class="cardhead"><h2>${esc(a.name)}</h2></div>
     <div class="kv">${WHOLE_KV}${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span>gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span>RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
     <div class="pathline">${esc(a.path || "–")}</div>
-    <div class="grid2">${chartBox("CPU aller Instanzen (% des Hosts)", "chart-cpu")}${chartBox("Working Set aller Instanzen (MB)", "chart-ws")}</div>
+    <div class="grid2">${chartBox("CPU aller Instanzen (% des Servers)", "chart-cpu")}${chartBox("Working Set aller Instanzen (MB)", "chart-ws")}</div>
     <h2>Sitzungen mit dieser Anwendung${WHOLE_H}</h2><div class="tablewrap" style="max-height:340px"><table id="as${u}"></table></div>`;
   chart(host.querySelector(".chart-cpu"), { axis: "snap", series: a.cpu ? [{ name: "CPU", values: a.cpu }] : [], unit: "%", decimals: 2, agg: "max", empty: noSeries });
   chart(host.querySelector(".chart-ws"), { axis: "snap", series: a.ws ? [{ name: "RAM", values: a.ws }] : [], unit: "MB", decimals: 0, empty: noSeries });
@@ -1541,14 +1671,14 @@ const appTable = table("tApps", [
   cNum("instAvg", "gleichzeitig Ø", 1),
   cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
   cNum("cpuSec", "CPU-Zeit s", 0),
-  cNum("cpuAvg", "CPU Ø %", 2, "alle Instanzen zusammen, % der Host-Kapazität"),
-  cNum("cpuP95", "CPU P95 %", 2),
+  cNum("cpuAvg", "CPU Ø %", 2, "alle Instanzen zusammen, Mittelwert über die Zeit, % der Server-Kapazität"),
+  cNum("cpuP95", "CPU P95 %", 2, P95_TITLE),
   cNum("cpuMax", "CPU Max %", 1),
-  cNum("wsAvg", "RAM Ø gesamt", 0, "Summe Working Set aller Instanzen", { fmt: fmtMB, bar: true }),
+  cNum("wsAvg", "RAM Ø gesamt", 0, "Summe Working Set aller Instanzen, Mittelwert über die Zeit", { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max gesamt", 0, "", { fmt: fmtMB }),
   cNum("wsPerInst", "RAM Ø je Instanz", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0)
-], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => [r.name, r.role, r.roleLabel].join(" "), filterInput: "fApps", roleSelect: "fRoleApps", onSelect: showApp, empty: NONE_ACTIVE });
+], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => [r.name, r.role, r.roleLabel].join(" "), filterInput: "fApps", roleSelect: "fRoleApps", onSelect: showApp, empty: NONE_ACTIVE, barW: 32 });
 // a tab whose list comes from a category left out with -Skip: the hint instead of the filters and the empty table
 function skipTab(tab, place) {
   const sec = document.getElementById("xt-" + tab); if (!notMeasured(place)) return;
@@ -1559,7 +1689,7 @@ skipTab("apps", "apps");
 
 // ---------- processes ----------
 if (!notMeasured("procs")) document.getElementById("procNote").textContent = `Enthält die ${fmt(D.procs.length, 0)} ressourcenintensivsten von ${fmt(M.processCount, 0)} Prozessen (CPU, RAM, I/O, die Spitzenreiter jeder Sitzung und alle Prozesse aus den Ranglisten der Befunde).`;
-const procTable = table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: procText, filterInput: "fProcs", roleSelect: "fRoleProcs", rowClass: (r) => r.isCollector ? "collector" : "", empty: NONE_ACTIVE,
+const procTable = table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id: (r) => r.k, text: procText, filterInput: "fProcs", roleSelect: "fRoleProcs", rowClass: (r) => r.isCollector ? "collector" : "", empty: NONE_ACTIVE, barW: 32,
   onSelect: (k) => { const h = document.getElementById("dProcs"); procDetail(h, D.procs.find((p) => p.k === k)); h.scrollIntoView({ behavior: scrollMode(), block: "start" }); } });
 skipTab("procs", "procs");
 
@@ -1612,7 +1742,7 @@ function showRest(ev) {
   return true;
 }
 // what an incident has to do with the report of a user: the reported user and the reported time, each named
-const flagsHtml = (inc) => (inc.focus ? `<span class="flag">betrifft den gemeldeten Benutzer${FOCUS.user ? " " + esc(FOCUS.user) : ""}</span>` : "") +
+const flagsHtml = (inc) => (inc.focus ? `<span class="flag">${FOCUS.user ? labelFor("betrifft den gemeldeten Benutzer", FOCUS.user) + esc(FOCUS.user) : "betrifft den gemeldeten Benutzer"}</span>` : "") +
   (inc.nearReported ? `<span class="flag">nahe der gemeldeten Uhrzeit${FOCUS.reportedMs != null ? " " + fmtTime(FOCUS.reportedMs) : ""}</span>` : "");
 // the kind of an endpoint beside its name, unless the name ends with it ("FortiGate-Proxy" is a proxy)
 const endpointKind = (name, kind) => kind && !String(name).toLowerCase().endsWith(String(kind).toLowerCase()) ? kind : "";
@@ -1687,8 +1817,8 @@ function incWhen(inc, clock) {
   const el = document.getElementById("focusInfo"), parts = [];
   if (FOCUS.user) {
     parts.push(FOCUS.found
-      ? `Gemeldeter Benutzer <b>${esc(FOCUS.user)}</b>` + (FOCUS.sessions.length ? (FOCUS.sessions.length === 1 ? ", Sitzung " : ", Sitzungen ") + FOCUS.sessions.map((s) => "#" + esc(sessByIdx.get(s)?.id ?? "?")).join(", ") : "")
-      : `Benutzer <b>${esc(FOCUS.user)}</b> in der Messung nicht gefunden`);
+      ? `${labelFor("Gemeldeter Benutzer", FOCUS.user)}<b>${esc(FOCUS.user)}</b>` + (FOCUS.sessions.length ? (FOCUS.sessions.length === 1 ? ", Sitzung " : ", Sitzungen ") + FOCUS.sessions.map((s) => "#" + esc(sessByIdx.get(s)?.id ?? "?")).join(", ") : "")
+      : `${labelFor("Benutzer", FOCUS.user)}<b>${esc(FOCUS.user)}</b> in der Messung nicht gefunden`);
   }
   if (FOCUS.reportedMs != null) {
     // before the start of the capture (its first tick, also under a cut), outside a cut, or after the end of the capture
@@ -1737,10 +1867,10 @@ function measuredHtml(lead, where) {
     <div>Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): ${lone.map((r) => `${esc(r.label)} Max ${fmtVal(r.max, r.unit)} (Soll ${below(r)} ${fmtLimit(r.warn, r.unit)})`).join("; ")}.</div>`;
   const ref = `Die Werte stehen im Soll-Ist-Vergleich ${where}.`;
   return (!lead ? loneText + `<div class="note">${ref}</div>`
-    : lone.length ? `<p class="lead"><i class="sym" aria-hidden="true">●</i> Kein Vorfall.</p>${loneText}
+    : lone.length ? `<p class="lead"><i class="sym" aria-hidden="true">●</i> Kein Vorfall.${WHOLE_H}</p>${loneText}
     <div class="note">${ref}</div>`
-    : `<p class="lead"><i class="sym" aria-hidden="true">●</i> Keine Schwelle wurde überschritten.</p>
-    <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. ${ref}</div>`) + `
+    : `<p class="lead"><i class="sym" aria-hidden="true">●</i> Keine Schwelle wurde überschritten.${WHOLE_H}</p>
+    <div class="note">Alle gemessenen Werte lagen in der gesamten Messung im Soll. ${ref}</div>`) + `
     <div class="mcols">
       <div><h3>Gemessen (${meas.length})</h3><ul>${meas.map((r) => `<li>${esc(r.label)}: Max ${fmtVal(r.max, r.unit)} <span class="note">(Soll ${esc(r.ideal || "–")})</span></li>`).join("") || "<li>keine</li>"}</ul></div>
       <div class="notm"><h3>Nicht gemessen (${notMeasuredCount()})</h3><ul>${notMeasuredItems() || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
@@ -2025,17 +2155,18 @@ const incLink = (id) => {
 function renderEventDetail(inc, host) {
   const ev = inc.event, u = ++uid, list = inc.events.map((e, k) => Object.assign({ k }, e));
   const kv = [`<span>Anzahl <b>${fmt(ev.count, 0)}</b></span>`, `<span>Zeitraum <b>${esc(incRange(inc))}</b></span>`];
-  if (ev.users.length || ev.inSession) kv.push(`<span>Benutzer <b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
+  if (ev.users.length || ev.inSession) kv.push(`<span>${labelFor("Benutzer", ev.users[0])}<b>${ev.users.length ? capList(ev.users.map(esc)) : "–"}</b></span>`);
   // the assignment to users and sessions not checked (without processes): no statement about the session, as in the sentence
   const unchecked = ev.unchecked || [], noAssign = unchecked.some((x) => x.id === "users");
   if (ev.sessions.length) kv.push(`<span>${ev.sessions.length === 1 ? "Sitzung" : "Sitzungen"} ${capList(ev.sessions.map(lnkS))}</span>`);
   else if (ev.sessionUnknown && !noAssign) kv.push("<span><b>Sitzung nicht ermittelt</b></span>");
   else if (ev.noUserSession && !noAssign) kv.push("<span><b>ohne Benutzersitzung</b></span>");
-  if (ev.app) kv.push(`<span>Anwendung <b>${esc(ev.app)}</b>${ev.versions.length ? " " + (ev.versions.length === 1 ? "Version " : "Versionen ") + capList(ev.versions.map(esc)) : ""}</span>`);
-  if (ev.service) kv.push(`<span>Dienst <b>${esc(ev.service)}</b></span>`);
-  if (ev.driver) kv.push(`<span>Treiber <b>${esc(ev.driver)}</b></span>`);
-  if (ev.printer) kv.push(`<span>Drucker <b>${esc(ev.printer)}</b></span>`);
-  if (ev.modules.length) kv.push(`<span>Fehlerhaftes Modul <b>${ev.modules.map((m) => esc(m.name) + " (" + fmt(m.count, 0) + " von " + fmt(ev.moduleEvents, 0) + ")").join(", ")}</b>${ev.sameModule ? ", immer dasselbe" : ""}</span>`);
+  if (ev.app) kv.push(`<span>${labelFor("Anwendung", ev.app)}<b>${esc(ev.app)}</b>${ev.versions.length ? " " + (ev.versions.length === 1 ? "Version " : "Versionen ") + capList(ev.versions.map(esc)) : ""}</span>`);
+  if (ev.service) kv.push(`<span>${labelFor("Dienst", ev.service)}<b>${esc(ev.service)}</b></span>`);
+  if (ev.driver) kv.push(`<span>${labelFor("Treiber", ev.driver)}<b>${esc(ev.driver)}</b></span>`);
+  if (ev.printer) kv.push(`<span>${labelFor("Drucker", ev.printer)}<b>${esc(ev.printer)}</b></span>`);
+  // "immer dasselbe" is said only of several events that name the module: one event has nothing to agree with
+  if (ev.modules.length) kv.push(`<span>Fehlerhaftes Modul <b>${ev.modules.map((m) => esc(m.name) + " (" + fmt(m.count, 0) + " von " + fmt(ev.moduleEvents, 0) + ")").join(", ")}</b>${ev.sameModule && ev.moduleEvents > 1 ? ", immer dasselbe" : ""}</span>`);
   if (ev.codes.length) kv.push(`<span>Fehlercode <b>${ev.codes.map((c) => esc(c.code) + (c.text ? " (" + esc(c.text) + ")" : "") + ' <span style="white-space:nowrap">' + fmt(c.count, 0) + "-mal</span>").join(", ")}</b></span>`);
   kv.push(`<span>Quelle <b>${esc(ev.source || "–")}</b></span>`);
   // a pattern that would need a category left out with -Skip: "nicht geprüft", never "Kein Muster erkannt"
@@ -2180,6 +2311,8 @@ function openInExpert(id) {
   }
   selectIncident(id);
   window.scrollTo(0, 0);
+  // the column stands under the head bar and the range bar: their heights are settled before the entry is brought into it
+  syncBars();
   document.querySelector(`#incList .inc[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 // a mark of the timeline opens its incident
@@ -2221,7 +2354,7 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
   const nNear = BEFORE.nearCapture.length, nearStart = BEFORE.near.length - nNear;
   const near = !nearShown ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtDT(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` +
     `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
-  const head = `<div class="cardhead"><h3>Vor der Messung</h3></div>
+  const head = `<div class="cardhead"><h3>Vor der Messung${NO_RANGE_H}</h3></div>
     <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>`;
   // partial: only the available logs were read; the page names both and never speaks for the logs that were not read
   const partial = BEFORE_STATUS === "partial", logs = BEFORE.logs || [];
@@ -2257,7 +2390,9 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
     if (entry && ev.target.closest(".inc-guided")) window.WP.openIncident(Number(entry.dataset.id));
   });
   el.hidden = false;
-  tabCount("before", notMeasured("before") ? "" : BEFORE.incidents.length);
+  // the number of incidents only of a lookback that was read (whole or in part): where nothing was read, a 0 would read as
+  // "no incident in the days before"
+  tabCount("before", notMeasured("before") || !(BEFORE_STATUS === "read" || BEFORE_STATUS === "partial") ? "" : BEFORE.incidents.length);
 } else document.getElementById("beforeNone").innerHTML = '<div class="empty">Diese Aufzeichnung enthält keinen Rückblick auf die Tage vor der Messung.</div>';
 
 // ---------- findings: printing ----------
@@ -2285,7 +2420,7 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
   // "nein" for the part that was read: the lookback (without Ereignisse) or the capture (without Rueckblick); "–" when neither
   const lbRead = BEFORE_STATUS === "read" || BEFORE_STATUS === "partial";
   const involvedNo = evSkip ? (!lbSkip && lbRead ? 'nein <span class="note">(vor der Messung)</span>' : "–") : lbSkip ? 'nein <span class="note">(während der Messung)</span>' : "nein";
-  el.innerHTML = `<div class="cardhead"><h3>Drucken</h3></div>
+  el.innerHTML = `<div class="cardhead"><h3>Drucken${WHOLE_H}</h3></div>
     <h4>Druckertreiber${notMeasured("print.drivers") ? "" : ` (${PRINT.drivers.length})`}</h4>${notMeasured("print.drivers") || (PRINT.drivers.length ? '<div class="tablewrap small"><table id="tPrintDrivers"></table></div>' + involvedNote : '<div class="note">Keine Treiberliste aufgezeichnet.</div>')}
     <h4>Druckwarteschlangen${notMeasured("print.queues") ? "" : ` (${PRINT.queues.length})`}</h4>${notMeasured("print.queues") || (PRINT.queues.length ? '<div class="tablewrap small"><table id="tPrintQueues"></table></div><div class="note" style="margin-top:4px">Fehler: Zuwachs der Zähler während der Messung.</div>' : '<div class="note">Keine Zähler der Warteschlangen aufgezeichnet.</div>')}
     <h4>Prozesse der Rolle Drucken</h4>${notMeasured("print.processes") ? notMeasured("print.processes") : procRows.length ? `<div class="tablewrap small"><table id="tPrintProcs"></table></div><div class="note" style="margin-top:4px">Arbeitsspeicher (Working Set) über die Messung, ohne Bewertung. Wurde ein Prozess neu gestartet, gilt der Anfang für den ersten und das Ende für den letzten Prozess.</div>` : '<div class="note">Keine Prozesse der Rolle Drucken in der Messung.</div>'}`;
@@ -2323,13 +2458,13 @@ let sollTable = null;
   const stOf = sollStatus;
   const shares = (r) => !r.measured || r.pctNormal == null ? "–" :
     `<span class="sharebar" aria-hidden="true"><i class="b0" style="width:${r.pctNormal || 0}%"></i><i class="b1" style="width:${r.pctWarn || 0}%"></i><i class="b2" style="width:${r.pctCrit || 0}%"></i></span>` +
-    `<span class="shares"><i class="sym st-good" aria-hidden="true">●</i> ${pct(r.pctNormal)} · <i class="sym st-warn" aria-hidden="true">▲</i> ${pct(r.pctWarn)} · <i class="sym st-crit" aria-hidden="true">◆</i> ${pct(r.pctCrit)}</span>`;
+    `<span class="shares"><span><i class="sym st-good" aria-hidden="true">●</i> ${pct(r.pctNormal)}</span> · <span><i class="sym st-warn" aria-hidden="true">▲</i> ${pct(r.pctWarn)}</span> · <span><i class="sym st-crit" aria-hidden="true">◆</i> ${pct(r.pctCrit)}</span></span>`;
   const dash = (f) => (v, r) => r.measured ? f(v, r) : "–";
   sollTable = table("sollist", [
     { key: "label", head: "Messwert" },
     { key: "ideal", head: "Soll", fmt: (v) => esc(v || "–") },
     { key: "pctCrit", head: "Bewertung", title: "aus den Befunden des Messwerts im Messzeitraum: kritisch mit einem kritischen Befund, auffällig mit einem Befund", cls: "wrap",
-      fmt: (v, r) => statusHtml(stOf(r)) + (r.measured ? (r.empty ? `<span class="note">${esc(r.empty)}</span>` : loneExceed(r) ? `<span class="note">${LONE}</span>` : "") : `<span class="note">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</span>`),
+      fmt: (v, r) => statusHtml(stOf(r), r.wholeStatus ? WHOLE_STATUS : "") + (r.measured ? (r.empty ? `<span class="note">${esc(r.empty)}</span>` : loneExceed(r) ? `<span class="note">${LONE}</span>` : "") : `<span class="note">${esc(r.detail || "Quelle auf diesem Server nicht verfügbar")}</span>`),
       sortVal: (r) => r.measured && r.status !== "na" ? (r.status || 0) * 1e6 + (r.pctCrit || 0) * 1000 + (r.pctWarn || 0) : -1 },
     cNum("avg", "Ø", 1, "", { fmt: dash((v, r) => fmtVal(v, r.unit)) }),
     cNum("p95", "P95", 1, "", { fmt: dash((v, r) => fmtVal(v, r.unit)) }),
@@ -2372,7 +2507,7 @@ let sollTable = null;
         <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
         <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
         <span>Verdichtung <b>${burstText}</b></span>
-        <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)`}</span>` +
+        <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Servers)`}</span>` +
         (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable${sfx}">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
       (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped${sfx}"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
       (reads ? `<${sub} style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</${sub}><ul class="errlist" id="eventReads${sfx}">${reads}</ul>` +
@@ -2390,7 +2525,7 @@ let sollTable = null;
       { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
     ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
   };
-  renderQuality(document.getElementById("quality"), "", '<h3 style="margin-bottom:8px">Messqualität</h3>', "h4");
+  renderQuality(document.getElementById("quality"), "", `<h3 style="margin-bottom:8px">Messqualität${WHOLE_H}</h3>`, "h4");
   renderQuality(document.getElementById("qualityGBody"), "G", "", "h3");
 }
 
@@ -2398,7 +2533,7 @@ let sollTable = null;
 // One range holds for the whole expert view. What it shows for a range comes from the report data alone: the series of the
 // signals, of the sessions, applications and processes, and the findings (the signals of the incidents). Nothing is detected
 // again.
-const FINDINGS = INC.flatMap((i) => i.signals || []);
+const FINDINGS = INC.flatMap((i) => i.signals || []), RESPONSE_TIMES = ["disk.latency", "smb.latency", "probe.connect"];
 const snapsIn = (t0, t1) => upperBound(GRID.snap, t1) - lowerBound(GRID.snap, t0);
 // The series of a signal in the report data: the grid they lie on and, per instance, a label and its values (dense: values;
 // sparse: t and v). total: the worst value per point in time where the data hold it (the input delay over all sessions).
@@ -2425,8 +2560,9 @@ function signalData(id) {
 // the range (with instances the worst instance per point in time, as in the target comparison of the whole capture), the
 // status from the findings that intersect the range, the number of snapshots in the range. Also: n (measured points),
 // exceeded (a point reached "auffällig"), worst (the instance with the most such points), series (false: the report data hold
-// no series of the signal, so only the status holds for a range).
+// no series of the signal, so only the status holds for a range). The bounds may come in either order.
 function rangeStats(id, t0, t1) {
+  if (t1 < t0) [t0, t1] = [t1, t0];
   const th = TH.get(id) || {}, low = th.direction === "low", src = signalData(id), row = D.sollIst.find((r) => r.id === id);
   const level = (v) => low ? (v <= th.crit ? 2 : v <= th.warn ? 1 : 0) : (v >= th.crit ? 2 : v >= th.warn ? 1 : 0), worse = (a, b) => low ? a < b : a > b;
   let status = 0;
@@ -2436,8 +2572,9 @@ function rangeStats(id, t0, t1) {
   if (!out.series) return out;
   const lo = lowerBound(src.grid, t0), hi = upperBound(src.grid, t1), per = new Array(Math.max(0, hi - lo)).fill(null);
   // The report data do not say which response times were too thin to be rated (fewer operations than the threshold asks for).
-  // A value above the maximum of the whole capture was one of them and is left out, so a range never shows more than the whole.
-  const cap = !low && row && row.max != null ? row.max + 0.06 : Infinity;
+  // A response time above the maximum of the whole capture was one of them and is left out, so a range never shows more than
+  // the whole. Every other signal is rated at each of its points: none of them is dropped.
+  const cap = RESPONSE_TIMES.includes(id) && !low && row && row.max != null ? row.max + 0.06 : Infinity;
   let best = null;
   for (const it of src.inst) {
     let bad = 0, worst = null;
@@ -2466,32 +2603,69 @@ function rangedSoll(r, z) {
   if (!r.measured) return r;
   const st = rangeStats(r.id, z.t0, z.t1);
   return Object.assign({}, r, { avg: st.avg, p95: st.p95, max: st.max, pctNormal: st.pctNormal, pctWarn: st.pctWarn, pctCrit: st.pctCrit, exceeded: st.exceeded, worstInstance: st.worst,
-    status: st.status || (st.series && !st.n ? "na" : 0),
+    status: st.status || (st.series && !st.n ? "na" : 0), wholeStatus: !st.series,
     empty: !st.series ? "kein Verlauf in den Berichtsdaten: für einen Zeitraum nicht auswertbar" : !st.n ? "keine Messwerte im gewählten Zeitraum" : "" });
+}
+// A snapshot holds what happened since the snapshot before it: it stands for the interval that ends with it (the first one
+// for one regular snapshot interval). A range takes the snapshots whose own time lies in it, so its edges are attributed like
+// this: the first snapshot of the range counts with its whole interval, also the part of it before the start of the range;
+// the time between the last snapshot of the range and its end belongs to the next snapshot and is left out. A range is
+// covered by whole snapshot intervals, shifted towards the past by up to one of them (6 s during an incident, else 15 s).
+function snapSec(i) { const S = GRID.snap; return (i > 0 ? S[i] - S[i - 1] : (M.snapSec || 0) * 1000) / 1000; }
+// CPU (% of the server), working set (MB) and I/O (KB/s) of an item at the snapshots lo to hi - 1. Its means are means over
+// time: every snapshot weighs as many seconds as it stands for. Snapshots follow each other faster while an incident lasts,
+// so a plain mean of the snapshots would lean towards the incidents. cpuAvg is the CPU time over the capacity of the seconds
+// covered, as the report data state it for a process; cpuP95 is the percentile of the snapshot values (its column says so).
+function snapUse(it, lo, hi) {
+  const o = it.o || 0, c = [];
+  let cpuSec = 0, cpuCov = 0, cpuSum = 0, wsSum = 0, wsCov = 0, wsPlain = 0, wsN = 0, wsMax = null, ioMB = it.io ? 0 : null, load = false;
+  for (let i = Math.max(lo, o); i < hi; i++) {
+    const cv = it.cpu ? it.cpu[i - o] : null, wv = it.ws ? it.ws[i - o] : null, iv = it.io ? it.io[i - o] : null, s = snapSec(i);
+    if (cv != null) { c.push(cv); cpuSum += cv; cpuSec += cv / 100 * (M.cores || 1) * s; cpuCov += s; }
+    if (wv != null) { wsSum += wv * s; wsCov += s; wsPlain += wv; wsN++; if (wsMax == null || wv > wsMax) wsMax = wv; }
+    if (iv != null) ioMB += iv * s / 1024;
+    if (cv > 0 || wv > 0) load = true;
+  }
+  c.sort((x, y) => x - y);
+  // (a capture without the length of its snapshot interval weighs every snapshot alike)
+  return { load, cpuSec, cpuAvg: cpuCov > 0 ? 100 * cpuSec / ((M.cores || 1) * cpuCov) : c.length ? cpuSum / c.length : null,
+    cpuP95: c.length ? c[Math.max(0, Math.ceil(0.95 * c.length) - 1)] : null, cpuMax: c.length ? c[c.length - 1] : null,
+    wsAvg: wsCov > 0 ? wsSum / wsCov : wsN ? wsPlain / wsN : null, wsMax, ioMB };
+}
+// The use of every session at the snapshots lo to hi - 1 and the CPU time of all of them. It is computed once per range: the
+// three tables and the processes of an opened session ask for the same range.
+let sessUseOf = { key: "", use: [], total: 0 };
+function sessionUse(lo, hi) {
+  const key = lo + ":" + hi;
+  if (sessUseOf.key !== key) { const use = D.sessions.map((s) => snapUse(s, lo, hi)); sessUseOf = { key, use, total: use.reduce((x, u) => x + u.cpuSec, 0) }; }
+  return sessUseOf;
+}
+// The rows of the whole capture as the report data hold them. Their two means (CPU and working set) are the means over time of
+// their series, like the means of a range: the same row then reads the same for the whole capture and for a range that is a
+// moment shorter. (The report data state the mean of a process over time; for sessions and applications, and for the working
+// set, they state the plain mean of the snapshots.) A row without a series keeps the values as delivered.
+const WHOLE_ROWS = {};
+function wholeRows(kind) {
+  if (!WHOLE_ROWS[kind]) {
+    const n = GRID.snap.length;
+    WHOLE_ROWS[kind] = D[kind].map((it) => {
+      if (!it.cpu && !it.ws) return it;
+      const u = snapUse(it, 0, n);
+      return Object.assign({}, it, { cpuAvg: u.cpuAvg == null ? it.cpuAvg : u.cpuAvg, wsAvg: u.wsAvg == null ? it.wsAvg : u.wsAvg });
+    });
+  }
+  return WHOLE_ROWS[kind];
 }
 // Sessions ("sessions"), applications ("apps") or processes ("procs") with their values in a time range, from their snapshot
 // series: who has no snapshot with load in the range is left out, and so is an application or a process without a series.
 // A value the report data hold no series for is null (the tables show "–"). Sessions are listed by their presence where the
-// range holds no snapshot or where the resources of the sessions were not measured.
-function rangeRows(kind, t0, t1) {
+// range holds no snapshot or where the resources of the sessions were not measured. The bounds may come in either order.
+// use: the use of the sessions in the range (sessionUse), handed in by who already has it.
+function rangeRows(kind, t0, t1, use) {
+  if (t1 < t0) [t0, t1] = [t1, t0];
   const S = GRID.snap, T = GRID.tick, lo = lowerBound(S, t0), hi = upperBound(S, t1);
-  // seconds a snapshot stands for: the time since the snapshot before it
-  const sec = (i) => (i > 0 ? S[i] - S[i - 1] : (M.snapSec || 0) * 1000) / 1000;
   const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null, p95 = (a) => a.length ? a[Math.max(0, Math.ceil(0.95 * a.length) - 1)] : null, top = (a) => a.length ? a[a.length - 1] : null;
-  // CPU (% of the host), working set (MB) and I/O (KB/s) of an item at the snapshots of the range
-  const use = (it) => {
-    const o = it.o || 0, c = [], w = []; let cpuSec = 0, ioMB = it.io ? 0 : null, load = false;
-    for (let i = Math.max(lo, o); i < hi; i++) {
-      const cv = it.cpu ? it.cpu[i - o] : null, wv = it.ws ? it.ws[i - o] : null, iv = it.io ? it.io[i - o] : null;
-      if (cv != null) { c.push(cv); cpuSec += cv / 100 * (M.cores || 1) * sec(i); }
-      if (wv != null) w.push(wv);
-      if (iv != null) ioMB += iv * sec(i) / 1024;
-      if (cv > 0 || wv > 0) load = true;
-    }
-    c.sort((a, b) => a - b); w.sort((a, b) => a - b);
-    return { load, cpuSec, cpuAvg: mean(c), cpuP95: p95(c), cpuMax: top(c), wsAvg: mean(w), wsMax: top(w), ioMB };
-  };
-  const sessUse = D.sessions.map(use), total = sessUse.reduce((x, u) => x + u.cpuSec, 0);
+  const su = use || sessionUse(lo, hi), sessUse = su.use, total = su.total;
   if (kind === "sessions") {
     const byPresence = hi <= lo || !!notMeasured("sessions.resources"), tlo = lowerBound(T, t0), thi = upperBound(T, t1), warn = (TH.get("input.session") || {}).warn;
     return D.sessions.map((s, k) => ({ s, u: sessUse[k] })).filter((o) => o.s.first <= t1 && o.s.last >= t0 && (byPresence || o.u.load)).map(({ s, u }) => {
@@ -2505,11 +2679,11 @@ function rangeRows(kind, t0, t1) {
     });
   }
   if (kind === "apps") {
-    const list = D.apps.filter((a) => a.cpu || a.ws).map((a) => ({ a, u: use(a) })).filter((o) => o.u.load), all = total || list.reduce((x, o) => x + o.u.cpuSec, 0);
+    const list = D.apps.filter((a) => a.cpu || a.ws).map((a) => ({ a, u: snapUse(a, lo, hi) })).filter((o) => o.u.load), all = total || list.reduce((x, o) => x + o.u.cpuSec, 0);
     return list.map(({ a, u }) => Object.assign({}, a, { sess: null, inst: null, instAvg: null, cpuShare: all > 0 ? 100 * u.cpuSec / all : null, cpuSec: u.cpuSec, cpuAvg: u.cpuAvg, cpuP95: u.cpuP95, cpuMax: u.cpuMax,
       wsAvg: u.wsAvg, wsMax: u.wsMax, wsPerInst: null, ioMB: null }));
   }
-  return D.procs.filter((p) => p.cpu || p.ws).map((p) => ({ p, u: use(p) })).filter((o) => o.u.load)
+  return D.procs.filter((p) => p.cpu || p.ws).map((p) => ({ p, u: snapUse(p, lo, hi) })).filter((o) => o.u.load)
     .map(({ p, u }) => Object.assign({}, p, { cpuSec: u.cpuSec, cpuAvg: u.cpuAvg, cpuMax: u.cpuMax, wsAvg: u.wsAvg, wsMax: u.wsMax, privMax: null, ioMB: null, handles: null, threads: null }));
 }
 // The range in force (the whole capture or the range chosen) on the page: the range bar, the charts, the tiles, the target
@@ -2518,15 +2692,18 @@ function refreshRange() {
   const z = window.WP.zoom, r = z || FULL;
   // a range set otherwise that leaves the chosen incident behind takes the choice away
   if (selInc != null && !selecting) { const i = incById.get(selInc); if (!z || z.t1 < i.start || z.t0 > i.end) selInc = null; }
-  const sel = selInc == null ? null : incById.get(selInc), snaps = z ? snapsIn(z.t0, z.t1) : 0, when = z ? "Zeitraum " + rangeText(z, z.t1 - z.t0 < 3600000) : "";
+  const sel = selInc == null ? null : incById.get(selInc), snaps = snapsIn(r.t0, r.t1), when = z ? "Zeitraum " + rangeText(z, z.t1 - z.t0 < 3600000) : "";
   document.getElementById("expert").classList.toggle("ranged", !!z);
-  document.getElementById("rangeInfo").innerHTML = `Zeitraum <b>${rangeText(r, !!z && z.t1 - z.t0 < 3600000)}</b> (${fmtSpan(r.t1 - r.t0)})` + (z ? "" : " · gesamte Messung") +
-    (sel ? ` · Vorfall ${sel.id}: ${esc((sel.guide || {}).tech || typeText(sel))}` : "");
+  // the chosen incident by its kind; an incident from events by the kind of its events ("Vorfall 10: Anwendungsabsturz")
+  const selWord = !sel ? "" : sel.type === "ereignis" ? EVINC_LONG[sel.event.kind] || sel.event.kind : (sel.guide || {}).tech || typeText(sel);
+  const info = document.getElementById("rangeInfo");
+  info.innerHTML = `Zeitraum <b>${rangeText(r, !!z && z.t1 - z.t0 < 3600000)}</b> (${fmtSpan(r.t1 - r.t0)})` + (z ? "" : " · gesamte Messung") + (sel ? ` · Vorfall ${sel.id}: ${esc(selWord)}` : "");
+  info.title = info.textContent;
   document.getElementById("rangeAll").disabled = !z;
-  // fewer than three snapshots carry the tables of a short range: the bar says how many
+  // fewer than three snapshots carry the tables (a short range, or a capture that was stopped early): the bar says how many
   const few = document.getElementById("rangeSnaps");
-  few.hidden = !z || snaps >= 3;
-  few.innerHTML = few.hidden ? "" : '<i class="sym" aria-hidden="true">▲</i>Tabellenwerte ' + (snaps ? "gestützt auf " + plural(snaps, "Schnappschuss", "Schnappschüsse") : "ohne Schnappschuss im Zeitraum");
+  few.hidden = snaps >= 3;
+  few.innerHTML = few.hidden ? "" : '<i class="sym" aria-hidden="true">▲</i>Tabellenwerte ' + (snaps ? "gestützt auf " + plural(snaps, "Schnappschuss", "Schnappschüsse") : z ? "ohne Schnappschuss im Zeitraum" : "ohne Schnappschuss in der Messung");
   few.title = "Die Tabellen der Sitzungen, Anwendungen und Prozesse stützen sich auf die Schnappschüsse im Zeitraum.";
   for (const e of document.querySelectorAll("#incList .inc")) {
     const on = Number(e.dataset.id) === selInc;
@@ -2537,19 +2714,26 @@ function refreshRange() {
   renderTiles(soll);
   sollTable.setRows(soll);
   note("sollRange", z ? `${when}: Ø, P95, Max und Zeitanteile aus den Messpunkten im Zeitraum; die Bewertung folgt den Befunden, die in den Zeitraum reichen.` : "");
-  const sess = z ? rangeRows("sessions", z.t0, z.t1) : D.sessions, apps = z ? rangeRows("apps", z.t0, z.t1) : D.apps, procs = z ? rangeRows("procs", z.t0, z.t1) : D.procs;
+  // the use of the sessions in the range: computed once, for the three tables
+  const use = z ? sessionUse(lowerBound(GRID.snap, z.t0), upperBound(GRID.snap, z.t1)) : null, rows = (kind) => z ? rangeRows(kind, z.t0, z.t1, use) : wholeRows(kind);
+  const sess = rows("sessions"), apps = rows("apps"), procs = rows("procs");
   sessTable.setRows(sess); appTable.setRows(apps); procTable.setRows(procs);
-  const noProcs = !!notMeasured("procs"), bare = D.apps.filter((a) => !a.cpu && !a.ws).length;
-  const from = snaps ? "Werte aus " + plural(snaps, "Schnappschuss", "Schnappschüssen") : "kein Schnappschuss im Zeitraum", dash = (cols) => ` Wofür die Berichtsdaten keinen Verlauf enthalten, steht „–“ (${cols}).`;
-  tabCount("sessions", sess.length); tabCount("apps", noProcs ? "" : apps.length); tabCount("procs", noProcs ? "" : procs.length);
+  // A range without a snapshot (shorter than the time between two of them): nothing of the applications and processes was
+  // sampled there. The tabs carry no count, the tables and notes say so, and nobody is counted as "mit Last" or without.
+  const noProcs = !!notMeasured("procs"), bare = D.apps.filter((a) => !a.cpu && !a.ws).length, none = !!z && !snaps;
+  const from = "Werte aus " + plural(snaps, "Schnappschuss", "Schnappschüssen"), dash = (cols) => ` Wofür die Berichtsdaten keinen Verlauf enthalten, steht „–“ (${cols}).`;
+  const unsampled = (what) => `${when}: im Zeitraum liegt kein Schnappschuss, ${what} sind für ihn nicht auswertbar.`;
+  tabCount("sessions", sess.length); tabCount("apps", noProcs || none ? "" : apps.length); tabCount("procs", noProcs || none ? "" : procs.length);
   note("sessRange", !z ? "" : notMeasured("sessions.resources") ? `${when}: ${sess.length} von ${D.sessions.length} Sitzungen anwesend.`
+    : none ? `${when}: ${sess.length} von ${D.sessions.length} Sitzungen anwesend. Im Zeitraum liegt kein Schnappschuss: die Werte aus Schnappschüssen (CPU, RAM, I/O, ICA RTT) stehen als „–“.`
     : `${when}: ${sess.length} von ${D.sessions.length} Sitzungen mit Last, ${from}.` + dash("Aktiv %, Commit Max, Prozesse Ø"));
-  note("appsRange", !z || noProcs ? "" : `${when}: ${apps.length} von ${D.apps.length} Anwendungen mit Last, ${from}.` +
+  note("appsRange", !z || noProcs ? "" : none ? unsampled("Anwendungen") : `${when}: ${apps.length} von ${D.apps.length} Anwendungen mit Last, ${from}.` +
     (bare ? ` ${plural(bare, "Anwendung", "Anwendungen")} mit geringer Last ${bare === 1 ? "hat" : "haben"} keinen gespeicherten Verlauf und ${bare === 1 ? "fehlt" : "fehlen"} im gewählten Zeitraum.` : "") +
     dash("Sitzungen, Instanzen, gleichzeitig Ø, RAM Ø je Instanz, I/O MB"));
-  note("procsRange", !z || noProcs ? "" : `${when}: ${procs.length} von ${D.procs.length} Prozessen mit Last, ${from}.` + dash("Commit Max, I/O MB, Handles Max, Threads Max"));
+  note("procsRange", !z || noProcs ? "" : none ? unsampled("Prozesse") : `${when}: ${procs.length} von ${D.procs.length} Prozessen mit Last, ${from}.` + dash("Commit Max, I/O MB, Handles Max, Threads Max"));
   refreshEvents(z);
   for (const fn of rangeFollow.values()) fn();
+  syncBars();
   refreshCharts();
 }
 

@@ -183,7 +183,7 @@ async function checkCards(browser, dir, scheme) {                   // Karten, w
   await page.click('#measured > summary');
   const mt = await page.locator('#measured').innerText(), meas = D.sollIst.filter((r) => r.measured);
   ok(mt.includes('Was wurde gemessen, was nicht') && mt.includes(`Gemessen (${meas.length})`) && mt.includes(`Nicht gemessen (${D.sollIst.length - meas.length})`) && mt.includes(meas[0].label + ': Max'), 'gemessene und nicht gemessene Werte');
-  ok(!mt.includes('Kein Vorfall') && !mt.includes('Keine Schwelle wurde überschritten') && !mt.includes('im ganzen Zeitraum im Soll'), 'mit Vorfaellen keine Aussage ohne Befund');
+  ok(!mt.includes('Kein Vorfall') && !mt.includes('Keine Schwelle wurde überschritten') && !mt.includes('in der gesamten Messung im Soll'), 'mit Vorfaellen keine Aussage ohne Befund');
   await page.click('#qualityG > summary');
   const flat = (s) => s.replace(/\s+/g, ' ').trim(), qg = flat(await page.locator('#qualityG').innerText());
   await showTab(page, 'quality');
@@ -1243,7 +1243,9 @@ async function checkReported(browser, dir, scheme) {                // gemeldete
   }), scheme), mc = m.D.incidents.find((i) => i.lead === 'cpu'), alias = m.D.meta.focus.user;
   await ivOpen(m.page, mc.id);
   const mt = await m.page.locator('#incident').innerText();
-  ok(/^Benutzer \d+$/.test(alias) && (await m.page.locator('#incident .iv-meta .flag').first().innerText()) === 'betrifft den gemeldeten Benutzer ' + alias && oneLine(await m.page.locator('#incident .iv-affected li.rep-user').innerText()).startsWith(alias + ' (#') && !/user\d{3}/.test(mt), 'maskiert: Hinweis und Kennzeichnung zeigen das Alias: ' + alias);
+  // (fix round 1 of Task 10, item 10: the alias begins with the word the label ends with, so the word is said once:
+  // "betrifft den gemeldeten Benutzer 02", not "… Benutzer Benutzer 02")
+  ok(/^Benutzer \d+$/.test(alias) && (await m.page.locator('#incident .iv-meta .flag').first().innerText()) === 'betrifft den gemeldeten ' + alias && oneLine(await m.page.locator('#incident .iv-affected li.rep-user').innerText()).startsWith(alias + ' (#') && !/user\d{3}/.test(mt), 'maskiert: Hinweis und Kennzeichnung zeigen das Alias: ' + alias);
   await m.page.close();
 }
 
@@ -1464,11 +1466,11 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   const sp = await open(browser, path.join(dir, 'report-spike.html'), scheme);
   const ms = await sp.page.locator('#measured').innerText();
   ok(ms.includes('Kein Vorfall.') && ms.includes('Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): CPU-Auslastung Max 96,5 % (Soll unter 75 %).'), 'einzelne Ueberschreitungen genannt, gefuehrte Ansicht: ' + ms.split('\n').slice(0, 3).join(' / '));
-  ok(!ms.includes('Keine Schwelle wurde überschritten') && !ms.includes('lagen im ganzen Zeitraum im Soll'), 'keine Aussage, alles sei im Soll, gefuehrte Ansicht');
+  ok(!ms.includes('Keine Schwelle wurde überschritten') && !ms.includes('lagen in der gesamten Messung im Soll'), 'keine Aussage, alles sei im Soll, gefuehrte Ansicht');
   await showExpert(sp.page);
   const nf = await sp.page.locator('#noFinding').innerText();
   ok(nf.includes('Kein Vorfall.') && nf.includes('Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): CPU-Auslastung Max 96,5 % (Soll unter 75 %).'), 'einzelne Ueberschreitungen genannt: ' + nf.split('\n').slice(0, 2).join(' / '));
-  ok(!nf.includes('Keine Schwelle wurde überschritten') && !nf.includes('lagen im ganzen Zeitraum im Soll'), 'keine Aussage, alles sei im Soll');
+  ok(!nf.includes('Keine Schwelle wurde überschritten') && !nf.includes('lagen in der gesamten Messung im Soll'), 'keine Aussage, alles sei im Soll');
   ok(await sp.page.locator('#incList .inc').count() === 0, 'kein Vorfall aus zwei Takten');
   let row = await sp.page.locator('#sollist tbody tr[data-id="cpu.host"]').innerText();
   ok(row.includes('normal') && row.includes('einzelne Überschreitungen') && !row.includes('kritisch'), 'Soll-Ist-Zeile normal mit Zusatz');
@@ -1504,7 +1506,10 @@ async function checkFinalFix(browser, dir, scheme) {                // Abschluss
   entry = await openIncident(v.page, disk.id);
   box = await entry.locator('.iv-evidence .causebox').innerText();
   ok(box.includes('Größter Verbraucher: Microsoft Defender mit 96 % der I/O-Menge. Im Fenster lief ein Virenscan; Zeitplan und Umfang des Scans prüfen.'), 'Schutzsoftware als groesster Verbraucher: ' + box);
-  ok(box.includes('Größter Anteil außerhalb der Schutzsoftware: robocopy.exe') && !box.includes('Begleiter') && !(await entry.locator('.iv-evidence .evidence').innerText()).includes('Begleiter:'), 'nicht als Begleiter bezeichnet');   // the lists of the evidence (its first line is the incident's sentence as delivered)
+  // the whole evidence of the incident view (cause box, rankings, lists, table of the measured values, chart legends) without
+  // the technical text, which is the incident's sentence as delivered (the patched data keep it)
+  const evBody = await entry.locator('.iv-evbody').evaluate((b) => { const c = b.cloneNode(true); for (const t of c.querySelectorAll('.techtext')) t.remove(); return c.textContent; });
+  ok(box.includes('Größter Anteil außerhalb der Schutzsoftware: robocopy.exe') && !box.includes('Begleiter') && evBody.length > 500 && evBody.includes('Größter Anteil außerhalb der Schutzsoftware') && !evBody.includes('Begleiter'), 'nicht als Begleiter bezeichnet');
   entry = await openIncident(v.page, D.incidents.find((i) => i.lead === 'cpu').id);
   ok((await entry.locator('.iv-evidence .causebox').innerText()).includes('Kein einzelner Hauptverursacher: kein Prozess erreicht 10 % der CPU-Zeit.'), 'kein Hauptverursacher unter der Untergrenze');
   entry = await openIncident(v.page, backend.id);
@@ -2241,9 +2246,17 @@ async function checkRange(browser, dir, scheme) {
   const z = await page.evaluate(() => window.WP.zoom);
   ok(z && z.t0 < cpu.start && z.t1 > cpu.end, 'Klick auf einen Vorfall setzt den Zeitraum');
   ok(await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1 && await page.locator('#chCpu .incband').count() === 1, 'Vorfall und Fenster hervorgehoben');
-  ok((await page.locator('.tile[data-signal="cpu.host"]').innerText()).includes('kritisch'), 'Kachel bezogen auf den Zeitraum');
+  // (P3-R74: the brief asserted "kritisch", which the tile shows for the whole capture too: the share of time of the range,
+  // computed from the series, stands in the tile, and the share of the whole capture does not)
+  const crit = D.thresholds.find((x) => x.id === 'cpu.host').crit, inZ = D.host.cpu.filter((v, k) => v != null && D.tickT[k] >= z.t0 && D.tickT[k] <= z.t1);
+  const share = de(100 * inZ.filter((v) => v >= crit).length / inZ.length, 1) + ' % der Zeit', whole = de(D.sollIst.find((r) => r.id === 'cpu.host').pctCrit, 1) + ' % der Zeit', tile = oneLine(await page.locator('.tile[data-signal="cpu.host"]').innerText());
+  ok(inZ.length > 30 && share !== whole && tile.includes('◆ kritisch ' + share) && !tile.includes(whole), 'Kachel bezogen auf den Zeitraum: ' + tile);
   await page.click('#xtabs button[data-tab=sessions]');
-  ok(await page.locator('#tSessions tbody tr').count() <= before, 'Tabellen nur mit im Zeitraum aktiven Sitzungen');
+  // (P3-R74: the brief asserted "<= before", which holds on a page that ignores the range: the number of rows is the number
+  // of sessions with load at a snapshot of the range, from the data; a range in which fewer sessions have load than the capture
+  // holds is asserted with the patched report further down)
+  const [zlo, zhi] = snapRange(D, z);
+  ok(before === D.sessions.length && await page.locator('#tSessions tbody tr').count() === D.sessions.filter((x) => hasLoad(x, zlo, zhi)).length, 'Tabellen nur mit im Zeitraum aktiven Sitzungen');
   // (literal adapted, P3-R1: the simulated hour takes a snapshot every 6 s while an incident lasts, so 20 s hold four of them;
   // the shortest range, 10 s from the start of the incident, holds two)
   const few = D.snapT.filter((t) => t >= cpu.start && t <= cpu.start + 10000).length;
@@ -2278,6 +2291,17 @@ async function checkRange(browser, dir, scheme) {
   const col = await many.page.evaluate(() => { const l = document.getElementById('incList'), c = document.getElementById('incCol').getBoundingClientRect(); return [l.children.length, l.scrollHeight > l.clientHeight, c.bottom <= window.innerHeight, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; });
   ok(col[0] === many.D.incidents.length && col[1] && col[2] && col[3], 'viele Vorfaelle: die Vorfallsspalte nennt alle und rollt in sich: ' + col.join(' '));
   await many.page.close();
+  // (P3-R74) sessions without load in a range are left out: two sessions idle around the CPU incident, the table of the range
+  // holds exactly the others
+  const idle = await openExpert(browser, patched(dir, 'report.html', 'report-range-idle.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu');
+    for (const s of J.sessions.filter((x) => x.user).slice(-2)) J.snapT.forEach((t, i) => { if (t >= c.start - 60000 && t <= c.end + 60000) { s.cpu[i] = 0; s.ws[i] = 0; } });
+  }), scheme);
+  const ic = idle.D.incidents.find((i) => i.lead === 'cpu'), allRows = await idle.page.locator('#tSessions tbody tr').count();
+  await idle.page.click(`#incList .inc[data-id="${ic.id}"]`);
+  const [ilo, ihi] = snapRange(idle.D, await idle.page.evaluate(() => window.WP.zoom)), withLoad = idle.D.sessions.filter((x) => hasLoad(x, ilo, ihi)).length;
+  ok(allRows === idle.D.sessions.length && withLoad === allRows - 2 && await idle.page.locator('#tSessions tbody tr').count() === withLoad, 'Tabellen nur mit im Zeitraum aktiven Sitzungen: zwei Sitzungen ohne Last im Zeitraum fehlen');
+  await idle.page.close();
   const edge = await open(browser, patched(dir, 'report.html', 'report-edge.html', (J) => {          // Review Focus 5
     const e = J.incidents.find((i) => i.type === 'ereignis'); e.start = e.end = J.meta.end;
   }), scheme);
@@ -2293,14 +2317,26 @@ async function checkRange(browser, dir, scheme) {
 const snapRange = (D, z) => [D.snapT.findIndex((t) => t >= z.t0) < 0 ? D.snapT.length : D.snapT.findIndex((t) => t >= z.t0), D.snapT.filter((t) => t <= z.t1).length];
 const hasLoad = (it, lo, hi) => { const o = it.o || 0; for (let i = Math.max(lo, o); i < hi; i++) if ((it.cpu && it.cpu[i - o] > 0) || (it.ws && it.ws[i - o] > 0)) return true; return false; };
 const de = (v, d) => v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
-// pairs of target-line labels of the charts under a selector that touch each other, and labels that leave their plot
+// the means over time of an item at the snapshots lo to hi - 1, from its series: a snapshot weighs the seconds since the one
+// before it (the first one a regular snapshot interval); cpuCov: the seconds covered by snapshots with a CPU value
+const timeMeans = (D, it, lo, hi) => {
+  const sec = (i) => (i > 0 ? D.snapT[i] - D.snapT[i - 1] : D.meta.snapSec * 1000) / 1000, o = it.o || 0; let cs = 0, cc = 0, ws = 0, wc = 0;
+  for (let i = Math.max(lo, o); i < hi; i++) { const c = it.cpu ? it.cpu[i - o] : null, w = it.ws ? it.ws[i - o] : null; if (c != null) { cs += c * sec(i); cc += sec(i); } if (w != null) { ws += w * sec(i); wc += sec(i); } }
+  return { cpuAvg: cc ? cs / cc : null, wsAvg: wc ? ws / wc : null, cpuCov: cc };
+};
+// contrast of two colours as the browser computes them ("rgb(r, g, b)"), after WCAG
+const luminance = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => { v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+// pairs of target-line labels of the charts under a selector that touch each other, and labels that leave their chart: a
+// label stands in the plot or (fix round 1 of Task 10: where no place on its line is free) wholly in the right margin
+// beside the plot, inside the picture
 const labelFaults = (page, sel) => page.locator(sel).evaluateAll((hosts) => {
   const bad = [];
   for (const host of hosts) for (const svg of host.querySelectorAll('svg')) {
     const boxes = [...svg.querySelectorAll('.band-warn text, .band-crit text')].map((t) => t.getBBox()), c = svg.querySelector('clipPath rect');
-    const x0 = Number(c.getAttribute('x')), x1 = x0 + Number(c.getAttribute('width'));
+    const x0 = Number(c.getAttribute('x')), x1 = x0 + Number(c.getAttribute('width')), W = Number(svg.getAttribute('width'));
     boxes.forEach((b, k) => {
-      if (b.x < x0 - 1 || b.x + b.width > x1 + 1) bad.push((host.id || host.className) + ': ausserhalb');
+      if (!(b.x >= x0 - 1 && b.x + b.width <= x1 + 1) && !(b.x >= x1 && b.x + b.width <= W)) bad.push((host.id || host.className) + ': ausserhalb');
       for (const o of boxes.slice(k + 1)) if (b.x < o.x + o.width && b.x + b.width > o.x && b.y < o.y + o.height && b.y + b.height > o.y) bad.push((host.id || host.className) + ': ueberlappt');
     });
   }
@@ -2337,10 +2373,18 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
       wrong.push(st.id + ': ' + JSON.stringify(st) + ' statt ' + JSON.stringify([r.max, r.avg, r.p95, r.pctNormal, r.pctWarn, r.pctCrit, r.status, r.worstInstance]));
   }
   ok(stats.length === D.sollIst.length && stats.filter((x) => x.series).length === D.sollIst.length - 1 && stats.every((x) => x.snaps === D.snapT.length) && !wrong.length, 'rangeStats ueber die ganze Messung ergibt den Soll-Ist-Vergleich: ' + wrong.join(' | '));
-  const rowsAll = await page.evaluate(() => ['sessions', 'apps', 'procs'].map((k) => rangeRows(k, FULL.t0, FULL.t1).map((r) => [k === 'procs' ? r.k : r.i, r.cpuSec, r.cpuMax, r.wsMax, r.cpuShare, r.inMax])));
+  const rowsAll = await page.evaluate(() => ['sessions', 'apps', 'procs'].map((k) => rangeRows(k, FULL.t0, FULL.t1).map((r) => [k === 'procs' ? r.k : r.i, r.cpuSec, r.cpuMax, r.wsMax, r.cpuShare, r.inMax, r.cpuAvg, r.wsAvg])));
   const drift = [];
   rowsAll[0].forEach((r) => { const x = D.sessions.find((y) => y.i === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.01)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1) && near(r[4], x.cpuShare, 0.2) && r[5] === x.inMax)) drift.push('Sitzung ' + r[0] + ' ' + JSON.stringify(r)); });
   rowsAll[2].forEach((r) => { const x = D.procs.find((y) => y.k === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.02)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1))) drift.push('Prozess ' + r[0] + ' ' + JSON.stringify(r)); });
+  // (fix round 1, item 1) the means are means over time. CPU: the delivered CPU seconds over the capacity of the seconds the
+  // item is covered by snapshots; for a process that is the mean the report data state (cpuAvg), within rounding. Working
+  // set: the mean of the series weighted by the seconds each snapshot stands for.
+  const nS = D.snapT.length, means = [];
+  rowsAll[2].forEach((r) => { const x = D.procs.find((y) => y.k === r[0]), m = timeMeans(D, x, 0, nS); if (!(near(r[6], x.cpuAvg, 0.02) && near(r[6], 100 * x.cpuSec / (D.meta.cores * m.cpuCov), Math.max(0.02, r[6] * 0.03)) && near(r[7], m.wsAvg, 1))) means.push('Prozess ' + x.name + ' ' + x.pid + ': ' + r[6] + ' / ' + x.cpuAvg + ', ' + r[7] + ' / ' + m.wsAvg); });
+  [[rowsAll[0], D.sessions, 'Sitzung '], [rowsAll[1], D.apps, 'Anwendung ']].forEach(([rows, list, what]) => rows.forEach((r) => { const x = list.find((y) => y.i === r[0]), m = timeMeans(D, x, 0, nS);
+    if (!(near(r[6], 100 * x.cpuSec / (D.meta.cores * m.cpuCov), Math.max(0.02, r[6] * 0.01)) && near(r[6], m.cpuAvg, 0.005) && near(r[7], m.wsAvg, 1))) means.push(what + (x.user || x.name) + ': ' + r[6] + ' / ' + m.cpuAvg + ', ' + r[7] + ' / ' + m.wsAvg); }));
+  ok(rowsAll[2].length > 200 && rowsAll[2].some((r) => r[6] > 1) && !means.length, 'rangeRows ueber die ganze Messung: CPU Ø und RAM Ø sind Mittel ueber die Zeit, bei Prozessen der gelieferte Wert: ' + means.slice(0, 4).join(' | '));
   const bare = D.apps.filter((a) => !a.cpu && !a.ws).length;
   ok(rowsAll[0].length === D.sessions.length && rowsAll[1].length === D.apps.length - bare && bare > 0 && rowsAll[2].length === D.procs.length && !drift.length, 'rangeRows ueber die ganze Messung: alle Sitzungen und Prozesse mit ihren Werten, Anwendungen ohne Verlauf fehlen: ' + drift.slice(0, 3).join(' | '));
 
@@ -2360,10 +2404,10 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
   t = oneLine(await tileOf('mem.used').innerText());
   ok(mem.status === 2 && await tileOf('mem.used').getAttribute('data-status') === '0' && t.includes('● normal') && !t.includes(de(mem.max, 0) + ' % Max'), 'Kachel folgt dem Zeitraum: der Arbeitsspeicher ist im Fenster des CPU-Vorfalls normal: ' + t);
   t = oneLine(await tileOf('ica.latency').innerText());
-  ok(t.includes('kein Verlauf in den Berichtsdaten: für einen Zeitraum nicht auswertbar') && t.includes('● normal') && !/\d Max/.test(t), 'Messwert ohne Verlauf in den Berichtsdaten: kein Wert fuer den Zeitraum, Status aus den Befunden: ' + t);
+  ok(t.includes('kein Verlauf in den Berichtsdaten: für einen Zeitraum nicht auswertbar') && t.includes('● normal in der gesamten Messung') && !/\d Max/.test(t), 'Messwert ohne Verlauf in den Berichtsdaten: kein Wert fuer den Zeitraum, Status aus den Befunden der gesamten Messung: ' + t);
   await showTab(page, 'sollist');
   t = oneLine(await rowOf('mem.used').innerText());
-  ok(t.includes('● normal') && !t.includes('◆ kritisch') && (await page.locator('#sollRange').innerText()).startsWith('Zeitraum ' + ddmmyyyy(z.t0, off) + ' ' + hhmm(z.t0, off)) && oneLine(await rowOf('ica.latency').innerText()).includes('kein Verlauf in den Berichtsdaten'), 'Soll-Ist im Zeitraum, mit Hinweis ueber der Tabelle: ' + t);
+  ok(t.includes('● normal') && !t.includes('◆ kritisch') && (await page.locator('#sollRange').innerText()).startsWith('Zeitraum ' + ddmmyyyy(z.t0, off) + ' ' + hhmm(z.t0, off)) && /● normal in der gesamten Messung ?kein Verlauf in den Berichtsdaten/.test(oneLine(await rowOf('ica.latency').innerText())), 'Soll-Ist im Zeitraum, mit Hinweis ueber der Tabelle: ' + t);
   ok(oneLine(await rowOf('input.session').innerText()).includes(D.sessions.find((x) => x.i === cpu.affected[0].s).user), 'Soll-Ist im Zeitraum: am staerksten ist eine Sitzung des Vorfalls');
   // tables: who had load in the range, with the values of the range
   await showTab(page, 'sessions');
@@ -2424,17 +2468,26 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
   ok(D.snapT.every((x) => x < gap[0] || x > gap[1]) && (await page.locator('#rangeSnaps').innerText()).includes('Tabellenwerte ohne Schnappschuss im Zeitraum'), 'Zeitraum ohne Schnappschuss: die Leiste sagt es: ' + await page.locator('#rangeSnaps').innerText());
   const sr = (await page.locator('#tSessions tbody tr').first().innerText()).split('\t');
   ok(await page.locator('#tSessions tbody tr').count() === D.sessions.length && sr[heads.findIndex((x) => x.startsWith('CPU-Zeit'))] === '–' && sr[heads.findIndex((x) => x.startsWith('RAM Ø'))] === '–', 'ohne Schnappschuss: Sitzungen nach Anwesenheit, Werte aus Schnappschuessen "–": ' + sr.join(' | '));
+  // (fix round 1, item 5: nothing of the applications and processes was sampled in such a range; the former texts counted
+  // "0 von 27 Anwendungen mit Last" and "26 von 26 Sitzungen mit Last")
+  const NO_SNAP = 'Im gewählten Zeitraum liegt kein Schnappschuss: Anwendungen und Prozesse sind für ihn nicht auswertbar.', gapNote = await page.locator('#sessRange').innerText();
+  ok(gapNote.includes(`${D.sessions.length} von ${D.sessions.length} Sitzungen anwesend. Im Zeitraum liegt kein Schnappschuss`) && !gapNote.includes('mit Last') && (await page.locator('#xtab-sessions .cnt').innerText()) === String(D.sessions.length), 'ohne Schnappschuss: der Hinweis nennt die anwesenden Sitzungen, niemand "mit Last": ' + gapNote);
   await showTab(page, 'apps');
-  ok((await page.locator('#tApps tbody').innerText()).trim() === 'Im gewählten Zeitraum ohne Last.' && (await page.locator('#xtab-apps .cnt').innerText()) === '0', 'ohne Schnappschuss: die Tabelle der Anwendungen sagt es');
+  const appsNote = await page.locator('#appsRange').innerText();
+  ok((await page.locator('#tApps tbody').innerText()).trim() === NO_SNAP && (await page.locator('#xtab-apps .cnt').innerText()) === '' && (await page.locator('#xtab-procs .cnt').innerText()) === '', 'ohne Schnappschuss: die Tabelle der Anwendungen sagt es, die Reiter zaehlen nicht');
+  ok(appsNote.includes('im Zeitraum liegt kein Schnappschuss, Anwendungen sind für ihn nicht auswertbar.') && !/\d+ von \d+/.test(appsNote) && !appsNote.includes('mit Last'), 'ohne Schnappschuss: Hinweis ueber den Anwendungen ohne "0 von n mit Last": ' + appsNote);
+  await showTab(page, 'procs');
+  const procsNote = await page.locator('#procsRange').innerText();
+  ok((await page.locator('#tProcs tbody').innerText()).trim() === NO_SNAP && procsNote.includes('im Zeitraum liegt kein Schnappschuss, Prozesse sind für ihn nicht auswertbar.') && !/\d+ von \d+/.test(procsNote), 'ohne Schnappschuss: Tabelle und Hinweis der Prozesse ebenso: ' + procsNote);
   t = oneLine(await tileOf('probe.connect').innerText());
   ok(await tileOf('probe.connect').getAttribute('data-status') === 'na' && t.includes('○ nicht gemessen') && t.includes('keine Messwerte im gewählten Zeitraum') && await tileOf('cpu.host').getAttribute('data-status') === '0' && /\d % Max/.test(await tileOf('cpu.host').innerText()),
     'ohne Messpunkt im Zeitraum sagt eine Kachel "nicht gemessen", nie "normal": ' + t);
   await page.click('#rangeAll');
   // stacked charts: by session, by application, or the host as a whole
   const areas = () => page.locator('#chCpuStack svg g[clip-path] path').count();
-  ok((await page.locator('#segCpu button').allInnerTexts()).join('|') === 'Host|nach Sitzung|nach Anwendung' && await areas() === 8, 'gestapeltes Diagramm aufteilbar nach Host, Sitzung, Anwendung; nach Sitzung: sieben und Sonstige');
+  ok((await page.locator('#segCpu button').allInnerTexts()).join('|') === 'Server|nach Sitzung|nach Anwendung' && await areas() === 8, 'gestapeltes Diagramm aufteilbar nach Server, Sitzung, Anwendung; nach Sitzung: sieben und Sonstige');
   await page.click('#segCpu button[data-by=host]');
-  ok(await areas() === 1 && (await page.locator('#chCpuStack .legend').innerText()).trim() === 'alle Prozesse' && await page.locator('#segCpu button[data-by=host]').getAttribute('aria-pressed') === 'true', 'Host: eine Flaeche fuer alle Prozesse');
+  ok(await areas() === 1 && (await page.locator('#chCpuStack .legend').innerText()).trim() === 'alle Prozesse' && await page.locator('#segCpu button[data-by=host]').getAttribute('aria-pressed') === 'true', 'Server: eine Flaeche fuer alle Prozesse');
   await page.click('#segMem button[data-by=apps]');
   ok(await page.locator('#chMemStack svg g[clip-path] path').count() > 1 && await areas() === 1, 'jedes der beiden Diagramme hat seine eigene Aufteilung');
   // tabs with the keyboard
@@ -2446,16 +2499,19 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
   ok(page.errors.length === 0, 'Skriptfehler Expertenansicht: ' + page.errors.join(' | '));
   await page.close();
 
-  // other widths: three charts beside each other on a wide screen, two at 1000 px (as at 1400 px); one column at 390 px
-  for (const [width, height, cols] of [[1920, 1080, 3], [1000, 700, 2]]) {
+  // other widths: three charts beside each other on a wide screen, two at 1200 px (as at 1400 px); one column at 390 px.
+  // (fix round 1, items 20 and 21: on a wide screen the two stacked charts share a row of their own and three charts stand in
+  // each row after it; the width with two charts beside the column is 1200 px, because below 1180 px the column is folded
+  // over the tiles - the layout at 1000 px is asserted in checkExpertFix)
+  for (const [width, height, cols] of [[1920, 1080, 3], [1200, 800, 2]]) {
     const w = await browser.newPage({ viewport: { width, height }, colorScheme: scheme });
     w.errors = []; w.on('pageerror', (e) => w.errors.push(e.message));
     await w.goto('file://' + path.join(dir, 'report.html'));
     await showExpert(w);
     await w.click(`#incList .inc[data-id="${cpu.id}"]`);
     const lay = await w.evaluate(() => { const tops = [...document.querySelectorAll('#charts .card')].map((c) => Math.round(c.getBoundingClientRect().top)), col = document.getElementById('incCol').getBoundingClientRect(), tl = document.getElementById('tiles').getBoundingClientRect();
-      return [tops.filter((y) => y === tops[0]).length, Math.round(col.width), col.right <= tl.left, document.documentElement.scrollWidth <= document.documentElement.clientWidth, col.bottom <= window.innerHeight]; });
-    ok(lay[0] === cols && lay[1] === 280 && lay[2] && lay[3] && lay[4] && w.errors.length === 0, width + ' px: Vorfallsspalte links neben Kacheln und Diagrammen (' + cols + ' je Zeile), ohne seitliches Rollen: ' + lay.join(' '));
+      return [tops.filter((y) => y === tops[0]).length, tops.filter((y) => y === tops[2]).length, Math.round(col.width), col.right <= tl.left, document.documentElement.scrollWidth <= document.documentElement.clientWidth, col.bottom <= window.innerHeight]; });
+    ok(lay[0] === 2 && lay[1] === cols && lay[2] === 280 && lay[3] && lay[4] && lay[5] && w.errors.length === 0, width + ' px: Vorfallsspalte links neben Kacheln und Diagrammen (die zwei gestapelten in einer Zeile, danach ' + cols + ' je Zeile), ohne seitliches Rollen: ' + lay.join(' '));
     ok(await labelFaults(w, '#charts .card > div[id]') === '', width + ' px: Beschriftungen der Soll-Linien ohne Beruehrung: ' + await labelFaults(w, '#charts .card > div[id]'));
     await w.close();
   }
@@ -2516,6 +2572,233 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
   await none.page.close();
 }
 
+// ---------- expert view: fix round 1 of Task 10 ----------
+async function checkExpertFix(browser, dir, scheme) {               // Zeitmittel, Namensspalte, Marke des Vorfalls, Zaehler, Leiste, Kennzeichnungen, Kontraste, Breiten
+  const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme);
+  await showExpert(page);
+  const cpu = D.incidents.find((i) => i.lead === 'cpu'), crash = D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'crash' && i.end === i.start);
+  const pick = (p, id) => p.click(`#incList .inc[data-id="${id}"] .inc-main`);
+  const num = (s) => parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  // -- item 1: the means of the tables are means over time; a range one second shorter than the capture shows no jump
+  const avgCells = () => page.evaluate(() => ['tSessions', 'tApps', 'tProcs'].map((id) => { const t = document.getElementById(id), c = [...t.querySelectorAll('thead th')].findIndex((x) => x.textContent.startsWith('CPU Ø %'));
+    return [...t.querySelectorAll('tbody tr[data-id]')].map((r) => [Number(r.dataset.id), r.cells[c].textContent]); }));
+  const whole = await avgCells(), nS = D.snapT.length, lists = [D.sessions, D.apps, D.procs], key = [(x) => x.i, (x) => x.i, (x) => x.k], off = [];
+  whole.forEach((rows, k) => rows.forEach(([id, text]) => { const x = lists[k].find((y) => key[k](y) === id), m = x.cpu ? timeMeans(D, x, 0, nS).cpuAvg : x.cpuAvg; if (!(Math.abs(num(text) - m) <= 0.011)) off.push(k + ':' + id + ' ' + text + ' statt ' + m); }));
+  const excel = D.procs.filter((x) => x.name === 'EXCEL.EXE').sort((a, b) => b.cpuSec - a.cpuSec)[0], excelSess = D.sessions.find((s) => s.i === excel.s);
+  const cell = (rows, id) => num(rows.find((r) => r[0] === id)[1]);
+  ok(whole[0].length === D.sessions.length && whole[1].length === D.apps.length && whole[2].length === D.procs.length && !off.length && cell(whole[2], excel.k) === excel.cpuAvg && Math.abs(excelSess.cpuAvg - cell(whole[0], excelSess.i)) > 1,
+    'gesamte Messung: "CPU Ø %" ist das Mittel ueber die Zeit (Prozess: der gelieferte Wert; Sitzung: nicht das Mittel der Schnappschuesse): ' + off.slice(0, 3).join(' | '));
+  await page.evaluate(() => window.WP.setZoom(FULL.t0, FULL.t1 - 1000));
+  const shorter = await avgCells(), jumps = []; let compared = 0;
+  whole.forEach((rows, k) => rows.forEach(([id, text]) => { const x = lists[k].find((y) => key[k](y) === id), now = shorter[k].find((r) => r[0] === id); if (!x.cpu || x.cpu.length < 30 || !now) return; compared++;
+    if (Math.abs(num(now[1]) - num(text)) > Math.max(0.05, 0.03 * num(text))) jumps.push(k + ':' + id + ' ' + text + ' -> ' + now[1]); }));
+  const wsJump = await page.evaluate(() => ['sessions', 'apps', 'procs'].flatMap((k) => { const w = new Map(wholeRows(k).map((r) => [k === 'procs' ? r.k : r.i, r])); return rangeRows(k, FULL.t0, FULL.t1 - 1000).filter((r) => (r.ws || []).length >= 30)
+    .filter((r) => Math.abs(r.wsAvg - w.get(k === 'procs' ? r.k : r.i).wsAvg) > Math.max(1, 0.03 * r.wsAvg)).map((r) => k + ' ' + (r.name || r.user)); }));
+  ok(await page.evaluate(() => window.WP.zoom !== null) && compared > 150 && !jumps.length && Math.abs(cell(shorter[2], excel.k) - excel.cpuAvg) <= 0.02 && !wsJump.length, 'ein Zeitraum, eine Sekunde kuerzer als die Messung: "CPU Ø %" und "RAM Ø" springen nicht: ' + jumps.slice(0, 3).concat(wsJump.slice(0, 3)).join(' | '));
+  // -- item 15: the use of the sessions is computed once per range; the two functions take their bounds in either order
+  const once = await page.evaluate(() => { let n = 0; const orig = window.snapUse; window.snapUse = function (it, lo, hi) { n++; return orig(it, lo, hi); };
+    window.WP.setZoom(FULL.t0 + 600000, FULL.t0 + 1500000); window.snapUse = orig;
+    const z = window.WP.zoom, lo = lowerBound(GRID.snap, z.t0), hi = upperBound(GRID.snap, z.t1), a = sessionUse(lo, hi), st = rangeStats('cpu.host', z.t1, z.t0), ts = rangeStats('cpu.host', z.t0, z.t1);
+    return [n, D.sessions.length + D.apps.filter((x) => x.cpu || x.ws).length + D.procs.filter((x) => x.cpu || x.ws).length, a === sessionUse(lo, hi), st.snaps === ts.snaps && st.snaps > 30 && st.max === ts.max && st.n === ts.n,
+      JSON.stringify(rangeRows('sessions', z.t1, z.t0).map((r) => [r.i, r.cpuSec])) === JSON.stringify(rangeRows('sessions', z.t0, z.t1).map((r) => [r.i, r.cpuSec])), rangeRows('procs', z.t1, z.t0).length]; });
+  ok(once[0] === once[1] && once[2] && once[3] && once[4] && once[5] > 100, 'ein Zeitraum: die Nutzung der Sitzungen wird einmal berechnet; rangeStats und rangeRows nehmen die Grenzen in jeder Reihenfolge: ' + once.join(' '));
+  await page.click('#rangeAll');
+  // -- item 2: the first column of the wide tables stays in the picture; tables at 1400 px
+  for (const [tab, table] of [['sessions', 'tSessions'], ['apps', 'tApps'], ['procs', 'tProcs']]) {
+    await showTab(page, tab);
+    const st = await page.evaluate((id) => { const t = document.getElementById(id), w = t.closest('.tablewrap'), row = t.querySelector('tbody tr:nth-child(3)');
+      row.scrollIntoView({ block: 'center' }); w.scrollLeft = w.scrollWidth;
+      const b = w.getBoundingClientRect(), c = row.cells[0].getBoundingClientRect(), h = t.querySelector('thead th').getBoundingClientRect(), last = row.cells[row.cells.length - 1].getBoundingClientRect(), at = document.elementFromPoint(c.left + 6, c.top + c.height / 2);
+      return [w.scrollLeft > 50, c.left >= b.left - 1 && c.right <= b.right && h.left >= b.left - 1, row.cells[0].contains(at), last.right <= b.right + 1, w.scrollWidth - w.clientWidth, getComputedStyle(row.cells[0]).backgroundColor !== 'rgba(0, 0, 0, 0)']; }, table);
+    ok(st[0] && st[1] && st[2] && st[3] && st[4] < 300 && st[5], `${table}, 1400 px, ans rechte Ende gerollt: die erste Spalte bleibt im Kasten und liegt ueber den anderen; es fehlen weniger als 300 px: ${st.join(' ')}`);
+    await page.hover(`#${table} tbody tr:nth-child(3) td:nth-child(4)`);
+    const hov = await page.evaluate((id) => { const r = document.querySelector(`#${id} tbody tr:nth-child(3)`); return [getComputedStyle(r.cells[0]).backgroundColor, getComputedStyle(r).backgroundColor, getComputedStyle(r.closest('.tablewrap')).backgroundColor]; }, table);
+    await page.click(`#${table} tbody tr:nth-child(3) td:nth-child(4)`);
+    const sel = await page.evaluate((id) => { const r = document.querySelector(`#${id} tbody tr.selected`); return r ? [getComputedStyle(r.cells[0]).backgroundColor, getComputedStyle(r).backgroundColor] : []; }, table);
+    ok(hov[0] === hov[1] && hov[0] !== hov[2] && sel.length === 2 && sel[0] === sel[1] && sel[0] !== hov[2] && sel[0] !== hov[0], `${table}: die feste erste Spalte traegt den Grund ihrer Zeile, ueberfahren und gewaehlt: ${hov.join(' ')} / ${sel.join(' ')}`);
+    await page.mouse.move(0, 0);
+  }
+  // -- item 19: contrast in the dark view: the bars of the cells on the surface and on a selected row
+  const bars = await page.evaluate(() => { const r = document.querySelector('#tProcs tbody tr.selected'), bar = document.querySelector('#tProcs .cellbar'); return [getComputedStyle(bar).backgroundColor, getComputedStyle(bar.closest('.tablewrap')).backgroundColor, getComputedStyle(r).backgroundColor]; });
+  ok(contrast(bars[0], bars[1]) >= 3 && contrast(bars[0], bars[2]) >= 3, 'Balken der Tabellenzellen: Kontrast mindestens 3:1 auf der Flaeche und auf einer gewaehlten Zeile: ' + contrast(bars[0], bars[1]).toFixed(2) + ' ' + contrast(bars[0], bars[2]).toFixed(2));
+  // -- item 3: the time of the chosen incident. A crash has no duration: a mark of its own in every chart
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await pick(page, crash.id);
+  const marks = await page.locator('#charts .card svg').evaluateAll((svgs) => svgs.map((svg) => { const m = svg.querySelector('.incband'); if (!m || !m.classList.contains('incmark')) return null;
+    const cs = getComputedStyle(m), c = svg.querySelector('clipPath rect'), grid = svg.querySelector('line[stroke="var(--grid)"]');
+    return { stroke: cs.stroke, width: parseFloat(cs.strokeWidth), solid: cs.strokeDasharray === 'none', op: parseFloat(cs.strokeOpacity) * parseFloat(cs.opacity) * parseFloat(cs.fillOpacity), ground: getComputedStyle(svg.closest('.card')).backgroundColor,
+      grid: getComputedStyle(grid).stroke, tall: m.getBBox().height - Number(c.getAttribute('height')), wide: m.getBBox().width, halo: !!svg.querySelector('.inchalo'), over: !!(svg.querySelector('g[clip-path]').compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING),
+      free: cs.pointerEvents === 'none', n: svg.querySelectorAll('.incband').length }; }));
+  const weak = marks.filter((m) => !(m && m.n === 1 && m.op === 1 && m.width >= 2 && m.solid && contrast(m.stroke, m.ground) >= 3 && m.stroke !== m.grid && m.tall >= 4 && m.wide >= 8 && m.halo && m.over && m.free));
+  ok(crash.end === crash.start && marks.length === 14 && !weak.length, 'Vorfall ohne Dauer: in jedem Diagramm eine eigene Marke (Linie mit Kappe ueber dem Diagramm, deckend, Kontrast mindestens 3:1 zum Grund, ueber den Messlinien, ohne den Zeiger zu fangen): ' +
+    JSON.stringify(weak[0] || null) + ' ' + (marks[0] ? contrast(marks[0].stroke, marks[0].ground).toFixed(2) : ''));
+  let info = await page.locator('#rangeInfo').innerText();
+  ok(info.endsWith(`· Vorfall ${crash.id}: Anwendungsabsturz`) && !info.includes('Vorfall aus Ereignissen'), 'Zeitraumleiste nennt einen Vorfall aus Ereignissen bei seiner Art, ohne das Wort doppelt: ' + info);
+  // a span with a duration: tinted; in the stacked charts above the areas, with its two edges; never in the way of the pointer
+  await pick(page, cpu.id);
+  const bands = await page.evaluate(() => ['chCpuStack', 'chMemStack', 'chCpu'].map((id) => { const svg = document.querySelector(`#${id} svg`), b = svg.querySelector('.incband'), g = svg.querySelector('g[clip-path]'), r = b.getBoundingClientRect();
+    document.getElementById(id).scrollIntoView({ block: 'center' }); const q = b.getBoundingClientRect(), at = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
+    return [b.tagName, r.width > 100, !!(g.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), svg.querySelectorAll('.incedge').length, svg.querySelectorAll('.incveil').length, getComputedStyle(b).pointerEvents, at && at.getAttribute('class')].join(); }));
+  ok(bands[0] === 'rect,true,true,1,1,none,hit' && bands[1] === bands[0] && bands[2] === 'rect,true,false,0,0,none,hit', 'Vorfall mit Dauer: getoent; in den gestapelten Diagrammen liegt der Bereich ueber den Flaechen, mit seinen Raendern; der Zeiger erreicht das Diagramm: ' + bands.join(' | '));
+  // -- item 19: the way into the guided view on the chosen entry
+  const lnk = await page.evaluate(() => { const e = document.querySelector('#incList .inc.selected'); return [getComputedStyle(e.querySelector('.inc-guided')).color, getComputedStyle(e).backgroundColor]; });
+  ok(contrast(lnk[0], lnk[1]) >= 4.5, '"Geführt öffnen" auf dem gewaehlten Eintrag: Kontrast mindestens 4,5:1: ' + contrast(lnk[0], lnk[1]).toFixed(2));
+  // -- item 17: what does not follow the range says so while a range is set
+  const heads = async () => { const out = []; for (const [tab, sel] of [['print', '#print h3'], ['quality', '#quality h3'], ['before', '#before h3']]) { await showTab(page, tab); out.push(oneLine(await page.locator(sel).first().innerText())); } return out.join('|'); };
+  ok(await heads() === 'Drucken · gesamte Messung|Messqualität · gesamte Messung|Vor der Messung · unabhängig vom gewählten Zeitraum', 'mit Zeitraum: Drucken, Messqualitaet und Vor der Messung sagen, dass sie ihm nicht folgen: ' + await heads());
+  await page.click('#rangeAll');
+  ok(await heads() === 'Drucken|Messqualität|Vor der Messung', 'ohne Zeitraum: keine Kennzeichnung: ' + await heads());
+  // -- item 16: the range bar keeps its height, whatever is chosen; the hint is left out before the range is cut
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const barOf = (p) => p.evaluate(() => { const b = document.getElementById('rangeBar'), i = document.getElementById('rangeInfo'), n = b.querySelector('.note'); return [b.offsetHeight, Math.round(document.getElementById('tiles').getBoundingClientRect().top + window.scrollY), i.scrollWidth <= i.clientWidth, n.getClientRects().length > 0, b.scrollWidth <= b.clientWidth].join(); });
+  const bar0 = await barOf(page), barAll = [];
+  for (const inc of D.incidents) { await page.evaluate((id) => selectIncident(id), inc.id); barAll.push(await barOf(page)); }
+  ok(bar0 === '40,' + bar0.split(',')[1] + ',true,true,true' && barAll.every((b) => b.startsWith(bar0.split(',').slice(0, 2).join() + ',true,') && b.endsWith(',true')) && barAll.some((b) => b.includes(',true,false,')), 'Zeitraumleiste: gleiche Hoehe fuer jeden gewaehlten Vorfall, nichts darunter verschiebt sich, der Text des Zeitraums bleibt ganz, der Hinweis weicht: ' + bar0 + ' / ' + [...new Set(barAll)].join(' / '));
+  await page.click('#rangeAll');
+  // "In der Expertenansicht zeigen": the entry stands in the picture of the column, for every incident
+  const outside = [];
+  for (const inc of D.incidents) {
+    await page.evaluate((id) => window.WP.openIncident(id), inc.id); await ivExpert(page);
+    const at = await page.evaluate((id) => { const e = document.querySelector(`#incList .inc[data-id="${id}"]`).getBoundingClientRect(), l = document.getElementById('incList').getBoundingClientRect(); return [e.top >= l.top - 1 && e.bottom <= l.bottom + 1 && e.bottom <= window.innerHeight, document.querySelector(`#incList .inc[data-id="${id}"]`).classList.contains('selected')]; }, inc.id);
+    if (!at[0] || !at[1]) outside.push(inc.id + ':' + at.join());
+  }
+  ok(D.incidents.length >= 12 && !outside.length, 'aus der Vorfallsansicht in die Expertenansicht: der gewaehlte Eintrag steht ganz im Bild der Spalte: ' + outside.join(' '));
+  await page.click('#rangeAll');
+  // -- item 18: a label of a target line that finds no free place on its line stands in the right margin, off the curve
+  const inputLabels = await labelCovers(page, '#chInput'), side = await page.locator('#chInput svg').evaluate((svg) => { const c = svg.querySelector('clipPath rect'), x1 = Number(c.getAttribute('x')) + Number(c.getAttribute('width'));
+    return [...svg.querySelectorAll('.band-warn, .band-crit')].map((g) => { const t = g.querySelector('text').getBBox(), y = Number(g.querySelector('line').getAttribute('y1')); return t.x >= x1 && t.x + t.width <= Number(svg.getAttribute('width')) && Math.abs(t.y + t.height / 2 - y) < 16; }); });
+  ok(inputLabels === '▲ auffällig ab 150 ms: 0 | ◆ kritisch ab 500 ms: 0' && side.length === 2 && side.every(Boolean) && await labelFaults(page, '#chInput') === '', 'Eingabeverzoegerung aller Sitzungen (gesamte Messung): die Beschriftungen der Soll-Linien stehen neben ihren Linien am rechten Rand, mit Symbol und Wort, nicht auf der Kurve: ' + inputLabels + ' ' + side.join());
+  const inPlot = await page.locator('#chCpu svg').evaluate((svg) => { const c = svg.querySelector('clipPath rect'), x1 = Number(c.getAttribute('x')) + Number(c.getAttribute('width')); return [...svg.querySelectorAll('.band-warn text, .band-crit text')].every((t) => t.getBBox().x + t.getBBox().width <= x1 + 1); });
+  ok(inPlot && await labelCovers(page, '#chCpu') === '▲ auffällig ab 75 %: 0 | ◆ kritisch ab 90 %: 0', 'wo auf der Linie Platz ist, bleibt die Beschriftung im Diagramm');
+  // -- item 20: first screen at 1400 x 900: the tiles need two rows, the second row of charts begins in the picture
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const first = await page.evaluate(() => { const tops = [...document.querySelectorAll('#tiles .tile')].map((e) => Math.round(e.getBoundingClientRect().top)), ch = [...document.querySelectorAll('#charts .card')].map((e) => e.getBoundingClientRect().top), t = document.querySelector('#tiles .tile[data-signal="input.session"]');
+    return [new Set(tops).size, Math.round(document.getElementById('tiles').getBoundingClientRect().height), ch[2] < window.innerHeight - 40, t.title.includes('am stärksten: '), t.querySelector('.goal').scrollWidth >= t.querySelector('.goal').clientWidth, [...document.querySelectorAll('#tiles .tile')].every((e) => e.scrollWidth <= e.clientWidth)]; });
+  ok(first[0] === 2 && first[1] < 320 && first[2] && first[3] && first[4] && first[5], '1400 x 900: die Kacheln brauchen zwei Zeilen, die zweite Zeile der Diagramme beginnt im Bild; "am staerksten" steht auf einer Zeile und ganz im Tooltip der Kachel: ' + first.join(' '));
+  // -- item 5 (the tiles of the same state are asserted in checkExpert) and item 7: a chart without a value in the range says "Zeitraum"
+  const k0 = D.snapKind.indexOf('RRRR') + 1;
+  await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [D.snapT[k0] + 2000, D.snapT[k0] + 12000]);
+  ok((await page.locator('#chSess').innerText()).trim() === 'Keine Messwerte im gewählten Zeitraum.' && (await page.locator('#footer').innerText()).includes('Punkten im Zeitraum'), 'ein Diagramm ohne Messwert im Zeitraum und die Fusszeile sagen "Zeitraum"');
+  ok(page.errors.length === 0, 'Skriptfehler Korrekturrunde: ' + page.errors.join(' | '));
+  await page.close();
+
+  // -- item 11 (P3-R70): "immer dasselbe" only of several events that name the module
+  const mp = await open(browser, path.join(dir, 'report.html'), scheme), one = D.incidents.find((i) => i.type === 'ereignis' && i.event.sameModule && i.event.moduleEvents === 1), several = D.incidents.find((i) => i.type === 'ereignis' && i.event.sameModule && i.event.moduleEvents > 1);
+  const kvOf = async (id) => oneLine(await (await openIncident(mp.page, id)).locator('.iv-evidence .kv').first().innerText());
+  const kv1 = await kvOf(one.id), kvN = await kvOf(several.id);
+  ok(kv1.includes('Fehlerhaftes Modul ' + one.event.modules[0].name + ' (1 von 1)') && !kv1.includes('immer dasselbe') && kvN.includes(`(${several.event.moduleEvents} von ${several.event.moduleEvents}), immer dasselbe`), 'ein einzelnes Ereignis nennt sein Modul ohne "immer dasselbe", mehrere mit: ' + kv1 + ' / ' + kvN);
+  await mp.page.close();
+
+  // -- item 4: the tab "Vor der Messung" counts only what a lookback read
+  const none = await openExpert(browser, path.join(dir, 'report-none.html'), scheme);
+  ok(none.D.before.status === 'missingFile' && (await none.page.locator('#xtab-before').innerText()).trim() === 'Vor der Messung' && (await none.page.locator('#xtab-events .cnt').innerText()) === '0', 'Rueckblick nicht gelesen (Datei fehlt): der Reiter traegt keine Zahl (die Ereignisse der Messung zaehlen 0)');
+  // -- item 17: the statement of a capture without a finding is one of the whole capture and says so under a range
+  const nf = none.page.locator('#noFinding');
+  ok(oneLine(await nf.locator('.lead').innerText()) === '● Keine Schwelle wurde überschritten.' && (await nf.innerText()).includes('Alle gemessenen Werte lagen in der gesamten Messung im Soll.'), 'ohne Befund, ohne Zeitraum: die Aussage ohne Kennzeichnung');
+  await none.page.evaluate(() => window.WP.setZoom(FULL.t0 + 300000, FULL.t0 + 600000));
+  ok(oneLine(await nf.locator('.lead').innerText()) === '● Keine Schwelle wurde überschritten. · gesamte Messung' && !(await nf.innerText()).includes('im ganzen Zeitraum'), 'ohne Befund, mit Zeitraum: die Aussage sagt, dass sie fuer die gesamte Messung gilt: ' + oneLine(await nf.locator('.lead').innerText()));
+  await none.page.close();
+  const emptyLb = (J) => { Object.assign(J.before, { eventCount: 0, incidentEventCount: 0, perDay: [], incidents: [], near: [], nearCapture: [], capped: [] }); };
+  for (const [name, change, count] of [['unavailable', (J) => { emptyLb(J); J.before.status = 'unavailable'; }, ''], ['off', (J) => { emptyLb(J); J.before.status = 'off'; J.before.days = 0; }, ''], ['missing', (J) => { emptyLb(J); J.before.status = 'missingFile'; }, ''],
+    ['read-none', (J) => { emptyLb(J); J.before.status = 'read'; }, '0'], ['partial', (J) => { J.before.status = 'partial'; J.before.logs = []; }, String(D.before.incidents.length)], ['read', () => {}, String(D.before.incidents.length)]]) {
+    const lb = await openExpert(browser, patched(dir, 'report.html', `report-fix-lb-${name}.html`, change), scheme);
+    ok(D.before.incidents.length > 0 && (await lb.page.locator('#xtab-before .cnt').innerText()) === count && lb.page.errors.length === 0, `Rueckblick ${name}: Zahl am Reiter "${count}": ` + await lb.page.locator('#xtab-before').innerText());
+    await lb.page.close();
+  }
+
+  // -- item 14: fewer than three snapshots in the whole capture: the bar says so without a range
+  const two = await openExpert(browser, patched(dir, 'report.html', 'report-fix-snaps2.html', (J) => { J.snapT = J.snapT.slice(0, 2); }), scheme);
+  ok(await two.page.evaluate(() => window.WP.zoom === null) && await two.page.locator('#rangeSnaps').isVisible() && (await two.page.locator('#rangeSnaps').innerText()).includes('Tabellenwerte gestützt auf 2 Schnappschüsse') && two.page.errors.length === 0, 'gesamte Messung mit zwei Schnappschuessen: die Leiste sagt es: ' + two.page.errors.join(' | '));
+  await two.page.close();
+
+  // -- item 9: only a response time above the delivered maximum is left out of a range; every other signal keeps each point
+  const cap = await openExpert(browser, patched(dir, 'report.html', 'report-fix-cap.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'), vol = J.volumes.find((x) => x.name === 'C:'), k = J.tickT.findIndex((t) => t >= c.start + 10000);
+    vol.ms[vol.t.findIndex((ti) => J.tickT[ti] >= c.start)] = 5000; J.host.queue[k] = 40; J.host.pagesIn[k] = 9000;
+  }), scheme);
+  await pick(cap.page, cap.D.incidents.find((i) => i.lead === 'cpu').id);
+  const tileText = async (id) => oneLine(await cap.page.locator(`.tile[data-signal="${id}"]`).innerText());
+  const capRow = (id) => cap.D.sollIst.find((r) => r.id === id);
+  ok(capRow('cpu.queue').max < 40 && capRow('mem.pagesin').max < 9000 && (await tileText('cpu.queue')).includes('40,00 Max') && (await tileText('mem.pagesin')).includes('9.000 1/s Max') && !(await tileText('disk.latency')).includes('5.000'),
+    'Zeitraum: nur eine Antwortzeit ueber dem gelieferten Maximum zaehlt nicht; Warteschlange und gelesene Seiten behalten jeden Punkt: ' + await tileText('cpu.queue') + ' / ' + await tileText('mem.pagesin') + ' / ' + await tileText('disk.latency'));
+  await cap.page.close();
+
+  // -- item 10: a masked report never says a designation twice ("Benutzer Benutzer 14", "Client Client 03")
+  const mk = await open(browser, patched(dir, 'report-masked.html', 'report-fix-masked-focus.html', (J) => {
+    const c = J.incidents.find((i) => i.lead === 'cpu'), s = J.sessions.find((x) => x.i === c.affected[0].s);
+    J.meta.focus = { user: s.user, found: true, sessions: [s.i], reportedMs: c.start + 30000 }; c.focus = true; c.nearReported = true;
+  }), scheme);
+  const seenText = () => mk.page.evaluate(() => document.body.innerText + '\n' + [...document.querySelectorAll('[title]')].filter((e) => e.getClientRects().length).map((e) => e.title).join('\n'));
+  const DOUBLE = /\b(\S+) \1 \d+/g, doubles = [], scan = async (where) => { for (const m of (await seenText()).matchAll(DOUBLE)) doubles.push(where + ': ' + m[0]); };
+  await scan('gefuehrt');
+  for (const inc of mk.D.incidents.concat(mk.D.before.incidents)) { await openIncident(mk.page, inc.id); await scan('Vorfall ' + inc.id); }
+  await mk.page.evaluate(() => window.WP.closeIncident());
+  await showExpert(mk.page);
+  const userSess = mk.D.sessions.find((x) => x.user && x.client && x.domain);
+  let kvS = '';
+  for (const t of TABS) {
+    await showTab(mk.page, t);
+    if (t === 'sessions') { await mk.page.click(`#tSessions tbody tr[data-id="${userSess.i}"]`); kvS = oneLine(await mk.page.locator('#dSessions .kv').innerText()); }
+    else if (t === 'apps' || t === 'procs') await mk.page.click(`#xt-${t} tbody tr >> nth=1`);
+    await scan('Reiter ' + t);
+  }
+  await mk.page.evaluate((id) => selectIncident(id), mk.D.incidents.find((i) => i.lead === 'cpu').id);
+  await scan('Zeitraum');
+  const fi = await mk.page.locator('#focusInfo').innerText(), flags = (await mk.page.locator('#incList .inc.focus .flag').first().innerText());
+  ok(/^Benutzer \d+$/.test(userSess.user) && /^Client \d+$/.test(userSess.client) && /^Domäne \d+$/.test(userSess.domain) && kvS.includes(userSess.domain + ' ' + userSess.client + ' Anmeldung') && fi.startsWith('Gemeldeter ' + mk.D.meta.focus.user + ', Sitzung') &&
+    flags === 'betrifft den gemeldeten ' + mk.D.meta.focus.user && !doubles.length && mk.page.errors.length === 0, 'maskiert: keine Bezeichnung steht doppelt (Sitzung, Vorfall aus Ereignissen, gemeldeter Benutzer): ' + [...new Set(doubles)].slice(0, 5).join(' | ') + ' ' + kvS.substring(0, 60) + ' / ' + fi.substring(0, 50));
+  await mk.page.close();
+  // an unmasked report keeps its labels
+  const um = await openExpert(browser, path.join(dir, 'report.html'), scheme), us = D.sessions.find((x) => x.user && x.client && x.domain);
+  await showTab(um.page, 'sessions'); await um.page.click(`#tSessions tbody tr[data-id="${us.i}"]`);
+  ok(oneLine(await um.page.locator('#dSessions .kv').innerText()).includes(`Domäne ${us.domain} Client ${us.client} Anmeldung`), 'unmaskiert: die Beschriftungen stehen vor ihren Werten');
+  await um.page.close();
+
+  // -- items 2, 20: 1920 x 1080: the three wide tables fit their box; every row of charts holds plots of one height
+  const w = await browser.newPage({ viewport: { width: 1920, height: 1080 }, colorScheme: scheme });
+  w.errors = []; w.on('pageerror', (e) => w.errors.push(e.message));
+  await w.goto('file://' + path.join(dir, 'report.html'));
+  await showExpert(w);
+  const rowsOf = await w.evaluate(() => { const rows = new Map(); for (const c of document.querySelectorAll('#charts .card')) { const y = Math.round(c.getBoundingClientRect().top), r = c.querySelector('clipPath rect'); if (!rows.has(y)) rows.set(y, []); rows.get(y).push(r ? Number(r.getAttribute('height')) : -1); } return [...rows.values()]; });
+  ok(rowsOf.length === 5 && rowsOf[0].length === 2 && rowsOf.slice(1).every((r) => r.length === 3) && rowsOf.every((r) => new Set(r).size === 1), '1920 px: die zwei gestapelten Diagramme in einer Zeile, danach drei je Zeile; in jeder Zeile gleich hohe Diagramme: ' + JSON.stringify(rowsOf));
+  const fit = [];
+  for (const t of ['sessions', 'apps', 'procs', 'sollist']) { await showTab(w, t); fit.push(await w.evaluate((t) => { const b = document.querySelector(`#xt-${t} .tablewrap`); return t + ' ' + b.scrollWidth + '/' + b.clientWidth; }, t)); }
+  ok(fit.every((f) => { const [a, b] = f.split(' ')[1].split('/').map(Number); return a <= b; }) && w.errors.length === 0, '1920 x 1080: keine Tabelle ist breiter als ihr Kasten: ' + fit.join(', '));
+  await w.close();
+
+  // -- items 20, 21: 1000 x 700: the incident column is a list over the tiles; the tiles need three rows; the target table fits
+  const s = await browser.newPage({ viewport: { width: 1000, height: 700 }, colorScheme: scheme });
+  s.errors = []; s.on('pageerror', (e) => s.errors.push(e.message));
+  await s.goto('file://' + path.join(dir, 'report.html'));
+  await showExpert(s);
+  const lay = await s.evaluate(() => { const col = document.getElementById('incCol').getBoundingClientRect(), tl = document.getElementById('tiles').getBoundingClientRect(), tops = [...document.querySelectorAll('#tiles .tile')].map((e) => Math.round(e.getBoundingClientRect().top)), ch = [...document.querySelectorAll('#charts .card')].map((e) => Math.round(e.getBoundingClientRect().top));
+    return [col.bottom <= tl.top, Math.round(col.width) === Math.round(tl.width), getComputedStyle(document.getElementById('incList')).display, getComputedStyle(document.getElementById('incToggle')).display !== 'none', new Set(tops).size, ch.filter((y) => y === ch[0]).length, document.documentElement.scrollWidth <= document.documentElement.clientWidth, document.getElementById('rangeBar').offsetHeight]; });
+  ok(lay[0] && lay[1] && lay[2] === 'none' && lay[3] && lay[4] === 3 && lay[5] === 2 && lay[6] && lay[7] === 40, '1000 px: die Vorfallsspalte ist eine Liste ueber den Kacheln, die Kacheln brauchen drei Zeilen, zwei Diagramme je Zeile, ohne seitliches Rollen: ' + lay.join(' '));
+  await s.click('#incToggle');
+  await s.click(`#incList .inc[data-id="${cpu.id}"] .inc-main`);
+  await showTab(s, 'sollist');
+  const sw = await s.evaluate(() => { const b = document.querySelector('#xt-sollist .tablewrap'); return [b.scrollWidth, b.clientWidth, document.getElementById('rangeBar').offsetHeight, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; });
+  ok(sw[0] <= sw[1] && sw[2] === 40 && sw[3] && await s.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1 && s.errors.length === 0, '1000 px: die Soll-Ist-Tabelle passt in ihren Kasten, die Leiste bleibt eine Zeile, auch mit gewaehltem Vorfall: ' + sw.join(' '));
+  await s.close();
+  // the widths between: the target table fits its box wherever the column stands beside it
+  for (const width of [1180, 1280]) {
+    const b = await browser.newPage({ viewport: { width, height: 800 }, colorScheme: scheme });
+    await b.goto('file://' + path.join(dir, 'report.html'));
+    await showExpert(b); await showTab(b, 'sollist');
+    const bw = await b.evaluate(() => { const x = document.querySelector('#xt-sollist .tablewrap'), col = document.getElementById('incCol').getBoundingClientRect(); return [x.scrollWidth, x.clientWidth, Math.round(col.width), col.right <= x.getBoundingClientRect().left]; });
+    ok(bw[0] <= bw[1] && bw[2] === 280 && bw[3], width + ' px: die Spalte steht neben den Tabellen, die Soll-Ist-Tabelle passt in ihren Kasten: ' + bw.join(' '));
+    await b.close();
+  }
+
+  // -- item 21: a long name of a printer driver wraps, the columns behind it stay in the box
+  const long = 'Microsoft.VisualStudio.Diagnostics.ServiceModelSink.Extended.Instrumentation.Runtime.4.0 Druckertreiber';
+  const lp = await openExpert(browser, patched(dir, 'report.html', 'report-fix-driver.html', (J) => { J.print.drivers[0].name = long; }), scheme);
+  await showTab(lp.page, 'print');
+  const dw = await lp.page.evaluate(() => { const t = document.getElementById('tPrintDrivers'), b = t.closest('.tablewrap'), r = t.querySelector('tbody tr'), o = t.querySelector('tbody tr:nth-child(2)'); return [b.scrollWidth, b.clientWidth, r.cells[0].getBoundingClientRect().height > o.cells[0].getBoundingClientRect().height + 10, r.cells[r.cells.length - 1].getBoundingClientRect().right <= b.getBoundingClientRect().right + 1, r.cells[0].textContent]; });
+  ok(dw[0] <= dw[1] && dw[2] && dw[3] && dw[4] === long, 'ein langer Treibername bricht um, die Tabelle der Treiber bleibt in ihrem Kasten: ' + dw.slice(0, 4).join(' '));
+  await lp.page.close();
+}
+
 async function checkWording(browser, dir, scheme) {                 // die gemessene Maschine heisst in den Texten der Seite "Server" (P3-R66)
   // the page's own texts: everything of the page source but the report data (labels, hints, sentences, titles, tooltips);
   // the name of the tool stays
@@ -2528,6 +2811,33 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   const { page, D } = await open(browser, path.join(dir, 'report.html'), scheme), boxes = [];
   for (const inc of D.incidents.filter((i) => i.type !== 'ereignis')) boxes.push(await (await openIncident(page, inc.id)).locator('.iv-evidence .causebox').innerText());
   ok(boxes.length >= 8 && boxes.some((b) => b.includes('Server')) && !boxes.some((b) => /Worker(?!Perf)/.test(b)), 'Verursacher-Aussagen der Seite ohne "Worker": ' + boxes.filter((b) => /Worker/.test(b)).join(' | '));
+  // (P3-R71, "durchgehend Server") The measured machine is never called "Host": not in the page's own texts, not in what the
+  // page shows, not in the texts of the report data and of the text files they come from. "Host" stays where it means the
+  // hypervisor ("VMware-Host", the "Hosts" of vCenter in the terms of the catalogue) and in "hostbasiert" (a kind of printer
+  // driver); names of programs ("CtxSvcHost.exe") are no words of their own.
+  const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
+    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index)))).map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
+  ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2, 'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
+  const ownHost = hostWords(own);
+  ok(own.includes('% des Servers') && own.includes('Server-Kapazität') && ownHost.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Host": ' + ownHost.join(' | '));
+  const strings = (v, out) => { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) v.forEach((x) => strings(x, out)); else if (v && typeof v === 'object') Object.values(v).forEach((x) => strings(x, out)); return out; };
+  const dataHost = strings(D, []).flatMap(hostWords);
+  ok(dataHost.length === 0, 'die Texte der Berichtsdaten nennen die gemessene Maschine nie "Host": ' + dataHost.slice(0, 5).join(' | '));
+  const srcDir = path.join(__dirname, '..', 'src'), fileHost = [];
+  for (const f of ['texts.de.json', 'guidance.de.json', 'thresholds.json']) for (const h of strings(JSON.parse(fs.readFileSync(path.join(srcDir, f), 'utf8')), []).flatMap(hostWords)) fileHost.push(f + ': ' + h);
+  ok(JSON.parse(fs.readFileSync(path.join(srcDir, 'texts.de.json'), 'utf8'))['sourcecall.fast'].includes('Server-Signale') && fileHost.length === 0, 'die Textdateien der Berichtsdaten nennen die gemessene Maschine nie "Host": ' + fileHost.slice(0, 5).join(' | '));
+  // shown: both views with every tab, an opened session, application and process, and what the tooltips and labels say
+  const shown = async () => page.evaluate(() => document.body.innerText + '\n' + [...document.querySelectorAll('[title], [aria-label]')].map((e) => (e.getAttribute('title') || '') + ' ' + (e.getAttribute('aria-label') || '')).join('\n'));
+  await page.evaluate(() => window.WP.closeIncident());
+  await showGuided(page);
+  let seen = await shown();
+  await showExpert(page);
+  for (const t of TABS) { await showTab(page, t); if (['sessions', 'apps', 'procs'].includes(t)) await page.click(`#xt-${t} tbody tr >> nth=1`); seen += '\n' + await shown(); }
+  await page.click(`#incList .inc[data-id="${D.incidents.find((i) => i.lead === 'cpu').id}"] .inc-main`);
+  seen += '\n' + await shown();
+  const seenHost = hostWords(seen);
+  ok(seen.includes('% des Servers') && seen.includes('Server-Kapazität') && seenHost.length === 0 && !/Ausschnitt/.test(seen), 'was die Seite zeigt, nennt die gemessene Maschine nie "Host" und den Zeitraum nie "Ausschnitt": ' + seenHost.slice(0, 5).join(' | '));
+  ok(page.errors.length === 0, 'Skriptfehler Wortwahl: ' + page.errors.join(' | '));
   await page.close();
 }
 
@@ -2536,7 +2846,7 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
 // the incident view, of copying, of printing and of the points carried from the review run once)
 const PER_SCHEME = [checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
-const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkWording];
+const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording];
 (async () => {
   const args = process.argv.slice(2), option = (name) => { const k = args.indexOf(name); return k < 0 ? null : args.splice(k, 2)[1]; };
   const only = option('--only'), oneScheme = option('--scheme'), dir = path.resolve(args[0]);

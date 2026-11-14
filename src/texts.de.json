@@ -48,7 +48,7 @@
   "source.perf.ica": "ICA-Sitzungswerte und Citrix EUEM", "source.profile.volumes": "Eingebundene Profilcontainer",
   "source.security.products": "Sicherheitsprodukte (Prozesse und Dienste in Sitzung 0)", "source.user.processes": "Prozesse in Benutzersitzungen",
   "source.endpoints": "TCP-Verbindungsaufbau zu den Gegenstellen",
-  "sourcecall.fast": "Schneller Takt (Host-Signale, Laufwerke, Freigaben, Eingabeverzögerung)",
+  "sourcecall.fast": "Schneller Takt (Server-Signale, Laufwerke, Freigaben, Eingabeverzögerung)",
   "sourcecall.snapshot": "Prozess-Schnappschuss (Prozesse, Sitzungen, Citrix-Werte)",
   "sourcecall.services": "Dienste und ihre Prozesse", "sourcecall.probes": "Antwortzeit-Proben der Gegenstellen",
   "sourcecall.events": "Ereignisprotokoll", "sourcecall.diskspace": "Freier Speicherplatz",
