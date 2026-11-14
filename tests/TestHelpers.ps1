@@ -253,3 +253,37 @@ function Add-HealthCanaries([string]$Dir) {
     }
     @{ Free = [string[]]$free.ToArray(); Names = [string[]]$names.ToArray(); Plain = $plain }
 }
+function Get-HealthCanaryKeep {
+    # The places of Add-HealthCanaries (Plain) whose plain token a report of level Alles keeps, by id and field
+    # (apps.probes: the value of each probe), for the measurement report and the health report of a quick run alike:
+    # what the collector writes there cannot be a name of the customer's environment (re-review of fix round 1 of
+    # Task 16): keywords of Windows and of the collector (states, start modes, modes, kinds, the fixed WEM service
+    # names), versions, numbers and times, device and driver texts of the vendor, the services under a Citrix folder,
+    # names from the event catalogue and the application list. Every other plain text field must lose its token: the
+    # names of the other services (ruling ZB-R61) and the value of a probe with names, and a new text field until it
+    # is classified here.
+    @(
+        'size.model', 'size.vmtoolsService', 'size.vmtoolsVersion', 'size.netAdapters.Name', 'size.netAdapters.Service', 'size.storageControllers.Name',
+        'size.storageControllers.Driver', 'size.balloonDriver',
+        'operation.lastUpdateId', 'operation.powerPlan', 'operation.volumes.Drive', 'operation.volumes.FileSystem',
+        'sessions.list.State',
+        'vda.version', 'vda.services.Name', 'vda.services.State', 'vda.services.StartMode', 'vda.desktopService', 'vda.controllers.Kind', 'vda.controllers.From',
+        'vda.wemService', 'vda.wemServices.Name', 'vda.wemServices.State', 'vda.wemServices.StartMode', 'vda.wemVersion', 'vda.teamsService', 'vda.webSocketService',
+        'profile.service', 'profile.version',
+        'print.spooler', 'print.spoolerStartMode', 'print.citrixPrintService', 'print.mappingClientVersion',
+        'security.services.State', 'security.services.StartMode', 'security.defenderService', 'security.defenderMode', 'security.defenderVersion',
+        'security.mdeService', 'security.filters.Name', 'security.filters.Altitude', 'security.applockerService', 'security.applockerCollections.Collection',
+        'network.smb1', 'network.smbConnections.Dialect', 'network.rss.Description', 'network.rssGlobal', 'network.timeType', 'network.timeService',
+        'events.logs.Log', 'events.logs.Mode',
+        'maintenance.tasks.State', 'maintenance.tasks.Triggers', 'maintenance.scanTime', 'maintenance.quickScanTime', 'maintenance.searchService',
+        'maintenance.updateService',
+        'apps.probes.App', 'apps.probes.Id', 'apps.probes.Kind', 'apps.probes.Read', 'apps.probes.State', 'apps.probes.Reason',
+        'apps.probes[edge.version].Value', 'apps.probes[edge.webview2Version].Value', 'apps.probes[edge.updateDefault].Value', 'apps.probes[edge.updateStable].Value',
+        'apps.probes[edge.updateWebView2].Value', 'apps.probes[edge.updateCheckMinutes].Value', 'apps.probes[edge.startupBoost].Value',
+        'apps.probes[edge.backgroundMode].Value', 'apps.probes[edge.sleepingTabs].Value', 'apps.probes[edge.autoDiscard].Value',
+        'apps.probes[edge.roamingProfile].Value', 'apps.probes[edge.updateService].Value',
+        'apps.probes[office.policyUpdateBranch].Value', 'apps.probes[office.hideUpdateNotifications].Value', 'apps.probes[office.hideEnableDisableUpdates].Value',
+        'apps.probes[office.perUserCatalog].Value', 'apps.probes[office.version].Value', 'apps.probes[office.platform].Value', 'apps.probes[office.updatesEnabled].Value',
+        'apps.probes[teams.version].Value', 'apps.probes[teams.disableAutoUpdate].Value', 'apps.probes[teams.disableFallback].Value', 'apps.probes[teams.maxFps].Value',
+        'apps.probes[teams.webview2Version].Value')
+}

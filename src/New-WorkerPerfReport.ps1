@@ -10,7 +10,8 @@
 
     A capture of a quick run (Start-WorkerPerfCapture -HealthOnly) has no measurement: it gets a health report with the
     health picture, the lookback and the print driver list. -From, -To, -FocusUser, -ReportedTime and -TopProcesses
-    are refused for it; -Mask, -MaskMapFile, -AppsFile and -HealthFile apply.
+    are refused for it; every other parameter applies (-OutFile, -ThresholdFile for the event settings and the labels of
+    the sources, -RoleFile, -GuidanceFile, -AppsFile, -HealthFile, -Mask, -MaskMapFile).
 
     Thresholds and roles are read at analysis time: a capture can be re-evaluated with changed
     files. Runs on Windows PowerShell 5.1 and PowerShell 7 (any platform).
@@ -325,7 +326,7 @@ function Get-TopIndices([double[]]$Keys, [int[]]$Items, [int]$Count) {
 
 function Get-ReportMetaFacts {
     # The fields of meta.json both ways of the report carry in meta as they are: simulated, endReason, endMessage, and the
-    # memory in GB.
+    # memory in GB. Reads the script value $model (also through Get-MetaValue).
     $simulated = Get-MetaValue 'Simulated'
     if ($null -ne $simulated) { $simulated = [bool]$simulated }
     $endReason = Get-MetaValue 'EndReason'
@@ -339,7 +340,8 @@ function Get-ReportMetaFacts {
 
 function Test-FocusUser([string]$User) {
     # An event's account is the reported user when the reported user was found in a session and the account names the
-    # same user: as User (events name no domain), or as Domain\User equal to -FocusUser.
+    # same user: as User (events name no domain), or as Domain\User equal to -FocusUser. Reads the script values $focusNames
+    # and $FocusUser (the short way of a quick run sets $focusNames empty).
     if ($focusNames.Count -eq 0 -or [string]::IsNullOrEmpty($User)) { return $false }
     $i = $User.LastIndexOf([char]'\')
     if ($i -ge 0) { return ($User -ieq $FocusUser) }
@@ -349,7 +351,9 @@ function Test-FocusUser([string]$User) {
 function ConvertTo-EventIncidentEntry($Incident) {
     # focus: with sessions, a session of the incident is a focus session (as for performance incidents); without
     # sessions (no session matched, the lookback), a person of the incident is the reported user. Near: the reported
-    # clock time within 15 minutes of the incident's span in local time.
+    # clock time within 15 minutes of the incident's span in local time. Reads the script values $focusSessions,
+    # $reportedWallMs, $eventOffset, $model, $texts and $eventConfig (and those of Test-FocusUser); the short way of a
+    # quick run sets $focusSessions empty and $reportedWallMs $null.
     $focus = $false
     $own = @($Incident.Sessions)
     if ($own.Count -gt 0) { foreach ($si in $own) { if ($focusSessions.Contains([int]$si)) { $focus = $true } } }
@@ -361,7 +365,8 @@ function ConvertTo-EventIncidentEntry($Incident) {
     return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset -CauseText $causeText)
 }
 
-# the counters of the event reads per log (I5): only logs with a number above zero, numbers and the log's label
+# the counters of the event reads per log (I5): only logs with a number above zero, numbers and the log's label (reads
+# the script value $texts)
 function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
     $list = New-Object System.Collections.Generic.List[object]
     foreach ($id in @($Counts.Keys)) {
@@ -380,7 +385,7 @@ function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
 
 function ConvertTo-ReportSources {
     # quality.sources and quality.sourceErrors of both ways: the sources of the capture (meta.json Sources) and its failed
-    # source calls (SourceErrors). Returns @{ Sources; Errors }.
+    # source calls (SourceErrors). Returns @{ Sources; Errors }. Reads the script values $model, $thresholds and $texts.
     $thOrder = @($thresholds.Keys)
     $sourceIds = @($model.Sources.Keys | Sort-Object -Property @{ Expression = { $ix = [array]::IndexOf($thOrder, $_); if ($ix -lt 0) { 1000 } else { $ix } } }, @{ Expression = { $_ } })
     $sourcesOut = New-Object System.Collections.Generic.List[object]
@@ -412,7 +417,7 @@ function ConvertTo-ReportSources {
 
 function New-ReportMask([string]$Level) {
     # The names of the whole capture and their replacements: the same arguments for the masked report and for the copy
-    # texts without names of an unmasked one (ruling P3-R8).
+    # texts without names of an unmasked one (ruling P3-R8). Reads the script values $Path, $texts, $roles and $eventConfig.
     return (New-WorkerPerfMask -Path $Path -Level $Level -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig)
 }
 
@@ -492,7 +497,8 @@ function New-ReportBefore {
 }
 
 function ConvertTo-ReportDrivers($PrintState) {
-    # print.drivers of the report data (both ways): the driver list with what the incidents say about each driver.
+    # print.drivers of the report data (both ways): the driver list with what the incidents say about each driver. Reads no
+    # script value.
     $driversOut = New-Object System.Collections.Generic.List[object]
     foreach ($d in @($PrintState.Drivers)) {
         $driversOut.Add([ordered]@{
@@ -505,7 +511,8 @@ function ConvertTo-ReportDrivers($PrintState) {
 
 function Add-ReportIncidentGuide([object[]]$Incidents, $Data) {
     # The fields of the guided report of each incident of the report data (both ways: the incidents of the capture and of
-    # the lookback): guide, and health, the checks of the health picture that may contribute to it.
+    # the lookback): guide, and health, the checks of the health picture that may contribute to it. Reads the script values
+    # $guidance, $thresholds, $eventOffset, $texts and $appList.
     $guideContext = @{ Data = $Data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
     foreach ($inc in $Incidents) {
         $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
@@ -519,13 +526,14 @@ function Add-ReportIncidentGuide([object[]]$Incidents, $Data) {
 }
 
 function Set-ReportBeforeRank([object[]]$BeforeInc) {
-    # rank of the incidents of the lookback: 1-based, by time
+    # rank of the incidents of the lookback: 1-based, by time (reads no script value)
     $beforeByTime = @($BeforeInc | Sort-Object -Property @{ Expression = { [double]$_['start'] } }, @{ Expression = { [int]$_['id'] } })
     for ($n = 0; $n -lt $beforeByTime.Count; $n++) { $beforeByTime[$n]['rank'] = $n + 1 }
 }
 
 function Get-ReportCopyParagraphs([object[]]$Incidents, $Data) {
-    # the copy texts of the incidents as unwrapped paragraphs, one list per incident
+    # the copy texts of the incidents as unwrapped paragraphs, one list per incident (reads the script values $guidance and
+    # $texts)
     $copyParagraphs = New-Object System.Collections.Generic.List[object]
     foreach ($inc in $Incidents) {
         $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $Data -Catalogue $guidance -Texts $texts))
@@ -537,7 +545,8 @@ function Add-ReportCopyTexts([object[]]$Incidents, [object[]]$Paragraphs, $Data,
     # The copy texts of the incidents and of the health picture (both ways). In a masked run ($AnonymousMask $null) the
     # paragraphs go into the data as they are and are masked with it; Complete-Report wraps them after that. The version
     # without names is not needed: the named version has none. Without -Mask the named version and the version without
-    # names (the replacements of a masked report of level Alles, in the paragraphs before wrapping) are wrapped here.
+    # names (the replacements of a masked report of level Alles, in the paragraphs before wrapping) are wrapped here. Reads
+    # the script value $healthCatalogue.
     if ($null -eq $AnonymousMask) {
         for ($n = 0; $n -lt $Incidents.Count; $n++) { $Incidents[$n]['copy'] = [ordered]@{ named = $Paragraphs[$n]; anonymous = $null } }
         Add-WorkerPerfHealthReportTexts -Result $Data['health'] -Catalogue $healthCatalogue -Server ([string]$Data['meta']['computer']) -Unwrapped
@@ -558,7 +567,9 @@ function Complete-Report($Data, [string]$Done, [string[]]$Details = @()) {
     # (guidance) is masked as one composed text; the copy texts are wrapped after the replacing; the level is set on the
     # masked result, so that no replacement can touch it. Then the report is written through a temporary file, the map of
     # the replacement names follows, and the console names the report: $Done (format: {0} the seconds, {1} the file),
-    # the lines $Details, and the lines of the masking. Returns the written file.
+    # the lines $Details, and the lines of the masking. Returns the written file. Reads the script values $Mask,
+    # $MaskMapFile, $OutFile, $templateFile, $timer, $inv, $texts, $guidance, $healthCatalogue and $thresholds (and those
+    # of New-ReportMask).
     $maskObj = $null
     if ($Mask) {
         $maskObj = New-ReportMask $Mask
@@ -729,8 +740,10 @@ if ($model.Meta.HealthOnly) {
     $refused = New-Object System.Collections.Generic.List[string]
     foreach ($name in 'FocusUser', 'ReportedTime', 'TopProcesses') { if ($PSBoundParameters.ContainsKey($name)) { $refused.Add('-' + $name) } }
     if ($refused.Count -gt 0) { throw ('Die Aufzeichnung ist ein Schnelllauf ohne Messung; nicht zusammen mit: {0}.' -f [string]::Join(', ', $refused.ToArray())) }
-    # what the lookback and its incidents read from the script: no reported user and no reported time, no events of a
-    # measurement (New-ReportBefore, ConvertTo-EventIncidentEntry)
+    # the script values the helpers read that the measurement way sets further down, set here for a quick run: no reported
+    # user ($focusSessions, $focusNames: Test-FocusUser, ConvertTo-EventIncidentEntry), no reported time ($reportedWallMs),
+    # no ticks and no events of a measurement ($tick, $events, $eventsOut: New-ReportBefore), the event settings and the
+    # lookback ($eventConfig also for New-ReportMask; $eventOffset, $lookback, $beforeIncidents)
     $focusSessions = New-Object System.Collections.Generic.List[int]
     $focusNames = @{}
     $reportedWallMs = $null

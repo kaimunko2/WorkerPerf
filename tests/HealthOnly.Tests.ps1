@@ -207,14 +207,24 @@ Describe 'Zustandsbericht aus dem Schnelllauf' {
             $lines[$i] = [string]::Join(',', [string[]]@($f | ForEach-Object { if ($_ -match '[",]') { '"' + $_.Replace('"', '""') + '"' } else { $_ } }))
         }
         [IO.File]::WriteAllLines($bf, $lines)
-        $mf = Join-Path $run 'meta.json'; $m = [IO.File]::ReadAllText($mf).Replace('"EndMessage": null', '"EndMessage": "Ende CANARYEND"'); [IO.File]::WriteAllText($mf, $m)
-        $m | Should -Match 'CANARYEND'
+        # the copied texts of meta.json the health report carries: the end message, the first message of a failed source
+        # call (quality.sourceErrors) and the reason of a source that is not available (quality.sources), as in Mask.Tests
+        $mf = Join-Path $run 'meta.json'; $m = [IO.File]::ReadAllText($mf).Replace('"EndMessage": null', '"EndMessage": "Ende CANARYEND"')
+        $m = $m.Replace('"SourceErrors": {}', '"SourceErrors": { "proc.info": { "Count": 2, "FirstTime": "2026-11-12T11:00:00.0000000+00:00", "FirstMessage": "Fehler CANARYERR" } }')
+        $m = $m.Replace('"Sources": {', '"Sources": { "cpu.steal": { "Available": false, "Detail": "Grund CANARYSRC" },')
+        [IO.File]::WriteAllText($mf, $m)
+        foreach ($t in 'CANARYEND', 'CANARYERR', 'CANARYSRC') { $m | Should -Match $t }
         $plain = Join-Path $TestDrive 'hoc-plain.html'; [void](& $ReportScript -Path $run -OutFile $plain 6>$null)
         $strings = New-Object System.Collections.Generic.List[string]
         $collect = { param($Value) if ($null -eq $Value -or $Value -is [ValueType]) { return }; if ($Value -is [string]) { $strings.Add($Value); return }
             if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { & $collect $x }; return }; foreach ($q in $Value.PSObject.Properties) { & $collect $q.Value } }
-        & $collect (Get-ReportData $plain); $all = $strings -join "`n"
-        foreach ($t in @($canary.Free) + @($canary.Names) + 'CANARYHER', 'CANARYBEF', 'CANARYEND') { $all.Contains($t) | Should -BeTrue -Because "$t im unmaskierten Bericht" }
+        $pd = Get-ReportData $plain; & $collect $pd; $all = $strings -join "`n"
+        foreach ($t in @($canary.Free) + @($canary.Names) + @($canary.Plain.Values) + 'CANARYHER', 'CANARYBEF', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { $all.Contains($t) | Should -BeTrue -Because "$t im unmaskierten Bericht" }
+        @($pd.quality.sourceErrors.firstMessage) | Should -Contain 'Fehler CANARYERR'; @($pd.quality.sources | Where-Object id -eq 'cpu.steal').detail | Should -Be 'Grund CANARYSRC'
+        # the versions without names never quote free text or a name of the server (P3-R44): lookback incidents, areas, checks
+        $anonymous = @(@($pd.before.incidents) | ForEach-Object { $_.copy.anonymous }) + @(foreach ($a in $pd.health.areas) { $a.copy.anonymous; foreach ($c in $a.checks) { $c.copy.anonymous } })
+        $anonymous.Count | Should -BeGreaterThan 80
+        foreach ($c in $anonymous) { $c | Should -Not -Match 'CANARY|kanari|SIM-VDA01' }
         foreach ($level in 'Personen', 'Alles') {
             $file = Join-Path $TestDrive "hoc-$level.html"; [void](& $ReportScript -Path $run -OutFile $file -Mask $level 6>$null)
             $text = [IO.File]::ReadAllText($file); $text | Should -Not -Match 'CANARY' -Because $level; $text | Should -Not -Match 'KANINSTANZ|KanFirmaAgent' -Because $level
@@ -225,6 +235,11 @@ Describe 'Zustandsbericht aus dem Schnelllauf' {
                 @((Get-Content $map -Raw | ConvertFrom-Json).entries | Where-Object { $_.name -eq 'SIM-VDA01' }).replacement | Should -Be 'Server 01'
                 $strings.Clear(); & $collect (Get-ReportData $file); $all = $strings -join "`n"
                 foreach ($t in $canary.Names) { $all.Contains($t) | Should -BeFalse -Because $t }
+                # the plain tokens left are exactly those of the fields the masking keeps by design (as in Mask.Tests)
+                $keep = Get-HealthCanaryKeep
+                $left = @(foreach ($place in $canary.Plain.Keys) { if ($all.Contains($canary.Plain[$place])) { $place } })
+                @($left | Where-Object { $keep -notcontains $_ }) -join ', ' | Should -Be '' -Because 'nicht eingeordnete Textfelder bleiben stehen'
+                @($keep | Where-Object { $left -notcontains $_ }) -join ', ' | Should -Be '' -Because 'die Liste nennt nur Felder, die stehen bleiben'
             }
         }
     }
