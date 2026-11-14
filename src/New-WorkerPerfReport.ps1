@@ -351,7 +351,7 @@ if ($Mask -eq 'Alles') {
     if (Test-Path -LiteralPath $maskMetaPath) {
         $maskWorker = [string](Get-WorkerPerfField (ConvertFrom-WorkerPerfJsonFile $maskMetaPath) 'Computer')
         if ($maskWorker -and (Split-Path -Leaf $OutFile).IndexOf($maskWorker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            throw "Der Dateiname des Berichts nennt den Worker; bei -Mask Alles bitte einen anderen Namen waehlen."
+            throw "Der Dateiname des Berichts nennt den Server; bei -Mask Alles bitte einen anderen Namen waehlen."
         }
     }
 }
