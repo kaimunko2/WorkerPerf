@@ -1455,7 +1455,8 @@ Describe 'Katalog an allen Testberichten: was ein Vorfall vor den zehn weiteren 
         [void](New-TestReports $allDir); [void](New-SkipReports $allDir)
         $script:AllGuides = @(foreach ($file in @(Get-ChildItem $allDir -Filter '*.html' | Sort-Object Name)) {
                 $shown = Get-ReportData $file.FullName
-                $list = @($shown.incidents); if ($shown.PSObject.Properties['before'] -and $shown.before.PSObject.Properties['incidents']) { $list += @($shown.before.incidents) }
+                # a health report (Task 17) has no incidents of a measurement, only those of the lookback
+                $list = @(); if ($shown.PSObject.Properties['incidents']) { $list = @($shown.incidents) }; if ($shown.PSObject.Properties['before'] -and $shown.before.PSObject.Properties['incidents']) { $list += @($shown.before.incidents) }
                 foreach ($inc in $list) { if ($inc.PSObject.Properties['guide'] -and $null -ne $inc.guide) { [pscustomobject]@{ Report = $file.Name; Id = [int]$inc.id; Guide = $inc.guide } } }
             })
     }

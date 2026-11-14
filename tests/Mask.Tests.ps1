@@ -804,75 +804,9 @@ Describe 'Simulierte Stunde, maskiert' {
             $m = [regex]::Replace($m, '"cpu\.steal": \{[^{}]*\}', '"cpu.steal": { "Available": false, "Detail": "Grund CANARYSRC" }')
             [IO.File]::WriteAllText($meta, $m)
             foreach ($t in 'EndReason": "error', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { if (-not $m.Contains($t)) { throw "Kanarienvogel nicht gesetzt: $t" } }
-            # health.json (Task 16): a token of its own in every text field of the value list (a single value, or in a list the
-            # field of the first entry; a value that is not read and an empty list become a read value with one entry whose
-            # other fields are empty), in the value of every probe of the application list that reads a text or a registry
-            # value (as the collector writes it: in Names where the probe carries names, else in Value; the row is made read),
-            # in the fields App, Id, Kind, Read, State and Reason of one more probe row, and in the first empty Error of an area. A field that
-            # can carry free server text or a name of a server, person, client, domain or address gets a token of its kind
-            # (Free, Names); every other text field a plain token (Plain: place -> token, the place being the id, id.Field or
-            # apps.probes[app.probe].Field), which the masking keeps by design: the test compares the places whose token is
-            # left at level Alles with its list of the fields that cannot hold a name of the customer's environment, so that a
-            # new text field fails the test until it is classified (fix round 1 of Task 16, follow-up). Two services an
-            # administrator named (ruling ZB-R61) are added to the list of all services.
-            $hf = Join-Path $dir 'health.json'; $h = ConvertFrom-WorkerPerfHealthJsonText ([IO.File]::ReadAllText($hf))
-            $free = New-Object System.Collections.Generic.List[string]; $names = New-Object System.Collections.Generic.List[string]; $plain = [ordered]@{}
-            $marker = { param([string]$Type, [string]$Place)
-                $k = '{0:000}' -f ($free.Count + $names.Count + $plain.Count + 1)          # one count over all tokens, of one width
-                switch ($Type) {
-                    'text:free' { $t = "CANARYH$k"; $free.Add($t) }
-                    'text:path' { $t = "\\kanari$k\frei\ordner"; $names.Add($t) }
-                    'text:share' { $t = "\\kanari$k\frei"; $names.Add($t) }
-                    'text:user' { $t = "kanari$k"; $names.Add($t) }
-                    'text:domain' { $t = "KANARI$k"; $names.Add($t) }
-                    'text:client' { $t = "KANARI-WS$k"; $names.Add($t) }
-                    'text:address' { $t = '10.77.0.' + [int]$k; $names.Add($t) }
-                    'text:host' { $t = "kanari$k.sim.local"; $names.Add($t) }
-                    'text:hosts' { $t = "kanari$k.sim.local"; $names.Add($t) }
-                    default { $t = "KANPLAIN$k"; $plain[$Place] = $t }
-                }
-                $t }
-            $isText = { param([string]$Type) $Type -eq 'value' -or $Type.StartsWith('text') }
-            $appTypes = @{}
-            foreach ($a in @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))) {
-                foreach ($p in @($a.probes)) { $appTypes['{0}.{1}' -f $a.key, $p.id] = Get-WorkerPerfAppFactType $p }
-            }
-            foreach ($id in $WorkerPerfHealthValues.Keys) {
-                $def = $WorkerPerfHealthValues[$id]; $values = $h['Areas'][$def.Area]['Values']
-                if ($def.Type -ne 'list') {
-                    if (& $isText $def.Type) { $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = (& $marker $def.Type $id) } }
-                    continue
-                }
-                $v = $values[$id]; $rows = @(); if ($null -ne $v -and $v['State'] -eq 'read') { $rows = @($v['Value']) }
-                if ($id -eq 'apps.probes') {
-                    foreach ($row in $rows) {
-                        $probe = '{0}.{1}' -f $row['App'], $row['Id']; $type = $appTypes[$probe]
-                        if (@('value', 'text', 'text:free') -notcontains $type) { continue }
-                        $row['State'] = 'read'; $row['Reason'] = ''; $row['Value'] = $null; $row['Names'] = $null
-                        if ($type -eq 'text:free') { $row['Names'] = & $marker $type "apps.probes[$probe].Names" } else { $row['Value'] = & $marker $type "apps.probes[$probe].Value" }
-                    }
-                    $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
-                    foreach ($f in 'App', 'Id', 'Kind', 'Read', 'State', 'Reason') { $row[$f] = & $marker $def.Fields[$f] "apps.probes.$f" }
-                    $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($rows) + @($row) }
-                    continue
-                }
-                if ($rows.Count -eq 0) {
-                    $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
-                    $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($row) }
-                }
-                else { $row = $rows[0] }
-                foreach ($f in $def.Fields.Keys) { if (& $isText $def.Fields[$f]) { $row[$f] = & $marker $def.Fields[$f] "$id.$f" } }
-                if ($id -eq 'security.services') {
-                    $values[$id]['Value'] = @($values[$id]['Value']) + @([ordered]@{ Name = 'MSSQL$KANINSTANZ'; State = 'Running'; StartMode = 'Auto' },
-                        [ordered]@{ Name = 'KanFirmaAgent'; State = 'Running'; StartMode = 'Auto' })
-                }
-            }
-            $areaWithoutError = @($h['Areas'].Values | Where-Object { [string]$_['Error'] -eq '' })[0]; $areaWithoutError['Error'] = 'Fehler CANARYHER'
-            $text = ConvertTo-Json -InputObject $h -Depth 20; [IO.File]::WriteAllText($hf, $text)
-            foreach ($t in @($free) + @($names) + @($plain.Values) + 'Fehler CANARYHER' + 'MSSQL$KANINSTANZ') {
-                if (-not $text.Contains((ConvertTo-Json $t).Trim('"'))) { throw "Kanarienvogel nicht gesetzt: $t" }
-            }
-            $script:CanaryHealth = @{ Free = [string[]]$free.ToArray(); Names = [string[]]$names.ToArray(); Plain = $plain }
+            # health.json (Task 16): tokens in every text field of the value list and of the application list (Add-HealthCanaries,
+            # tests/TestHelpers.ps1)
+            $script:CanaryHealth = Add-HealthCanaries $dir
             $dir
         }
         function Get-AllStrings($Value, $List) {

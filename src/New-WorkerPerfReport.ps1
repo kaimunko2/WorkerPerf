@@ -8,6 +8,10 @@
     thresholds, groups the findings into incidents, attributes them to sessions, applications
     and processes and writes one HTML file that embeds all data as JSON.
 
+    A capture of a quick run (Start-WorkerPerfCapture -HealthOnly) has no measurement: it gets a health report with the
+    health picture, the lookback and the print driver list. -From, -To, -FocusUser, -ReportedTime and -TopProcesses
+    are refused for it; -Mask, -MaskMapFile, -AppsFile and -HealthFile apply.
+
     Thresholds and roles are read at analysis time: a capture can be re-evaluated with changed
     files. Runs on Windows PowerShell 5.1 and PowerShell 7 (any platform).
 
@@ -319,6 +323,344 @@ function Get-TopIndices([double[]]$Keys, [int[]]$Items, [int]$Count) {
     return , $out.ToArray()
 }
 
+function Get-ReportMetaFacts {
+    # The fields of meta.json both ways of the report carry in meta as they are: simulated, endReason, endMessage, and the
+    # memory in GB.
+    $simulated = Get-MetaValue 'Simulated'
+    if ($null -ne $simulated) { $simulated = [bool]$simulated }
+    $endReason = Get-MetaValue 'EndReason'
+    if ($null -ne $endReason) { $endReason = [string]$endReason }
+    $endMessage = Get-MetaValue 'EndMessage'
+    if ($null -ne $endMessage) { $endMessage = [string]$endMessage }
+    $ramGB = $null
+    if ([double]$model.Meta.RamMB -gt 0) { $ramGB = [Math]::Round([double]$model.Meta.RamMB / 1024.0, 1) }
+    return @{ Simulated = $simulated; EndReason = $endReason; EndMessage = $endMessage; RamGB = $ramGB }
+}
+
+function Test-FocusUser([string]$User) {
+    # An event's account is the reported user when the reported user was found in a session and the account names the
+    # same user: as User (events name no domain), or as Domain\User equal to -FocusUser.
+    if ($focusNames.Count -eq 0 -or [string]::IsNullOrEmpty($User)) { return $false }
+    $i = $User.LastIndexOf([char]'\')
+    if ($i -ge 0) { return ($User -ieq $FocusUser) }
+    return $focusNames.ContainsKey($User.ToLowerInvariant())
+}
+
+function ConvertTo-EventIncidentEntry($Incident) {
+    # focus: with sessions, a session of the incident is a focus session (as for performance incidents); without
+    # sessions (no session matched, the lookback), a person of the incident is the reported user. Near: the reported
+    # clock time within 15 minutes of the incident's span in local time.
+    $focus = $false
+    $own = @($Incident.Sessions)
+    if ($own.Count -gt 0) { foreach ($si in $own) { if ($focusSessions.Contains([int]$si)) { $focus = $true } } }
+    else { foreach ($u in @($Incident.Users)) { if (Test-FocusUser ([string]$u)) { $focus = $true } } }
+    $near = $false
+    if ($null -ne $reportedWallMs) { $near = Test-WorkerPerfIncidentNearWall $Incident $reportedWallMs $eventOffset }
+    $text = [string](Get-WorkerPerfEventIncidentText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
+    $causeText = [string](Get-WorkerPerfEventIncidentDetailText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
+    return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset -CauseText $causeText)
+}
+
+# the counters of the event reads per log (I5): only logs with a number above zero, numbers and the log's label
+function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($id in @($Counts.Keys)) {
+        $c = $Counts[$id]
+        $dropped = $(if ($WithDropped) { [long]$c.Dropped } else { [long]0 })
+        if ($dropped -le 0 -and [long]$c.Skipped -le 0 -and [long]$c.Unformatted -le 0) { continue }
+        $label = [string]$id
+        if ($texts.ContainsKey('source.events.' + $id)) { $label = [string]$texts['source.events.' + $id] }
+        $row = [ordered]@{ log = [string]$id; label = $label }
+        if ($WithDropped) { $row['dropped'] = $dropped }
+        $row['skipped'] = [long]$c.Skipped; $row['unformatted'] = [long]$c.Unformatted
+        $list.Add($row)
+    }
+    return , $list.ToArray()
+}
+
+function ConvertTo-ReportSources {
+    # quality.sources and quality.sourceErrors of both ways: the sources of the capture (meta.json Sources) and its failed
+    # source calls (SourceErrors). Returns @{ Sources; Errors }.
+    $thOrder = @($thresholds.Keys)
+    $sourceIds = @($model.Sources.Keys | Sort-Object -Property @{ Expression = { $ix = [array]::IndexOf($thOrder, $_); if ($ix -lt 0) { 1000 } else { $ix } } }, @{ Expression = { $_ } })
+    $sourcesOut = New-Object System.Collections.Generic.List[object]
+    foreach ($id in $sourceIds) {
+        $src = $model.Sources[$id]
+        # signals take the threshold's label, other sources their text; an unknown id stays as it is
+        $label = [string]$id
+        if ($thresholds.Contains($id)) { $label = [string]$thresholds[$id].label }
+        elseif ($texts.ContainsKey('source.' + $id)) { $label = $texts['source.' + $id] }
+        $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail
+                readFailed = [bool](Get-WorkerPerfField $src 'ReadFailed'); lookbackRead = [bool](Get-WorkerPerfField $src 'LookbackRead') })
+    }
+    # failed source calls of the capture: the source's text, else its key; a log booked on its own ('events.<log id>',
+    # 'eventsbefore.<log id>', M13) by the call's text and the log's
+    $sourceErrorsOut = New-Object System.Collections.Generic.List[object]
+    foreach ($e in @($model.SourceErrors | Sort-Object -Property @{ Expression = { $_.Source } })) {
+        $label = [string]$e.Source
+        $cut = $label.IndexOf([char]'.')
+        if ($texts.ContainsKey('sourcecall.' + $label)) { $label = $texts['sourcecall.' + $label] }
+        elseif ($cut -gt 0 -and $texts.ContainsKey('source.events.' + $label.Substring($cut + 1))) {
+            $call = $label.Substring(0, $cut); $log = $texts['source.events.' + $label.Substring($cut + 1)]
+            if ($call -eq 'events') { $label = $log }
+            elseif ($texts.ContainsKey('sourcecall.' + $call)) { $label = $texts['sourcecall.' + $call] + ' ' + [char]0x2013 + ' ' + $log }
+        }
+        $sourceErrorsOut.Add([ordered]@{ source = [string]$e.Source; label = $label; count = [int]$e.Count; firstMs = $e.FirstMs; firstMessage = [string]$e.FirstMessage })
+    }
+    return @{ Sources = $sourcesOut.ToArray(); Errors = $sourceErrorsOut.ToArray() }
+}
+
+function New-ReportMask([string]$Level) {
+    # The names of the whole capture and their replacements: the same arguments for the masked report and for the copy
+    # texts without names of an unmasked one (ruling P3-R8).
+    return (New-WorkerPerfMask -Path $Path -Level $Level -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig)
+}
+
+function New-ReportBefore {
+    # The section before of the report data (both ways): the lookback, its incidents (ConvertTo-EventIncidentEntry), the
+    # events near a reported time and what the page may say about the lookback. Reads the values of the script: $lookback,
+    # $beforeIncidents, $tick, $events, $eventsOut, $reportedWallMs, $eventOffset, $eventConfig, $texts, $model and $Path.
+    $beforeIncOut = New-Object System.Collections.Generic.List[object]
+    foreach ($inc in $beforeIncidents) { $beforeIncOut.Add((ConvertTo-EventIncidentEntry $inc)) }
+    # near: the lookback events within 15 minutes of a reported time before the capture, then the events of the capture
+    # within the same radius (nearCapture: their positions in events)
+    $nearOut = New-Object System.Collections.Generic.List[object]
+    foreach ($e in @($lookback.Near)) { $nearOut.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset)) }
+    $nearCapture = New-Object System.Collections.Generic.List[int]
+    $captureStartMs = [long]$tick.TimeMs[0]
+    if ($null -ne $model.CaptureStartMs) { $captureStartMs = [long]$model.CaptureStartMs }
+    if ($null -ne $reportedWallMs -and $reportedWallMs -lt $captureStartMs + [long]$eventOffset * 60000L) {
+        for ($i = 0; $i -lt $events.Count; $i++) {
+            if (Test-WorkerPerfEventNearWall $events[$i] $reportedWallMs $eventOffset) { $nearOut.Add($eventsOut[$i]); $nearCapture.Add($i) }
+        }
+    }
+    $perDayOut = New-Object System.Collections.Generic.List[object]
+    $incidentEventCount = 0
+    foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count; partial = [bool]$d.Partial }); $incidentEventCount += [int]$d.Count }
+    # per log the oldest event read (M5), and what the lookback skipped per log (I5, LookbackReadCounts of newer captures)
+    $oldestOut = @(@($lookback.Oldest) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ log = [string]$_.Log; t = [long]$_.TimeMs } })
+    $lookbackReadsOut = @()
+    if (@($model.Skip) -notcontains 'Rueckblick') { $lookbackReadsOut = ConvertTo-ReadCountsOut $model.Meta['LookbackReadCounts'] }
+    # What the page may say about the lookback (status):
+    #   notRecorded  the capture has no lookback setting (format 2)
+    #   off          -EventLookbackDays 0 or -Skip Rueckblick
+    #   missingFile  events_before.csv is missing
+    #   unavailable  nothing was read: the lookback read failed (SourceErrors 'eventsbefore'), the capture's Sources do not
+    #                list every log of events.json that has a lookback (the source does not read the lookback; the Windows
+    #                source of today lists only Defender and AppLocker), or list none of them as available
+    #   partial      every lookback log is listed, some as not available: only the available ones were read
+    #   read         every lookback log is listed and available; the lookback may hold no events
+    # A lookback that holds events is partial or read, by the same per-log rule (read when the Sources say nothing more).
+    # logs: every log of events.json with a lookback, in its order, with the label of its source and whether it was read.
+    $lookbackLogs = @(@(Get-WorkerPerfEventReadLogs $eventConfig) | Where-Object { $_.Lookback })
+    $logsOut = New-Object System.Collections.Generic.List[object]
+    $listedCount = 0
+    foreach ($l in $lookbackLogs) {
+        $sid = 'events.' + $l.Id
+        $avail = $false
+        # a switched-off log is not available for the capture, but its events were read for the lookback (M14)
+        if ($model.Sources.ContainsKey($sid)) { $listedCount++; $avail = ([bool]$model.Sources[$sid].Available -or [bool](Get-WorkerPerfField $model.Sources[$sid] 'LookbackRead')) }
+        $label = [string]$l.Id
+        if ($texts.ContainsKey('source.' + $sid)) { $label = [string]$texts['source.' + $sid] }
+        $logsOut.Add([ordered]@{ id = [string]$l.Id; label = $label; available = $avail })
+    }
+    $usableCount = @($logsOut | Where-Object { $_.available }).Count
+    $allListed = ($listedCount -eq $lookbackLogs.Count)
+    $lookbackStatus = 'read'
+    $metaDays = Get-WorkerPerfField $model.Meta 'EventLookbackDays'
+    if ($null -eq $metaDays) { $lookbackStatus = 'notRecorded' }
+    elseif ([int]$metaDays -le 0 -or @($model.Skip) -contains 'Rueckblick') { $lookbackStatus = 'off' }
+    elseif ([int]$lookback.EventCount -gt 0) {
+        if ($allListed -and $usableCount -gt 0 -and $usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
+    }
+    elseif (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv'))) { $lookbackStatus = 'missingFile' }
+    else {
+        $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' -or $_.Source -like 'eventsbefore.*' })
+        if ($failed.Count -gt 0 -or -not $allListed -or $usableCount -eq 0) { $lookbackStatus = 'unavailable' }
+        elseif ($usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
+    }
+    $captureEndMs = [long]$tick.TimeMs[$tick.TimeMs.Count - 1]
+    if ($null -ne $model.CaptureEndMs) { $captureEndMs = [long]$model.CaptureEndMs }
+    $beforeOut = [ordered]@{
+        days = [int]$lookback.Days; from = [long]$lookback.FromMs; capped = [string[]]@($lookback.Capped)
+        eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
+        incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
+        captureStart = $captureStartMs; status = $lookbackStatus; logs = $logsOut.ToArray(); captureEnd = $captureEndMs
+        oldest = $oldestOut; readCounts = $lookbackReadsOut
+    }
+    return $beforeOut
+}
+
+function ConvertTo-ReportDrivers($PrintState) {
+    # print.drivers of the report data (both ways): the driver list with what the incidents say about each driver.
+    $driversOut = New-Object System.Collections.Generic.List[object]
+    foreach ($d in @($PrintState.Drivers)) {
+        $driversOut.Add([ordered]@{
+                name = [string]$d.Name; manufacturer = [string]$d.Manufacturer; version = [string]$d.Version; type = [int]$d.Type; isolation = [string]$d.Isolation
+                isolated = [bool]$d.Isolated; files = [string[]]@($d.Files); involved = [bool]$d.Involved; possiblyInvolved = [bool]$d.PossiblyInvolved
+            })
+    }
+    return , $driversOut.ToArray()
+}
+
+function Add-ReportIncidentGuide([object[]]$Incidents, $Data) {
+    # The fields of the guided report of each incident of the report data (both ways: the incidents of the capture and of
+    # the lookback): guide, and health, the checks of the health picture that may contribute to it.
+    $guideContext = @{ Data = $Data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
+    foreach ($inc in $Incidents) {
+        $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
+        $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
+        # the checks of the health picture that may contribute to it: by its situation and the patterns of its events
+        $patternIds = [string[]]@(foreach ($pattern in @(Get-WorkerPerfField (Get-WorkerPerfField $inc 'event') 'patterns')) {
+                if ($null -ne $pattern) { [string](Get-WorkerPerfField $pattern 'id') } })
+        $situation = [string](Get-WorkerPerfField $inc['guide'] 'situation')
+        $inc['health'] = [string[]]@(Get-WorkerPerfHealthIncidentChecks -Result $Data['health'] -Situation $situation -Patterns $patternIds)
+    }
+}
+
+function Set-ReportBeforeRank([object[]]$BeforeInc) {
+    # rank of the incidents of the lookback: 1-based, by time
+    $beforeByTime = @($BeforeInc | Sort-Object -Property @{ Expression = { [double]$_['start'] } }, @{ Expression = { [int]$_['id'] } })
+    for ($n = 0; $n -lt $beforeByTime.Count; $n++) { $beforeByTime[$n]['rank'] = $n + 1 }
+}
+
+function Get-ReportCopyParagraphs([object[]]$Incidents, $Data) {
+    # the copy texts of the incidents as unwrapped paragraphs, one list per incident
+    $copyParagraphs = New-Object System.Collections.Generic.List[object]
+    foreach ($inc in $Incidents) {
+        $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $Data -Catalogue $guidance -Texts $texts))
+    }
+    return , $copyParagraphs.ToArray()
+}
+
+function Add-ReportCopyTexts([object[]]$Incidents, [object[]]$Paragraphs, $Data, $AnonymousMask) {
+    # The copy texts of the incidents and of the health picture (both ways). In a masked run ($AnonymousMask $null) the
+    # paragraphs go into the data as they are and are masked with it; Complete-Report wraps them after that. The version
+    # without names is not needed: the named version has none. Without -Mask the named version and the version without
+    # names (the replacements of a masked report of level Alles, in the paragraphs before wrapping) are wrapped here.
+    if ($null -eq $AnonymousMask) {
+        for ($n = 0; $n -lt $Incidents.Count; $n++) { $Incidents[$n]['copy'] = [ordered]@{ named = $Paragraphs[$n]; anonymous = $null } }
+        Add-WorkerPerfHealthReportTexts -Result $Data['health'] -Catalogue $healthCatalogue -Server ([string]$Data['meta']['computer']) -Unwrapped
+        return
+    }
+    for ($n = 0; $n -lt $Incidents.Count; $n++) {
+        $p = $Paragraphs[$n]
+        $Incidents[$n]['copy'] = [ordered]@{ named = Format-WorkerPerfCopyLines $p
+            anonymous = Format-WorkerPerfCopyLines ([string[]]@($p | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $AnonymousMask })) }
+    }
+    Add-WorkerPerfHealthReportTexts -Result $Data['health'] -Catalogue $healthCatalogue -Server ([string]$Data['meta']['computer']) -AnonymousMask $AnonymousMask
+}
+
+function Complete-Report($Data, [string]$Done, [string[]]$Details = @()) {
+    # The finish of both ways. With -Mask: the names of the whole capture (not the cut) are replaced in the report data,
+    # once; a reported user typed by the caller that is no name of the capture is removed (P2-R11), one the capture names
+    # (a session in the cut or anywhere in the capture) is replaced like every name; the catalogue the data carry
+    # (guidance) is masked as one composed text; the copy texts are wrapped after the replacing; the level is set on the
+    # masked result, so that no replacement can touch it. Then the report is written through a temporary file, the map of
+    # the replacement names follows, and the console names the report: $Done (format: {0} the seconds, {1} the file),
+    # the lines $Details, and the lines of the masking. Returns the written file.
+    $maskObj = $null
+    if ($Mask) {
+        $maskObj = New-ReportMask $Mask
+        $focusOut = Get-WorkerPerfField $Data['meta'] 'focus'
+        if ($null -ne $focusOut -and $null -ne $focusOut.user -and -not $focusOut.found -and -not (Test-WorkerPerfMaskKnownAccount $maskObj ([string]$focusOut.user))) {
+            $focusOut.user = [string]$texts['mask.other']
+        }
+        $Data = Protect-WorkerPerfReportData $Data $maskObj
+        if ($Data.Contains('guidance')) {
+            # the catalogue is composed text throughout: a key of it named like a keyword field (copy.measure) is no keyword
+            $Data['guidance'] = ConvertTo-PlainData $guidance $maskObj
+            # the keys of terms are display words, not identifiers (ruling P3-R43): masked like the texts, so that guide.terms
+            # (composed text, masked with the data) still finds its explanation; all other keys of the catalogue stay. Two keys
+            # that get the same replacement name (two names of one server) keep both explanations, joined in their order.
+            $plainTerms = $Data['guidance']['terms']
+            if ($plainTerms -is [System.Collections.IDictionary]) {
+                $maskedTerms = [ordered]@{}
+                foreach ($k in @($plainTerms.Keys)) {
+                    $maskedKey = Hide-WorkerPerfReportText ([string]$k) $maskObj
+                    if ($maskedTerms.Contains($maskedKey)) { $maskedTerms[$maskedKey] = [string]$maskedTerms[$maskedKey] + ' ' + [string]$plainTerms[$k] }
+                    else { $maskedTerms[$maskedKey] = $plainTerms[$k] }
+                }
+                $Data['guidance']['terms'] = $maskedTerms
+            }
+        }
+        # the incidents of the capture (a quick run has none) and of the lookback
+        $captureList = Get-WorkerPerfGuidanceList $Data 'incidents'
+        $beforeList = Get-WorkerPerfGuidanceList $Data['before'] 'incidents'
+        foreach ($inc in @($captureList) + @($beforeList)) {
+            $inc['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($inc['copy']['named']))
+        }
+        if ($Data.Contains('copyAll')) { $Data['copyAll']['named'] = Format-WorkerPerfCopyLines ([string[]]@($Data['copyAll']['named'])) }
+        foreach ($area in @(Get-WorkerPerfField $Data['health'] 'areas')) {
+            foreach ($record in @($area) + @($area['checks'])) { $record['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($record['copy']['named'])) }
+        }
+        $Data['meta']['mask'] = $Mask
+        # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
+        # replacement, never by the real name. The report's words are those of texts.de.json, every text of the guidance
+        # catalogue as read, with the keys of its terms (they are masked too), and every text of the health catalogue as read
+        # (findings, meanings, steps, labels, copy texts, legends; with the labels of the application list it carries).
+        $vocabulary = @{}
+        foreach ($k in $texts.Keys) { $vocabulary[$k] = $texts[$k] }
+        $catalogueWords = New-Object System.Collections.Generic.List[string]
+        foreach ($t in @(Get-PlainDataStrings $guidance)) { $catalogueWords.Add([string]$t) }
+        foreach ($t in @(Get-PlainDataStrings $healthCatalogue)) { $catalogueWords.Add([string]$t) }
+        $catalogueTerms = Get-WorkerPerfField $guidance 'terms'
+        if ($catalogueTerms -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $catalogueTerms.PSObject.Properties) { $catalogueWords.Add([string]$p.Name) } }
+        elseif ($catalogueTerms -is [System.Collections.IDictionary]) { foreach ($k in $catalogueTerms.Keys) { $catalogueWords.Add([string]$k) } }
+        for ($w = 0; $w -lt $catalogueWords.Count; $w++) { $vocabulary['guidance#' + $w] = $catalogueWords[$w] }
+        $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $vocabulary -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
+    }
+
+    Write-Host 'Schreibe Bericht ...'
+    $template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
+    $marker = '<script id="wp-data" type="application/json">null</script>'
+    $at = $template.IndexOf($marker)
+    if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
+    $open = '<script id="wp-data" type="application/json">'
+    # The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
+    # never held in memory as a whole. It goes to a temporary file next to the target first; only when it is complete is an
+    # existing target deleted and the temporary file moved onto its name. An error while writing, or a target that cannot
+    # be deleted (read-only, locked), leaves the previous report as it was. Only an error between the delete and the move
+    # leaves no report. The temporary file is removed on any error. No File.Replace: some file systems used for reports
+    # (FAT/exFAT, some SMB/NAS and DFS shares) do not support it.
+    $tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
+        try {
+            $writer.Write($template.Substring(0, $at + $open.Length))
+            ConvertTo-JsonText $Data $writer
+            $writer.Write($template.Substring($at + $open.Length + 4))
+        }
+        finally { $writer.Dispose() }
+        if ([IO.File]::Exists($OutFile)) { [IO.File]::Delete($OutFile) }
+        [IO.File]::Move($tmpFile, $OutFile)
+    }
+    catch {
+        if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
+        throw
+    }
+    # the map only once the report is complete; a failure here leaves the report as written
+    if ($MaskMapFile) {
+        try { Save-WorkerPerfMaskMap -Mask $maskObj -Path $MaskMapFile }
+        catch { throw ("Bericht geschrieben ({0}), die Zuordnungsdatei '{1}' aber nicht: {2}" -f $OutFile, $MaskMapFile, $_.Exception.Message) }
+    }
+
+    $timer.Stop()
+    Write-Host ($Done -f $timer.Elapsed.TotalSeconds.ToString('0.0', $inv), $OutFile)
+    foreach ($line in $Details) { Write-Host $line }
+    if ($Mask) {
+        Write-Host ("  maskiert (Stufe {0}): {1} Namen ersetzt" -f $Mask, @($maskObj.Entries).Count)
+        if ($maskWords.Count -eq 1) {
+            Write-Host ("  Hinweis: 1 Name gleicht einem Wort des Berichts ({0}); Saetze mit diesem Wort sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords[0])
+        }
+        elseif ($maskWords.Count -gt 1) {
+            Write-Host ("  Hinweis: {0} Namen gleichen Woertern des Berichts ({1}); Saetze mit diesen Woertern sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords.Count, [string]::Join(', ', [string[]]$maskWords))
+        }
+        if ($MaskMapFile) { Write-Host ("  Zuordnung der Ersatznamen: {0}" -f $MaskMapFile) }
+    }
+    Get-Item -LiteralPath $OutFile
+}
+
 #endregion
 
 #region ---------- inputs -----------------------------------------------------------------
@@ -380,6 +722,72 @@ Write-Host 'Lese Aufzeichnung ...'
 $model = Import-WorkerPerfRun -Path $Path -From $From -To $To -Thresholds $thresholds -Roles $roles
 $loadSec = $timer.Elapsed.TotalSeconds
 
+if ($model.Meta.HealthOnly) {
+    # The health report of a quick run (-HealthOnly, decision B4): a quick run has no measurement, so its report data hold
+    # only meta, quality, health, before, print and skipped; findings, incidents, series, Lagebild and noFinding do not
+    # arise. -From and -To are refused by the reader.
+    $refused = New-Object System.Collections.Generic.List[string]
+    foreach ($name in 'FocusUser', 'ReportedTime', 'TopProcesses') { if ($PSBoundParameters.ContainsKey($name)) { $refused.Add('-' + $name) } }
+    if ($refused.Count -gt 0) { throw ('Die Aufzeichnung ist ein Schnelllauf ohne Messung; nicht zusammen mit: {0}.' -f [string]::Join(', ', $refused.ToArray())) }
+    # what the lookback and its incidents read from the script: no reported user and no reported time, no events of a
+    # measurement (New-ReportBefore, ConvertTo-EventIncidentEntry)
+    $focusSessions = New-Object System.Collections.Generic.List[int]
+    $focusNames = @{}
+    $reportedWallMs = $null
+    $tick = $model.Tick
+    $events = @()
+    $eventsOut = New-Object System.Collections.Generic.List[object]
+    $eventConfig = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot 'events.json')
+    $eventSettings = Read-WorkerPerfEventSettings $ThresholdFile
+    $eventOffset = [int][Math]::Round([double]$model.Meta.OffsetMinutes)
+    $lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId 1 -ReportedWallMs $null
+    $beforeIncidents = @($lookback.Incidents)
+    $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents @($beforeIncidents)
+    $beforeOut = New-ReportBefore
+    # whether a driver took part in an incident is known only from the lookback: there is no measurement whose incidents
+    # could name one (the rule of the measurement would say both)
+    $involvedFrom = 'none'
+    if ($beforeOut['status'] -eq 'read' -or $beforeOut['status'] -eq 'partial') { $involvedFrom = 'lookback' }
+    $metaFacts = Get-ReportMetaFacts
+    $readMs = $null
+    if ($null -ne $model.CaptureStartMs) { $readMs = [long]$model.CaptureStartMs }
+    $sourceLists = ConvertTo-ReportSources
+    $data = [ordered]@{
+        meta = [ordered]@{
+            computer = (Get-MetaValue 'Computer'); os = (Get-MetaValue 'OS'); cores = [int]$model.Meta.Cores; ramGB = $metaFacts.RamGB
+            start = $readMs; end = $readMs; offsetMin = [double]$model.Meta.OffsetMinutes; durationMin = 0; ticks = 0; snapshots = 0
+            simulated = $metaFacts.Simulated; endReason = $metaFacts.EndReason; endMessage = $metaFacts.EndMessage
+            healthOnly = $true; reportKind = (Get-WorkerPerfHealthCopyText $healthCatalogue 'healthOnlyHead')
+            generated = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        }
+        quality = [ordered]@{
+            unreadable = [ordered]@{ eventsBefore = [int]$model.Unreadable.EventsBefore; printDrivers = [int]$model.Unreadable.PrintDrivers }
+            sourceErrors = $sourceLists.Errors; sources = $sourceLists.Sources
+        }
+        health = (Get-WorkerPerfHealthResult -Model $model -Catalogue $healthCatalogue -EventConfig $eventConfig -Roles $roles -Texts $texts)
+        before = $beforeOut
+        print = [ordered]@{ drivers = (ConvertTo-ReportDrivers $printState); queues = [object[]]@(); processes = [object[]]@(); involvedFrom = $involvedFrom }
+        skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
+    }
+    # the fields of the guided report of the lookback's incidents, as in the report of a measurement
+    if ($Mask) {
+        Write-Host 'Maskiere Namen ...'
+        Clear-WorkerPerfReportFreeText $data
+    }
+    $beforeInc = @($data['before']['incidents'])
+    Add-ReportIncidentGuide -Incidents $beforeInc -Data $data
+    Set-ReportBeforeRank $beforeInc
+    $copyParagraphs = Get-ReportCopyParagraphs -Incidents $beforeInc -Data $data
+    $anonymousMask = $null
+    if (-not $Mask) { $anonymousMask = New-ReportMask 'Alles' }
+    Add-ReportCopyTexts -Incidents $beforeInc -Paragraphs $copyParagraphs -Data $data -AnonymousMask $anonymousMask
+    # the console names the summary of the health picture, or why there is none
+    $summaryLine = [string](Get-WorkerPerfField (Get-WorkerPerfField $data['health'] 'summary') 'text')
+    if (-not $summaryLine) { $summaryLine = [string](Get-WorkerPerfField $data['health'] 'text') }
+    Complete-Report -Data $data -Done 'Zustandsbericht erstellt in {0} s: {1}' -Details @('  ' + $summaryLine)
+    return
+}
+
 Write-Host 'Bewerte Messwerte ...'
 $series = @(Get-WorkerPerfSeries $model $thresholds)
 $findings = @(Get-WorkerPerfFindings -Series $series -Thresholds $thresholds)
@@ -437,15 +845,6 @@ $focusRadiusMs = 15L * 60000L
 $focusNames = @{}
 foreach ($s in $sessions) { if ($focusSessions.Contains([int]$s.Index)) { $focusNames[([string]$s.User).ToLowerInvariant()] = $true } }
 
-function Test-FocusUser([string]$User) {
-    # An event's account is the reported user when the reported user was found in a session and the account names the
-    # same user: as User (events name no domain), or as Domain\User equal to -FocusUser.
-    if ($focusNames.Count -eq 0 -or [string]::IsNullOrEmpty($User)) { return $false }
-    $i = $User.LastIndexOf([char]'\')
-    if ($i -ge 0) { return ($User -ieq $FocusUser) }
-    return $focusNames.ContainsKey($User.ToLowerInvariant())
-}
-
 #endregion
 
 #region ---------- events: incidents, lookback, print state -------------------------------
@@ -467,21 +866,6 @@ $lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings 
 $beforeIncidents = @($lookback.Incidents)
 $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents (@($eventIncidents) + @($beforeIncidents))
 
-function ConvertTo-EventIncidentEntry($Incident) {
-    # focus: with sessions, a session of the incident is a focus session (as for performance incidents); without
-    # sessions (no session matched, the lookback), a person of the incident is the reported user. Near: the reported
-    # clock time within 15 minutes of the incident's span in local time.
-    $focus = $false
-    $own = @($Incident.Sessions)
-    if ($own.Count -gt 0) { foreach ($si in $own) { if ($focusSessions.Contains([int]$si)) { $focus = $true } } }
-    else { foreach ($u in @($Incident.Users)) { if (Test-FocusUser ([string]$u)) { $focus = $true } } }
-    $near = $false
-    if ($null -ne $reportedWallMs) { $near = Test-WorkerPerfIncidentNearWall $Incident $reportedWallMs $eventOffset }
-    $text = [string](Get-WorkerPerfEventIncidentText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
-    $causeText = [string](Get-WorkerPerfEventIncidentDetailText -Incident $Incident -Model $model -Texts $texts -Config $eventConfig -OffsetMinutes $eventOffset)
-    return (ConvertTo-WorkerPerfEventIncidentOut -Incident $Incident -Text $text -Focus $focus -Near $near -Texts $texts -OffsetMinutes $eventOffset -CauseText $causeText)
-}
-
 #endregion
 
 #region ---------- meta, quality, thresholds ----------------------------------------------
@@ -501,21 +885,14 @@ if ($cores -gt 0) { $usersPerCore = [Math]::Round($maxUsers / [double]$cores, 3)
 $durationSec = 0.0
 foreach ($e in $tick.ElapsedSec) { if ($e -eq $e) { $durationSec += $e } }
 
-$simulated = Get-MetaValue 'Simulated'
-if ($null -ne $simulated) { $simulated = [bool]$simulated }
-$endReason = Get-MetaValue 'EndReason'
-if ($null -ne $endReason) { $endReason = [string]$endReason }
-$endMessage = Get-MetaValue 'EndMessage'
-if ($null -ne $endMessage) { $endMessage = [string]$endMessage }
-$ramGB = $null
-if ([double]$model.Meta.RamMB -gt 0) { $ramGB = [Math]::Round([double]$model.Meta.RamMB / 1024.0, 1) }
+$metaFacts = Get-ReportMetaFacts
 
 $focusOut = [ordered]@{ user = $focusUserOut; found = ($focusSessions.Count -gt 0); sessions = $focusSessions.ToArray(); reportedMs = $reportedMs }
 $meta = [ordered]@{
-    computer = (Get-MetaValue 'Computer'); os = (Get-MetaValue 'OS'); cores = $cores; ramGB = $ramGB
+    computer = (Get-MetaValue 'Computer'); os = (Get-MetaValue 'OS'); cores = $cores; ramGB = $metaFacts.RamGB
     start = [long]$tick.TimeMs[0]; end = [long]$tick.TimeMs[$nT - 1]; offsetMin = $offsetMin
     fastSec = $fastSec; snapSec = [double]$model.Meta.SnapSec; durationMin = [Math]::Round($durationSec / 60.0, 2)
-    ticks = $nT; snapshots = $nP; simulated = $simulated; endReason = $endReason; endMessage = $endMessage; usersPerCore = $usersPerCore
+    ticks = $nT; snapshots = $nP; simulated = $metaFacts.Simulated; endReason = $metaFacts.EndReason; endMessage = $metaFacts.EndMessage; healthOnly = $false; usersPerCore = $usersPerCore
     processRows = $model.Rows.K.Length; processCount = $validK.Count; totalCpuSec = [Math]::Round($totalCpuMs / 1000.0, 1)
     generated = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     focus = $focusOut
@@ -554,48 +931,7 @@ if ($totalCpuMs -gt 0) { $collectorPct = [Math]::Round(100.0 * $collectorMs / $t
 $burstSec = Get-MetaValue 'BurstIntervalSeconds'
 if ($null -ne $burstSec) { $burstSec = [double]$burstSec }
 
-$thOrder = @($thresholds.Keys)
-$sourceIds = @($model.Sources.Keys | Sort-Object -Property @{ Expression = { $ix = [array]::IndexOf($thOrder, $_); if ($ix -lt 0) { 1000 } else { $ix } } }, @{ Expression = { $_ } })
-$sourcesOut = New-Object System.Collections.Generic.List[object]
-foreach ($id in $sourceIds) {
-    $src = $model.Sources[$id]
-    # signals take the threshold's label, other sources their text; an unknown id stays as it is
-    $label = [string]$id
-    if ($thresholds.Contains($id)) { $label = [string]$thresholds[$id].label }
-    elseif ($texts.ContainsKey('source.' + $id)) { $label = $texts['source.' + $id] }
-    $sourcesOut.Add([ordered]@{ id = [string]$id; label = $label; available = [bool]$src.Available; detail = [string]$src.Detail
-            readFailed = [bool](Get-WorkerPerfField $src 'ReadFailed'); lookbackRead = [bool](Get-WorkerPerfField $src 'LookbackRead') })
-}
-# failed source calls of the capture: the source's text, else its key; a log booked on its own ('events.<log id>',
-# 'eventsbefore.<log id>', M13) by the call's text and the log's
-$sourceErrorsOut = New-Object System.Collections.Generic.List[object]
-foreach ($e in @($model.SourceErrors | Sort-Object -Property @{ Expression = { $_.Source } })) {
-    $label = [string]$e.Source
-    $cut = $label.IndexOf([char]'.')
-    if ($texts.ContainsKey('sourcecall.' + $label)) { $label = $texts['sourcecall.' + $label] }
-    elseif ($cut -gt 0 -and $texts.ContainsKey('source.events.' + $label.Substring($cut + 1))) {
-        $call = $label.Substring(0, $cut); $log = $texts['source.events.' + $label.Substring($cut + 1)]
-        if ($call -eq 'events') { $label = $log }
-        elseif ($texts.ContainsKey('sourcecall.' + $call)) { $label = $texts['sourcecall.' + $call] + ' ' + [char]0x2013 + ' ' + $log }
-    }
-    $sourceErrorsOut.Add([ordered]@{ source = [string]$e.Source; label = $label; count = [int]$e.Count; firstMs = $e.FirstMs; firstMessage = [string]$e.FirstMessage })
-}
-# the counters of the event reads per log (I5): only logs with a number above zero, numbers and the log's label
-function ConvertTo-ReadCountsOut($Counts, [switch]$WithDropped) {
-    $list = New-Object System.Collections.Generic.List[object]
-    foreach ($id in @($Counts.Keys)) {
-        $c = $Counts[$id]
-        $dropped = $(if ($WithDropped) { [long]$c.Dropped } else { [long]0 })
-        if ($dropped -le 0 -and [long]$c.Skipped -le 0 -and [long]$c.Unformatted -le 0) { continue }
-        $label = [string]$id
-        if ($texts.ContainsKey('source.events.' + $id)) { $label = [string]$texts['source.events.' + $id] }
-        $row = [ordered]@{ log = [string]$id; label = $label }
-        if ($WithDropped) { $row['dropped'] = $dropped }
-        $row['skipped'] = [long]$c.Skipped; $row['unformatted'] = [long]$c.Unformatted
-        $list.Add($row)
-    }
-    return , $list.ToArray()
-}
+$sourceLists = ConvertTo-ReportSources
 # EventReadCounts counts the lookback and the capture together, LookbackReadCounts the lookback alone: the capture's own
 # counters are the difference per log and counter, never below zero (a capture without LookbackReadCounts keeps its own).
 # Without Ereignisse the capture read no events: no counter of the capture is shown (skipped names the reason).
@@ -623,8 +959,8 @@ $quality = [ordered]@{
     unreadable = [ordered]@{ ticks = [int]$model.Unreadable.Ticks; snapshots = [int]$model.Unreadable.Snapshots
         events = [int]$model.Unreadable.Events; eventsBefore = [int]$model.Unreadable.EventsBefore
         printDrivers = [int]$model.Unreadable.PrintDrivers; printQueues = [int]$model.Unreadable.PrintQueues }
-    sourceErrors = $sourceErrorsOut.ToArray()
-    sources = $sourcesOut.ToArray()
+    sourceErrors = $sourceLists.Errors
+    sources = $sourceLists.Sources
     eventReads = $eventReadsOut
 }
 
@@ -1072,82 +1408,9 @@ foreach ($row in $sollIst) {
 
 #region ---------- lookback, print state ---------------------------------------------------
 
-$beforeIncOut = New-Object System.Collections.Generic.List[object]
-foreach ($inc in $beforeIncidents) { $beforeIncOut.Add((ConvertTo-EventIncidentEntry $inc)) }
-# near: the lookback events within 15 minutes of a reported time before the capture, then the events of the capture
-# within the same radius (nearCapture: their positions in events)
-$nearOut = New-Object System.Collections.Generic.List[object]
-foreach ($e in @($lookback.Near)) { $nearOut.Add((ConvertTo-WorkerPerfEventOut $e $eventOffset)) }
-$nearCapture = New-Object System.Collections.Generic.List[int]
-$captureStartMs = [long]$tick.TimeMs[0]
-if ($null -ne $model.CaptureStartMs) { $captureStartMs = [long]$model.CaptureStartMs }
-if ($null -ne $reportedWallMs -and $reportedWallMs -lt $captureStartMs + [long]$eventOffset * 60000L) {
-    for ($i = 0; $i -lt $events.Count; $i++) {
-        if (Test-WorkerPerfEventNearWall $events[$i] $reportedWallMs $eventOffset) { $nearOut.Add($eventsOut[$i]); $nearCapture.Add($i) }
-    }
-}
-$perDayOut = New-Object System.Collections.Generic.List[object]
-$incidentEventCount = 0
-foreach ($d in @($lookback.PerDay)) { $perDayOut.Add([ordered]@{ day = [string]$d.Day; count = [int]$d.Count; partial = [bool]$d.Partial }); $incidentEventCount += [int]$d.Count }
-# per log the oldest event read (M5), and what the lookback skipped per log (I5, LookbackReadCounts of newer captures)
-$oldestOut = @(@($lookback.Oldest) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ log = [string]$_.Log; t = [long]$_.TimeMs } })
-$lookbackReadsOut = @()
-if (@($model.Skip) -notcontains 'Rueckblick') { $lookbackReadsOut = ConvertTo-ReadCountsOut $model.Meta['LookbackReadCounts'] }
-# What the page may say about the lookback (status):
-#   notRecorded  the capture has no lookback setting (format 2)
-#   off          -EventLookbackDays 0 or -Skip Rueckblick
-#   missingFile  events_before.csv is missing
-#   unavailable  nothing was read: the lookback read failed (SourceErrors 'eventsbefore'), the capture's Sources do not
-#                list every log of events.json that has a lookback (the source does not read the lookback; the Windows
-#                source of today lists only Defender and AppLocker), or list none of them as available
-#   partial      every lookback log is listed, some as not available: only the available ones were read
-#   read         every lookback log is listed and available; the lookback may hold no events
-# A lookback that holds events is partial or read, by the same per-log rule (read when the Sources say nothing more).
-# logs: every log of events.json with a lookback, in its order, with the label of its source and whether it was read.
-$lookbackLogs = @(@(Get-WorkerPerfEventReadLogs $eventConfig) | Where-Object { $_.Lookback })
-$logsOut = New-Object System.Collections.Generic.List[object]
-$listedCount = 0
-foreach ($l in $lookbackLogs) {
-    $sid = 'events.' + $l.Id
-    $avail = $false
-    # a switched-off log is not available for the capture, but its events were read for the lookback (M14)
-    if ($model.Sources.ContainsKey($sid)) { $listedCount++; $avail = ([bool]$model.Sources[$sid].Available -or [bool](Get-WorkerPerfField $model.Sources[$sid] 'LookbackRead')) }
-    $label = [string]$l.Id
-    if ($texts.ContainsKey('source.' + $sid)) { $label = [string]$texts['source.' + $sid] }
-    $logsOut.Add([ordered]@{ id = [string]$l.Id; label = $label; available = $avail })
-}
-$usableCount = @($logsOut | Where-Object { $_.available }).Count
-$allListed = ($listedCount -eq $lookbackLogs.Count)
-$lookbackStatus = 'read'
-$metaDays = Get-WorkerPerfField $model.Meta 'EventLookbackDays'
-if ($null -eq $metaDays) { $lookbackStatus = 'notRecorded' }
-elseif ([int]$metaDays -le 0 -or @($model.Skip) -contains 'Rueckblick') { $lookbackStatus = 'off' }
-elseif ([int]$lookback.EventCount -gt 0) {
-    if ($allListed -and $usableCount -gt 0 -and $usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
-}
-elseif (-not (Test-Path -LiteralPath (Join-Path $Path 'events_before.csv'))) { $lookbackStatus = 'missingFile' }
-else {
-    $failed = @($model.SourceErrors | Where-Object { $_.Source -eq 'eventsbefore' -or $_.Source -like 'eventsbefore.*' })
-    if ($failed.Count -gt 0 -or -not $allListed -or $usableCount -eq 0) { $lookbackStatus = 'unavailable' }
-    elseif ($usableCount -lt $lookbackLogs.Count) { $lookbackStatus = 'partial' }
-}
-$captureEndMs = [long]$tick.TimeMs[$tick.TimeMs.Count - 1]
-if ($null -ne $model.CaptureEndMs) { $captureEndMs = [long]$model.CaptureEndMs }
-$beforeOut = [ordered]@{
-    days = [int]$lookback.Days; from = [long]$lookback.FromMs; capped = [string[]]@($lookback.Capped)
-    eventCount = [int]$lookback.EventCount; incidentEventCount = $incidentEventCount; perDay = $perDayOut.ToArray()
-    incidents = $beforeIncOut.ToArray(); near = $nearOut.ToArray(); nearCapture = $nearCapture.ToArray()
-    captureStart = $captureStartMs; status = $lookbackStatus; logs = $logsOut.ToArray(); captureEnd = $captureEndMs
-    oldest = $oldestOut; readCounts = $lookbackReadsOut
-}
+$beforeOut = New-ReportBefore
 
-$driversOut = New-Object System.Collections.Generic.List[object]
-foreach ($d in @($printState.Drivers)) {
-    $driversOut.Add([ordered]@{
-            name = [string]$d.Name; manufacturer = [string]$d.Manufacturer; version = [string]$d.Version; type = [int]$d.Type; isolation = [string]$d.Isolation
-            isolated = [bool]$d.Isolated; files = [string[]]@($d.Files); involved = [bool]$d.Involved; possiblyInvolved = [bool]$d.PossiblyInvolved
-        })
-}
+$driversOut = ConvertTo-ReportDrivers $printState
 $queuesOut = New-Object System.Collections.Generic.List[object]
 foreach ($q in @($printState.Queues)) {
     $queuesOut.Add([ordered]@{ name = [string]$q.Name; maxJobs = (Get-Round $q.MaxJobs 0); jobErrors = (Get-Round $q.JobErrors 0); notReadyErrors = (Get-Round $q.NotReadyErrors 0) })
@@ -1162,10 +1425,10 @@ foreach ($p in @($printState.Processes)) {
 # the sources of the driver column "An einem Vorfall beteiligt": the event incidents of the capture (Ereignisse not left
 # out) and of the lookback (read or partly read); "nein" holds only when both were read
 $involvedCapture = @($model.Skip) -notcontains 'Ereignisse'
-$involvedLookback = $lookbackStatus -eq 'read' -or $lookbackStatus -eq 'partial'
+$involvedLookback = $beforeOut['status'] -eq 'read' -or $beforeOut['status'] -eq 'partial'
 if ($involvedCapture -and $involvedLookback) { $involvedFrom = 'both' } elseif ($involvedCapture) { $involvedFrom = 'capture' }
 elseif ($involvedLookback) { $involvedFrom = 'lookback' } else { $involvedFrom = 'none' }
-$printOut = [ordered]@{ drivers = $driversOut.ToArray(); queues = $queuesOut.ToArray(); processes = $printProcsOut.ToArray(); involvedFrom = $involvedFrom }
+$printOut = [ordered]@{ drivers = $driversOut; queues = $queuesOut.ToArray(); processes = $printProcsOut.ToArray(); involvedFrom = $involvedFrom }
 
 #endregion
 
@@ -1191,18 +1454,11 @@ $data = [ordered]@{
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
 }
 
-function New-ReportMask([string]$Level) {
-    # The names of the whole capture and their replacements: the same arguments for the masked report and for the copy
-    # texts without names of an unmasked one (ruling P3-R8).
-    return (New-WorkerPerfMask -Path $Path -Level $Level -Texts $texts -RoleLabels @($roles | ForEach-Object { [string]$_.label }) -EventConfig $eventConfig)
-}
-
 # The guided report (rulings P3-R8, P3-R9): guidance, ranking, situation summary, groups and copy texts are built from the
 # report data before the names are replaced; with -Mask the free texts are cleared first (a hint of the situation summary
 # may quote meta.endMessage), and every new field is masked with all other data. The copy texts are wrapped last, after
 # the names in their paragraphs were replaced: a replacement has another length, and a name split by the wrapper would
 # not be found.
-$maskObj = $null
 if ($Mask) {
     # The free texts go first, in place: nothing of the uncleared data is written anywhere after this.
     Write-Host 'Maskiere Namen ...'
@@ -1212,31 +1468,18 @@ if ($Mask) {
 $captureInc = @($data['incidents'])
 $beforeInc = @($data['before']['incidents'])
 $allInc = @($captureInc + $beforeInc)
-$guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
-foreach ($inc in $allInc) {
-    $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
-    $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
-    # the checks of the health picture that may contribute to it: by its situation and the patterns of its events
-    $patternIds = [string[]]@(foreach ($pattern in @(Get-WorkerPerfField (Get-WorkerPerfField $inc 'event') 'patterns')) {
-            if ($null -ne $pattern) { [string](Get-WorkerPerfField $pattern 'id') } })
-    $situation = [string](Get-WorkerPerfField $inc['guide'] 'situation')
-    $inc['health'] = [string[]]@(Get-WorkerPerfHealthIncidentChecks -Result $data['health'] -Situation $situation -Patterns $patternIds)
-}
+Add-ReportIncidentGuide -Incidents $allInc -Data $data
 # rank: 1-based in its own list; the capture's incidents by importance, the lookback's by time
 $order = [int[]]@(Get-WorkerPerfIncidentRanking -Incidents $captureInc)
 $incById = @{}
 foreach ($inc in $captureInc) { $incById[[int]$inc['id']] = $inc }
 for ($n = 0; $n -lt $order.Length; $n++) { $incById[$order[$n]]['rank'] = $n + 1 }
-$beforeByTime = @($beforeInc | Sort-Object -Property @{ Expression = { [double]$_['start'] } }, @{ Expression = { [int]$_['id'] } })
-for ($n = 0; $n -lt $beforeByTime.Count; $n++) { $beforeByTime[$n]['rank'] = $n + 1 }
+Set-ReportBeforeRank $beforeInc
 $lagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue $guidance -Texts $texts
 $cardCount = 10
 $more = @(Get-WorkerPerfIncidentGroups -Incidents $captureInc -Order $order -Cards $cardCount -OffsetMinutes $eventOffset -Texts $texts)
 # the copy texts as unwrapped paragraphs, one list per incident of allInc
-$copyParagraphs = New-Object System.Collections.Generic.List[object]
-foreach ($inc in $allInc) {
-    $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $data -Catalogue $guidance -Texts $texts))
-}
+$copyParagraphs = Get-ReportCopyParagraphs -Incidents $allInc -Data $data
 $summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
 # the catalogue as read (like thresholds): set below, masked as one composed text in a masked run (ruling P3-R10)
 $data['guidance'] = $null
@@ -1246,66 +1489,15 @@ $data['cards'] = [int[]]@($order | Select-Object -First $cardCount)
 $data['more'] = $more
 
 if ($Mask) {
-    # The paragraphs go into the data as they are and are masked with it; they are wrapped after that. The version without
-    # names is not needed: the named version has none. The names come from the whole capture (not the cut), built once.
-    # The level is set on the masked result, so that no replacement can touch it.
-    for ($n = 0; $n -lt $allInc.Count; $n++) { $allInc[$n]['copy'] = [ordered]@{ named = $copyParagraphs[$n]; anonymous = $null } }
+    # the summary goes into the data as it is, like the incidents' paragraphs (Add-ReportCopyTexts)
+    Add-ReportCopyTexts -Incidents $allInc -Paragraphs $copyParagraphs -Data $data -AnonymousMask $null
     $data['copyAll'] = [ordered]@{ named = $summaryParagraphs; anonymous = $null }
-    Add-WorkerPerfHealthReportTexts -Result $data['health'] -Catalogue $healthCatalogue -Server ([string]$meta['computer']) -Unwrapped
-    $maskObj = New-ReportMask $Mask
-    # a reported user typed by the caller that is no name of the capture is removed (P2-R11); one the capture names (a
-    # session in the cut or anywhere in the capture) is replaced like every name
-    if ($null -ne $focusOut.user -and -not $focusOut.found -and -not (Test-WorkerPerfMaskKnownAccount $maskObj ([string]$focusOut.user))) {
-        $focusOut.user = [string]$texts['mask.other']
-    }
-    $data = Protect-WorkerPerfReportData $data $maskObj
-    # the catalogue is composed text throughout: a key of it named like a keyword field (copy.measure) is no keyword
-    $data['guidance'] = ConvertTo-PlainData $guidance $maskObj
-    # the keys of terms are display words, not identifiers (ruling P3-R43): masked like the texts, so that guide.terms
-    # (composed text, masked with the data) still finds its explanation; all other keys of the catalogue stay. Two keys
-    # that get the same replacement name (two names of one server) keep both explanations, joined in their order.
-    $plainTerms = $data['guidance']['terms']
-    if ($plainTerms -is [System.Collections.IDictionary]) {
-        $maskedTerms = [ordered]@{}
-        foreach ($k in @($plainTerms.Keys)) {
-            $maskedKey = Hide-WorkerPerfReportText ([string]$k) $maskObj
-            if ($maskedTerms.Contains($maskedKey)) { $maskedTerms[$maskedKey] = [string]$maskedTerms[$maskedKey] + ' ' + [string]$plainTerms[$k] }
-            else { $maskedTerms[$maskedKey] = $plainTerms[$k] }
-        }
-        $data['guidance']['terms'] = $maskedTerms
-    }
-    foreach ($inc in @($data['incidents']) + @($data['before']['incidents'])) {
-        $inc['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($inc['copy']['named']))
-    }
-    $data['copyAll']['named'] = Format-WorkerPerfCopyLines ([string[]]@($data['copyAll']['named']))
-    foreach ($area in @(Get-WorkerPerfField $data['health'] 'areas')) {
-        foreach ($record in @($area) + @($area['checks'])) { $record['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($record['copy']['named'])) }
-    }
-    $data['meta']['mask'] = $Mask
-    # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
-    # replacement, never by the real name. The report's words are those of texts.de.json, every text of the guidance
-    # catalogue as read, with the keys of its terms (they are masked too), and every text of the health catalogue as read
-    # (findings, meanings, steps, labels, copy texts, legends; with the labels of the application list it carries).
-    $vocabulary = @{}
-    foreach ($k in $texts.Keys) { $vocabulary[$k] = $texts[$k] }
-    $catalogueWords = New-Object System.Collections.Generic.List[string]
-    foreach ($t in @(Get-PlainDataStrings $guidance)) { $catalogueWords.Add([string]$t) }
-    foreach ($t in @(Get-PlainDataStrings $healthCatalogue)) { $catalogueWords.Add([string]$t) }
-    $catalogueTerms = Get-WorkerPerfField $guidance 'terms'
-    if ($catalogueTerms -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $catalogueTerms.PSObject.Properties) { $catalogueWords.Add([string]$p.Name) } }
-    elseif ($catalogueTerms -is [System.Collections.IDictionary]) { foreach ($k in $catalogueTerms.Keys) { $catalogueWords.Add([string]$k) } }
-    for ($w = 0; $w -lt $catalogueWords.Count; $w++) { $vocabulary['guidance#' + $w] = $catalogueWords[$w] }
-    $maskWords = @(Get-WorkerPerfMaskVocabularyHits -Mask $maskObj -Texts $vocabulary -Units @($thresholds.Values | ForEach-Object { [string]$_.unit }))
 }
 else {
     $data['guidance'] = ConvertTo-PlainData $guidance
     # the version without names: the replacements of a masked report of level Alles, in the paragraphs before wrapping
     $anonymousMask = New-ReportMask 'Alles'
-    for ($n = 0; $n -lt $allInc.Count; $n++) {
-        $p = $copyParagraphs[$n]
-        $allInc[$n]['copy'] = [ordered]@{ named = Format-WorkerPerfCopyLines $p
-            anonymous = Format-WorkerPerfCopyLines ([string[]]@($p | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
-    }
+    Add-ReportCopyTexts -Incidents $allInc -Paragraphs $copyParagraphs -Data $data -AnonymousMask $anonymousMask
     # the summary without names never quotes free text of the server (ruling P3-R44): with an end message, its Lagebild
     # is built again without it (the hint without a message, as in a masked report). No other copied field of the
     # server reaches a copy text.
@@ -1321,56 +1513,9 @@ else {
     }
     $data['copyAll'] = [ordered]@{ named = Format-WorkerPerfCopyLines $summaryParagraphs
         anonymous = Format-WorkerPerfCopyLines ([string[]]@($anonymousSummary | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
-    Add-WorkerPerfHealthReportTexts -Result $data['health'] -Catalogue $healthCatalogue -Server ([string]$meta['computer']) -AnonymousMask $anonymousMask
 }
 
-Write-Host 'Schreibe Bericht ...'
-$template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
-$marker = '<script id="wp-data" type="application/json">null</script>'
-$at = $template.IndexOf($marker)
-if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
-$open = '<script id="wp-data" type="application/json">'
-# The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
-# never held in memory as a whole. It goes to a temporary file next to the target first; only when it is complete is an
-# existing target deleted and the temporary file moved onto its name. An error while writing, or a target that cannot
-# be deleted (read-only, locked), leaves the previous report as it was. Only an error between the delete and the move
-# leaves no report. The temporary file is removed on any error. No File.Replace: some file systems used for reports
-# (FAT/exFAT, some SMB/NAS and DFS shares) do not support it.
-$tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
-try {
-    $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
-    try {
-        $writer.Write($template.Substring(0, $at + $open.Length))
-        ConvertTo-JsonText $data $writer
-        $writer.Write($template.Substring($at + $open.Length + 4))
-    }
-    finally { $writer.Dispose() }
-    if ([IO.File]::Exists($OutFile)) { [IO.File]::Delete($OutFile) }
-    [IO.File]::Move($tmpFile, $OutFile)
-}
-catch {
-    if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
-    throw
-}
-# the map only once the report is complete; a failure here leaves the report as written
-if ($MaskMapFile) {
-    try { Save-WorkerPerfMaskMap -Mask $maskObj -Path $MaskMapFile }
-    catch { throw ("Bericht geschrieben ({0}), die Zuordnungsdatei '{1}' aber nicht: {2}" -f $OutFile, $MaskMapFile, $_.Exception.Message) }
-}
-
-$timer.Stop()
-Write-Host ("Bericht erstellt in {0} s (davon Einlesen {1} s): {2}" -f $timer.Elapsed.TotalSeconds.ToString('0.0', $inv), $loadSec.ToString('0.0', $inv), $OutFile)
-Write-Host ("  {0} Takte, {1} Schnappschuesse, {2} Vorfaelle, {3} Sitzungen, {4} Prozesse im Bericht" -f $nT, $nP, $incOut.Count, $sessOut.Count, $procOut.Count)
-if ($Mask) {
-    Write-Host ("  maskiert (Stufe {0}): {1} Namen ersetzt" -f $Mask, @($maskObj.Entries).Count)
-    if ($maskWords.Count -eq 1) {
-        Write-Host ("  Hinweis: 1 Name gleicht einem Wort des Berichts ({0}); Saetze mit diesem Wort sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords[0])
-    }
-    elseif ($maskWords.Count -gt 1) {
-        Write-Host ("  Hinweis: {0} Namen gleichen Woertern des Berichts ({1}); Saetze mit diesen Woertern sind im maskierten Bericht entstellt und koennen den Namen verraten." -f $maskWords.Count, [string]::Join(', ', [string[]]$maskWords))
-    }
-    if ($MaskMapFile) { Write-Host ("  Zuordnung der Ersatznamen: {0}" -f $MaskMapFile) }
-}
-Get-Item -LiteralPath $OutFile
+$done = 'Bericht erstellt in {0} s (davon Einlesen ' + $loadSec.ToString('0.0', $inv) + ' s): {1}'
+Complete-Report -Data $data -Done $done -Details @(("  {0} Takte, {1} Schnappschuesse, {2} Vorfaelle, {3} Sitzungen, {4} Prozesse im Bericht" -f $nT, $nP, $incOut.Count, $sessOut.Count, $procOut.Count))
 
 #endregion

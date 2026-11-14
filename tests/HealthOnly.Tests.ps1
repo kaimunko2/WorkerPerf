@@ -122,3 +122,117 @@ Describe 'Schnelllauf -HealthOnly' {
         @($rows | Where-Object App -eq 'simapp').Count | Should -Be 4
     }
 }
+Describe 'Zustandsbericht aus dem Schnelllauf' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
+        $script:ReportScript = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $script:Html = Join-Path $TestDrive 'ho.html'
+        $script:Out = @(& $ReportScript -Path $Run -OutFile $Html 6>&1); $script:H = Get-ReportData $Html
+    }
+    It 'entsteht ohne Fehler und traegt nur Kopf, Zustandsbild, Rueckblick, Treiberliste und Weggelassenes' {
+        @($H.PSObject.Properties.Name) | Should -Be @('meta', 'quality', 'health', 'before', 'print', 'skipped')
+        $H.meta.healthOnly | Should -BeTrue; $H.meta.endReason | Should -Be 'healthonly'; $H.meta.reportKind | Should -Be 'Zustandsbericht ohne Messung'; $H.meta.computer | Should -Be 'SIM-VDA01'
+        $H.meta.ticks | Should -Be 0; $H.meta.start | Should -Be $H.meta.end; $H.meta.start | Should -BeGreaterThan 0
+        # Literal angepasst: 208 Werte seit Task 14s und den Proben der Anwendungsliste (Task 16), nicht 202
+        $H.health.state | Should -Be 'read'; $H.health.summary.text | Should -Be '1 Bereich zum Handeln, 5 zum Prüfen, 5 in Ordnung'; @($H.health.raw).Count | Should -Be 208
+        $H.health.eventsReachText | Should -Match '\d\d\.\d\d\.\d{4}'; $H.health.environmentText | Should -Match 'nicht persistent'      # ab wann die Protokolle reichen: steht im Zustandsbericht ueber dem Rueckblick
+        $H.before.status | Should -Be 'read'; @($H.before.incidents).Count | Should -Be 4; @($H.before.incidents | Where-Object { $null -eq $_.guide }).Count | Should -Be 0
+        @($H.print.drivers).Count | Should -Be 3; @($H.print.queues).Count | Should -Be 0; $H.print.involvedFrom | Should -Be 'lookback'; @($H.skipped).Count | Should -Be 0
+        ($H | ConvertTo-Json -Depth 20) | Should -Not -Match 'keine Vorf|Kein Vorfall|Keine Störung'
+        ($Out | Out-String) | Should -Match 'Zustandsbericht erstellt'; ($Out | Out-String) | Should -Not -Match 'Takte'
+    }
+    It 'bleibt ohne Rueckblick und ohne Treiberliste ehrlich' {   # Review Focus 5
+        $run = Invoke-SimHealthOnly (Join-Path $TestDrive 'ho4') @{ Skip = @('Rueckblick', 'Drucken') }; $f = Join-Path $TestDrive 'ho4.html'
+        [void](& $ReportScript -Path $run -OutFile $f 6>$null); $d = Get-ReportData $f
+        @($d.skipped.id) | Should -Be @('Rueckblick', 'Drucken'); $d.before.status | Should -Be 'off'; @($d.print.drivers).Count | Should -Be 0; $d.print.involvedFrom | Should -Be 'none'
+        $g = @{}; foreach ($a in $d.health.areas) { foreach ($c in $a.checks) { $g[$c.id] = $c } }
+        $g['print.driversInSpooler'].grade | Should -Be 'unknown'; $g['events.crashes'].grade | Should -Be 'unknown'; $g['profile.containerFull'].grade | Should -Be 'act'
+        $g['events.crashes'].why | Should -Match 'Rückblick'; ($d.health.areas | Where-Object id -eq 'events').grade | Should -Be 'ok'
+        $g['print.isolationOff'].note | Should -Be ''; $g['sessions.tempProfiles'].grade | Should -Be 'ok'
+    }
+    It 'nennt eine Anwendung der Liste, die nicht installiert ist, im Bereich und zaehlt sie nicht' {   # Review Focus 3
+        $appFile = New-TestAppFile $TestDrive; $run = Invoke-SimHealthOnly (Join-Path $TestDrive 'ho6') @{ AppsFile = $appFile }; $f = Join-Path $TestDrive 'ho6.html'
+        [void](& $ReportScript -Path $run -OutFile $f -AppsFile $appFile 6>$null); $a = (Get-ReportData $f).health.areas | Where-Object id -eq 'apps'
+        ($a.apps | Where-Object key -eq 'simapp').state | Should -Be 'notInstalled'; ($a.apps | Where-Object key -eq 'simapp').text | Should -Be 'Sim-Fachanwendung: nicht installiert'
+        # Literal angepasst: drei zum Pruefen seit der Korrekturrunde 1 von Task 14c (ZB-R57, apps.edgeWebView2Update), nicht zwei
+        @($a.checks | Where-Object { $_.app -eq 'simapp' }).Count | Should -Be 0; $a.countsText | Should -Be '3 zum Prüfen'      # der ausgelieferte Katalog hat keine Pruefung fuer sie
+        # dieselbe Aufzeichnung mit der ausgelieferten Liste ausgewertet: die vierte Anwendung kommt nicht vor
+        [void](& $ReportScript -Path $run -OutFile $f 6>$null); @((Get-ReportData $f).health.areas | Where-Object id -eq 'apps' | ForEach-Object { $_.apps.key } | Sort-Object) | Should -Be @('edge', 'office', 'teams')
+        { & $ReportScript -Path $run -OutFile $f -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw '*keine.json*'      # die Meldung kommt vom Leser des gefuehrten Berichts: er liest die Datei zuerst
+    }
+    It 'maskiert den Zustandsbericht wie den Bericht' {
+        $f = Join-Path $TestDrive 'ho-masked.html'; [void](& $ReportScript -Path $Run -OutFile $f -Mask Alles 6>$null); $d = Get-ReportData $f
+        $json = $d | ConvertTo-Json -Depth 20
+        foreach ($n in 'user0\d\d', 'SIM-VDA01', 'CONTOSO', 'ddc0\d', 'Inventarlauf', 'fd00:20::10') { $json | Should -Not -Match $n -Because $n }
+        $d.meta.mask | Should -Be 'Alles'; $d.meta.computer | Should -Be 'Server 01'; $d.health.summary.text | Should -Be $H.health.summary.text
+    }
+    It 'lehnt die Parameter der Messung ab' {
+        { & $ReportScript -Path $Run -OutFile (Join-Path $TestDrive 'x.html') -From ([datetime]::Now) 6>$null } | Should -Throw '*Schnelllauf*-From*'
+        { & $ReportScript -Path $Run -OutFile (Join-Path $TestDrive 'x.html') -FocusUser 'user003' -TopProcesses 20 6>$null } | Should -Throw '*Schnelllauf*nicht zusammen mit: -FocusUser, -TopProcesses.'
+        { & $ReportScript -Path $Run -OutFile (Join-Path $TestDrive 'x.html') -ReportedTime ([datetime]::Now) 6>$null } | Should -Throw 'Die Aufzeichnung ist ein Schnelllauf ohne Messung; nicht zusammen mit: -ReportedTime.'
+        Test-Path (Join-Path $TestDrive 'x.html') | Should -BeFalse
+    }
+    It 'gibt den Rueckblick-Vorfaellen die Felder des gefuehrten Berichts wie im Bericht einer Messung' {
+        $inc = @($H.before.incidents)
+        @($inc | ForEach-Object { [int]$_.rank } | Sort-Object) | Should -Be @(1..$inc.Count)
+        foreach ($i in $inc) {
+            $i.guide.situation | Should -Not -BeNullOrEmpty; $i.copy.named | Should -Match 'SIM-VDA01'; $i.copy.anonymous | Should -Not -Match 'SIM-VDA01'
+            $i.PSObject.Properties.Name | Should -Contain 'health'
+        }
+        @($inc | Where-Object { @($_.health).Count -gt 0 }).Count | Should -BeGreaterThan 0          # ein Vorfall verweist auf eine Pruefung des Zustandsbilds
+        foreach ($a in $H.health.areas) { $a.copy.named | Should -Not -BeNullOrEmpty; $a.copy.anonymous | Should -Not -Match 'SIM-VDA01' }
+        ($Out | Out-String) | Should -Match ('  ' + [regex]::Escape($H.health.summary.text))
+    }
+    It 'ordnet jedes Textfeld des Zustandsberichts im Bestand tests/MaskCensus.json ein' {                   # Global Constraints, Maskierung
+        $file = Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $marks = @{}; foreach ($p in $file.fields.PSObject.Properties) { $marks[$p.Name] = [string]$p.Value }
+        $marks['meta.reportKind'] | Should -Be 'composed'
+        # die Berichtsdaten, wie das Skript sie bildet (in einem Kindbereich punktweise ausgefuehrt, der $data behaelt)
+        $quick = & { $null = . $ReportScript -Path $Run -OutFile (Join-Path $TestDrive 'census.html') 6>$null; $data }
+        $paths = New-Object 'System.Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+        $walk = { param($Value, [string]$Path)
+            if ($null -eq $Value -or $Value -is [ValueType] -or $Value -is [System.Text.StringBuilder]) { return }
+            if (@($file.subtrees) -ccontains $Path) { [void]$paths.Add($Path); return }
+            if ($Value -is [string]) { [void]$paths.Add($Path); return }
+            if ($Value -is [System.Collections.IDictionary]) { foreach ($k in @($Value.Keys)) { & $walk $Value[$k] ($(if ($Path) { "$Path.$k" } else { [string]$k })) }; return }
+            foreach ($x in $Value) { & $walk $x "$Path[]" } }
+        & $walk $quick ''
+        $paths.Count | Should -BeGreaterThan 50; $paths | Should -Contain 'meta.reportKind'
+        @($paths | Where-Object { -not $marks.ContainsKey($_) } | ForEach-Object { "neues Textfeld $_ : in tests/MaskCensus.json einordnen" }) | Should -BeNullOrEmpty
+    }
+    It 'laesst im maskierten Zustandsbericht keinen Namen und keinen Freitext des Servers stehen' {          # Zusatz d (Kanarienvoegel wie in Task 16)
+        $run = Invoke-SimHealthOnly (Join-Path $TestDrive 'hoc'); $canary = Add-HealthCanaries $run
+        $bf = Join-Path $run 'events_before.csv'; $lines = [IO.File]::ReadAllLines($bf); $ix = [array]::IndexOf($lines[0].Split(','), 'Text')
+        for ($i = 1; $i -lt $lines.Length; $i++) {
+            $f = [string[]]@(Split-WorkerPerfCsvLine $lines[$i]); $f[$ix] = 'Meldung CANARYBEF'
+            $lines[$i] = [string]::Join(',', [string[]]@($f | ForEach-Object { if ($_ -match '[",]') { '"' + $_.Replace('"', '""') + '"' } else { $_ } }))
+        }
+        [IO.File]::WriteAllLines($bf, $lines)
+        $mf = Join-Path $run 'meta.json'; $m = [IO.File]::ReadAllText($mf).Replace('"EndMessage": null', '"EndMessage": "Ende CANARYEND"'); [IO.File]::WriteAllText($mf, $m)
+        $m | Should -Match 'CANARYEND'
+        $plain = Join-Path $TestDrive 'hoc-plain.html'; [void](& $ReportScript -Path $run -OutFile $plain 6>$null)
+        $strings = New-Object System.Collections.Generic.List[string]
+        $collect = { param($Value) if ($null -eq $Value -or $Value -is [ValueType]) { return }; if ($Value -is [string]) { $strings.Add($Value); return }
+            if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { & $collect $x }; return }; foreach ($q in $Value.PSObject.Properties) { & $collect $q.Value } }
+        & $collect (Get-ReportData $plain); $all = $strings -join "`n"
+        foreach ($t in @($canary.Free) + @($canary.Names) + 'CANARYHER', 'CANARYBEF', 'CANARYEND') { $all.Contains($t) | Should -BeTrue -Because "$t im unmaskierten Bericht" }
+        foreach ($level in 'Personen', 'Alles') {
+            $file = Join-Path $TestDrive "hoc-$level.html"; [void](& $ReportScript -Path $run -OutFile $file -Mask $level 6>$null)
+            $text = [IO.File]::ReadAllText($file); $text | Should -Not -Match 'CANARY' -Because $level; $text | Should -Not -Match 'KANINSTANZ|KanFirmaAgent' -Because $level
+            if ($level -eq 'Alles') {
+                $text | Should -Not -Match 'kanari|SIM-VDA01'
+                # die Zuordnungsdatei entsteht wie im Bericht einer Messung
+                $map = Join-Path $TestDrive 'hoc.map.json'; [void](& $ReportScript -Path $run -OutFile $file -Mask $level -MaskMapFile $map 6>$null)
+                @((Get-Content $map -Raw | ConvertFrom-Json).entries | Where-Object { $_.name -eq 'SIM-VDA01' }).replacement | Should -Be 'Server 01'
+                $strings.Clear(); & $collect (Get-ReportData $file); $all = $strings -join "`n"
+                foreach ($t in $canary.Names) { $all.Contains($t) | Should -BeFalse -Because $t }
+            }
+        }
+    }
+    It 'gibt dem Bericht einer Messung meta.healthOnly falsch und laesst seine Felder' {
+        $cap = Invoke-SimCapture (Join-Path $TestDrive 'messung'); $f = Join-Path $TestDrive 'messung.html'
+        $o = @(& $ReportScript -Path $cap -OutFile $f 6>&1); $d = Get-ReportData $f
+        $d.meta.PSObject.Properties.Name | Should -Contain 'healthOnly'; $d.meta.healthOnly | Should -BeFalse; $d.meta.PSObject.Properties.Name | Should -Not -Contain 'reportKind'
+        @($d.PSObject.Properties.Name) | Should -Contain 'incidents'; @($d.PSObject.Properties.Name) | Should -Contain 'lagebild'; $d.print.involvedFrom | Should -Be 'both'
+        ($o | Out-String) | Should -Match 'Bericht erstellt in [\d.]+ s \(davon Einlesen [\d.]+ s\): '; ($o | Out-String) | Should -Match '  \d+ Takte, \d+ Schnappschuesse'
+    }
+}

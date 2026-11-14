@@ -8,6 +8,7 @@
     "meta.computer": "name",
     "meta.os": "name",
     "meta.endReason": "keyword",
+    "meta.reportKind": "composed",
     "meta.focus.user": "name",
     "quality.sources[].id": "keyword",
     "quality.sources[].label": "composed",
