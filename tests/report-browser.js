@@ -3611,6 +3611,9 @@ async function checkHealth(browser, dir, scheme) {
   ok((await page.evaluate(() => location.hash)).includes('a=profile'), 'Adresse haelt den Bereich');
   await el.locator('.hc-copy').click();
   ok(await page.evaluate(() => window.__copied.at(-1)) === c0.copy.named, 'Pruefung kopieren');
+  // (fix round 1, item 5) the link of the source reads as small text: 4.5:1 or more on the ground of the check
+  const link = await el.locator('.hc-source a').evaluate((a) => [getComputedStyle(a).color, getComputedStyle(a.closest('.hcheck')).backgroundColor]);
+  ok(contrast(link[0], link[1]) >= 4.5, 'Verweis der Quelle: Kontrast mindestens 4,5:1: ' + contrast(link[0], link[1]).toFixed(2) + ' ' + link.join(' auf '));
   // print: the area view on paper with every check open and without its buttons; folded again afterwards
   const media = async (m) => { await page.emulateMedia({ media: m }); await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))); };
   const openChecks = () => av.locator('details.hcheck').evaluateAll((d) => d.filter((x) => x.open).length);
@@ -3666,10 +3669,20 @@ async function checkHealth(browser, dir, scheme) {
   const ch = await open(browser, patched(dir, 'report.html', 'report-health-changed.html', (J) => { J.health.changedText = 'Schwellen weichen vom ausgelieferten Stand ab: Freier Platz 25 GB (ausgeliefert 10 GB)'; }), scheme);
   ok((await ch.page.locator('#healthInfo').innerText()).includes('Schwellen weichen vom ausgelieferten Stand ab'), 'Kopf vermerkt geaenderte Schwellen');
   await ch.page.close();
-  const m = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  // the masked report: no names in the area view and none in what its buttons copy (fix round 1, item 3: the copy texts as the
+  // reader gets them, the same as the masked report data hold)
+  const mctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
+  await mctx.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+  const m = { page: await mctx.newPage() }; m.page.errors = []; m.page.on('pageerror', (e) => m.page.errors.push(e.message));
+  await m.page.goto('file://' + path.join(dir, 'report-masked.html'));
+  const mProf = (await m.page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent))).health.areas.find((a) => a.id === 'profile');
   await m.page.click('#healthRow .htile[data-area="profile"]');
   ok(!/user0\d\d|SIM-VDA01|CONTOSO|fs01/.test(await m.page.locator('#area').innerText()) && await m.page.locator('#anonSwitch').count() === 0 && await m.page.locator('#area .hc-copy').count() > 0, 'maskiert: keine Namen in der Bereichsansicht');   // Review Focus 4
-  await m.page.close();
+  await m.page.click('#areaCopy'); await m.page.locator('#area .hc-copy').first().click();
+  const mCopied = await m.page.evaluate(() => window.__copied);
+  ok(mCopied.length === 2 && mCopied[0] === mProf.copy.named && mCopied[1] === mProf.checks[0].copy.named && !mCopied.some((t) => /user0\d\d|SIM-VDA01|CONTOSO|fs01|\\\\/.test(t)) && m.page.errors.length === 0,
+    'maskiert: was "Bereich kopieren" und "Kopieren" kopieren, ist der Text der maskierten Berichtsdaten, ohne Namen: ' + mCopied.map((t) => t.slice(0, 60)).join(' | '));
+  await mctx.close();
   // (additions 4) the report of a quick run (no measurement: no incidents, no unrecorded) opens without a script error; its
   // own page comes with Task 20
   const q = await open(browser, path.join(dir, 'report-health.html'), scheme);

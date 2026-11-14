@@ -591,7 +591,8 @@ ul.av-apps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: 
 .hc-body h4:first-child { margin-top: 0; }
 .hc-body p { margin: 0; max-width: 100ch; }
 .hc-todo .step { font-weight: 600; }
-.hc-source a { color: var(--link); }
+/* the link of a source in the colour of the accent: 4.5:1 or more on the light ground of the guided view (--link has less) */
+.hc-source a { color: var(--accent); }
 .hc-body .hc-source { margin-top: 14px; }
 .hc-body .hc-actions { margin-top: 12px; }
 .area-notcovered p { margin: 0; max-width: 100ch; color: var(--text2); }
@@ -912,7 +913,9 @@ const TH = new Map(D.thresholds.map((t) => [t.id, t]));
 
 // Status: 0 normal, 1 auffaellig, 2 kritisch, na nicht gemessen. Always symbol plus word.
 const STATUS = { "0": ["●", "normal", "good"], "1": ["▲", "auffällig", "warn"], "2": ["◆", "kritisch", "crit"], "na": ["○", "nicht gemessen", "na"] };
-const statusHtml = (st, extra) => `<span class="status st-${STATUS[st][2]}"><i class="sym" aria-hidden="true">${STATUS[st][0]}</i> ${STATUS[st][1]}${extra ? ` <span class="pct">${extra}</span>` : ""}</span>`;
+// the mark as HTML: its colour class (good, warn, crit, na), symbol and word (escaped) and, after them, extra (HTML)
+const markHtml = (cls, sym, word, extra) => `<span class="status st-${cls}"><i class="sym" aria-hidden="true">${esc(sym)}</i> ${esc(word)}${extra ? ` <span class="pct">${extra}</span>` : ""}</span>`;
+const statusHtml = (st, extra) => markHtml(STATUS[st][2], STATUS[st][0], STATUS[st][1], extra);
 // Categories left out with -Skip (skipped[] { id, label, text, places }) and categories the capture never recorded (unrecorded[],
 // the same fields: the event logs of a capture from before their recording): the hint for a place of the page that depends on
 // one, as HTML, or "" where the place was measured; the switch is named for a category left out with it. Where the hint
@@ -3220,6 +3223,16 @@ ivEl.addEventListener("focusin", (ev) => { const t = ev.target.closest(".term");
 ivEl.addEventListener("focusout", (ev) => { if (ev.target.closest(".term")) hideTerm(); });
 document.addEventListener("click", (ev) => { const t = ev.target.closest(".term"); if (t) showTerm(t); else hideTerm(); });
 
+// The items of a list of steps (of a guide in the incident view, of a check in the area view of the health picture): each its
+// text (bold) and, where given, where to do it and how to recognise it. textHtml(tag, cls, text) renders a text as an element
+// ("" without a text): with the terms of the guidance marked in the incident view, as plain text in the area view; more(step)
+// adds HTML after them (the incident view: the source of the step).
+function stepsHtml(list, textHtml, more) {
+  const how = (label, text) => text ? `<div><dt>${label}</dt>${textHtml("dd", "", text)}</div>` : "";
+  return list.map((c) => `<li>${textHtml("p", "step", c.text)}${c.where || c.sign ? `<dl class="how">${how("Wo:", c.where)}${how("Woran erkennbar:", c.sign)}</dl>` : ""}${more ? more(c) : ""}</li>`).join("");
+}
+// a text of the report data as an element, without marked terms
+const plainHtml = (tag, cls, text) => text ? `<${tag}${cls ? ` class="${cls}"` : ""}>${esc(text)}</${tag}>` : "";
 // the source of a step: its title and, where the catalogue gives an address, the address, as plain text
 function sourceHtml(src) {
   const text = !src ? "" : typeof src === "string" ? src : [src.title, src.url].filter(Boolean).join(" – ");
@@ -3279,12 +3292,11 @@ function renderIncident(id) {
   const caption = margin.before && margin.after ? "der Vorfall (getönt) mit Vor- und Nachlauf." : margin.before ? "der Vorfall (getönt) mit Vorlauf." : margin.after ? "der Vorfall (getönt) mit Nachlauf."
     : "der Vorfall erstreckt sich über die gesamte gemessene Zeit.";
   const cause = causeParts(inc), checks = g.checks || [], remedies = g.remedies || [], contacts = g.contacts || [];
-  const how = (label, text) => text ? `<div><dt>${label}</dt>${tx("dd", "", text)}</div>` : "";
   const note = g.fallback ? (D.guidance || {}).fallbackNote : "";
   // the days before the capture have no measured values: said once, not again where the classification in the head says it
   const noValues = before && !String(g.userView || "").toLowerCase().includes(NO_VALUES.toLowerCase().replace(/\.$/, ""));
   const text = (noValues ? `<p class="bnote">${NO_VALUES}</p>` : "") + tx("p", "iv-meaning", g.meaning) + tx("p", "iv-impact", g.impact);
-  const checkList = (list, from) => !list.length ? "" : `<ol class="checks"${from ? ` start="${from + 1}"` : ""}>${list.map((c) => `<li>${tx("p", "step", c.text)}${c.where || c.sign ? `<dl class="how">${how("Wo:", c.where)}${how("Woran erkennbar:", c.sign)}</dl>` : ""}${sourceHtml(c.source)}</li>`).join("")}</ol>`;
+  const checkList = (list, from) => !list.length ? "" : `<ol class="checks"${from ? ` start="${from + 1}"` : ""}>${stepsHtml(list, tx, (c) => sourceHtml(c.source))}</ol>`;
   const remedyList = (list) => `<ul>${list.map((r) => `<li>${r.precondition ? `<p class="tx pre"><b>Wenn</b> ${termHtml(r.precondition, terms)},</p>` : ""}<p class="tx act">${r.precondition ? "<b>dann:</b> " : ""}${termHtml(r.text, terms)}</p>${sourceHtml(r.source)}</li>`).join("")}</ul>`;
   const next = nextIncident(id);
   ivEl.dataset.id = id;
@@ -3519,10 +3531,7 @@ document.addEventListener("keydown", (ev) => {
 // Every text comes from the report data (health) and is inserted as text; the page adds the labels of its sections and buttons.
 // A grade stands as symbol and word of health.grades in the colour of the status marks.
 const GRADE_CLASS = { act: "crit", check: "warn", ok: "good", unknown: "na", na: "na" };
-const gradeHtml = (g) => {
-  const w = (HEALTH.grades || {})[g] || { symbol: "", word: g };
-  return `<span class="status st-${GRADE_CLASS[g] || "na"}"><i class="sym" aria-hidden="true">${esc(w.symbol)}</i> ${esc(w.word)}</span>`;
-};
+const gradeHtml = (g) => { const w = (HEALTH.grades || {})[g] || { symbol: "", word: g }; return markHtml(GRADE_CLASS[g] || "na", w.symbol, w.word); };
 const countsHtml = (a) => a.countsText ? `<span class="ht-counts">${esc(a.countsText)}</span>` : "";
 // The row between the hints and the timeline: read, the summary, the assumed target environment and a tile per area (a button
 // that opens its area view); not recorded or unreadable, the text only; left out with -Skip, the hint "nicht gemessen". Without
@@ -3533,7 +3542,8 @@ const countsHtml = (a) => a.countsText ? `<span class="ht-counts">${esc(a.counts
       <div class="htiles">${HEALTH_AREAS.map((a) => `<button type="button" class="htile" data-area="${esc(a.id)}" data-grade="${esc(a.grade)}"><span class="ht-label">${esc(a.label)}</span>${gradeHtml(a.grade)}${countsHtml(a)}</button>`).join("")}</div>`
     : HEALTH.state === "skipped" ? notMeasured("health") : HEALTH.text ? `<p class="hr-text">${esc(HEALTH.text)}</p>` : "";
   row.innerHTML = `<div class="cardhead"><h3 id="healthHead">${esc(HEALTH.title)}</h3>${HEALTH_READ ? `<p id="healthSummary">${esc((HEALTH.summary || {}).text)}</p>` : ""}</div>${body}`;
-  row.hidden = !HEALTH.title && !body;
+  // left out with -Skip, the row shows only where the page names the place "health" (Task 20); #skipInfo names the category
+  row.hidden = HEALTH.state === "skipped" ? !body : !HEALTH.title && !body;
   row.addEventListener("click", (ev) => { const t = ev.target.closest(".htile"); if (t) window.WP.openArea(t.dataset.area); });
 }
 // The area view replaces the content of the guided view like the incident view: head with the area, its grade and, where the
@@ -3543,13 +3553,14 @@ const countsHtml = (a) => a.countsText ? `<span class="ht-counts">${esc(a.counts
 // the reader came from.
 const avEl = document.getElementById("area");
 let avFrom = null;
+// The source of a check has its own line: kind, vendor, title (a link where the address is a web address) and date, more than
+// sourceHtml of a step of the guidance says.
 function checkHtml(c) {
   const s = c.source || {}, date = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s.date || ""), finding = c.finding || c.why;
   const title = !s.title ? "" : isWebUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title);
   const origin = [esc(c.kindLabel), [esc(s.vendor), title].filter(Boolean).join(", ")].filter(Boolean).join(" – ");
   const when = date ? ` (Stand ${date[3]}.${date[2]}.${date[1]})` : s.date ? ` (Stand ${esc(s.date)})` : "";
-  const how = (label, text) => text ? `<div><dt>${label}</dt><dd>${esc(text)}</dd></div>` : "";
-  const steps = (c.todo || []).map((t) => `<li><p class="step">${esc(t.text)}</p>${t.where || t.sign ? `<dl class="how">${how("Wo:", t.where)}${how("Woran erkennbar:", t.sign)}</dl>` : ""}</li>`).join("");
+  const steps = stepsHtml(c.todo || [], plainHtml);
   return `<details class="hcheck card" data-check="${esc(c.id)}" data-grade="${esc(c.grade)}"${c.grade === "ok" || c.grade === "na" ? "" : " open"}>
       <summary><h3 class="hc-title"><span class="hc-name">${esc(c.title)}</span>${gradeHtml(c.grade)}</h3>${finding ? `<span class="hc-finding">${esc(finding)}</span>` : ""}${c.note ? `<span class="hc-note">${esc(c.note)}</span>` : ""}</summary>
       <div class="hc-body">${c.meaning ? `<h4>Was bedeutet das?</h4><p class="hc-meaning">${esc(c.meaning)}</p>` : ""}${steps ? `<h4>Was tun?</h4><ol class="checks hc-todo">${steps}</ol>` : ""}${origin ? `
