@@ -256,7 +256,9 @@
     "maintenance.tasksInWorkHours": "Geplante Aufgaben, die in der Arbeitszeit laufen",
     "maintenance.sessionTriggerTasks": "Geplante Aufgaben mit Auslöser Leerlauf, Anmeldung oder Sitzungswechsel",
     "maintenance.scanInWorkHours": "Geplanter Scan von Defender Antivirus in der Arbeitszeit",
-    "maintenance.updateInWorkHours": "Automatische Installation von Updates in der Arbeitszeit"
+    "maintenance.updateInWorkHours": "Automatische Installation von Updates in der Arbeitszeit",
+    "apps.edgeUpdatesOff": "Updates von Microsoft Edge per Richtlinie abgeschaltet (aus den Update-Vorgaben für Edge selbst und für alle Kanäle)",
+    "apps.webView2UpdatesOff": "Updates der WebView2-Runtime per Richtlinie abgeschaltet (aus den Update-Vorgaben für die WebView2-Runtime und für alle Kanäle)"
   },
   "copy": {
     "title": "Zustand des Servers",
@@ -293,7 +295,7 @@
     "reasonAppNotInstalled": "{app} ist nicht installiert",
     "reasonTimeout": "das Zeitlimit für das Lesen war erreicht",
     "reasonError": "das Lesen ist gescheitert",
-    "reasonAbsent": "auf diesem Server nicht vorhanden",
+    "reasonAbsent": "er ist auf diesem Server nicht gesetzt oder nicht vorhanden",
     "reasonSkipped": "{category} nicht erfasst (-Skip)",
     "reasonNotRecorded": "die Aufzeichnung enthält die Daten dafür nicht",
     "reasonPerUser": "ein Listener lässt die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht",
@@ -1832,7 +1834,7 @@
         "check": "Microsoft Defender Antivirus läuft in der aktiven Betriebsart (Normal) mit Echtzeitschutz, und daneben ist ein weiteres Schutzprodukt mit Filtertreiber geladen (Anzahl: {security.otherFilterProducts}). Erkannte Schutzprodukte: {security.products} (ein Strich heißt: nicht gelesen).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Prüfen zwei Schutzprodukte zugleich jeden Dateizugriff, kostet das Rechenleistung und Laufwerkszugriffe in allen Sitzungen (Erläuterung des Katalogs). Microsoft schreibt, dass Defender Antivirus auf Windows Server neben einem anderen Schutzprodukt nicht von selbst passiv wird, und nennt zwei Wege, je nachdem, ob der Server an Microsoft Defender for Endpoint angebunden ist. Erkannt wird das weitere Produkt nur an seinem Filtertreiber, zugeordnet nach der Rollenliste (Microsoft führt die Treiber von Arctic Wolf Aurora unter Cylance Inc.), ob es in Echtzeit prüft, liest das Zustandsbild nicht.",
+      "meaning": "Prüfen zwei Schutzprodukte zugleich jeden Dateizugriff, kostet das Rechenleistung und Laufwerkszugriffe in allen Sitzungen (Erläuterung des Katalogs). Microsoft schreibt, dass Defender Antivirus auf Windows Server neben einem anderen Schutzprodukt nicht von selbst passiv wird, und nennt zwei Wege, je nachdem, ob der Server an Microsoft Defender for Endpoint angebunden ist. Erkannt wird das weitere Produkt nur an seinem Filtertreiber (Zuordnung aus der Rollenliste, Microsoft führt ihn unter Cylance Inc.), und ob es in Echtzeit prüft, liest das Zustandsbild nicht.",
       "todo": [
         {
           "text": "Mit dem Sicherheitsteam klären, welches Produkt den Echtzeitschutz übernehmen soll, ob das weitere Produkt Dateizugriffe in Echtzeit prüft und ob die Server an Microsoft Defender for Endpoint angebunden sind",
@@ -2596,7 +2598,7 @@
       },
       "findings": {
         "ok": "Der wirksame Beginn der geplanten Scans von Microsoft Defender Antivirus liegt nicht in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es ist kein Scan geplant. Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert (eingestellter Tag: {maintenance.scanDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie; eingestellte Zeit: {maintenance.scanTime}; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}; ein Strich heißt: nicht gesetzt oder nicht gelesen, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster).",
-        "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert. Eingestellter Tag: {maintenance.scanDay} (0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie); eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}. Ein Strich heißt: nicht eingestellt, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster.",
+        "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert. Die Startzeit des Schnellscans rechnet die Prüfung an jedem Tag, unabhängig vom eingestellten Tag, denn Microsoft zeigt sie als Zeit eines täglichen Schnellscans. Eingestellter Tag: {maintenance.scanDay} (0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie); eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}. Ein Strich heißt: nicht eingestellt, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Ein Scan, der in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Nach Microsoft (Seite „Schedule antivirus scans using PowerShell“) beginnen geplante Scans um eine feste Verzögerung nach der eingestellten Zeit, ohne Einstellung 120 Minuten, und mit zufälliger Startzeit bis zu 30 Minuten oder dem eingestellten Zeitfenster davor oder danach, und diesen wirksamen Beginn prüft der Katalog für den geplanten Scan und für den Schnellscan. Die Prüfung ist eine Faustregel des Katalogs.",
@@ -2695,12 +2697,12 @@
       "id": "maintenance.updateInstallInWorkHours",
       "area": "maintenance",
       "title": "Installation von Updates in der Arbeitszeit",
-      "values": ["maintenance.updateInWorkHours", "maintenance.updateDay", "maintenance.updateHour"],
+      "values": ["maintenance.updateInWorkHours", "maintenance.updateOptions", "maintenance.updateDay", "maintenance.updateHour"],
       "rules": {
         "check": [{"value": "maintenance.updateInWorkHours", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die Richtlinie für automatische Updates legt keine Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt (eingestellter Tag: {maintenance.updateDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag; eingestellte Stunde: {maintenance.updateHour}; ein Strich heißt: nicht gesetzt oder nicht gelesen; mit Option 4 nimmt die Prüfung ohne Tag jeden Tag und ohne Stunde nach Microsoft 03:00 Uhr an).",
+        "ok": "Die Richtlinie für automatische Updates legt keine Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es gibt keine Richtlinie (eingestellte Option: {maintenance.updateOptions}; 2 = zum Herunterladen benachrichtigen und automatisch installieren, 3 = automatisch herunterladen und zur Installation benachrichtigen, 4 = automatisch herunterladen und zur geplanten Zeit installieren, 5 = lokale Administratoren wählen die Einstellung, 7 = automatisch herunterladen, zur Installation und zum Neustart benachrichtigen, ein Strich heißt: keine Richtlinie; eingestellter Tag: {maintenance.updateDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag; eingestellte Stunde: {maintenance.updateHour}; ein Strich heißt: nicht gesetzt oder nicht gelesen; mit Option 4 nimmt die Prüfung ohne Tag jeden Tag und ohne Stunde nach Microsoft 03:00 Uhr an). Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt, und die Prüfung steht dann auf „In Ordnung“, obwohl der Zeitpunkt nicht prüfbar ist.",
         "check": "Die Richtlinie für automatische Updates legt die Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr): eingestellter Tag {maintenance.updateDay}, eingestellte Stunde {maintenance.updateHour} (Tag: 0 = täglich, 1 bis 7 = Sonntag bis Samstag; ein Strich heißt: nicht eingestellt, die Prüfung nimmt dann beim Tag jeden Tag und bei der Stunde nach Microsoft 03:00 Uhr an).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
@@ -2765,25 +2767,25 @@
       "id": "apps.edgeAutoUpdate",
       "area": "apps",
       "title": "Automatische Updates von Microsoft Edge",
-      "values": ["apps.edge.updateDefault", "apps.edge.updateStable"],
+      "values": ["apps.edge.updateDefault", "apps.edge.updateStable", "apps.edgeUpdatesOff"],
       "rules": {
-        "check": [{"value": "apps.edge.updateStable", "op": "ne", "than": 0}, {"value": "apps.edge.updateDefault", "op": "ne", "than": 0}]
+        "check": [{"value": "apps.edgeUpdatesOff", "op": "eq", "than": false}]
       },
       "findings": {
-        "ok": "Eine der zwei Richtlinien für Updates von Microsoft Edge steht auf 0 = abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt). Steht die Vorgabe für Edge selbst auf 1, 2 oder 3, geht sie nach Microsoft vor, und die Updates sind dann nicht abgeschaltet; diesen Fall meldet die Prüfung nicht.",
-        "check": "Keine Richtlinie schaltet die automatischen Updates von Microsoft Edge ab (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt).",
+        "ok": "Die automatischen Updates von Microsoft Edge sind per Richtlinie abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle). Die Richtlinien wirken nach Microsoft nur auf einem Server, der Mitglied einer Active-Directory-Domäne ist.",
+        "check": "Die automatischen Updates von Microsoft Edge sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Aktualisiert sich Microsoft Edge auf jedem Server selbst, können im Pool verschiedene Versionen laufen, und Microsoft nennt es für nicht persistente Maschinen bewährte Praxis, die automatischen Updates abzuschalten und Edge über das Master-Image zu aktualisieren. Die Richtlinien für Updates wirken nach Microsoft nur auf Windows, das Mitglied einer Active-Directory-Domäne ist, und die Vorgabe für Edge selbst geht der Vorgabe für alle Kanäle vor. Für andere Maschinen nennt Microsoft auf der Seite der Richtlinien das Erlauben der Updates als empfohlene Vorgabe.",
+      "meaning": "Aktualisiert sich Microsoft Edge auf jedem Server selbst, können im Pool verschiedene Versionen laufen, und Microsoft nennt es für nicht persistente Maschinen bewährte Praxis, die automatischen Updates abzuschalten und Edge über das Master-Image zu aktualisieren. Die Richtlinien für Updates wirken nach Microsoft nur in einer Active-Directory-Domäne, die Vorgabe für Edge selbst geht der Vorgabe für alle Kanäle vor, und diese gilt auch für die WebView2-Runtime. Allgemein nennt Microsoft das Erlauben der Updates als empfohlene Vorgabe, für nicht persistente Maschinen gilt die Seite zu VDI.",
       "todo": [
         {
           "text": "Nachsehen, welche der zwei Richtlinien für Updates von Microsoft Edge gesetzt ist",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge Update, Richtlinien „Update policy override default“ und „Update policy override“ (für Microsoft Edge Stable)",
-          "sign": "keine der zwei Richtlinien steht auf „Updates disabled“"
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge Update, Richtlinien „Update policy override default“ und „Update policy override“ (für Microsoft Edge Stable)",
+          "sign": "die Richtlinie für Microsoft Edge Stable steht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht darauf"
         },
         {
-          "text": "Die automatischen Updates von Microsoft Edge per Richtlinie abschalten und Edge mit dem Master-Image aktualisieren",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Update policy override“ für Microsoft Edge Stable auf „Updates disabled“; Edge im Master-Image aktualisieren, danach die Server neu bereitstellen",
+          "text": "Die automatischen Updates von Microsoft Edge per Richtlinie abschalten und Edge mit dem Master-Image aktualisieren. Soll sich die WebView2-Runtime weiter selbst aktualisieren, nur die Richtlinie für Microsoft Edge Stable abschalten und nicht die Vorgabe für alle Kanäle, denn diese gilt nach Microsoft auch für die WebView2-Runtime",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Update policy override“ für Microsoft Edge Stable auf „Updates disabled“; Edge im Master-Image aktualisieren, danach die Server neu bereitstellen",
           "sign": "Zustandsbild meldet die automatischen Updates als abgeschaltet"
         }
       ],
@@ -2809,16 +2811,16 @@
         "check": "Der Prüfabstand des Updaters von Microsoft Edge steht auf 0. Damit schaltet der Updater nach Microsoft jede regelmäßige Abfrage im Netz ab und bekommt selbst keine Updates für Stabilität und Sicherheit mehr.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Steht der Prüfabstand auf 0, bekommt der Updater von Microsoft Edge nach Microsoft selbst keine Updates für Stabilität und Sicherheit mehr, deshalb rät Microsoft davon ab. Die Updates von Edge sollen nach Microsoft stattdessen über die Richtlinien „Update policy override default“ und „Update policy override“ gesteuert werden. Wer die Updates von Edge abschalten will, tut es dort (Prüfung „Automatische Updates von Microsoft Edge“).",
+      "meaning": "Die Benutzer arbeiten mit einem Microsoft Edge, das der Updater nicht mehr von selbst aktualisiert, wenn der Prüfabstand auf 0 steht (Erläuterung des Katalogs), denn dann schaltet der Updater nach Microsoft jede regelmäßige Abfrage im Netz ab. Er bekommt so auch selbst keine Updates für Stabilität und Sicherheit mehr, deshalb rät Microsoft davon ab und nennt für die Updates von Edge die Richtlinien „Update policy override default“ und „Update policy override“. Wer die Updates von Edge abschalten will, tut es dort (Prüfung „Automatische Updates von Microsoft Edge“).",
       "todo": [
         {
           "text": "Nachsehen, wo der Prüfabstand auf 0 gesetzt wird",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge Update, Richtlinie „Auto-update check period override“, und Master-Image",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge Update, Richtlinie „Auto-update check period override“, und Master-Image",
           "sign": "die Richtlinie steht auf 0"
         },
         {
           "text": "Die Richtlinie „Auto-update check period override“ nicht auf 0 setzen oder nicht konfigurieren und die Updates nur über die Richtlinien „Update policy override default“ und „Update policy override“ steuern",
-          "where": "in der Gruppenrichtlinie der Server; bei nicht persistenten Servern auch im Master-Image, danach die Server neu bereitstellen",
+          "where": "in der Gruppenrichtlinie für die Server; bei nicht persistenten Servern auch im Master-Image, danach die Server neu bereitstellen",
           "sign": "Zustandsbild meldet keinen Prüfabstand von 0 mehr"
         }
       ],
@@ -2835,26 +2837,26 @@
       "id": "apps.edgeWebView2Update",
       "area": "apps",
       "title": "Updates der WebView2-Runtime",
-      "values": ["apps.edge.updateWebView2"],
+      "values": ["apps.edge.updateWebView2", "apps.edge.updateDefault", "apps.webView2UpdatesOff"],
       "rules": {
-        "check": [{"value": "apps.edge.updateWebView2", "op": "eq", "than": 0}]
+        "check": [{"value": "apps.webView2UpdatesOff", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; 0 = abgeschaltet, 1 = erlaubt, ein Strich heißt: nicht gesetzt).",
-        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet. Dann muss das Master-Image die aktuelle Runtime tragen.",
+        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle).",
+        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle). Dann muss das Master-Image die aktuelle Runtime tragen.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Abgeschaltete Updates der WebView2-Runtime können nach Microsoft Anwendungen stören, die auf diese Komponente angewiesen sind, und Microsoft rät, nicht auf einer älteren Version der Runtime zu bleiben. Lädt ein nicht persistenter Server ein Update selbst, ist es nach dem Neustart wieder weg, deshalb muss bei abgeschalteten Updates das Master-Image die aktuelle Runtime enthalten (Folgerung des Katalogs). Die Runtime nutzen nach Microsoft unter anderem Teams und Outlook.",
+      "meaning": "Abgeschaltete Updates der WebView2-Runtime können nach Microsoft Anwendungen stören, die auf diese Komponente angewiesen sind, und Microsoft rät, nicht auf einer älteren Version der Runtime zu bleiben. Lädt ein nicht persistenter Server ein Update selbst, ist es nach dem Neustart wieder weg, deshalb muss bei abgeschalteten Updates das Master-Image die aktuelle Runtime enthalten (Folgerung des Katalogs). Die Runtime nutzen nach Microsoft unter anderem Teams und Outlook, und ohne eigene Vorgabe für die Runtime gilt für sie nach Microsoft die Update-Vorgabe für alle Kanäle von Microsoft Edge.",
       "todo": [
         {
           "text": "Nachsehen, ob die Updates der WebView2-Runtime bewusst abgeschaltet sind und wie das Master-Image die Runtime aktuell hält",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge Update, Richtlinie „Update policy override“ für die WebView2-Runtime; Pflege des Master-Image",
-          "sign": "die Richtlinie steht auf „Updates disabled“, und das Master-Image wird nicht mit jeder neuen Runtime erneuert"
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge Update, Richtlinie „Update policy override“ für die WebView2-Runtime und Richtlinie „Update policy override default“; Pflege des Master-Image",
+          "sign": "die Richtlinie für die WebView2-Runtime steht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht darauf, und das Master-Image wird nicht mit jeder neuen Runtime erneuert"
         },
         {
-          "text": "Die Updates der WebView2-Runtime wieder erlauben oder die Runtime bei jeder Pflege des Master-Image aktualisieren",
-          "where": "in der Gruppenrichtlinie der Server oder im Master-Image, danach die Server neu bereitstellen",
-          "sign": "Zustandsbild meldet die Updates der Runtime als nicht abgeschaltet, oder die Version der WebView2-Runtime unter den gelesenen Werten von Microsoft Edge ist die aktuelle"
+          "text": "Die Updates der WebView2-Runtime wieder erlauben (Richtlinie „Update policy override“ für die WebView2-Runtime auf „Always allow updates“) oder die Runtime bei jeder Pflege des Master-Image aktualisieren",
+          "where": "in der Gruppenrichtlinie für die Server oder im Master-Image, danach die Server neu bereitstellen",
+          "sign": "Zustandsbild meldet die Updates der Runtime als nicht abgeschaltet, oder der Rohwert „Microsoft Edge – Version der WebView2-Runtime“ im Zustandsbild zeigt die aktuelle Version"
         }
       ],
       "source": {
@@ -2869,27 +2871,27 @@
     {
       "id": "apps.edgeStartupBoost",
       "area": "apps",
-      "title": "Startboost von Microsoft Edge",
+      "title": "Startup-Boost von Microsoft Edge",
       "values": ["apps.edge.startupBoost"],
       "rules": {
         "check": [{"value": "apps.edge.startupBoost", "op": "ne", "than": 0}]
       },
       "findings": {
-        "ok": "Startboost von Microsoft Edge ist per Richtlinie abgeschaltet.",
-        "check": "Startboost von Microsoft Edge ist per Richtlinie eingeschaltet oder nicht gesetzt (gelesener Wert: {apps.edge.startupBoost}; 1 = eingeschaltet, ein Strich heißt: nicht gesetzt, dann kann Startboost nach Microsoft zunächst an oder aus sein).",
+        "ok": "Startup-Boost von Microsoft Edge ist per Richtlinie abgeschaltet.",
+        "check": "Startup-Boost von Microsoft Edge ist per Richtlinie nicht abgeschaltet (gelesener Wert: {apps.edge.startupBoost}; 1 = eingeschaltet, ein Strich heißt: nicht gesetzt, dann kann Startup-Boost nach Microsoft zunächst an oder aus sein).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Mit Startboost starten Prozesse von Microsoft Edge schon bei der Anmeldung und nach dem Schließen des letzten Fensters im Hintergrund neu, auf einem Server mit vielen Sitzungen in jeder Sitzung, und kosten dort Arbeitsspeicher auch für Benutzer, die Edge nicht öffnen (Faustregel des Katalogs). Microsoft beschreibt nur dieses Verhalten und spricht keine Empfehlung aus. Nach Aaron Parker (2023, Windows Server 2022 mit vielen Sitzungen) startet die Richtlinie bei jeder Anmeldung mehrere Prozesse von Edge, ein Preis an Rechenleistung und Arbeitsspeicher für ein besseres Erlebnis der Benutzer.",
+      "meaning": "Mit Startup-Boost starten Prozesse von Microsoft Edge schon bei der Anmeldung und nach dem Schließen des letzten Fensters im Hintergrund neu, auf einem Server mit vielen Sitzungen in jeder Sitzung, und kosten Arbeitsspeicher auch für Benutzer, die Edge nicht öffnen (Faustregel des Katalogs). Microsoft beschreibt nur dieses Verhalten und spricht keine Empfehlung aus. Aaron Parker (2023, Windows Server 2022) schaltet Startup-Boost als Richtlinie für Benutzer ein, damit Web-Apps bei der Anmeldung entstehen, und nennt die dann startenden Prozesse einen Preis an Rechenleistung und Arbeitsspeicher.",
       "todo": [
         {
-          "text": "Nachsehen, ob Startboost aus einem bestimmten Grund eingeschaltet ist",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Enable startup boost“",
+          "text": "Nachsehen, ob Startup-Boost aus einem bestimmten Grund eingeschaltet ist",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Enable startup boost“",
           "sign": "die Richtlinie ist eingeschaltet oder nicht konfiguriert"
         },
         {
-          "text": "Ohne einen solchen Grund Startboost per Richtlinie abschalten",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Enable startup boost“ deaktivieren",
-          "sign": "Zustandsbild meldet Startboost als abgeschaltet"
+          "text": "Ohne einen solchen Grund Startup-Boost per Richtlinie abschalten",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Enable startup boost“ deaktivieren",
+          "sign": "Zustandsbild meldet Startup-Boost als abgeschaltet"
         }
       ],
       "source": {
@@ -2918,12 +2920,12 @@
       "todo": [
         {
           "text": "Nachsehen, ob der Hintergrundmodus bewusst eingeschaltet ist",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Continue running background apps after Microsoft Edge closes“",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Continue running background apps after Microsoft Edge closes“",
           "sign": "die Richtlinie ist eingeschaltet"
         },
         {
           "text": "Ohne einen Grund dafür den Hintergrundmodus per Richtlinie abschalten",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Continue running background apps after Microsoft Edge closes“ deaktivieren",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Continue running background apps after Microsoft Edge closes“ deaktivieren",
           "sign": "Zustandsbild meldet den Hintergrundmodus als nicht eingeschaltet"
         }
       ],
@@ -2953,12 +2955,12 @@
       "todo": [
         {
           "text": "Nachsehen, warum die schlafenden Tabs abgeschaltet sind",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Configure sleeping tabs“",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Configure sleeping tabs“",
           "sign": "die Richtlinie ist deaktiviert"
         },
         {
           "text": "Die schlafenden Tabs per Richtlinie wieder zulassen",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Configure sleeping tabs“ aktivieren oder nicht konfigurieren",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Configure sleeping tabs“ aktivieren oder nicht konfigurieren",
           "sign": "Zustandsbild meldet die schlafenden Tabs als nicht abgeschaltet"
         }
       ],
@@ -2988,12 +2990,12 @@
       "todo": [
         {
           "text": "Nachsehen, warum das Verwerfen abgeschaltet ist",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Configure auto discard sleeping tabs“",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Configure auto discard sleeping tabs“",
           "sign": "die Richtlinie ist deaktiviert"
         },
         {
           "text": "Das Verwerfen per Richtlinie wieder zulassen",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Configure auto discard sleeping tabs“ aktivieren oder nicht konfigurieren",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Configure auto discard sleeping tabs“ aktivieren oder nicht konfigurieren",
           "sign": "Zustandsbild meldet das Verwerfen als nicht abgeschaltet"
         }
       ],
@@ -3019,17 +3021,17 @@
         "check": "Der On-Premises-Sync von Microsoft Edge (Roaming-Kopie der Profildaten) ist per Richtlinie eingeschaltet. Ob er wirkt, zeigt der Wert allein nicht, denn nach Microsoft wirkt er nur mit Profilen, die an ein Konto der Active-Directory-Domäne gebunden sind.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Hat ein Benutzer Sitzungen auf mehreren Servern zugleich, können nach Microsoft beim nächsten Start von Edge die Daten der einen Sitzung von denen einer anderen überschrieben werden, und teilen sich die Server eine umgeleitete Datei profile.pb, startet nur eine Instanz von Edge. Microsoft schreibt, dass der On-Premises-Sync keine gleichzeitigen Sitzungen unterstützt und nur mit Profilen wirkt, die an ein Konto der Active-Directory-Domäne gebunden sind. Ob er auf diesen Servern wirkt, zeigt der Wert 1 allein deshalb nicht.",
+      "meaning": "Hat ein Benutzer Sitzungen auf mehreren Servern zugleich, können nach Microsoft beim nächsten Start von Edge die Daten der einen Sitzung von denen einer anderen überschrieben werden. Microsoft nennt den On-Premises-Sync für Benutzer nur im Active Directory als einen der zwei Wege, die Daten von Edge auf nicht persistenten Maschinen zu erhalten (der andere ist Enterprise Sync mit Microsoft Entra ID), aber ohne gleichzeitige Sitzungen und nur mit Profilen, die an ein Konto der Active-Directory-Domäne gebunden sind. Ob er wirkt, zeigt der Wert 1 allein deshalb nicht.",
       "todo": [
         {
           "text": "Nachsehen, ob der On-Premises-Sync gewollt ist und ob dieselben Benutzer Sitzungen auf mehreren Servern zugleich haben",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Enable using roaming copies for Microsoft Edge profile data“; Sitzungen der Benutzer in Citrix Studio",
+          "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Enable using roaming copies for Microsoft Edge profile data“; Sitzungen der Benutzer in Citrix Studio",
           "sign": "die Richtlinie ist eingeschaltet, und dieselben Benutzer haben Sitzungen auf mehreren Servern"
         },
         {
-          "text": "Wo gleichzeitige Sitzungen vorkommen, den On-Premises-Sync per Richtlinie abschalten",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Enable using roaming copies for Microsoft Edge profile data“ deaktivieren",
-          "sign": "Zustandsbild meldet den On-Premises-Sync als nicht eingeschaltet"
+          "text": "Wo gleichzeitige Sitzungen vorkommen und die Benutzer Konten in Microsoft Entra ID haben: zuerst Enterprise Sync einrichten, danach den On-Premises-Sync per Richtlinie abschalten. Haben die Benutzer nur Konten im Active Directory, bleibt der On-Premises-Sync der Weg von Microsoft, dann mit dem Team für Citrix klären, ob gleichzeitige Sitzungen eines Benutzers auf mehreren Servern nötig sind",
+          "where": "Enterprise Sync nach der Seite „Configure Microsoft Edge enterprise sync“ von Microsoft; danach in der Gruppenrichtlinie für die Server die Richtlinie „Enable using roaming copies for Microsoft Edge profile data“ deaktivieren",
+          "sign": "Enterprise Sync gleicht die Daten von Edge ab, und Zustandsbild meldet den On-Premises-Sync als nicht eingeschaltet"
         }
       ],
       "source": {
@@ -3051,24 +3053,24 @@
       },
       "findings": {
         "ok": "Der Ordner der Benutzerdaten von Microsoft Edge ist nicht per Richtlinie verlegt.",
-        "check": "Der Ordner der Benutzerdaten von Microsoft Edge ist per Richtlinie verlegt. Den Pfad nennt der Befund nicht, weil er Namen von Servern oder Benutzern tragen kann; er steht unter den gelesenen Werten von Microsoft Edge.",
+        "check": "Der Ordner der Benutzerdaten von Microsoft Edge ist per Richtlinie verlegt. Den Pfad nennt der Befund nicht, weil er Namen von Servern oder Benutzern tragen kann. Er steht im Rohwert „Microsoft Edge – Ordner der Benutzerdaten“ im Zustandsbild.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Liegen Inhalte des Ordners der Benutzerdaten auf einer Freigabe oder wandern sie mit dem Profil, kann das nach Microsoft die Zuverlässigkeit und die Leistung von Edge beeinträchtigen, und Microsoft nennt das Umleiten oder Roamen dieser Inhalte nicht unterstützt (empfohlen ist Enterprise Sync). Zu einem Ordner, der nur auf ein anderes lokales Laufwerk verlegt ist, sagt Microsoft nichts. Die Prüfung ist eine Faustregel des Katalogs, denn ob der Pfad lokal ist, kann sie am Wert nicht erkennen.",
       "todo": [
         {
           "text": "Nachsehen, wohin der Ordner der Benutzerdaten zeigt",
-          "where": "Gruppenrichtlinie der Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Set the user data directory“; im Bericht die gelesenen Werte von Microsoft Edge",
+          "where": "Rohwert „Microsoft Edge – Ordner der Benutzerdaten“ im Zustandsbild; Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge, Richtlinie „Set the user data directory“",
           "sign": "der Pfad zeigt auf eine Freigabe, auf einen umgeleiteten Profilordner oder auf ein lokales Laufwerk"
         },
         {
-          "text": "Zeigt er auf eine Freigabe oder auf einen Ordner, der mit dem Profil wandert: die Richtlinie zurücknehmen und die Daten von Edge nach Microsoft über Enterprise Sync abgleichen",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Set the user data directory“",
+          "text": "Zeigt er auf eine Freigabe oder auf einen Ordner, der mit dem Profil wandert: die Richtlinie zurücknehmen und die Daten von Edge auf einem der zwei Wege von Microsoft erhalten, mit Enterprise Sync für Konten in Microsoft Entra ID oder mit dem On-Premises-Sync für Konten nur im Active Directory (der keine gleichzeitigen Sitzungen unterstützt)",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Set the user data directory“",
           "sign": "Zustandsbild meldet den Ordner der Benutzerdaten als nicht verlegt"
         },
         {
           "text": "Bleibt der Ordner lokal verlegt: ihn nach Microsoft weder auf die Wurzel eines Laufwerks noch auf einen Ordner legen, der anderen Zwecken dient",
-          "where": "in der Gruppenrichtlinie der Server, Richtlinie „Set the user data directory“",
+          "where": "in der Gruppenrichtlinie für die Server, Richtlinie „Set the user data directory“",
           "sign": "der Pfad ist ein eigener Ordner nur für die Daten von Edge"
         }
       ],
@@ -3094,16 +3096,16 @@
         "check": "Der Schalter, mit dem sich die Updates von Office ein- und ausschalten lassen, ist per Richtlinie nicht ausgeblendet (gelesener Wert: {apps.office.hideEnableDisableUpdates}; 1 = ausgeblendet, ein Strich heißt: nicht gesetzt).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ist der Schalter für Updates sichtbar, bietet Office in den Sitzungen an, die Updates ein- oder auszuschalten (Erläuterung des Katalogs nach dem Namen der Richtlinie „Hide option to enable or disable updates“). Microsoft setzt den Wert in seinem Beispiel für Microsoft 365 Apps auf Windows 10 und 11 Enterprise mit mehreren Sitzungen (Azure Virtual Desktop) ohne einen Grund auf 1, für Office LTSC auf Windows Server gibt es keine Seite, und die Prüfung überträgt das als Faustregel des Katalogs. Der Wert verbirgt nur den Schalter und zeigt nicht, ob Office sich selbst aktualisiert.",
+      "meaning": "Ist der Schalter für Updates sichtbar, bietet Office in den Sitzungen an, die Updates ein- oder auszuschalten (Erläuterung des Katalogs nach dem Namen der Richtlinie „Hide option to enable or disable updates“). Microsoft setzt den Wert in seinem Beispiel für Microsoft 365 Apps auf Windows 10 und 11 Enterprise mit mehreren Sitzungen (Azure Virtual Desktop) ohne einen Grund auf 1, für Office LTSC auf Windows Server fand sich keine Seite von Microsoft, und die Prüfung überträgt das als Faustregel des Katalogs. Der Wert verbirgt nur den Schalter und zeigt nicht, ob Office sich selbst aktualisiert.",
       "todo": [
         {
           "text": "Nachsehen, auf welchem Weg Office auf den Servern aktualisiert wird",
-          "where": "Master-Image; Gruppenrichtlinie der Server, Administrative Vorlage „Microsoft Office 2016 (Machine)“, Bereich „Updates“",
+          "where": "Rohwerte „Microsoft Office – Automatische Updates laut Installation“, „Microsoft Office – Aufgabe für automatische Updates eingeschaltet“ und „Microsoft Office – Updatequelle aus der Richtlinie“ im Zustandsbild; Master-Image; Gruppenrichtlinie für die Server, Administrative Vorlage „Microsoft Office 2016 (Machine)“, Bereich „Updates“",
           "sign": "der Weg ist bekannt: über das Master-Image oder über die automatischen Updates von Office"
         },
         {
           "text": "Wird Office über das Master-Image aktualisiert: den Schalter für Updates per Richtlinie ausblenden, wie in Microsofts Beispiel für Microsoft 365 Apps",
-          "where": "in der Gruppenrichtlinie der Server, Administrative Vorlage „Microsoft Office 2016 (Machine)“, Richtlinie „Hide option to enable or disable updates“",
+          "where": "in der Gruppenrichtlinie für die Server, Administrative Vorlage „Microsoft Office 2016 (Machine)“, Richtlinie „Hide option to enable or disable updates“",
           "sign": "Zustandsbild meldet den Schalter als ausgeblendet"
         }
       ],
@@ -3129,22 +3131,22 @@
         "check": "Die automatische Aktualisierung von Microsoft Teams ist nicht abgeschaltet (Wert disableAutoUpdate: {apps.teams.disableAutoUpdate}; 1 = abgeschaltet, ein Strich heißt: nicht gesetzt).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Aktualisiert sich Teams auf einem nicht persistenten Server selbst, ist das Update nach dem nächsten Neustart wieder weg (Erläuterung des Katalogs). Microsoft beschreibt für nicht persistente VDI den Wert disableAutoUpdate, der die automatische Aktualisierung verhindert und den Teams-Versionen nach 23306.3314.2555.9628 auswerten, nennt dafür aber keinen Grund. Ist der Wert gesetzt, installiert und aktualisiert das Installationspaket von Teams nach Microsoft das Besprechungs-Add-in für Outlook nicht mehr, die Administratoren müssen es dann selbst bereitstellen.",
+      "meaning": "Aktualisiert sich Teams auf einem nicht persistenten Server selbst, ist das Update nach dem nächsten Neustart wieder weg (Erläuterung des Katalogs). Microsoft beschreibt für nicht persistente VDI den Wert disableAutoUpdate, der die automatische Aktualisierung verhindert und den nur Versionen von Teams nach 23306.3314.2555.9628 auswerten können, nennt dafür aber keinen Grund. Ist der Wert gesetzt, installiert und aktualisiert das Installationspaket von Teams nach Microsoft das Besprechungs-Add-in für Outlook nicht mehr, die Administratoren müssen es dann selbst bereitstellen.",
       "todo": [
         {
           "text": "Nachsehen, ob der Wert disableAutoUpdate im Master-Image fehlt oder ob eine Richtlinie ihn setzt",
-          "where": "Master-Image (Windows-Registrierung, Schlüssel HKLM\\SOFTWARE\\Microsoft\\Teams); Gruppenrichtlinie der Server",
+          "where": "Master-Image (Windows-Registrierung, Schlüssel HKLM\\SOFTWARE\\Microsoft\\Teams); Gruppenrichtlinie für die Server",
           "sign": "der Wert fehlt oder steht nicht auf 1"
         },
         {
           "text": "Die automatische Aktualisierung von Teams abschalten (Wert disableAutoUpdate auf 1) und das Besprechungs-Add-in selbst bereitstellen, wie Microsoft es beschreibt",
           "where": "bei nicht persistenten Servern im Master-Image oder per Gruppenrichtlinie, danach die Server neu bereitstellen",
-          "sign": "Zustandsbild meldet die automatische Aktualisierung als abgeschaltet"
+          "sign": "Zustandsbild meldet die automatische Aktualisierung als abgeschaltet, und der Rohwert „Microsoft Teams – Besprechungs-Add-in maschinenweit vorhanden“ im Zustandsbild zeigt das Add-in als vorhanden"
         },
         {
           "text": "Teams mit jeder Pflege des Master-Image erneuern, denn nach Microsoft zeigt Teams den Benutzern bei Versionen, die älter als 90 Tage sind, eine Sperrseite",
           "where": "im Master-Image, danach die Server neu bereitstellen",
-          "sign": "die Version des neuen Teams unter den gelesenen Werten von Microsoft Teams ist nicht älter als 90 Tage"
+          "sign": "für die Version im Rohwert „Microsoft Teams – Version des neuen Teams“ im Zustandsbild liegt das Datum der Sperrseite noch in der Zukunft (Seite „Version update history for the new and classic Microsoft Teams app“ von Microsoft, Abschnitt VDI, Spalte „90-day blocking UI“)"
         }
       ],
       "source": {
@@ -3166,14 +3168,14 @@
       },
       "findings": {
         "ok": "Der Rückfallmodus von Microsoft Teams ist abgeschaltet oder auf Audio begrenzt (Wert DisableFallback: {apps.teams.disableFallback}; 1 = aus, 2 = nur Audio).",
-        "check": "Der Rückfallmodus von Microsoft Teams ist eingeschaltet (Wert DisableFallback: {apps.teams.disableFallback}; 0 oder ein Strich, also nicht gesetzt, heißt: Rückfall eingeschaltet). Das ist eine Entscheidung des Betreibers, kein Fehler.",
+        "check": "Der Rückfallmodus von Microsoft Teams ist nicht abgeschaltet und nicht auf Audio begrenzt (Wert DisableFallback: {apps.teams.disableFallback}; 0 = Rückfall eingeschaltet, 1 = aus, 2 = nur Audio, andere Werte nennt Microsoft nicht; ein Strich heißt: maschinenweit (HKLM) nicht gesetzt, dann ist der Rückfall nach Microsoft eingeschaltet, sofern kein Wert je Benutzer gesetzt ist, den das Zustandsbild nicht liest). Das ist eine Entscheidung des Betreibers, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Fällt Teams in einer Sitzung auf die Technik von Citrix ohne Optimierung zurück, laufen Audio, Video und Bildschirmfreigabe nach Citrix auf dem Server, und mit Video ist dann hohe CPU-Last auf dem VDA zu erwarten. Microsoft nennt den Rückfall für Benutzer an einem nicht unterstützten Endgerät, nach Citrix wirkt DisableFallback nicht, wenn Workspace-App oder Endgerät die Optimierung nicht unterstützen, und Teams wertet den Wert ab Version 24257 aus. Keiner der Hersteller nennt einen Sollwert, die Prüfung ist eine Faustregel des Katalogs, und ob der Rückfall bleibt, entscheidet der Betreiber.",
+      "meaning": "Fällt Teams ohne Optimierung zurück, laufen nach Citrix beim klassischen Teams mit Optimierung über WebRTC Audio, Video und Bildschirmfreigabe auf dem Server, mit Video bei hoher CPU-Last auf dem VDA, und die neue VDI-Lösung fällt auf die normale Umleitung von Audio und Video zurück. Microsoft nennt den Rückfall für Benutzer an nicht unterstützten Endgeräten, und Teams wertet DisableFallback ab Version 24257 aus, nach Citrix aber nur, wo Citrix Workspace-App und Endgerät die Optimierung unterstützen. Keiner der Hersteller nennt einen Sollwert, die Prüfung ist eine Faustregel des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, ob Benutzer sich von Endgeräten verbinden, die die Optimierung von Teams nicht unterstützen, und ob der Rückfall für sie gewollt ist",
-          "where": "Team für die Endgeräte und Citrix Workspace; Wert DisableFallback im Master-Image (Windows-Registrierung, Schlüssel HKLM\\SOFTWARE\\Microsoft\\Teams)",
+          "where": "Team für die Endgeräte und die Citrix Workspace-App; Wert DisableFallback im Master-Image (Windows-Registrierung, Schlüssel HKLM\\SOFTWARE\\Microsoft\\Teams)",
           "sign": "die Entscheidung ist getroffen, ob Audio und Video ohne Optimierung auf den Servern laufen dürfen"
         },
         {
@@ -3204,7 +3206,7 @@
         "check": "Die WebView2-Runtime ist nicht maschinenweit installiert (HKLM); eine Installation je Benutzer liest das Zustandsbild nicht.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ohne die WebView2-Runtime fehlt Teams eine Voraussetzung, denn Microsoft verlangt das WebView2-Framework auf Windows Server und in Umgebungen mit mehreren Benutzern und rät, es auf den aktuellsten Stand zu bringen. Die Prüfung sieht nur eine maschinenweite Installation, eine Installation je Benutzer liest das Zustandsbild nicht. Dieselbe Seite von Microsoft (Stand 25.08.2026) nennt Oktober 2026 als Ende der Unterstützung von Teams auf Windows Server 2022, während ihre Liste der Voraussetzungen Windows Server 2022 weiter führt.",
+      "meaning": "Ohne die WebView2-Runtime läuft das neue Teams für die Benutzer nicht so, wie Microsoft es unterstützt, denn Microsoft verlangt das WebView2-Framework auf Windows Server und in Umgebungen mit mehreren Benutzern und rät, es auf den aktuellsten Stand zu bringen. Die Prüfung sieht nur eine maschinenweite Installation, eine Installation je Benutzer liest das Zustandsbild nicht. Dieselbe Seite von Microsoft (Stand 25.08.2026) nennt Oktober 2026 als Ende der Unterstützung von Teams auf Windows Server 2022, während ihre Liste der Voraussetzungen Windows Server 2022 weiter führt.",
       "todo": [
         {
           "text": "Nachsehen, ob die WebView2-Runtime im Master-Image für alle Benutzer installiert ist",
@@ -3236,29 +3238,29 @@
       },
       "findings": {
         "ok": "Ein maschinenweit installiertes klassisches Teams wurde nicht gefunden. Eine Installation je Benutzer im Profil sieht die Prüfung nicht.",
-        "check": "Das klassische Teams ist neben dem neuen Teams noch maschinenweit installiert (gefunden: C:\\Program Files (x86)\\Microsoft\\Teams\\current\\Teams.exe). Das ist ein Hinweis aus der Praxis, kein Fehler.",
+        "check": "Das klassische Teams ist neben dem neuen Teams noch maschinenweit installiert (gefunden: C:\\Program Files (x86)\\Microsoft\\Teams\\current\\Teams.exe). Microsoft lässt es deinstallieren, sobald das neue Teams maschinenweit bereitgestellt ist.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ist das klassische Teams neben dem neuen Teams noch installiert, fehlt nach Manuel Winkel ein Schritt der Installation, denn er schreibt für das neue Teams auf Citrix-Servern, dass eine noch vorhandene alte Installation von Teams zuerst deinstalliert werden muss (2026). Die Prüfung sieht nur das maschinenweit installierte klassische Teams an dem Ort, den Citrix dafür nennt, eine Installation je Benutzer im Profil oder nur das Installationsprogramm sieht sie nicht. In den geöffneten Seiten rät kein Hersteller ausdrücklich zum Entfernen, die Prüfung ist eine Empfehlung aus der Praxis.",
+      "meaning": "Ist das klassische Teams im Master-Image noch maschinenweit installiert, steht es den Benutzern nach jedem Neustart wieder neben dem neuen Teams bereit, auch wenn Microsoft es selbst zu entfernen versucht (Erläuterung des Katalogs). Microsoft lässt die Administratoren den Teams Machine-Wide Installer mit ihren Werkzeugen der Softwareverteilung deinstallieren, und nach Manuel Winkel (2026) muss eine alte Installation von Teams vor dem neuen Teams deinstalliert werden. Die Prüfung sieht nur eine maschinenweite Installation an dem Ort, den Citrix nennt, keine je Benutzer im Profil.",
       "todo": [
         {
           "text": "Nachsehen, ob das klassische Teams im Master-Image noch installiert ist",
-          "where": "Master-Image, installierte Programme (Teams Machine-Wide Installer, Microsoft Teams)",
+          "where": "Rohwert „Microsoft Teams – Klassisches Teams noch vorhanden“ im Zustandsbild; Master-Image, installierte Programme („Teams Machine-Wide Installer“ und „Microsoft Teams“)",
           "sign": "das klassische Teams steht dort"
         },
         {
-          "text": "Das klassische Teams im Master-Image entfernen, zum Beispiel mit der Option des Bootstrappers von Microsoft, die das klassische Teams entfernt (so Manuel Winkel), dann das Master-Image versiegeln",
+          "text": "Nachdem das neue Teams im Master-Image maschinenweit bereitgestellt ist, dort den Teams Machine-Wide Installer und das klassische Teams mit den Werkzeugen der Softwareverteilung deinstallieren, wie Microsoft es beschreibt, dann das Master-Image versiegeln",
           "where": "im Master-Image, danach die Server neu bereitstellen; nicht auf dem einzelnen Server",
           "sign": "Zustandsbild meldet kein maschinenweit installiertes klassisches Teams mehr"
         }
       ],
       "source": {
-        "vendor": "Manuel Winkel",
-        "title": "Install new Microsoft Teams (version 2) in Citrix",
-        "url": "https://www.deyda.net/index.php/en/2026/08/10/install-new-microsoft-teams-version-2-in-citrix/",
-        "date": "2026-09-21"
+        "vendor": "Microsoft",
+        "title": "Uninstalling classic Microsoft Teams",
+        "url": "https://learn.microsoft.com/en-us/microsoftteams/teams-classic-client-uninstall",
+        "date": "2026-02-23"
       },
-      "kind": "practice",
+      "kind": "vendor",
       "relates": ["system"]
     }
   ]

@@ -81,8 +81,10 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
     It 'liest einen vollstaendigen Katalog und kennt jeden Fakt' {
         $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
         @($c.checks).Count | Should -Be 2; $c.thresholds.diskFreeGB.value | Should -Be 10; $c.areas[0].id | Should -Be 'size'; $c.grades.act.word | Should -Be 'Handeln'
-        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 168; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 62
-        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 210                         # 168 feste, 38 der ausgelieferten Liste, 4 der simapp
+        # Korrekturrunde 1 von Task 14c: zwei abgeleitete Fakten der Anwendungen (apps.edgeUpdatesOff, apps.webView2UpdatesOff; Entscheidung ZB-R57)
+        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 170; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 64
+        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 212                         # 170 feste, 38 der ausgelieferten Liste, 4 der simapp
+        $t['apps.edgeUpdatesOff'].Area | Should -Be 'apps'; $t['apps.edgeUpdatesOff'].Type | Should -Be 'bool'; $t['apps.webView2UpdatesOff'].Derived | Should -BeTrue
         $ta['apps.edge.installed'].Area | Should -Be 'apps'; $ta['apps.edge.installed'].Type | Should -Be 'bool'; $ta['apps.edge.backgroundMode'].Type | Should -Be 'value'
         $ta['apps.edge.userDataDir'].Type | Should -Be 'text:free'; $ta['apps.office.updateTask'].Type | Should -Be 'bool'; $ta['apps.office.platform'].Documented | Should -BeFalse
         $ta['apps.simapp.cacheMode'].Label | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart'; $ta['apps.simapp.installed'].Label | Should -Be 'Sim-Fachanwendung'; $t['size.cpuLogical'].Label | Should -Be ''
@@ -369,7 +371,7 @@ Describe 'Fakten des Zustandsbilds' {
         & $val 'size.commitOfRamPct' | Should -Be 58; & $val 'size.vmware' | Should -BeTrue; & $val 'size.vmtoolsMajor' | Should -Be 11; & $val 'size.balloonRunning' | Should -BeFalse
         & $val 'size.otherNetAdapters' | Should -Be 1; & $val 'size.lsiControllers' | Should -Be 1; & $val 'network.rssOff' | Should -Be 1; & $val 'sessions.idleLimitMin' | Should -Be 180
         & $val 'vda.wemServicesNotReady' | Should -Be 2; & $val 'print.citrixMapping' | Should -BeTrue      # der Anmeldedienst steht, der dritte Dienst fehlt in der Liste
-        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 168                       # gelesene Werte sind selbst Fakten
+        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 170                       # gelesene Werte sind selbst Fakten
     }
     It 'findet den Windows-Dienst des WEM-Agenten am Dienstnamen SENS' {   # ZB-R34
         $citrix = @(@{ Name = 'Citrix WEM Agent Host Service'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'Citrix WEM User Logon Service'; State = 'Running'; StartMode = 'Auto' })
@@ -419,7 +421,7 @@ Describe 'Fakten des Zustandsbilds' {
         $rows = @((& $row 'edge' 'installed' 'read' '' $true $null), (& $row 'edge' 'backgroundMode' 'read' '' 1 $null), (& $row 'edge' 'userDataDir' 'read' '' $null '\\fs01\edge$'),
             (& $row 'edge' 'sleepingTabs' 'absent' '' $null $null), (& $row 'simapp' 'installed' 'read' '' $false $null), (& $row 'simapp' 'cacheMode' 'absent' 'notInstalled' $null $null))
         $f = Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = $rows }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles
-        @($f.Keys).Count | Should -Be 210; @($f.Keys)[168] | Should -BeLike 'apps.*'
+        @($f.Keys).Count | Should -Be 212; @($f.Keys)[170] | Should -BeLike 'apps.edge.*'
         $f['apps.edge.installed'].Value | Should -BeTrue; $f['apps.edge.backgroundMode'].Value | Should -Be 1; $f['apps.edge.userDataDir'].Value | Should -Be '\\fs01\edge$'
         $f['apps.edge.sleepingTabs'].State | Should -Be 'absent'; $f['apps.edge.sleepingTabs'].Reason | Should -Be ''
         $f['apps.simapp.installed'].Value | Should -BeFalse; $f['apps.simapp.cacheMode'].State | Should -Be 'absent'; $f['apps.simapp.cacheMode'].Reason | Should -Be 'notInstalled'
@@ -671,7 +673,7 @@ Describe 'Bewertung' {
         $s = & $get $r 'apps.simCache'; $s.grade | Should -Be 'check'; $s.finding | Should -Be 'Cache-Betriebsart 1.'
         $s.value | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart: 1; Sim-Fachanwendung – Datenordner der Sim-Fachanwendung: Text valueSet'; ($s | ConvertTo-Json -Depth 6) | Should -Not -Match 'fs01'
         $raw = $r.raw | Where-Object id -eq 'apps.simapp.dataPath'; $raw.free | Should -Be '\\fs01\simapp$'; $raw.text | Should -Be ''; $raw.label | Should -Be 'Sim-Fachanwendung – Datenordner der Sim-Fachanwendung'; $raw.area | Should -Be 'apps'
-        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 210
+        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 212
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'read' '' 2 $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'ok'
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'absent' '' $null $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'check'   # nicht gesetzt ist ungleich 2
         # die Installation laesst sich nicht lesen: nicht pruefbar mit dem Grund
@@ -738,7 +740,7 @@ Describe 'Bewertung' {
         (& $raw 'vda.controllers').items[0].text | Should -Be 'Entry: ddc01.sim.local; Kind: fqdn; From: policy'; (& $raw 'vda.controllers').items[0].free | Should -Be ''
         (& $raw 'security.defenderSharedSignatures').text | Should -Be '\\fs01\defender$'; (& $raw 'size.cpuLogical').state | Should -Be 'absent'; (& $raw 'size.cpuLogical').text | Should -Be ''
         (& $raw 'size.cpuLogical').stateText | Should -Be 'Text stateAbsent'; (& $raw 'size.memTotalMB').stateText | Should -Be 'Text stateRead'
-        @($r.raw).Count | Should -Be 168
+        @($r.raw).Count | Should -Be 170
     }
     It 'macht eine Pruefung, deren Bewertung scheitert, nicht pruefbar und bewertet die anderen' {   # ZB-R27, Zusatz b
         $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
@@ -943,7 +945,7 @@ Describe 'Bewertung: Regeln im Einzelnen' {
         foreach ($id in 'operation.minFreeGB', 'apps.simapp.installed') {
             $e = $r.raw | Where-Object id -eq $id; $e.state | Should -Be 'unreadable' -Because $id; $e.reason | Should -Be 'error' -Because $id; $e.stateText | Should -Be 'Text stateUnreadable' -Because $id; $e.text | Should -Be ''
         }
-        @($r.raw).Count | Should -Be 210; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
+        @($r.raw).Count | Should -Be 212; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
     }
     It 'zeigt einen Rohwert, dessen Formatierung scheitert, als nicht lesbar' {
         # eine Zeit ausserhalb dessen, was ein Datum fassen kann: der Rohwert und der Satz zur Reichweite der Protokolle scheitern nicht
@@ -995,10 +997,10 @@ Describe 'Katalog in src' {
             'security.twoScanners', 'security.passiveWithoutMde', 'security.citrixExclusions', 'security.wemExclusions', 'network.smb1', 'network.dnsCount', 'network.rss',
             'maintenance.sessionTriggerTasks', 'maintenance.defenderRandomize',
             'apps.edgeAutoUpdate', 'apps.edgeUpdateCheckOff', 'apps.edgeWebView2Update', 'apps.edgeBackgroundMode', 'apps.edgeSleepingTabs', 'apps.edgeAutoDiscard', 'apps.edgeRoamingProfile',
-            'apps.teamsAutoUpdate', 'apps.teamsWebView2')
+            'apps.teamsAutoUpdate', 'apps.teamsWebView2', 'apps.teamsClassic')
         # mit den drei Pruefungen aus den weiteren Praxisquellen: size.workerCpuMax (Task 14a), print.operationalLogOff (14b), apps.teamsClassic (14c)
         $script:Practice = @('size.commitAboveRam', 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory', 'operation.uptime', 'operation.updateAge', 'operation.powerPlan', 'sessions.disconnectLimit', 'sessions.idleLimit',
-            'print.operationalLogOff', 'security.networkProtection', 'events.sinceBoot', 'maintenance.updateServiceEnabled', 'apps.teamsClassic')
+            'print.operationalLogOff', 'security.networkProtection', 'events.sinceBoot', 'maintenance.updateServiceEnabled')
         $script:K3 = @('events.crashes', 'events.storage', 'events.fileserver', 'events.coverage', 'events.sinceBoot', 'sessions.unloadedProfiles', 'sessions.tempProfiles')
         # zwoelf Praxisquellen (Entscheidung ZB-R7): der Blog von Kasper Johansen ist nicht mehr erreichbar und wird nicht verwendet
         $script:PracticeSources = @('BIS-F', 'Carl Stalhood', 'GO-EUC', 'James Kindon', 'James Rankin', 'Thomas Kötzing', 'Manuel Winkel', 'Aaron Parker', 'Trentent Tye',
@@ -1009,11 +1011,11 @@ Describe 'Katalog in src' {
             'profile.containerFull' = 'Aaron Parker'; 'profile.containersPerUser' = 'Aaron Parker'
             'print.driversInSpooler' = 'Thomas Kötzing'; 'print.isolationOff' = 'Thomas Kötzing'; 'print.driverCount' = 'Thomas Kötzing'; 'security.signatureAge' = 'John Billekens'
             'security.citrixExclusions' = 'James Rankin'; 'security.wemExclusions' = 'Carl Stalhood'; 'maintenance.sessionTriggerTasks' = 'James Rankin'
-            'apps.edgeStartupBoost' = 'Aaron Parker' }
+            'apps.edgeStartupBoost' = 'Aaron Parker'; 'apps.teamsClassic' = 'Manuel Winkel' }
     }
     It 'enthaelt genau die Pruefungen des Plans mit Bereich, Art und Schwellen' {
         @($Real.checks.id) | Should -Be @($PlanChecks.Values | ForEach-Object { $_ })
-        @($Real.checks).Count | Should -Be 80; $Vendor.Count | Should -Be 31; $Practice.Count | Should -Be 14
+        @($Real.checks).Count | Should -Be 80; $Vendor.Count | Should -Be 32; $Practice.Count | Should -Be 13
         foreach ($c in $Real.checks) {
             $c.id | Should -BeLike ($c.area + '.*')
             $c.kind | Should -Be $(if ($Vendor -contains $c.id) { 'vendor' } elseif ($Practice -contains $c.id) { 'practice' } else { 'rule' }) -Because $c.id
@@ -1199,9 +1201,9 @@ Describe 'Katalog in src' {
         (Get-Content $CatFile -Raw) | Should -Not -Match 'Provisioning Services|\bPVS\b'                              # nichts, was nur fuer Provisioning Services gilt
     }
     It 'stuetzt keine Pruefung auf einen Wert ohne dokumentierte Lesequelle' {
-        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 206
+        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 208
         foreach ($c in $Real.checks) { foreach ($v in $c.values) { $t[$v].Documented | Should -BeTrue -Because "$($c.id): $v" } }
-        @($Real.values.PSObject.Properties.Name).Count | Should -Be 168
+        @($Real.values.PSObject.Properties.Name).Count | Should -Be 170
     }
     It 'fuehrt die Quelle jeder Pruefung im Nachweis' {
         foreach ($c in $Real.checks) {
@@ -1437,9 +1439,9 @@ Describe 'Katalog in src' {
         $na.finding | Should -BeExactly ('Trifft nicht zu: der Wert „Betriebsart von Microsoft Defender Antivirus“ wird auf diesem Server nicht gelesen, weil das Produkt, zu dem er gehört, nicht installiert ist ' +
             '(bei Werten zu VMware: weil der Server keine VMware-VM ist).')
         (Get-Check @{ 'print.spooler' = (New-WorkerPerfHealthValue 'unreadable' 'rights') } @{} 'print.spoolerStopped' $Real).finding | Should -Not -Match '='
-        # ein Rohwert, den ein Schritt beim Namen nennt, heisst im Katalog genau so
-        $labels = @($Real.values.PSObject.Properties.Value)
-        foreach ($c in $Real.checks) { foreach ($t in $c.todo) { foreach ($part in $t.text, $t.where, $t.sign) {
+        # ein Rohwert, den ein Schritt oder ein Befund beim Namen nennt, heisst im Katalog oder in der Anwendungsliste genau so ("<Anwendung> – <Probe>")
+        $labels = @($Real.values.PSObject.Properties.Value) + @(@((Get-WorkerPerfHealthFactTable $Apps).Values) | ForEach-Object { $_.Label } | Where-Object { $_ })
+        foreach ($c in $Real.checks) { foreach ($t in @($c.todo) + @([pscustomobject]@{ text = $c.findings.check; where = $c.findings.ok; sign = '' })) { foreach ($part in $t.text, $t.where, $t.sign) {
                     foreach ($m in [regex]::Matches($part, 'Rohwerte? („[^“]+“(, | und )?)+')) { foreach ($q in [regex]::Matches($m.Value, '„([^“]+)“')) { $labels | Should -Contain $q.Groups[1].Value -Because $c.id } } } } }
     }
     It 'fuehrt mit den Schritten der Sicherheitsprodukte und des Dienstes Windows Update zu dem, was Microsoft sagt' {      # Korrekturrunde 1 von Task 14b, Punkte 1 bis 3, 12
@@ -1473,7 +1475,7 @@ Describe 'Katalog in src' {
         $w = $check['security.wemExclusions']; $w.kind | Should -Be 'vendor'; $w.source.vendor | Should -Be 'Citrix'; $w.source.title | Should -Match 'CTX696648'; $w.meaning | Should -Match 'Carl Stalhood'
         foreach ($id in 'security.wemExclusions', 'security.citrixExclusions') { $check[$id].source.date | Should -Be '2026-05-25' -Because $id }
         $Proof | Should -Match '\| Citrix \| Endpoint Security, Antivirus, and Antimalware Best Practices \(CTX696648\) \| \S+ \| 2026-05-25 \|'
-        @($Real.checks | Where-Object kind -eq 'vendor').Count | Should -Be 31; @($Real.checks | Where-Object kind -eq 'practice').Count | Should -Be 14; @($Real.checks | Where-Object kind -eq 'rule').Count | Should -Be 35
+        @($Real.checks | Where-Object kind -eq 'vendor').Count | Should -Be 32; @($Real.checks | Where-Object kind -eq 'practice').Count | Should -Be 13; @($Real.checks | Where-Object kind -eq 'rule').Count | Should -Be 35
     }
     It 'sagt im Ereignisbild nur, was die gelesenen Protokolle hergeben' {                                   # Korrekturrunde 1 von Task 14b, Punkte 4, 5, 19
         $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
@@ -1775,7 +1777,8 @@ Describe 'Katalog in src: simulierte Stunde, Schnelllauf, weitere Anwendung, Nac
         $r = Get-SimResult $SimRun; $g = Get-Grades $r; $g.Count | Should -Be 80
         @($g.Keys | Where-Object { $g[$_] -eq 'act' } | Sort-Object) | Should -Be @('print.driversInSpooler', 'profile.containerFull')
         # print.operationalLogOff (PXH-02, Task 14b) ist nach dem Plan dazugekommen: die Simulation fuehrt das Betriebsprotokoll zum Drucken als ausgeschaltet
-        @($g.Keys | Where-Object { $g[$_] -eq 'check' } | Sort-Object) | Should -Be @('apps.edgeBackgroundMode', 'apps.teamsAutoUpdate', 'events.crashes', 'maintenance.tasksInWorkHours', 'operation.pendingRestart', 'print.operationalLogOff')
+        # apps.edgeWebView2Update seit der Korrekturrunde 1 von Task 14c (ZB-R57): die Simulation setzt die Update-Vorgabe fuer alle Kanaele auf 0 und keine eigene fuer die Runtime
+        @($g.Keys | Where-Object { $g[$_] -eq 'check' } | Sort-Object) | Should -Be @('apps.edgeBackgroundMode', 'apps.edgeWebView2Update', 'apps.teamsAutoUpdate', 'events.crashes', 'maintenance.tasksInWorkHours', 'operation.pendingRestart', 'print.operationalLogOff')
         @($g.Keys | Where-Object { $g[$_] -eq 'unknown' } | Sort-Object) | Should -Be @('security.citrixExclusions', 'security.wemExclusions')
         @($g.Keys | Where-Object { $g[$_] -eq 'na' }).Count | Should -Be 0
         $g['operation.powerPlan'] | Should -Be 'ok'; $g['print.mappingClientSupported'] | Should -Be 'ok'       # Hoechstleistung; Client 6.4.1
@@ -1800,16 +1803,16 @@ Describe 'Katalog in src: simulierte Stunde, Schnelllauf, weitere Anwendung, Nac
         $catFile = Join-Path $TestDrive 'health.test.json'; [IO.File]::WriteAllText($catFile, ($j | ConvertTo-Json -Depth 12))
         $cat = Read-WorkerPerfHealthCatalogue $catFile @(Read-WorkerPerfHealthApps $appFile)
         { Read-WorkerPerfHealthCatalogue $catFile $Apps } | Should -Throw "*Pruefung 'apps.simCache'*Anwendung 'simapp' steht nicht in der Anwendungsliste*"
-        # auf dem simulierten Server ist sie nicht installiert: trifft nicht zu, zaehlt nicht
+        # auf dem simulierten Server ist sie nicht installiert: trifft nicht zu, zaehlt nicht (drei zum Pruefen seit der Korrekturrunde 1 von Task 14c: apps.edgeWebView2Update)
         $r = Get-SimResult (Invoke-SimHealthOnly (Join-Path $TestDrive 'ho-app') @{ AppsFile = $appFile }) $cat; $a = $r.areas | Where-Object id -eq 'apps'
         $a.checks[-1].id | Should -Be 'apps.simCache'; $a.checks[-1].grade | Should -Be 'na'; $a.checks[-1].why | Should -Be 'Sim-Fachanwendung ist nicht installiert'
-        ($a.apps | Where-Object key -eq 'simapp').text | Should -Be 'Sim-Fachanwendung: nicht installiert'; $a.countsText | Should -Be '2 zum Prüfen'; $r.summary.text | Should -Be '1 Bereich zum Handeln, 5 zum Prüfen, 5 in Ordnung'
+        ($a.apps | Where-Object key -eq 'simapp').text | Should -Be 'Sim-Fachanwendung: nicht installiert'; $a.countsText | Should -Be '3 zum Prüfen'; $r.summary.text | Should -Be '1 Bereich zum Handeln, 5 zum Prüfen, 5 in Ordnung'
         # derselbe Server mit der Anwendung: nur sein Stand aendert sich, kein Code des Bausteins
         $patch = "`$script:SimHealthInner = `${function:Get-WorkerPerfHealth}`nfunction Get-WorkerPerfHealth {`n" +
             "    `$script:WorkerPerfSimAppState.Files['C:\Program Files\SimApp\simapp.exe'] = '4.2.0'; `$script:WorkerPerfSimAppState.Values['HKLM\SOFTWARE\SimApp|CacheMode'] = 1`n    & `$script:SimHealthInner }"
         $run = (& (New-PatchedSource (Join-Path $TestDrive 'srcapp') $patch) -Simulate -HealthOnly -AppsFile $appFile -OutputPath (Join-Path $TestDrive 'ho-app2') 6>$null 3>$null) | Select-Object -Last 1
         $a = (Get-SimResult $run $cat).areas | Where-Object id -eq 'apps'; $c = $a.checks | Where-Object id -eq 'apps.simCache'
-        $c.grade | Should -Be 'check'; $c.finding | Should -Be 'Cache-Betriebsart 1.'; $c.app | Should -Be 'simapp'; $a.countsText | Should -Be '3 zum Prüfen'; ($a.apps | Where-Object key -eq 'simapp').state | Should -Be 'installed'
+        $c.grade | Should -Be 'check'; $c.finding | Should -Be 'Cache-Betriebsart 1.'; $c.app | Should -Be 'simapp'; $a.countsText | Should -Be '4 zum Prüfen'; ($a.apps | Where-Object key -eq 'simapp').state | Should -Be 'installed'
     }
     It 'fuehrt im Nachweis die Lesequellen und was nicht aufgenommen wurde' {
         $Proof | Should -Match 'Lesequellen'; $Proof | Should -Match 'Nicht aufgenommen'
@@ -1827,24 +1830,29 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         # eine Zeile der Proben einer Anwendung, wie sie health.json traegt; Edge, Office und Teams installiert
         function New-AppRow([string]$App, [string]$Id, $Value, [string]$State = 'read', [string]$Kind = 'registryValue', [string]$Read = '') {
             [ordered]@{ App = $App; Id = $Id; Kind = $Kind; Read = $Read; State = $State; Reason = ''; Value = $Value; Names = $null } }
-        function Get-AppCheck([string]$Id, [hashtable]$Probes = @{}, [string[]]$NotInstalled = @()) {
-            # jede Probe der drei Anwendungen hat eine Zeile: gegeben gelesen, sonst nicht gesetzt; eine nicht installierte Anwendung mit notInstalled
-            $rows = @(foreach ($app in @($Apps | Where-Object { $_.installed })) {
+        function New-AppRows([hashtable]$Probes = @{}, [string[]]$NotInstalled = @(), [hashtable]$Unread = @{}) {
+            # jede Probe der drei Anwendungen hat eine Zeile: gegeben gelesen, sonst nicht gesetzt; eine nicht installierte Anwendung mit notInstalled;
+            # Unread: Probe -> Grund einer Zeile, die nicht gelesen werden konnte
+            @(foreach ($app in @($Apps | Where-Object { $_.installed })) {
                     $a = [string]$app.key; $inst = $NotInstalled -notcontains $a
                     New-AppRow $a 'installed' $inst 'read' 'file' 'exists'
                     foreach ($p in @($app.probes)) {
                         $k = "$a.$($p.id)"
                         if (-not $inst) { $r = New-AppRow $a $p.id $null 'absent'; $r.Reason = 'notInstalled'; $r; continue }
+                        if ($Unread.ContainsKey($k)) { $r = New-AppRow $a $p.id $null 'unreadable'; $r.Reason = $Unread[$k]; $r; continue }
                         if (-not $Probes.ContainsKey($k)) { New-AppRow $a $p.id $null 'absent'; continue }
                         if ($p.id -eq 'userDataDir') { $r = New-AppRow $a $p.id $null; $r.Names = $Probes[$k]; $r } else { New-AppRow $a $p.id $Probes[$k] }
-                    } })
-            $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'apps.probes' = $rows }) -Catalogue $Real -EventConfig $Cfg -Roles $Roles -Texts $Texts
+                    } }) }
+        function Get-AppCheck([string]$Id, [hashtable]$Probes = @{}, [string[]]$NotInstalled = @(), [hashtable]$Unread = @{}) {
+            $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'apps.probes' = (New-AppRows $Probes $NotInstalled $Unread) }) -Catalogue $Real -EventConfig $Cfg -Roles $Roles -Texts $Texts
             @($r.areas | ForEach-Object { $_.checks }) | Where-Object id -eq $Id }
+        function Get-AppFacts([hashtable]$Probes = @{}, [string[]]$NotInstalled = @(), [hashtable]$Unread = @{}) {
+            Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = (New-AppRows $Probes $NotInstalled $Unread) }) -Catalogue $Real -EventConfig $Cfg -Roles $Roles }
     }
     It 'stuft die Pruefungen der Anwendungen nach den Tabellen des Plans ein' {
         foreach ($case in @(
                 @('apps.edgeAutoUpdate', @{ 'edge.updateDefault' = 0 }, 'ok'), @('apps.edgeAutoUpdate', @{}, 'check'), @('apps.edgeAutoUpdate', @{ 'edge.updateDefault' = 1 }, 'check'),
-                @('apps.edgeAutoUpdate', @{ 'edge.updateStable' = 0 }, 'ok'), @('apps.edgeAutoUpdate', @{ 'edge.updateDefault' = 0; 'edge.updateStable' = 1 }, 'ok'),
+                @('apps.edgeAutoUpdate', @{ 'edge.updateStable' = 0 }, 'ok'), @('apps.edgeAutoUpdate', @{ 'edge.updateDefault' = 0; 'edge.updateStable' = 1 }, 'check'),
                 @('apps.edgeUpdateCheckOff', @{ 'edge.updateCheckMinutes' = 0 }, 'check'), @('apps.edgeUpdateCheckOff', @{}, 'ok'), @('apps.edgeUpdateCheckOff', @{ 'edge.updateCheckMinutes' = 60 }, 'ok'),
                 @('apps.edgeWebView2Update', @{ 'edge.updateWebView2' = 0 }, 'check'), @('apps.edgeWebView2Update', @{}, 'ok'),
                 @('apps.edgeStartupBoost', @{ 'edge.startupBoost' = 0 }, 'ok'), @('apps.edgeStartupBoost', @{ 'edge.startupBoost' = 1 }, 'check'), @('apps.edgeStartupBoost', @{}, 'check'),
@@ -1873,7 +1881,7 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
     It 'schreibt die Texte der Anwendungen so, wie die Quellenpruefung sie traegt' {                      # Zusatz g; research-edge/office/teams-check.md
         $kind = [ordered]@{ 'apps.edgeAutoUpdate' = 'vendor'; 'apps.edgeUpdateCheckOff' = 'vendor'; 'apps.edgeWebView2Update' = 'vendor'; 'apps.edgeStartupBoost' = 'rule'
             'apps.edgeBackgroundMode' = 'vendor'; 'apps.edgeSleepingTabs' = 'vendor'; 'apps.edgeAutoDiscard' = 'vendor'; 'apps.edgeRoamingProfile' = 'vendor'; 'apps.edgeUserDataDir' = 'rule'
-            'apps.officeUpdateUi' = 'rule'; 'apps.teamsAutoUpdate' = 'vendor'; 'apps.teamsFallback' = 'rule'; 'apps.teamsWebView2' = 'vendor'; 'apps.teamsClassic' = 'practice' }
+            'apps.officeUpdateUi' = 'rule'; 'apps.teamsAutoUpdate' = 'vendor'; 'apps.teamsFallback' = 'rule'; 'apps.teamsWebView2' = 'vendor'; 'apps.teamsClassic' = 'vendor' }
         foreach ($id in $kind.Keys) { $Chk[$id].kind | Should -Be $kind[$id] -Because $id; $Chk[$id].source.url | Should -Match '^https://' -Because $id }
         # Edge: nur Microsoft, mit beiden Bedingungen der Richtlinien fuer Updates; nichts darueber, was Dienste oder Aufgaben des Updaters tun
         $au = $Chk['apps.edgeAutoUpdate']; $au.source.vendor | Should -Be 'Microsoft'; $au.source.title | Should -BeExactly 'Microsoft Edge for Virtual desktop infrastructure (VDI)'
@@ -1894,10 +1902,10 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         $fb = $Chk['apps.teamsFallback']; $fb.source.vendor | Should -Be 'Microsoft'; foreach ($w in 'nicht unterstützten Endgerät', 'nach Citrix', 'keiner der Hersteller nennt einen Sollwert', 'Faustregel des Katalogs') { $fb.meaning | Should -Match $w -Because $w }
         $fb.findings.check | Should -Match 'Entscheidung des Betreibers'
         $wv = $Chk['apps.teamsWebView2'].meaning; $wv | Should -Match 'Oktober 2026'; $wv | Should -Match 'Windows Server 2022'; $wv | Should -Match '25\.08\.2026'; $wv | Should -Not -Match 'Upgrade|planen'
-        $tc = $Chk['apps.teamsClassic']; $tc.source.vendor | Should -Be 'Manuel Winkel'; $tc.source.url | Should -Match '^https://www\.deyda\.net/'; $tc.meaning | Should -Match 'maschinenweit'
+        $tc = $Chk['apps.teamsClassic']; $tc.source.vendor | Should -Be 'Microsoft'; $tc.meaning | Should -Match 'Manuel Winkel'; $tc.meaning | Should -Match 'maschinenweit'
         $tc.findings.ok | Should -Match 'je Benutzer'
-        # Nachweis: die Zeilen der Anwendungen, Manuel Winkel als Praxisquelle, Aaron Parker als zweite Quelle
-        foreach ($w in 'Quellen aus der Praxis: deyda.net', 'install-new-microsoft-teams-version-2-in-citrix', 'stealthpuppy.com/m365apps-frontline-workers', 'hdx-registry-settings', 'install-office-on-wvd-master-image') { $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
+        # Nachweis: die Zeilen der Anwendungen, Manuel Winkel und Aaron Parker als zweite Quelle
+        foreach ($w in 'install-new-microsoft-teams-version-2-in-citrix', 'stealthpuppy.com/m365apps-frontline-workers', 'hdx-registry-settings', 'install-office-on-wvd-master-image') { $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
     }
     It 'uebernimmt die Berichtigungen der sieben Pruefdateien an den Pruefungen der Tasks 14a und 14b' {      # Zusatz h
         # Regeln: DNS nur fuer Mitglieder einer Domaene (beide Wege)
@@ -1961,5 +1969,114 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         $Proof | Should -Not -Match 'Betriebsprotokoll des Druckdienstes|Abstürzen des Druckdienstes'
         $confirm = (($Proof -split '(?m)^### Auf dem Zielsystem zu bestätigen$', 2)[1]) -replace '\s+', ' '
         foreach ($w in 'IPv6', 'Win32_SystemDriver', 'N/A', 'HideExclusionsFromLocalAdmins', 'EventLogNotFoundException') { $confirm | Should -Match ([regex]::Escape($w)) -Because $w }
+    }
+    It 'leitet ab, ob die Updates von Edge und der WebView2-Runtime abgeschaltet sind, und bewertet danach' {   # Korrekturrunde 1, Punkt 1 (ZB-R57)
+        # Microsoft: die Vorgabe je Kanal geht vor; ohne sie gilt die Vorgabe fuer alle Kanaele, auch fuer die WebView2-Runtime. Nur 0 heisst abgeschaltet.
+        foreach ($default in @($null, 0, 1)) {
+            foreach ($channel in @($null, 0, 1, 3)) {
+                $off = ($channel -eq 0) -or ($null -eq $channel -and $default -eq 0)
+                $p = @{}; if ($null -ne $default) { $p['edge.updateDefault'] = $default }
+                $pe = $p.Clone(); if ($null -ne $channel) { $pe['edge.updateStable'] = $channel }
+                $pw = $p.Clone(); if ($null -ne $channel) { $pw['edge.updateWebView2'] = $channel }
+                $because = "Vorgabe $default, Kanal $channel"
+                $fe = Get-AppFacts $pe; $fe['apps.edgeUpdatesOff'].State | Should -Be 'read' -Because $because; $fe['apps.edgeUpdatesOff'].Value | Should -Be $off -Because $because
+                $fw = Get-AppFacts $pw; $fw['apps.webView2UpdatesOff'].State | Should -Be 'read' -Because $because; $fw['apps.webView2UpdatesOff'].Value | Should -Be $off -Because $because
+                $e = Get-AppCheck 'apps.edgeAutoUpdate' $pe; $e.grade | Should -Be $(if ($off) { 'ok' } else { 'check' }) -Because $because
+                $w = Get-AppCheck 'apps.edgeWebView2Update' $pw; $w.grade | Should -Be $(if ($off) { 'check' } else { 'ok' }) -Because $because
+                foreach ($x in $e, $w) {
+                    $x.finding | Should -Not -Match '[{}]' -Because $because; $x.finding | Should -Not -Match 'meldet die Prüfung nicht' -Because $because
+                    $x.finding | Should -Match '0 = abgeschaltet' -Because $because; $x.finding | Should -Match 'ein Strich heißt: nicht gesetzt' -Because $because
+                }
+                # beide gelesenen Werte stehen im Befund
+                $e.finding | Should -Match ('alle Kanäle: ' + $(if ($null -eq $default) { '–' } else { $default })) -Because $because
+                $e.finding | Should -Match ('für Edge selbst: ' + $(if ($null -eq $channel) { '–' } else { $channel })) -Because $because
+                $w.finding | Should -Match ('alle Kanäle: ' + $(if ($null -eq $default) { '–' } else { $default })) -Because $because
+                $w.finding | Should -Match ('WebView2-Runtime: ' + $(if ($null -eq $channel) { '–' } else { $channel })) -Because $because
+            }
+        }
+        # nicht gelesen: der Wert je Kanal entscheidet, wo er gelesen ist; sonst ist die Ableitung nicht pruefbar
+        $f = Get-AppFacts @{ 'edge.updateStable' = 0 } @() @{ 'edge.updateDefault' = 'rights' }; $f['apps.edgeUpdatesOff'].Value | Should -BeTrue
+        $f = Get-AppFacts @{} @() @{ 'edge.updateDefault' = 'rights' }; $f['apps.edgeUpdatesOff'].State | Should -Be 'unreadable'; $f['apps.edgeUpdatesOff'].Reason | Should -Be 'rights'
+        $f['apps.webView2UpdatesOff'].State | Should -Be 'unreadable'
+        $f = Get-AppFacts @{ 'edge.updateDefault' = 0 } @() @{ 'edge.updateStable' = 'timeout' }; $f['apps.edgeUpdatesOff'].State | Should -Be 'unreadable'; $f['apps.edgeUpdatesOff'].Reason | Should -Be 'timeout'
+        (Get-AppCheck 'apps.edgeAutoUpdate' @{} @() @{ 'edge.updateStable' = 'rights' }).grade | Should -Be 'unknown'
+        # Edge nicht installiert: die Ableitungen treffen nicht zu, die Pruefungen ebenso
+        $f = Get-AppFacts @{} @('edge'); $f['apps.edgeUpdatesOff'].State | Should -Be 'absent'; $f['apps.edgeUpdatesOff'].Reason | Should -Be 'notInstalled'
+        (Get-AppCheck 'apps.edgeWebView2Update' @{} @('edge')).grade | Should -Be 'na'
+        # Werte, die Microsoft nicht nennt, sind nicht "abgeschaltet"; ein Text ist keine Zahl
+        (Get-AppFacts @{ 'edge.updateStable' = 7; 'edge.updateDefault' = 0 })['apps.edgeUpdatesOff'].Value | Should -BeFalse
+        (Get-AppFacts @{ 'edge.updateDefault' = '0' })['apps.edgeUpdatesOff'].Value | Should -BeFalse
+        # Vorgehen: nur die Richtlinie fuer Microsoft Edge Stable abschalten, wo die Runtime sich weiter aktualisieren soll
+        $au = $Chk['apps.edgeAutoUpdate']; $au.todo[1].text | Should -Match 'nur die Richtlinie für Microsoft Edge Stable'; $au.todo[1].text | Should -Match 'WebView2-Runtime'
+        $au.findings.ok | Should -Match 'Active-Directory-Domäne'; $au.meaning | Should -Not -Match 'für andere Maschinen'
+        foreach ($id in 'apps.edgeAutoUpdate', 'apps.edgeWebView2Update') { @($Chk[$id].values)[0] | Should -BeLike 'apps.edge.*' -Because $id }
+        @($Chk['apps.edgeAutoUpdate'].values) | Should -Contain 'apps.edgeUpdatesOff'; @($Chk['apps.edgeWebView2Update'].values) | Should -Contain 'apps.webView2UpdatesOff'
+        $Real.values.'apps.edgeUpdatesOff' | Should -Match 'Microsoft Edge'; $Real.values.'apps.webView2UpdatesOff' | Should -Match 'WebView2-Runtime'
+        $ProofFlat | Should -Match ([regex]::Escape('A Microsoft Edge update policy applies to both Microsoft Edge and the WebView2 Runtime, unless the policy is channel-specific'))
+    }
+    It 'laesst einen abgeleiteten Fakt der Anwendungen nicht an erster Stelle und nicht ausserhalb des Bereichs stehen' {
+        foreach ($case in @(@('apps', 'apps.x', @('apps.edgeUpdatesOff', 'apps.edge.updateDefault'), "*Pruefung 'apps.x'*erste Wert*Wert einer Anwendung*"),
+                @('operation', 'operation.x', @('apps.edgeUpdatesOff'), "*Pruefung 'operation.x'*'apps.edgeUpdatesOff' gehoert in den Bereich apps*"))) {
+            $j = Get-Content $CatFile -Raw | ConvertFrom-Json
+            $j.checks += [pscustomobject]@{ id = $case[1]; area = $case[0]; title = 'X'; values = $case[2]; rules = @{ check = @(@{ value = 'apps.edgeUpdatesOff'; op = 'eq'; than = $true }) }
+                findings = @{ ok = 'a'; check = 'b'; unknown = 'c {reason}' }; meaning = 'Erfundene Prüfung.'; todo = @(@{ text = 't'; where = 'im Master-Image'; sign = 's' })
+                source = @{ vendor = 'Test'; title = 'Test'; url = ''; date = '2026-11-13' }; kind = 'rule'; relates = @('disk') }
+            $file = Join-Path $TestDrive "cat-$($case[0]).json"; [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 12))
+            { Read-WorkerPerfHealthCatalogue $file $Apps } | Should -Throw $case[3]
+        }
+    }
+    It 'fuehrt beim klassischen Teams zur Deinstallation, wie Microsoft sie beschreibt' {                  # Korrekturrunde 1, Punkt 2 (ZB-R58), Punkt 9
+        $tc = $Chk['apps.teamsClassic']; $tc.kind | Should -Be 'vendor'; $tc.source.vendor | Should -Be 'Microsoft'
+        $tc.source.title | Should -BeExactly 'Uninstalling classic Microsoft Teams'; $tc.source.url | Should -Be 'https://learn.microsoft.com/en-us/microsoftteams/teams-classic-client-uninstall'
+        $tc.source.date | Should -Be '2026-02-23'
+        $all = "$($tc.meaning) $(@($tc.todo | ForEach-Object { "$($_.text) $($_.where) $($_.sign)" }) -join ' ') $(@($tc.findings.PSObject.Properties.Value) -join ' ')"
+        $all | Should -Not -Match 'Bootstrapper|teamsbootstrapper|-x\b'; $tc.meaning | Should -Not -Match 'kein Hersteller'
+        $tc.todo[0].where | Should -Match 'Rohwert „Microsoft Teams – Klassisches Teams noch vorhanden“ im Zustandsbild'; $tc.todo[0].where | Should -Match 'installierte Programme'
+        $tc.todo[1].text | Should -Match 'Teams Machine-Wide Installer'; $tc.todo[1].text | Should -Match 'Softwareverteilung'; $tc.todo[1].text | Should -Match 'neue Teams .*bereitgestellt'
+        $tc.todo[1].where | Should -Match 'Master-Image'
+        $tc.meaning | Should -Match '^Ist das klassische Teams .* Benutzer'                                             # die Wirkung fuer die Benutzer zuerst
+        $ProofFlat | Should -Match ([regex]::Escape('Admins should use their existing deployment tools to uninstall the Teams Machine-Wide Installer.'))
+        $ProofFlat | Should -Match ([regex]::Escape('For Non-Persistent VDI configurations, admins must manage the uninstallation process according to their device configuration.'))
+        $ProofFlat | Should -Not -Match 'entfernt die alte Installation mit dessen Option'
+        $ProofFlat | Should -Match '`apps\.teamsClassic` – auch gestützt durch: Manuel Winkel'
+    }
+    It 'nennt beim On-Premises-Sync und beim Ordner der Benutzerdaten beide Wege von Microsoft' {        # Korrekturrunde 1, Punkt 3
+        $rp = $Chk['apps.edgeRoamingProfile']; $rp.meaning | Should -Match 'zwei Wege'; $rp.meaning | Should -Match 'Microsoft Entra ID'
+        $rp.todo[1].text | Should -Match '^Wo gleichzeitige Sitzungen vorkommen und die Benutzer Konten in Microsoft Entra ID haben'
+        $rp.todo[1].text | Should -Match 'zuerst .*Enterprise Sync einrichten, danach den On-Premises-Sync'
+        $ud = $Chk['apps.edgeUserDataDir']; $ud.todo[1].text | Should -Match 'Enterprise Sync'; $ud.todo[1].text | Should -Match 'On-Premises-Sync'; $ud.todo[1].text | Should -Match 'nur im Active Directory'
+    }
+    It 'sagt bei der Installation von Updates, ob eine Richtlinie gesetzt ist' {                          # Korrekturrunde 1, Punkt 4 (ZB-R51)
+        @($Chk['maintenance.updateInstallInWorkHours'].values) | Should -Contain 'maintenance.updateOptions'
+        $x = Get-Check @{} @{} 'maintenance.updateInstallInWorkHours' $Real; $x.grade | Should -Be 'ok'
+        $x.finding | Should -Match 'eingestellte Option: –'; $x.finding | Should -Match 'ein Strich heißt: keine Richtlinie'
+        $x.finding | Should -Match '4 = automatisch herunterladen und zur geplanten Zeit installieren'; $x.finding | Should -Match 'nicht prüfbar'
+        (Get-Check @{ 'maintenance.updateOptions' = 3 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellte Option: 3'
+    }
+    It 'uebernimmt die kleineren Punkte der Durchsicht' {                                                 # Korrekturrunde 1, Punkte 5 bis 9
+        # 5: Rueckfall von Teams
+        $fb = Get-AppCheck 'apps.teamsFallback' @{}; $fb.finding | Should -Match 'ein Strich heißt: maschinenweit \(HKLM\) nicht gesetzt'
+        (Get-AppCheck 'apps.teamsFallback' @{ 'teams.disableFallback' = 3 }).finding | Should -Match 'andere Werte nennt Microsoft nicht'
+        $Chk['apps.teamsFallback'].meaning | Should -Match 'WebRTC'
+        foreach ($c in $Real.checks) { "$($c.meaning) $(@($c.todo | ForEach-Object { "$($_.text) $($_.where) $($_.sign)" }) -join ' ')" | Should -Not -Match 'Citrix Workspace(?!-App| Environment)|(?<!Citrix )Workspace-App' -Because $c.id }
+        # 6
+        $sb = $Chk['apps.edgeStartupBoost']; $sb.meaning | Should -Match 'schaltet .*ein'; $sb.findings.check | Should -Match 'nicht abgeschaltet \(gelesener Wert'
+        $of = $Chk['apps.officeUpdateUi']; $of.meaning | Should -Match 'fand sich keine Seite von Microsoft'; $of.todo[0].where | Should -Match 'Automatische Updates laut Installation'
+        $ts = $Chk['security.twoScanners'].meaning; $ts | Should -Match 'Microsoft führt ihn unter Cylance Inc\.'; $ts | Should -Not -Match 'Inc\.\), ob'
+        # 7: ein Name fuer die Gruppenrichtlinie, fuer den Rohwert und fuer Startup-Boost
+        foreach ($c in $Real.checks) {
+            $t = "$($c.title) $($c.meaning) $(@($c.findings.PSObject.Properties.Value) -join ' ') $(@($c.todo | ForEach-Object { "$($_.text) $($_.where) $($_.sign)" }) -join ' ')"
+            $t | Should -Not -Match 'Gruppenrichtlinie der Server|unter den gelesenen Werten|Startboost' -Because $c.id
+        }
+        $Chk['apps.edgeStartupBoost'].title | Should -Match 'Startup-Boost'
+        $tu = $Chk['apps.teamsAutoUpdate']; $tu.meaning | Should -Match 'nach 23306\.3314\.2555\.9628'
+        $tu.todo[1].sign | Should -Match 'Besprechungs-Add-in maschinenweit vorhanden'; $tu.todo[2].sign | Should -Match '90-day blocking UI'
+        $ProofFlat | Should -Match ([regex]::Escape('https://learn.microsoft.com/en-us/officeupdates/teams-app-versioning'))
+        $Chk['apps.edgeUpdateCheckOff'].meaning | Should -Match '^Die Benutzer'; $Chk['apps.teamsWebView2'].meaning | Should -Match '^Ohne die WebView2-Runtime läuft'
+        $Chk['maintenance.defenderScanInWorkHours'].findings.check | Should -Match 'unabhängig vom eingestellten Tag'
+        # 8
+        $Real.copy.reasonAbsent | Should -BeExactly 'er ist auf diesem Server nicht gesetzt oder nicht vorhanden'
+        # 9
+        foreach ($w in 'Quellenprüfung VM-14, partly', 'Quellenprüfung VM-19, partly', 'Quellenprüfung VM-01, partly') { $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
     }
 }

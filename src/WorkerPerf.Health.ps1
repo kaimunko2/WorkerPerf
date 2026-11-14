@@ -89,7 +89,9 @@ $script:WorkerPerfHealthDerived = & {
         @('events.disabledLogs', 'number'), @('events.reachFrom', 'time'), @('events.sinceBootOnly', 'bool'),
 
         @('maintenance.tasksInWorkHours', 'number'), @('maintenance.sessionTriggerTasks', 'number'), @('maintenance.scanInWorkHours', 'bool'),
-        @('maintenance.updateInWorkHours', 'bool')
+        @('maintenance.updateInWorkHours', 'bool'),
+
+        @('apps.edgeUpdatesOff', 'bool'), @('apps.webView2UpdatesOff', 'bool')
     )
     $list = [ordered]@{}
     foreach ($row in $rows) {
@@ -333,7 +335,8 @@ function Test-WorkerPerfHealthCondition {
 
 function Test-WorkerPerfHealthCheckValues($Ctx, [string]$Id, [string]$Area, $Check) {
     # values of a check: known facts with a documented source, each once. In the area apps only facts of one application
-    # of the list (the application is checked before the fact); in any other area no fact of an application.
+    # of the list (the application is checked before the fact) and derived facts of the area apps, the first value a fact
+    # of the application (it names the application of the check); in any other area no fact of the area apps.
     $path = $Ctx.Path
     $m = Get-WorkerPerfHealthCatalogueMember $Check 'values'
     if ($null -eq $m) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' 'fehlt' }
@@ -345,9 +348,13 @@ function Test-WorkerPerfHealthCheckValues($Ctx, [string]$Id, [string]$Area, $Che
         if (-not (Test-WorkerPerfHealthCatalogueText $fact)) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' 'enthaelt einen Eintrag, der kein Text ist oder leer ist' }
         if (-not $seen.Add($fact)) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt '$fact' mehr als einmal" }
         $isAppFact = $fact.StartsWith('apps.', [StringComparison]::Ordinal)
+        $parts = $fact.Split('.')
+        if ($Area -ceq 'apps' -and $isAppFact -and $parts.Count -eq 2 -and $seen.Count -gt 1 -and $Ctx.FactIds.Contains($fact) -and $Ctx.Facts[$fact].Derived) { continue }
         if ($Area -ceq 'apps') {
-            $parts = $fact.Split('.')
-            if (-not $isAppFact -or $parts.Count -ne 3) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "'$fact' ist kein Wert einer Anwendung" }
+            if (-not $isAppFact -or $parts.Count -ne 3) {
+                if ($seen.Count -eq 1) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt als ersten Wert '$fact', der erste Wert ist aber kein Wert einer Anwendung" }
+                Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "'$fact' ist kein Wert einer Anwendung"
+            }
             $key = $parts[1]
             if ($Ctx.AppKeys -cnotcontains $key) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "Anwendung '$key' steht nicht in der Anwendungsliste ('$fact')" }
             if ($appOfCheck -and $appOfCheck -cne $key) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt Werte von mehr als einer Anwendung ('$appOfCheck', '$key')" }
@@ -1489,6 +1496,28 @@ function Add-WorkerPerfHealthAppFacts($F, $Ctx, [object[]]$Apps) {
             $F[$id] = New-WorkerPerfHealthFact $state $reason (Get-WorkerPerfHealthModelMember $row $field)
         }
     }
+    # Updates of Microsoft Edge and of the WebView2 Runtime switched off by policy (ruling ZB-R57): Microsoft lets the
+    # value of the channel outrank the default for all channels, and the default applies to the WebView2 Runtime as well.
+    $F['apps.edgeUpdatesOff'] = Invoke-WorkerPerfHealthRule { Get-WorkerPerfHealthUpdatesOff $F 'apps.edge.updateStable' 'apps.edge.updateDefault' }
+    $F['apps.webView2UpdatesOff'] = Invoke-WorkerPerfHealthRule { Get-WorkerPerfHealthUpdatesOff $F 'apps.edge.updateWebView2' 'apps.edge.updateDefault' }
+}
+
+function Get-WorkerPerfHealthUpdatesOff($F, [string]$Channel, [string]$Default) {
+    # True when the policy value of the channel is 0, or it is not set and the default for all channels is 0; any other
+    # value (also one Microsoft does not document, or a text) is not off. The value of the channel decides where it is
+    # read; a value that is not read gives its state. Without a row of the application list: unreadable/notRecorded.
+    $channelFact = $F[$Channel]; $defaultFact = $F[$Default]
+    if ($null -eq $channelFact -or $null -eq $defaultFact) { return (New-WorkerPerfHealthFact 'unreadable' 'notRecorded') }
+    $isZero = { param($x) (Test-WorkerPerfHealthNumber $x.Value) -and [double]$x.Value -eq 0 }
+    if ($channelFact.State -ceq 'read') { return [bool](& $isZero $channelFact) }
+    if ($channelFact.State -ceq 'unreadable' -or @('notInstalled', 'notInUse') -ccontains [string]$channelFact.Reason) {
+        return (New-WorkerPerfHealthFact $channelFact.State $channelFact.Reason)
+    }
+    if ($defaultFact.State -ceq 'read') { return [bool](& $isZero $defaultFact) }
+    if ($defaultFact.State -ceq 'unreadable' -or @('notInstalled', 'notInUse') -ccontains [string]$defaultFact.Reason) {
+        return (New-WorkerPerfHealthFact $defaultFact.State $defaultFact.Reason)
+    }
+    return $false
 }
 
 function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$Roles = @()) {
