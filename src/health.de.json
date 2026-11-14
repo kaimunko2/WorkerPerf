@@ -4,22 +4,22 @@
     {
       "id": "size",
       "label": "Größe und Reserve",
-      "notCovered": "Nicht gelesen werden die Zähler der VMware Tools für Ballon, Host-Auslagerung, Grenzen und Reservierung und alles, was nur der Hypervisor kennt (Bereitschaftszeit, Aufteilung auf NUMA-Knoten, nachträgliches Hinzufügen von Prozessoren)."
+      "notCovered": "Nicht gelesen werden die Zähler der VMware Tools für Ballon, Host-Auslagerung, Grenzen und Reservierung und alles, was nur der Hypervisor kennt: die Bereitschaftszeit der Prozessoren (CPU Ready), die Aufteilung auf NUMA-Knoten und das nachträgliche Hinzufügen von Prozessoren (CPU Hot Add)."
     },
     {
       "id": "operation",
       "label": "Betrieb",
-      "notCovered": "Ein Neustart, den nur Windows Update oder die Komponentenwartung verlangt, steht als Rohwert da und ist nicht geprüft; nicht gelesen werden der Windows-Update-Agent, die Zeitgeber für Schlaf und Ruhezustand und Laufwerke ohne Laufwerksbuchstaben."
+      "notCovered": "Ein Neustart, den nur Windows Update oder die Komponentenwartung verlangt, steht als Rohwert da und ist nicht geprüft; nicht gelesen werden der Windows-Update-Agent, die eingestellten Zeiten bis zu Standby und Ruhezustand und Laufwerke ohne Laufwerksbuchstaben."
     },
     {
       "id": "sessions",
       "label": "Sitzungen",
-      "notCovered": "Nicht gelesen werden Zeitgeber aus Citrix-Richtlinien, die Transportart der Sitzungen, die Größe der Profilordner und Einstellungen je Benutzer."
+      "notCovered": "Nicht gelesen werden Sitzungs-Timer aus Citrix-Richtlinien, die Transportart der Sitzungen, die Größe der Profilordner und Einstellungen je Benutzer."
     },
     {
       "id": "vda",
       "label": "Citrix VDA",
-      "notCovered": "Nicht gelesen werden, ob der VDA gerade registriert ist, die Art der Bereitstellung, die wirksame Konfiguration und der Inhalt des Cache des WEM-Agenten; die Citrix-Richtlinien stehen nur als Rohwerte da und sind nicht geprüft."
+      "notCovered": "Nicht gelesen werden, ob der VDA gerade bei einem Delivery Controller registriert ist, die Art der Bereitstellung, die wirksame Konfiguration und der Inhalt des Cache des WEM-Agenten; die Citrix-Richtlinien stehen nur als Rohwerte da und sind nicht geprüft."
     },
     {
       "id": "profile",
@@ -34,7 +34,7 @@
     {
       "id": "security",
       "label": "Sicherheitsprodukte",
-      "notCovered": "Ein Produkt der Rollenliste ohne Dienst und ohne Filtertreiber wird nicht erkannt; nicht gelesen werden die Inhalte der AppLocker-Regeln, Proxy-Werte und die Listen des Ordnerzugriffsschutzes."
+      "notCovered": "Ein Schutzprodukt ohne Dienst und ohne Filtertreiber wird nicht erkannt; nicht gelesen werden die Inhalte der AppLocker-Regeln, Proxy-Werte und die Listen des Ordnerzugriffsschutzes."
     },
     {
       "id": "network",
@@ -44,7 +44,7 @@
     {
       "id": "events",
       "label": "Ereignisbild",
-      "notCovered": "Gelesen werden nur die Protokolle, die der Ereigniskatalog kennt; auf einem nicht persistenten Server reichen sie höchstens bis zum letzten Start zurück, solange sie nicht auf einem beständigen Laufwerk liegen."
+      "notCovered": "Gelesen werden nur die Protokolle, die WorkerPerf auswertet; auf einem nicht persistenten Server reichen sie höchstens bis zum letzten Start zurück, solange sie nicht auf einem beständigen Laufwerk liegen."
     },
     {
       "id": "maintenance",
@@ -54,7 +54,7 @@
     {
       "id": "apps",
       "label": "Anwendungen",
-      "notCovered": "Einstellungen je Benutzer werden nicht gelesen (etwa der Cache-Modus von Outlook, Add-ins je Benutzer, der Autostart von Teams, Benutzerrichtlinien von Edge), ebenso wenig der Aktivierungsstand von Office."
+      "notCovered": "Einstellungen je Benutzer werden nicht gelesen (etwa der Modus „Cached Exchange Mode“ von Outlook, Add-ins je Benutzer, der Autostart von Teams, Benutzerrichtlinien von Edge), ebenso wenig der Aktivierungsstand von Office."
     }
   ],
   "grades": {
@@ -71,7 +71,7 @@
     "sessionsPerCpu": {"value": 8, "default": 8, "unit": "Sitzungen", "label": "Benutzersitzungen je logischem Prozessor, Obergrenze"},
     "workerCpuMin": {"value": 8, "default": 8, "unit": "Prozessoren", "label": "Logische Prozessoren des Servers, Untergrenze"},
     "workerCpuMax": {"value": 8, "default": 8, "unit": "Prozessoren", "label": "Logische Prozessoren des Servers, Obergrenze"},
-    "workerMemMinMB": {"value": 24576, "default": 24576, "unit": "MB", "label": "Arbeitsspeicher des Servers, Untergrenze"},
+    "workerMemMinMB": {"value": 24000, "default": 24000, "unit": "MB", "label": "Arbeitsspeicher des Servers, Untergrenze"},
     "uptimeDays": {"value": 30, "default": 30, "unit": "Tage", "label": "Laufzeit seit dem letzten Start"},
     "updateAgeDays": {"value": 60, "default": 60, "unit": "Tage", "label": "Alter des jüngsten Updates"},
     "diskFreeGB": {"value": 10, "default": 10, "unit": "GB", "label": "Freier Platz auf System- und Auslagerungslaufwerk"},
@@ -96,39 +96,39 @@
     "size.hypervisor": "Läuft unter einem Hypervisor",
     "size.model": "Hersteller und Modell",
     "size.vmtoolsPresent": "VMware Tools vorhanden",
-    "size.vmtoolsService": "Dienst der VMware Tools",
+    "size.vmtoolsService": "Dienst der VMware Tools (Running = läuft, Stopped = beendet)",
     "size.vmtoolsVersion": "Version der VMware Tools",
     "size.netAdapters": "Netzwerkadapter",
     "size.storageControllers": "Speicheradapter",
-    "size.balloonDriver": "Ballon-Treiber der VMware Tools",
+    "size.balloonDriver": "Ballon-Treiber der VMware Tools (Running = läuft, Stopped = beendet)",
     "operation.lastBoot": "Letzter Start",
     "operation.pendingRename": "Ausstehende Umbenennungen beim Neustart",
     "operation.pendingServicing": "Komponentenwartung wartet auf einen Neustart",
     "operation.pendingUpdate": "Windows Update wartet auf einen Neustart",
     "operation.lastUpdate": "Jüngstes Installationsdatum eines Updates",
     "operation.lastUpdateId": "Kennung des jüngsten Updates",
-    "operation.powerPlan": "Aktiver Energiesparplan",
+    "operation.powerPlan": "Aktiver Energiesparplan (highPerformance = Höchstleistung, balanced = Ausbalanciert, powerSaver = Energiesparmodus, other = eigener Plan)",
     "operation.volumes": "Lokale Laufwerke",
     "sessions.list": "Sitzungen beim Lesen",
     "sessions.limits": "Zeitlimits der Sitzungen je Listener",
     "sessions.localProfiles": "Lokale Profile",
     "vda.version": "Version des VDA",
     "vda.services": "Citrix-Dienste",
-    "vda.desktopService": "Dienst „Citrix Desktop Service“",
-    "vda.controllers": "Controllerliste",
+    "vda.desktopService": "Dienst Citrix Desktop Service (Running = läuft, Stopped = beendet)",
+    "vda.controllers": "Liste der Delivery Controller",
     "vda.listOfSids": "ListOfSIDs von Hand gesetzt",
-    "vda.farmGuid": "Registrierung über die Organisationseinheit (FarmGUID)",
+    "vda.farmGuid": "Registrierung des VDA beim Delivery Controller über die Organisationseinheit (FarmGUID)",
     "vda.policyRaw": "Rohwerte der Citrix-Richtlinien",
     "vda.persistentDataLocation": "Beständiger Datenort der Bereitstellung",
-    "vda.wemService": "Dienst des WEM-Agenten",
+    "vda.wemService": "Dienst des WEM-Agenten (Running = läuft, Stopped = beendet)",
     "vda.wemServices": "Dienste, die der WEM-Agent braucht",
     "vda.wemVersion": "Version des WEM-Agenten",
     "vda.wemServer": "WEM-Server aus der Richtlinie",
-    "vda.wemCacheLocation": "Abweichender Ort des Cache des WEM-Agenten",
+    "vda.wemCacheLocation": "Eigener Ort des Cache des WEM-Agenten",
     "vda.wemGpNetworkTimeout": "Wartezeit der Gruppenrichtlinie auf das Netz (GpNetworkStartTimeoutPolicyValue)",
-    "vda.teamsService": "Dienst „Citrix HDX Teams Redirection Service“",
-    "vda.webSocketService": "Dienst „Citrix HDX HTML5 Video Redirection Service“",
-    "profile.service": "Dienst der Citrix Profilverwaltung",
+    "vda.teamsService": "Dienst Citrix HDX Teams Redirection Service (Running = läuft, Stopped = beendet)",
+    "vda.webSocketService": "Dienst Citrix HDX HTML5 Video Redirection Service (Running = läuft, Stopped = beendet)",
+    "profile.service": "Dienst der Citrix Profilverwaltung (Running = läuft, Stopped = beendet)",
     "profile.version": "Version der Citrix Profilverwaltung",
     "profile.policyGpo": "Rohwerte der Profilverwaltung aus Gruppenrichtlinie oder WEM",
     "profile.policyStudio": "Rohwerte der Profilverwaltung aus Citrix Studio",
@@ -136,13 +136,13 @@
     "print.isolationExecution": "Richtlinie zur Treiberisolierung (0 = Isolierung aus)",
     "print.isolationOverride": "Richtlinie, die die Isolierungsangabe der Treiber übersteuert",
     "print.queueCount": "Druckwarteschlangen",
-    "print.spooler": "Dienst Druckwarteschlange (Spooler)",
+    "print.spooler": "Dienst Druckwarteschlange (Spooler; Running = läuft, Stopped = beendet)",
     "print.spoolerStartMode": "Starttyp des Dienstes Druckwarteschlange",
-    "print.citrixPrintService": "Dienst „Citrix Print Manager Service“",
+    "print.citrixPrintService": "Dienst Citrix Print Manager Service (Running = läuft, Stopped = beendet)",
     "print.operationalLog": "Betriebsprotokoll des Druckdienstes eingeschaltet",
     "print.mappingClientVersion": "Version des PrinTaurus SmartSpread Client",
     "security.services": "Dienste",
-    "security.defenderService": "Dienst von Microsoft Defender Antivirus (WinDefend)",
+    "security.defenderService": "Dienst von Microsoft Defender Antivirus (WinDefend; Running = läuft, Stopped = beendet)",
     "security.defenderMode": "Betriebsart von Microsoft Defender Antivirus",
     "security.defenderRealTime": "Echtzeitschutz aktiv",
     "security.defenderTamper": "Manipulationsschutz aktiv",
@@ -156,9 +156,9 @@
     "security.defenderNetworkProtection": "Netzwerkschutz (0 = aus, 1 = blockieren, 2 = überwachen)",
     "security.defenderForcePassive": "Passive Betriebsart erzwungen (ForceDefenderPassiveMode)",
     "security.mdeOnboarding": "Anbindung an Microsoft Defender for Endpoint (1 = angebunden)",
-    "security.mdeService": "Dienst von Microsoft Defender for Endpoint (Sense)",
+    "security.mdeService": "Dienst von Microsoft Defender for Endpoint (Sense; Running = läuft, Stopped = beendet)",
     "security.filters": "Geladene Dateisystem-Filtertreiber",
-    "security.applockerService": "Dienst von AppLocker (AppIDSvc)",
+    "security.applockerService": "Dienst von AppLocker (AppIDSvc; Running = läuft, Stopped = beendet)",
     "security.applockerCollections": "Umfang der AppLocker-Regeln",
     "network.domainMember": "Mitglied einer Domäne",
     "network.smbRequireSigning": "SMB-Client verlangt Signierung",
@@ -171,7 +171,7 @@
     "network.rss": "Receive Side Scaling je Adapter",
     "network.timeType": "Art der Zeitsynchronisation",
     "network.timeServers": "Zeitquellen",
-    "network.timeService": "Windows-Zeitdienst (W32Time)",
+    "network.timeService": "Windows-Zeitdienst (W32Time; Running = läuft, Stopped = beendet)",
     "events.logs": "Ereignisprotokolle",
     "maintenance.tasks": "Geplante Aufgaben außerhalb des Ordners \\Microsoft\\",
     "maintenance.taskCount": "Zahl aller geplanten Aufgaben",
@@ -185,9 +185,9 @@
     "maintenance.updateDay": "Installationstag der Updates (0 = täglich, 1–7 = Sonntag bis Samstag)",
     "maintenance.updateHour": "Installationsstunde der Updates",
     "maintenance.updateNoRebootWithUsers": "Kein automatischer Neustart bei angemeldeten Benutzern",
-    "maintenance.searchService": "Suchdienst (WSearch)",
-    "maintenance.updateService": "Startart des Dienstes Windows Update",
-    "apps.probes": "Proben der Anwendungen",
+    "maintenance.searchService": "Suchdienst (WSearch; Running = läuft, Stopped = beendet)",
+    "maintenance.updateService": "Starttyp des Dienstes Windows Update",
+    "apps.probes": "Gelesene Werte der Anwendungen",
     "size.commitPeakPct": "Höchststand des zugesagten Speichers, Anteil an der Zusagegrenze",
     "size.commitNowPct": "Zugesagter Speicher beim Lesen, Anteil an der Zusagegrenze",
     "size.pagefileCount": "Auslagerungsdateien, Anzahl ohne temporäre",
@@ -209,13 +209,13 @@
     "sessions.idleLimitMin": "Zeitlimit für Sitzungen im Leerlauf",
     "sessions.unloadedProfiles": "Lokale Profile ohne Sitzung",
     "sessions.tempProfiles": "Temporäre Profile",
-    "vda.stoppedAutoServices": "Citrix-Dienste mit Starttyp „Automatisch“, die nicht laufen",
-    "vda.controllerCount": "Controller in der Liste",
-    "vda.controllersNotFqdn": "Controller, die nicht als vollständiger Name eingetragen sind",
+    "vda.stoppedAutoServices": "Citrix-Dienste mit Starttyp Automatisch, die nicht laufen",
+    "vda.controllerCount": "Delivery Controller in der Liste",
+    "vda.controllersNotFqdn": "Delivery Controller, die nicht als vollständiger Name eingetragen sind",
     "vda.wemServicesNotReady": "Dienste des WEM-Agenten, die fehlen, nicht laufen oder nicht automatisch starten",
     "profile.containerCount": "Eingebundene Profilcontainer, Anzahl",
     "profile.containerMaxUsedPct": "Höchste Belegung eines Profilcontainers",
-    "profile.maxContainersPerUser": "Meiste eingebundene Container eines Benutzers",
+    "profile.maxContainersPerUser": "Höchste Zahl eingebundener Container eines Benutzers",
     "print.driverCount": "Druckertreiber",
     "print.driversInSpooler": "Druckertreiber ohne Isolierung",
     "print.driversV2": "Druckertreiber vom Typ 2",
@@ -266,7 +266,7 @@
     "areaPartial": "Der Bereich wurde nur zum Teil gelesen.",
     "areaFailed": "Der Bereich wurde nicht gelesen.",
     "areaReasonBudget": "Das Zeitlimit für das Lesen des Zustandsbilds war erreicht.",
-    "areaReasonNoReader": "Die Aufzeichnung hat für diesen Bereich keinen Leser.",
+    "areaReasonNoReader": "Diese Fassung der Aufzeichnung liest den Bereich nicht.",
     "areaReasonNotRead": "Das Lesen hat für diesen Bereich nichts geliefert.",
     "areaReasonNotInFile": "Der Bereich fehlt in der Datei health.json der Aufzeichnung.",
     "unknownOne": "1 Prüfung nicht prüfbar",
@@ -280,7 +280,7 @@
     "yes": "ja",
     "no": "nein",
     "reasonRights": "die Rechte zum Lesen fehlten",
-    "reasonNotInstalled": "„{label}“ gibt es auf diesem Server nicht (das Produkt ist nicht installiert, oder der Server ist keine VMware-VM)",
+    "reasonNotInstalled": "der Wert „{label}“ wird auf diesem Server nicht gelesen, weil das Produkt, zu dem er gehört, nicht installiert ist (bei Werten zu VMware: weil der Server keine VMware-VM ist)",
     "reasonNotInUse": "die Zuordnung der Drucker über Citrix-Richtlinien ist auf diesem Server nicht in Gebrauch",
     "reasonAppNotInstalled": "{app} ist nicht installiert",
     "reasonTimeout": "das Zeitlimit für das Lesen war erreicht",
@@ -309,10 +309,11 @@
     "copyAreaItem": "- {title}: {grade}. {finding}",
     "copyMeaning": "Was bedeutet das?",
     "copyTodo": "Was tun?",
-    "copyStep": "{n}. {text} – {where}; erkennbar an {sign}",
+    "copyStep": "{n}. {text} – Wo: {where}. Woran zu erkennen: {sign}",
     "copySource": "{kind}: {vendor}, {title} (Stand {date})",
     "copyOk": "Weitere Prüfungen in Ordnung: {n}"
   },
+  "units": {"Tage": "Tag", "Stunden": "Stunde", "Minuten": "Minute"},
   "precedence": [
     {
       "check": "operation.powerPlan",
@@ -334,7 +335,7 @@
         "ok": "Der zugesagte Speicher lag seit dem Start bei höchstens {size.commitPeakPct} % der Zusagegrenze (Schwelle {@commitPeakPct} %), beim Lesen bei {size.commitNowPct} %.",
         "check": "Der zugesagte Speicher hat seit dem Start {size.commitPeakPct} % der Zusagegrenze erreicht (Schwelle {@commitPeakPct} %). Beim Lesen lag er bei {size.commitNowPct} %.",
         "act": "Der zugesagte Speicher liegt beim Lesen bei {size.commitNowPct} % der Zusagegrenze (harte Grenze {@commitNowPct} %). Der Höchststand seit dem Start war {size.commitPeakPct} %.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "Windows sagt Programmen Speicher nur bis zur Zusagegrenze zu; sie ist nach Microsoft die Summe aus Arbeitsspeicher und allen Auslagerungsdateien. Ist die Grenze erreicht, bekommen Programme und Dienste keinen weiteren Speicher und können scheitern oder hängen. Die Schwellen sind Erfahrungswerte des Katalogs, keine Zahlen von Microsoft.",
       "todo": [
@@ -369,9 +370,9 @@
       "findings": {
         "ok": "Auslagerungsdateien (ohne temporäre): {size.pagefileCount}.",
         "check": "Der Server hat keine Auslagerungsdatei (gezählt ohne temporäre: {size.pagefileCount}).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ohne Auslagerungsdatei liegt die Zusagegrenze nach Microsoft knapp unter dem eingebauten Arbeitsspeicher. Außerdem braucht Windows nach Microsoft in der Regel eine Auslagerungsdatei, um bei einem Systemabsturz ein Speicherabbild zu schreiben; eine eigene Abbilddatei als Ersatz liest diese Prüfung nicht. Nach GO-EUC stürzten in einem Test ohne Auslagerungsdatei die Testmaschinen unter Speicherdruck nach wenigen Minuten ab (2019, Windows 10 1803 mit einer Sitzung je Maschine, zwei virtuelle Prozessoren und 4 GB Arbeitsspeicher, MCS 1906.1, ein Testprogramm belegte zusätzlich 2 GB). Wie groß die Datei war, machte in diesem Test keinen messbaren Unterschied.",
+      "meaning": "Ohne Auslagerungsdatei liegt die Zusagegrenze nach Microsoft knapp unter dem eingebauten Arbeitsspeicher. Außerdem braucht Windows nach Microsoft in der Regel eine Auslagerungsdatei, um bei einem Systemabsturz ein Speicherabbild (Dump) zu schreiben; eine eigene Datei dafür (dedicated dump file) liest diese Prüfung nicht. Nach GO-EUC stürzten in einem Test ohne Auslagerungsdatei die Testmaschinen unter Speicherdruck nach wenigen Minuten ab (2019, Windows 10 1803 mit einer Sitzung je Maschine, zwei virtuelle Prozessoren und 4 GB Arbeitsspeicher, MCS 1906.1, ein Testprogramm belegte zusätzlich 2 GB).",
       "todo": [
         {
           "text": "Klären, ob die Auslagerungsdatei beim Versiegeln des Abbilds absichtlich abgeschaltet wurde",
@@ -402,9 +403,9 @@
         "check": [{"value": "size.memPerSessionMB", "op": "exists"}, {"value": "size.memPerSessionMB", "op": "lt", "than": "@memPerSessionMB"}]
       },
       "findings": {
-        "ok": "Arbeitsspeicher je Benutzersitzung beim Lesen: {size.memPerSessionMB} MB (Schwelle {@memPerSessionMB} MB; ein Strich heißt: keine Benutzersitzung).",
+        "ok": "Arbeitsspeicher je Benutzersitzung beim Lesen in MB: {size.memPerSessionMB} (Schwelle {@memPerSessionMB}; ein Strich heißt: keine Benutzersitzung).",
         "check": "Je Benutzersitzung stehen rechnerisch nur {size.memPerSessionMB} MB Arbeitsspeicher bereit (Schwelle {@memPerSessionMB} MB).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "Der Wert teilt den Arbeitsspeicher des Servers durch die Zahl der Benutzersitzungen beim Lesen. Reicht der Speicher je Sitzung nicht, lagert Windows aus, und alle Sitzungen auf dem Server werden langsamer. Die Schwelle ist ein Erfahrungswert des Katalogs; als Anhalt für die Größenordnung nennt Microsoft für Microsoft Edge in virtuellen Desktop-Umgebungen mindestens 1 GB Arbeitsspeicher je Benutzer, für große Webanwendungen und Erweiterungen mehr.",
       "todo": [
@@ -438,10 +439,10 @@
       },
       "findings": {
         "ok": "Benutzersitzungen je logischem Prozessor beim Lesen: {size.sessionsPerCpu} (Schwelle {@sessionsPerCpu}).",
-        "check": "Auf einen logischen Prozessor kommen beim Lesen {size.sessionsPerCpu} Benutzersitzungen, mehr als die Schwelle von {@sessionsPerCpu}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Benutzersitzungen je logischem Prozessor beim Lesen: {size.sessionsPerCpu}, mehr als die Schwelle von {@sessionsPerCpu}.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der Wert teilt die Zahl der Benutzersitzungen beim Lesen durch die Zahl der logischen Prozessoren. Microsoft beschreibt den Bedarf eines Sitzungshosts als Rechenleistung je Sitzung mal Zahl der Sitzungen plus eine Reserve für Lastspitzen; eine Zahl nennt Microsoft nicht. Die Schwelle ist ein Erfahrungswert des Katalogs: Teilen sich sehr viele Sitzungen einen Prozessor, bremsen schon wenige rechenintensive Programme alle anderen.",
+      "meaning": "Der Wert teilt die Zahl der Benutzersitzungen beim Lesen durch die Zahl der logischen Prozessoren. Microsoft beschreibt den Bedarf eines Multi-Session-Servers als Rechenleistung je Sitzung mal Zahl der Sitzungen plus eine Reserve für Lastspitzen; eine Zahl nennt die Seite nicht. Die Schwelle ist ein Erfahrungswert des Katalogs: Teilen sich sehr viele Sitzungen einen Prozessor, bremsen schon wenige rechenintensive Programme alle anderen.",
       "todo": [
         {
           "text": "Auslastung der Prozessoren zu einer Zeit mit üblicher Last ansehen",
@@ -466,7 +467,7 @@
     {
       "id": "size.commitAboveRam",
       "area": "size",
-      "title": "Zugesagter Speicher gegen Arbeitsspeicher",
+      "title": "Zugesagter Speicher im Verhältnis zum Arbeitsspeicher",
       "values": ["size.commitOfRamPct"],
       "rules": {
         "check": [{"value": "size.commitOfRamPct", "op": "gt", "than": 100}]
@@ -474,9 +475,9 @@
       "findings": {
         "ok": "Der zugesagte Speicher liegt beim Lesen bei {size.commitOfRamPct} % des Arbeitsspeichers.",
         "check": "Der zugesagte Speicher liegt beim Lesen bei {size.commitOfRamPct} % des Arbeitsspeichers, also über dem, was der Server an Arbeitsspeicher hat.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass der Arbeitsspeicher der virtuellen Maschine mindestens so groß ist wie der zugesagte Speicher, gemessen im Gastsystem, weil der Hypervisor den wirklichen Bedarf nicht zeigt. Nutzen die Programme den zugesagten Speicher auch, reicht der Arbeitsspeicher nicht für alles, und Windows lagert aus; das ist die Erläuterung des Katalogs, nicht der Quelle. Der Wert ist ein Augenblickswert beim Lesen.",
+      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass der Arbeitsspeicher der virtuellen Maschine mindestens so groß ist wie der zugesagte Speicher. Gemessen wird nach Stalhood im Gastsystem, weil der Hypervisor den wirklichen Bedarf nicht zeigt. Nutzen die Programme den zugesagten Speicher auch, reicht der Arbeitsspeicher nicht für alles, und Windows lagert aus (Erläuterung des Katalogs, nicht der Quelle); der Wert gilt nur für den Augenblick des Lesens.",
       "todo": [
         {
           "text": "Den Wert über die ganze Messung ansehen, nicht nur beim Lesen",
@@ -508,15 +509,15 @@
       },
       "findings": {
         "ok": "Logische Prozessoren des Servers: {size.cpuLogical} (Untergrenze {@workerCpuMin}).",
-        "check": "Logische Prozessoren des Servers: {size.cpuLogical}, weniger als {@workerCpuMin}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Logische Prozessoren des Servers: {size.cpuLogical}, weniger als der Praxiswert von {@workerCpuMin}. Das ist ein Hinweis, kein Fehler.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood empfiehlt für einen Sitzungshost mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). GO-EUC kam 2019 in einem Lasttest zum selben Bild: Maschinen mit sieben oder acht virtuellen Prozessoren trugen die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab. Der Test lief mit Windows Server 2016 unter ESXi 6.7 U1 auf zwei Prozessoren Xeon E5-2680 v4 mit je 14 Kernen, die Schutzmaßnahmen gegen Spectre und Meltdown waren abgeschaltet; für heutige Prozessoren sind die genauen Zahlen nicht belegt. Diese Prüfung meldet weniger Prozessoren als die Untergrenze, die Prüfung „Prozessoren je Server (Obergrenze)“ mehr als die Obergrenze.",
+      "meaning": "Carl Stalhood empfiehlt für einen Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). GO-EUC kam 2019 in einem Lasttest zum selben Bild: Maschinen mit sieben oder acht virtuellen Prozessoren trugen die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (Windows Server 2016 unter ESXi 6.7 U1 auf zwei Prozessoren Xeon E5-2680 v4 mit je 14 Kernen, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; für heutige Prozessoren sind die genauen Zahlen nicht belegt). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, und der Hinweis bleibt stehen; ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Messung.",
       "todo": [
         {
-          "text": "Zahl der virtuellen Prozessoren der Server prüfen und auf acht anheben, wenn nichts dagegen spricht",
+          "text": "Die Zahl der virtuellen Prozessoren mit dem Praxiswert und mit der Prozessorlast in der Messung vergleichen und entscheiden, ob sie bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
           "where": "Maschinenkatalog in Citrix Studio oder virtuelle Maschine des Master-Image, zusammen mit dem Hypervisor-Team",
-          "sign": "Zustandsbild zeigt acht logische Prozessoren"
+          "sign": "die Zahl ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         }
       ],
       "source": {
@@ -538,15 +539,15 @@
       },
       "findings": {
         "ok": "Logische Prozessoren des Servers: {size.cpuLogical} (Obergrenze {@workerCpuMax}).",
-        "check": "Der Server hat {size.cpuLogical} logische Prozessoren, mehr als {@workerCpuMax}. Das ist ein Hinweis, kein Fehler.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Logische Prozessoren des Servers: {size.cpuLogical}, mehr als der Praxiswert von {@workerCpuMax}. Das ist ein Hinweis, kein Fehler.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood empfiehlt für einen Sitzungshost mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). GO-EUC kam 2019 in einem Lasttest zum selben Bild: Maschinen mit sieben oder acht virtuellen Prozessoren trugen die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab. Der Test lief mit Windows Server 2016 unter ESXi 6.7 U1 auf zwei Prozessoren Xeon E5-2680 v4 mit je 14 Kernen, die Schutzmaßnahmen gegen Spectre und Meltdown waren abgeschaltet; für heutige Prozessoren sind die genauen Zahlen nicht belegt. Nach GO-EUC soll außerdem die Summe der virtuellen Prozessoren aller Maschinen eines Hosts der Zahl seiner logischen Kerne entsprechen; das kann der Server selbst nicht lesen. Diese Prüfung meldet mehr Prozessoren als die Obergrenze, die Prüfung „Prozessoren je Server (Untergrenze)“ weniger als die Untergrenze.",
+      "meaning": "Carl Stalhood empfiehlt für einen Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). GO-EUC kam 2019 in einem Lasttest zum selben Bild: Maschinen mit sieben oder acht virtuellen Prozessoren trugen die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (Windows Server 2016 unter ESXi 6.7 U1 auf zwei Prozessoren Xeon E5-2680 v4 mit je 14 Kernen, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; für heutige Prozessoren sind die genauen Zahlen nicht belegt). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, und der Hinweis bleibt stehen; ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Messung.",
       "todo": [
         {
-          "text": "Mit dem Hypervisor-Team klären, warum die Server mehr als acht virtuelle Prozessoren haben, und die Zahl anpassen, wenn kein Grund dagegen spricht",
+          "text": "Mit dem Hypervisor-Team klären, warum die Server mehr virtuelle Prozessoren haben als den Praxiswert, und entscheiden, ob die Zahl bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
           "where": "Maschinenkatalog in Citrix Studio oder virtuelle Maschine des Master-Image, zusammen mit dem Hypervisor-Team",
-          "sign": "Zustandsbild zeigt höchstens acht logische Prozessoren"
+          "sign": "die Zahl ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         },
         {
           "text": "Das Hypervisor-Team prüfen lassen, ob die virtuellen Prozessoren aller Maschinen eines Hosts zusammen der Zahl seiner logischen Kerne entsprechen (Sicht von GO-EUC)",
@@ -573,15 +574,15 @@
       },
       "findings": {
         "ok": "Der Server hat {size.memTotalMB} MB Arbeitsspeicher (Untergrenze {@workerMemMinMB} MB).",
-        "check": "Der Server hat {size.memTotalMB} MB Arbeitsspeicher, weniger als {@workerMemMinMB} MB.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Der Server hat {size.memTotalMB} MB Arbeitsspeicher, weniger als der Praxiswert von {@workerMemMinMB} MB. Das ist ein Hinweis, kein Fehler.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood empfiehlt für einen Sitzungshost mit Windows Server 2022, 2019 oder 2016 24 bis 48 GB Arbeitsspeicher je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Nutzt die Bereitstellung einen Schreibcache im Arbeitsspeicher (MCS mit Speicheroptimierung), rechnet er den Speicher für den Cache hinzu. Mit weniger Arbeitsspeicher reicht der Platz bei vielen Sitzungen früher nicht mehr, und Windows lagert aus.",
+      "meaning": "Carl Stalhood empfiehlt für einen Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 24 bis 48 GB Arbeitsspeicher je virtueller Maschine und rechnet bei einem Schreibcache im Arbeitsspeicher (MCS mit Speicheroptimierung) den Speicher für den Cache hinzu (Seite zum VDA 2411, Stand Dezember 2024). Die Schwelle der Prüfung liegt knapp unter 24 GB, weil Windows den Arbeitsspeicher einer virtuellen Maschine etwas kleiner melden kann, als ihr zugeteilt ist (Festlegung des Katalogs, nicht der Quelle). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, und der Hinweis bleibt stehen; ob der Arbeitsspeicher reicht, zeigen die Prüfung „Arbeitsspeicher je Sitzung“ und die Messung.",
       "todo": [
         {
-          "text": "Arbeitsspeicher der Server prüfen und anheben, wenn Sitzungszahl und Anwendungen es verlangen",
+          "text": "Den Arbeitsspeicher der Server mit dem Praxiswert, mit der Zahl der Sitzungen und mit der Speicherlast in der Messung vergleichen und entscheiden, ob er bleibt: Ist er bewusst so gewählt, ist nichts zu ändern",
           "where": "Maschinenkatalog in Citrix Studio oder virtuelle Maschine des Master-Image, zusammen mit dem Hypervisor-Team",
-          "sign": "Zustandsbild zeigt mindestens 24576 MB (24 GB) Arbeitsspeicher"
+          "sign": "die Größe ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         }
       ],
       "source": {
@@ -603,10 +604,10 @@
       },
       "findings": {
         "ok": "Die VMware Tools haben die Version {size.vmtoolsVersion} (Hauptversion {size.vmtoolsMajor}).",
-        "check": "Die VMware Tools haben die Hauptversion {size.vmtoolsMajor} (installierte Version: {size.vmtoolsVersion}); erwartet ist mindestens 12. Die Hauptversion 0 heißt: Es wurden keine VMware Tools gefunden.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Hauptversion der VMware Tools: {size.vmtoolsMajor} (installierte Version: {size.vmtoolsVersion}). Für die beste Leistung nennt VMware Version 12.0.0 oder neuer. Eine 0 heißt: Auf dieser VMware-VM wurden keine VMware Tools gefunden.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "VMware nennt für Windows Server 2022 die VMware Tools ab Version 10.3.5 als Mindeststand und Version 12.0.0 oder neuer für die beste Leistung; für Windows Server 2025 sind es 11.3.0 und 12.5.0. Ein älterer Stand ist danach unterstützt, aber nicht der, den VMware für die beste Leistung nennt. Die Version auf dem Server ist die des Master-Image.",
+      "meaning": "VMware nennt für Windows Server 2022 die VMware Tools ab Version 10.3.5 als Mindeststand und Version 12.0.0 oder neuer für die beste Leistung; für Windows Server 2025 sind es 11.3.0 und 12.5.0. Ein Stand ab dem Mindeststand und unter 12.0.0 (unter Windows Server 2025: unter 12.5.0) ist danach unterstützt, aber nicht der, den VMware für die beste Leistung nennt; ein Stand unter dem Mindeststand ist danach nicht unterstützt. Die Version auf dem Server ist die des Master-Image.",
       "todo": [
         {
           "text": "VMware Tools im Abbild auf einen Stand ab 12.0.0 bringen (unter Windows Server 2025 ab 12.5.0); die Version mit dem Hypervisor-Team abstimmen",
@@ -634,7 +635,7 @@
       "findings": {
         "ok": "Der Ballon-Treiber der VMware Tools läuft.",
         "check": "Der Ballon-Treiber der VMware Tools (vmmemctl) läuft nicht oder fehlt.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "VMware nennt den Ballon-Treiber „critical to performance“ (entscheidend für die Leistung) und verlangt zu prüfen, dass er eingeschaltet ist. Er wird mit den VMware Tools installiert. Nach VMware ist er für das Ballooning nötig, mit dem vSphere den Arbeitsspeicher der virtuellen Maschinen verwaltet, und unter vSphere empfohlen.",
       "todo": [
@@ -669,7 +670,7 @@
       "findings": {
         "ok": "Alle aktiven Netzwerkadapter sind VMXNET3-Adapter.",
         "check": "Aktive Netzwerkadapter, die kein VMXNET3-Adapter sind: {size.otherNetAdapters}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "VMware setzt in seinem Artikel zu schlechter Netzleistung und hoher Latenz auf virtuellen Windows-Maschinen voraus, dass die Maschinen den Adapter VMXNET3 nutzen, bevor weiter gesucht wird. Nach VMware verbessern die Treiber für VMXNET3 aus den VMware Tools die Netzleistung; Carl Stalhood nennt für vSphere ebenfalls VMXNET3. Eine allgemeine Pflicht nennt der Artikel nicht: Die Prüfung ist ein Hinweis für den Fall von Netzproblemen, etwa beim Zugriff auf Freigaben.",
       "todo": [
@@ -703,10 +704,10 @@
       },
       "findings": {
         "ok": "Kein Speicheradapter nutzt einen LSI-Logic-Treiber.",
-        "check": "Speicheradapter mit LSI-Logic-Treiber: {size.lsiControllers}. Das ist ein Hinweis für E/A-starke Last, kein Fehler.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Speicheradapter mit LSI-Logic-Treiber: {size.lsiControllers}. Das zählt nur bei E/A-starker Last und ist kein Fehler.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "VMware schreibt, dass der paravirtuelle SCSI-Adapter (VMware Paravirtual SCSI) in leistungsstarken Speicherumgebungen mehr Durchsatz bei weniger Prozessorlast bringt als die anderen SCSI-Adapter. VMware knüpft das an E/A-starke Last, besonders in SAN-Umgebungen. Ein Adapter mit LSI-Logic-Treiber ist deshalb kein Fehler: Die Prüfung ist nur ein Hinweis für den Fall, dass Laufwerke oder Profile langsam sind.",
+      "meaning": "VMware schreibt, dass der paravirtuelle SCSI-Adapter (VMware Paravirtual SCSI) in leistungsstarken Speicherumgebungen mehr Durchsatz bei weniger Prozessorlast bringt als die anderen SCSI-Adapter. VMware knüpft das an E/A-starke Last, besonders in SAN-Umgebungen, und nennt den Adapter für direkt angeschlossenen Speicher (DAS) nicht geeignet. Ein Adapter mit LSI-Logic-Treiber ist deshalb kein Fehler: Die Prüfung ist nur ein Hinweis für den Fall, dass Laufwerke oder Profile langsam sind.",
       "todo": [
         {
           "text": "Mit dem Hypervisor-Team klären, ob die Last einen paravirtuellen SCSI-Adapter rechtfertigt",
@@ -739,9 +740,9 @@
       "findings": {
         "ok": "Keine Datei wartet darauf, beim nächsten Neustart umbenannt oder gelöscht zu werden.",
         "check": "Dateien, die erst beim nächsten Neustart umbenannt oder gelöscht werden: {operation.pendingRename}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Windows merkt sich Dateien, die erst beim nächsten Neustart umbenannt oder gelöscht werden können; Installationen und Updates nutzen das für Dateien, die gerade in Gebrauch sind. Auf einem nicht persistenten Server heißt ein solcher Eintrag: Seit dem letzten Start wurde etwas installiert oder aktualisiert, und der Neustart, der es abschließen würde, verwirft die Änderung wieder. Einen Neustart, den nur Windows Update oder die Komponentenwartung verlangt, sieht diese Prüfung nicht.",
+      "meaning": "Windows merkt sich nach Microsoft in einem Wert der Windows-Registrierung, welche Dateien erst beim nächsten Neustart umbenannt oder gelöscht werden. Nach der Faustregel des Katalogs heißt ein solcher Eintrag auf einem nicht persistenten Server meist: Seit dem letzten Start wurde etwas installiert oder aktualisiert, und der Neustart, der es abschließen würde, verwirft die Änderung wieder. Einen Neustart, den nur Windows Update oder die Komponentenwartung verlangt, sieht diese Prüfung nicht.",
       "todo": [
         {
           "text": "Klären, was seit dem letzten Start auf dem Server installiert oder aktualisiert wurde",
@@ -778,19 +779,19 @@
       },
       "findings": {
         "ok": "Laufzeit seit dem letzten Start in Tagen: {operation.uptimeDays} (Schwelle {@uptimeDays}).",
-        "check": "Der Server läuft seit {operation.uptimeDays} Tagen ohne Neustart (Schwelle {@uptimeDays} Tage).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Laufzeit seit dem letzten Start in Tagen: {operation.uptimeDays}, mehr als die Schwelle von {@uptimeDays}.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass Sitzungshosts regelmäßig neu gestartet werden. Eine Zahl nennt er nicht; die Schwelle ist ein Vorschlag des Katalogs. Ein nicht persistenter Server kehrt erst mit dem Neustart zum Stand des Master-Image zurück.",
+      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass Multi-Session-Server regelmäßig neu gestartet werden. Eine Zahl nennt er nicht; die Schwelle ist ein Vorschlag des Katalogs. Ein nicht persistenter Server kehrt erst mit dem Neustart zum Stand des Master-Image zurück.",
       "todo": [
         {
-          "text": "Neustartplan der Bereitstellungsgruppe ansehen",
-          "where": "Citrix Studio, Bereitstellungsgruppe, Neustartplan",
-          "sign": "kein Plan vorhanden, oder der Plan hat diesen Server nicht erfasst"
+          "text": "Den Zeitplan für Neustarts der Bereitstellungsgruppe ansehen",
+          "where": "Citrix Studio, Bereitstellungsgruppe, Einstellungen zu geplanten Neustarts",
+          "sign": "kein Zeitplan vorhanden, oder der Zeitplan hat diesen Server nicht erfasst"
         },
         {
           "text": "Die Server regelmäßig außerhalb der Arbeitszeit neu starten lassen",
-          "where": "Neustartplan der Bereitstellungsgruppe in Citrix Studio",
+          "where": "Zeitplan für Neustarts der Bereitstellungsgruppe in Citrix Studio",
           "sign": "Laufzeit bleibt bei der nächsten Aufzeichnung unter der Schwelle"
         }
       ],
@@ -813,8 +814,8 @@
       },
       "findings": {
         "ok": "Alter des jüngsten Updates im Abbild in Tagen: {operation.updateAgeDays} (Schwelle {@updateAgeDays}; ein Strich heißt: Windows nennt kein lesbares Installationsdatum).",
-        "check": "Das jüngste Update im Abbild ist {operation.updateAgeDays} Tage alt (Schwelle {@updateAgeDays} Tage).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Alter des jüngsten Updates im Abbild in Tagen: {operation.updateAgeDays}, mehr als die Schwelle von {@updateAgeDays}.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass das letzte Windows-Update höchstens 60 Tage zurückliegt. Auf einem nicht persistenten Server ist der Stand der Updates der Stand des Master-Image: Ein altes Datum heißt, dass das Abbild lange nicht aktualisiert wurde. Das betrifft dann alle Server aus diesem Abbild.",
       "todo": [
@@ -826,7 +827,7 @@
         {
           "text": "Einen festen Rhythmus für die Pflege des Abbilds vereinbaren",
           "where": "Team, das das Master-Image pflegt",
-          "sign": "das Abbild wird mindestens alle zwei Monate aktualisiert"
+          "sign": "das Abbild wird in Abständen aktualisiert, die unter der Schwelle liegen"
         }
       ],
       "source": {
@@ -848,14 +849,14 @@
       },
       "findings": {
         "ok": "Der aktive Energiesparplan ist „Höchstleistung“.",
-        "check": "Der aktive Energiesparplan ist nicht „Höchstleistung“ (gelesen: {operation.powerPlan}; balanced steht für „Ausbalanciert“, powerSaver für „Energiesparmodus“, other für einen eigenen Plan).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Der aktive Energiesparplan ist nicht „Höchstleistung“, sondern {operation.powerPlan} (balanced = „Ausbalanciert“, powerSaver = „Energiesparmodus“, other = ein eigener Plan).",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll den Energiesparplan „Höchstleistung“; BIS-F stellt denselben Plan beim Versiegeln des Abbilds ein. Microsoft nennt dagegen „Ausbalanciert“ als empfohlene Vorgabe für Windows Server und „Höchstleistung“ für Anwendungen, die auf Verzögerungen empfindlich reagieren. VMware nennt „Höchstleistung“ für die Zeit, in der Leistungs- und Latenzprobleme untersucht werden. Für diesen Katalog ist festgelegt, dass hier die Praxisquellen vor dem Hersteller gelten, weil sie sich ausdrücklich auf Citrix-Terminalserver und Betriebserfahrung beziehen. GO-EUC hat 2026 zwischen „Ausbalanciert“ und „Höchstleistung“ nur einen geringen Unterschied gemessen und für Benutzer keinen spürbaren (Windows 11 mit einer Sitzung je Maschine auf Azure, Defender abgeschaltet, Leerlaufzustände der Prozessoren nicht untersucht). Einen messbaren Gewinn verspricht die Umstellung also nicht.",
+      "meaning": "Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll den Energiesparplan „Höchstleistung“; BIS-F stellt denselben Plan beim Versiegeln des Abbilds ein. Die Hersteller sagen es anders: Microsoft nennt „Ausbalanciert“ als empfohlene Vorgabe für Windows Server und „Höchstleistung“ für Anwendungen, die auf Verzögerungen empfindlich reagieren; VMware nennt „Höchstleistung“ für die Zeit, in der Leistungs- und Latenzprobleme untersucht werden (der Artikel stützt sich auf Beobachtungen unter älteren Windows-Versionen und sagt, die Umstellung könne die Leistung erhöhen). Für diesen Katalog ist festgelegt, dass hier die Praxisquellen vor dem Hersteller gelten, weil sie sich ausdrücklich auf Citrix-Terminalserver und Betriebserfahrung beziehen. GO-EUC hat 2026 „Ausbalanciert“ und „Höchstleistung“ verglichen (Windows 11 mit einer Sitzung je Maschine auf Azure, Defender abgeschaltet): In diesem Test brachte die Umstellung nur einen geringen Gewinn an Leistung und bei der gemessenen Benutzererfahrung kaum oder keinen Unterschied; die Leerlaufzustände der Prozessoren waren nicht Teil der Messung. Für Windows Server mit vielen Sitzungen unter vSphere hat GO-EUC in diesem Test nicht gemessen.",
       "todo": [
         {
-          "text": "Energiesparplan im Abbild auf „Höchstleistung“ stellen",
-          "where": "bei nicht persistenten Servern im Master-Image (Energieoptionen) oder in der Gruppenrichtlinie für die Server, danach die Server neu bereitstellen",
+          "text": "Den Energiesparplan auf „Höchstleistung“ stellen",
+          "where": "bei nicht persistenten Servern im Master-Image (Energieoptionen), danach die Server neu bereitstellen; oder in der Gruppenrichtlinie für die Server",
           "sign": "Zustandsbild zeigt den Plan „Höchstleistung“"
         }
       ],
@@ -878,12 +879,12 @@
         "act": [{"value": "operation.minFreeGB", "op": "exists"}, {"value": "operation.minFreeGB", "op": "lt", "than": "@diskFreeHardGB", "hard": true}]
       },
       "findings": {
-        "ok": "Auf dem Systemlaufwerk und auf Laufwerken mit Auslagerungsdatei sind mindestens {operation.minFreeGB} GB frei (Schwelle {@diskFreeGB} GB).",
+        "ok": "Kleinster freier Platz auf dem Systemlaufwerk und auf Laufwerken mit Auslagerungsdatei in GB: {operation.minFreeGB} (Schwelle {@diskFreeGB}; ein Strich heißt: kein Laufwerk als System- oder Auslagerungslaufwerk erkannt).",
         "check": "Auf dem Systemlaufwerk oder einem Laufwerk mit Auslagerungsdatei sind nur {operation.minFreeGB} GB frei (Schwelle {@diskFreeGB} GB).",
         "act": "Auf dem Systemlaufwerk oder einem Laufwerk mit Auslagerungsdatei sind nur noch {operation.minFreeGB} GB frei (harte Grenze {@diskFreeHardGB} GB).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der Wert ist der freie Platz beim Lesen auf dem Systemlaufwerk und auf Laufwerken mit einer Auslagerungsdatei. Läuft eines davon voll, kann eine vom System verwaltete Auslagerungsdatei nicht mehr wachsen, und Windows, Profile und Programme können nicht mehr schreiben. Nach Thomas Kötzing (2024) liegen auf Servern aus MCS mit Speicheroptimierung auf dem Cache-Laufwerk neben dem Überlauf des Schreibcaches oft auch die Auslagerungsdatei, der WEM-Cache und umgeleitete Protokolle; die Überlaufdatei mcsdif.vhdx behält bis zum Neustart ihre größte erreichte Größe. Diese Prüfung sieht das Cache-Laufwerk nur, wenn die Auslagerungsdatei darauf liegt. Die Schwellen sind Erfahrungswerte des Katalogs.",
+      "meaning": "Läuft das Systemlaufwerk oder ein Laufwerk mit Auslagerungsdatei voll, kann eine vom System verwaltete Auslagerungsdatei nicht mehr wachsen, und Windows, Profile und Programme können nicht mehr schreiben. Nach Thomas Kötzing (2024) liegen auf Servern aus MCS mit Speicheroptimierung auf dem Cache-Laufwerk neben dem Überlauf des Schreibcaches oft auch die Auslagerungsdatei, der Cache des WEM-Agenten und umgeleitete Protokolle, und die Überlaufdatei mcsdif.vhdx behält bis zum Neustart ihre größte erreichte Größe; diese Prüfung sieht das Cache-Laufwerk nur, wenn die Auslagerungsdatei darauf liegt. Der Wert gilt für den Augenblick des Lesens, die Schwellen sind Erfahrungswerte des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, was den Platz belegt",
@@ -920,20 +921,20 @@
       },
       "findings": {
         "ok": "Zeitlimit für getrennte Sitzungen in Minuten: {sessions.disconnectLimitMin}.",
-        "check": "Windows hat kein Zeitlimit für getrennte Sitzungen. Ein Zeitgeber aus einer Citrix-Richtlinie wird nicht gelesen und kann trotzdem gelten.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Windows hat kein Zeitlimit für getrennte Sitzungen. Ein Sitzungs-Timer aus einer Citrix-Richtlinie wird nicht gelesen und kann trotzdem gelten.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ohne Zeitlimit bleibt eine getrennte Sitzung bestehen, bis jemand sie beendet, und belegt so lange Arbeitsspeicher. Carl Stalhood setzt in seinen Gruppenrichtlinien für Sitzungshosts ein Zeitlimit für getrennte Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023); James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden (2023). Beide Zahlen sind Größenordnungen, keine Schwelle dieser Prüfung. Gelesen wird nur das Zeitlimit von Windows: Einen Zeitgeber aus einer Citrix-Richtlinie sieht diese Prüfung nicht. Als Beispiel beschreibt Guy Leech (2016) einen Druckserver mit vier Prozessoren, auf dem über Tage getrennte Verwaltungssitzungen den größten Teil der Rechenleistung banden; das war kein Sitzungshost.",
+      "meaning": "Ohne Zeitlimit bleibt eine getrennte Sitzung bestehen, bis jemand sie beendet, und belegt so lange Arbeitsspeicher. Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für getrennte Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden (2023); beide Zahlen sind Größenordnungen, keine Schwelle dieser Prüfung. Gelesen wird nur das Zeitlimit von Windows: Einen Sitzungs-Timer aus einer Citrix-Richtlinie sieht diese Prüfung nicht.",
       "todo": [
         {
-          "text": "Das Zeitlimit in der Computerkonfiguration einer Gruppenrichtlinie setzen, die für die Server gilt, nicht am Benutzerobjekt im Active Directory (so James Rankin, 2023, und James Kindon, 2021; nach Kindon greifen die Werte am Benutzerobjekt nur, wo nichts anderes gesetzt ist)",
-          "where": "Gruppenrichtlinie für die Server, Computerkonfiguration, Zeitlimits der Remotedesktop-Sitzungen",
-          "sign": "Zustandsbild zeigt ein Zeitlimit für getrennte Sitzungen"
+          "text": "Zuerst prüfen, ob in einer Citrix-Richtlinie ein Sitzungs-Timer gesetzt ist: Dann gilt schon ein Zeitlimit, das diese Prüfung nicht sieht; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
+          "where": "Citrix-Richtlinie für die Bereitstellungsgruppe in Citrix Studio",
+          "sign": "der Timer für getrennte Sitzungen ist dort eingeschaltet"
         },
         {
-          "text": "Prüfen, ob stattdessen ein Zeitgeber in einer Citrix-Richtlinie gesetzt ist; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
-          "where": "Citrix-Richtlinie für die Bereitstellungsgruppe in Citrix Studio",
-          "sign": "Zeitgeber für Sitzungshosts ist dort eingeschaltet"
+          "text": "Ist dort keiner gesetzt, das Zeitlimit in der Computerkonfiguration einer Gruppenrichtlinie setzen, die für die Server gilt, nicht am Benutzerobjekt im Active Directory (so James Rankin, 2023, und James Kindon, 2021; nach Kindon greifen die Werte am Benutzerobjekt nur, wo nichts anderes gesetzt ist)",
+          "where": "Gruppenrichtlinie für die Server, Computerkonfiguration; bei Carl Stalhood heißt die Einstellung englisch „Set time limit for disconnected sessions“",
+          "sign": "Zustandsbild zeigt ein Zeitlimit für getrennte Sitzungen"
         }
       ],
       "source": {
@@ -955,20 +956,20 @@
       },
       "findings": {
         "ok": "Zeitlimit für Sitzungen im Leerlauf in Minuten: {sessions.idleLimitMin}.",
-        "check": "Windows hat kein Zeitlimit für Sitzungen im Leerlauf. Ein Zeitgeber aus einer Citrix-Richtlinie wird nicht gelesen und kann trotzdem gelten.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Windows hat kein Zeitlimit für Sitzungen im Leerlauf. Ein Sitzungs-Timer aus einer Citrix-Richtlinie wird nicht gelesen und kann trotzdem gelten.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ohne Zeitlimit bleibt eine Sitzung, in der niemand mehr arbeitet, verbunden und belegt Arbeitsspeicher und Rechenleistung. Carl Stalhood setzt in seinen Gruppenrichtlinien für Sitzungshosts ein Zeitlimit für aktive, aber untätige Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023); James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden, nach denen die Sitzung getrennt wird (2023). Beide Zahlen sind Größenordnungen, keine Schwelle dieser Prüfung. Gelesen wird nur das Zeitlimit von Windows: Einen Zeitgeber aus einer Citrix-Richtlinie sieht diese Prüfung nicht.",
+      "meaning": "Ohne Zeitlimit bleibt eine Sitzung, in der niemand mehr arbeitet, verbunden und belegt Arbeitsspeicher und Rechenleistung. Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für aktive, aber untätige Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden, nach denen die Sitzung getrennt wird (2023); beide Zahlen sind Größenordnungen, keine Schwelle dieser Prüfung. Gelesen wird nur das Zeitlimit von Windows: Einen Sitzungs-Timer aus einer Citrix-Richtlinie sieht diese Prüfung nicht.",
       "todo": [
         {
-          "text": "Das Zeitlimit in der Computerkonfiguration einer Gruppenrichtlinie setzen, die für die Server gilt, nicht am Benutzerobjekt im Active Directory (so James Rankin, 2023, und James Kindon, 2021; nach Kindon greifen die Werte am Benutzerobjekt nur, wo nichts anderes gesetzt ist)",
-          "where": "Gruppenrichtlinie für die Server, Computerkonfiguration, Zeitlimits der Remotedesktop-Sitzungen",
-          "sign": "Zustandsbild zeigt ein Zeitlimit für Sitzungen im Leerlauf"
+          "text": "Zuerst prüfen, ob in einer Citrix-Richtlinie ein Sitzungs-Timer gesetzt ist: Dann gilt schon ein Zeitlimit, das diese Prüfung nicht sieht; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
+          "where": "Citrix-Richtlinie für die Bereitstellungsgruppe in Citrix Studio",
+          "sign": "der Timer für Sitzungen im Leerlauf ist dort eingeschaltet"
         },
         {
-          "text": "Prüfen, ob stattdessen ein Zeitgeber in einer Citrix-Richtlinie gesetzt ist; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
-          "where": "Citrix-Richtlinie für die Bereitstellungsgruppe in Citrix Studio",
-          "sign": "Zeitgeber für Sitzungshosts ist dort eingeschaltet"
+          "text": "Ist dort keiner gesetzt, das Zeitlimit in der Computerkonfiguration einer Gruppenrichtlinie setzen, die für die Server gilt, nicht am Benutzerobjekt im Active Directory (so James Rankin, 2023, und James Kindon, 2021; nach Kindon greifen die Werte am Benutzerobjekt nur, wo nichts anderes gesetzt ist)",
+          "where": "Gruppenrichtlinie für die Server, Computerkonfiguration; bei Carl Stalhood heißt die Einstellung englisch „Set a time limit for active but idle Terminal Services sessions“",
+          "sign": "Zustandsbild zeigt ein Zeitlimit für Sitzungen im Leerlauf"
         }
       ],
       "source": {
@@ -990,15 +991,15 @@
       },
       "findings": {
         "ok": "Dauer der ältesten getrennten Sitzung in Stunden: {sessions.disconnectedOldestHours} (Schwelle {@disconnectedHours}; 0 heißt: keine getrennte Sitzung).",
-        "check": "Eine Sitzung ist seit {sessions.disconnectedOldestHours} Stunden getrennt (Schwelle {@disconnectedHours} Stunden).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Dauer der ältesten getrennten Sitzung in Stunden: {sessions.disconnectedOldestHours}, mehr als die Schwelle von {@disconnectedHours}.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Eine getrennte Sitzung läuft auf dem Server weiter: Ihre Programme behalten ihren Arbeitsspeicher, und ihr Profil bleibt geladen. Eine Sitzung, die seit mehr als einem Tag getrennt ist, wird meist nicht mehr gebraucht. Die Schwelle ist ein Erfahrungswert des Katalogs.",
+      "meaning": "Eine getrennte Sitzung läuft auf dem Server weiter: Ihre Programme behalten ihren Arbeitsspeicher, und ihr Profil bleibt geladen. Eine Sitzung, die länger als die Schwelle getrennt ist, wird meist nicht mehr gebraucht. Die Schwelle ist ein Erfahrungswert des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, wem die getrennten Sitzungen gehören und ob sie noch gebraucht werden",
           "where": "Citrix Director oder Task-Manager auf dem Server, Registerkarte „Benutzer“",
-          "sign": "Sitzungen mit dem Status „Getrennt“ seit mehr als einem Tag"
+          "sign": "Sitzungen, die seit Langem den Status „Getrennt“ haben"
         },
         {
           "text": "Ein Zeitlimit für getrennte Sitzungen setzen, damit sie von selbst enden (siehe die Prüfung „Zeitlimit für getrennte Sitzungen“)",
@@ -1024,9 +1025,9 @@
         "check": [{"value": "sessions.unloadedProfiles", "op": "gt", "than": "@unloadedProfiles"}]
       },
       "findings": {
-        "ok": "Lokale Profile ohne Sitzung: {sessions.unloadedProfiles} (Schwelle {@unloadedProfiles}); letzter Start am {operation.lastBoot} Uhr.",
-        "check": "{sessions.unloadedProfiles} lokale Profile gehören zu keiner laufenden Sitzung (Schwelle {@unloadedProfiles}). Sie sind seit dem letzten Start am {operation.lastBoot} Uhr entstanden oder liegen schon im Abbild.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "ok": "Lokale Profile ohne Sitzung: {sessions.unloadedProfiles} (Schwelle {@unloadedProfiles}); letzter Start: {operation.lastBoot}.",
+        "check": "Lokale Profile ohne laufende Sitzung: {sessions.unloadedProfiles}, mehr als die Schwelle von {@unloadedProfiles}. Sie sind seit dem letzten Start ({operation.lastBoot}) entstanden oder liegen schon im Abbild.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
       "meaning": "Bleiben lokale Profile nach der Abmeldung auf dem Server liegen, belegen sie Platz auf dem Systemlaufwerk. Auf einem nicht persistenten Server reicht die Zahl nur bis zum letzten Start zurück: Nach einem Neustart liegen wieder nur die Profile des Abbilds da. Die Schwelle ist ein Erfahrungswert des Katalogs.",
       "todo": [
@@ -1065,16 +1066,16 @@
         "act": [{"value": "sessions.tempProfiles", "op": "gt", "than": 0}, {"event": "profileerror", "min": 1, "days": 7}]
       },
       "findings": {
-        "ok": "Kein temporäres Profil seit dem letzten Start am {operation.lastBoot} Uhr.",
-        "check": "Temporäre Profile seit dem letzten Start am {operation.lastBoot} Uhr: {sessions.tempProfiles}.",
-        "act": "Temporäre Profile seit dem letzten Start am {operation.lastBoot} Uhr: {sessions.tempProfiles}. Dazu stehen Profilfehler im Rückblick der letzten 7 Tage oder in der Messung.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "ok": "Kein temporäres Profil seit dem letzten Start ({operation.lastBoot}).",
+        "check": "Temporäre Profile seit dem letzten Start ({operation.lastBoot}): {sessions.tempProfiles}.",
+        "act": "Temporäre Profile seit dem letzten Start ({operation.lastBoot}): {sessions.tempProfiles}. Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Profilfehler; ob sie diese Profile betreffen, zeigt die Ereignisanzeige.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Windows meldet einen Benutzer mit einem temporären Profil an, wenn es sein Profil nicht laden kann. Der Benutzer arbeitet dann ohne seine Einstellungen, und was er im Profil ablegt, geht bei der Abmeldung verloren. Thomas Kötzing nennt als einen Auslöser Einträge mit der Endung .bak für den Benutzer in der Profilliste der Registrierung des Servers (2024, gezeigt mit FSLogix; die Profilliste gehört zu Windows). Auf einem nicht persistenten Server reicht die Zahl nur bis zum letzten Start zurück.",
+      "meaning": "Windows meldet einen Benutzer mit einem temporären Profil an, wenn es sein Profil nicht laden kann: Er arbeitet dann ohne seine Einstellungen, und was er im Profil ablegt, geht bei der Abmeldung verloren. Thomas Kötzing nennt als einen Auslöser Einträge mit der Endung .bak für den Benutzer in der Profilliste der Windows-Registrierung des Servers (2024, gezeigt mit FSLogix; die Profilliste gehört zu Windows). Die Prüfung ist eine Faustregel des Katalogs; auf einem nicht persistenten Server reichen die Zahl der temporären Profile und die Ereignisprotokolle, also auch der Rückblick, nur bis zum letzten Start zurück.",
       "todo": [
         {
-          "text": "Bei den betroffenen Benutzern nach Einträgen mit der Endung .bak in der Profilliste suchen, solange der Server läuft; mit dem nächsten Neustart sind sie verschwunden (Thomas Kötzing, 2024)",
-          "where": "Registrierung des Servers, HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
+          "text": "Bei den betroffenen Benutzern nach Einträgen mit der Endung .bak in der Profilliste suchen (Thomas Kötzing, 2024), solange der Server läuft: Auf einem nicht persistenten Server sind sie nach dem nächsten Neustart nicht mehr da",
+          "where": "Windows-Registrierung des Servers, HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
           "sign": "Schlüssel mit der Kennung des Benutzers und der Endung .bak"
         },
         {
@@ -1108,16 +1109,21 @@
       },
       "findings": {
         "ok": "Alle Citrix-Dienste mit dem Starttyp „Automatisch“ laufen.",
-        "check": "Citrix-Dienste mit dem Starttyp „Automatisch“, die nicht laufen: {vda.stoppedAutoServices}. Zustand des Dienstes „Citrix Desktop Service“ laut Windows: {vda.desktopService}.",
-        "act": "Der Dienst „Citrix Desktop Service“ läuft nicht (Zustand laut Windows: {vda.desktopService}). Dazu stehen Dienstereignisse im Rückblick der letzten 7 Tage oder in der Messung.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Citrix-Dienste mit dem Starttyp „Automatisch“, die nicht laufen: {vda.stoppedAutoServices}. Gelesener Zustand des Dienstes „Citrix Desktop Service“: {vda.desktopService} (Running = läuft, Stopped = beendet).",
+        "act": "Der Dienst „Citrix Desktop Service“ läuft nicht (gelesener Zustand: {vda.desktopService}; Running = läuft, Stopped = beendet). Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Ereignisse über unerwartet beendete Dienste; ob sie diesen Dienst betreffen, zeigt die Ereignisanzeige.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der Dienst „Citrix Desktop Service“ meldet den Server beim Controller an; ohne ihn bekommt der Server keine neuen Sitzungen. Die anderen Citrix-Dienste tragen einzelne Funktionen der Sitzungen. Ein Dienst, der automatisch starten soll und nicht läuft, ist deshalb ein Grund nachzusehen.",
+      "meaning": "Der Dienst „Citrix Desktop Service“ registriert den VDA beim Delivery Controller; ohne ihn bekommt der Server keine neuen Sitzungen. Die anderen Citrix-Dienste tragen einzelne Funktionen der Sitzungen, deshalb ist ein Dienst, der automatisch starten soll und nicht läuft, ein Grund nachzusehen. Die Prüfung ist eine Faustregel des Katalogs; auf einem nicht persistenten Server reichen die Ereignisprotokolle nur bis zum letzten Start zurück, der Rückblick also auch.",
       "todo": [
         {
-          "text": "Nachsehen, welche Citrix-Dienste nicht laufen und seit wann",
+          "text": "Auf diesem Server nur nachsehen, welche Citrix-Dienste nicht laufen und seit wann; an den Diensten dort nichts umstellen",
           "where": "Dienste-Konsole des Servers; Ereignisanzeige, Systemprotokoll; im Bericht der Rohwert „Citrix-Dienste“",
           "sign": "Dienst mit dem Starttyp „Automatisch“, der nicht läuft; Einträge über unerwartet beendete Dienste"
+        },
+        {
+          "text": "Betrifft es nur diesen Server: ihn über die Bereitstellungsgruppe in den Wartungsmodus setzen und, sobald keine Benutzer mehr angemeldet sind, neu starten lassen; mit dem Neustart kehrt er zum Stand des Master-Image zurück",
+          "where": "Citrix Studio, Bereitstellungsgruppe",
+          "sign": "nach dem Neustart laufen die Dienste"
         },
         {
           "text": "Tritt es auf mehreren Servern auf, die Installation des VDA im Abbild prüfen",
@@ -1137,20 +1143,20 @@
     {
       "id": "vda.controllerCount",
       "area": "vda",
-      "title": "Zahl der Controller in der Liste",
+      "title": "Zahl der Delivery Controller in der Liste",
       "values": ["vda.controllerCount", "vda.farmGuid"],
       "rules": {
         "check": [{"value": "vda.farmGuid", "op": "eq", "than": false}, {"value": "vda.controllerCount", "op": "eq", "than": 1}]
       },
       "findings": {
-        "ok": "Controller in der Liste aus Richtlinie oder Registrierung: {vda.controllerCount} (0 heißt: die Liste kommt auf einem anderen Weg). Registrierung über die Organisationseinheit: {vda.farmGuid}.",
-        "check": "In der Controllerliste aus Richtlinie oder Registrierung steht nur ein Controller.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "ok": "Delivery Controller in der Liste aus Richtlinie oder Windows-Registrierung: {vda.controllerCount} (0 heißt: die Liste kommt auf einem anderen Weg). Registrierung des VDA beim Delivery Controller über die Organisationseinheit im Active Directory: {vda.farmGuid} (bei „ja“ wertet diese Prüfung die Liste nicht).",
+        "check": "In der Liste der Delivery Controller aus Richtlinie oder Windows-Registrierung steht nur ein Controller.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der VDA meldet sich bei einem der Controller aus seiner Liste an. Citrix empfiehlt, mehr als einen Controller einzutragen, damit die Anmeldung nicht scheitert, wenn ein Controller nicht erreichbar ist. Steht in Richtlinie und Registrierung kein Eintrag, kommt die Liste auf einem anderen Weg; für MCS beschreibt Citrix, dass die Bereitstellung sie selbst mitgibt. Das ist kein Befund.",
+      "meaning": "Der VDA registriert sich bei einem der Delivery Controller aus seiner Liste; ein VDA, der nicht registriert ist, bekommt keine neuen Sitzungen. Citrix empfiehlt, mehr als einen Controller einzutragen, damit die Registrierung des VDA nicht scheitert, wenn ein Controller nicht erreichbar ist. Steht in Richtlinie und Windows-Registrierung kein Eintrag, kommt die Liste auf einem anderen Weg, und das ist in Ordnung: Für MCS beschreibt Citrix, dass die Bereitstellung sie selbst mitgibt.",
       "todo": [
         {
-          "text": "Mindestens zwei Controller in die Liste eintragen",
+          "text": "Mindestens zwei Delivery Controller in die Liste eintragen",
           "where": "Gruppenrichtlinie für die Server (Citrix nennt die Richtlinie als bevorzugten Weg) oder Installation des VDA im Master-Image",
           "sign": "Zustandsbild zeigt mindestens zwei Controller"
         }
@@ -1167,20 +1173,20 @@
     {
       "id": "vda.controllerNotFqdn",
       "area": "vda",
-      "title": "Schreibweise der Controller in der Liste",
+      "title": "Schreibweise der Delivery Controller in der Liste",
       "values": ["vda.controllersNotFqdn"],
       "rules": {
         "check": [{"value": "vda.controllersNotFqdn", "op": "gt", "than": 0}]
       },
       "findings": {
-        "ok": "Kein Controller der Liste ist als Kurzname oder IP-Adresse eingetragen.",
-        "check": "Controller der Liste, die als Kurzname oder IP-Adresse eingetragen sind: {vda.controllersNotFqdn}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "ok": "Kein Delivery Controller der Liste ist als Kurzname oder IP-Adresse eingetragen.",
+        "check": "Delivery Controller der Liste, die als Kurzname oder IP-Adresse eingetragen sind: {vda.controllersNotFqdn}.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Citrix empfiehlt, Controller mit ihrem vollständigen Namen (FQDN) einzutragen. Nach Citrix soll jeder Eintrag der Liste auf einen gültigen vollständigen Namen zeigen, damit sich die Anmeldung des VDA beim Start nicht verzögert. Eine IP-Adresse gilt nach Citrix zudem nicht als vertrauenswürdige Angabe.",
+      "meaning": "Citrix empfiehlt, Delivery Controller mit ihrem vollständigen Namen (FQDN) einzutragen. Nach Citrix soll jeder Eintrag der Liste auf einen gültigen vollständigen Namen zeigen, damit sich die Registrierung des VDA beim Start nicht verzögert. Eine IP-Adresse gilt nach Citrix zudem nicht als vertrauenswürdige Angabe.",
       "todo": [
         {
-          "text": "Die Einträge der Controllerliste auf vollständige Namen umstellen",
+          "text": "Die Einträge der Liste der Delivery Controller auf vollständige Namen umstellen",
           "where": "Gruppenrichtlinie für die Server oder Installation des VDA im Master-Image",
           "sign": "Zustandsbild zeigt keinen Controller mehr, der als Kurzname oder IP-Adresse eingetragen ist"
         }
@@ -1204,14 +1210,14 @@
       },
       "findings": {
         "ok": "Der Wert ListOfSIDs ist nicht gesetzt.",
-        "check": "Der Wert ListOfSIDs ist in Richtlinie oder Registrierung gesetzt.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Der Wert ListOfSIDs ist in Richtlinie oder Windows-Registrierung gesetzt.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Über ListOfSIDs lässt sich von Hand festlegen, welchen Controllern der VDA vertraut. Citrix rät, den Wert ohne besonderen Grund nicht zu ändern: Wer ihn setzt, muss nach Citrix auch die automatische Aktualisierung der Controllerliste abschalten. Die Prüfung stellt nur fest, dass der Wert gesetzt ist; seinen Inhalt liest sie nicht.",
+      "meaning": "Über ListOfSIDs lässt sich von Hand festlegen, welchen Delivery Controllern der VDA vertraut. Citrix rät, den Wert ohne besonderen Grund nicht zu ändern: Wer ihn setzt, muss nach Citrix auch die automatische Aktualisierung der Liste der Delivery Controller abschalten. Die Prüfung stellt nur fest, dass der Wert gesetzt ist; seinen Inhalt liest sie nicht.",
       "todo": [
         {
           "text": "Klären, ob es einen Grund für den von Hand gesetzten Wert gibt, und ihn sonst entfernen",
-          "where": "Gruppenrichtlinie für die Server oder Master-Image (Einstellungen des VDA in der Registrierung)",
+          "where": "Gruppenrichtlinie für die Server oder Master-Image (Einstellungen des VDA in der Windows-Registrierung)",
           "sign": "Zustandsbild meldet ListOfSIDs als nicht gesetzt"
         }
       ],
@@ -1235,9 +1241,9 @@
       "findings": {
         "ok": "Die drei Dienste, die der WEM-Agent braucht, laufen und starten automatisch.",
         "check": "Von den drei Diensten, die der WEM-Agent braucht, fehlen, laufen nicht oder starten nicht automatisch: {vda.wemServicesNotReady}.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Citrix nennt drei Dienste, die der WEM-Agent braucht: den „System Event Notification Service“ von Windows, den „Citrix WEM Agent Host Service“ und den „Citrix WEM User Logon Service“. Sie sollen laufen und automatisch starten. Sonst arbeitet der Agent nach Citrix nicht wie erwartet, und die Umgebung der Benutzer wird bei der Anmeldung nicht verlässlich eingerichtet.",
+      "meaning": "Citrix nennt drei Dienste, die der WEM-Agent braucht, um wie erwartet zu arbeiten: den „System Event Notification Service“ von Windows, den „Citrix WEM Agent Host Service“ und den „Citrix WEM User Logon Service“. Sie sollen nach Citrix laufen und automatisch starten. Arbeitet der Agent nicht wie erwartet, wird die Umgebung der Benutzer bei der Anmeldung nicht verlässlich eingerichtet (Erläuterung des Katalogs, nicht von Citrix).",
       "todo": [
         {
           "text": "Nachsehen, welcher der drei Dienste fehlt, nicht läuft oder nicht automatisch startet",
@@ -1245,7 +1251,7 @@
           "sign": "Dienst läuft nicht, oder sein Starttyp ist nicht „Automatisch“"
         },
         {
-          "text": "Den Starttyp der Dienste im Abbild auf „Automatisch“ stellen; die Dienste nicht per Skript beenden oder neu starten (Citrix rät davon ab)",
+          "text": "Den Starttyp der Dienste im Abbild auf „Automatisch“ stellen; den Dienst „Citrix WEM Agent Host Service“ nicht per Skript beenden oder neu starten (Citrix rät davon ab)",
           "where": "bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen",
           "sign": "Zustandsbild meldet alle drei Dienste als bereit"
         }
@@ -1269,10 +1275,10 @@
       },
       "findings": {
         "ok": "Für den Cache des WEM-Agenten ist ein eigener Ort eingetragen.",
-        "check": "Für den Cache des WEM-Agenten ist kein eigener Ort eingetragen. Er liegt damit im Programmordner des Agenten, auf einem nicht persistenten Server also an keinem beständigen Ort.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Für den Cache des WEM-Agenten ist kein eigener Ort eingetragen. Ohne Eintrag liegt er im Programmordner des Agenten, also an keinem beständigen Ort; nur der Agent des WEM-Dienstes der Citrix Cloud sucht sich ab Version 2408.1.0.1 selbst einen.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Citrix verlangt, dass der Cache des WEM-Agenten nach Möglichkeit an einem beständigen Ort liegt; ein nicht beständiger Ort kann nach Citrix zu Fehlern beim Abgleich des Cache, übermäßigem Netzverkehr und Leistungsproblemen führen. BIS-F bietet an, den Cache auf den beständigen Datenträger von MCSIO zu legen (ältere Praxis, Stand 2019). Der Agent des WEM-Dienstes der Citrix Cloud findet den beständigen Ort ab Version 2408.1.0.1 selbst; für den Agenten eigener WEM-Server sagt Citrix das nicht. Zur Vorgeschichte: Nach James Kindon (2020) übersprangen ältere Agenten beim Start den ersten Abgleich, wenn schon ein Cache da war; aktuelle Agenten verwerfen nach Citrix auf bereitgestellten Maschinen die Cache-Dateien, die aus dem Abbild stammen. Manuel Winkel hat das alte Verhalten 2026 mit WEM 2507 CU1 auf nicht persistenten VDAs wieder beobachtet (eigene Beobachtung, keine öffentliche Fehlernummer von Citrix); geholfen hat, den Cache neu aufzubauen. Ein beständiger Ort setzt ein beständiges Laufwerk voraus, etwa das Cache-Laufwerk von MCS mit Speicheroptimierung.",
+      "meaning": "Citrix verlangt, dass der Cache des WEM-Agenten nach Möglichkeit an einem beständigen Ort liegt; ein nicht beständiger Ort kann nach Citrix zu Fehlern beim Abgleich des Cache, übermäßigem Netzverkehr und Leistungsproblemen führen. Der Agent des WEM-Dienstes der Citrix Cloud findet den beständigen Ort ab Version 2408.1.0.1 selbst; für den Agenten eigener WEM-Server sagt Citrix das nicht. Manuel Winkel hat 2026 mit WEM 2507 CU1 und eigenen WEM-Servern auf nicht persistenten Servern beobachtet, dass der Cache beim Start nicht aufgebaut und die WEM-Konfiguration deshalb nicht verlässlich angewendet wurde (eigene Beobachtung, keine öffentliche Fehlernummer von Citrix); geholfen hat, den Cache neu aufzubauen.",
       "todo": [
         {
           "text": "Zuerst klären, ob der Agent zum WEM-Dienst der Citrix Cloud gehört und mindestens die Version 2408.1.0.1 hat: Dann findet er den beständigen Ort nach Citrix selbst, und der Befund ist ohne Bedeutung",
@@ -1286,8 +1292,8 @@
         },
         {
           "text": "Den Ort des Cache auf dieses Laufwerk legen",
-          "where": "bei nicht persistenten Servern im Master-Image (Einstellung AgentCacheAlternateLocation des WEM-Agenten) oder in der BIS-F-Richtlinie für den WEM-Agenten, danach die Server neu bereitstellen",
-          "sign": "Zustandsbild zeigt einen abweichenden Ort des Cache"
+          "where": "bei nicht persistenten Servern im Master-Image (Einstellung AgentCacheAlternateLocation des WEM-Agenten), danach die Server neu bereitstellen; BIS-F bietet dafür eine eigene Richtlinie an (ältere Praxis, Stand 2019)",
+          "sign": "Zustandsbild zeigt einen eigenen Ort des Cache"
         }
       ],
       "source": {
@@ -1308,15 +1314,15 @@
         "check": [{"value": "vda.wemGpNetworkTimeout", "op": "exists"}, {"value": "vda.wemGpNetworkTimeout", "op": "lt", "than": 30}]
       },
       "findings": {
-        "ok": "Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden: {vda.wemGpNetworkTimeout} (erwartet sind mindestens 30; ein Strich heißt: nicht gesetzt).",
+        "ok": "Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden: {vda.wemGpNetworkTimeout} (Citrix empfiehlt mindestens 30; ein Strich heißt: nicht gesetzt).",
         "check": "Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden: {vda.wemGpNetworkTimeout}. Citrix empfiehlt mindestens 30 Sekunden.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der Wert GpNetworkStartTimeoutPolicyValue legt nach Citrix fest, wie lange die Gruppenrichtlinie bei der Anmeldung auf das Netz wartet. Die Installation des WEM-Agenten legt ihn mit 120 Sekunden an; Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt. Antworten die Domänencontroller langsam, kann es nach Citrix länger dauern, bis der Anmeldebildschirm erscheint.",
+      "meaning": "Der Wert GpNetworkStartTimeoutPolicyValue legt nach Citrix fest, wie lange die Gruppenrichtlinie bei der Anmeldung auf das Netz wartet. Die Installation des WEM-Agenten legt ihn mit 120 Sekunden an; Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt. Der Preis der Wartezeit: Antworten die Domänencontroller langsam, kann es nach Citrix länger dauern, bis der Anmeldebildschirm erscheint.",
       "todo": [
         {
-          "text": "Den Wert im Abbild auf mindestens 30 Sekunden setzen",
-          "where": "bei nicht persistenten Servern im Master-Image (Systemeinstellungen bei der Installation des WEM-Agenten) oder in der Gruppenrichtlinie für die Server, danach die Server neu bereitstellen",
+          "text": "Den Wert auf mindestens 30 Sekunden setzen",
+          "where": "bei nicht persistenten Servern im Master-Image (Systemeinstellungen bei der Installation des WEM-Agenten), danach die Server neu bereitstellen; oder in der Gruppenrichtlinie für die Server",
           "sign": "Zustandsbild zeigt mindestens 30 Sekunden"
         }
       ],
@@ -1342,12 +1348,12 @@
         ]
       },
       "findings": {
-        "ok": "Höchste Belegung eines eingebundenen Profilcontainers: {profile.containerMaxUsedPct} % (Schwelle {@containerUsedPct} %; ein Strich heißt: kein Container eingebunden).",
+        "ok": "Höchste Belegung eines eingebundenen Profilcontainers in Prozent: {profile.containerMaxUsedPct} (Schwelle {@containerUsedPct}; ein Strich heißt: kein Container eingebunden).",
         "check": "Ein Profilcontainer ist zu {profile.containerMaxUsedPct} % belegt (Schwelle {@containerUsedPct} %).",
         "act": "Ein Profilcontainer ist zu {profile.containerMaxUsedPct} % belegt (harte Grenze {@containerUsedHardPct} %).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ist ein Profilcontainer voll, kann der Benutzer in seinem Profil nichts mehr speichern. Nach Aaron Parker gehen Anwendungen mit dem fehlenden Platz nicht geordnet um (2019, geschrieben für FSLogix; die Folge gilt für jeden Profilcontainer). 90 % ist bei der Citrix Profilverwaltung die Vorgabe für die Belegung, ab der sie einen Container automatisch vergrößert, wenn diese Funktion eingeschaltet ist. Die harte Grenze ist ein Erfahrungswert des Katalogs.",
+      "meaning": "Ist ein Profilcontainer voll, kann der Benutzer in seinem Profil nichts mehr speichern; nach Aaron Parker gehen Anwendungen mit dem fehlenden Platz nicht geordnet um (2019, geschrieben für FSLogix; die Folge gilt für jeden Profilcontainer). 90 % ist bei der Citrix Profilverwaltung die Vorgabe für die Belegung, ab der sie einen Container automatisch vergrößert, wenn diese Funktion eingeschaltet ist. Die harte Grenze ist ein Erfahrungswert des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, wem der Container gehört und was ihn füllt",
@@ -1383,11 +1389,11 @@
         "check": [{"value": "profile.maxContainersPerUser", "op": "exists"}, {"value": "profile.maxContainersPerUser", "op": "gt", "than": "@containersPerUser"}]
       },
       "findings": {
-        "ok": "Meiste eingebundene Container eines Benutzers: {profile.maxContainersPerUser} (Schwelle {@containersPerUser}; ein Strich heißt: kein Besitzer bekannt).",
+        "ok": "Höchste Zahl eingebundener Container eines Benutzers: {profile.maxContainersPerUser} (Schwelle {@containersPerUser}; ein Strich heißt: kein Besitzer bekannt).",
         "check": "Für einen Benutzer sind {profile.maxContainersPerUser} Container eingebunden (Schwelle {@containersPerUser}).",
-        "unknown": "Nicht prüfbar: {reason}."
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Mehrere eingebundene Container eines Benutzers entstehen, wenn er mehrere Sitzungen zugleich hat. Nach Aaron Parker brauchen gleichzeitige Sitzungen eines Benutzers zusätzlichen Speicherplatz, solange sie laufen (2019, geschrieben für FSLogix). James Rankin beschreibt, dass die Citrix Profilverwaltung in der Voreinstellung einen Differenzdatenträger schreibt und ihn bei der Abmeldung in den Container zurückführt (2023). Die Schwelle ist ein Erfahrungswert des Katalogs.",
+      "meaning": "Mehrere eingebundene Container eines Benutzers entstehen zum Beispiel, wenn er mehrere Sitzungen zugleich hat; nach Aaron Parker brauchen gleichzeitige Sitzungen eines Benutzers zusätzlichen Speicherplatz, solange sie laufen (2019, geschrieben für FSLogix). James Rankin beschreibt, dass die Citrix Profilverwaltung in der Voreinstellung einen Differenzdatenträger schreibt und ihn bei der Abmeldung in den Container zurückführt (2023). Die Schwelle ist ein Erfahrungswert des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, wie viele Sitzungen der Benutzer hat und ob alle gebraucht werden",
@@ -1420,16 +1426,21 @@
       },
       "findings": {
         "ok": "Der Dienst der Citrix Profilverwaltung läuft.",
-        "check": "Der Dienst der Citrix Profilverwaltung läuft nicht (Zustand laut Windows: {profile.service}).",
-        "act": "Der Dienst der Citrix Profilverwaltung läuft nicht (Zustand laut Windows: {profile.service}). Dazu stehen Profilfehler im Rückblick der letzten 7 Tage oder in der Messung.",
-        "unknown": "Nicht prüfbar: {reason}."
+        "check": "Der Dienst der Citrix Profilverwaltung läuft nicht (gelesener Zustand: {profile.service}; Running = läuft, Stopped = beendet).",
+        "act": "Der Dienst der Citrix Profilverwaltung läuft nicht (gelesener Zustand: {profile.service}; Running = läuft, Stopped = beendet). Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Profilfehler; ob sie mit diesem Dienst zusammenhängen, zeigt die Ereignisanzeige.",
+        "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Die Citrix Profilverwaltung lädt und speichert die Profile der Benutzer bei der An- und Abmeldung. Läuft ihr Dienst nicht, bekommen Benutzer ihr Profil nicht, und ihre Änderungen können verloren gehen. Stehen dazu Profilfehler in den Ereignissen, sind Benutzer bereits betroffen.",
+      "meaning": "Die Citrix Profilverwaltung lädt und speichert die Profile der Benutzer bei der An- und Abmeldung; läuft ihr Dienst nicht, bekommen Benutzer ihr Profil nicht, und ihre Änderungen können verloren gehen. Stehen außerdem Profilfehler in den Ereignissen, liegt nahe, dass Benutzer schon betroffen sind. Die Prüfung ist eine Faustregel des Katalogs; auf einem nicht persistenten Server reichen die Ereignisprotokolle nur bis zum letzten Start zurück, der Rückblick also auch.",
       "todo": [
         {
-          "text": "Nachsehen, warum der Dienst nicht läuft",
+          "text": "Auf diesem Server nur nachsehen, warum der Dienst nicht läuft; an dem Dienst dort nichts umstellen",
           "where": "Dienste-Konsole und Ereignisanzeige des Servers (Systemprotokoll und Anwendungsprotokoll)",
           "sign": "Dienst beendet, oder sein Starttyp ist nicht „Automatisch“; Einträge über einen unerwartet beendeten Dienst"
+        },
+        {
+          "text": "Betrifft es nur diesen Server: ihn über die Bereitstellungsgruppe in den Wartungsmodus setzen und, sobald keine Benutzer mehr angemeldet sind, neu starten lassen; mit dem Neustart kehrt er zum Stand des Master-Image zurück",
+          "where": "Citrix Studio, Bereitstellungsgruppe",
+          "sign": "nach dem Neustart läuft der Dienst"
         },
         {
           "text": "Tritt es auf mehreren Servern auf, Installation und Starttyp des Dienstes im Abbild prüfen",

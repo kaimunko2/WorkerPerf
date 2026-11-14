@@ -291,6 +291,24 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $ch = @(Get-WorkerPerfHealthChangedThresholds $c); $ch.Count | Should -Be 1
         $ch[0].id | Should -Be 'diskFreeGB'; $ch[0].value | Should -Be 25; $ch[0].default | Should -Be 10; $ch[0].unit | Should -Be 'GB'; $ch[0].label | Should -Be 'Freier Platz'
     }
+    It 'nimmt den Teil units mit der Einzahl einer Einheit an und liefert ihn auch ohne Angabe' {
+        # units ist freiwillig: Mehrzahl -> Einzahl, nur fuer Einheiten der Werte
+        $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.units = [ordered]@{ Tage = 'Tag'; Stunden = 'Stunde'; Minuten = 'Minute' } })
+        $c.units.Tage | Should -Be 'Tag'; $c.units.Stunden | Should -Be 'Stunde'; @($c.units.PSObject.Properties.Name) | Should -Be @('Tage', 'Stunden', 'Minuten')
+        $none = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
+        ($null -ne $none.units) | Should -BeTrue; @($none.units.PSObject.Properties).Count | Should -Be 0
+        $WorkerPerfHealthOptionalParts | Should -Be @('units'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'units'
+    }
+    It 'lehnt einen fehlerhaften Teil units ab' -TestCases @(
+        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte: MB, s, Tage, %, GB, Stunden, Minuten)." }
+        @{ Change = { $c.units = @{ tage = 'Tag' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'tage'*" }                            # Namen gelten nur in genau dieser Schreibweise
+        @{ Change = { $c.units = @{ Prozessoren = 'Prozessor' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'Prozessoren'*" }        # die Einheit einer Schwelle, nicht eines Werts
+        @{ Change = { $c.units = @{ Tage = '' } }; Msg = "Katalog '*': Teil 'units' nennt fuer die Einheit 'Tage' keinen Text." }
+        @{ Change = { $c.units = @{ Tage = 1 } }; Msg = "*Teil 'units' nennt fuer die Einheit 'Tage' keinen Text*" }
+        @{ Change = { $c.units = @('Tag') }; Msg = "Katalog '*': Teil 'units' ist kein Objekt." }
+        @{ Change = { $c.units = 'Tag' }; Msg = "*Teil 'units' ist kein Objekt*" }
+        @{ Change = { $c.unit = @{ Tage = 'Tag' } }; Msg = "*Teil 'unit' ist unbekannt*" }
+    ) { { Read-WorkerPerfHealthCatalogue (New-HealthCatalogue $Change) } | Should -Throw $Msg }
 }
 Describe 'Fakten des Zustandsbilds' {
     It 'bildet die abgeleiteten Fakten aus den gelesenen Werten' {
@@ -797,8 +815,55 @@ Describe 'Bewertung: Regeln im Einzelnen' {
             }
             finally { [Threading.Thread]::CurrentThread.CurrentCulture = $old }
         }
-        $out[0] | Should -Be 'Nur 8,5 GB frei (Schwelle 10 GB).|Wert operation.minFreeGB: 8,5 GB|13.01.2026 08:00|1235 MB'
+        # 1234,5 bleibt 1234,5: eine Zahl steht so genau da, wie sie verglichen wird (frueher ab 10 auf ganze Zahlen gerundet: 1235)
+        $out[0] | Should -Be 'Nur 8,5 GB frei (Schwelle 10 GB).|Wert operation.minFreeGB: 8,5 GB|13.01.2026 08:00|1234,5 MB'
         $out[1] | Should -Be $out[0]
+    }
+    It 'zeigt eine Zahl so genau, wie die Regel sie vergleicht' {
+        # ein Fakt ist ganz oder auf eine Nachkommastelle gerundet, eine Schwelle steht, wie der Katalog sie schreibt: nichts wird weiter gerundet
+        foreach ($case in @(@(30.4, '30,4'), @(30, '30'), @(100.4, '100,4'), @(100, '100'), @(24.3, '24,3'), @(9.96, '9,96'), @(1234.5, '1234,5'), @(24576, '24576'), @(0.3, '0,3'),
+                @(0.125, '0,125'), @(8, '8'), @(0, '0'), @(-0.0000001, '0'), @(2.5000001, '2,5'), @(-1.5, '-1,5'))) {
+            Format-WorkerPerfHealthNumber $case[0] | Should -BeExactly $case[1] -Because "$($case[0])"
+        }
+        # 30,4 Tage gegen die Schwelle 30: der Befund nennt 30,4 und widerspricht seiner Regel nicht; genau 30 ist nicht mehr als 30
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+            $c.thresholds.uptimeDays = @{ value = 30; default = 30; unit = 'Tage'; label = 'Laufzeit' }; $c.thresholds.halfDays = @{ value = 0.5; default = 0.5; unit = 'Tage'; label = 'halber Tag' }
+            $c.checks[0].id = 'operation.uptime'; $c.checks[0].values = @('operation.uptimeDays', 'size.commitOfRamPct')
+            $c.checks[0].rules = @{ check = @(@{ value = 'operation.uptimeDays'; op = 'gt'; than = '@uptimeDays' }); act = @(@{ value = 'size.commitOfRamPct'; op = 'gt'; than = 100; hard = $true }) }
+            $c.checks[0].findings = @{ ok = 'Laufzeit in Tagen: {operation.uptimeDays} (Schwelle {@uptimeDays}, halbe Schwelle {@halfDays}).'; check = 'Laufzeit in Tagen: {operation.uptimeDays}, mehr als {@uptimeDays}.'
+                act = 'Zugesagt sind {size.commitOfRamPct} % des Arbeitsspeichers, mehr als 100 %.'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') })
+        $ram = @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 5000 }
+        $x = Get-Check ($ram + @{ 'operation.lastBoot' = $ReadMs - [long](30.4 * 86400000) }) @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Laufzeit in Tagen: 30,4, mehr als 30.'; $x.value | Should -Match 'Wert operation\.uptimeDays: 30,4 Tage'
+        $x = Get-Check ($ram + @{ 'operation.lastBoot' = $ReadMs - 30 * 86400000L }) @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Laufzeit in Tagen: 30 (Schwelle 30, halbe Schwelle 0,5).'
+        # 100,4 % gegen 100: der Befund nennt 100,4; genau 100 % ist nicht mehr als 100 %
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10040; 'operation.lastBoot' = $ReadMs - 86400000L } @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'act'; $x.finding | Should -BeExactly 'Zugesagt sind 100,4 % des Arbeitsspeichers, mehr als 100 %.'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10000; 'operation.lastBoot' = $ReadMs - 86400000L } @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'ok'; $x.value | Should -Match 'Wert size\.commitOfRamPct: 100 %'
+    }
+    It 'nennt die Einheit eines Werts in der Einzahl, wenn er genau 1 ist' {
+        # ($toUptime, nicht $change: so heisst der Parameter von New-HealthCatalogue)
+        $toUptime = { $c.checks[0].id = 'operation.uptime'; $c.checks[0].values = @('operation.uptimeDays', 'sessions.disconnectedOldestHours', 'sessions.disconnectLimitMin', 'operation.minFreeGB')
+            $c.checks[0].rules = @{ check = @(@{ value = 'operation.uptimeDays'; op = 'gt'; than = 30 }) }
+            $c.checks[0].findings = @{ ok = 'Laufzeit in Tagen: {operation.uptimeDays}.'; check = 'lange'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') }
+        $with = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { . $toUptime; $c.units = [ordered]@{ Tage = 'Tag'; Stunden = 'Stunde'; Minuten = 'Minute' } })
+        $one = (Get-Vol 1) + @{ 'operation.lastBoot' = $ReadMs - 86400000L; 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 1; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true })
+            'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 3600000L }) }
+        $x = Get-Check $one @{} 'operation.uptime' $with
+        $x.value | Should -BeExactly 'Wert operation.uptimeDays: 1 Tag; Wert sessions.disconnectedOldestHours: 1 Stunde; Wert sessions.disconnectLimitMin: 1 Minute; Wert operation.minFreeGB: 1 GB'
+        $x.finding | Should -BeExactly 'Laufzeit in Tagen: 1.'                                                            # im Befundsatz steht die Zahl ohne Einheit
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $one) -Catalogue $with -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        ($r.raw | Where-Object id -eq 'operation.uptimeDays').text | Should -BeExactly '1 Tag'; ($r.raw | Where-Object id -eq 'sessions.disconnectLimitMin').text | Should -BeExactly '1 Minute'
+        # jede andere Zahl bleibt in der Mehrzahl, auch 1,5, 0 und 2
+        $more = (Get-Vol 1) + @{ 'operation.lastBoot' = $ReadMs - [long](1.5 * 86400000); 'sessions.list' = @(); 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 2; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true }) }
+        (Get-Check $more @{} 'operation.uptime' $with).value | Should -BeExactly 'Wert operation.uptimeDays: 1,5 Tage; Wert sessions.disconnectedOldestHours: 0 Stunden; Wert sessions.disconnectLimitMin: 2 Minuten; Wert operation.minFreeGB: 1 GB'
+        # ohne den Teil units bleibt die Einheit, wie die Wertetabelle sie nennt
+        $without = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue $toUptime)
+        (Get-Check $one @{} 'operation.uptime' $without).value | Should -BeLike 'Wert operation.uptimeDays: 1 Tage; *'
     }
     It 'setzt eine Zeit und einen Ja/Nein-Wert in den Befund ein' {
         $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
@@ -910,9 +975,10 @@ Describe 'Katalog in src' {
             $c.id | Should -BeLike ($c.area + '.*')
             $c.kind | Should -Be $(if ($Vendor -contains $c.id) { 'vendor' } elseif ($Practice -contains $c.id) { 'practice' } else { 'rule' }) -Because $c.id
         }
-        $want = [ordered]@{ commitPeakPct = 90; commitNowPct = 98; memPerSessionMB = 1024; sessionsPerCpu = 8; workerCpuMin = 8; workerCpuMax = 8; workerMemMinMB = 24576; uptimeDays = 30; updateAgeDays = 60; diskFreeGB = 10; diskFreeHardGB = 2
+        $want = [ordered]@{ commitPeakPct = 90; commitNowPct = 98; memPerSessionMB = 1024; sessionsPerCpu = 8; workerCpuMin = 8; workerCpuMax = 8; workerMemMinMB = 24000; uptimeDays = 30; updateAgeDays = 60; diskFreeGB = 10; diskFreeHardGB = 2
             disconnectedHours = 24; unloadedProfiles = 20; containerUsedPct = 90; containerUsedHardPct = 95; containersPerUser = 3; printDrivers = 20; queuesPerSession = 10; signatureAgeDays = 2; eventDays = 3; workStartHour = 7; workEndHour = 18 }
         $want.Count | Should -Be 22
+        # workerMemMinMB: Carl Stalhood nennt 24 GB (24576 MB); die Schwelle liegt knapp darunter, damit ein Server mit genau 24 GB, den Windows etwas kleiner meldet, nicht gemeldet wird
         # Der Lader lehnt eine Schwelle ab, die keine Regel und kein Befundsatz nutzt: diese vier kommen mit ihren Pruefungen in Task 14b (die Zeile entfaellt dort)
         foreach ($k in 'printDrivers', 'queuesPerSession', 'signatureAgeDays', 'eventDays') { $want.Remove($k) }
         @($Real.thresholds.PSObject.Properties.Name) | Should -Be @($want.Keys)
@@ -939,7 +1005,7 @@ Describe 'Katalog in src' {
             (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpu' $Real).grade | Should -Be $case[1] -Because "$($case[0]) Prozessoren"
             (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpuMax' $Real).grade | Should -Be $case[2] -Because "$($case[0]) Prozessoren"
         }
-        (Get-Check @{ 'size.cpuLogical' = 16 } @{} 'size.workerCpuMax' $Real).finding | Should -Match '16 logische Prozessoren'
+        (Get-Check @{ 'size.cpuLogical' = 16 } @{} 'size.workerCpuMax' $Real).finding | Should -BeExactly 'Logische Prozessoren des Servers: 16, mehr als der Praxiswert von 8. Das ist ein Hinweis, kein Fehler.'
     }
     It 'traegt die Texte, auf die sich Bericht und Seite stuetzen, und zu jeder Pruefung einen Vorschlag' {
         $want = [ordered]@{ title = 'Zustand des Servers'; notRecorded = 'Zustandsbild nicht erfasst.'; unreadable = 'Zustandsbild nicht lesbar.'; healthOnlyHead = 'Zustandsbericht ohne Messung'
@@ -1029,7 +1095,109 @@ Describe 'Katalog in src' {
         }
         (Get-Check $bad @{} 'operation.diskFree' $Real).grade | Should -Be 'act'
         (Get-Check $bad @{} 'operation.diskFree' $Real).finding | Should -Match '1,5 GB frei .*2 GB'
-        (Get-Check $bad @{} 'operation.updateAge' $Real).finding | Should -Match '90 Tage alt .*60 Tage'
+        (Get-Check $bad @{} 'operation.updateAge' $Real).finding | Should -BeExactly 'Alter des jüngsten Updates im Abbild in Tagen: 90, mehr als die Schwelle von 60.'
         (Get-Check $bad @{} 'size.commitHeadroom' $Real).grade | Should -Be 'act'
+    }
+    It 'zeigt an der Schwelle die Zahl, mit der die Regel vergleicht' {                                  # Korrekturrunde 1, C1
+        # 30,4 Tage gegen 30 und 100,4 % gegen 100: der Befund nennt die Zahl mit ihrer Nachkommastelle, genau auf der Schwelle bleibt die Pruefung in Ordnung
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - [long](30.4 * 86400000) } @{} 'operation.uptime' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 30,4, mehr als die Schwelle von 30.'
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - 30 * 86400000L } @{} 'operation.uptime' $Real
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 30 (Schwelle 30).'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10040 } @{} 'size.commitAboveRam' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Der zugesagte Speicher liegt beim Lesen bei 100,4 % des Arbeitsspeichers, also über dem, was der Server an Arbeitsspeicher hat.'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10000 } @{} 'size.commitAboveRam' $Real
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Der zugesagte Speicher liegt beim Lesen bei 100 % des Arbeitsspeichers.'
+        $x = Get-Check @{ 'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - [long](24.3 * 3600000) }) } @{} 'sessions.disconnectedOld' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Dauer der ältesten getrennten Sitzung in Stunden: 24,3, mehr als die Schwelle von 24.'
+    }
+    It 'nennt Einheiten in der Einzahl und schreibt jeden Befund so, dass er auch fuer 1 stimmt' {        # Korrekturrunde 1, C2
+        @($Real.units.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) | Should -Be @('Tage=Tag', 'Stunden=Stunde', 'Minuten=Minute')
+        $one = @{ 'operation.lastBoot' = $ReadMs - 86400000L; 'operation.lastUpdate' = $ReadMs - 86400000L - 3600000L
+            'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 1; DisconnectedLimitMin = 1; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true })
+            'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 3600000L }) }
+        (Get-Check $one @{} 'operation.uptime' $Real).value | Should -BeExactly 'Laufzeit seit dem letzten Start: 1 Tag'
+        (Get-Check $one @{} 'operation.updateAge' $Real).value | Should -BeExactly 'Alter des jüngsten Updates: 1 Tag'
+        (Get-Check $one @{} 'sessions.disconnectedOld' $Real).value | Should -BeExactly 'Dauer der ältesten getrennten Sitzung: 1 Stunde'
+        (Get-Check $one @{} 'sessions.disconnectLimit' $Real).value | Should -BeExactly 'Zeitlimit für getrennte Sitzungen: 1 Minute'
+        (Get-Check $one @{} 'sessions.idleLimit' $Real).value | Should -BeExactly 'Zeitlimit für Sitzungen im Leerlauf: 1 Minute'
+        (Get-Check $one @{} 'operation.uptime' $Real).finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 1 (Schwelle 30).'
+        # kein Befundsatz stellt hinter eine eingesetzte Zahl ein Wort, das nur in der Mehrzahl stimmt (MB, GB und % haben keine Einzahl)
+        $plural = '\}\s+(Tage|Tagen|Stunden|Minuten|Sekunden|Profile|Sitzungen|Benutzersitzungen|Prozessoren|logische|lokale|Dienste|Dateien|Controller\b)'
+        foreach ($c in $Real.checks) { foreach ($f in $c.findings.PSObject.Properties) { $f.Value | Should -Not -Match $plural -Because "$($c.id) $($f.Name)" } }
+        # jede Pruefung mit lauter Einsen bewertet: kein Befund sagt "1 Tage" oder "1 Tagen"
+        $ones = @{ 'size.cpuLogical' = 1; 'size.memTotalMB' = 1; 'size.commitTotalMB' = 1; 'size.commitLimitMB' = 1; 'size.commitPeakMB' = 1; 'operation.pendingRename' = 1; 'vda.wemGpNetworkTimeout' = 1 } + $one
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $ones) -Catalogue $Real -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        foreach ($c in @($r.areas | ForEach-Object { $_.checks })) { $c.finding | Should -Not -Match '(?<![\d,])1 (Tage|Tagen|Stunden|Minuten|Sekunden|Profile|Sitzungen|Benutzersitzungen|Prozessoren|logische|lokale)\b' -Because $c.id }
+    }
+    It 'sagt nicht zutreffend so, dass es nicht wie ein Ergebnis klingt, und nennt jeden Schritt mit Ort und Merkmal' {   # Korrekturrunde 1, B1, B2
+        # ein Server, der keine VMware-VM ist: die Pruefung trifft nicht zu; der Satz sagt nicht "... gibt es auf diesem Server nicht"
+        $x = Get-Check @{ 'size.model' = 'Sim Corp Server 1'; 'size.netAdapters' = @() } @{} 'size.netAdapterType' $Real
+        $x.grade | Should -Be 'na'
+        $x.finding | Should -BeExactly ('Trifft nicht zu: der Wert „Aktive Netzwerkadapter, die nicht VMXNET3 sind“ wird auf diesem Server nicht gelesen, weil das Produkt, zu dem er gehört, nicht installiert ist ' +
+            '(bei Werten zu VMware: weil der Server keine VMware-VM ist).')
+        $Real.copy.reasonNotInstalled | Should -Not -Match 'gibt es'
+        # eine Bezeichnung, die in diesem Satz in Anfuehrungszeichen steht, traegt selbst keine (die Werte der fuenf Bereiche dieser Task)
+        foreach ($p in @($Real.values.PSObject.Properties | Where-Object { $_.Name -match '^(size|operation|sessions|vda|profile)\.' })) { $p.Value | Should -Not -Match '[„“]' -Because $p.Name }
+        $Real.copy.copyStep | Should -BeExactly '{n}. {text} – Wo: {where}. Woran zu erkennen: {sign}'
+        # der Lader verlangt in jedem Schritt Ort und Merkmal: keiner der zwei Teile kann fehlen; kein Teil endet mit einem Punkt, der im Kopiertext doppelt staende
+        foreach ($c in $Real.checks) { foreach ($t in $c.todo) { foreach ($part in $t.text, $t.where, $t.sign) { $part | Should -Not -Match '[.;:]\s*$' -Because $c.id } } }
+    }
+    It 'haelt die Regeln fuer die Texte ein, die die Durchsicht ergeben hat' {                              # Korrekturrunde 1, A und B
+        # A1: die Messung von GO-EUC bleibt in ihrem Test; der Vorbehalt von VMware steht da
+        $pp = ($Real.checks | Where-Object id -eq 'operation.powerPlan').meaning
+        $pp | Should -Not -Match 'verspricht'; foreach ($w in 'In diesem Test', 'nicht Teil der Messung', 'vSphere hat GO-EUC in diesem Test nicht gemessen', 'älteren Windows-Versionen') { $pp | Should -Match $w -Because $w }
+        # A2: unterstuetzt ist ein Stand erst ab dem Mindeststand; ohne VMware Tools sagt der Befund nicht, sie haetten die Hauptversion 0
+        $vt = $Real.checks | Where-Object id -eq 'size.vmTools'
+        $vt.meaning | Should -Match 'ab dem Mindeststand und unter 12\.0\.0'; $vt.meaning | Should -Match 'unter dem Mindeststand ist danach nicht unterstützt'; $vt.meaning | Should -Not -Match 'Ein älterer Stand ist danach unterstützt'
+        $none = Get-Check @{ 'size.model' = 'VMware, Inc. VMware7,1'; 'size.vmtoolsVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } @{} 'size.vmTools' $Real
+        $none.grade | Should -Be 'check'; $none.finding | Should -BeLike 'Hauptversion der VMware Tools: 0 (installierte Version: –).*Eine 0 heißt: Auf dieser VMware-VM wurden keine VMware Tools gefunden.'
+        # A4: eine Faustregel sagt, dass sie vom Katalog stammt
+        foreach ($c in @($Real.checks | Where-Object kind -eq 'rule')) { $c.meaning | Should -Match 'Faustregel des Katalogs|Erfahrungswerte? des Katalogs' -Because $c.id }
+        # B8: der Satz fuer nicht pruefbar wiederholt die Einstufung nicht
+        foreach ($c in $Real.checks) { $c.findings.unknown | Should -BeExactly 'Der Wert konnte nicht gelesen werden: {reason}.' -Because $c.id }
+        # B5, B7: wo ein Ereignis die Pruefung zu Handeln macht, bindet der Befund die Ereignisse nicht an das Gepruefte, und die Bedeutung nennt die Grenze des Rueckblicks
+        $withEvent = @($Real.checks | Where-Object { @($_.rules.act | Where-Object { $null -ne $_.event }).Count -gt 0 })
+        @($withEvent.id) | Should -Be @('sessions.tempProfiles', 'vda.services', 'profile.serviceStopped')
+        foreach ($c in $withEvent) {
+            $c.findings.act | Should -Match 'Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung .*; ob sie .*, zeigt die Ereignisanzeige\.$' -Because $c.id
+            $c.findings.act | Should -Not -Match 'Dazu stehen' -Because $c.id
+            $c.meaning | Should -Match 'auf einem nicht persistenten Server reichen .*nur bis zum letzten Start zurück' -Because $c.id
+        }
+        # B3: Registrierung heisst die Windows-Registrierung oder die Registrierung des VDA; Anmeldung ist die der Benutzer
+        $all = Get-Content $CatFile -Raw
+        $all | Should -Not -Match '(?<!Windows-)Registrierung(?! des VDA)'; $all | Should -Not -Match 'Anmeldung des VDA|meldet den Server|meldet sich bei einem'
+        # B4: der Befund zum Cache des WEM-Agenten nennt keinen Ort als gefunden
+        ($Real.checks | Where-Object id -eq 'vda.wemCache').findings.check | Should -Match 'Ohne Eintrag liegt er .*; nur der Agent des WEM-Dienstes der Citrix Cloud sucht sich ab Version 2408\.1\.0\.1 selbst einen\.$'
+        # B6: die drei Hinweise zur Groesse sagen, dass sie Hinweise sind und eine bewusst gewaehlte Groesse bleiben kann
+        foreach ($id in 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory') {
+            $c = $Real.checks | Where-Object id -eq $id
+            $c.findings.check | Should -Match 'Praxiswert von \{@\w+\}.*Das ist ein Hinweis, kein Fehler\.$' -Because $id; $c.meaning | Should -Match 'bewusst anders gewählt, ist nichts zu ändern' -Because $id
+            (@($c.todo | ForEach-Object { $_.text }) -join ' ') | Should -Not -Match 'anheben|wenn nichts dagegen spricht|wenn kein Grund dagegen spricht' -Because $id
+        }
+        # ein Server mit genau 24 GB, den Windows mit 24575 MB meldet, wird nicht gemeldet
+        (Get-Check @{ 'size.memTotalMB' = 24575 } @{} 'size.workerMemory' $Real).grade | Should -Be 'ok'; (Get-Check @{ 'size.memTotalMB' = 16384 } @{} 'size.workerMemory' $Real).grade | Should -Be 'check'
+        # B8: die gemessene Maschine heisst Server; Kennwoerter und englische Zustaende stehen mit ihrer Bedeutung da
+        $all | Should -Not -Match 'Sitzungshost|Zeitgeber|nicht persistenten VDAs'
+        $Real.values.'operation.powerPlan' | Should -Match 'balanced = Ausbalanciert'; (Get-Check @{ 'operation.powerPlan' = 'balanced' } @{} 'operation.powerPlan' $Real).finding | Should -Match 'sondern balanced \(balanced = „Ausbalanciert“'
+        foreach ($id in 'vda.desktopService', 'vda.wemService', 'profile.service') { $Real.values.$id | Should -Match 'Running = läuft, Stopped = beendet' -Because $id }
+        (Get-Check @{ 'profile.service' = 'Stopped' } @{} 'profile.serviceStopped' $Real).finding | Should -Match 'gelesener Zustand: Stopped; Running = läuft, Stopped = beendet'
+        # B8: eine Bedeutung hat hoechstens drei Saetze; laenger ist nur der Energiesparplan, der den Widerspruch der Hersteller und die Messung von GO-EUC mit ihren Bedingungen nennen muss
+        foreach ($c in $Real.checks) {
+            $sentences = @([regex]::Split($c.meaning.Trim(), '(?<=[.!?])\s+(?=[A-ZÄÖÜ„0-9])')).Count
+            $sentences | Should -BeLessOrEqual $(if ($c.id -eq 'operation.powerPlan') { 5 } else { 3 }) -Because $c.id
+        }
+        # B8: Zahlen, die eine Schwelle wiederholen, stehen nicht in Schritten
+        foreach ($id in 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory', 'operation.updateAge', 'sessions.disconnectedOld') {
+            (@(($Real.checks | Where-Object id -eq $id).todo | ForEach-Object { "$($_.text) $($_.sign)" }) -join ' ') | Should -Not -Match '\bacht\b|24576|zwei Monate|einem Tag' -Because $id
+        }
+    }
+    It 'fuehrt im Nachweis die Vorbehalte der Hersteller, das Datum der Seite von Microsoft und was auf dem Zielsystem zu bestaetigen ist' {   # Korrekturrunde 1, A4, B8
+        $Proof | Should -Match 'power-performance-tuning\s+\(Stand der Seite 2022-08-29, Abruf 2026-11-13\)'
+        $Proof | Should -Match 'not suitable for DAS environments'; $Proof | Should -Match 'may increase overall performance'
+        $Proof | Should -Match '(?m)^### Auf dem Zielsystem zu bestätigen$'
+        $confirm = ($Proof -split '(?m)^### Auf dem Zielsystem zu bestätigen$', 2)[1]
+        foreach ($w in 'Höchstleistung', 'Running', 'System Event Notification Service', 'Set time limit for disconnected sessions', 'Delete locally cached profiles on logoff', 'Wartungsmodus', '24000 MB') { $confirm | Should -Match ([regex]::Escape($w)) -Because $w }
+        $Proof | Should -Match ([regex]::Escape('| `workerMemMinMB` | 24000 MB |'))
     }
 }

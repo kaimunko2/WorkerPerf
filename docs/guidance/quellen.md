@@ -1271,7 +1271,7 @@ Windows Server 2019. Der Katalog kennzeichnet sie deshalb als ältere Praxis.
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
 | 97_PrepBISF_PRE_BaseImage.ps1 (Skript im Quelltext von BIS-F) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1 | letzter Eintrag der Historie im Skript: 22.11.2020 | 2026-11-13 | `operation.powerPlan` (zweite Praxisquelle im Text: BIS-F stellt beim Versiegeln den Plan „High Performance“ ein, ohne Bedingung) |
-| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Text: BIS-F bietet an, den Cache des WEM-Agenten auf den beständigen Datenträger zu legen; für MCS setzt das einen VDA ab 1903 mit MCSIO voraus) |
+| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Vorschlag zum Vorgehen: BIS-F bietet eine eigene Richtlinie an, die den Cache des WEM-Agenten auf den beständigen Datenträger legt; für MCS setzt das einen VDA ab 1903 mit Speicheroptimierung (MCSIO) voraus) |
 
 ### Quellen aus der Praxis: carlstalhood.com
 
@@ -1280,14 +1280,15 @@ Gruppenrichtlinien ist älter und nennt Windows Server 2022 nur am Rand.
 
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
-| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Sitzungshosts mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr) |
-| Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Sitzungshosts regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
+| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr; die Schwelle des Katalogs liegt mit 24000 MB knapp unter 24 GB, siehe „Schwellen“) |
+| Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Multi-Session-Server regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
 | Group Policy Computer Settings for VDAs | https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/ | 2023-11-03 | 2026-11-13 | `sessions.disconnectLimit`, `sessions.idleLimit` (Zeitlimits per Gruppenrichtlinie, „3 hours or similar“: eine Größenordnung, keine Schwelle; die Prüfliste „Citrix Health Check“ nennt die Zeitlimits ebenfalls) |
 
 Nicht übernommen aus diesen Seiten, weil die Gegenprüfung es nicht trägt: beim zugesagten Speicher der Höchststand
 seit dem Start und eine Mindestlaufzeit (stehen nicht auf der Seite); bei den Zeitlimits die Aussage, sie gehörten
-nur in die Gruppenrichtlinie von Microsoft (neuere Seiten von Stalhood nennen den Zeitgeber der Citrix-Richtlinie als
-gleichwertigen Weg); beim Energiesparplan die Zeitgeber für Schlaf und Ruhezustand (das Zustandsbild liest sie nicht).
+nur in die Gruppenrichtlinie von Microsoft (neuere Seiten von Stalhood nennen die Sitzungs-Timer der Citrix-Richtlinie
+als gleichwertigen Weg); beim Energiesparplan die Zeiten bis zu Standby und Ruhezustand (das Zustandsbild liest sie
+nicht).
 
 ### Weitere Praxisquellen als zweite Quelle
 
@@ -1296,13 +1297,13 @@ steht ihre Aussage im Text der Prüfung, mit dem Namen der Quelle und, bei einer
 Art der Prüfung ändert sich dadurch nicht. Abruf aller Seiten: 2026-11-13.
 
 - `size.workerCpu`, `size.workerCpuMax` – auch gestützt durch: GO-EUC, „Impact of sizing RDSH VMs“, https://www.go-euc.com/impact-of-sizing-rdsh-vms/, 2019-02-27. Lasttest von 2019 mit Windows Server 2016 unter ESXi 6.7 U1 auf zwei Xeon E5-2680 v4, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; die genauen Zahlen sind für heutige Prozessoren nicht belegt. Die Empfehlung „höchstens 8 vCPU je Maschine“ und die Regel zur Summe der vCPU eines Hosts sind Rat der Autoren, kein Messwert.
-- `size.pagefilePresent` – auch gestützt durch: GO-EUC, „Page file sizing for virtualized environments“, https://www.go-euc.com/page-file-sizing-for-virtualized-environments/, 2019-12-03. Test von 2019 mit Windows 10 1803 (eine Sitzung je Maschine), 2 vCPU und 4 GB, MCS 1906.1; übernommen ist nur die Beobachtung, dass die Maschinen ohne Auslagerungsdatei unter Speicherdruck abstürzten. Der Rat zur Größe der Datei ist nicht übernommen.
+- `size.pagefilePresent` – auch gestützt durch: GO-EUC, „Page file sizing for virtualized environments“, https://www.go-euc.com/page-file-sizing-for-virtualized-environments/, 2019-12-03. Test von 2019 mit Windows 10 1803 (eine Sitzung je Maschine), 2 vCPU und 4 GB, MCS 1906.1; übernommen ist nur die Beobachtung, dass die Maschinen ohne Auslagerungsdatei unter Speicherdruck abstürzten. Der Rat zur Größe der Datei ist nicht übernommen; dass die Größe der Datei in diesem Test keinen messbaren Unterschied machte, steht nur hier, nicht im Text der Prüfung.
 - `operation.pendingRestart` – auch gestützt durch: Guy Leech, „Reasons for Reboots – Part 1“, https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/, 2014-06-24. Aus der Zeit von Windows 7 und Windows Server 2008 R2; steht nur im Vorschlag zum Vorgehen (im Abbild nach jeder Installation prüfen). Der Mechanismus selbst ist der von Microsoft dokumentierte.
 - `operation.diskFree` – auch gestützt durch: Thomas Kötzing, „Citrix Maschinenerstellungsdienste (MCS) – Skript zum Auslesen des RAM- und Disk-Cache“, https://koetzingit.de/blog/2024/03/18/citrix-maschinenerstellungsdienste-mcs-skript-zum-auslesen-des-ram-und-disk-cache/, 2024-03-18. Gilt nur, wo MCS mit Speicheroptimierung eingerichtet ist; der Text der Prüfung sagt das.
-- `sessions.disconnectLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08 (Richtlinie statt Benutzerobjekt; zwei Stunden als sein Beispiel für einfache Benutzer); James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09 (die Werte am Benutzerobjekt greifen nur, wo nichts anderes gesetzt ist); Guy Leech, „The Taming of the Print Server“, https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/, 2016-02-23 (nur als Beispiel: ein Druckserver, kein Sitzungshost).
+- `sessions.disconnectLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08 (Richtlinie statt Benutzerobjekt; zwei Stunden als sein Beispiel für einfache Benutzer); James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09 (die Werte am Benutzerobjekt greifen nur, wo nichts anderes gesetzt ist); Guy Leech, „The Taming of the Print Server“, https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/, 2016-02-23 (nur als Beispiel und nur hier, nicht im Text der Prüfung: ein Druckserver mit vier Prozessoren, auf dem über Tage getrennte Verwaltungssitzungen den größten Teil der Rechenleistung banden; kein Multi-Session-Server).
 - `sessions.idleLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08; James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09. Das Beispiel von Guy Leech ist hier nicht verwendet: Es handelt von getrennten Sitzungen.
 - `sessions.tempProfiles` – auch gestützt durch: Thomas Kötzing, „Powershell-Skript zum Löschen von temporären Benutzerprofilen“, https://koetzingit.de/blog/2024/09/10/powershell-skript-zum-loeschen-von-temporaeren-benutzerprofilen/, 2024-09-10. Gezeigt mit FSLogix; die Profilliste gehört zu Windows. Das Löschen von Einträgen auf dem laufenden Server ist nicht als Abhilfe übernommen.
-- `vda.wemCache` – auch gestützt durch: Manuel Winkel, „Finding in the Wild | Sometimes Old Citrix Problems Simply Return“, https://www.deyda.net/index.php/en/2026/09/26/finding-in-the-wild-sometimes-old-citrix-problems-simply-return/, 2026-09-26 (eigene Beobachtung mit WEM 2507 CU1 auf nicht persistenten VDAs, keine öffentliche Fehlernummer von Citrix); James Kindon, „The why does it of Citrix WEM Cache“, https://jkindon.com/the-why-does-it-of-citrix-wem-cache/, 2020-10-15 (nur als Vorgeschichte: gilt für Agenten vor Version 2012).
+- `vda.wemCache` – auch gestützt durch: Manuel Winkel, „Finding in the Wild | Sometimes Old Citrix Problems Simply Return“, https://www.deyda.net/index.php/en/2026/09/26/finding-in-the-wild-sometimes-old-citrix-problems-simply-return/, 2026-09-26 (eigene Beobachtung mit WEM 2507 CU1 und eigenen WEM-Servern auf nicht persistenten VDAs: Der Cache wurde beim Start nicht aufgebaut, geholfen hat, ihn neu aufzubauen; keine öffentliche Fehlernummer von Citrix); James Kindon, „The why does it of Citrix WEM Cache“, https://jkindon.com/the-why-does-it-of-citrix-wem-cache/, 2020-10-15 (nur als Vorgeschichte und nur hier, nicht im Text der Prüfung: Agenten vor Version 2012 übersprangen beim Start den ersten Abgleich, wenn schon ein Cache da war; aktuelle Agenten verwerfen nach Citrix auf bereitgestellten Maschinen die Cache-Dateien, die aus dem Abbild stammen).
 - `profile.containerFull` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23. Geschrieben für FSLogix; übernommen sind nur die Folge eines vollen Containers und der Rat, die Größe nicht knapper zu begrenzen als nötig. Keine Zahl des Katalogs stammt von dort.
 - `profile.containersPerUser` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23 (zusätzlicher Speicherplatz bei gleichzeitigen Sitzungen; für FSLogix); James Rankin, „QuickPost – getting started with Citrix UPM Containers“, https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/, 2023-09-08 (die Citrix Profilverwaltung schreibt einen Differenzdatenträger und führt ihn bei der Abmeldung zurück).
 
@@ -1317,16 +1318,23 @@ Citrix-Terminalserver und Betriebserfahrung, die Herstellerdokumentation nicht.
 - Praxisquellen: Carl Stalhood, „Citrix Health Check“ (oben); BIS-F stellt beim Versiegeln denselben Plan ein (oben).
 - Microsoft, „Overview about power and performance tuning for the Windows Server“,
   https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning
-  (Abruf 2026-11-13): „Balanced (recommended)“ ist die Vorgabe; „High Performance“ nennt die Seite für Anwendungen,
+  (Stand der Seite 2022-08-29, Abruf 2026-11-13):
+  „Balanced (recommended)“ ist die Vorgabe; „High Performance“ nennt die Seite für Anwendungen,
   die auf Verzögerungen empfindlich reagieren. Der Katalog nennt das im Text der Prüfung.
 - VMware, „Poor network performance or high network latency on Windows virtual machines“,
-  https://knowledge.broadcom.com/external/article/310350 (Abruf 2026-11-13): „High performance“ für die Zeit, in der
-  Leistungsprobleme untersucht werden. Der Artikel begründet das mit Beobachtungen unter älteren Windows-Versionen.
+  https://knowledge.broadcom.com/external/article/310350 (Stand der Seite 2025-07-21, Abruf 2026-11-13): „High
+  performance“ für die Zeit, in der Leistungsprobleme untersucht werden. Der Artikel begründet das mit einer
+  Beobachtung von Microsoft unter Windows Server 2008 und 2008 R2 und sagt nur, die Umstellung könne die Leistung
+  erhöhen („may increase overall performance“); für neuere Windows-Versionen bestätigt er es nicht eigens. Der
+  Katalog nennt diesen Vorbehalt im Text der Prüfung.
 - Andere Sicht aus der Praxis: GO-EUC, „Beyond Balanced: Benchmarking Windows 11 Power Plans“,
-  https://www.go-euc.com/beyond-balanced-benchmarking-windows-11-power-plans/, 2026-09-15: nur ein geringer
-  Unterschied zwischen „Balanced“ und „High performance“, für Benutzer kein spürbarer. Gemessen mit Windows 11 und
-  einer Sitzung je Maschine auf Azure, Defender abgeschaltet; die Leerlaufzustände der Prozessoren waren nicht Teil
-  der Messung. Der Katalog nennt die Messung mit diesen Bedingungen; sie ändert weder Regel noch Einstufung.
+  https://www.go-euc.com/beyond-balanced-benchmarking-windows-11-power-plans/, 2026-09-15: In diesem Test brachte
+  der Wechsel von „Balanced“ zu „High performance“ nur einen geringen Gewinn an Leistung („a slight increase in
+  performance“) und bei der gemessenen Benutzererfahrung kaum oder keinen Unterschied („minimal to no difference in
+  the UX Score“). Gemessen mit Windows 11 und einer Sitzung je Maschine auf Azure, Defender abgeschaltet; die
+  Leerlaufzustände der Prozessoren waren nicht Teil der Messung. Für Windows Server mit vielen Sitzungen unter
+  vSphere hat GO-EUC in diesem Test nicht gemessen. Der Katalog nennt die Messung mit diesen Bedingungen und zieht
+  daraus keinen Schluss für andere Umgebungen; sie ändert weder Regel noch Einstufung.
 
 ### Herstellerquellen
 
@@ -1334,12 +1342,12 @@ Citrix-Terminalserver und Betriebserfahrung, die Herstellerdokumentation nicht.
 |---|---|---|---|---|---|
 | Microsoft | How to determine the appropriate page file size for 64-bit versions of Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/how-to-determine-the-appropriate-page-file-size-for-64-bit-versions-of-windows | 2026-02-12 | 2026-11-13 | `size.pagefilePresent` (`vendor`); als Beleg der Faustregeln `size.commitHeadroom` (Zusagegrenze = Arbeitsspeicher und alle Auslagerungsdateien) und `operation.diskFree` (eine vom System verwaltete Auslagerungsdatei wächst nur, solange Platz frei ist) |
 | Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens) |
-| Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; keine Zahl) |
-| Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (der Wert `PendingFileRenameOperations`) |
-| VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` |
+| Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; diese Seite nennt keine Zahl) |
+| Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (die Seite beschreibt den Wert `PendingFileRenameOperations`; was ein Eintrag auf einem nicht persistenten Server bedeutet, ist die Faustregel des Katalogs und steht nicht auf der Seite) |
+| VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` (Windows Server 2022: ab 10.3.5, für die beste Leistung ab 12.0.0; Windows Server 2025: ab 11.3.0, für die beste Leistung ab 12.5.0; die Seite führt die Angaben unter „VMware Tools support for Guest Operating Systems“, ein Stand unter dem Mindeststand ist danach nicht unterstützt) |
 | VMware | Solutions for Memory Performance Problems | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-monitoring-and-performance/monitoring-inventory-objects/troubleshoot-and-enhance-performance/memory-performance-solutions.html | 2026-10-28 | 2026-11-13 | `size.balloonDriver` |
 | VMware | Poor network performance or high network latency on Windows virtual machines | https://knowledge.broadcom.com/external/article/310350 | 2025-07-21 | 2026-11-13 | `size.netAdapterType` (der Artikel setzt VMXNET3 voraus, bevor weiter gesucht wird; eine allgemeine Pflicht nennt er nicht; die Seite „Citrix Virtual Delivery Agent (VDA) 2411“ von Carl Stalhood nennt für vSphere ebenfalls VMXNET3) |
-| VMware | SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration.html | 2026-10-28 | 2026-11-13 | `size.storageController` (nur ein Hinweis: VMware knüpft den Vorteil an E/A-starke Last) |
+| VMware | SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration.html | 2026-10-28 | 2026-11-13 | `size.storageController` (nur ein Hinweis: VMware knüpft den Vorteil an E/A-starke Last und nennt den Adapter für direkt angeschlossenen Speicher nicht geeignet, siehe unten) |
 | Citrix | VDA registration | https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/manage-deployment/vda-registration.html | 2026-11-12 | 2026-11-13 | `vda.controllerCount`, `vda.controllerNotFqdn`, `vda.listOfSids` |
 | Citrix | WEM health check tool | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/wem-health-check-tool.html | 2026-11-12 | 2026-11-13 | `vda.wemServices` |
 | Citrix | Agent (install and configure) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-13 | `vda.wemCache` (Abschnitt „Prerequisites“), `vda.wemGpTimeout` (Abschnitt „System settings“) |
@@ -1353,20 +1361,27 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   WEM-Server enthalten diese Aussage nicht.
 - Citrix, „Session limits policy settings“,
   https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/policies/reference/ica-policy-settings/session-limits-policy-settings.html:
-  Citrix empfiehlt, die Zeitgeber nur auf einem der beiden Wege zu setzen (`sessions.disconnectLimit`,
+  Citrix empfiehlt, die Zeitlimits nur auf einem der beiden Wege zu setzen (`sessions.disconnectLimit`,
   `sessions.idleLimit`, im Vorschlag zum Vorgehen).
 - Citrix, „Set up profile containers“,
   https://docs.citrix.com/us/en/profile-management/current-release/configure/citrix-profile-management-profile-container.html:
   Mit einem Container für das ganze Profil gilt „Delete locally cached profiles on logoff“ nicht mehr
   (`sessions.unloadedProfiles`, im Vorschlag zum Vorgehen; die Empfehlung der Einstellung für Terminalserver steht auf
   der Seite „Profile Management policy descriptions and defaults“).
-- Citrix, „Agent (install and configure)“ (Tabelle oben), Abschnitt „Recommendations“: Die Dienste des WEM-Agenten
-  nicht per Skript beenden oder neu starten (`vda.wemServices`, im Vorschlag zum Vorgehen). Dieselbe Seite
+- Citrix, „Agent (install and configure)“ (Tabelle oben), Abschnitt „Recommendations“: Den Dienst „Citrix WEM
+  Agent Host Service“ nicht per Skript beenden oder neu starten; Citrix sagt das nur für diesen Dienst
+  (`vda.wemServices`, im Vorschlag zum Vorgehen). Abschnitt „System settings“: Antworten die Domänencontroller
+  langsam, kann es länger dauern, bis der Anmeldebildschirm erscheint; die Seite nennt das als möglichen Preis der
+  Wartezeit, nicht als Folge eines zu kleinen Werts (`vda.wemGpTimeout`). Dieselbe Seite
   beschreibt, dass der Agent auf bereitgestellten Maschinen die Cache-Dateien aus dem Abbild verwirft (`vda.wemCache`).
+- Citrix, „WEM health check tool“ (Tabelle oben): Die Seite sagt nur, dass der Agent die drei Dienste braucht, um
+  wie erwartet zu arbeiten. Was das für die Benutzer heißt, ist im Text der Prüfung als Erläuterung des Katalogs
+  gekennzeichnet (`vda.wemServices`).
 - Microsoft, „Performance Tuning Remote Desktop Session Hosts“ (Tabelle oben): Eine zu kleine Auslagerungsdatei
   lässt Speicheranforderungen von Programmen und Systemteilen scheitern (`size.commitHeadroom`).
 - VMware, „VMware Tools Device Drivers“,
-  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-device-drivers.html:
+  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-device-drivers.html
+  (Stand der Seite 2026-05-08):
   Der Treiber zur Speichersteuerung ist für das Ballooning nötig und unter vSphere empfohlen (`size.balloonDriver`);
   die Treiber für VMXNET3 verbessern die Netzleistung (`size.netAdapterType`).
 - VMware, „Add a Paravirtualized SCSI Adapter“,
@@ -1375,12 +1390,15 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   (`size.storageController`).
 - VMware, „Configuring disks to use VMware Paravirtual SCSI (PVSCSI) controllers“,
   https://knowledge.broadcom.com/external/article/313507: Ein Wechsel des Adapters am Startlaufwerk ohne den Treiber
-  lässt Windows nicht mehr starten (`size.storageController`, im Vorschlag zum Vorgehen).
+  lässt Windows nicht mehr starten (`size.storageController`, im Vorschlag zum Vorgehen). Derselbe Artikel nennt den
+  Adapter für direkt angeschlossenen Speicher nicht geeignet („not suitable for DAS environments“); der Text der
+  Prüfung nennt diesen Vorbehalt.
 
 ### Faustregeln
 
 Eine Faustregel ist eine Prüfung, für die es weder eine Empfehlung des Herstellers noch eine aus der Praxis gibt.
-Ihre Schwellen sind Vorschläge des Katalogs. Wo ein Dokument des Herstellers den Zusammenhang beschreibt, nennt die
+Ihre Schwellen sind Vorschläge des Katalogs, und jede Faustregel sagt in ihrem Text, dass die Prüfung oder ihre
+Schwelle vom Katalog stammt. Wo ein Dokument des Herstellers den Zusammenhang beschreibt, nennt die
 Prüfung dieses Dokument als Beleg (Tabelle „Herstellerquellen“). Die übrigen tragen die Quelle
 „WorkerPerf: Erfahrungswert des Katalogs ohne Herstellerdokument“ (Stand 2026-11-13): `sessions.disconnectedOld`,
 `sessions.unloadedProfiles`, `sessions.tempProfiles`, `vda.services`, `profile.containersPerUser`,
@@ -1399,7 +1417,7 @@ Kopf jede Abweichung vom ausgelieferten Wert.
 | `sessionsPerCpu` | 8 Sitzungen | `size.cpuPerSession` | Vorschlag des Katalogs |
 | `workerCpuMin` | 8 Prozessoren | `size.workerCpu` | Carl Stalhood (Praxisquelle) |
 | `workerCpuMax` | 8 Prozessoren | `size.workerCpuMax` | Carl Stalhood, GO-EUC (Praxisquellen) |
-| `workerMemMinMB` | 24576 MB | `size.workerMemory` | Carl Stalhood (Praxisquelle) |
+| `workerMemMinMB` | 24000 MB | `size.workerMemory` | Carl Stalhood (Praxisquelle) nennt 24 GB (24576 MB). Der Katalog setzt die Schwelle knapp darunter: Gelesen wird der Arbeitsspeicher, den Windows meldet, und der kann bei einer virtuellen Maschine etwas kleiner sein, als ihr zugeteilt ist. Ein Server mit genau 24 GB wird so nicht gemeldet. Der Abstand ist eine Festlegung des Katalogs. |
 | `uptimeDays` | 30 Tage | `operation.uptime` | Vorschlag des Katalogs |
 | `updateAgeDays` | 60 Tage | `operation.updateAge` | Carl Stalhood (Praxisquelle) |
 | `diskFreeGB` | 10 GB | `operation.diskFree` | Vorschlag des Katalogs |
@@ -1413,3 +1431,44 @@ Kopf jede Abweichung vom ausgelieferten Wert.
 
 Feste Zahlen in Regeln, die aus dem Dokument des Herstellers stammen und deshalb keine Schwellen sind: 12
 (Hauptversion der VMware Tools), 30 (Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden).
+
+### Auf dem Zielsystem zu bestätigen
+
+Der Katalog nennt Stellen und Bezeichnungen der Oberflächen von Windows, Citrix und VMware. Wo die Recherche den
+Namen einer Einstellung nennt, steht er so da wie in der Quelle (englisch). Alle anderen Stellen sind allgemein
+umschrieben, weil ihre deutschen Anzeigenamen hier nicht geprüft werden konnten. Die folgenden Angaben sind beim Test
+auf dem Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog angepasst.
+
+- **Energiesparplan** (`operation.powerPlan`): die Namen der Pläne „Höchstleistung“, „Ausbalanciert“ und
+  „Energiesparmodus“ und die Stelle „Energieoptionen“. Das Zustandsbild liest den Plan als Kennwort
+  (highPerformance, balanced, powerSaver, other); die Bezeichnung des Werts erklärt die Kennwörter.
+- **Zustand und Starttyp von Diensten**: Das Zustandsbild zeigt den Zustand eines Dienstes so, wie Windows ihn über
+  die Schnittstelle liefert (Running, Stopped); die Bezeichnungen der Werte erklären Running als „läuft“ und
+  Stopped als „beendet“. Zu bestätigen ist, welche Wörter die Dienste-Konsole eines deutschen Windows dafür zeigt
+  (die Liste weiter oben nennt „Wird ausgeführt“), und der Starttyp „Automatisch“.
+- **Dienste des WEM-Agenten** (`vda.wemServices`): Der Katalog nennt den „System Event Notification Service“
+  englisch wie die Seite von Citrix. Zu bestätigen ist, unter welchem Anzeigenamen ein deutsches Windows diesen
+  Dienst zeigt.
+- **Zeitlimits der Sitzungen** (`sessions.disconnectLimit`, `sessions.idleLimit`): Der Katalog nennt die zwei
+  Einstellungen der Gruppenrichtlinie englisch, wie Carl Stalhood sie nennt:
+  „Set time limit for disconnected sessions“ und
+  „Set a time limit for active but idle Terminal Services sessions“. Zu bestätigen sind ihre deutschen Anzeigenamen
+  und ihr Ort unter Computerkonfiguration > Administrative Vorlagen, ebenso die Namen der Sitzungs-Timer in den
+  Citrix-Richtlinien (im Katalog: „Timer für getrennte Sitzungen“, „Timer für Sitzungen im Leerlauf“).
+- **Citrix Studio** (`operation.uptime`, `vda.services`, `profile.serviceStopped`): die Stelle und die Bezeichnung
+  des Zeitplans für Neustarts einer Bereitstellungsgruppe und der Wartungsmodus eines Servers; die Wörter
+  „Maschinenkatalog“ und „Bereitstellungsgruppe“.
+- **Citrix Profilverwaltung** (`sessions.unloadedProfiles`): Der Katalog nennt die Einstellung englisch wie die
+  Quelle („Delete locally cached profiles on logoff“). Zu bestätigen ist ihr deutscher Anzeigename.
+- **Task-Manager** (`size.commitHeadroom`, `sessions.disconnectedOld`): die Registerkarten „Benutzer“ und „Details“
+  und der Status „Getrennt“. Den zugesagten Speicher zeigt der Task-Manager unter einer eigenen Bezeichnung
+  (vermutet wird „Zugesichert“); der Katalog nennt sie nicht.
+- **Auslagerungsdatei** (`size.pagefilePresent`): die Stelle „Systemeigenschaften, Einstellungen zum virtuellen
+  Arbeitsspeicher“.
+- **VMware Tools** (`size.balloonDriver`): die Bezeichnung der Komponente zur Speichersteuerung im
+  Installationsprogramm (im Katalog: „Memory Control“).
+- **Arbeitsspeicher eines Servers mit 24 GB** (`size.workerMemory`): wie viel Arbeitsspeicher Windows für eine
+  virtuelle Maschine mit genau 24 GB meldet. Der Katalog nimmt an, dass der Wert knapp unter 24576 MB liegen kann,
+  und setzt die Schwelle deshalb auf 24000 MB.
+- **Outlook** (Bereich Anwendungen, „nicht abgedeckt“): Der Katalog nennt den Modus englisch wie die Quelle
+  („Cached Exchange Mode“).
