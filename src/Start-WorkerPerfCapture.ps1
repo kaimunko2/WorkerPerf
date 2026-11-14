@@ -2,8 +2,8 @@
 
 <#
 .SYNOPSIS
-    Records performance and resource usage of a Citrix multi-session VDA (terminal server worker)
-    down to individual sessions and processes.
+    Records performance and resource usage of a Citrix multi-session server (VDA) down to
+    individual sessions and processes.
 
 .DESCRIPTION
     Measures in two cadences and writes a run folder in capture format 3:

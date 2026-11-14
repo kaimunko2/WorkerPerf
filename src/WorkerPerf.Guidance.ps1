@@ -1078,15 +1078,38 @@ $script:WorkerPerfLagebildParts = @(
     @{ Key = 'partEvents'; Value = 'events'; Place = 'events'; States = @('red', 'yellow') }
     @{ Key = 'partChronic'; Value = 'chronic'; Place = 'citrix'; States = @('red', 'yellow') })
 
+function Get-WorkerPerfLagebildIncompleteLogs($Data) {
+    # The labels of the event logs of the capture that could not be read at least once (quality.sources events.<id> with
+    # readFailed) or lost events at the cap of a read (quality.eventReads with dropped), each once, in that order.
+    $quality = Get-WorkerPerfField $Data 'quality'
+    $labels = New-Object System.Collections.Generic.List[string]
+    foreach ($s in (Get-WorkerPerfGuidanceList $quality 'sources')) {
+        if (-not ([string](Get-WorkerPerfField $s 'id')).StartsWith('events.') -or -not [bool](Get-WorkerPerfField $s 'readFailed')) { continue }
+        $l = [string](Get-WorkerPerfField $s 'label'); if (-not $l) { $l = [string](Get-WorkerPerfField $s 'id') }
+        if (-not $labels.Contains($l)) { $labels.Add($l) }
+    }
+    foreach ($r in (Get-WorkerPerfGuidanceList $quality 'eventReads')) {
+        $n = Get-WorkerPerfField $r 'dropped'
+        if ($null -eq $n -or [long]$n -le 0) { continue }
+        $l = [string](Get-WorkerPerfField $r 'label'); if (-not $l) { $l = [string](Get-WorkerPerfField $r 'log') }
+        if (-not $labels.Contains($l)) { $labels.Add($l) }
+    }
+    $labels.ToArray()
+}
+
 function Get-WorkerPerfLagebild {
     # The situation summary of the capture (spec 3.1): state with symbol and word, sentence (catalogue part lagebild),
     # key figures, hints on the capture (catalogue part hints) and the id of the most important incident. The red and
     # the yellow sentence are joined from their parts ($script:WorkerPerfLagebildParts); a part whose count is zero and
     # whose category was left out is not listed (nothing that was not measured counts as zero, ruling P3-R49), and the
-    # sentence then ends with the reservation lagebild.notMeasured. A part with a real count stays.
+    # sentence then ends with the reservation lagebild.notMeasured. A part with a real count stays. A category the capture
+    # never recorded (Data.unrecorded: the event logs of a capture from before their recording) counts like one left out
+    # for the sentence and its reservation, but not for the hint on what -Skip left out. A log of the capture that could
+    # not be read or lost events at the cap of a read (Data.quality: sources events.<id> with readFailed, eventReads with
+    # dropped) gives the hint hint.eventsIncomplete of the texts.
     # Incidents: the capture's incidents only (Data.incidents). Incidents of the lookback (Data.before) count nowhere; the
-    # caller does not pass them, and nothing is filtered here. Data: the report data (meta, sollIst, skipped). Texts:
-    # Read-WorkerPerfTexts (symbol and word of the state).
+    # caller does not pass them, and nothing is filtered here. Data: the report data (meta, sollIst, skipped, unrecorded,
+    # quality). Texts: Read-WorkerPerfTexts (symbol and word of the state).
     param([object[]]$Incidents = @(), $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts)
     $list = @(@($Incidents) | Where-Object { $null -ne $_ })
     $bottlenecks = 0; $delays = 0; $unverified = 0; $events = 0; $chronic = 0; $red = $false
@@ -1131,7 +1154,11 @@ function Get-WorkerPerfLagebild {
     $start = Get-WorkerPerfField $meta 'start'
     if ($null -ne $start) { $v['date'] = Format-WorkerPerfEventDate ([long][double]$start) ([int](Get-WorkerPerfField $meta 'offsetMin')) }
     $skipped = Get-WorkerPerfGuidanceList $Data 'skipped'
-    if ($skipped.Count -gt 0) { $v['skipped'] = (@($skipped | ForEach-Object { [string](Get-WorkerPerfField $_ 'label') }) -join ', ') }
+    $unrecorded = Get-WorkerPerfGuidanceList $Data 'unrecorded'
+    # the hint on -Skip names what was left out; the sentence names that and what the capture never recorded
+    $skippedText = (@($skipped | ForEach-Object { [string](Get-WorkerPerfField $_ 'label') }) -join ', ')
+    $notRecordedText = (@(@($skipped) + @($unrecorded) | ForEach-Object { [string](Get-WorkerPerfField $_ 'label') }) -join ', ')
+    if ($notRecordedText) { $v['skipped'] = $notRecordedText }
     $message = [string](Get-WorkerPerfField $meta 'endMessage'); if ($message) { $v['message'] = $message }
     # a signal missing because its category was skipped is named by the skipped hint only
     $signals = New-Object System.Collections.Generic.List[string]
@@ -1148,7 +1175,7 @@ function Get-WorkerPerfLagebild {
 
     # the places of the report data that were not measured, as the page reads them for its key figures
     $notMeasured = New-Object System.Collections.Generic.List[string]
-    foreach ($s in $skipped) { foreach ($place in (Get-WorkerPerfGuidanceList $s 'places')) { $notMeasured.Add([string]$place) } }
+    foreach ($s in @($skipped) + @($unrecorded)) { foreach ($place in (Get-WorkerPerfGuidanceList $s 'places')) { $notMeasured.Add([string]$place) } }
     $sentenceKey = $state
     $reserve = $false
     if ($state -eq 'green') { if ($notMeasured.Contains('events')) { $sentenceKey = 'greenSkipped' } }
@@ -1167,8 +1194,13 @@ function Get-WorkerPerfLagebild {
     # hints: what was left out on purpose before what could not be measured (ruling P3-R28); duration, interrupted and
     # stopflag give none (ruling P3-R5)
     $hints = New-Object System.Collections.Generic.List[string]
-    if ($skipped.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'skipped' $v)) }
+    if ($skipped.Count -gt 0) {
+        $sv = $v.Clone(); $sv['skipped'] = $skippedText
+        $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'skipped' $sv))
+    }
     if ($signals.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'unmeasured' $v)) }
+    $incomplete = @(Get-WorkerPerfLagebildIncompleteLogs $Data)
+    if ($incomplete.Count -gt 0) { $hints.Add((Format-WorkerPerfGuidanceWord $Texts 'hint.eventsIncomplete' @((Join-WorkerPerfTextList $incomplete $Texts)))) }
     $reason = [string](Get-WorkerPerfField $meta 'endReason')
     if (-not $reason) { $hints.Add((Format-WorkerPerfGuidancePart $Catalogue 'hints' 'notFinished' $v)) }
     elseif ($reason -eq 'error') {
@@ -1275,8 +1307,11 @@ function ConvertTo-WorkerPerfAnonymousText([string]$Text, $Mask) {
     return (Hide-WorkerPerfReportText $Text $Mask)
 }
 
-function Get-WorkerPerfCopyFacts($Incident, $Data, $Catalogue, $Texts) {
+function Get-WorkerPerfCopyFacts($Incident, $Data, $Catalogue, $Texts, $Facts = $null) {
     # The facts of the incident as the guidance has them (Get-WorkerPerfGuidanceFacts), in the server's time of the data.
+    # Facts: the facts the caller computed for the guidance already, as one table keyed by the incident record (the report
+    # script computes them once per incident); an incident it does not hold gets its facts here.
+    if ($null -ne $Facts -and $Facts.ContainsKey($Incident)) { return $Facts.get_Item($Incident) }
     $offset = [int](Get-WorkerPerfField (Get-WorkerPerfField $Data 'meta') 'offsetMin')
     return (Get-WorkerPerfGuidanceFacts -Incident $Incident -Context @{ Data = $Data; OffsetMinutes = $offset; Texts = $Texts } -Catalogue $Catalogue)
 }
@@ -1302,31 +1337,93 @@ function Get-WorkerPerfCopyTitleLine($Guide, [hashtable]$Values, $Texts, [bool]$
     return (Format-WorkerPerfGuidanceWord $Texts 'copy.title' @($when, $title))
 }
 
+function Get-WorkerPerfConcerned($Incident, $Data, $Texts) {
+    # Who was affected (spec 4, "Wer war betroffen"), the one list the incident view shows and the copy text counts:
+    # sessions (session indices, each once, in this order), users (indices of event.users of an event incident:
+    # the users no listed session names), note (a sentence of the texts, or ''), notChecked (the note is the reason why
+    # the users were not checked: unchecked 'users' of the event).
+    #   performance incident: its affected sessions (input delay over the target); without any, a note why
+    #     (affected.none.inputUnmeasured, affected.none.chronic, affected.none);
+    #   incident of the surroundings: the sessions whose own measured value is over its target, then its affected sessions;
+    #     a note on the input delay of these sessions (affected.note.inputUnmeasured, affected.note.inputBelow), without
+    #     any session affected.note.endpoint;
+    #   event incident: its sessions and the users they do not name (by the users of Data.sessions); without either, the
+    #     unchecked reason, else event.session.unknown, event.nouser or affected.none.event.
+    # Returns an ordered table.
+    $known = @{}
+    foreach ($s in (Get-WorkerPerfGuidanceList $Data 'sessions')) { $i = Get-WorkerPerfField $s 'i'; if ($null -ne $i) { $known[[int]$i] = [string](Get-WorkerPerfField $s 'user') } }
+    $sessions = New-Object System.Collections.Generic.List[int]
+    $users = New-Object System.Collections.Generic.List[int]
+    $note = ''; $notChecked = $false
+    $type = [string](Get-WorkerPerfField $Incident 'type')
+    $inputUnmeasured = [bool](Get-WorkerPerfField (Get-WorkerPerfField $Data 'unmeasured') 'input')
+    $affected = Get-WorkerPerfGuidanceList $Incident 'affected'
+    $add = { param($Index) if ($null -ne $Index -and [int]$Index -ge 0 -and -not $sessions.Contains([int]$Index)) { $sessions.Add([int]$Index) } }
+    if ($type -eq 'ereignis') {
+        $ev = Get-WorkerPerfField $Incident 'event'
+        foreach ($s in (Get-WorkerPerfGuidanceList $ev 'sessions')) { & $add $s }
+        $named = @($sessions | Where-Object { $known.ContainsKey($_) } | ForEach-Object { $known[$_] })
+        $list = Get-WorkerPerfGuidanceList $ev 'users'
+        for ($n = 0; $n -lt $list.Count; $n++) {
+            $u = [string]$list[$n]
+            if ($u -and $named -notcontains $u -and @($users | Where-Object { [string]$list[$_] -eq $u }).Count -eq 0) { $users.Add($n) }
+        }
+        if ($sessions.Count -eq 0 -and $users.Count -eq 0) {
+            $unchecked = @((Get-WorkerPerfGuidanceList $ev 'unchecked') | Where-Object { [string](Get-WorkerPerfField $_ 'id') -eq 'users' })
+            if ($unchecked.Count -gt 0) { $note = [string](Get-WorkerPerfField $unchecked[0] 'text'); $notChecked = $true }
+            elseif ([bool](Get-WorkerPerfField $ev 'sessionUnknown')) { $note = (Get-WorkerPerfGuidanceWord $Texts 'event.session.unknown').Trim() }
+            elseif ([bool](Get-WorkerPerfField $ev 'noUserSession')) { $note = (Get-WorkerPerfGuidanceWord $Texts 'event.nouser').Trim() }
+            else { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.event' }
+        }
+    }
+    elseif ($type -eq 'umfeld') {
+        foreach ($sg in (Get-WorkerPerfGuidanceList $Incident 'signals')) { & $add (Get-WorkerPerfField $sg 's') }
+        foreach ($a in $affected) { & $add (Get-WorkerPerfField $a 's') }
+        if ($sessions.Count -eq 0) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.note.endpoint' }
+        elseif ($inputUnmeasured) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.note.inputUnmeasured' }
+        elseif ($affected.Count -eq 0) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.note.inputBelow' }
+    }
+    else {
+        foreach ($a in $affected) { & $add (Get-WorkerPerfField $a 's') }
+        if ($sessions.Count -eq 0) {
+            if ($inputUnmeasured) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.inputUnmeasured' }
+            elseif ([bool](Get-WorkerPerfField $Incident 'chronic')) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.chronic' }
+            else { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none' }
+        }
+    }
+    return [ordered]@{ sessions = [int[]]$sessions.ToArray(); users = [int[]]$users.ToArray(); note = $note; notChecked = $notChecked }
+}
+
 function Get-WorkerPerfCopyAffected($Incident, $Data, $Facts, $Catalogue, $Texts) {
     # The paragraph on the affected sessions, or $null (ruling P3-R32): none when they cannot be determined (the user's
     # view says so) or not assigned (an incident before the capture without sessions) and none for a chronic state
     # without affected sessions, and none for an event incident outside user sessions (its causeText says so, ruling
-    # P3-R32 as refined); else copy.affected with the number of sessions (event.sessions of an event incident, affected otherwise) and their
-    # users (event.users; of the sessions in Data.sessions).
+    # P3-R32 as refined); else copy.affected with the number of sessions and their users. Sessions and users are those
+    # the incident view lists (Get-WorkerPerfConcerned: the incident's field concerned, else built here): the users of
+    # the sessions, then the users of an event no session names.
     $v = $Facts.Values
     if (@($Facts.Conditions) -ccontains 'affected.unknown' -or -not $v.ContainsKey('affected')) { return $null }
-    $count = [string]$v['affected']
+    $concerned = Get-WorkerPerfField $Incident 'concerned'
+    if ($null -eq $concerned) { $concerned = Get-WorkerPerfConcerned $Incident $Data $Texts }
+    $listed = Get-WorkerPerfGuidanceList $concerned 'sessions'
+    $count = [string]$listed.Count
     $users = New-Object System.Collections.Generic.List[string]
+    $sessions = Get-WorkerPerfGuidanceList $Data 'sessions'
+    foreach ($idx in $listed) {
+        foreach ($s in $sessions) {
+            if ([string](Get-WorkerPerfField $s 'i') -ne [string]$idx) { continue }
+            $u = [string](Get-WorkerPerfField $s 'user')
+            if ($u -and -not $users.Contains($u)) { $users.Add($u) }
+        }
+    }
     if ([string](Get-WorkerPerfField $Incident 'type') -eq 'ereignis') {
         $ev = Get-WorkerPerfField $Incident 'event'
         # outside user sessions the incident's own sentence (causeText) says "Ohne Benutzersitzung." already
         if ($count -eq '0' -and [bool](Get-WorkerPerfField $ev 'noUserSession')) { return $null }
-        foreach ($u in (Get-WorkerPerfGuidanceList $ev 'users')) { if ([string]$u -and -not $users.Contains([string]$u)) { $users.Add([string]$u) } }
-    }
-    else {
-        $sessions = Get-WorkerPerfGuidanceList $Data 'sessions'
-        foreach ($a in (Get-WorkerPerfGuidanceList $Incident 'affected')) {
-            $idx = [string](Get-WorkerPerfField $a 's')
-            foreach ($s in $sessions) {
-                if ([string](Get-WorkerPerfField $s 'i') -ne $idx) { continue }
-                $u = [string](Get-WorkerPerfField $s 'user')
-                if ($u -and -not $users.Contains($u)) { $users.Add($u) }
-            }
+        $evUsers = Get-WorkerPerfGuidanceList $ev 'users'
+        foreach ($n in (Get-WorkerPerfGuidanceList $concerned 'users')) {
+            $u = [string]$evUsers[[int]$n]
+            if ($u -and -not $users.Contains($u)) { $users.Add($u) }
         }
     }
     $list = ''; if ($users.Count -gt 0) { $list = Join-WorkerPerfTextList $users.ToArray() $Texts }
@@ -1361,11 +1458,11 @@ function Get-WorkerPerfCopyParagraphs {
     # (copy.contact; '- '), each block after an empty paragraph. Of the checks and the remedies the text carries the first
     # ones only, in the guide's order (copy.maxChecks, copy.maxRemedies), and says after a shortened block how many more
     # stand in the report (copy.moreChecks, copy.moreRemedies; ruling P3-R59); it carries every contact. Guide:
-    # New-WorkerPerfGuidance of the incident; Data: the report data; Texts: Read-WorkerPerfTexts. Plain pipeline output
-    # (the caller writes @(...)).
-    param($Incident, $Guide, $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts)
-    $facts = Get-WorkerPerfCopyFacts $Incident $Data $Catalogue $Texts
-    $v = $facts.Values
+    # New-WorkerPerfGuidance of the incident; Data: the report data; Texts: Read-WorkerPerfTexts; Facts: see
+    # Get-WorkerPerfCopyFacts. Plain pipeline output (the caller writes @(...)).
+    param($Incident, $Guide, $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts, $Facts = $null)
+    $own = Get-WorkerPerfCopyFacts $Incident $Data $Catalogue $Texts $Facts
+    $v = $own.Values
     Format-WorkerPerfGuidancePart $Catalogue 'copy' 'head' $v
     Get-WorkerPerfCopyTitleLine $Guide $v $Texts (Test-WorkerPerfCopyBefore $Incident)
     $view = [string](Get-WorkerPerfField $Guide 'userView'); if ($view) { $view }
@@ -1376,7 +1473,7 @@ function Get-WorkerPerfCopyParagraphs {
     }
     $cause = ([string](Get-WorkerPerfField $Incident 'causeText')).Trim()
     if ($cause) { (Format-WorkerPerfGuidancePart $Catalogue 'copy' 'cause' @{}) + ' ' + $cause }
-    $affected = Get-WorkerPerfCopyAffected $Incident $Data $facts $Catalogue $Texts
+    $affected = Get-WorkerPerfCopyAffected $Incident $Data $own $Catalogue $Texts
     if ($null -ne $affected) { $affected }
     $checks = Get-WorkerPerfGuidanceList $Guide 'checks'
     if ($checks.Count -gt 0) {
@@ -1410,13 +1507,14 @@ function Get-WorkerPerfCopyParagraphs {
 
 function Get-WorkerPerfCopySummaryParagraphs {
     # The paragraphs of the summary of the capture, unwrapped: head (copy.summaryHead: server, date, start and end of the
-    # capture as HH:mm), symbol, word and sentence of the Lagebild, its hints one paragraph each, then after an empty
-    # paragraph one paragraph per incident in the order of Order ('- ' time, duration, title, technical name, impact),
-    # then after an empty paragraph the incidents before the capture (Before) under copy.before, oldest first ('- ' date,
-    # time, title, technical name); no such block without them. Incidents: the capture's incidents, Before: the
-    # incidents of before.incidents, each with its guide (guide); an id of Order used once; an id missing from Incidents
-    # stops. Plain pipeline output (the caller writes @(...)).
-    param([object[]]$Incidents = @(), [int[]]$Order = @(), $Lagebild, $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts, [object[]]$Before = @())
+    # capture as HH:mm; an end on another day than the start with its date, copy.dated), symbol, word and sentence of the
+    # Lagebild, its hints one paragraph each, then after an empty paragraph one paragraph per incident in the order of
+    # Order ('- ' time, duration, title, technical name, impact; the date first where the incident starts on another day
+    # than the capture), then after an empty paragraph the incidents before the capture (Before) under copy.before,
+    # oldest first ('- ' date, time, title, technical name); no such block without them. Incidents: the capture's
+    # incidents, Before: the incidents of before.incidents, each with its guide (guide); an id of Order used once; an id
+    # missing from Incidents stops. Facts: see Get-WorkerPerfCopyFacts. Plain pipeline output (the caller writes @(...)).
+    param([object[]]$Incidents = @(), [int[]]$Order = @(), $Lagebild, $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts, [object[]]$Before = @(), $Facts = $null)
     $meta = Get-WorkerPerfField $Data 'meta'
     $offset = [int](Get-WorkerPerfField $meta 'offsetMin')
     $v = @{}
@@ -1426,7 +1524,11 @@ function Get-WorkerPerfCopySummaryParagraphs {
         $v['date'] = Format-WorkerPerfEventDate ([long][double]$start) $offset
         $v['from'] = (Format-WorkerPerfClock ([long][double]$start) $offset).Substring(0, 5)
     }
-    if ($null -ne $end) { $v['to'] = (Format-WorkerPerfClock ([long][double]$end) $offset).Substring(0, 5) }
+    if ($null -ne $end) {
+        $v['to'] = (Format-WorkerPerfClock ([long][double]$end) $offset).Substring(0, 5)
+        $endDate = Format-WorkerPerfEventDate ([long][double]$end) $offset
+        if ($v.ContainsKey('date') -and $endDate -ne $v['date']) { $v['to'] = Format-WorkerPerfGuidanceWord $Texts 'copy.dated' @($endDate, $v['to']) }
+    }
     Format-WorkerPerfGuidancePart $Catalogue 'copy' 'summaryHead' $v
     $state = (@([string](Get-WorkerPerfField $Lagebild 'symbol'), [string](Get-WorkerPerfField $Lagebild 'word')) | Where-Object { $_ }) -join ' '
     $sentence = [string](Get-WorkerPerfField $Lagebild 'sentence')
@@ -1442,7 +1544,8 @@ function Get-WorkerPerfCopySummaryParagraphs {
         $seen.Add([int]$id)
         $inc = $byId[[int]$id]
         $guide = Get-WorkerPerfField $inc 'guide'
-        $line = '- ' + (Get-WorkerPerfCopyTitleLine $guide (Get-WorkerPerfCopyFacts $inc $Data $Catalogue $Texts).Values $Texts)
+        $values = (Get-WorkerPerfCopyFacts $inc $Data $Catalogue $Texts $Facts).Values
+        $line = '- ' + (Get-WorkerPerfCopyTitleLine $guide $values $Texts ($v.ContainsKey('date') -and $values['date'] -and $values['date'] -ne $v['date']))
         $impact = [string](Get-WorkerPerfField $guide 'impact')
         if ($impact) {
             if ($line -notmatch '[.!?]$') { $line += '.' }
@@ -1454,7 +1557,7 @@ function Get-WorkerPerfCopySummaryParagraphs {
     if ($earlier.Count -gt 0) {
         ''
         Get-WorkerPerfGuidanceWord $Texts 'copy.before'
-        foreach ($inc in $earlier) { '- ' + (Get-WorkerPerfCopyTitleLine (Get-WorkerPerfField $inc 'guide') (Get-WorkerPerfCopyFacts $inc $Data $Catalogue $Texts).Values $Texts $true) }
+        foreach ($inc in $earlier) { '- ' + (Get-WorkerPerfCopyTitleLine (Get-WorkerPerfField $inc 'guide') (Get-WorkerPerfCopyFacts $inc $Data $Catalogue $Texts $Facts).Values $Texts $true) }
     }
 }
 

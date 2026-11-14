@@ -324,7 +324,12 @@ Fehlt er, ist der Bericht nicht maskiert.
   Daten des Berichts maskiert. Ein maskierter Bericht hat deshalb keinen Schalter „ohne Namen". Ein Bericht ohne
   `-Mask` bietet jeden Text zum Kopieren zusätzlich ohne Namen an: mit den Ersatznamen der Stufe `Alles`, also
   denselben wie ein Bericht derselben Aufzeichnung mit `-Mask Alles`, mit denselben Grenzen (siehe
-  [Kopieren](#kopieren)).
+  [Kopieren](#kopieren)). Dafür liest die Auswertung die Namen der ganzen Aufzeichnung ein zweites Mal aus deren
+  Dateien, wie es `-Mask Alles` tut. Das kostet etwa eine Sekunde je Stunde Aufzeichnung (gemessen mit PowerShell 7:
+  rund 7 Sekunden für eine simulierte Aufzeichnung über acht Stunden; Windows PowerShell 5.1 braucht länger). Aus den
+  schon geladenen Messwerten lassen sich die Namen nicht gewinnen, ohne die Ersatznamen zu ändern: Diese halten nur den
+  gewählten Ausschnitt (`-From`, `-To`) und je Sitzung einen Client, die Ersatznamen gelten aber für die ganze
+  Aufzeichnung.
 
 **Wohin mit den Dateien:**
 
@@ -598,14 +603,16 @@ Darunter stehen fünf Kennzahlen. Vorfälle aus den Tagen vor der Messung zähle
 |---|---|
 | Engpässe auf dem Server | Engpässe bei CPU, Arbeitsspeicher, Datenträger, Freigabe oder Profilcontainer |
 | Verzögerungen von außen | Verzögerungen ohne Engpass und Vorfälle im Umfeld; heißt „Verzögerungen ohne erkannten Engpass", wenn eine davon nicht geprüft werden konnte (`-Skip Laufwerke`) |
-| Abstürze und Fehler | Vorfälle aus Ereignissen der Messzeit; ohne `Ereignisse` steht „–" mit dem Grund |
+| Abstürze und Fehler | Vorfälle aus Ereignissen der Messzeit; ohne `Ereignisse` steht „–" mit dem Grund, ebenso bei einer Aufzeichnung ohne Ereignisprotokolle (aufgezeichnet, bevor WorkerPerf sie las) |
 | Dauerzustände | Dauerzustände; ohne `Citrix` steht statt einer 0 „–" mit dem Grund |
 | Minuten mit spürbarer Störung | die Dauer der Zeitfenster aller Vorfälle außer den Dauerzuständen; überlappende Fenster zählen einmal |
 
 Im Band stehen die Knöpfe „Wichtigsten Vorfall öffnen" (nur mit Vorfall), „Zusammenfassung kopieren" und der Schalter
 „ohne Namen" (siehe [Kopieren](#kopieren)). Unter dem Band stehen Hinweise, wenn sie die Aussage einschränken: nicht
-gemessene Werte, mit `-Skip` weggelassene Kategorien, eine Aufzeichnung, die nicht regulär, vorzeitig oder mit einem
-Fehler endete.
+gemessene Werte, mit `-Skip` weggelassene Kategorien, ein Ereignisprotokoll, das während der Messung nicht gelesen
+werden konnte oder Ereignisse verlor, eine Aufzeichnung, die nicht regulär, vorzeitig oder mit einem Fehler endete.
+Eine Aufzeichnung ohne Ereignisprotokolle zählt Abstürze und Fehler nicht als 0: Der Satz nennt sie unter „Nicht
+gemessen".
 
 Darunter folgen:
 
@@ -615,7 +622,7 @@ Darunter folgen:
   aus Ereignissen, dann die übrigen Vorfälle, zuletzt die Dauerzustände. Innerhalb dieser Gruppen entscheidet die Zahl
   der betroffenen Sitzungen, dann die Dauer, dann die Uhrzeit; ein Vorfall aus Ereignissen ohne bekannte Sitzung steht
   hinter den anderen seiner Gruppe. Eine Karte zeigt die Einordnung in Benutzersicht („Spürbar für 8 Sitzungen,
-  1,5 Minuten lang."), Uhrzeit und Dauer, einen Titel in Alltagssprache, die Wirkung in einem Satz, den Verursacher
+  1,5 Minuten lang."), Uhrzeit und Dauer (bei einer Messung über Mitternacht am zweiten Tag mit Datum), einen Titel in Alltagssprache, die Wirkung in einem Satz, den Verursacher
   oder einen Hinweis, den ersten Prüfschritt, den Zustand, ein Kürzel der Ressource und die Knöpfe „Öffnen" und
   „Kopieren".
 - **Weitere Vorfälle** ab dem elften als kompakte Liste. Vorfälle derselben Art mit demselben Verursacher stehen
@@ -632,14 +639,15 @@ Eine Karte, eine Zeile der Liste, eine Markierung der Zeitleiste oder „Wichtig
 Vorfallsansicht. Im Kopf stehen der Titel in Alltagssprache, darunter klein die Fachbezeichnung, Zustand, Nummer,
 Zeit, Dauer und die Einordnung in Benutzersicht. Knöpfe: „Zusammenfassung kopieren" mit dem Schalter „ohne Namen",
 „In der Expertenansicht zeigen", „Zurück zum Lagebild" (aus der Expertenansicht geöffnet: „Zurück zur
-Expertenansicht") und „Nächster Vorfall" in der Rangfolge. Dann folgen immer dieselben fünf Abschnitte:
+Expertenansicht") und „Nächster Vorfall" in der Rangfolge. Nach „Wichtigsten Vorfall öffnen" rollt die Ansicht so weit,
+dass der erste Prüfschritt ganz zu sehen ist. Dann folgen immer dieselben fünf Abschnitte:
 
 | Abschnitt | Inhalt |
 |---|---|
 | **Was war los** | zwei bis drei Sätze, was passiert ist, und die Wirkung auf die Benutzer; daneben ein kleines Diagramm des auslösenden Messwerts mit den Schwellen und dem Vorfall getönt, mit Vor- und Nachlauf. Ein Vorfall aus Ereignissen hat kein Diagramm; ein Vorfall vor der Messung sagt, dass für diese Zeit keine Messwerte vorliegen |
 | **Wer oder was hat es verursacht** | Hauptverursacher mit Anwendung, Benutzer, Anteil und üblichem Wert, Begleiter, „Kein einzelner Hauptverursacher", wo das gilt; bei einer Verzögerung ohne Engpass, dass die Ursache vermutlich außerhalb des Servers oder in der Anwendung liegt, und was dafür spricht |
 | **Was ist zu tun** | nummerierte Prüfschritte mit „Wo:" und „Woran erkennbar:", die naheliegendsten zuerst; abgesetzt „Mögliche Abhilfe – Vorschlag" als „Wenn …, dann: …"; „An wen wenden". Unter jedem Element steht seine Quelle, wo es eine hat. Sichtbar sind die ersten fünf Prüfschritte und drei Vorschläge, der Rest hinter „Weitere … anzeigen" |
-| **Wer war betroffen** | die betroffenen Sitzungen mit Benutzer, Client und höchster Verzögerung; ohne gemessene Eingabeverzögerung der Satz, dass die Betroffenen nicht bestimmbar sind |
+| **Wer war betroffen** | die betroffenen Sitzungen mit Benutzer, Client und höchster Verzögerung; bei einem Vorfall im Umfeld die Sitzungen mit eigenem Messwert über dem Soll; bei einem Vorfall aus Ereignissen dessen Sitzungen und Benutzer; ohne gemessene Eingabeverzögerung der Satz, dass die Betroffenen nicht bestimmbar sind. Der Kopiertext zählt dieselben Sitzungen |
 | **Belege** (eingeklappt) | der Fachsatz des Vorfalls und alles, was ihn stützt (siehe [Inhalte im Einzelnen](#inhalte-im-einzelnen)), am Ende, was nicht gemessen wurde |
 
 Fachbegriffe sind unterlegt. Ihre Erklärung aus dem Katalog erscheint beim Überfahren mit der Maus, beim Antippen und
@@ -654,7 +662,7 @@ belegen kann, nennt der Bericht als Vermutung („vermutlich", „wahrscheinlich
 
 | Knopf | Text |
 |---|---|
-| „Zusammenfassung kopieren" im Band | Kopf mit Server und Zeitraum, das Lagebild in einem Satz, die Hinweise des Lagebilds als je ein Absatz, alle Vorfälle der Messung in Kurzform, danach die Vorfälle vor der Messung |
+| „Zusammenfassung kopieren" im Band | Kopf mit Server und Zeitraum (über Mitternacht mit beiden Tagen; ein Vorfall am zweiten Tag mit Datum), das Lagebild in einem Satz, die Hinweise des Lagebilds als je ein Absatz, alle Vorfälle der Messung in Kurzform, danach die Vorfälle vor der Messung |
 | „Kopieren" auf einer Karte, „Zusammenfassung kopieren" in der Vorfallsansicht | Kopfzeile mit Server und Datum; Zeit, Dauer und Titel; Einordnung in Benutzersicht; Wirkung; höchster Messwert mit Soll; Ursache; betroffene Sitzungen; die ersten fünf Prüfschritte und drei Vorschläge, dann „Weitere … stehen im Bericht."; an wen wenden |
 
 Die Texte sind reiner Text mit höchstens 78 Zeichen je Zeile und stimmen mit der Vorfallsansicht überein. Wie viele
@@ -708,6 +716,10 @@ den Tabellen; ein Hinweis über der Tabelle sagt, wie viele von wie vielen Last 
 Zeitraum steht als „○ nicht gemessen – keine Messwerte im gewählten Zeitraum", nie als „normal". Die Tabellen im
 Detail einer Sitzung oder Anwendung, die Paare aus Sitzung und Anwendung zeigen, bleiben Werte der ganzen Messung und
 sagen das. Alle Tabellen sind sortier- und filterbar.
+
+Bekannte Grenze: Bei Laufwerken und Freigaben zählt ein gewählter Zeitraum auch Messpunkte mit, an denen zu wenige
+Zugriffe für eine Bewertung stattfanden. Die Bewertung der ganzen Messung zählt solche Punkte nicht. Für ein Laufwerk
+oder eine Freigabe kann ein Zeitraum deshalb einen Anteil über dem Soll zeigen, den die ganze Messung nicht zählt.
 
 ### Adresse, Zurück-Taste und Tastatur
 
