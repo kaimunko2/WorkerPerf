@@ -4,7 +4,7 @@
     {
       "id": "size",
       "label": "Größe und Reserve",
-      "notCovered": "Nicht gelesen werden die Zähler der VMware Tools für Ballon, Host-Auslagerung, Grenzen und Reservierung und alles, was nur der Hypervisor kennt: die Bereitschaftszeit der Prozessoren (CPU Ready), die Aufteilung auf NUMA-Knoten und das nachträgliche Hinzufügen von Prozessoren (CPU Hot Add)."
+      "notCovered": "Nicht gelesen werden die Zähler der VMware Tools für Ballon, Auslagerung durch den VMware-Host, Grenzen und Reservierung und alles, was nur der Hypervisor kennt: die Bereitschaftszeit der Prozessoren (CPU Ready), die Aufteilung auf NUMA-Knoten und das nachträgliche Hinzufügen von Prozessoren (CPU Hot Add)."
     },
     {
       "id": "operation",
@@ -467,7 +467,7 @@
       "todo": [
         {
           "text": "Den Wert zu einer Zeit mit üblicher Last beurteilen: in der Messung ansehen, wie viele Sitzungen liefen und wie voll der Arbeitsspeicher war",
-          "where": "Expertenansicht: Diagramme „Arbeitsspeicher des Hosts“ und „Sitzungen“",
+          "where": "Expertenansicht: Diagramme „Arbeitsspeicher des Servers“ und „Sitzungen“",
           "sign": "Arbeitsspeicher über längere Zeit fast voll belegt"
         },
         {
@@ -502,7 +502,7 @@
       "todo": [
         {
           "text": "Auslastung der Prozessoren zu einer Zeit mit üblicher Last ansehen",
-          "where": "Expertenansicht: Diagramm „CPU-Auslastung des Hosts“",
+          "where": "Expertenansicht: Diagramm „CPU-Auslastung des Servers“",
           "sign": "Auslastung über längere Zeit nahe 100 %"
         },
         {
@@ -537,7 +537,7 @@
       "todo": [
         {
           "text": "Den Wert über die ganze Messung ansehen, nicht nur beim Lesen",
-          "where": "Expertenansicht: Diagramm „Arbeitsspeicher des Hosts“",
+          "where": "Expertenansicht: Diagramm „Arbeitsspeicher des Servers“",
           "sign": "zugesagter Speicher liegt über längere Zeit über dem Arbeitsspeicher"
         },
         {
@@ -606,9 +606,9 @@
           "sign": "die Zahl ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         },
         {
-          "text": "Das Hypervisor-Team prüfen lassen, ob die virtuellen Prozessoren aller Maschinen eines Hosts zusammen der Zahl seiner logischen Kerne entsprechen (Sicht von GO-EUC)",
+          "text": "Das Hypervisor-Team prüfen lassen, ob die virtuellen Prozessoren aller Maschinen eines Virtualisierungshosts zusammen der Zahl seiner logischen Kerne entsprechen (Sicht von GO-EUC)",
           "where": "Verwaltung des Hypervisors",
-          "sign": "Summe der virtuellen Prozessoren liegt nicht über der Zahl der logischen Kerne des Hosts"
+          "sign": "Summe der virtuellen Prozessoren liegt nicht über der Zahl der logischen Kerne des Virtualisierungshosts"
         }
       ],
       "source": {
@@ -911,9 +911,9 @@
       "meaning": "Spart der Energiesparplan an der Leistung der Prozessoren, können Sitzungen langsamer reagieren (Erläuterung des Katalogs). Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll den Energiesparplan „Höchstleistung“, BIS-F stellt denselben Plan beim Versiegeln des Abbilds ein, und für diesen Katalog ist festgelegt, dass hier die Praxisquellen vor dem Hersteller gelten (sie beziehen sich ausdrücklich auf Citrix-Terminalserver und Betriebserfahrung). Microsoft nennt dagegen „Ausbalanciert“ als empfohlene Vorgabe für Windows Server und „Höchstleistung“ für Anwendungen, die auf Verzögerungen empfindlich reagieren, und schreibt, dass ein Energiesparplan von Windows nichts bewirkt, wo nicht das Betriebssystem die Energieverwaltung steuert. VMware nennt „Höchstleistung“ für die Zeit, in der Leistungs- und Latenzprobleme untersucht werden (der Artikel stützt sich auf Beobachtungen unter älteren Windows-Versionen und sagt, die Umstellung könne die Leistung erhöhen), und als dauerhafte Einstellung, wenn das Energiesparen mit den Problemen zusammenhängt, einen eigenen Plan nach den Anforderungen an Leistung und Energie (im Zweifel mit dem Hardwarehersteller abgestimmt). GO-EUC hat 2026 „Ausbalanciert“ und „Höchstleistung“ verglichen und in diesem Test nur einen geringen Gewinn an Leistung und bei der gemessenen Benutzererfahrung kaum oder keinen Unterschied gefunden (Windows 11 mit einer Sitzung je Maschine auf Azure, Microsoft Defender Antivirus abgeschaltet; die Leerlaufzustände der Prozessoren waren nicht Teil der Messung; für Windows Server mit vielen Sitzungen unter vSphere hat GO-EUC in diesem Test nicht gemessen).",
       "todo": [
         {
-          "text": "Zuerst mit dem Hypervisor-Team klären, ob ein Energiesparplan von Windows auf diesen Servern überhaupt wirkt: Nach Microsoft bewirkt er nichts, wo nicht das Betriebssystem die Energieverwaltung steuert; bei virtuellen Servern entscheiden darüber das BIOS der Hosts und das Betriebssystem der Hosts (der Hypervisor)",
-          "where": "BIOS-Einstellungen und Energieverwaltung der Hosts, zusammen mit dem Hypervisor-Team",
-          "sign": "die Energieverwaltung ist dem Betriebssystem der Hosts (dem Hypervisor) überlassen, oder der Host ist selbst auf hohe Leistung eingestellt"
+          "text": "Zuerst mit dem Hypervisor-Team klären, ob ein Energiesparplan von Windows auf diesen Servern überhaupt wirkt: Nach Microsoft bewirkt er nichts, wo nicht das Betriebssystem die Energieverwaltung steuert; bei virtuellen Servern entscheiden darüber das BIOS der Virtualisierungshosts und das Betriebssystem der Virtualisierungshosts (der Hypervisor)",
+          "where": "BIOS-Einstellungen und Energieverwaltung der Virtualisierungshosts, zusammen mit dem Hypervisor-Team",
+          "sign": "die Energieverwaltung ist dem Betriebssystem der Virtualisierungshosts (dem Hypervisor) überlassen, oder der Virtualisierungshost ist selbst auf hohe Leistung eingestellt"
         },
         {
           "text": "Den Energiesparplan auf „Höchstleistung“ stellen",
@@ -2680,7 +2680,7 @@
         "check": "Der Server ist eine virtuelle Maschine, und der zufällige Startzeitpunkt geplanter Scans von Microsoft Defender Antivirus ist abgeschaltet.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Starten die geplanten Scans aller virtuellen Maschinen eines Hosts zur selben Zeit, trifft die Last alle Server zugleich (Erläuterung des Katalogs). Nach Microsoft verteilt ein zufälliger Startzeitpunkt die Last des Scans, sodass mehrere virtuelle Maschinen auf einem Host die geplanten Aufgaben nicht alle gleichzeitig starten. Der zufällige Startzeitpunkt ist die Voreinstellung von Defender Antivirus.",
+      "meaning": "Starten die geplanten Scans aller virtuellen Maschinen eines Virtualisierungshosts zur selben Zeit, trifft die Last alle Server zugleich (Erläuterung des Katalogs). Nach Microsoft verteilt ein zufälliger Startzeitpunkt die Last des Scans, sodass mehrere virtuelle Maschinen auf einem Virtualisierungshost die geplanten Aufgaben nicht alle gleichzeitig starten. Der zufällige Startzeitpunkt ist die Voreinstellung von Defender Antivirus.",
       "todo": [
         {
           "text": "Klären, warum der zufällige Startzeitpunkt abgeschaltet ist",

@@ -3027,13 +3027,19 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   // der vCPU zum Host passt, beurteilt die Betreuung von VMware", "… Co-Stop des Hosts" after "der VMware-Host" more than
   // 150 characters before. "Host" or "Hosts" as a word of its own in a sentence, or a part of one after a semicolon, that names
   // VMware is the hypervisor. (Task 11, fix round 1: the catalogue says "Co-Stop des VMware-Hosts", which the rule for
-  // "VMware-" covers; a "Hosts" far behind a "VMware-Host", past semicolons, is no exception: the probe below.)
+  // "VMware-" covers; a "Hosts" far behind a "VMware-Host", past semicolons, is no exception: the probe below.) (Merge of the
+  // health picture: its texts in the report data say "Virtualisierungshost" for the hypervisor and call the measured machine
+  // "Server" too; "Host" stays only in two English names it quotes as they are, the Windows role "Remote Desktop Session
+  // Host(s)" in the title of a Microsoft source and the Citrix service "… Agent Host Service". The probe below.)
   const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
   const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
+    !(/^Hosts?$/.test(m[0]) && /Remote\s+Desktop\s+Session\s+$/.test(text.substring(Math.max(0, m.index - 40), m.index))) && !(m[0] === 'Host' && /^\s+Service\b/.test(text.substring(m.index + 4, m.index + 20)) && /Agent\s+$/.test(text.substring(Math.max(0, m.index - 12), m.index))) &&
     !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
     .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
   ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2 &&
-    hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts.').length === 1 && hostWords('dazu Co-Stop des VMware-Hosts.').length === 0,
+    hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts.').length === 1 && hostWords('dazu Co-Stop des VMware-Hosts.').length === 0 &&
+    hostWords('Performance Tuning Remote Desktop Session Hosts; der Dienst „Citrix WEM Agent Host Service“; Kerne des Virtualisierungshosts; Remote Desktop Session\r\n  Hosts').length === 0 &&
+    hostWords('Session Host, Host Service, Agent Host-Dienst, der Host Service des Servers, Desktop Session Hosts').length === 5,
     'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
   const ownHost = hostWords(own);
   ok(own.includes('% des Servers') && own.includes('Server-Kapazität') && ownHost.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Host": ' + ownHost.join(' | '));

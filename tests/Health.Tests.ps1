@@ -1555,7 +1555,8 @@ Describe 'Katalog in src' {
         (& $step 'print.mappingClientSupported' 1) | Should -Match '^Den Client im Abbild auf das Release der Druckserver bringen, mindestens 6\.2'
         @($check['print.operationalLogOff'].todo).Count | Should -Be 2; (& $step 'print.operationalLogOff' 0) | Should -Match '^Nachsehen, ob das Protokoll schon im Abbild ausgeschaltet ist'
         (& $step 'print.operationalLogOff' 1) | Should -Not -Match 'Einstellung der Windows-Registrierung'
-        (& $step 'operation.powerPlan' 0) | Should -Match '^Zuerst mit dem Hypervisor-Team klären.*das Betriebssystem der Hosts \(der Hypervisor\)'; (& $step 'operation.powerPlan' 1) | Should -Match '^Den Energiesparplan auf „Höchstleistung“ stellen'
+        # Literal angepasst (Merge des gefuehrten Berichts, P3-R71): der Host des Hypervisors heisst Virtualisierungshost
+        (& $step 'operation.powerPlan' 0) | Should -Match '^Zuerst mit dem Hypervisor-Team klären.*das Betriebssystem der Virtualisierungshosts \(der Hypervisor\)'; (& $step 'operation.powerPlan' 1) | Should -Match '^Den Energiesparplan auf „Höchstleistung“ stellen'
         (& $step 'vda.controllerCount' 0) | Should -Match '^Nachsehen, ob der eine Eintrag eine Controller-Gruppe mit mehreren Controllern ist: Dann ist nichts zu tun'
         # 9: seit Task 14s (ZB-R50) werden der globale Schalter von Windows und die Einstellung des Netzwerkadapters gelesen
         $rss = $check['network.rss']
