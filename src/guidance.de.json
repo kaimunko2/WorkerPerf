@@ -171,9 +171,9 @@
         },
         {
           "when": ["cause.app", "app.webview2"],
-          "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst",
+          "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst; ist es eine solche Anwendung, deren Betreuung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“ und „Anwendungen“: Anwendungen, die in der Sitzung von {user} liefen",
-          "sign": "Teams, Outlook oder eine andere Anwendung mit Web-Oberfläche in derselben Sitzung aktiv: dann deren Betreuung ansprechen",
+          "sign": "Teams, Outlook oder eine andere Anwendung mit Web-Oberfläche in derselben Sitzung aktiv",
           "source": "Microsoft: WebView2 end-user FAQ"
         },
         {
@@ -200,7 +200,7 @@
         {
           "when": ["cause.app", "app.teams"],
           "text": "Prüfen, ob Teams in der Sitzung von {user} mit Medienoptimierung lief: scheitert die neue VDI-Lösung, fällt Teams laut Citrix auf die gewöhnliche Audio- und Videoumleitung zurück, und die Medien werden auf dem Server verarbeitet",
-          "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung, 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
+          "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung; 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
           "sign": "Angabe, dass die Sitzung nicht optimiert ist; nach einem Neustart von Teams wählt es die Optimierung laut Citrix neu",
           "source": "Citrix: Optimization for Microsoft Teams (New)"
         },
@@ -239,21 +239,21 @@
         },
         {
           "when": ["cause.app", "role.Citrix"],
-          "text": "{app} gehört zu den Citrix-Komponenten des Servers (VDA oder Workspace Environment Management): prüfen, ob in Citrix Director die Leistungsansicht einer Sitzung dieses Servers geöffnet war; die Praxisquelle (2026) berichtet, dass die Prozessorlast auf dem VDA deutlich steigt, solange die Ansicht geöffnet bleibt, und sinkt, wenn sie geschlossen wird",
-          "where": "Rückfrage bei den Benutzern von Citrix Director: Uhrzeit, zu der die Ansicht „Session Performance“ geöffnet war; Programme und Features auf dem Server: Version des VDA",
-          "sign": "Ansicht war im Zeitraum des Vorfalls geöffnet und der VDA ist älter als CVAD 2507 LTSR CU1 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-29162; in den Versionshinweisen von Citrix gegenlesen)",
+          "text": "{app} gehört zu den Citrix-Komponenten des Servers (VDA oder Workspace Environment Management): prüfen, ob in Citrix Director die Leistungsansicht einer Sitzung dieses Servers geöffnet war; die Praxisquelle Manuel Winkel (2026) berichtet, dass die Prozessorlast auf dem VDA deutlich steigt, solange die Ansicht geöffnet bleibt, und sinkt, wenn sie geschlossen wird",
+          "where": "Rückfrage bei den Benutzern von Citrix Director: Uhrzeit, zu der die Ansicht „Session Performance“ geöffnet war; Programme und Features auf dem Server: Version des VDA; Versionshinweise von Citrix zu CVAD 2507 LTSR CU1: ob der Fehler mit der Kennung CVADHELP-29162 dort als behoben geführt ist",
+          "sign": "Ansicht war im Zeitraum des Vorfalls geöffnet und der VDA ist älter als CVAD 2507 LTSR CU1 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-29162)",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Director Itself Becomes a Performance Problem"
         },
         {
           "when": ["cause.app", "role.Citrix"],
-          "text": "{app} gehört zu den Citrix-Komponenten des Servers (VDA oder Workspace Environment Management): ist es der Grafikprozess des VDA (ctxgfx.exe), in den Citrix-Richtlinien der Bereitstellungsgruppe prüfen, ob Grafikeinstellungen über die Voreinstellung angehoben sind; die Praxisquelle rät, ohne 3D- oder CAD-Anwendungen alles auf der Voreinstellung zu lassen (Stand 2019, ab VDA 7.18)",
+          "text": "Wenn {app} der Grafikprozess des VDA ist (ctxgfx.exe): in den Citrix-Richtlinien der Bereitstellungsgruppe prüfen, ob Grafikeinstellungen über die Voreinstellung angehoben sind; die Praxisquelle GO-EUC (2019, ab VDA 7.18) rät, ohne 3D- oder CAD-Anwendungen alles auf der Voreinstellung zu lassen",
           "where": "Citrix Studio, Richtlinien: „Use video codec for compression“, Bildqualität („Visual quality“), Zielbildrate („Target frame rate“)",
           "sign": "„Use video codec for compression“ auf „For the entire screen“ oder angehobene Bildqualität oder Bildrate, obwohl die Server keine Grafikkarte haben",
           "source": "GO-EUC (Empfehlung aus der Praxis): Citrix Policy Templates"
         },
         {
           "when": ["cause.app", "role.Citrix"],
-          "text": "{app} gehört zu den Citrix-Komponenten des Servers (VDA oder Workspace Environment Management): ist es der WEM-Agent und fällt die Last auf Anmeldungen oder seine Aktualisierungen, prüfen, wie viele Gruppen im Active Directory Zuweisungen tragen; die Praxisquelle beschreibt einen Kundenfall von 2022, in dem Hunderte Zuweisungen an Gruppen den Agenten bei jeder Anmeldung und Aktualisierung lange rechnen ließen",
+          "text": "Wenn {app} zum WEM-Agenten gehört und die Last auf Anmeldungen oder seine Aktualisierungen fällt: prüfen, wie viele Gruppen im Active Directory Zuweisungen tragen; die Praxisquelle James Kindon (2022) beschreibt einen Kundenfall, in dem Hunderte Zuweisungen an Gruppen den Agenten bei jeder Anmeldung und Aktualisierung lange rechnen ließen",
           "where": "WEM-Konsole: Zuweisungen (Verknüpfungen, Registrierungs- und Dateiaktionen) je Gruppe; Expertenansicht mit dem Zeitraum des Vorfalls: Anteil der Schutzsoftware",
           "sign": "Sehr viele Zuweisungen an einzelne Gruppen und Benutzer in vielen dieser Gruppen; die Schutzsoftware steigt zur selben Zeit mit",
           "source": "James Kindon (Empfehlung aus der Praxis): The not-so-hidden tax of granular group based application presentation with Citrix WEM"
@@ -266,16 +266,16 @@
         },
         {
           "when": ["cause.app"],
-          "text": "In Workspace Environment Management prüfen, ob einem Prozess, vor allem {app}, die Priorität „Realtime“ zugewiesen ist; die Praxisquelle rät davon ab, weil ein rechenintensiver Prozess mit dieser Priorität den Server lahmlegen kann, ebenso Guy Leech (2016)",
+          "text": "In Workspace Environment Management prüfen, ob einem Prozess, vor allem {app}, die Priorität „Realtime“ zugewiesen ist; die Praxisquelle Manuel Winkel (2022) rät davon ab, weil das zu Fehlfunktionen des Systems führen kann; Guy Leech (2016) rät ebenfalls davon ab, weil ein rechenintensiver Prozess mit dieser Priorität schweren Ressourcenmangel auslösen kann",
           "where": "WEM-Konsole, Konfigurationssatz dieser Server: System Optimization, CPU Management, Prozessprioritäten",
           "sign": "Eintrag mit der Priorität „Realtime“",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): WEM Administration Console – Part 2 (System Optimization, Policies & Profiles and Security)"
         },
         {
           "when": ["cause.app"],
-          "text": "Prüfen, ob die Sitzung von {user} im Zeitraum getrennt war; Prozesse einer getrennten Sitzung laufen weiter, die Praxisquelle fand 2016 auf einem Druckserver Prozesse getrennter Sitzungen als größte Verbraucher",
-          "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“: Status „Getrennt“; Citrix Director: Sitzungen des Servers",
-          "sign": "Sitzung im Status „Getrennt“ mit hohem Anteil am Prozessor; dann den Benutzer fragen und die Sitzung abmelden lassen; ob ein Zeitlimit für getrennte Sitzungen gilt, steht in der Citrix-Richtlinie oder der Gruppenrichtlinie der Remotedesktopdienste",
+          "text": "Prüfen, ob die Sitzung von {user} im Zeitraum getrennt war: Prozesse einer getrennten Sitzung laufen weiter; die Praxisquelle Guy Leech (2016) fand auf einem Druckserver Prozesse getrennter Sitzungen als größte Verbraucher; trifft es zu, den Benutzer fragen und die Sitzung abmelden lassen",
+          "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“: Status „Getrennt“; Citrix Director: Sitzungen des Servers; Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste: ob ein Zeitlimit für getrennte Sitzungen gilt",
+          "sign": "Sitzung im Status „Getrennt“ mit hohem Anteil am Prozessor",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Taming of the Print Server"
         },
         {
@@ -299,7 +299,7 @@
         {
           "when": ["cause.security"],
           "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Programmordner oder Prozesse",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
+          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“); mit Microsoft Defender gilt die Form mit den Prozessen des Agenten, nicht der Ordner: Microsoft führt Programmordner unter den Ordnern, die man nicht ausnehmen soll",
           "sign": "Auslagerungsdatei, Ereignisprotokolle oder WEM-Agent ohne Ausschluss",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
         },
@@ -338,14 +338,14 @@
           "when": ["cause.none"],
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
-          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
+          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen Carl Stalhood und BIS-F stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
           "when": ["cause.none"],
-          "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle beschreibt aus einem einzelnen Kundenfall von 2026 einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
-          "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; DNS: der eigene Name des Servers als vollständiger Name (FQDN)",
-          "sign": "VDA älter als CVAD 2507 LTSR CU2 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-28688; in den Versionshinweisen von Citrix gegenlesen) oder der Name des Servers wird nicht aufgelöst",
+          "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle Manuel Winkel (2026) beschreibt aus einem einzelnen Kundenfall einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
+          "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; auf dem Server: nslookup mit dem eigenen vollständigen Namen (FQDN); Versionshinweise von Citrix zu CVAD 2507 LTSR CU2: ob der Fehler mit der Kennung CVADHELP-28688 dort als behoben geführt ist",
+          "sign": "VDA älter als CVAD 2507 LTSR CU2 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA"
         },
         {
@@ -408,7 +408,7 @@
         },
         {
           "when": ["cause.app"],
-          "text": "CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen („CPU Spikes Protection“, in der WEM-Konsole); er senkt die Priorität eines Prozesses, der den Prozessor über die Messzeit stark belegt, und ist laut Citrix nicht dafür gedacht, die Gesamtlast zu senken; nach James Kindon (2023) die Grenze von WEM selbst bestimmen lassen („Auto Prevent CPU Spikes“) statt eines festen Werts je Größe der virtuellen Maschine; nach Guy Leech (2016) nur Prozesse der Benutzer herabstufen, keine des Systems",
+          "text": "CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen („CPU Spikes Protection“, in der WEM-Konsole); er senkt die Priorität eines Prozesses, der den Prozessor über die Messzeit stark belegt, und ist laut Citrix nicht dafür gedacht, die Gesamtlast zu senken; nach James Kindon (2023) die Grenze von WEM selbst bestimmen lassen („Auto Prevent CPU Spikes“) statt eines festen Werts je Größe der virtuellen Maschine",
           "precondition": "einzelne Anwendungen wiederholt die anderen Sitzungen bremsen",
           "source": "Citrix: CPU Management (WEM current release)"
         },
@@ -468,7 +468,7 @@
         },
         {
           "when": ["cause.app", "role.Citrix"],
-          "text": "Zuweisungen von WEM an einzelne Gruppen verringern (in der WEM-Konsole), wie die Praxisquelle es in ihrem Kundenfall von 2022 tat; Verknüpfungen veröffentlichter Anwendungen der Workspace-App überlassen, doppelte Einträge in Gruppenrichtlinien und WEM streichen, Dateikopien in Gruppenrichtlinien für den Computer verlegen (eine Richtlinie wirkt auch auf nicht persistente Server) und den WEM-Agenten aktuell halten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
+          "text": "Zuweisungen von WEM an einzelne Gruppen verringern (in der WEM-Konsole), wie die Praxisquelle James Kindon (2022) es in einem Kundenfall tat; Verknüpfungen veröffentlichter Anwendungen der Workspace-App überlassen, doppelte Einträge in Gruppenrichtlinien und WEM streichen, Dateikopien in Gruppenrichtlinien für den Computer verlegen (eine Richtlinie wirkt auch auf nicht persistente Server) und den WEM-Agenten aktuell halten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{app} ein Prozess des WEM-Agenten ist und sehr viele Zuweisungen an Gruppen bestehen",
           "source": "James Kindon (Empfehlung aus der Praxis): The not-so-hidden tax of granular group based application presentation with Citrix WEM"
         },
@@ -479,13 +479,13 @@
         },
         {
           "when": ["event.defender"],
-          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle nennt mindestens einmal im Monat, Citrix nennt in seinem Leitfaden zu Schutzsoftware dasselbe ohne Abstand",
+          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat; Citrix rät in seinem Leitfaden zu Schutzsoftware dasselbe und nennt keinen Abstand",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
           "source": "John Billekens (Empfehlung aus der Praxis): Citrix · AV exclusions"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf; nach James Rankin (Test von 2021 mit Windows Server 2019, dateibasierten Profilen und ohne Microsoft Defender) verlängerten fehlende Ausschlüsse die Anmeldung um mehr als 40 Sekunden",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
@@ -495,12 +495,12 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; der Prüfschritt nach Carl Stalhood nennt mindestens 8 vCPU; beide Angaben treffen sich bei 8 vCPU; sie sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Engpass ohne einzelnen Verursacher an mehreren Tagen auftritt"
         },
         {
           "when": ["cause.none"],
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         }
@@ -560,16 +560,16 @@
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Prüfen, ob der Schnellstart von Microsoft Edge eingeschaltet ist (Richtlinie StartupBoostEnabled): Edge startet dann bei jeder Anmeldung Prozesse im Hintergrund, auch für Benutzer, die Edge nie öffnen; die Praxisquelle (2023) nennt das einen Tausch von Prozessor und Arbeitsspeicher gegen schnellere Starts von Edge, keine Anweisung zum Abschalten",
+          "text": "Prüfen, ob der Startup-Boost von Microsoft Edge eingeschaltet ist (Richtlinie StartupBoostEnabled): Edge startet dann bei jeder Anmeldung Prozesse im Hintergrund, auch für Benutzer, die Edge nie öffnen; die Praxisquelle Aaron Parker (2023) nennt das einen Tausch von Prozessor und Arbeitsspeicher gegen schnellere Starts von Edge und rät nicht zum Abschalten; ob der schnellere Start den Arbeitsspeicher je Sitzung wert ist, entscheidet der Betreiber (StartupBoostEnabled = 0 schaltet ab; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "where": "Gruppenrichtlinie oder Workspace Environment Management: Richtlinien für Microsoft Edge",
           "sign": "StartupBoostEnabled auf 1; ist die Richtlinie nicht gesetzt, entscheidet die Voreinstellung von Edge",
           "source": "Aaron Parker (Empfehlung aus der Praxis): Support Frontline Workers on Shared Virtual Desktops"
         },
         {
           "when": ["cause.app", "app.webview2"],
-          "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst",
+          "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst; ist es eine solche Anwendung, deren Betreuung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“ und „Anwendungen“: Anwendungen, die in der Sitzung von {user} liefen",
-          "sign": "Teams, Outlook oder eine andere Anwendung mit Web-Oberfläche in derselben Sitzung aktiv: dann deren Betreuung ansprechen",
+          "sign": "Teams, Outlook oder eine andere Anwendung mit Web-Oberfläche in derselben Sitzung aktiv",
           "source": "Microsoft: WebView2 end-user FAQ"
         },
         {
@@ -589,7 +589,7 @@
         {
           "when": ["cause.app", "app.teams"],
           "text": "Prüfen, ob Teams in der Sitzung von {user} mit Medienoptimierung lief: scheitert die neue VDI-Lösung, fällt Teams laut Citrix auf die gewöhnliche Audio- und Videoumleitung zurück, und die Medien werden auf dem Server verarbeitet",
-          "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung, 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
+          "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung; 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
           "sign": "Angabe, dass die Sitzung nicht optimiert ist; nach einem Neustart von Teams wählt es die Optimierung laut Citrix neu",
           "source": "Citrix: Optimization for Microsoft Teams (New)"
         },
@@ -629,14 +629,14 @@
         {
           "when": ["cause.none"],
           "text": "Kein einzelner Verursacher: Arbeitsspeicher je Sitzung und Zahl der Sitzungen ansehen",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Arbeitsspeicher nach Verursacher“, Reiter „Sitzungen“",
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Arbeitsspeicher nach Verursacher“, Reiter „Sitzungen“; nach Thomas Kötzing (Durchsicht eines Terminalservers von 2018) auch die Programme ansehen, die in jeder Sitzung von selbst starten: er fand etwa zehn solcher Prozesse mit zusammen 20 bis 25 MB je Benutzer, meist aus den Run-Schlüsseln der Registrierung (im Master-Image: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run und HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run)",
           "sign": "Summe vieler ähnlich großer Sitzungen über dem Soll, ohne einzelne Sitzung mit hohem Anteil"
         },
         {
           "when": ["cause.none"],
-          "text": "Prüfen, ob der Server mehr Sitzungen trägt als die anderen Server derselben Bereitstellungsgruppe",
-          "where": "Citrix Director oder Citrix Studio: Sitzungen je Server",
-          "sign": "Sitzungszahl deutlich über der der anderen Server"
+          "text": "Prüfen, ob der Server mehr Sitzungen trägt als die anderen Server derselben Bereitstellungsgruppe; trifft es zu und haben die anderen Server kaum Last, Version des VDA und Namensauflösung des Servers prüfen: die Praxisquelle Manuel Winkel (2026) beschreibt aus einem einzelnen Kundenfall einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
+          "where": "Citrix Director oder Citrix Studio: Sitzungen je Server, Version des VDA; auf dem Server: nslookup mit dem eigenen vollständigen Namen (FQDN); Versionshinweise von Citrix zu CVAD 2507 LTSR CU2: ob der Fehler mit der Kennung CVADHELP-28688 dort als behoben geführt ist",
+          "sign": "Sitzungszahl deutlich über der der anderen Server; für den Fehler des VDA: VDA älter als CVAD 2507 LTSR CU2 (dort ist er nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst"
         },
         {
           "when": ["cause.none"],
@@ -644,27 +644,6 @@
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“: Arbeitsspeicher; vCenter: Einstellungen der virtuellen Maschine",
           "sign": "Weniger als 24 GB Arbeitsspeicher bei vielen gleichzeitigen Sitzungen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
-        },
-        {
-          "when": ["cause.none"],
-          "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle beschreibt aus einem einzelnen Kundenfall von 2026 einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
-          "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; DNS: der eigene Name des Servers als vollständiger Name (FQDN)",
-          "sign": "VDA älter als CVAD 2507 LTSR CU2 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-28688; in den Versionshinweisen von Citrix gegenlesen) oder der Name des Servers wird nicht aufgelöst",
-          "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA"
-        },
-        {
-          "when": ["cause.none"],
-          "text": "Programme ansehen, die in jeder Sitzung von selbst starten: die Praxisquelle fand 2018 bei einer Durchsicht etwa zehn solcher Prozesse mit zusammen 20 bis 25 MB je Benutzer, meist aus den Run-Schlüsseln der Registrierung",
-          "where": "Registrierung im Master-Image: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run und HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run; Task-Manager auf dem Server: Prozesse je Sitzung",
-          "sign": "Programme, die in jeder Sitzung laufen und die die Benutzer nicht brauchen; sie aus den Run-Schlüsseln entfernen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Einträge, die eine Aufgabe haben, vorher abwägen",
-          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Hören Sie auf die Serverleistung zu optimieren! Optimieren Sie die Benutzersitzungen"
-        },
-        {
-          "when": ["cause.none"],
-          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; nach der Praxisquelle (Test von 2020 mit Windows 10) belegt ihn der Treiber von MCS I/O, und Windows kann ihn nicht nutzen",
-          "where": "Citrix Studio, Maschinenkatalog: Arbeitsspeicher und Größe des Caches",
-          "sign": "Arbeitsspeicher der Server abzüglich des Caches reicht für die Sitzungen nicht; dann mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen",
-          "source": "GO-EUC (Empfehlung aus der Praxis): The real impact of Citrix MCSIO"
         },
         {
           "when": ["cause.nodata"],
@@ -714,6 +693,12 @@
           "text": "Prüfen, ob der Speichermangel regelmäßig auftritt",
           "where": "Lagebild und Zeitleiste dieses Berichts; Berichte anderer Tage",
           "sign": "Arbeitsspeicher-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder Dauerzustand des Arbeitsspeichers im Lagebild"
+        },
+        {
+          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; Citrix schreibt, dass der Cache Teil des Arbeitsspeichers der Maschine ist; nach der Praxisquelle GO-EUC (Test von 2020 mit Windows 10 und einer einzelnen Maschine) belegt ihn der Treiber von MCS I/O, und Windows kann ihn nicht nutzen; reicht der Rest für die Sitzungen nicht, mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen",
+          "where": "Citrix Studio, Maschinenkatalog: Arbeitsspeicher und Größe des Caches",
+          "sign": "Arbeitsspeicher der Server abzüglich des Caches reicht für die Sitzungen nicht",
+          "source": "GO-EUC (Empfehlung aus der Praxis): The real impact of Citrix MCSIO"
         }
       ],
       "remedies": [
@@ -747,7 +732,7 @@
         },
         {
           "when": ["cause.app"],
-          "text": "Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen (in der WEM-Konsole); Citrix empfiehlt höchstens 5 %, weil sonst ein Prozess, der gerade benutzt wird, als untätig gelten und seinen Arbeitsspeicher verlieren kann; die Praxis ist sich nicht einig, James Kindon (2023) lässt die Speicheroptimierung fast immer ausgeschaltet, weil sie Arbeitsspeicher untätiger Anwendungen auf das Laufwerk auslagert, Manuel Winkel (2022) nutzt sie mit einer Leerlaufgrenze von 3 %; nach Guy Leech (2018) danach prüfen, ob Windows mehr Seiten vom Datenträger liest",
+          "text": "Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen (in der WEM-Konsole); Citrix empfiehlt höchstens 5 %, weil sonst ein Prozess, der gerade benutzt wird, als untätig gelten und seinen Arbeitsspeicher verlieren kann; die Praxis ist sich nicht einig; James Kindon (2023) lässt die Speicheroptimierung fast immer ausgeschaltet, weil sie Arbeitsspeicher untätiger Anwendungen auf das Laufwerk auslagert; Manuel Winkel (2022, Stand WEM 2206) nutzt sie mit einer Leerlaufgrenze von 3 %; nach Guy Leech (2018) danach prüfen, ob Windows mehr Seiten vom Datenträger liest",
           "precondition": "die Speicheroptimierung von WEM eingeschaltet ist und Anwendungen nach einer Pause des Benutzers auffällig träge reagieren",
           "source": "Citrix: Memory Management (WEM current release)"
         },
@@ -758,17 +743,17 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher (Committed Bytes), gemessen im Server selbst; so nennt es die Praxisquelle",
+          "text": "Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher (Committed Bytes), gemessen im Server selbst; so nennt es die Praxisquelle Carl Stalhood",
           "precondition": "der zugesagte Speicher regelmäßig über dem Arbeitsspeicher der virtuellen Maschine liegt",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
-          "text": "Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen (Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste; die Praxisquelle nennt als Größenordnung 3 Stunden; eine Richtlinie wirkt auch auf nicht persistente Server); nach James Rankin (2023) und James Kindon (2021) beide Zeitlimits per Richtlinie für die Server setzen, nicht am Benutzerobjekt im Active Directory",
+          "text": "Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen (Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste; die Praxisquelle Carl Stalhood nennt als Größenordnung 3 Stunden; eine Richtlinie wirkt auch auf nicht persistente Server); nach James Rankin (2023) und James Kindon (2021) nicht am Benutzerobjekt im Active Directory",
           "precondition": "getrennte Sitzungen über Stunden Arbeitsspeicher belegen und die Benutzer ihre Arbeit dort nicht fortsetzen müssen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Group Policy Computer Settings for VDAs"
         },
         {
-          "text": "Optimierung für getrennte Sitzungen von Citrix Workspace Environment Management einschalten (in der WEM-Konsole); die Praxisquelle (2023) nutzt sie, weil WEM dann nur bei getrennten Sitzungen eingreift, ihre Prozesse herabstuft und ihren Arbeitsspeicher begrenzt, bis der Benutzer sich wieder verbindet; sie ergänzt das Zeitlimit für getrennte Sitzungen und ersetzt es nicht",
+          "text": "Optimierung für getrennte Sitzungen von Citrix Workspace Environment Management einschalten (in der WEM-Konsole); Citrix beschreibt, dass WEM dann nur bei getrennten Sitzungen eingreift, ihre Prozesse herabstuft und ihren Arbeitsspeicher begrenzt, bis der Benutzer sich wieder verbindet; die Praxisquelle James Kindon (2023) nennt die Funktion nützlich und nutzt sie; sie ergänzt das Zeitlimit für getrennte Sitzungen und ersetzt es nicht",
           "precondition": "getrennte Sitzungen Arbeitsspeicher belegen und die Benutzer ihre Arbeit dort fortsetzen müssen (Einstellung „Multi-session optimization“, ab WEM 2112)",
           "source": "James Kindon (Empfehlung aus der Praxis): WEM Advanced Guidance 2023"
         }
@@ -830,7 +815,7 @@
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“), beides belastet die Freigabe und verlängert die Abmeldung",
+          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“); beides belastet die Freigabe und verlängert die Abmeldung",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Sitzungen“, Reiter „Ereignisse“ (Anmeldung, Abmeldung)",
           "sign": "An- oder Abmeldung eines oder mehrerer Benutzer kurz vor Beginn des Vorfalls"
         },
@@ -855,7 +840,7 @@
         {
           "when": ["cause.security"],
           "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Programmordner oder Prozesse",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
+          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“); mit Microsoft Defender gilt die Form mit den Prozessen des Agenten, nicht der Ordner: Microsoft führt Programmordner unter den Ordnern, die man nicht ausnehmen soll",
           "sign": "Auslagerungsdatei, Ereignisprotokolle oder WEM-Agent ohne Ausschluss",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
         },
@@ -873,7 +858,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Prüfen, ob bei der Anmeldung ein Skript das Benutzerprofil aufräumt; die Praxisquelle warnt, dass ein Aufräumen bei der Anmeldung bei vielen gleichzeitigen Anmeldungen Laufwerk und Prozessor belastet",
+          "text": "Prüfen, ob bei der Anmeldung ein Skript das Benutzerprofil aufräumt; die Praxisquelle Aaron Parker (ohne Datum, für FSLogix beschrieben) warnt, dass ein Aufräumen bei der Anmeldung bei vielen gleichzeitigen Anmeldungen Laufwerk und Prozessor belastet",
           "where": "Anmeldeskript in der Gruppenrichtlinie, Aktionen von Workspace Environment Management bei der Anmeldung, Aufgabenplanung im Master-Image (Aufgaben mit Auslöser „Bei Anmeldung“)",
           "sign": "Skriptprozess (zum Beispiel powershell.exe) in vielen Sitzungen kurz nach deren Anmeldung in der Prozessliste des Zeitraums, und ein Aufräumskript an einer der genannten Stellen",
           "source": "Aaron Parker (Empfehlung aus der Praxis): Profile Cleanup - FSLogix docs"
@@ -919,15 +904,15 @@
           "sign": "Latenz des Datenspeichers, Sicherungslauf oder Snapshot im selben Zeitraum"
         },
         {
-          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): Größe der Datei mcsdif.vhdx und freien Platz auf dem Cache-Datenträger des Servers prüfen; nach der Praxisquelle (2024) behält die Datei ihre größte Größe, sie zeigt also den höchsten Stand seit dem Start und nicht die aktuelle Belegung",
-          "where": "Cache-Datenträger des Servers: Datei mcsdif.vhdx und freier Platz; Leistungsüberwachung: Indikatoren „Citrix MCS“; Citrix Studio: Maschinenkatalog",
-          "sign": "Datei seit dem Start deutlich gewachsen (der Cache im Arbeitsspeicher ist übergelaufen) oder wenig freier Platz (läuft der Cache-Datenträger voll, werden die Sitzungen nach Angabe von Citrix unbenutzbar); nach Manuel Winkel (2026) auch der umgekehrte Fall, ein angehängter Datenträger ohne die Datei mcsdif.vhdx und ohne Schreibzugriffe, dann arbeitet der Cache nicht; nach GO-EUC (Test von 2020) zählt der Server mit MCS I/O mehr Schreibzugriffe, weil der Überlauf mitzählt",
-          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix Maschinenerstellungsdienste (MCS) -Skript zum Auslesen des RAM- und Disk-Cache"
-        },
-        {
           "text": "Prüfen, ob die Verzögerung am Laufwerk regelmäßig auftritt",
           "where": "Lagebild und Zeitleiste dieses Berichts; Berichte anderer Tage",
           "sign": "Laufwerk-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder mehrmals mit demselben Verursacher"
+        },
+        {
+          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): Größe der Datei mcsdif.vhdx und freien Platz auf dem Cache-Datenträger des Servers prüfen; nach der Praxisquelle Thomas Kötzing (2024) wird die Datei nicht wieder kleiner; sie zeigt also den höchsten Stand seit dem Start und nicht die aktuelle Belegung",
+          "where": "Cache-Datenträger des Servers: Datei mcsdif.vhdx und freier Platz; Leistungsüberwachung: Indikatoren „Citrix MCS“; Citrix Studio: Maschinenkatalog",
+          "sign": "Datei seit dem Start deutlich gewachsen (der Cache im Arbeitsspeicher ist übergelaufen) oder wenig freier Platz (läuft der Cache-Datenträger voll, werden die Sitzungen nach Angabe von Citrix unbenutzbar); nach Manuel Winkel (2026) auch der umgekehrte Fall: ein angehängter Datenträger ohne die Datei mcsdif.vhdx und ohne Schreibzugriffe, dann arbeitet der Cache nicht",
+          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix Maschinenerstellungsdienste (MCS) -Skript zum Auslesen des RAM- und Disk-Cache"
         }
       ],
       "remedies": [
@@ -943,13 +928,13 @@
         },
         {
           "when": ["event.defender"],
-          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle nennt mindestens einmal im Monat, Citrix nennt in seinem Leitfaden zu Schutzsoftware dasselbe ohne Abstand",
+          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat; Citrix rät in seinem Leitfaden zu Schutzsoftware dasselbe und nennt keinen Abstand",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
           "source": "John Billekens (Empfehlung aus der Praxis): Citrix · AV exclusions"
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf; nach James Rankin (Test von 2021 mit Windows Server 2019, dateibasierten Profilen und ohne Microsoft Defender) verlängerten fehlende Ausschlüsse die Anmeldung um mehr als 40 Sekunden",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
@@ -959,7 +944,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Aufräumen des Benutzerprofils von der Anmeldung auf die Abmeldung oder in eine zeitlich gestaffelte Aufgabe verlegen, wie die Praxisquelle es vorschlägt (Skript in der Gruppenrichtlinie oder in Workspace Environment Management, eine Richtlinie wirkt auch auf nicht persistente Server; eine geplante Aufgabe bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
+          "text": "Aufräumen des Benutzerprofils von der Anmeldung auf die Abmeldung oder in eine zeitlich gestaffelte Aufgabe verlegen, wie die Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) es vorschlägt (Skript in der Gruppenrichtlinie oder in Workspace Environment Management, eine Richtlinie wirkt auch auf nicht persistente Server; eine geplante Aufgabe bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Aufräumskript bei der Anmeldung läuft und die Last mit Anmeldewellen zusammenfällt",
           "source": "Aaron Parker (Empfehlung aus der Praxis): A Practical Guide to FSLogix Containers Capacity Planning and Maintenance"
         }
@@ -1012,7 +997,7 @@
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“), beides belastet die Freigabe und verlängert die Abmeldung",
+          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“); beides belastet die Freigabe und verlängert die Abmeldung",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Sitzungen“, Reiter „Ereignisse“ (Anmeldung, Abmeldung)",
           "sign": "An- oder Abmeldung eines oder mehrerer Benutzer kurz vor Beginn des Vorfalls"
         },
@@ -1024,7 +1009,7 @@
         },
         {
           "when": ["endpoint.slow"],
-          "text": "Prüfen, ob {endpoint} das Basisverzeichnis von Benutzern trägt (Eintrag am Benutzerobjekt im Active Directory oder Richtlinie der Remotedesktopdienste); die Praxisquelle zeigte 2016 im Labor, dass die Anmeldung dann auf die Zeitüberschreitung im Netz wartet, wenn der Name aufgelöst wird, der Dateiserver aber nicht antwortet",
+          "text": "Wenn die Gegenstelle ein Dateiserver ist: prüfen, ob {endpoint} das Basisverzeichnis von Benutzern trägt (Eintrag am Benutzerobjekt im Active Directory oder Richtlinie der Remotedesktopdienste); die Praxisquelle Trentent Tye (2016, Labor mit Windows Server 2008 R2) zeigte, dass die Anmeldung dann auf die Zeitüberschreitung im Netz wartet, wenn der Name aufgelöst wird, der Dateiserver aber nicht antwortet",
           "where": "Active Directory, Benutzerobjekt: Registerkarte „Profil“, Basisordner; Gruppenrichtlinie der Remotedesktopdienste: Basisverzeichnis",
           "sign": "Basisverzeichnis betroffener Benutzer liegt auf der Gegenstelle, die langsam oder gar nicht antwortete",
           "source": "Trentent Tye (Empfehlung aus der Praxis): ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact)"
@@ -1112,19 +1097,19 @@
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "Active Write Back der Citrix Profilverwaltung abschalten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle rät dazu, weil die Funktion den Dateiserver zusätzlich belastet, und nennt sie als standardmäßig eingeschaltet; auch James Kindon (2025) nennt die Funktion eine häufige Ursache überlasteter Dateiserver und rät, sie bei Bedarf durch die Variante zu ersetzen, die nur beim Sperren und Trennen der Sitzung sichert (Profilverwaltung ab Version 2303)",
+          "text": "Active Write Back der Citrix Profilverwaltung abschalten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle Carl Stalhood rät dazu, weil die Funktion den Dateiserver zusätzlich belastet, und nennt sie als standardmäßig eingeschaltet; auch James Kindon (2025) nennt die Funktion eine häufige Ursache überlasteter Dateiserver und rät, sie bei Bedarf durch die Variante zu ersetzen, die nur beim Sperren und Trennen der Sitzung sichert (Profilverwaltung ab Version 2303)",
           "precondition": "Benutzer nicht auf mehreren Servern zugleich angemeldet sind und Änderungen am Profil nicht schon während der Sitzung gesichert werden müssen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
         },
         {
           "when": ["cause.app"],
-          "text": "AppData und Startmenü aus der Ordnerumleitung nehmen und im Profilcontainer lassen, wie die Praxisquelle (2023) rät (Einstellung in Workspace Environment Management oder per Gruppenrichtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); was umgeleitet bleiben darf, sieht die Praxis verschieden, James Kindon nennt Desktop und Dokumente, James Rankin (2018) nur Dokumente",
+          "text": "AppData und Startmenü aus der Ordnerumleitung nehmen und im Profilcontainer lassen, wie die Praxisquelle James Kindon (2023) rät (Einstellung in Workspace Environment Management oder per Gruppenrichtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); was umgeleitet bleiben darf, sieht die Praxis verschieden; James Kindon nennt Desktop und Dokumente; James Rankin (2018) nennt Dokumente, Bilder und ähnliche Datenordner, lässt den Desktop aber im Profilcontainer",
           "precondition": "AppData oder das Startmenü der Benutzer auf die Freigabe umgeleitet ist",
           "source": "James Kindon (Empfehlung aus der Praxis): Stop Redirecting AppData. It's no longer the 80's"
         },
         {
           "when": ["endpoint.slow"],
-          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz); die Praxisquelle (2020) rät darüber hinaus ganz von Laufwerksbuchstaben ab, das ist ihre Meinung",
+          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
           "source": "James Rankin (Empfehlung aus der Praxis): (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops"
         },
@@ -1135,7 +1120,7 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf; nach James Rankin (Test von 2021 mit Windows Server 2019, dateibasierten Profilen und ohne Microsoft Defender) verlängerten fehlende Ausschlüsse die Anmeldung um mehr als 40 Sekunden",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
@@ -1144,8 +1129,9 @@
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
-          "text": "Drosselung der Bandbreite des SMB-Clients abschalten erwägen (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle maß damit 2021 in einem Labor zusammen mit Änderungen am Dateiserver 12 statt 17 Sekunden Anmeldung, welchen Anteil der Wert daran hatte, sagt sie nicht; Microsoft nennt den Wert nur für Windows 10 und 11",
-          "precondition": "der Dateiserver wiederholt langsam antwortet und seine Betreuung ihn selbst nicht überlastet findet",
+          "when": ["cause.app"],
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "precondition": "der Dateiserver wiederholt langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
           "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
         }
       ],
@@ -1159,12 +1145,11 @@
           "text": "Betreuung der Schutzsoftware: mit Uhrzeit und dem Anteil von {security}"
         },
         {
-          "when": ["cause.none"],
-          "text": "Betreuung des Speichersystems unter dem Dateiserver, wenn auf dem Server keine Ursache zu finden ist: mit der Frage, ob dort eine Schutzsoftware oder ein anderes Prüfprodukt eingeführt oder geändert wurde; die Praxisquelle (2025) berichtet von einem solchen Fall mit Störungen in vielen Sitzungen",
-          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix: Wir brauchen einen Infrastruktur-Monitor – für Speichersysteme Plus!"
+          "text": "Betreuung von Dateiserver und Netz: mit Uhrzeit, Freigabe und gemessener Antwortzeit"
         },
         {
-          "text": "Betreuung von Dateiserver und Netz: mit Uhrzeit, Freigabe und gemessener Antwortzeit"
+          "text": "Betreuung des Speichersystems unter dem Dateiserver, wenn auf dem Server keine Ursache zu finden ist: mit der Frage, ob dort ein Sicherheits- oder Überwachungsprodukt eingeführt oder geändert wurde; die Praxisquelle Thomas Kötzing (2025) berichtet von einem Fall, in dem ein neuer Virenschutz auf dem Speichersystem viele Sitzungen störte",
+          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix: Wir brauchen einen Infrastruktur-Monitor – für Speichersysteme Plus!"
         }
       ]
     },
@@ -1190,7 +1175,7 @@
           "when": ["cause.app"],
           "text": "Größe der Daten von {app} im betroffenen Profilcontainer prüfen",
           "where": "In der Sitzung des Benutzers, dem der Profilcontainer gehört (wer es ist, steht in den Belegen): Ordner des Benutzerprofils",
-          "sign": "Datenordner von {app} deutlich größer als bei anderen Benutzern; nach Aaron Parker (2019) auch dann, wenn sich die Anwendung selbst ins Benutzerprofil installiert hat (Programmpfad unter AppData), sie liegt dann im Profilcontainer jedes Benutzers"
+          "sign": "Datenordner von {app} deutlich größer als bei anderen Benutzern oder Programmpfad von {app} unter AppData (nach Aaron Parker, 2019, liegt die Anwendung dann im Profilcontainer jedes Benutzers)"
         },
         {
           "when": ["cause.app"],
@@ -1221,14 +1206,14 @@
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Prüfen, ob der Cache-Ordner von Microsoft Edge vom Profilcontainer ausgenommen ist (AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Cache); die Praxisquelle führt ihn in ihrer Liste der Ausschlüsse für Profilcontainer, die Liste ist für FSLogix geschrieben, übertragbar sind die Pfade",
+          "text": "Prüfen, ob der Cache-Ordner von Microsoft Edge vom Profilcontainer ausgenommen ist (AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Cache); die Praxisquelle Aaron Parker (Liste ohne Datum) führt ihn in ihrer Liste der Ausschlüsse für Profilcontainer; die Liste ist für FSLogix geschrieben; übertragbar sind die Pfade",
           "where": "Richtlinie der Citrix Profilverwaltung: Ausschlussliste der Ordner für den Profilcontainer",
           "sign": "Cache-Ordner von Edge fehlt in der Ausschlussliste",
           "source": "Aaron Parker (Empfehlung aus der Praxis): Redirections.csv (ConvertTo-RedirectionsXml)"
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“), beides belastet die Freigabe und verlängert die Abmeldung",
+          "text": "{app} gehört zur Citrix Profilverwaltung: prüfen, ob zur Zeit des Vorfalls An- oder Abmeldungen liefen (dabei werden Profile geladen und zurückgeschrieben); nach James Rankin (2023) schreibt die Profilverwaltung bei der Abmeldung die Änderungen der Sitzung in den Profilcontainer zurück und kann ihn ab Version 2303 dabei verkleinern (Richtlinie „Enable VHD disk compaction“); beides belastet die Freigabe und verlängert die Abmeldung",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Sitzungen“, Reiter „Ereignisse“ (Anmeldung, Abmeldung)",
           "sign": "An- oder Abmeldung eines oder mehrerer Benutzer kurz vor Beginn des Vorfalls"
         },
@@ -1328,18 +1313,18 @@
       "remedies": [
         {
           "when": ["cause.app"],
-          "text": "Datenmenge von {app} im Profil verkleinern, zum Beispiel den Zwischenspeicher begrenzen oder ältere Daten auslagern; hat sich {app} ins Benutzerprofil installiert, sie stattdessen für alle Benutzer installieren (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); nach Aaron Parker (2019) hält eine Anwendungssteuerung Benutzer von solchen Installationen ab, sie einzurichten ist aber aufwendig",
+          "text": "Datenmenge von {app} im Profil verkleinern, zum Beispiel den Zwischenspeicher begrenzen oder ältere Daten auslagern",
           "precondition": "{app} sehr große Datenbestände im betroffenen Profilcontainer hält"
         },
         {
           "when": ["cause.app", "app.outlook"],
-          "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); nach Aaron Parker (2019) mit dem kleinsten brauchbaren Zeitraum beginnen, üblich sind 3 Monate, und ihn nur für Gruppen verlängern, die mehr brauchen",
+          "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); nach Aaron Parker (2019, für FSLogix-Container beschrieben) mit dem kleinsten brauchbaren Zeitraum beginnen, üblich sind 3 Monate, und ihn nur für Gruppen verlängern, die mehr brauchen",
           "precondition": "die OST-Datei im betroffenen Profilcontainer größer als 10 GB ist",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Cache-Ordner von Microsoft Edge vom Profilcontainer ausnehmen (Richtlinie der Citrix Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle (2019, für FSLogix beschrieben) bleiben Daten, die schon im Container liegen, dort, bis sie gelöscht werden oder der Container verkleinert wird",
+          "text": "Cache-Ordner von Microsoft Edge vom Profilcontainer ausnehmen (Richtlinie der Citrix Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) bleiben Daten, die schon im Container liegen, dort, bis sie gelöscht werden oder der Container verkleinert wird",
           "precondition": "der Cache-Ordner von Edge noch nicht ausgenommen ist",
           "source": "Aaron Parker (Empfehlung aus der Praxis): A Practical Guide to FSLogix Containers Capacity Planning and Maintenance"
         },
@@ -1350,7 +1335,7 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf; nach James Rankin (Test von 2021 mit Windows Server 2019, dateibasierten Profilen und ohne Microsoft Defender) verlängerten fehlende Ausschlüsse die Anmeldung um mehr als 40 Sekunden",
+          "text": "Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der Anwendungen nennen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Sammlung von John Billekens führt die Ausschlüsse der Hersteller für einen VDA mit mehreren Sitzungen mit Pfad auf",
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
@@ -1359,14 +1344,19 @@
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
-          "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
+          "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle Carl Stalhood nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
           "precondition": "die Verzögerung regelmäßig bei Anmeldungen auftritt",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
         },
         {
-          "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
+          "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
           "precondition": "der Profilcontainer des Benutzers viel größer ist als die Daten darin und weiter wächst",
           "source": "James Rankin (Empfehlung aus der Praxis): QuickPost – Citrix UPM VHD compaction feature"
+        },
+        {
+          "text": "{app} für alle Benutzer installieren statt im Benutzerprofil (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); nach der Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) liegt eine Anwendung, die sich ins Benutzerprofil installiert, im Profilcontainer jedes Benutzers; die Installation für alle Benutzer folgert diese Anleitung daraus, nicht die Praxisquelle",
+          "precondition": "{app} unter AppData installiert ist",
+          "source": "Aaron Parker (Empfehlung aus der Praxis): A Practical Guide to FSLogix Containers Capacity Planning and Maintenance"
         }
       ],
       "contacts": [
@@ -1427,7 +1417,7 @@
         },
         {
           "when": ["unmeasured.ica.latency"],
-          "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzungen im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Praxisquelle (2024) weist darauf hin, dass die Laufzeit im Netz einen großen Teil der Verzögerung ausmachen kann, die Benutzer bei Eingaben spüren",
+          "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzungen im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Eingabeverzögerung dieses Vorfalls wurde auf dem Server gemessen; was Benutzer bei Eingaben spüren, enthält dazu die Laufzeit im Netz, die nach der Praxisquelle Benny Tritsch (2024) einen großen Teil ausmachen kann",
           "where": "Citrix Director, Sitzung des Benutzers: Verlauf von ICA Round Trip und Netzwerklatenz",
           "sign": "Wert im Zeitraum des Vorfalls deutlich höher als zu ruhigen Zeiten derselben Sitzung",
           "source": "Benny Tritsch (Empfehlung aus der Praxis): DEX4DaaS - DEX Quality Criteria for DaaS Environments"
@@ -1460,29 +1450,23 @@
         {
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
-          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
+          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen Carl Stalhood und BIS-F stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
-          "text": "Wenn die Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung warteten: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle maß 2021 im Labor mit Windows 10 etwa 33 Sekunden Wartezeit je nicht erreichbarer Zuordnung bei der Anmeldung, Thomas Kötzing nennt 2020 etwa 30 Sekunden",
+          "text": "Wenn die Benutzer im Explorer oder in einem Dateidialog warteten: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle James Rankin (2021, Labor mit Windows 10, Group Policy Preferences, sechs Ziele) maß beim Verbinden etwa 33 Sekunden Zeitüberschreitung je nicht erreichbarer Zuordnung; Thomas Kötzing (2020) nennt für Freigaben, die eine Gruppenrichtlinie verbindet, etwa 30 Sekunden",
           "where": "WEM-Konsole (Aktionen für Laufwerkszuordnungen) oder Gruppenrichtlinie; in einer Sitzung: Explorer, „Dieser PC“, oder der Befehl net use",
           "sign": "Zugeordnetes Laufwerk als getrennt oder nicht verfügbar angezeigt; Warten beim Öffnen des Explorers oder eines Dateidialogs",
           "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations – part #4"
         },
         {
-          "text": "Wenn die Verzögerung in Anmeldungen oder eine Aktualisierung der Gruppenrichtlinien fiel: im Protokoll der Gruppenrichtlinien die Dauer je Erweiterung lesen; die Praxisquelle (2017) sieht sich jede Erweiterung über 1000 ms näher an und nennt als Faustwert für alle Benutzerrichtlinien zusammen höchstens etwa 7 bis 9 Sekunden; nach Trentent Tye (Labor 2018) vervielfachen viele kleine Gruppenrichtlinien die Laufzeit zum Domänencontroller",
-          "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > GroupPolicy > Operational; Anmeldung eines betroffenen Benutzers suchen (Ereignis 5324), Ereignisse 4016 bis 5016 (eine Erweiterung) und 4257 bis 5257 (Laden der Richtlinien vom Domänencontroller)",
-          "sign": "Einzelne Erweiterung mit auffällig langer Dauer; das Protokoll reicht auf nicht persistenten Servern nur bis zum letzten Neustart zurück",
-          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Einfache Fehleranalyse der Dauer von Gruppenrichtlinien während der Anmeldung"
-        },
-        {
-          "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen der Benutzer „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle fand das 2016 in einem Fall als Ursache einer Wartezeit von 18 bis 20 Sekunden",
+          "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen der Benutzer „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle Guy Leech (2016, ein Fall mit XenApp 7.7 und Receiver 4.4) fand das als Ursache einer Wartezeit von 18 bis 20 Sekunden; trifft es zu, die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie; eine Richtlinie wirkt auch auf nicht persistente Server) oder mit der Betreuung von Netz und Proxy eine Erkennung einrichten, die antwortet",
           "where": "In einer Sitzung: Internetoptionen, Verbindungen, LAN-Einstellungen; Betreuung von Netz und Proxy: ob eine automatische Erkennung eingerichtet ist",
-          "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung; dann die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie) oder eine Erkennung einrichten lassen",
+          "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         },
         {
-          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die Messwerte im Server zeigen das nur zum Teil, die Praxisquelle wertet dafür CPU-Bereitschaft, CPU-Latenz und Co-Stop des Hosts aus",
+          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
           "source": "GO-EUC (Empfehlung aus der Praxis): VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling"
@@ -1496,17 +1480,17 @@
         },
         {
           "when": ["event.applocker"],
-          "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
+          "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
           "precondition": "der Modus auf „Overwrite“ steht und Anwendungen blockiert wurden, die vorher liefen",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications"
         },
         {
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         },
         {
-          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz); die Praxisquelle (2020) rät darüber hinaus ganz von Laufwerksbuchstaben ab, das ist ihre Meinung",
+          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
           "source": "James Rankin (Empfehlung aus der Praxis): (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops"
         }
@@ -1521,10 +1505,6 @@
         },
         {
           "text": "Betreuung von Netz und Proxy, wenn mehrere verschiedene Anwendungen zugleich warteten"
-        },
-        {
-          "text": "Betreuung der Gruppenrichtlinien, wenn deren Verarbeitung lange dauerte: mit der Frage, ob sich kleine Richtlinien für die Server und ihre Benutzer zusammenlegen lassen, wie die Praxisquelle (2018) rät; Betreuung von Netz und Active Directory mit der Frage, ob die Server einen Domänencontroller am eigenen Standort erreichen",
-          "source": "Trentent Tye (Empfehlung aus der Praxis): Group Policy - Monolithic vs Functional Design and Performance Evaluation"
         }
       ]
     },
@@ -1572,7 +1552,7 @@
         },
         {
           "when": ["unmeasured.ica.latency"],
-          "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzung im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Praxisquelle (2024) weist darauf hin, dass die Laufzeit im Netz einen großen Teil der Verzögerung ausmachen kann, die Benutzer bei Eingaben spüren",
+          "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzung im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Eingabeverzögerung dieses Vorfalls wurde auf dem Server gemessen; was Benutzer bei Eingaben spüren, enthält dazu die Laufzeit im Netz, die nach der Praxisquelle Benny Tritsch (2024) einen großen Teil ausmachen kann",
           "where": "Citrix Director, Sitzung des Benutzers: Verlauf von ICA Round Trip und Netzwerklatenz",
           "sign": "Wert im Zeitraum des Vorfalls deutlich höher als zu ruhigen Zeiten derselben Sitzung",
           "source": "Benny Tritsch (Empfehlung aus der Praxis): DEX4DaaS - DEX Quality Criteria for DaaS Environments"
@@ -1595,25 +1575,25 @@
         {
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
-          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
+          "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen Carl Stalhood und BIS-F stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
-          "text": "Prüfen, ob die Anwendung, in der der Benutzer wartete, über längere Zeit etwa einen ganzen Prozessor belegte (ihr Anteil an der gesamten CPU entspricht dann 100 % geteilt durch die Zahl der logischen Prozessoren): eine Anwendung, die nur einen Prozessor nutzen kann, ist dann an ihrer Grenze, auch wenn der Server insgesamt wenig Last hat; die Praxisquelle fand 2015 in einem solchen Fall ein Modul eines anderen Produkts in der Anwendung als Ursache",
+          "text": "Prüfen, ob die Anwendung, in der der Benutzer wartete, über längere Zeit etwa einen ganzen Prozessor belegte (ihr Anteil an der gesamten CPU entspricht dann 100 % geteilt durch die Zahl der logischen Prozessoren): eine Anwendung, die nur einen Prozessor nutzen kann, ist dann an ihrer Grenze, auch wenn der Server insgesamt wenig Last hat; die Praxisquelle Trentent Tye (2015, XenApp 6.5) fand in einem solchen Fall ein Modul eines anderen Produkts in der Anwendung als Ursache; gehören die Threads mit hoher Last zu einem solchen Modul, dessen Betreuung und den Hersteller der Anwendung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Prozesse“: Prozessoranteil der Anwendung; Process Explorer: Threads des Prozesses und die Module, zu denen sie gehören",
-          "sign": "Anteil der Anwendung über längere Zeit gleichbleibend bei etwa einem Prozessor; Threads mit hoher Last gehören zu einem Modul eines anderen Produkts (Anmeldung, Schutz, Überwachung), dann dessen Betreuung und den Hersteller der Anwendung ansprechen",
+          "sign": "Anteil der Anwendung über längere Zeit gleichbleibend bei etwa einem Prozessor; Threads mit hoher Last gehören zu einem Modul eines anderen Produkts (Anmeldung, Schutz, Überwachung)",
           "source": "Trentent Tye (Empfehlung aus der Praxis): Help! My Citrix application is running slow (Meditech, Citrix, Imprivata)"
         },
         {
-          "text": "Wenn der Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung wartete: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle maß 2021 im Labor mit Windows 10 etwa 33 Sekunden Wartezeit je nicht erreichbarer Zuordnung bei der Anmeldung, Thomas Kötzing nennt 2020 etwa 30 Sekunden",
+          "text": "Wenn der Benutzer im Explorer oder in einem Dateidialog wartete: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle James Rankin (2021, Labor mit Windows 10, Group Policy Preferences, sechs Ziele) maß beim Verbinden etwa 33 Sekunden Zeitüberschreitung je nicht erreichbarer Zuordnung; Thomas Kötzing (2020) nennt für Freigaben, die eine Gruppenrichtlinie verbindet, etwa 30 Sekunden",
           "where": "WEM-Konsole (Aktionen für Laufwerkszuordnungen) oder Gruppenrichtlinie; in einer Sitzung: Explorer, „Dieser PC“, oder der Befehl net use",
           "sign": "Zugeordnetes Laufwerk als getrennt oder nicht verfügbar angezeigt; Warten beim Öffnen des Explorers oder eines Dateidialogs",
           "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations – part #4"
         },
         {
-          "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen des Benutzers „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle fand das 2016 in einem Fall als Ursache einer Wartezeit von 18 bis 20 Sekunden",
+          "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen des Benutzers „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle Guy Leech (2016, ein Fall mit XenApp 7.7 und Receiver 4.4) fand das als Ursache einer Wartezeit von 18 bis 20 Sekunden; trifft es zu, die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie; eine Richtlinie wirkt auch auf nicht persistente Server) oder mit der Betreuung von Netz und Proxy eine Erkennung einrichten, die antwortet",
           "where": "In einer Sitzung: Internetoptionen, Verbindungen, LAN-Einstellungen; Betreuung von Netz und Proxy: ob eine automatische Erkennung eingerichtet ist",
-          "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung; dann die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie) oder eine Erkennung einrichten lassen",
+          "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         }
       ],
@@ -1625,7 +1605,7 @@
         },
         {
           "when": ["event.applocker"],
-          "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
+          "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
           "precondition": "der Modus auf „Overwrite“ steht und Anwendungen blockiert wurden, die vorher liefen",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications"
         },
@@ -1634,12 +1614,12 @@
           "precondition": "dieselbe Anwendung bei diesem Benutzer wiederholt hängt, bei anderen Benutzern aber nicht"
         },
         {
-          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
+          "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         },
         {
-          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz); die Praxisquelle (2020) rät darüber hinaus ganz von Laufwerksbuchstaben ab, das ist ihre Meinung",
+          "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
           "source": "James Rankin (Empfehlung aus der Praxis): (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops"
         }
@@ -1664,7 +1644,7 @@
           "when": ["unmeasured.ica.latency"],
           "text": "In Citrix Director die Netzwerklatenz der betroffenen Sitzung mit dem ICA Round Trip vergleichen: die ICA-Netzwerklatenz wurde nicht gemessen",
           "where": "Citrix Director, Sitzung des Benutzers (wer es ist, steht in den Belegen)",
-          "sign": "Netzwerklatenz nahe am ICA Round Trip (Ursache im Netz) oder deutlich darunter (Ursache bei Endgerät oder Server, deren Verarbeitung der ICA Round Trip mit enthält); nach Benny Tritsch (2024) kann die Laufzeit im Netz einen großen Teil der Verzögerung ausmachen, die der Benutzer bei Eingaben spürt"
+          "sign": "Netzwerklatenz nahe am ICA Round Trip (Ursache im Netz) oder deutlich darunter (Ursache bei Endgerät oder Server, deren Verarbeitung der ICA Round Trip mit enthält)"
         },
         {
           "text": "Feststellen, welcher Benutzer betroffen ist und von wo und wie er arbeitet (Büro, Homeoffice, Außenstelle; WLAN oder Kabel; VPN)",
@@ -1682,15 +1662,15 @@
           "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Netzstrecke) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
         },
         {
-          "text": "Den Benutzer fragen, wie die Störung aussah; die Praxisquelle ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
+          "text": "Den Benutzer fragen, wie die Störung aussah; die Praxisquelle Benny Tritsch (2026) ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
           "where": "Rückfrage beim Benutzer; die Antwort mit Uhrzeit und Standort an die Betreuung des Netzes geben",
           "sign": "Eine der drei Erscheinungen; alle drei liegen außerhalb des Servers; in einem Test der Praxisquelle von 2025 (VDA 2507 LTSR, Windows 11, Netzsimulator) hielt HDX bei wenig Bandbreite die Bildrate und senkte die Bildqualität",
           "source": "Benny Tritsch (Empfehlung aus der Praxis): A Guide to Common VDI Screen Artifacts and What They Mean"
         },
         {
-          "text": "Feststellen, über welchen Transport die Sitzung des Benutzers läuft (EDT über UDP oder TCP); die Voreinstellung von Citrix („Preferred“, EDT mit Rückfall auf TCP) bleibt die Regel; die Praxisquelle (2025, Meinung ohne Messung) berichtet von schwarzen oder zerstückelten Bildern mit EDT über VPN, WLAN oder Mobilfunk und würde EDT abschalten, das ist die andere Sicht und kein Vorschlag dieses Berichts",
+          "text": "Feststellen, über welchen Transport die Sitzung des Benutzers läuft (EDT, also UDP, oder TCP); die Voreinstellung von Citrix („Preferred“, EDT mit Rückfall auf TCP) bleibt die Regel; die Praxis sieht es verschieden: Carl Stalhood (2024) führt Adaptive Transport in seiner Prüfliste als eingeschaltet; die Praxisquelle Thomas Kötzing (2025, Meinung ohne Messung) berichtet von schwarzen oder zerstückelten Bildern mit EDT über VPN, WLAN oder Mobilfunk und würde EDT abschalten; das ist die andere Sicht und kein Vorschlag dieses Berichts; meldet der Benutzer solche Bilder und läuft die Sitzung über EDT, die Betreuung des Netzes die MTU auf dieser Strecke prüfen lassen",
           "where": "Citrix Director, Sitzungsdetails, oder auf dem Server der Befehl CtxSession.exe -v; Citrix-Richtlinie: Sitzungszuverlässigkeit und MTU-Erkennung von EDT",
-          "sign": "Sitzung läuft über EDT (UDP) und der Benutzer meldet schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk; dann die Betreuung des Netzes die MTU auf dieser Strecke prüfen lassen",
+          "sign": "Sitzung läuft über EDT (UDP) und der Benutzer meldet schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix, es ist an der Zeit, drei HDX-Dinge zu beheben!"
         }
       ],
@@ -1743,47 +1723,26 @@
         {
           "when": ["cause.none", "lead.memory"],
           "text": "Kein einzelner Verursacher: Auslegung des Servers für den Arbeitsspeicher prüfen (Sitzungen je Server, Arbeitsspeicher der virtuellen Maschine)",
-          "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“",
-          "sign": "Auslastung über die ganze Dauer des Zustands über dem Soll bei üblicher Zahl von Sitzungen"
-        },
-        {
-          "when": ["cause.none", "lead.cpu"],
-          "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle beschreibt aus einem einzelnen Kundenfall von 2026 einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
-          "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; DNS: der eigene Name des Servers als vollständiger Name (FQDN)",
-          "sign": "VDA älter als CVAD 2507 LTSR CU2 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-28688; in den Versionshinweisen von Citrix gegenlesen) oder der Name des Servers wird nicht aufgelöst",
-          "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA"
-        },
-        {
-          "when": ["cause.none", "lead.memory"],
-          "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle beschreibt aus einem einzelnen Kundenfall von 2026 einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
-          "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; DNS: der eigene Name des Servers als vollständiger Name (FQDN)",
-          "sign": "VDA älter als CVAD 2507 LTSR CU2 (dort ist der Fehler nach der Praxisquelle behoben, Kennung CVADHELP-28688; in den Versionshinweisen von Citrix gegenlesen) oder der Name des Servers wird nicht aufgelöst",
-          "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA"
+          "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“; wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger), in Citrix Studio am Maschinenkatalog die Größe des Caches nachsehen und vom Arbeitsspeicher des Servers abziehen: laut Citrix ist der Cache Teil des Arbeitsspeichers der Maschine; nach GO-EUC (Test von 2020 mit Windows 10 und einer einzelnen Maschine) belegt ihn der Treiber von MCS I/O, und Windows kann ihn nicht nutzen",
+          "sign": "Auslastung über die ganze Dauer des Zustands über dem Soll bei üblicher Zahl von Sitzungen; mit MCS I/O: Arbeitsspeicher der Server abzüglich des Caches reicht für die Sitzungen nicht"
         },
         {
           "when": ["lead.cpu"],
-          "text": "Auslastung des Prozessors mit den anderen Servern derselben Bereitstellungsgruppe vergleichen",
-          "where": "Citrix Director; Berichte der anderen Server",
-          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität)"
+          "text": "Auslastung des Prozessors mit den anderen Servern derselben Bereitstellungsgruppe vergleichen; trägt nur dieser Server viele Sitzungen und haben die anderen kaum Last, Version des VDA und Namensauflösung des Servers prüfen: die Praxisquelle Manuel Winkel (2026) beschreibt aus einem einzelnen Kundenfall einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
+          "where": "Citrix Director: Sitzungen je Server, Version des VDA; Berichte der anderen Server; auf dem Server: nslookup mit dem eigenen vollständigen Namen (FQDN); Versionshinweise von Citrix zu CVAD 2507 LTSR CU2: ob der Fehler mit der Kennung CVADHELP-28688 dort als behoben geführt ist",
+          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität); für den Fehler des VDA: VDA älter als CVAD 2507 LTSR CU2 (dort ist er nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst"
         },
         {
           "when": ["lead.memory"],
-          "text": "Auslastung des Arbeitsspeichers mit den anderen Servern derselben Bereitstellungsgruppe vergleichen",
-          "where": "Citrix Director; Berichte der anderen Server",
-          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität)"
+          "text": "Auslastung des Arbeitsspeichers mit den anderen Servern derselben Bereitstellungsgruppe vergleichen; trägt nur dieser Server viele Sitzungen und haben die anderen kaum Last, Version des VDA und Namensauflösung des Servers prüfen: die Praxisquelle Manuel Winkel (2026) beschreibt aus einem einzelnen Kundenfall einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
+          "where": "Citrix Director: Sitzungen je Server, Version des VDA; Berichte der anderen Server; auf dem Server: nslookup mit dem eigenen vollständigen Namen (FQDN); Versionshinweise von Citrix zu CVAD 2507 LTSR CU2: ob der Fehler mit der Kennung CVADHELP-28688 dort als behoben geführt ist",
+          "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität); für den Fehler des VDA: VDA älter als CVAD 2507 LTSR CU2 (dort ist er nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst"
         },
         {
           "when": ["lead.memory"],
-          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; nach der Praxisquelle (Test von 2020 mit Windows 10) belegt ihn der Treiber von MCS I/O, und Windows kann ihn nicht nutzen",
-          "where": "Citrix Studio, Maschinenkatalog: Arbeitsspeicher und Größe des Caches",
-          "sign": "Arbeitsspeicher der Server abzüglich des Caches reicht für die Sitzungen nicht; dann mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen",
-          "source": "GO-EUC (Empfehlung aus der Praxis): The real impact of Citrix MCSIO"
-        },
-        {
-          "when": ["lead.memory"],
-          "text": "Nach Prozessen suchen, die in Sitzungen zurückgeblieben sind, die es nicht mehr gibt; die Praxisquelle (2018) erkennt sie an einer Sitzungsnummer ohne Sitzung und daran, dass Sitzungsnummern immer weiter steigen, statt wiederverwendet zu werden",
+          "text": "Nach Prozessen suchen, die in Sitzungen zurückgeblieben sind, die es nicht mehr gibt; die Praxisquelle Guy Leech (2018) erkennt sie an einer Sitzungsnummer ohne Sitzung und daran, dass Sitzungsnummern immer weiter steigen, statt wiederverwendet zu werden; finden sich solche Prozesse, das Produkt, zu dem sie gehören, seiner Betreuung melden",
           "where": "Task-Manager auf dem Server, Registerkarte „Details“: Spalte „Sitzungs-ID“ einblenden (Rechtsklick auf einen Spaltenkopf, „Spalten auswählen“) und mit der Registerkarte „Benutzer“ vergleichen",
-          "sign": "Prozesse mit einer Sitzungsnummer, zu der keine Sitzung mehr besteht; das Produkt, zu dem sie gehören, seiner Betreuung melden; auf nicht persistenten Servern räumt der nächste Neustart sie ab",
+          "sign": "Prozesse mit einer Sitzungsnummer, zu der keine Sitzung mehr besteht; auf nicht persistenten Servern räumt der nächste Neustart sie ab",
           "source": "Guy Leech (Empfehlung aus der Praxis): Finding Zombie Processes"
         },
         {
@@ -1820,7 +1779,7 @@
           "when": ["lead.profile"],
           "text": "Größe dieses Profilcontainers prüfen und seine Antwortzeit mit der anderer Profilcontainer vergleichen",
           "where": "Profilspeicher auf dem Dateiserver: Containerdateien; Expertenansicht über die gesamte Messung: Diagramm „Datenträger-Antwortzeit“",
-          "sign": "Nur dieser Profilcontainer dauerhaft langsam (Ursache bei seinem Inhalt oder seiner Größe) oder alle (Ursache beim Dateiserver oder im Netz); nach Aaron Parker (2019) wächst ein Container mit der Nutzung und schrumpft nicht von selbst, eine Datei viel größer als die Daten darin enthält Leerraum, der erst beim Verkleinern des Containers frei wird"
+          "sign": "Nur dieser Profilcontainer dauerhaft langsam (Ursache bei seinem Inhalt oder seiner Größe) oder alle (Ursache beim Dateiserver oder im Netz); nach Aaron Parker (2019) wächst ein Container mit der Nutzung und schrumpft nicht von selbst; eine Datei viel größer als die Daten darin enthält Leerraum, der erst beim Verkleinern des Containers frei wird"
         },
         {
           "when": ["cause.nodata"],
@@ -1854,7 +1813,7 @@
         },
         {
           "when": ["cause.none", "lead.cpu"],
-          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
         },
         {
@@ -1863,22 +1822,22 @@
           "precondition": "der Arbeitsspeicher ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
         },
         {
-          "when": ["lead.share"],
-          "text": "Drosselung der Bandbreite des SMB-Clients abschalten erwägen (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle maß damit 2021 in einem Labor zusammen mit Änderungen am Dateiserver 12 statt 17 Sekunden Anmeldung, welchen Anteil der Wert daran hatte, sagt sie nicht; Microsoft nennt den Wert nur für Windows 10 und 11",
-          "precondition": "der Dateiserver dauerhaft langsam antwortet und seine Betreuung ihn selbst nicht überlastet findet",
-          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
-        },
-        {
           "when": ["lead.profile"],
-          "text": "Drosselung der Bandbreite des SMB-Clients abschalten erwägen (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle maß damit 2021 in einem Labor zusammen mit Änderungen am Dateiserver 12 statt 17 Sekunden Anmeldung, welchen Anteil der Wert daran hatte, sagt sie nicht; Microsoft nennt den Wert nur für Windows 10 und 11",
-          "precondition": "der Profilspeicher dauerhaft langsam antwortet und die Betreuung des Dateiservers ihn selbst nicht überlastet findet",
-          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
-        },
-        {
-          "when": ["lead.profile"],
-          "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
+          "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
           "precondition": "der Profilcontainer des Benutzers viel größer ist als die Daten darin und weiter wächst",
           "source": "James Rankin (Empfehlung aus der Praxis): QuickPost – Citrix UPM VHD compaction feature"
+        },
+        {
+          "when": ["cause.app", "lead.share"],
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "precondition": "der Dateiserver dauerhaft langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
+          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
+        },
+        {
+          "when": ["cause.app", "lead.profile"],
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "precondition": "der Profilspeicher dauerhaft langsam antwortet, die Betreuung des Dateiservers ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
+          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
         }
       ],
       "contacts": [
@@ -2047,9 +2006,9 @@
         },
         {
           "when": ["app.webview2"],
-          "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen",
+          "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Absturzes blockiert; Microsoft rät, beide zuzulassen, bevorzugt mit Herausgeberregeln",
+          "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Absturzes blockiert",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
@@ -2075,7 +2034,7 @@
         },
         {
           "when": ["app.outlook", "pattern.securitymodule"],
-          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund, es geht um beschädigte Daten, nicht um Geschwindigkeit",
+          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund; es geht um beschädigte Daten, nicht um Geschwindigkeit",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
           "sign": "Endungen .ost und .pst ohne Ausschluss",
           "source": "John Billekens (Empfehlung aus der Praxis): Microsoft Office Outlook · AV exclusions"
@@ -2302,9 +2261,9 @@
         },
         {
           "when": ["app.webview2"],
-          "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen",
+          "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Hängers blockiert; Microsoft rät, beide zuzulassen, bevorzugt mit Herausgeberregeln",
+          "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Hängers blockiert",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
@@ -2330,7 +2289,7 @@
         },
         {
           "when": ["app.outlook", "pattern.securitymodule"],
-          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund, es geht um beschädigte Daten, nicht um Geschwindigkeit",
+          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund; es geht um beschädigte Daten, nicht um Geschwindigkeit",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
           "sign": "Endungen .ost und .pst ohne Ausschluss",
           "source": "John Billekens (Empfehlung aus der Praxis): Microsoft Office Outlook · AV exclusions"
@@ -2476,7 +2435,7 @@
         {
           "when": ["pattern.none"],
           "text": "Kein Muster erkannt: feststellen, welcher Treiber oder welche Druckwarteschlange das Problem auslöst",
-          "where": "Vorfallsansicht, Abschnitt „Belege“: Treiber, Drucker und Meldungstext; Expertenansicht, Reiter „Drucken“: Treiberliste und Druckwarteschlangen; nach Thomas Kötzing (Fall von 2025) beim nächsten Absturz von spoolsv.exe oder splwow64.exe ein Speicherabbild des Prozesses sichern und daraus die DLL des Druckertreibers bestimmen",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Treiber, Drucker und Meldungstext; Expertenansicht, Reiter „Drucken“: Treiberliste und Druckwarteschlangen; nach Thomas Kötzing (Fall von 2025) zeigt ein Speicherabbild von spoolsv.exe oder splwow64.exe vom nächsten Absturz die DLL des Druckertreibers: es mit der Betreuung der Druckserver oder dem Hersteller des Treibers sichern und auswerten lassen",
           "sign": "Problem nur mit einem Treiber oder nur an einer Druckwarteschlange",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
@@ -2594,7 +2553,7 @@
         },
         {
           "when": ["pattern.printdriver"],
-          "text": "Prüfen, ob das Treiberpaket von {driver} einen eigenen Druckmonitor installiert hat; die Praxisquelle (2017) rät, keine Treiber fremder Hersteller mit Druckmonitor zu verwenden und ein Paket ohne Monitor zu wählen oder den Monitor zu entfernen",
+          "text": "Prüfen, ob das Treiberpaket von {driver} einen eigenen Druckmonitor installiert hat; die Praxisquelle Thomas Kötzing (2017) rät, keine Treiber fremder Hersteller mit Druckmonitor zu verwenden und ein Paket ohne Monitor zu wählen oder den Monitor zu entfernen",
           "where": "Im Master-Image, zum Beispiel mit Autoruns, Registerkarte „Print Monitors“; das Treiberpaket wählt die Betreuung der Druckserver, das Master-Image trägt dasselbe Paket",
           "sign": "Druckmonitor des Herstellers von {driver} neben den Monitoren von Windows",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Die zehn Regeln zum Drucken unter Citrix"
@@ -2622,7 +2581,7 @@
         },
         {
           "when": ["queue.stuck"],
-          "text": "Prüfen, ob die Druckwarteschlangen der Druckserver, die das Zuordnungswerkzeug den Benutzern zuordnet, noch bestehen und ob ihr Druckserver antwortet; die Praxisquelle maß 2016 unter XenApp 6.5, dass ein Drucker auf einem abgeschalteten Druckserver die Anmeldung um 5,9 Sekunden aufhielt, und sah bei nicht mehr vorhandenen Druckern etwa 150 Sekunden",
+          "text": "Prüfen, ob die Druckwarteschlangen der Druckserver, die das Zuordnungswerkzeug den Benutzern zuordnet, noch bestehen und ob ihr Druckserver antwortet; nach der Praxisquelle Trentent Tye (2016, XenApp 6.5) halten solche Zuordnungen auch die Anmeldung auf",
           "where": "Verwaltung des Zuordnungswerkzeugs: zugeordnete Druckwarteschlangen; Druckserver: ob die Warteschlange besteht und der Druckserver erreichbar ist",
           "sign": "Zugeordnete Druckwarteschlange, deren Druckserver abgeschaltet, umgezogen oder umbenannt ist",
           "source": "Trentent Tye (Empfehlung aus der Praxis): ControlUp - Dissecting Logon Times a step further (Printer loading)"
@@ -2669,7 +2628,7 @@
         },
         {
           "text": "Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach einem Wechsel des Endgeräts: Version des PrinTaurus SmartSpread Client feststellen und prüfen, ob Drucker- und Freigabename der betroffenen Druckwarteschlange verschieden sind",
-          "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Druckserver: Name und Freigabename der Druckwarteschlange; nach James Kindon (2018) auch prüfen, ob zusätzlich WEM Drucker zuordnet oder „Delete network printers at startup“ gesetzt ist, die Drucker soll nur ein Werkzeug zuordnen",
+          "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Druckserver: Name und Freigabename der Druckwarteschlange; nach James Kindon (2018) auch prüfen, ob zusätzlich WEM Drucker zuordnet oder „Delete network printers at startup“ gesetzt ist; die Drucker soll nur ein Werkzeug zuordnen",
           "sign": "Client älter als Version 6.2 (laut AKI wurde bis dahin der erzwungene Standarddrucker bei verschiedenen Namen nicht richtig zugewiesen; als Änderung der Version 6.2 führt AKI auch, dass die Zuordnungen passend zum Endgerät gesetzt werden, wenn der Benutzer es ohne Neuanmeldung wechselt); ab 6.2 zeigt Windows eine Druckwarteschlange mit verschiedenen Namen doppelt an (laut AKI eine bekannte Einschränkung)",
           "source": "AKI: Release Notes 6.2 deutsch"
         },
@@ -2774,7 +2733,7 @@
         },
         {
           "when": ["queue.stuck"],
-          "text": "Druckwarteschlangen, deren Druckserver es nicht mehr gibt oder der umgezogen ist, aus den Regeln des Zuordnungswerkzeugs streichen lassen (zentrale Einstellung des Werkzeugs, nicht am Server); die Praxisquelle fand 2016 solche veralteten Zuordnungen als Ursache langer Anmeldungen",
+          "text": "Druckwarteschlangen, deren Druckserver es nicht mehr gibt oder der umgezogen ist, aus den Regeln des Zuordnungswerkzeugs streichen lassen (zentrale Einstellung des Werkzeugs, nicht am Server); die Praxisquelle Trentent Tye (2016, XenApp 6.5) fand solche veralteten Zuordnungen als Ursache langer Anmeldungen",
           "precondition": "eine zugeordnete Druckwarteschlange auf einen Druckserver zeigt, der nicht antwortet oder die Warteschlange nicht mehr hat",
           "source": "Trentent Tye (Empfehlung aus der Praxis): ControlUp - Dissecting Logon Times a step further (Printer loading)"
         },
@@ -2837,7 +2796,7 @@
           "source": "AKI: Release Notes PrinTaurus 6.4"
         },
         {
-          "text": "Protokoll „Microsoft-Windows-PrintService/Operational“ einschalten und so groß wählen, dass es die Zeit zwischen zwei Neustarts fasst (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); es führt Einträge je Drucker und je Auftrag, die dem Protokoll „Admin“ fehlen; die Praxisquelle schaltet es ein, um Anmeldezeit einzelnen Druckern zuzuordnen (ihre Größen, 20 MB im Jahr 2016 und 500 MB im Jahr 2019, sind Beispiele)",
+          "text": "Protokoll „Microsoft-Windows-PrintService/Operational“ einschalten und so groß wählen, dass es die Zeit zwischen zwei Neustarts fasst (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); es führt Einträge je Drucker und je Auftrag, die dem Protokoll „Admin“ fehlen; die Praxisquelle Trentent Tye (2019) schaltet es ein, um Anmeldezeit einzelnen Druckern zuzuordnen",
           "precondition": "das Protokoll ausgeschaltet ist und das nächste Druckproblem von Hand untersucht werden soll",
           "source": "Trentent Tye (Empfehlung aus der Praxis): Printers and their impact on logon duration"
         }
@@ -2922,13 +2881,13 @@
           "sign": "Fehlerzeile zur Uhrzeit der Anmeldung mit Pfad und Fehlercode"
         },
         {
-          "text": "Im Protokoll des Benutzerprofildiensts die Anmeldungen und Abmeldungen des Benutzers nachlesen; die Praxisquelle (2018) liest daraus Beginn und Ende jeder Sitzung: Ereignis 1 beginnt die Verarbeitung des Profils bei der Anmeldung, Ereignis 4 beendet sie bei der Abmeldung",
+          "text": "Im Protokoll des Benutzerprofildiensts die Anmeldungen und Abmeldungen des Benutzers nachlesen; die Praxisquelle Guy Leech (2018) liest daraus Beginn und Ende jeder Sitzung: Ereignis 1 steht für den Beginn der Verarbeitung des Profils bei der Anmeldung, Ereignis 4 für ihr Ende bei der Abmeldung",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > User Profile Service > Operational; die Sitzungsnummer steht in den Details des Ereignisses; das Protokoll reicht nur bis zum letzten Neustart des Servers zurück",
-          "sign": "Frühere, schon beendete Sitzung des Benutzers mit Ereignis 1, aber ohne passendes Ereignis 4: ihre Abmeldung wurde nicht abgeschlossen, sie kann das Profil noch halten (Lesart des Katalogs)",
+          "sign": "Frühere, schon beendete Sitzung des Benutzers mit Ereignis 1, aber ohne passendes Ereignis 4: ihre Abmeldung wurde nicht abgeschlossen; sie kann das Profil noch halten (das folgert diese Anleitung, nicht die Praxisquelle)",
           "source": "Guy Leech (Empfehlung aus der Praxis): Showing Current & Historical User Sessions"
         },
         {
-          "text": "Wenn der Profilcontainer voll oder fast voll ist: Höchstgröße und automatische Vergrößerung des Containers in der Richtlinie der Citrix Profilverwaltung prüfen; die Praxisquelle (2019) warnt, dass Anwendungen einen vollen Container nicht abfangen, und bemisst die Größe nach den vorhandenen Profilen mit Zuwachs",
+          "text": "Wenn der Profilcontainer voll oder fast voll ist: Höchstgröße und automatische Vergrößerung des Containers in der Richtlinie der Citrix Profilverwaltung prüfen; die Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) warnt, dass Anwendungen einen vollen Container nicht abfangen, und bemisst die Größe nach den vorhandenen Profilen mit Zuwachs",
           "where": "Richtlinie der Citrix Profilverwaltung: Größe des Profilcontainers und automatische Vergrößerung; Profilspeicher: Größe der Containerdatei des Benutzers",
           "sign": "Höchstgröße knapp über der heutigen Belegung und keine automatische Vergrößerung",
           "source": "Aaron Parker (Empfehlung aus der Praxis): A Practical Guide to FSLogix Containers Capacity Planning and Maintenance"
@@ -2948,7 +2907,7 @@
         },
         {
           "when": ["pattern.companion"],
-          "text": "„Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten (Richtlinie, ab Version 2402 LTSR; eine Richtlinie wirkt auch auf nicht persistente Server), damit der Profilcontainer nach einem kurzen Ausfall wieder eingebunden wird; die Praxisquelle (2026) nennt für wiederkehrende Ausfälle zusätzlich „Enable local caching for profile containers“ und dafür etwa 5 Sekunden längere Anmeldungen; mit lokalem Cache auch die Vorgaben von Citrix für das neue Teams in der Profilverwaltung umsetzen und den freien Platz des Servers beobachten",
+          "text": "„Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten (Richtlinie, ab Version 2402 LTSR; eine Richtlinie wirkt auch auf nicht persistente Server), damit der Profilcontainer nach einem kurzen Ausfall wieder eingebunden wird; die Praxisquelle Thomas Kötzing (2026) nennt für wiederkehrende Ausfälle zusätzlich „Enable local caching for profile containers“ und dafür auf nicht persistenten Servern etwa 5 Sekunden längere Anmeldungen (seine Angabe, keine Messreihe); mit lokalem Cache auch die Vorgaben von Citrix für das neue Teams in der Profilverwaltung umsetzen und den freien Platz des Servers beobachten",
           "precondition": "Ausfälle des Speichers oder des Netzes zum Profilspeicher wiederkehren",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix UPM wie FSLogix nutzen – nur besser!"
         },
@@ -2957,19 +2916,19 @@
           "precondition": "eine zweite oder hängengebliebene Sitzung desselben Benutzers besteht"
         },
         {
-          "text": "Zurückschreiben aus mehreren Sitzungen für Profilcontainer in der Citrix Profilverwaltung einschalten und den exklusiven Zugriff auf den Profilcontainer nicht zugleich einschalten (Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle (2026) bekommt eine weitere Sitzung dann einen eigenen beschreibbaren Container, und die Änderungen werden zurückgeschrieben, sobald die Sperre frei ist, bei gleichzeitigen Sitzungen gewinnt die letzte Änderung",
+          "text": "Zurückschreiben aus mehreren Sitzungen für Profilcontainer in der Citrix Profilverwaltung einschalten und den exklusiven Zugriff auf den Profilcontainer nicht zugleich einschalten (Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle Thomas Kötzing (2026) bekommt eine weitere Sitzung dann einen eigenen beschreibbaren Container, und die Änderungen werden zurückgeschrieben, sobald die Sperre frei ist; bei gleichzeitigen Sitzungen gewinnt die letzte Änderung",
           "precondition": "Profilfehler wiederkehren, weil eine zweite oder hängengebliebene Sitzung desselben Benutzers den Profilcontainer sperrt (Einstellung „Enable multi-session write-back for profile containers“)",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix UPM wie FSLogix nutzen – nur besser!"
         },
         {
-          "text": "Server in den Wartungsmodus setzen und neu starten, sobald er leer ist, damit er mit einer sauberen Profilliste startet; nach der Praxisquelle (2024) verursachen Einträge mit der Endung .bak in der Profilliste der Registrierung temporäre Profile; liegt ein solcher Eintrag oder ein Rest des Profils schon im Master-Image, es dort bereinigen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
+          "text": "Server in den Wartungsmodus setzen und neu starten, sobald er leer ist, damit er mit einer sauberen Profilliste startet; nach der Praxisquelle Thomas Kötzing (2024) verursachen Einträge mit der Endung .bak in der Profilliste der Registrierung temporäre Profile; liegt ein solcher Eintrag oder ein Rest des Profils schon im Master-Image, es dort bereinigen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Benutzer mit einem temporären Profil angemeldet wurde und ein Eintrag mit der Endung .bak für ihn besteht",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Powershell-Skript zum Löschen von temporären Benutzerprofilen"
         }
       ],
       "contacts": [
         {
-          "text": "Betreuung des Dateiservers mit dem Profilspeicher, wenn der Speicher zur Zeit des Fehlers nicht erreichbar oder voll war; nach James Kindon (2021) beendet ein Ausfall des Speichers, während Profilcontainer eingebunden sind, die Sitzungen der Benutzer, deshalb auch Kapazität, Last und Schutzsoftware des Dateiservers prüfen lassen"
+          "text": "Betreuung des Dateiservers mit dem Profilspeicher, wenn der Speicher zur Zeit des Fehlers nicht erreichbar oder voll war; nach James Kindon (2021) beendet ein Ausfall des Speichers, während Profilcontainer eingebunden sind, die Sitzungen der Benutzer; deshalb auch Kapazität, Last und Schutzsoftware des Dateiservers prüfen lassen"
         },
         {
           "text": "Citrix-Betreuung, wenn die Citrix Profilverwaltung den Fehler meldet: mit Uhrzeit, Benutzer und Meldungstext"
@@ -3017,12 +2976,6 @@
           "sign": "Meldung der Quellen „disk“ oder „Ntfs“ mehrmals; Alarm am Datenspeicher oder Störung am Dateiserver zur selben Zeit"
         },
         {
-          "text": "Wenn das Laufwerk aus einem Datenträger- oder Dateisystemfehler das Systemlaufwerk oder der Cache-Datenträger von MCS ist und es fast voll ist: feststellen, was es seit dem Start des Servers füllt; die Praxisquelle listet dafür die seit dem Start erzeugten oder geänderten Dateien nach Größe auf",
-          "where": "Auf dem Server: Dateien mit Änderungsdatum nach dem letzten Start in Protokoll-, Cache- und Aktualisierungsordnern, die größten zuerst (eine Suche über das ganze Laufwerk dauert lange)",
-          "sign": "Wenige große oder schnell wachsende Dateien eines Produkts; den Schreiber im Master-Image abstellen oder umleiten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Größe der Dateien entspricht der Belegung des Caches nicht genau",
-          "source": "Guy Leech (Empfehlung aus der Praxis): Get files modified since boot.ps1"
-        },
-        {
           "text": "Bei einer Warnung vor Speichermangel: nachlesen, welche Anwendungen Windows als größte Verbraucher nennt, und mit den Arbeitsspeicher-Vorfällen dieses Berichts vergleichen",
           "where": "Meldungstext des Ereignisses 2004; Lagebild: Vorfälle „Arbeitsspeicher des Servers knapp“",
           "sign": "Name der Anwendung im Meldungstext; Arbeitsspeicher-Vorfall zur selben Zeit"
@@ -3036,6 +2989,12 @@
           "text": "Prüfen, ob dieselbe Meldung an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient",
           "sign": "Meldung derselben Art an mehreren Tagen (Dauerproblem statt Einzelfall)"
+        },
+        {
+          "text": "Wenn der Datenträger- oder Dateisystemfehler das Systemlaufwerk oder den Cache-Datenträger von MCS nennt und dieser fast voll ist: feststellen, was ihn seit dem Start des Servers füllt; die Praxisquelle Guy Leech (Skript ohne Datum) listet dafür die seit dem Start erzeugten oder geänderten Dateien nach Größe auf; finden sich wenige große oder schnell wachsende Dateien eines Produkts, den Schreiber abstellen oder umleiten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
+          "where": "Auf dem Server: Dateien mit Änderungsdatum nach dem letzten Start in Protokoll-, Cache- und Aktualisierungsordnern, die größten zuerst, mit dem Skript der Praxisquelle („Get files modified since boot.ps1“) oder einer Dateisuche nach Änderungsdatum (eine Suche über das ganze Laufwerk dauert lange)",
+          "sign": "Wenige große oder schnell wachsende Dateien eines Produkts; die Größe der Dateien entspricht der Belegung des Caches nicht genau",
+          "source": "Guy Leech (Empfehlung aus der Praxis): Get files modified since boot.ps1"
         },
         {
           "when": ["pattern.unchecked"],

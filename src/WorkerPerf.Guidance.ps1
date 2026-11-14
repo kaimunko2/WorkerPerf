@@ -31,6 +31,9 @@ $script:WorkerPerfGuidanceGapPrefixes = @('unmeasured.', 'skipped.')
 # conditions that only name a coincidence in time with another incident: something the report found, but it says nothing
 # about cause and effect
 $script:WorkerPerfGuidanceCoincidenceConditions = @('pattern.overlap')
+# the mark by which the catalogue's field 'source' tells a source from practice from a vendor's document
+# ('<name> (Empfehlung aus der Praxis): <title>', spec 5.7)
+$script:WorkerPerfGuidancePracticeMark = '(Empfehlung aus der Praxis)'
 # catalogue parts and the keys each text part must have, in the order they are checked
 $script:WorkerPerfGuidanceParts = @('version', 'terms', 'vendors', 'userView', 'lagebild', 'hints', 'copy', 'fallbackNote', 'situations')
 $script:WorkerPerfGuidancePartKeys = [ordered]@{
@@ -749,14 +752,20 @@ function Test-WorkerPerfGuidanceTrailingCondition([string]$Name) {
 
 function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
-    # text can be filled. Three groups, the order of the file within each: first the elements with a condition that
-    # says more than a gap or a coincidence in time, then the general ones, last those whose conditions all name a gap
-    # or a coincidence in time (what is unknown, or merely happened at the same time, is not the first thing to do).
+    # text can be filled. Groups, the order of the file within each: first the elements with a condition that says
+    # more than a gap or a coincidence in time, then the general ones, then those whose conditions all name a gap or
+    # a coincidence in time (what is unknown, or merely happened at the same time, is not the first thing to do).
+    # One rule for the sources from practice (ruling P3-R75): an element of the second or third group whose source
+    # carries the catalogue's mark of a source from practice stands after both groups, the general ones first. So a
+    # general recommendation from practice never pushes a general step of a vendor or of the catalogue, or a note on
+    # what was not measured, out of the first places. With a condition that says more it keeps its place.
     # Plain pipeline output (the caller writes @(...)). Templates (a List[string]) receives the templates of the texts
     # of the elements emitted (not their sources), for the glossary.
     $withCondition = New-Object System.Collections.Generic.List[object]
     $general = New-Object System.Collections.Generic.List[object]
     $trailing = New-Object System.Collections.Generic.List[object]
+    $generalPractice = New-Object System.Collections.Generic.List[object]
+    $trailingPractice = New-Object System.Collections.Generic.List[object]
     $fields = $script:WorkerPerfGuidanceOutputFields[$ListName]
     foreach ($el in (Get-WorkerPerfGuidanceList $Entry $ListName)) {
         $when = Get-WorkerPerfGuidanceList $el 'when'
@@ -776,13 +785,16 @@ function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Condi
         }
         if (-not $complete) { continue }
         if ($null -ne $Templates) { foreach ($t in $used) { $Templates.Add($t) } }
-        if ($when.Count -eq 0) { $general.Add($item) }
-        elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceTrailingCondition ([string]$_)) }).Count -eq 0) { $trailing.Add($item) }
+        $practice = ([string](Get-WorkerPerfField $el 'source')).Contains($script:WorkerPerfGuidancePracticeMark)
+        if ($when.Count -eq 0) { if ($practice) { $generalPractice.Add($item) } else { $general.Add($item) } }
+        elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceTrailingCondition ([string]$_)) }).Count -eq 0) { if ($practice) { $trailingPractice.Add($item) } else { $trailing.Add($item) } }
         else { $withCondition.Add($item) }
     }
     foreach ($item in $withCondition) { $item }
     foreach ($item in $general) { $item }
     foreach ($item in $trailing) { $item }
+    foreach ($item in $generalPractice) { $item }
+    foreach ($item in $trailingPractice) { $item }
 }
 
 function Get-WorkerPerfGuidanceTech($Incident, $Texts) {

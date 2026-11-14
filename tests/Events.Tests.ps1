@@ -656,8 +656,15 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
             Should -Be @($exp | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Kind, $_.App, (@($_.Patterns) -join ','), $_.Count, $_.StartMs, $_.EndMs })
         # C1: Aussage geaendert, ein Vorfall, ein Ereignis und ein Tag mehr
         @($lb.Incidents.Id) | Should -Be @(5, 6, 7, 8); $lb.Days | Should -Be 7; $lb.EventCount | Should -Be 6
-        ($lb.PerDay | Measure-Object Count -Sum).Sum | Should -Be 6; @($lb.PerDay).Count | Should -Be 3; @($lb.Near).Count | Should -Be 0
+        ($lb.PerDay | Measure-Object Count -Sum).Sum | Should -Be 6; @($lb.Near).Count | Should -Be 0
+        # the days of the lookback from the events' own times, not a pinned number: the simulated capture starts at the
+        # current clock, and started shortly before midnight its lookback events fall on one calendar day more
         $off = [int]$M.Meta.OffsetMinutes
+        $dayOf = { param($ms) [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).UtcDateTime.AddMinutes($off).ToString('yyyy-MM-dd', [cultureinfo]::InvariantCulture) }
+        $eventDays = [string[]]@($M.EventsBefore | ForEach-Object { & $dayOf $_.TimeMs }); $wantDays = [string[]]@($eventDays | Select-Object -Unique); [Array]::Sort($wantDays, [StringComparer]::Ordinal)
+        $wantDays.Count | Should -BeGreaterThan 1
+        @($lb.PerDay | ForEach-Object { $_.Day }) | Should -Be $wantDays
+        foreach ($p in @($lb.PerDay)) { $p.Count | Should -Be @($eventDays | Where-Object { $_ -ceq $p.Day }).Count -Because $p.Day }
         $at = { param($ms, $f) [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.AddMinutes($off).ToString($f, [cultureinfo]::InvariantCulture) }
         $text = @($lb.Incidents | ForEach-Object { Get-WorkerPerfEventIncidentText -Incident $_ -Model $M -Texts $Texts -Config $Cfg -OffsetMinutes $off })
         $text[0] | Should -BeExactly ((& $at $exp[0].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von EXCEL.EXE (1-mal). Benutzer: user001. Fehlerhaftes Modul: simaddin.dll. Fehlercode: 0xc0000005 (Zugriffsverletzung). Ursache liegt wahrscheinlich im Modul simaddin.dll (betrifft EXCEL.EXE, WINWORD.EXE).')
