@@ -588,7 +588,7 @@ Winterzeit, zeigt der Bericht beide jeweils in ihrer eigenen Ortszeit.
 ### Geführte Ansicht
 
 **Lagebild.** Oben steht ein farbiges Band. Es nennt den Zustand als Symbol und Wort und in einem Satz, zum Beispiel
-„Handlungsbedarf: 5-mal Engpass auf dem Server, 2-mal Verzögerung, 4-mal Absturz oder Fehler, 1-mal Dauerzustand;
+„Handlungsbedarf wegen Engpass auf dem Server (5), Verzögerung (2), Absturz oder Fehler (4), Dauerzustand (1);
 12,9 min mit spürbarer Störung."
 
 | Band | Zustand | wann |
