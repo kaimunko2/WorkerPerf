@@ -81,6 +81,42 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         $script:WinFake.Cim['Win32_QuickFixEngineering'] = @((& $qfe 'KB2' '14.10.2026'), (& $qfe 'KB3' '1d9a3c'))
         $h = Read-Health; (Get-V $h 'operation.lastUpdate').State | Should -Be 'absent'; (Get-V $h 'operation.lastUpdateId').State | Should -Be 'absent'
     }
+    It 'zaehlt ausstehende Umbenennungen und Loeschungen je Operation, eine Loeschung mit leerem Ziel' {   # Task 14s, Punkt 1
+        $sm = 'SYSTEM\CurrentControlSet\Control\Session Manager'
+        # zwei Umbenennungen und eine Loeschung (Quelle und leeres Ziel), die Loeschung in der Mitte und am Ende
+        $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\alt.dll', '', '\??\C:\Sim\b.tmp', '!\??\C:\Sim\b.dll') }
+        (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
+        $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll', '') }
+        (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
+        # .NET laesst die leere Zeichenkette vor dem Abschluss der Liste weg: die letzte Loeschung zaehlt trotzdem
+        $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll') }
+        (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
+        $script:WinFake.Registry[$sm] = [ordered]@{}; (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 0
+    }
+    It 'liest das Datum eines Updates in den dokumentierten Formen: FILETIME, Tag-Monat-Jahr und Monat/Tag/Jahr' {   # Task 14s, Punkt 2
+        $qfe = { param($id, $on) [pscustomobject]@{ HotFixID = $id; InstalledOn = $on } }
+        $instant = [datetime]::SpecifyKind([datetime]'2026-10-20T08:15:00', [DateTimeKind]::Utc)
+        $hex = $instant.ToFileTimeUtc().ToString('x16'); $atMs = ([DateTimeOffset]$instant).ToUnixTimeMilliseconds()
+        foreach ($case in @(@($hex, $atMs), @(('0x' + $hex.ToUpperInvariant()), $atMs), @('23-10-2026', (ConvertTo-WorkerPerfHealthTime ([datetime]'2026-10-23'))),
+                @('3-1-2026', (ConvertTo-WorkerPerfHealthTime ([datetime]'2026-01-03'))), @('10/14/2026', (ConvertTo-WorkerPerfHealthTime ([datetime]'2026-10-14'))))) {
+            $script:WinFake.Cim['Win32_QuickFixEngineering'] = @((& $qfe 'KB9' $case[0]))
+            $h = Read-Health; (Get-V $h 'operation.lastUpdate').Value | Should -Be $case[1] -Because $case[0]; (Get-V $h 'operation.lastUpdateId').Value | Should -Be 'KB9' -Because $case[0]
+        }
+        # eine gemischte Liste: das juengste lesbare Datum zaehlt; was in keiner Form steht, zaehlt nicht und kostet die anderen nicht
+        $script:WinFake.Cim['Win32_QuickFixEngineering'] = @((& $qfe 'KB1' '10/14/2026'), (& $qfe 'KB2' '23-10-2026'), (& $qfe 'KB3' $hex), (& $qfe 'KB4' '2026-12-01'),
+            (& $qfe 'KB5' '31-02-2026'), (& $qfe 'KB6' 'ffffffffffffffff'), (& $qfe 'KB7' '0x1d9a3c'), (& $qfe 'KB8' ''))
+        $h = Read-Health; (Get-V $h 'operation.lastUpdateId').Value | Should -Be 'KB2'; (Get-V $h 'operation.lastUpdate').State | Should -Be 'read'
+        $h.Areas['operation'].Status | Should -Be 'read'
+        # Tag-Monat-Jahr wird nie als Monat-Tag-Jahr gelesen, unter keiner Kultur
+        $keep = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
+            ConvertFrom-WorkerPerfHotFixDate '03-01-2026' | Should -Be ([datetime]'2026-01-03')
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+            ConvertFrom-WorkerPerfHotFixDate '1/3/2026' | Should -Be ([datetime]'2026-01-03')
+        }
+        finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $keep }
+    }
     It 'meldet einen Bereich ohne Leser und einen Leser, der wirft, als nicht gelesen' {
         $keep = $script:WorkerPerfWinHealthReaders
         function Read-TestThrows($Ctx) { Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingRename' { 3 }; throw 'Testfehler im Leser' }
@@ -163,6 +199,14 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
         @(($p | Where-Object { -not $_.Loaded -and -not $_.Special }).Path) | Should -Be @('C:\Users\gast', 'C:\Users\TEMP'); ($p | Where-Object Path -eq 'C:\Users\TEMP').Temporary | Should -BeTrue
         $script:WinFake.CimFail['Win32_TSSessionSetting'] = New-WinStandInDenied 'cim'
         $h = Read-Health; (Get-V $h 'sessions.limits').Reason | Should -Be 'rights'; (Get-V $h 'sessions.list').State | Should -Be 'read'; $h.Areas['sessions'].Status | Should -Be 'partial'
+    }
+    It 'liest zu jedem Listener, ob seine Zeitlimits gelten oder die des Benutzers' {   # Task 14s, Punkt 4
+        $l = @((Get-V (Read-Health) 'sessions.limits').Value); @($l | ForEach-Object { $_.TimeLimitPolicy }) | Should -Be @(1, 1)
+        @($l[0].Keys) | Should -Be @($WorkerPerfHealthValues['sessions.limits'].Fields.Keys)
+        $script:WinFake.Cim['Win32_TSSessionSetting'][1].TimeLimitPolicy = [uint32]0
+        ((Get-V (Read-Health) 'sessions.limits').Value | Where-Object Terminal -eq 'ICA-CGP').TimeLimitPolicy | Should -Be 0
+        $script:WinFake.Cim['Win32_TSSessionSetting'] = @([pscustomobject]@{ TerminalName = 'RDP-Tcp'; IdleSessionLimit = [uint32]0; DisconnectedSessionLimit = [uint32]0 })
+        $old = (Get-V (Read-Health) 'sessions.limits').Value[0]; $old.Contains('TimeLimitPolicy') | Should -BeTrue; $old.TimeLimitPolicy | Should -BeNullOrEmpty
     }
     It 'liest Version, Dienste und Controllerliste des VDA; die Richtlinie geht vor' {
         $h = Read-Health; $h.Areas['vda'].Status | Should -Be 'read'
@@ -394,6 +438,19 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         $script:WinFake.Cim['Win32_SystemDriver'] = @([pscustomobject]@{ Name = 'mrxsmb10'; State = 'Running'; StartMode = 'Auto' })
         (Get-V (Read-Health) 'network.smb1').Value | Should -Be 'Auto'
     }
+    It 'liest den globalen Schalter von Windows fuer Receive Side Scaling aus der CIM-Klasse, ohne Ausgabe eines Programms' {   # Task 14s, Punkt 6
+        $h = Read-Health; (Get-V $h 'network.rssGlobal').Value | Should -BeExactly 'enabled'
+        $script:WinFake.Calls['cim:MSFT_NetOffloadGlobalSetting'] | Should -Be 1
+        $script:WinFake.Cim['MSFT_NetOffloadGlobalSetting'][0].ReceiveSideScaling = [byte]0
+        (Get-V (Read-Health) 'network.rssGlobal').Value | Should -BeExactly 'disabled'
+        $script:WinFake.Cim['MSFT_NetOffloadGlobalSetting'] = @([pscustomobject]@{ TaskOffload = [byte]1 })                  # die Klasse ohne die Eigenschaft
+        $v = Get-V (Read-Health) 'network.rssGlobal'; $v.State | Should -Be 'absent'; $v.Reason | Should -Be ''
+        $script:WinFake.CimFail['MSFT_NetOffloadGlobalSetting'] = New-WinStandInMissingClass                                 # die Klasse fehlt
+        $h = Read-Health; $v = Get-V $h 'network.rssGlobal'; $v.State | Should -Be 'absent'; $v.Reason | Should -Be ''; $h.Areas['network'].Status | Should -Be 'read'
+        $script:WinFake.CimFail['MSFT_NetOffloadGlobalSetting'] = New-WinStandInDenied 'cim'
+        $v = Get-V (Read-Health) 'network.rssGlobal'; $v.State | Should -Be 'unreadable'; $v.Reason | Should -Be 'rights'
+        (Get-Content (Join-Path $PSScriptRoot '../src/WorkerPerf.Sources.Windows.ps1') -Raw) | Should -Not -Match 'netsh|Get-NetOffloadGlobalSetting'
+    }
     It 'liest geplante Aufgaben, Scan- und Update-Zeitplaene' {
         $h = Read-Health; $h.Areas['maintenance'].Status | Should -Be 'read'
         $t = (Get-V $h 'maintenance.tasks').Value; @($t.Path) | Should -Be @('\Sim\Inventarlauf', '\Sim\Anmeldeskript')
@@ -424,6 +481,17 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         foreach ($id in 'maintenance.taskCount', 'maintenance.scanDay', 'maintenance.searchService') {
             (Get-V $h $id).State | Should -Be 'unreadable' -Because $id; (Get-V $h $id).Reason | Should -Be 'timeout' -Because $id }
         $h.Areas['maintenance'].Status | Should -Be 'partial'; foreach ($a in 'security', 'network', 'events') { $h.Areas[$a].Status | Should -Be 'read' -Because $a }
+    }
+    It 'liest die Verzoegerung geplanter Scans und das Zeitfenster der zufaelligen Startzeit aus derselben Abfrage' {   # Task 14s, Punkt 3
+        $h = Read-Health; (Get-V $h 'maintenance.scanOffset').Value | Should -Be 120
+        (Get-V $h 'maintenance.scanRandomWindow').State | Should -Be 'absent'; (Get-V $h 'maintenance.scanRandomWindow').Reason | Should -Be ''   # die Plattform hat die Eigenschaft nicht
+        $script:WinFake.Cim['MSFT_MpPreference'][0] | Add-Member -NotePropertyName SchedulerRandomizationTime -NotePropertyValue ([uint32]45)
+        $script:WinFake.Cim['MSFT_MpPreference'][0].ScanScheduleOffset = [uint32]0
+        $before = [int]$script:WinFake.Calls['cim:MSFT_MpPreference']
+        $h = Read-Health; (Get-V $h 'maintenance.scanOffset').Value | Should -Be 0; (Get-V $h 'maintenance.scanRandomWindow').Value | Should -Be 45
+        [int]$script:WinFake.Calls['cim:MSFT_MpPreference'] - $before | Should -Be 1
+        $script:WinFake.Services = @($script:WinFake.Services | Where-Object Name -ne 'WinDefend')
+        $h = Read-Health; foreach ($id in 'maintenance.scanOffset', 'maintenance.scanRandomWindow') { (Get-V $h $id).Reason | Should -Be 'notInstalled' -Because $id }
     }
     It 'speichert nur Zahlen, Wahrheitswerte, Texte und Listen daraus' {
         $script:WinFake.Cim['MSFT_MpPreference'][0].ScanScheduleQuickScanTime = [datetime]'2026-01-01T03:30:00'       # je nach Fassung der Plattform Zeitspanne oder Zeitpunkt

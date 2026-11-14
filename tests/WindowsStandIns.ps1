@@ -145,7 +145,7 @@ function Reset-WinStandIns {
         Cim = @{
             'Win32_TSSessionSetting' = @('RDP-Tcp', 'ICA-CGP') | ForEach-Object {
                 [pscustomobject]@{ TerminalName = $_; IdleSessionLimit = [uint32]0; DisconnectedSessionLimit = [uint32]0; ActiveSessionLimit = [uint32]0
-                    BrokenConnectionAction = [uint32]0; PolicySourceDisconnectedSessionLimit = [uint32]0 } }
+                    BrokenConnectionAction = [uint32]0; PolicySourceDisconnectedSessionLimit = [uint32]0; TimeLimitPolicy = [uint32]1 } }
             # Status is a bit field: 9 = temporary and corrupted
             'Win32_UserProfile' = @(
                 [pscustomobject]@{ LocalPath = 'C:\Users\mueller'; Loaded = $true; Special = $false; LastUseTime = [datetime]::Now; Status = [uint32]0 }
@@ -167,7 +167,8 @@ function Reset-WinStandIns {
             'MSFT_MpPreference' = @([pscustomobject]@{ ExclusionPath = [string[]]@('C:\Program Files\Citrix')
                     ExclusionProcess = [string[]]@('C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'); ExclusionExtension = [string[]]@('.vhdx')
                     SharedSignaturesPath = ''; ScanScheduleDay = [byte]0; ScanScheduleTime = [timespan]'02:00:00'; ScanScheduleQuickScanTime = [timespan]'02:00:00'
-                    ScanParameters = [byte]1; RandomizeScheduleTaskTimes = $true; ScanAvgCPULoadFactor = [byte]50; EnableNetworkProtection = [byte]0 })
+                    ScanParameters = [byte]1; RandomizeScheduleTaskTimes = $true; ScanAvgCPULoadFactor = [byte]50; EnableNetworkProtection = [byte]0
+                    ScanScheduleOffset = [uint32]120 })
             # SMB client: its configuration and the open connections (with the account, which is not stored)
             'MSFT_SmbClientConfiguration' = @([pscustomobject]@{ RequireSecuritySignature = $false; DirectoryCacheEntriesMax = [uint32]16
                     FileInfoCacheEntriesMax = [uint32]64; FileNotFoundCacheEntriesMax = [uint32]128 })
@@ -187,6 +188,8 @@ function Reset-WinStandIns {
                 [pscustomobject]@{ InterfaceAlias = 'Ethernet1'; InterfaceIndex = [uint32]9; AddressFamily = [uint16]2; ServerAddresses = [string[]]@() })
             # Name is the connection name of the adapter, which is not stored
             'MSFT_NetAdapterRssSettingData' = @([pscustomobject]@{ Name = 'Ethernet0'; InterfaceDescription = 'vmxnet3 Ethernet Adapter'; Enabled = $true })
+            # the global TCP/IP offload settings of Windows (ReceiveSideScaling: 0 Disabled, 1 Enabled)
+            'MSFT_NetOffloadGlobalSetting' = @([pscustomobject]@{ ReceiveSideScaling = [byte]1 })
         }
         # Win32_Service: every service carries all six properties (the readers run under strict mode)
         Services = @(

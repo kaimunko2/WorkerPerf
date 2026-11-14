@@ -173,6 +173,7 @@
     "network.smbConnections": "Bestehende SMB-Verbindungen",
     "network.dnsServers": "DNS-Server je Netzwerkadapter",
     "network.rss": "Receive Side Scaling je Netzwerkadapter",
+    "network.rssGlobal": "Receive Side Scaling global in Windows",
     "network.timeType": "Art der Zeitsynchronisation",
     "network.timeServers": "Zeitquellen",
     "network.timeService": "Windows-Zeitdienst (W32Time)",
@@ -184,6 +185,8 @@
     "maintenance.quickScanTime": "Startzeit des Schnellscans",
     "maintenance.scanType": "Art des geplanten Scans",
     "maintenance.scanRandomize": "Zufälliger Startzeitpunkt geplanter Scans",
+    "maintenance.scanOffset": "Verzögerung geplanter Scans von Defender Antivirus",
+    "maintenance.scanRandomWindow": "Zeitfenster der zufälligen Startzeit geplanter Scans",
     "maintenance.scanCpuLoad": "Höchster durchschnittlicher CPU-Anteil eines Scans",
     "maintenance.updateOptions": "Richtlinie für automatische Updates (AUOptions)",
     "maintenance.updateDay": "Installationstag der Updates",
@@ -238,6 +241,7 @@
     "network.dnsPublic": "DNS-Server mit öffentlicher Adresse",
     "network.timeFromDomain": "Zeit kommt aus der Domäne",
     "network.rssOff": "VMXNET3-Adapter mit abgeschaltetem Receive Side Scaling",
+    "network.rssDisabled": "Receive Side Scaling global oder an einem VMXNET3-Adapter abgeschaltet",
     "events.lookbackDays": "Länge des Rückblicks",
     "events.crashDays": "Tage mit Abstürzen im Rückblick",
     "events.storageCount": "Datenträgerfehler im Rückblick",
@@ -248,7 +252,7 @@
     "events.fullLogs": "Volle Protokolle, die alte Einträge nicht überschreiben",
     "events.disabledLogs": "Abgeschaltete Protokolle",
     "events.reachFrom": "Die Protokolle reichen zurück bis",
-    "events.sinceBootOnly": "Protokolle reichen nur bis zum letzten Start",
+    "events.sinceBootOnly": "Rückblick reicht nur bis zum letzten Start",
     "maintenance.tasksInWorkHours": "Geplante Aufgaben, die in der Arbeitszeit laufen",
     "maintenance.sessionTriggerTasks": "Geplante Aufgaben mit Auslöser Leerlauf, Anmeldung oder Sitzungswechsel",
     "maintenance.scanInWorkHours": "Geplanter Scan von Defender Antivirus in der Arbeitszeit",
@@ -322,6 +326,7 @@
     "size.vmtoolsService": "Running = läuft, Stopped = beendet",
     "size.balloonDriver": "Running = läuft, Stopped = beendet",
     "operation.powerPlan": "highPerformance = Höchstleistung, balanced = Ausbalanciert, powerSaver = Energiesparmodus, other = eigener Plan",
+    "sessions.limits": "TimeLimitPolicy: 0 = die Zeitlimits des Benutzers gelten, 1 = die Zeitlimits des Listeners gelten",
     "vda.services": "State: Running = läuft, Stopped = beendet; StartMode: Auto = automatisch, Manual = manuell, Disabled = deaktiviert",
     "vda.desktopService": "Running = läuft, Stopped = beendet",
     "vda.wemService": "Running = läuft, Stopped = beendet",
@@ -342,6 +347,7 @@
     "security.mdeService": "Running = läuft, Stopped = beendet",
     "security.applockerService": "Running = läuft, Stopped = beendet",
     "network.smb1": "Auto = automatisch, Manual = manuell, Disabled = deaktiviert; Boot und System = beim Start von Windows",
+    "network.rssGlobal": "enabled = eingeschaltet, disabled = ausgeschaltet",
     "network.timeType": "NT5DS = aus der Domäne, NTP = feste Zeitquellen, NoSync = kein Abgleich, AllSync = beides",
     "network.timeService": "Running = läuft, Stopped = beendet",
     "events.logs": "Mode: Retain = nicht überschreiben, Circular = überschreiben, AutoBackup = archivieren",
@@ -2226,20 +2232,20 @@
       "id": "network.rss",
       "area": "network",
       "title": "Receive Side Scaling am Netzwerkadapter",
-      "values": ["network.rssOff"],
+      "values": ["network.rssDisabled", "network.rssGlobal", "network.rssOff"],
       "rules": {
-        "check": [{"value": "network.rssOff", "op": "gt", "than": 0}]
+        "check": [{"value": "network.rssDisabled", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Bei keinem VMXNET3-Adapter ist Receive Side Scaling (RSS) in den Einstellungen des Netzwerkadapters abgeschaltet. Den globalen Schalter von Windows für RSS liest das Zustandsbild nicht.",
-        "check": "VMXNET3-Adapter, bei denen Receive Side Scaling (RSS) in den Einstellungen des Netzwerkadapters abgeschaltet ist: {network.rssOff}. Den globalen Schalter von Windows für RSS liest das Zustandsbild nicht.",
+        "ok": "Receive Side Scaling (RSS) ist global in Windows eingeschaltet, und bei keinem VMXNET3-Adapter ist es in den Einstellungen des Netzwerkadapters abgeschaltet.",
+        "check": "Receive Side Scaling (RSS) ist abgeschaltet. Globaler Schalter von Windows für RSS: {network.rssGlobal} (enabled = eingeschaltet, disabled = ausgeschaltet; ein Strich heißt: nicht gelesen); VMXNET3-Adapter, bei denen RSS in den Einstellungen des Netzwerkadapters abgeschaltet ist: {network.rssOff} (ein Strich heißt: nicht gelesen).",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ist Receive Side Scaling (RSS) abgeschaltet, verarbeitet nach VMware ein einziger Prozessor den ganzen eingehenden Netzverkehr und kann zum Engpass werden, während andere Prozessoren wenig zu tun haben. VMware verlangt RSS im Gastsystem an zwei Stellen, global in Windows und am Netzwerkadapter, und das Zustandsbild liest nur die Einstellung des Netzwerkadapters. BIS-F schaltet RSS beim Versiegeln des Abbilds dagegen global ab (so sein Skript und seine Seite „System Optimizations“, während seine Versionshinweise das Gegenteil nennen), und hier gilt die Linie des Herstellers.",
+      "meaning": "Ist Receive Side Scaling (RSS) abgeschaltet, verarbeitet nach VMware ein einziger Prozessor den ganzen eingehenden Netzverkehr und kann zum Engpass werden, während andere Prozessoren wenig zu tun haben. VMware verlangt RSS im Gastsystem an zwei Stellen, global in Windows und am Netzwerkadapter, und das Zustandsbild liest beide. BIS-F widerspricht sich selbst, denn ein Schritt schaltet RSS beim Versiegeln des Abbilds global ab und ein anderer schaltet es auf VMware je Adapter ein, und hier gilt die Linie des Herstellers.",
       "todo": [
         {
-          "text": "Nachsehen, ob RSS global in Windows und am Netzwerkadapter eingeschaltet ist und ob ein Schritt des Versiegelns es abschaltet, etwa das Werkzeug, mit dem das Abbild versiegelt wird",
-          "where": "Master-Image: globaler Zustand von Windows (Ausgabe von „netsh int tcp show global“, Zeile zu Receive-Side Scaling), erweiterte Eigenschaften des Netzwerkadapters, Schritte des Versiegelns",
+          "text": "Nachsehen, an welcher der zwei Stellen RSS abgeschaltet ist und ob ein Schritt des Versiegelns es abschaltet, etwa das Werkzeug, mit dem das Abbild versiegelt wird",
+          "where": "Rohwerte „Receive Side Scaling global in Windows“ und „Receive Side Scaling je Netzwerkadapter“ im Zustandsbild; Schritte des Versiegelns des Master-Image",
           "sign": "RSS ist global oder am Netzwerkadapter ausgeschaltet, oder ein Schritt des Versiegelns schaltet es ab"
         },
         {
@@ -2371,7 +2377,7 @@
         "check": [{"value": "events.sinceBootOnly", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die gelesenen Ereignisprotokolle reichen vor den letzten Start des Servers zurück, oder sie haben keinen Eintrag (letzter Start: {operation.lastBoot}; Länge des Rückblicks in Tagen: {events.lookbackDays}; ein Strich heißt: nicht gelesen).",
+        "ok": "Die gelesenen Ereignisprotokolle reichen vor den letzten Start des Servers zurück, sie haben keinen Eintrag, oder der letzte Start liegt vor dem Beginn des Rückblicks (letzter Start: {operation.lastBoot}; Länge des Rückblicks in Tagen: {events.lookbackDays}; ein Strich heißt: nicht gelesen).",
         "check": "Kein gelesenes Ereignisprotokoll reicht vor den letzten Start des Servers zurück ({operation.lastBoot}). Liegt dieser Start innerhalb des Rückblicks (eingestellte Länge in Tagen: {events.lookbackDays}), zeigen Rückblick und Ereignisbild nur die Zeit seit dem Start. Auf einem nicht persistenten Server ohne beständiges Laufwerk ist das der Normalfall. Das ist ein Hinweis aus der Praxis, kein Fehler.",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
@@ -2411,7 +2417,7 @@
         "check": [{"value": "events.coverageGapDays", "op": "gt", "than": 0}, {"value": "events.sinceBootOnly", "op": "eq", "than": false}]
       },
       "findings": {
-        "ok": "Lücke zwischen dem Beginn des Rückblicks und dem ältesten Eintrag des Protokolls, das am wenigsten weit zurückreicht, in Tagen: {events.coverageGapDays}; die Protokolle reichen nur bis zum letzten Start: {events.sinceBootOnly} (letzter Start: {operation.lastBoot}; ein Strich heißt: nicht gelesen; eine Lücke, die der letzte Start erklärt, meldet diese Prüfung nicht).",
+        "ok": "Lücke zwischen dem Beginn des Rückblicks und dem ältesten Eintrag des Protokolls, das am wenigsten weit zurückreicht, in Tagen: {events.coverageGapDays}; der Rückblick reicht nur bis zum letzten Start: {events.sinceBootOnly} (letzter Start: {operation.lastBoot}; ein Strich heißt: nicht gelesen; eine Lücke, die der letzte Start erklärt, meldet diese Prüfung nicht).",
         "check": "Mindestens ein ausgewertetes Ereignisprotokoll hat keinen Eintrag aus den ersten Tagen des Rückblicks (Tage ohne Eintrag: {events.coverageGapDays}); der letzte Start ({operation.lastBoot}) erklärt das nicht. Entweder ist das Protokoll zu klein und hat ältere Einträge überschrieben, oder es hat in dieser Zeit nichts aufgezeichnet.",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
@@ -2583,16 +2589,16 @@
       "id": "maintenance.defenderScanInWorkHours",
       "area": "maintenance",
       "title": "Geplanter Scan von Defender Antivirus in der Arbeitszeit",
-      "values": ["maintenance.scanInWorkHours", "maintenance.scanDay", "maintenance.scanTime"],
+      "values": ["maintenance.scanInWorkHours", "maintenance.scanDay", "maintenance.scanTime", "maintenance.quickScanTime", "maintenance.scanOffset", "maintenance.scanRandomize", "maintenance.scanRandomWindow"],
       "rules": {
         "check": [{"value": "maintenance.scanInWorkHours", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die eingestellte Zeit des geplanten Scans von Microsoft Defender Antivirus liegt nicht in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es ist kein Scan geplant (eingestellter Tag: {maintenance.scanDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie; eingestellte Zeit: {maintenance.scanTime}; ein Strich heißt: nicht eingestellt).",
-        "check": "Die eingestellte Zeit des geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr): eingestellter Tag {maintenance.scanDay} (0 = täglich, 1 bis 7 = Sonntag bis Samstag), eingestellte Zeit {maintenance.scanTime} Uhr.",
+        "ok": "Der wirksame Beginn der geplanten Scans von Microsoft Defender Antivirus liegt nicht in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es ist kein Scan geplant. Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert (eingestellter Tag: {maintenance.scanDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie; eingestellte Zeit: {maintenance.scanTime}; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}; ein Strich heißt: nicht eingestellt, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster).",
+        "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert. Eingestellter Tag: {maintenance.scanDay} (0 = täglich, 1 bis 7 = Sonntag bis Samstag); eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}. Ein Strich heißt: nicht eingestellt, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster.",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Ein Scan, der in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Geprüft wird die eingestellte Zeit des geplanten Scans, nicht sein genauer Beginn, denn Defender Antivirus kann den Start geplanter Scans zufällig verschieben. Die Prüfung ist eine Faustregel des Katalogs und wertet die Zeit des Schnellscans nicht aus.",
+      "meaning": "Ein Scan, der in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Nach Microsoft (Seite „Schedule antivirus scans using PowerShell“) beginnen geplante Scans um eine feste Verzögerung nach der eingestellten Zeit, ohne Einstellung 120 Minuten, und mit zufälliger Startzeit bis zu 30 Minuten oder dem eingestellten Zeitfenster davor oder danach, und diesen wirksamen Beginn prüft der Katalog für den geplanten Scan und für den Schnellscan. Die Prüfung ist eine Faustregel des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, welcher Tag und welche Zeit eingestellt sind",

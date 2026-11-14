@@ -84,7 +84,8 @@ $script:WorkerPerfHealthValues = & {
 
         @('sessions.list', 'list', '', ('Id=number, State=text, WinStation=text:path, User=text:user, Domain=text:domain, Client=text:client, ' +
             'LogonTime=time, ConnectTime=time, DisconnectTime=time, IdleMinutes=number')),
-        @('sessions.limits', 'list', '', 'Terminal=text, IdleLimitMin=number, DisconnectedLimitMin=number, ActiveLimitMin=number, BrokenAction=number, FromPolicy=bool'),
+        @('sessions.limits', 'list', '', ('Terminal=text, IdleLimitMin=number, DisconnectedLimitMin=number, ActiveLimitMin=number, BrokenAction=number, FromPolicy=bool, ' +
+            'TimeLimitPolicy=number')),
         @('sessions.localProfiles', 'list', '', 'Path=text:path, Loaded=bool, Special=bool, LastUse=time, Temporary=bool'),
 
         @('vda.version', 'text'), @('vda.services', 'list', '', $services), @('vda.desktopService', 'text'),
@@ -117,7 +118,7 @@ $script:WorkerPerfHealthValues = & {
         @('network.smbFileInfoCache', 'number'), @('network.smbFileNotFoundCache', 'number'), @('network.smb1', 'text'),
         @('network.smbConnections', 'list', '', 'Share=text:share, Dialect=text, Signed=bool, Encrypted=bool, Connections=number'),
         @('network.dnsServers', 'list', '', 'Interface=number, Address=text:address'), @('network.rss', 'list', '', 'Description=text, Enabled=bool'),
-        @('network.timeType', 'text'), @('network.timeServers', 'text:hosts'), @('network.timeService', 'text'),
+        @('network.rssGlobal', 'text'), @('network.timeType', 'text'), @('network.timeServers', 'text:hosts'), @('network.timeService', 'text'),
 
         @('events.logs', 'list', '', ('Log=text, Present=bool, Enabled=bool, MaxSizeMB=number, FileSizeMB=number, Records=number, Mode=text, ' +
             'Full=bool, Oldest=time')),
@@ -126,7 +127,7 @@ $script:WorkerPerfHealthValues = & {
             'RepeatMinutes=number, Action=text:free')),
         @('maintenance.taskCount', 'number'), @('maintenance.scanDay', 'number'), @('maintenance.scanTime', 'text'),
         @('maintenance.quickScanTime', 'text'), @('maintenance.scanType', 'number'), @('maintenance.scanRandomize', 'bool'),
-        @('maintenance.scanCpuLoad', 'number', '%'), @('maintenance.updateOptions', 'number'), @('maintenance.updateDay', 'number'),
+        @('maintenance.scanOffset', 'number', 'Minuten'), @('maintenance.scanRandomWindow', 'number', 'Minuten'), @('maintenance.scanCpuLoad', 'number', '%'), @('maintenance.updateOptions', 'number'), @('maintenance.updateDay', 'number'),
         @('maintenance.updateHour', 'number'), @('maintenance.updateNoRebootWithUsers', 'number'), @('maintenance.searchService', 'text'),
         @('maintenance.updateService', 'text'),
 

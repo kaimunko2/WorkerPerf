@@ -1547,7 +1547,12 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   power and performance“ (`operation.powerPlan`, im Text und im Vorschlag zum Vorgehen).
 - Microsoft, „Win32_QuickFixEngineering class“,
   https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-quickfixengineering: Die Klasse führt nur Updates,
-  die über die Komponentenwartung (Component Based Servicing) installiert wurden (`operation.updateAge`).
+  die über die Komponentenwartung (Component Based Servicing) installiert wurden (`operation.updateAge`). Zum
+  Installationsdatum sagt sie: „Most systems use a standard date format, such as "23-10-2013". However, some systems
+  may return a 64-bit hexidecimal value in the Win32 FILETIME format.“ `operation.lastUpdate` liest deshalb in dieser
+  Reihenfolge 16 hexadezimale Ziffern (mit oder ohne 0x) als FILETIME, Tag-Monat-Jahr mit Bindestrichen und
+  Monat/Tag/Jahr mit Schrägstrichen, jeweils ohne die Spracheinstellung des Servers; ein Datum in keiner dieser Formen
+  zählt nicht.
 - Microsoft, „Win32_UserProfile class“,
   https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85): Ein temporäres Profil
   „will be deleted after the user logs off“; `sessions.tempProfiles` zählt deshalb die temporären Profile der laufenden
@@ -1555,7 +1560,29 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
 - Microsoft, „Win32_TSSessionSetting class“,
   https://learn.microsoft.com/en-us/windows/win32/termserv/win32-tssessionsetting: Die Zeitlimits des Listeners gelten
   für die Benutzer nur, wenn der Listener sie vorgibt; sonst gelten die Einstellungen des Benutzerkontos
-  (`sessions.disconnectLimit`, `sessions.idleLimit`). Das Zustandsbild liest diese Angabe des Listeners noch nicht.
+  (`sessions.disconnectLimit`, `sessions.idleLimit`). Die Seite nennt dafür die Eigenschaft TimeLimitPolicy: „Per User
+  (0) The user's time-limits policy settings are in effect. Server Override (1) The user's time-limits policy settings
+  are overridden by the server.“ Das Zustandsbild liest sie als Feld `TimeLimitPolicy` von `sessions.limits`. Die
+  Zeitlimits nehmen nur die Listener mit dem Wert 1 (und Einträge älterer Aufzeichnungen ohne das Feld); hat keiner
+  davon ein Zeitlimit und lässt ein Listener die Zeitlimits je Benutzer gelten, sind beide Prüfungen nicht prüfbar
+  („die Aufzeichnung enthält die Daten dafür nicht“: die Zeitlimits der Benutzerkonten liest das Zustandsbild nicht).
+- Microsoft, „Schedule antivirus scans using PowerShell“,
+  https://learn.microsoft.com/en-us/defender-endpoint/schedule-antivirus-scans-powershell (Stand der Seite
+  2026-08-21, Abruf 2026-11-14): „ScanScheduleOffset: Specifies the fixed number of minutes to delay scheduled scan
+  start times on the device. The default value is 120, which means scheduled scans start 2 hours after the times
+  specified by the ScanScheduleTime and ScanScheduleQuickScanTime parameters.“, „RandomizeScheduleTaskTimes … $true:
+  Scheduled tasks begin within 30 minutes before or after the scheduled time. This value is the default.“ und
+  „SchedulerRandomizationTime: Specifies the time window, in minutes, within which scheduled tasks in Microsoft
+  Defender (including scheduled scans) can randomly start.“ Daraus stammen die Werte `maintenance.scanOffset` und
+  `maintenance.scanRandomWindow` (Eigenschaften ScanScheduleOffset und SchedulerRandomizationTime von
+  MSFT_MpPreference) und der wirksame Beginn in `maintenance.scanInWorkHours` und
+  `maintenance.defenderScanInWorkHours`.
+- Microsoft, „MSFT_NetOffloadGlobalSetting class“,
+  https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/nettcpipprov/msft-netoffloadglobalsetting (Stand der Seite
+  2018-05-31, Abruf 2026-11-14): „ReceiveSideScaling … Whether to turn on receive side scaling (RSS).“ mit den Werten
+  „Disabled 0 RSS is turned off.“ und „Enabled 1 RSS is turned on.“ Daraus stammt `network.rssGlobal` (disabled,
+  enabled), der globale Schalter, den „Get-NetOffloadGlobalSetting“ zeigt; das Zustandsbild liest ihn über die Klasse,
+  nicht aus der Ausgabe eines Programms (`network.rss`).
 - Microsoft, „Automatic maintenance“, https://learn.microsoft.com/en-us/windows/win32/taskschd/task-maintenence (Stand
   der Seite 2020-09-19): Wartungsaufgaben laufen, „when the machine is idle and on AC power“
   (`maintenance.tasksInWorkHours`). Die Seite spricht von Wartungsaufgaben, nicht von allem im Ordner \Microsoft\: Dass
@@ -1612,29 +1639,39 @@ Was die Quellenprüfung der Recherchen zu einzelnen Werten festhält, auf die si
   `size.lsiControllers` aus Namen der Adapter und Treiber. Diese Namen stammen von der Installation, nicht aus einem
   Dokument von Microsoft, und sind beim ersten Lauf zu bestätigen. Die Klasse `Win32_NetworkAdapter` nennt Microsoft
   veraltet.
-- `operation.pendingRename` zählt Einträge des Werts `PendingFileRenameOperations`; die Zählung von Löschungen wird in
-  einer späteren Fassung berichtigt. `operation.lastUpdate` liest heute nur ein Datumsformat; Windows kann das
-  Installationsdatum nach Microsoft in weiteren Formen liefern, dann zeigt das Zustandsbild einen Strich.
-- `maintenance.scanInWorkHours` vergleicht die eingestellte Zeit des geplanten Scans mit der Arbeitszeit. Ob Defender zu
-  dieser Zeit einen Versatz hinzurechnet, wird noch an der Dokumentation von Microsoft geprüft; der Text von
-  `maintenance.defenderScanInWorkHours` spricht deshalb von der eingestellten Zeit und nennt keinen Beginn.
-- `maintenance.updateInWorkHours` ist ohne Richtlinie „nein“. Nach Microsoft lädt und installiert Windows ohne
-  Richtlinie automatisch; der Text von `maintenance.updateInstallInWorkHours` sagt deshalb, dass der Zeitpunkt der
-  Installation ohne Richtlinie nicht bekannt ist. Die Regel des Werts wird in einer späteren Fassung berichtigt.
-- `network.rssOff` zählt die VMXNET3-Adapter, deren Einstellung für Receive Side Scaling ausgeschaltet ist. VMware prüft
-  an zwei Stellen: am Netzwerkadapter und global in Windows („netsh int tcp show global“). Den globalen Schalter, den
-  BIS-F beim Versiegeln abschaltet, liest das Zustandsbild noch nicht; Befund, Bedeutung und Schritte von `network.rss`
-  sagen das. Das Lesen des globalen Zustands folgt in einer späteren Fassung.
+- `operation.pendingRename` zählt die Operationen des Werts `PendingFileRenameOperations`: je Operation eine Quelle und
+  ein Ziel, bei einer Löschung ein leeres Ziel (MoveFileEx, Tabelle oben). Der Leser behält die leeren Zeichenketten;
+  nur die letzte vor dem Ende der Liste lässt .NET weg, deshalb zählt eine ungerade Zahl ihre letzte Operation mit.
+  `operation.lastUpdate` liest die Formen, die Microsoft für das Installationsdatum nennt (oben bei
+  „Win32_QuickFixEngineering class“).
+- `maintenance.scanInWorkHours` prüft den wirksamen Beginn der Scans von Defender Antivirus: die eingestellte Zeit plus
+  `maintenance.scanOffset` (ohne Wert 120 Minuten), bei zufälliger Startzeit (`maintenance.scanRandomize`, ohne Wert
+  eingeschaltet) um `maintenance.scanRandomWindow` davor und danach verbreitert (ohne Wert 30 Minuten). Er zählt, wenn
+  eine Minute dieses Fensters in die Arbeitszeit fällt, für den geplanten Scan am eingestellten Tag (welcher Art auch
+  immer) und, wo sie gelesen ist, für die Startzeit des Schnellscans an jedem Tag. Ein Fenster über Mitternacht reicht
+  in den nächsten Tag. Dass die Startzeit des Schnellscans an jedem Tag gilt, ist die Lesart des Katalogs; die Seite
+  von Microsoft zeigt sie als Zeit eines täglichen Schnellscans.
+- `maintenance.updateInWorkHours` ist ohne Richtlinie nicht bekannt: Nach Microsoft lädt und installiert Windows ohne
+  Richtlinie automatisch, zu einer Zeit, die die Richtlinie nicht nennt. Mit Option 4 ohne eingestellte Stunde nimmt
+  der Wert 03:00 an, ohne eingestellten Tag jeden Tag („If no schedule is specified, the default schedule for all
+  installations is every day at 3:00 AM“). Ein Wert, der nicht vorhanden ist, bleibt bei der Bewertung „In Ordnung“;
+  der Befund von `maintenance.updateInstallInWorkHours` sagt, dass der Zeitpunkt ohne Richtlinie nicht bekannt ist.
+- `network.rssOff` zählt die VMXNET3-Adapter, deren Einstellung für Receive Side Scaling ausgeschaltet ist;
+  `network.rssGlobal` ist der globale Schalter von Windows (oben bei „MSFT_NetOffloadGlobalSetting class“).
+  `network.rssDisabled` ist „ja“, wenn eine der zwei Stellen aus ist, die VMware nennt; ist der globale Zustand nicht
+  gelesen und kein Adapter aus, ist er nicht lesbar und `network.rss` nicht prüfbar, nie „In Ordnung“.
 - `events.coverageGapDays` nimmt von allen Protokollen des Rückblicks den jüngsten „ältesten Eintrag“, auch von
   Protokollen, die selten etwas aufzeichnen. Der Befund von `events.coverage` behauptet deshalb weder fehlende Tage noch
   ein zu kleines Protokoll; der erste Schritt unterscheidet beides an der Größe des Protokolls. `events.sinceBootOnly`
-  ist heute auch dann „ja“, wenn der letzte Start vor dem Beginn des Rückblicks liegt; der Befund von `events.sinceBoot`
-  nennt die Folge deshalb nur für einen Start innerhalb des Rückblicks. Die Regel des Werts wird in einer späteren
-  Fassung berichtigt.
-- Befunde nennen, was gelesen wurde. Dafür führen fünf Prüfungen in `values` mehr Werte, als die Tabellen des Plans
+  ist nur „ja“, wenn der letzte Start innerhalb des Rückblicks liegt (nach dem Lesezeitpunkt minus der eingestellten
+  Länge des Rückblicks) und kein Protokoll mit Einträgen vor ihn zurückreicht; ein Start vor dem Rückblick begrenzt
+  nichts (Entscheidung ZB-R52).
+- Befunde nennen, was gelesen wurde. Dafür führen sechs Prüfungen in `values` mehr Werte, als die Tabellen des Plans
   nennen: `print.queueCount` (Zahl der Warteschlangen und der Sitzungen), `security.twoScanners` (erkannte
-  Schutzprodukte), `network.timeSource` (Art der Zeitsynchronisation), `maintenance.defenderScanInWorkHours` (Tag und
-  Zeit) und `maintenance.updateInstallInWorkHours` (Tag und Stunde). Die Regeln sind unverändert.
+  Schutzprodukte), `network.timeSource` (Art der Zeitsynchronisation), `network.rss` (globaler Schalter und Zahl der
+  Adapter), `maintenance.defenderScanInWorkHours` (Tag, Zeiten, Verzögerung und zufällige Startzeit) und
+  `maintenance.updateInstallInWorkHours` (Tag und Stunde). Die Regel von `network.rss` prüft seit der Berichtigung nach
+  der Quellenprüfung `network.rssDisabled`; die übrigen Regeln sind unverändert.
 - `print.mappingClientVersion`: Der Hersteller dokumentiert den Namen des Installationspakets, nicht den Eintrag unter
   den installierten Programmen; ob der Eintrag so heißt, zeigt der erste Lauf.
 

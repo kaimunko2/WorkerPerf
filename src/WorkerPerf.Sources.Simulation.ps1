@@ -819,7 +819,8 @@ function Get-WorkerPerfHealth {
     $profiles.Add([ordered]@{ Path = 'C:\Users\user026'; Loaded = $false; Special = $false; LastUse = (& $time $s.AddDays(-10)); Temporary = $false })
     $profiles.Add([ordered]@{ Path = 'C:\Users\Administrator'; Loaded = $false; Special = $false; LastUse = (& $time $s.AddDays(-40)); Temporary = $false })
     $limits = @(foreach ($terminal in 'ICA-CGP', 'RDP-Tcp') {
-            [ordered]@{ Terminal = $terminal; IdleLimitMin = 180; DisconnectedLimitMin = 240; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true } })
+            [ordered]@{ Terminal = $terminal; IdleLimitMin = 180; DisconnectedLimitMin = 240; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true
+                TimeLimitPolicy = 1 } })
     $areas['sessions'] = Complete-WorkerPerfHealthArea 'sessions' ([ordered]@{
             'sessions.list' = & $ok $list.ToArray(); 'sessions.limits' = & $ok $limits; 'sessions.localProfiles' = & $ok $profiles.ToArray()
         }) 0
@@ -890,7 +891,7 @@ function Get-WorkerPerfHealth {
             'network.smbConnections' = & $ok @(foreach ($share in '\\fs01\daten', '\\fs01\profile$') {
                     [ordered]@{ Share = $share; Dialect = '3.1.1'; Signed = $true; Encrypted = $false; Connections = 25 } })
             'network.dnsServers' = & $ok @(foreach ($a in '10.20.0.10', '10.20.0.11', 'fd00:20::10') { [ordered]@{ Interface = 4; Address = $a } })
-            'network.rss' = & $ok @([ordered]@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $true })
+            'network.rss' = & $ok @([ordered]@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $true }); 'network.rssGlobal' = & $ok 'enabled'
             'network.timeType' = & $ok 'NT5DS'; 'network.timeServers' = & $ok 'zeit01.sim.local 10.20.0.20'; 'network.timeService' = & $ok 'Running'
         }) 0
 
@@ -912,6 +913,7 @@ function Get-WorkerPerfHealth {
                     Triggers = 'daily'; RepeatMinutes = 0; Action = 'C:\Tools\sicherung.cmd' })
             'maintenance.taskCount' = & $ok 162; 'maintenance.scanDay' = & $ok 0; 'maintenance.scanTime' = & $ok '02:00'
             'maintenance.quickScanTime' = & $ok '02:00'; 'maintenance.scanType' = & $ok 1; 'maintenance.scanRandomize' = & $ok $true
+            'maintenance.scanOffset' = & $ok 120; 'maintenance.scanRandomWindow' = $absent
             'maintenance.scanCpuLoad' = & $ok 50; 'maintenance.updateOptions' = $absent; 'maintenance.updateDay' = $absent
             'maintenance.updateHour' = $absent; 'maintenance.updateNoRebootWithUsers' = $absent
             'maintenance.searchService' = New-WorkerPerfHealthValue 'absent' 'notInstalled'; 'maintenance.updateService' = & $ok 'Disabled'

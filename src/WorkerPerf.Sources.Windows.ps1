@@ -1340,14 +1340,35 @@ function ConvertTo-WorkerPerfPowerPlan([string]$Guid) {
 }
 
 function ConvertFrom-WorkerPerfHotFixDate($Value) {
-    # InstalledOn of Win32_QuickFixEngineering: a DateTime as it is, a text only in the form M/d/yyyy (invariant
-    # culture); any other form (a local date, a hexadecimal FILETIME, empty) gives $null.
+    # InstalledOn of Win32_QuickFixEngineering, in the forms its class page documents ("a standard date format, such as
+    # "23-10-2013"" or "a 64-bit hexidecimal value in the Win32 FILETIME format"), tried in this order: 16 hexadecimal
+    # digits with or without 0x (a FILETIME, as local time), day-month-year with dashes, month/day/year with slashes
+    # (both culture-invariant, never the current culture). A DateTime stays as it is; any other text (a local date,
+    # empty) gives $null and never throws.
     if ($Value -is [datetime]) { return $Value }
     if ($null -eq $Value) { return $null }
+    $text = ([string]$Value).Trim()
+    if ($text -match '^(0[xX])?([0-9a-fA-F]{16})$') {
+        try { return [datetime]::FromFileTime([Convert]::ToInt64($Matches[2], 16)) }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { return $null }
+    }
+    $invariant = [System.Globalization.CultureInfo]::InvariantCulture
     $parsed = [datetime]::MinValue
-    if ([datetime]::TryParseExact(([string]$Value).Trim(), 'M/d/yyyy', [System.Globalization.CultureInfo]::InvariantCulture,
-            [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) { return $parsed }
+    $none = [System.Globalization.DateTimeStyles]::None
+    if ([datetime]::TryParseExact($text, [string[]]@('dd-MM-yyyy', 'd-M-yyyy'), $invariant, $none, [ref]$parsed)) { return $parsed }
+    if ([datetime]::TryParseExact($text, 'M/d/yyyy', $invariant, $none, [ref]$parsed)) { return $parsed }
     return $null
+}
+
+function ConvertTo-WorkerPerfRssState($Value) {
+    # ReceiveSideScaling of MSFT_NetOffloadGlobalSetting: 'disabled' (0), 'enabled' (1), any other number as its digits;
+    # nothing for $null (the value is then absent).
+    if ($null -eq $Value) { return }
+    $n = [long]$Value
+    if ($n -eq 0) { return 'disabled' }
+    if ($n -eq 1) { return 'enabled' }
+    return [string]$n
 }
 
 function Select-WorkerPerfLatestHotFix([object[]]$HotFixes) {
@@ -3239,8 +3260,10 @@ function Read-WorkerPerfWinHealthOperation($Ctx) {
         if ($boot -is [datetime]) { ConvertTo-WorkerPerfHealthTime $boot }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingRename' {
-        # pairs of source and target; the paths are not kept. An odd count (a list that ends in an empty target) still
-        # counts its last pair.
+        # one operation is a source and its target, the target empty for a delete (MoveFileEx: "szSrcFile\0\0"); the
+        # empty strings are kept, so the count of strings over two is the count of operations. The paths are not kept.
+        # .NET drops only the empty string right before the end of the list (a delete as the last operation): an odd
+        # count still counts its last operation.
         $sm = Get-WorkerPerfRegistryValues 'SYSTEM\CurrentControlSet\Control\Session Manager'
         $entries = 0
         if ($null -ne $sm -and $sm['Values'].Contains('PendingFileRenameOperations')) { $entries = @($sm['Values']['PendingFileRenameOperations']).Count }
@@ -3284,7 +3307,10 @@ function Read-WorkerPerfWinHealthSessions($Ctx) {
     }
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.limits' {
         # the limits in milliseconds as minutes (0 = no limit); FromPolicy: the disconnected limit comes from a policy
-        $tsProps = @('TerminalName', 'IdleSessionLimit', 'DisconnectedSessionLimit', 'ActiveSessionLimit', 'BrokenConnectionAction', 'PolicySourceDisconnectedSessionLimit')
+        # TimeLimitPolicy: 0 = the users' own time limits are in effect (per user), 1 = the listener's limits override
+        # them (Server Override); $null when the class does not give it
+        $tsProps = @('TerminalName', 'IdleSessionLimit', 'DisconnectedSessionLimit', 'ActiveSessionLimit', 'BrokenConnectionAction', 'PolicySourceDisconnectedSessionLimit',
+            'TimeLimitPolicy')
         foreach ($ts in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_TSSessionSetting' 'root\CIMv2\TerminalServices' -Property $tsProps)) {
             Assert-WorkerPerfWinHealthTimeLeft $Ctx
             $tsSource = Get-WorkerPerfField $ts 'PolicySourceDisconnectedSessionLimit'
@@ -3294,7 +3320,8 @@ function Read-WorkerPerfWinHealthSessions($Ctx) {
                 IdleLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'IdleSessionLimit') 60000 1)
                 DisconnectedLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'DisconnectedSessionLimit') 60000 1)
                 ActiveLimitMin = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'ActiveSessionLimit') 60000 1)
-                BrokenAction = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'BrokenConnectionAction')); FromPolicy = $fromPolicy }
+                BrokenAction = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'BrokenConnectionAction')); FromPolicy = $fromPolicy
+                TimeLimitPolicy = (ConvertTo-WorkerPerfWinHealthNumber (Get-WorkerPerfField $ts 'TimeLimitPolicy')) }
         }
     }
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.localProfiles' {
@@ -3590,6 +3617,15 @@ function Read-WorkerPerfWinHealthNetwork($Ctx) {
             [ordered]@{ Description = [string](Get-WorkerPerfField $rss 'InterfaceDescription'); Enabled = (ConvertTo-WorkerPerfWinHealthBool (Get-WorkerPerfField $rss 'Enabled')) }
         }
     }
+    Set-WorkerPerfWinHealthValue $Ctx 'network.rssGlobal' {
+        # the global switch of Windows (MSFT_NetOffloadGlobalSetting.ReceiveSideScaling: 0 Disabled, 1 Enabled), not the
+        # output of a program; a missing class or property is absent
+        $found = $null
+        try { $found = @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_NetOffloadGlobalSetting' 'root\StandardCimv2' -Property ReceiveSideScaling) }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { if (-not (Test-WorkerPerfWinMissingClass $_.Exception)) { throw } }
+        if ($null -ne $found -and $found.Count -gt 0) { ConvertTo-WorkerPerfRssState (Get-WorkerPerfField $found[0] 'ReceiveSideScaling') }
+    }
     Set-WorkerPerfWinHealthValue $Ctx 'network.timeType' {
         $values = & $timeKey
         if ($null -ne $values) { ConvertTo-WorkerPerfRegistrySingleText $values['Type'] }
@@ -3652,6 +3688,10 @@ function Read-WorkerPerfWinHealthMaintenance($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.quickScanTime' { & $scan 'ScanScheduleQuickScanTime' { param($Raw) ConvertTo-WorkerPerfClockText $Raw } }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanType' { & $scan 'ScanParameters' $number }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanRandomize' { & $scan 'RandomizeScheduleTaskTimes' { param($Raw) ConvertTo-WorkerPerfWinHealthBool $Raw } }
+    # the fixed delay of scheduled scans and the window of their random start, in minutes ("Schedule antivirus scans
+    # using PowerShell"); a platform without the property gives absent
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanOffset' { & $scan 'ScanScheduleOffset' $number }
+    Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanRandomWindow' { & $scan 'SchedulerRandomizationTime' $number }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.scanCpuLoad' { & $scan 'ScanAvgCPULoadFactor' $number }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateOptions' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'AUOptions' }
     Set-WorkerPerfWinHealthValue $Ctx 'maintenance.updateDay' { Get-WorkerPerfWinHealthRegistryNumber $script:WorkerPerfWinUpdatePolicyKey 'ScheduledInstallDay' }

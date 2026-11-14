@@ -80,7 +80,7 @@ $script:WorkerPerfHealthDerived = & {
         @('security.citrixExclusionsMissing', 'number'), @('security.wemExclusionsMissing', 'number'),
 
         @('network.smbOldDialects', 'number'), @('network.dnsServersMin', 'number'), @('network.dnsPublic', 'number'),
-        @('network.timeFromDomain', 'bool'), @('network.rssOff', 'number'),
+        @('network.timeFromDomain', 'bool'), @('network.rssOff', 'number'), @('network.rssDisabled', 'bool'),
 
         @('events.lookbackDays', 'number', 'Tage'), @('events.crashDays', 'number'), @('events.storageCount', 'number'),
         @('events.fileserverDays', 'number'),
@@ -1048,6 +1048,28 @@ function Test-WorkerPerfHealthWorkTimeMs($Ms, $Ctx) {
     return (Test-WorkerPerfHealthWorkTime $t.TimeOfDay.TotalHours ([int]$t.DayOfWeek) $Ctx)
 }
 
+function ConvertTo-WorkerPerfHealthClockMinutes($Text) {
+    # The minutes after midnight of a time of day 'HH:mm' (as the reader writes the scan times); $null for any other text.
+    if ([string]$Text -match '^\s*(\d{1,2}):(\d{2})') { return ([int]$Matches[1] * 60 + [int]$Matches[2]) }
+    return $null
+}
+
+function Test-WorkerPerfHealthScanWindow([int]$Day, [double]$From, [double]$To, $Ctx) {
+    # True when a minute of the window From..To (minutes after midnight of the scan day, both ends included; below 0
+    # the day before, from 1440 on the days after) lies in the working hours. Day as the Defender schedule gives it:
+    # 0 every day, 1 to 7 Sunday to Saturday. The working hours: Monday to Friday, workStartHour up to workEndHour.
+    $week = 7 * 1440
+    $days = @($Day - 1); if ($Day -eq 0) { $days = @(0..6) }
+    foreach ($d in $days) {
+        $a = $d * 1440 + $From; $b = $d * 1440 + $To
+        foreach ($w in 1..5) {
+            $start = $w * 1440 + $Ctx.WorkStart * 60; $end = $w * 1440 + $Ctx.WorkEnd * 60
+            foreach ($shift in @(-$week, 0, $week)) { if ($a + $shift -lt $end -and $b + $shift -ge $start) { return $true } }
+        }
+    }
+    return $false
+}
+
 function Test-WorkerPerfHealthWorkDay($Day) {
     # A day of the Defender and Windows Update schedules (0 daily, 1 to 7 Sunday to Saturday) that holds a working day.
     $d = [int]$Day
@@ -1114,11 +1136,21 @@ function Add-WorkerPerfHealthSessionFacts($F, $Ctx) {
                 $h = ((Get-WorkerPerfHealthReadAt $Ctx) - [double]$at) / 3600000; if ($h -gt $hours) { $hours = $h } }
         }
         Get-WorkerPerfHealthRound $hours }
+    # the smallest limit of the listeners whose limits are in effect: a listener with TimeLimitPolicy 0 (per user) lets
+    # the users' own time limits apply, which the health picture does not read (Win32_TSSessionSetting); an entry
+    # without the field (an older capture) counts as before. No limit in effect and a listener per user: not known
+    # (unreadable with notRecorded: the capture does not hold the users' limits).
     foreach ($pair in @(@('sessions.disconnectLimitMin', 'DisconnectedLimitMin'), @('sessions.idleLimitMin', 'IdleLimitMin'))) {
         $field = $pair[1]
         $F[$pair[0]] = Get-WorkerPerfHealthDerived $F @('sessions.limits') {
-            $limits = @(foreach ($l in @($F['sessions.limits'].Value)) { $m = Get-WorkerPerfHealthItemField $l $field; if ($null -ne $m -and [double]$m -gt 0) { [double]$m } })
-            if ($limits.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($limits | Measure-Object -Minimum).Minimum } }
+            $perUser = $false
+            $limits = @(foreach ($l in @($F['sessions.limits'].Value)) {
+                    $policy = Get-WorkerPerfHealthModelMember $l 'TimeLimitPolicy'
+                    if ($null -ne $policy -and [double]$policy -eq 0) { $perUser = $true; continue }
+                    $m = Get-WorkerPerfHealthItemField $l $field; if ($null -ne $m -and [double]$m -gt 0) { [double]$m } })
+            if ($limits.Count -gt 0) { ($limits | Measure-Object -Minimum).Minimum }
+            elseif ($perUser) { New-WorkerPerfHealthFact 'unreadable' 'notRecorded' }
+            else { New-WorkerPerfHealthFact 'absent' } }
     }
     $F['sessions.unloadedProfiles'] = Get-WorkerPerfHealthDerived $F @('sessions.localProfiles') {
         Get-WorkerPerfHealthCountWhere $F['sessions.localProfiles'].Value { (Get-WorkerPerfHealthItemField $_ 'Loaded') -eq $false -and (Get-WorkerPerfHealthItemField $_ 'Special') -eq $false } }
@@ -1260,6 +1292,18 @@ function Add-WorkerPerfHealthNetworkFacts($F, $Ctx) {
     $F['network.timeFromDomain'] = Get-WorkerPerfHealthDerived $F @('network.timeType') { @('NT5DS', 'AllSync') -contains [string]$F['network.timeType'].Value }
     $F['network.rssOff'] = Get-WorkerPerfHealthVmwareDerived $F @('network.rss') {
         Get-WorkerPerfHealthCountWhere $F['network.rss'].Value { [string](Get-WorkerPerfHealthItemField $_ 'Description') -like '*vmxnet3*' -and (Get-WorkerPerfHealthItemField $_ 'Enabled') -eq $false } }
+    # RSS off in one of the two places VMware names: the global switch of Windows or a VMXNET3 adapter. Either one off
+    # is enough; "not off" needs both read (the global state disabled or enabled, the adapters counted), otherwise the
+    # fact takes the state of the one not read (an absent global state: unreadable, never "in Ordnung").
+    $F['network.rssDisabled'] = Get-WorkerPerfHealthVmwareDerived $F @() {
+        $global = $F['network.rssGlobal']; $adapters = $F['network.rssOff']
+        $globalOff = ($global.State -ceq 'read' -and [string]$global.Value -ceq 'disabled')
+        $adaptersOff = ($adapters.State -ceq 'read' -and [double]$adapters.Value -gt 0)
+        if ($globalOff -or $adaptersOff) { $true }
+        elseif ($global.State -cne 'read') { New-WorkerPerfHealthFact 'unreadable' $global.Reason }
+        elseif ([string]$global.Value -cne 'enabled') { New-WorkerPerfHealthFact 'unreadable' 'error' }
+        elseif ($adapters.State -cne 'read') { New-WorkerPerfHealthFact 'unreadable' $adapters.Reason }
+        else { $false } }
 }
 
 function Add-WorkerPerfHealthEventFacts($F, $Ctx) {
@@ -1324,12 +1368,14 @@ function Add-WorkerPerfHealthEventFacts($F, $Ctx) {
     $F['events.reachFrom'] = Get-WorkerPerfHealthDerived $F @('events.logs') {
         $oldest = @(foreach ($l in @(& $withEntry)) { [double](Get-WorkerPerfHealthItemField $l 'Oldest') })
         if ($oldest.Count -eq 0) { New-WorkerPerfHealthFact 'absent' } else { ($oldest | Measure-Object -Maximum).Maximum } }
-    # no log reaches more than ten minutes before the last start
-    $F['events.sinceBootOnly'] = Get-WorkerPerfHealthDerived $F @('events.logs', 'operation.lastBoot') {
+    # the last start lies inside the lookback (after the moment of reading minus the lookback days) and no log reaches
+    # more than ten minutes before it; a start before the lookback limits nothing (ruling ZB-R52)
+    $F['events.sinceBootOnly'] = Get-WorkerPerfHealthDerived $F @('events.logs', 'operation.lastBoot', 'events.lookbackDays') {
         $boot = [double]$F['operation.lastBoot'].Value
         $logs = @(& $withEntry)
         if ($boot -le 0) { New-WorkerPerfHealthFact 'absent' }
         elseif (& $unknownOldest @(& $enabled)) { New-WorkerPerfHealthFact 'unreadable' 'error' }
+        elseif ($boot -le (Get-WorkerPerfHealthReadAt $Ctx) - [double]$F['events.lookbackDays'].Value * $script:WorkerPerfHealthDayMs) { $false }
         elseif ($logs.Count -eq 0) { $false }
         else { @($logs | Where-Object { [double](Get-WorkerPerfHealthItemField $_ 'Oldest') -lt $boot - 600000 }).Count -eq 0 } }
 }
@@ -1344,22 +1390,52 @@ function Add-WorkerPerfHealthMaintenanceFacts($F, $Ctx) {
         Get-WorkerPerfHealthCountWhere $F['maintenance.tasks'].Value {
             $words = @(([string](Get-WorkerPerfHealthItemField $_ 'Triggers')).Split(',') | ForEach-Object { $_.Trim() })
             (Test-WorkerPerfHealthYes (Get-WorkerPerfHealthItemField $_ 'Enabled')) -and @($words | Where-Object { @('idle', 'logon', 'session') -contains $_ }).Count -gt 0 } }
-    # the scan: never on scanDay 8 (and not on a weekend day); the time of day HH:mm in server local time
+    # The scans of Defender Antivirus start at their EFFECTIVE time ("Schedule antivirus scans using PowerShell"): the
+    # configured time plus ScanScheduleOffset (absent: 120 minutes), with the random start on (RandomizeScheduleTaskTimes,
+    # absent: on) widened by SchedulerRandomizationTime before and after (absent: 30 minutes). True when any minute of
+    # such a window lies in the working hours. Two scans count: the scheduled scan (scanDay with scanTime, whatever its
+    # type, quick or full) and, where its time is read, the daily quick scan (quickScanTime, every day). Without a read
+    # time of the scheduled scan the fact takes its state, as before; a part of the window that is not readable makes
+    # the fact unreadable.
     $F['maintenance.scanInWorkHours'] = Get-WorkerPerfHealthDerived $F @('maintenance.scanDay') {
-        if (-not (Test-WorkerPerfHealthWorkDay $F['maintenance.scanDay'].Value)) { $false }
-        else {
-            $time = $F['maintenance.scanTime']
-            if ($time.State -ne 'read') { New-WorkerPerfHealthFact $time.State $time.Reason }
-            elseif ([string]$time.Value -match '^\s*(\d{1,2}):(\d{2})') { Test-WorkerPerfHealthWorkTime ([int]$Matches[1] + [int]$Matches[2] / 60.0) 1 $Ctx }
-            else { New-WorkerPerfHealthFact 'unreadable' 'error' } } }
-    # Windows Update: no policy (no AUOptions) is no installation in the working hours
+        $offset = 120.0; $spread = 30.0
+        $o = $F['maintenance.scanOffset']
+        if ($o.State -ceq 'unreadable') { return (New-WorkerPerfHealthFact 'unreadable' $o.Reason) } elseif ($o.State -ceq 'read') { $offset = [double]$o.Value }
+        $random = $F['maintenance.scanRandomize']; $window = $F['maintenance.scanRandomWindow']
+        if ($random.State -ceq 'unreadable') { return (New-WorkerPerfHealthFact 'unreadable' $random.Reason) }
+        if ($random.State -ceq 'read' -and $random.Value -eq $false) { $spread = 0.0 }
+        elseif ($window.State -ceq 'unreadable') { return (New-WorkerPerfHealthFact 'unreadable' $window.Reason) }
+        elseif ($window.State -ceq 'read') { $spread = [double]$window.Value }
+        $quick = $F['maintenance.quickScanTime']
+        if ($quick.State -ceq 'read' -and $null -ne $quick.Value) {
+            $at = ConvertTo-WorkerPerfHealthClockMinutes $quick.Value
+            if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+            if (Test-WorkerPerfHealthScanWindow 0 ($at + $offset - $spread) ($at + $offset + $spread) $Ctx) { return $true }
+        }
+        $day = [int]$F['maintenance.scanDay'].Value
+        if ($day -lt 0 -or $day -gt 7) { return $false }
+        $time = $F['maintenance.scanTime']
+        if ($time.State -cne 'read') { return (New-WorkerPerfHealthFact $time.State $time.Reason) }
+        $at = ConvertTo-WorkerPerfHealthClockMinutes $time.Value
+        if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+        Test-WorkerPerfHealthScanWindow $day ($at + $offset - $spread) ($at + $offset + $spread) $Ctx }
+    # Windows Update with the policy option 4 (download and install at the scheduled time): ScheduledInstallDay and
+    # ScheduledInstallTime, without them every day at 03:00 (Microsoft). Without the policy Windows downloads and
+    # installs at a time the policy does not give: not known (absent). Other options install nothing by schedule.
     $F['maintenance.updateInWorkHours'] = Invoke-WorkerPerfHealthRule {
         $options = $F['maintenance.updateOptions']
-        if ($options.State -eq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $options.Reason }
-        elseif ($options.State -ne 'read' -or [double]$options.Value -ne 4) { $false }
+        if ($options.State -ceq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $options.Reason }
+        elseif ($options.State -cne 'read') { New-WorkerPerfHealthFact 'absent' $options.Reason }
+        elseif ([double]$options.Value -ne 4) { $false }
         else {
-            Get-WorkerPerfHealthDerived $F @('maintenance.updateDay', 'maintenance.updateHour') {
-                (Test-WorkerPerfHealthWorkDay $F['maintenance.updateDay'].Value) -and (Test-WorkerPerfHealthWorkTime ([double]$F['maintenance.updateHour'].Value) 1 $Ctx) }
+            $dayFact = $F['maintenance.updateDay']; $hourFact = $F['maintenance.updateHour']
+            if ($dayFact.State -ceq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $dayFact.Reason }
+            elseif ($hourFact.State -ceq 'unreadable') { New-WorkerPerfHealthFact 'unreadable' $hourFact.Reason }
+            else {
+                $day = 0.0; if ($dayFact.State -ceq 'read') { $day = [double]$dayFact.Value }
+                $hour = 3.0; if ($hourFact.State -ceq 'read') { $hour = [double]$hourFact.Value }
+                (Test-WorkerPerfHealthWorkDay $day) -and (Test-WorkerPerfHealthWorkTime $hour 1 $Ctx)
+            }
         } }
 }
 
@@ -1392,7 +1468,7 @@ function Add-WorkerPerfHealthAppFacts($F, $Ctx, [object[]]$Apps) {
 
 function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$Roles = @()) {
     # All facts of a capture: id -> fact ([ordered]@{ State; Reason; Value }), for every fact of
-    # Get-WorkerPerfHealthFactTable $Catalogue.appList in its order (the 164 fixed facts, then those of the application
+    # Get-WorkerPerfHealthFactTable $Catalogue.appList in its order (the 168 fixed facts, then those of the application
     # list). The read values come from health.json as ConvertTo-WorkerPerfHealthReadFact checks them; without a read
     # health picture (HealthState skipped, notRecorded or unreadable) they are unreadable with skipped:Zustand,
     # notRecorded or error. The working hours come from the thresholds workStartHour and workEndHour of the catalogue.

@@ -193,9 +193,9 @@ Describe 'Zustandsbild: Format und Werteliste' {
                 foreach ($t in $v.Fields.Values) { $t | Should -Match '^(number|bool|time|value|text(:(host|hosts|share|path|user|client|domain|address|protected|free))?)$' -Because $id }
             }
         }
-        $want = @{ size = 16; operation = 8; sessions = 3; vda = 16; profile = 5; print = 8; security = 19; network = 12; events = 1; maintenance = 14; apps = 1 }
+        $want = @{ size = 16; operation = 8; sessions = 3; vda = 16; profile = 5; print = 8; security = 19; network = 13; events = 1; maintenance = 16; apps = 1 }
         foreach ($a in $WorkerPerfHealthAreas) { $count[$a] | Should -Be $want[$a] -Because $a }
-        @($WorkerPerfHealthValues.Keys).Count | Should -Be 103
+        @($WorkerPerfHealthValues.Keys).Count | Should -Be 106                     # Task 14s: network.rssGlobal, maintenance.scanOffset, maintenance.scanRandomWindow
         $WorkerPerfHealthValues['vda.controllers'].Fields['Entry'] | Should -Be 'text:host'; $WorkerPerfHealthValues['maintenance.tasks'].Fields['Path'] | Should -Be 'text:free'
         $WorkerPerfHealthValues['vda.wemServer'].Type | Should -Be 'text:host'; $WorkerPerfHealthValues['vda.wemCacheLocation'].Type | Should -Be 'text:path'
         @($WorkerPerfHealthValues['operation.volumes'].Fields.Keys) | Should -Be @('Drive', 'SizeGB', 'FreeGB', 'FileSystem', 'System', 'PageFile')

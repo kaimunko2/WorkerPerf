@@ -81,8 +81,8 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
     It 'liest einen vollstaendigen Katalog und kennt jeden Fakt' {
         $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
         @($c.checks).Count | Should -Be 2; $c.thresholds.diskFreeGB.value | Should -Be 10; $c.areas[0].id | Should -Be 'size'; $c.grades.act.word | Should -Be 'Handeln'
-        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 164; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 61
-        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 206                         # 164 feste, 38 der ausgelieferten Liste, 4 der simapp
+        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 168; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 62
+        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 210                         # 168 feste, 38 der ausgelieferten Liste, 4 der simapp
         $ta['apps.edge.installed'].Area | Should -Be 'apps'; $ta['apps.edge.installed'].Type | Should -Be 'bool'; $ta['apps.edge.backgroundMode'].Type | Should -Be 'value'
         $ta['apps.edge.userDataDir'].Type | Should -Be 'text:free'; $ta['apps.office.updateTask'].Type | Should -Be 'bool'; $ta['apps.office.platform'].Documented | Should -BeFalse
         $ta['apps.simapp.cacheMode'].Label | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart'; $ta['apps.simapp.installed'].Label | Should -Be 'Sim-Fachanwendung'; $t['size.cpuLogical'].Label | Should -Be ''
@@ -300,7 +300,7 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $WorkerPerfHealthOptionalParts | Should -Be @('units', 'legends'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'units'
     }
     It 'lehnt einen fehlerhaften Teil units ab' -TestCases @(
-        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte: MB, s, Tage, %, GB, Stunden, Minuten)." }
+        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte: MB, s, Tage, Minuten, %, GB, Stunden)." }
         @{ Change = { $c.units = @{ tage = 'Tag' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'tage'*" }                            # Namen gelten nur in genau dieser Schreibweise
         @{ Change = { $c.units = @{ Prozessoren = 'Prozessor' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'Prozessoren'*" }        # die Einheit einer Schwelle, nicht eines Werts
         @{ Change = { $c.units = @{ Tage = '' } }; Msg = "Katalog '*': Teil 'units' nennt fuer die Einheit 'Tage' keinen Text." }
@@ -369,7 +369,7 @@ Describe 'Fakten des Zustandsbilds' {
         & $val 'size.commitOfRamPct' | Should -Be 58; & $val 'size.vmware' | Should -BeTrue; & $val 'size.vmtoolsMajor' | Should -Be 11; & $val 'size.balloonRunning' | Should -BeFalse
         & $val 'size.otherNetAdapters' | Should -Be 1; & $val 'size.lsiControllers' | Should -Be 1; & $val 'network.rssOff' | Should -Be 1; & $val 'sessions.idleLimitMin' | Should -Be 180
         & $val 'vda.wemServicesNotReady' | Should -Be 2; & $val 'print.citrixMapping' | Should -BeTrue      # der Anmeldedienst steht, der dritte Dienst fehlt in der Liste
-        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 164                       # gelesene Werte sind selbst Fakten
+        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 168                       # gelesene Werte sind selbst Fakten
     }
     It 'findet den Windows-Dienst des WEM-Agenten am Dienstnamen SENS' {   # ZB-R34
         $citrix = @(@{ Name = 'Citrix WEM Agent Host Service'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'Citrix WEM User Logon Service'; State = 'Running'; StartMode = 'Auto' })
@@ -419,7 +419,7 @@ Describe 'Fakten des Zustandsbilds' {
         $rows = @((& $row 'edge' 'installed' 'read' '' $true $null), (& $row 'edge' 'backgroundMode' 'read' '' 1 $null), (& $row 'edge' 'userDataDir' 'read' '' $null '\\fs01\edge$'),
             (& $row 'edge' 'sleepingTabs' 'absent' '' $null $null), (& $row 'simapp' 'installed' 'read' '' $false $null), (& $row 'simapp' 'cacheMode' 'absent' 'notInstalled' $null $null))
         $f = Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = $rows }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles
-        @($f.Keys).Count | Should -Be 206; @($f.Keys)[164] | Should -BeLike 'apps.*'
+        @($f.Keys).Count | Should -Be 210; @($f.Keys)[168] | Should -BeLike 'apps.*'
         $f['apps.edge.installed'].Value | Should -BeTrue; $f['apps.edge.backgroundMode'].Value | Should -Be 1; $f['apps.edge.userDataDir'].Value | Should -Be '\\fs01\edge$'
         $f['apps.edge.sleepingTabs'].State | Should -Be 'absent'; $f['apps.edge.sleepingTabs'].Reason | Should -Be ''
         $f['apps.simapp.installed'].Value | Should -BeFalse; $f['apps.simapp.cacheMode'].State | Should -Be 'absent'; $f['apps.simapp.cacheMode'].Reason | Should -Be 'notInstalled'
@@ -490,7 +490,7 @@ Describe 'Fakten des Zustandsbilds' {
         $f['maintenance.tasksInWorkHours'].Value | Should -Be 2; $f['maintenance.sessionTriggerTasks'].Value | Should -Be 1
         $f['maintenance.scanInWorkHours'].Value | Should -BeTrue; $f['maintenance.updateInWorkHours'].Value | Should -BeFalse           # Tag 7 ist Samstag
         (Get-Facts @{ 'maintenance.scanDay' = 8; 'maintenance.scanTime' = '12:30' })['maintenance.scanInWorkHours'].Value | Should -BeFalse
-        (Get-Facts @{})['maintenance.updateInWorkHours'].Value | Should -BeFalse                                                        # keine Richtlinie
+        (Get-Facts @{})['maintenance.updateInWorkHours'].State | Should -Be 'absent'                                                    # keine Richtlinie: nicht pruefbar (Task 14s)
     }
     It 'nennt ohne gelesenes Zustandsbild jeden gelesenen Wert nicht lesbar und folgt dem Modell des Servers' {
         foreach ($case in @(@('skipped', 'skipped:Zustand'), @('notRecorded', 'notRecorded'), @('unreadable', 'error'))) {
@@ -671,7 +671,7 @@ Describe 'Bewertung' {
         $s = & $get $r 'apps.simCache'; $s.grade | Should -Be 'check'; $s.finding | Should -Be 'Cache-Betriebsart 1.'
         $s.value | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart: 1; Sim-Fachanwendung – Datenordner der Sim-Fachanwendung: Text valueSet'; ($s | ConvertTo-Json -Depth 6) | Should -Not -Match 'fs01'
         $raw = $r.raw | Where-Object id -eq 'apps.simapp.dataPath'; $raw.free | Should -Be '\\fs01\simapp$'; $raw.text | Should -Be ''; $raw.label | Should -Be 'Sim-Fachanwendung – Datenordner der Sim-Fachanwendung'; $raw.area | Should -Be 'apps'
-        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 206
+        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 210
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'read' '' 2 $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'ok'
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'absent' '' $null $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'check'   # nicht gesetzt ist ungleich 2
         # die Installation laesst sich nicht lesen: nicht pruefbar mit dem Grund
@@ -738,7 +738,7 @@ Describe 'Bewertung' {
         (& $raw 'vda.controllers').items[0].text | Should -Be 'Entry: ddc01.sim.local; Kind: fqdn; From: policy'; (& $raw 'vda.controllers').items[0].free | Should -Be ''
         (& $raw 'security.defenderSharedSignatures').text | Should -Be '\\fs01\defender$'; (& $raw 'size.cpuLogical').state | Should -Be 'absent'; (& $raw 'size.cpuLogical').text | Should -Be ''
         (& $raw 'size.cpuLogical').stateText | Should -Be 'Text stateAbsent'; (& $raw 'size.memTotalMB').stateText | Should -Be 'Text stateRead'
-        @($r.raw).Count | Should -Be 164
+        @($r.raw).Count | Should -Be 168
     }
     It 'macht eine Pruefung, deren Bewertung scheitert, nicht pruefbar und bewertet die anderen' {   # ZB-R27, Zusatz b
         $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
@@ -943,7 +943,7 @@ Describe 'Bewertung: Regeln im Einzelnen' {
         foreach ($id in 'operation.minFreeGB', 'apps.simapp.installed') {
             $e = $r.raw | Where-Object id -eq $id; $e.state | Should -Be 'unreadable' -Because $id; $e.reason | Should -Be 'error' -Because $id; $e.stateText | Should -Be 'Text stateUnreadable' -Because $id; $e.text | Should -Be ''
         }
-        @($r.raw).Count | Should -Be 206; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
+        @($r.raw).Count | Should -Be 210; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
     }
     It 'zeigt einen Rohwert, dessen Formatierung scheitert, als nicht lesbar' {
         # eine Zeit ausserhalb dessen, was ein Datum fassen kann: der Rohwert und der Satz zur Reichweite der Protokolle scheitern nicht
@@ -1064,7 +1064,7 @@ Describe 'Katalog in src' {
         # Zusatz j: was die Quellenpruefung fuer die Wartung verlangt
         $up = $check['maintenance.updateInstallInWorkHours']; $up.meaning | Should -Match '03:00'; $up.meaning | Should -Match 'automatische Wartung'
         "$($up.meaning) $($up.findings.ok)" | Should -Match 'Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt'
-        $check['maintenance.defenderScanInWorkHours'].findings.check | Should -Match '^Die eingestellte Zeit des geplanten Scans'
+        $check['maintenance.defenderScanInWorkHours'].findings.check | Should -Match '^Der wirksame Beginn eines geplanten Scans'
         $full = $check['maintenance.defenderFullScan']; $full.kind | Should -Be 'rule'; $full.meaning | Should -Match 'schnell oder vollständig'; $full.meaning | Should -Match 'keine Empfehlung von Microsoft'
         foreach ($id in 'print.driverCount', 'print.kernelModeV2') { $check[$id].meaning | Should -Match 'nicht jede dieser Empfehlungen für jede Umgebung gilt' -Because $id }
         $Real.values.'maintenance.quickScanTime' | Should -BeExactly 'Startzeit des Schnellscans'; $Real.values.'maintenance.scanCpuLoad' | Should -BeExactly 'Höchster durchschnittlicher CPU-Anteil eines Scans'
@@ -1193,9 +1193,9 @@ Describe 'Katalog in src' {
         (Get-Content $CatFile -Raw) | Should -Not -Match 'Provisioning Services|\bPVS\b'                              # nichts, was nur fuer Provisioning Services gilt
     }
     It 'stuetzt keine Pruefung auf einen Wert ohne dokumentierte Lesequelle' {
-        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 202
+        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 206
         foreach ($c in $Real.checks) { foreach ($v in $c.values) { $t[$v].Documented | Should -BeTrue -Because "$($c.id): $v" } }
-        @($Real.values.PSObject.Properties.Name).Count | Should -Be 164
+        @($Real.values.PSObject.Properties.Name).Count | Should -Be 168
     }
     It 'fuehrt die Quelle jeder Pruefung im Nachweis' {
         foreach ($c in $Real.checks) {
@@ -1416,7 +1416,7 @@ Describe 'Katalog in src' {
     }
     It 'fuehrt die Legenden im Teil legends und laesst die Bezeichnungen schlichte Namen sein' {             # Entscheidung ZB-R49
         foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '=' -Because $p.Name }
-        @($Real.legends.PSObject.Properties).Count | Should -Be 32
+        @($Real.legends.PSObject.Properties).Count | Should -Be 34
         $Real.legends.'print.spooler' | Should -BeExactly 'Running = läuft, Stopped = beendet'
         $Real.legends.'security.defenderMode' | Should -BeExactly 'Normal = aktiv, Passive = passiv'
         $Real.legends.'maintenance.scanDay' | Should -BeExactly '0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie'
@@ -1470,11 +1470,13 @@ Describe 'Katalog in src' {
         $day = 86400000L
         $logs = { param([double[]]$Days) $names = 'Application', 'System', 'Microsoft-Windows-PrintService/Admin'
             @(for ($i = 0; $i -lt $Days.Count; $i++) { @{ Log = $names[$i]; Present = $true; Enabled = $true; MaxSizeMB = 20; FileSizeMB = 1; Records = 5; Mode = 'Circular'; Full = $false; Oldest = $ReadMs - [long]($Days[$i] * $day) } }) }
-        # der Server laeuft laenger als der Rueckblick, die Protokolle reichen neun Tage zurueck: der Rueckblick von sieben Tagen ist ganz abgedeckt, und der Befund behauptet nichts anderes
+        # der Server laeuft laenger als der Rueckblick, die Protokolle reichen neun Tage zurueck: der Rueckblick von sieben Tagen ist ganz abgedeckt, und seit Task 14s (ZB-R52)
+        # meldet die Pruefung das nicht mehr; reichen die Protokolle nur bis zu einem Start im Rueckblick, behauptet der Befund nichts anderes
         $since = $check['events.sinceBoot']; $since.title | Should -BeExactly 'Reichweite der Ereignisprotokolle vor den letzten Start'
-        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - 10 * $day; 'events.logs' = (& $logs 9, 9, 9) } @{} 'events.sinceBoot' $Real
+        (Get-Check @{ 'operation.lastBoot' = $ReadMs - 10 * $day; 'events.logs' = (& $logs 9, 9, 9) } @{} 'events.sinceBoot' $Real).grade | Should -Be 'ok'
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - 2 * $day; 'events.logs' = (& $logs 1.9, 1.9, 1.9) } @{} 'events.sinceBoot' $Real
         $x.grade | Should -Be 'check'
-        $x.finding | Should -BeExactly ('Kein gelesenes Ereignisprotokoll reicht vor den letzten Start des Servers zurück (05.01.2026 08:00). Liegt dieser Start innerhalb des Rückblicks (eingestellte Länge in Tagen: 7), ' +
+        $x.finding | Should -BeExactly ('Kein gelesenes Ereignisprotokoll reicht vor den letzten Start des Servers zurück (13.01.2026 08:00). Liegt dieser Start innerhalb des Rückblicks (eingestellte Länge in Tagen: 7), ' +
             'zeigen Rückblick und Ereignisbild nur die Zeit seit dem Start. Auf einem nicht persistenten Server ohne beständiges Laufwerk ist das der Normalfall. Das ist ein Hinweis aus der Praxis, kein Fehler.')
         $since.findings.check | Should -Not -Match 'deshalb nur die Zeit seit diesem Start'; $since.meaning | Should -Not -Match 'Auf diesem Server reichen'
         $since.meaning | Should -Match '^Reichen die Ereignisprotokolle nur bis zum letzten Start, zeigen Rückblick und Ereignisbild nichts von davor'
@@ -1519,11 +1521,11 @@ Describe 'Katalog in src' {
         (& $step 'print.operationalLogOff' 1) | Should -Not -Match 'Einstellung der Windows-Registrierung'
         (& $step 'operation.powerPlan' 0) | Should -Match '^Zuerst mit dem Hypervisor-Team klären.*das Betriebssystem der Hosts \(der Hypervisor\)'; (& $step 'operation.powerPlan' 1) | Should -Match '^Den Energiesparplan auf „Höchstleistung“ stellen'
         (& $step 'vda.controllerCount' 0) | Should -Match '^Nachsehen, ob der eine Eintrag eine Controller-Gruppe mit mehreren Controllern ist: Dann ist nichts zu tun'
-        # 9: gelesen wird die Einstellung des Netzwerkadapters, nicht der globale Schalter von Windows
+        # 9: seit Task 14s (ZB-R50) werden der globale Schalter von Windows und die Einstellung des Netzwerkadapters gelesen
         $rss = $check['network.rss']
-        foreach ($g in 'ok', 'check') { $rss.findings.$g | Should -Match 'in den Einstellungen des Netzwerkadapters abgeschaltet.* Den globalen Schalter von Windows für RSS liest das Zustandsbild nicht\.$' -Because $g }
-        $rss.meaning | Should -Match 'das Zustandsbild liest nur die Einstellung des Netzwerkadapters'
-        (& $step 'network.rss' 0) | Should -Match 'netsh int tcp show global'; (& $step 'network.rss' 1) | Should -Match 'dafür sorgen, dass das Versiegeln es nicht wieder abschaltet'
+        foreach ($g in 'ok', 'check') { $rss.findings.$g | Should -Match 'in den Einstellungen des Netzwerkadapters abgeschaltet' -Because $g; $rss.findings.$g | Should -Not -Match 'liest das Zustandsbild nicht' -Because $g }
+        $rss.meaning | Should -Match 'global in Windows und am Netzwerkadapter, und das Zustandsbild liest beide'
+        (& $step 'network.rss' 0) | Should -Match 'Rohwerte „Receive Side Scaling global in Windows“'; (& $step 'network.rss' 1) | Should -Match 'dafür sorgen, dass das Versiegeln es nicht wieder abschaltet'
         # 15, 16
         (& $step 'vda.listOfSids' 0) | Should -Match 'Einstellung „Controller SIDs“ der Citrix-Richtlinie'
         foreach ($id in 'network.dnsCount', 'network.dnsPublic') { $check[$id].source.title | Should -BeExactly 'Best practices for DNS client settings in Windows Server' -Because $id }
@@ -1537,7 +1539,7 @@ Describe 'Katalog in src' {
             Should -BeExactly 'Druckwarteschlangen beim Lesen: 12, Benutzersitzungen: 0, Warteschlangen je Sitzung: 12, mehr als die Schwelle von 10 (ohne Sitzung steht dort die Zahl aller Warteschlangen, und die Warteschlangen des Servers selbst sind mitgezählt).'
         (Get-Check @{ 'network.domainMember' = $true; 'network.timeType' = 'NTP' } @{} 'network.timeSource' $Real).finding |
             Should -BeExactly 'Der Server ist Mitglied einer Domäne, bezieht seine Zeit aber nicht aus der Domäne (eingestellte Art: NTP; NTP = feste Zeitquellen, NoSync = kein Abgleich, ein Strich heißt: keine Art eingetragen).'
-        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30' } @{} 'maintenance.defenderScanInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 0 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag\), eingestellte Zeit 12:30 Uhr\.$'
+        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30' } @{} 'maintenance.defenderScanInWorkHours' $Real).finding | Should -Match 'Eingestellter Tag: 0 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag\); eingestellte Zeit: 12:30 Uhr; Startzeit des Schnellscans: –; Verzögerung in Minuten: –;'
         (Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 3; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 3 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag\), eingestellte Stunde 10 Uhr\.$'
         $check['security.citrixExclusions'].findings.check | Should -Match 'zeigt der Rohwert „Ausgeschlossene Prozesse“\.$'; (& $step 'security.citrixExclusions' 0) | Should -Match 'Rohwert „Ausgeschlossene Prozesse“'
         (Get-Check @{} @{} 'print.spoolerStopped' $Real).finding | Should -Match 'gelesener Zustand: –; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden'
@@ -1575,5 +1577,149 @@ Describe 'Katalog in src' {
             }
         }
         $ProofFlat | Should -Not -Match 'Universal Printing Driver'
+    }
+}
+Describe 'Fakten nach der Quellenpruefung (Task 14s)' {
+    BeforeAll {
+        $script:Real = Read-WorkerPerfHealthCatalogue (Join-Path $PSScriptRoot '../src/health.de.json') @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))
+        $script:Day = 86400000L
+        $script:Vm = @{ 'size.model' = 'VMware, Inc. VMware7,1' }
+    }
+    It 'nimmt fuer den geplanten Scan den wirksamen Beginn: eingestellte Zeit plus Verzoegerung, verbreitert um das Zufallsfenster' {   # Punkt 3
+        $scan = { param([hashtable]$v) (Get-Facts $v)['maintenance.scanInWorkHours'] }
+        # Arbeitszeit 7 bis 18 Uhr; ohne Angabe 120 Minuten Verzoegerung und 30 Minuten Zufallsfenster je Richtung
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00' }).Value | Should -BeFalse                                   # 03:30 bis 04:30
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '05:00' }).Value | Should -BeTrue                                    # 06:30 bis 07:30
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30'; 'maintenance.scanOffset' = 0; 'maintenance.scanRandomize' = $false }).Value | Should -BeTrue
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '23:30' }).Value | Should -BeFalse                                   # 01:00 bis 02:00 am Tag danach
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '16:30' }).Value | Should -BeFalse                                   # 18:00 bis 19:00: das Ende der Arbeitszeit zaehlt nicht dazu
+        # das Fenster folgt dem gelesenen Wert; ohne zufaellige Startzeit wird es nicht verbreitert
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '04:00'; 'maintenance.scanRandomize' = $false }).Value | Should -BeFalse      # genau 06:00
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '04:00'; 'maintenance.scanRandomWindow' = 90 }).Value | Should -BeTrue           # 04:30 bis 07:30
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '04:00'; 'maintenance.scanRandomize' = $false; 'maintenance.scanRandomWindow' = 90 }).Value | Should -BeFalse
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = 300 }).Value | Should -BeTrue                # 06:30 bis 07:30
+        # der Tag des Scans: Freitag 23:30 endet am Samstag, Sonntag 23:30 mit 10 Stunden Verzoegerung beginnt am Montag um 09:30, Samstag 12:30 nie in der Arbeitszeit
+        (& $scan @{ 'maintenance.scanDay' = 6; 'maintenance.scanTime' = '23:30' }).Value | Should -BeFalse
+        (& $scan @{ 'maintenance.scanDay' = 1; 'maintenance.scanTime' = '23:30'; 'maintenance.scanOffset' = 600 }).Value | Should -BeTrue
+        (& $scan @{ 'maintenance.scanDay' = 7; 'maintenance.scanTime' = '12:30' }).Value | Should -BeFalse
+        (& $scan @{ 'maintenance.scanDay' = 2; 'maintenance.scanTime' = '00:10'; 'maintenance.scanOffset' = 0 }).Value | Should -BeFalse              # Sonntag 23:40 bis Montag 00:40
+        (& $scan @{ 'maintenance.scanDay' = 8; 'maintenance.scanTime' = '12:30' }).Value | Should -BeFalse
+        # die taegliche Zeit des Schnellscans zaehlt, wo sie gesetzt ist, an jedem Tag
+        (& $scan @{ 'maintenance.scanDay' = 8; 'maintenance.scanTime' = '02:00'; 'maintenance.quickScanTime' = '06:00' }).Value | Should -BeTrue          # 07:30 bis 08:30
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00'; 'maintenance.quickScanTime' = '02:00' }).Value | Should -BeFalse
+        # ohne gelesene Zeit des geplanten Scans: wie bisher nicht pruefbar; ein nicht lesbarer Teil des Fensters macht den Fakt nicht lesbar
+        $f = & $scan @{ 'maintenance.scanDay' = 0 }; $f.State | Should -Be 'absent'; $f.Reason | Should -Be ''
+        $f = & $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }
+        $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'
+        $f = & $scan @{ 'maintenance.scanDay' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }; $f.State | Should -Be 'absent'; $f.Reason | Should -Be 'notInstalled'
+        # gerendert: der Befund nennt den wirksamen Beginn
+        $x = Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '05:00'; 'maintenance.scanOffset' = 120 } @{} 'maintenance.defenderScanInWorkHours' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -Match 'wirksame Beginn'; $x.finding | Should -Match 'eingestellte Zeit: 05:00 Uhr'
+        $x = Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00' } @{} 'maintenance.defenderScanInWorkHours' $Real
+        $x.grade | Should -Be 'ok'; $x.finding | Should -Match 'wirksame Beginn'
+    }
+    It 'nennt die Zeitlimits nicht pruefbar, wo der Listener die Zeitlimits je Benutzer gelten laesst' {   # Punkt 4
+        $lim = { param($terminal, $policy, $min) [ordered]@{ Terminal = $terminal; IdleLimitMin = $min; DisconnectedLimitMin = $min; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true; TimeLimitPolicy = $policy } }
+        $f = Get-Facts @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 240), (& $lim 'RDP-Tcp' 1 0)) }
+        $f['sessions.disconnectLimitMin'].Value | Should -Be 240; $f['sessions.idleLimitMin'].Value | Should -Be 240
+        foreach ($case in @(@((& $lim 'ICA-CGP' 0 240)), @((& $lim 'ICA-CGP' 0 0)), @((& $lim 'ICA-CGP' 0 0), (& $lim 'RDP-Tcp' 1 0)))) {
+            $f = Get-Facts @{ 'sessions.limits' = $case }
+            foreach ($id in 'sessions.disconnectLimitMin', 'sessions.idleLimitMin') { $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'notRecorded' -Because $id }
+        }
+        # ein Listener mit den Werten des Servers zaehlt neben einem mit den Werten je Benutzer
+        (Get-Facts @{ 'sessions.limits' = @((& $lim 'RDP-Tcp' 0 30), (& $lim 'ICA-CGP' 1 180)) })['sessions.disconnectLimitMin'].Value | Should -Be 180
+        # ein Eintrag einer frueheren Fassung ohne das Feld: wie bisher
+        (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 90 }) })['sessions.disconnectLimitMin'].Value | Should -Be 90
+        (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 0 }) })['sessions.disconnectLimitMin'].State | Should -Be 'absent'
+        # gerendert: beide Pruefungen sind im Fall je Benutzer nicht pruefbar, mit den Werten des Listeners wie bisher
+        foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
+            $x = Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 0 0)) } @{} $id $Real
+            $x.grade | Should -Be 'unknown' -Because $id; $x.finding | Should -BeExactly 'Der Wert konnte nicht gelesen werden: die Aufzeichnung enthält die Daten dafür nicht.' -Because $id
+            (Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 0)) } @{} $id $Real).grade | Should -Be 'check' -Because $id
+            (Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 120)) } @{} $id $Real).grade | Should -Be 'ok' -Because $id
+        }
+        $Real.legends.'sessions.limits' | Should -Match 'TimeLimitPolicy: 0 = '
+    }
+    It 'nennt die Installation von Updates ohne Richtlinie nicht pruefbar und nimmt bei Option 4 ohne Stunde 03:00' {   # Punkt 5
+        $up = { param([hashtable]$v) (Get-Facts $v)['maintenance.updateInWorkHours'] }
+        $f = & $up @{}; $f.State | Should -Be 'absent'; $f.Reason | Should -Be ''                                                      # keine Richtlinie
+        (& $up @{ 'maintenance.updateOptions' = 4 }).Value | Should -BeFalse                                                          # taeglich 03:00
+        (& $up @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 0 }).Value | Should -BeFalse
+        (& $up @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 0; 'maintenance.updateHour' = 3 }).Value | Should -BeFalse
+        (& $up @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 0; 'maintenance.updateHour' = 10 }).Value | Should -BeTrue
+        (& $up @{ 'maintenance.updateOptions' = 4; 'maintenance.updateHour' = 10 }).Value | Should -BeTrue                            # ohne Tag: taeglich
+        (& $up @{ 'maintenance.updateOptions' = 3; 'maintenance.updateDay' = 0; 'maintenance.updateHour' = 10 }).Value | Should -BeFalse    # nur herunterladen
+        $f = & $up @{ 'maintenance.updateOptions' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'rights'
+        $f = & $up @{ 'maintenance.updateOptions' = 4; 'maintenance.updateHour' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }; $f.Reason | Should -Be 'timeout'
+        # gerendert
+        $x = Get-Check @{} @{} 'maintenance.updateInstallInWorkHours' $Real; $x.grade | Should -Be 'ok'; $x.finding | Should -Match 'Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt'
+        (Get-Check @{ 'maintenance.updateOptions' = 4 } @{} 'maintenance.updateInstallInWorkHours' $Real).grade | Should -Be 'ok'
+        (Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 0; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real).grade | Should -Be 'check'
+    }
+    It 'nennt RSS abgeschaltet, wenn es global oder an einem VMXNET3-Adapter aus ist, und nie in Ordnung ohne den globalen Zustand' {   # Punkt 6
+        $on = @(@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $true }); $off = @(@{ Description = 'vmxnet3 Ethernet Adapter'; Enabled = $false })
+        $rss = { param([hashtable]$v) (Get-Facts ($Vm + $v))['network.rssDisabled'] }
+        (& $rss @{ 'network.rss' = $on; 'network.rssGlobal' = 'enabled' }).Value | Should -BeFalse
+        (& $rss @{ 'network.rss' = $on; 'network.rssGlobal' = 'disabled' }).Value | Should -BeTrue
+        (& $rss @{ 'network.rss' = $off; 'network.rssGlobal' = 'enabled' }).Value | Should -BeTrue
+        (& $rss @{ 'network.rss' = $off; 'network.rssGlobal' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }).Value | Should -BeTrue
+        $f = & $rss @{ 'network.rss' = $on; 'network.rssGlobal' = (New-WorkerPerfHealthValue 'unreadable' 'rights') }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'rights'
+        $f = & $rss @{ 'network.rss' = $on }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be ''                          # die Klasse fehlt
+        $f = & $rss @{ 'network.rss' = (New-WorkerPerfHealthValue 'unreadable' 'timeout'); 'network.rssGlobal' = 'enabled' }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'
+        (& $rss @{ 'network.rss' = (New-WorkerPerfHealthValue 'unreadable' 'timeout'); 'network.rssGlobal' = 'disabled' }).Value | Should -BeTrue
+        $f = & $rss @{ 'network.rss' = $on; 'network.rssGlobal' = '2' }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'error'
+        $f = (Get-Facts @{ 'size.model' = 'Sim Corp Server 1'; 'network.rss' = $on; 'network.rssGlobal' = 'disabled' })['network.rssDisabled']; $f.State | Should -Be 'absent'; $f.Reason | Should -Be 'notInstalled'
+        # gerendert: der Befund nennt, welche der zwei Stellen aus ist
+        $g = Get-Check ($Vm + @{ 'network.rss' = $on; 'network.rssGlobal' = 'disabled' }) @{} 'network.rss' $Real
+        $g.grade | Should -Be 'check'; $g.finding | Should -Match 'Globaler Schalter von Windows für RSS: disabled'; $g.finding | Should -Match 'abgeschaltet ist: 0\b'
+        $a = Get-Check ($Vm + @{ 'network.rss' = $off; 'network.rssGlobal' = 'enabled' }) @{} 'network.rss' $Real
+        $a.grade | Should -Be 'check'; $a.finding | Should -Match 'Globaler Schalter von Windows für RSS: enabled'; $a.finding | Should -Match 'abgeschaltet ist: 1\b'
+        $ok = Get-Check ($Vm + @{ 'network.rss' = $on; 'network.rssGlobal' = 'enabled' }) @{} 'network.rss' $Real; $ok.grade | Should -Be 'ok'
+        $ok.finding | Should -Match 'global in Windows eingeschaltet'; $ok.finding | Should -Not -Match 'liest das Zustandsbild nicht'
+        (Get-Check ($Vm + @{ 'network.rss' = $on }) @{} 'network.rss' $Real).grade | Should -Be 'unknown'
+        $c = $Real.checks | Where-Object id -eq 'network.rss'
+        $c.meaning | Should -Match 'liest beide'; $c.meaning | Should -Match 'BIS-F widerspricht sich selbst'; $c.meaning | Should -Not -Match 'liest nur'
+        (@($c.todo)[0].where) | Should -Match 'Rohwerte „Receive Side Scaling global in Windows“ und „Receive Side Scaling je Netzwerkadapter“'
+        $Real.legends.'network.rssGlobal' | Should -BeExactly 'enabled = eingeschaltet, disabled = ausgeschaltet'
+    }
+    It 'nennt die Protokolle nur seit dem letzten Start, wenn dieser Start im Rueckblick liegt' {   # Punkt 7
+        $logs = { param([double]$Days) @(foreach ($n in 'Application', 'System') { @{ Log = $n; Present = $true; Enabled = $true; MaxSizeMB = 20; FileSizeMB = 1; Records = 5; Mode = 'Circular'; Full = $false; Oldest = $ReadMs - [long]($Days * $Day) } }) }
+        $case = { param($bootDays, $logDays) @{ 'operation.lastBoot' = $ReadMs - [long]($bootDays * $Day); 'events.logs' = (& $logs $logDays) } }
+        # Rueckblick 7 Tage
+        (Get-Facts (& $case 10 9))['events.sinceBootOnly'].Value | Should -BeFalse                                     # Start vor dem Rueckblick: der ganze Rueckblick ist abgedeckt
+        (Get-Facts (& $case 2 1.9))['events.sinceBootOnly'].Value | Should -BeTrue
+        (Get-Facts (& $case 2 5))['events.sinceBootOnly'].Value | Should -BeFalse
+        (Get-Facts (& $case 10 3))['events.sinceBootOnly'].Value | Should -BeFalse                                     # der Start erklaert die Luecke nicht
+        (Get-Facts (& $case 2 1.9) $NoLookback)['events.sinceBootOnly'].Value | Should -BeFalse                        # ohne Rueckblick liegt kein Start darin
+        # gerendert
+        $r = { param($values, $id) Get-Check $values @{} $id $Real }
+        $x = & $r (& $case 10 9) 'events.sinceBoot'; $x.grade | Should -Be 'ok'
+        $x.finding | Should -BeExactly ('Die gelesenen Ereignisprotokolle reichen vor den letzten Start des Servers zurück, sie haben keinen Eintrag, oder der letzte Start liegt vor dem Beginn ' +
+            'des Rückblicks (letzter Start: 05.01.2026 08:00; Länge des Rückblicks in Tagen: 7; ein Strich heißt: nicht gelesen).')
+        (& $r (& $case 10 9) 'events.coverage').grade | Should -Be 'ok'
+        $x = & $r (& $case 2 1.9) 'events.sinceBoot'; $x.grade | Should -Be 'check'
+        $x.finding | Should -BeExactly ('Kein gelesenes Ereignisprotokoll reicht vor den letzten Start des Servers zurück (13.01.2026 08:00). Liegt dieser Start innerhalb des Rückblicks (eingestellte Länge in Tagen: 7), ' +
+            'zeigen Rückblick und Ereignisbild nur die Zeit seit dem Start. Auf einem nicht persistenten Server ohne beständiges Laufwerk ist das der Normalfall. Das ist ein Hinweis aus der Praxis, kein Fehler.')
+        $y = & $r (& $case 2 1.9) 'events.coverage'; $y.grade | Should -Be 'ok'
+        $y.finding | Should -BeExactly ('Lücke zwischen dem Beginn des Rückblicks und dem ältesten Eintrag des Protokolls, das am wenigsten weit zurückreicht, in Tagen: 6; der Rückblick reicht nur bis zum letzten Start: ja ' +
+            '(letzter Start: 13.01.2026 08:00; ein Strich heißt: nicht gelesen; eine Lücke, die der letzte Start erklärt, meldet diese Prüfung nicht).')
+        (& $r (& $case 2 5) 'events.sinceBoot').grade | Should -Be 'ok'
+        $z = & $r (& $case 2 5) 'events.coverage'; $z.grade | Should -Be 'check'; $z.finding | Should -Match 'Tage ohne Eintrag: 2\); der letzte Start \(13\.01\.2026 08:00\) erklärt das nicht\.'
+        $w = & $r (& $case 10 3) 'events.coverage'; $w.grade | Should -Be 'check'; $w.finding | Should -Match 'Tage ohne Eintrag: 4\); der letzte Start \(05\.01\.2026 08:00\) erklärt das nicht\.'
+        (& $r (& $case 10 3) 'events.sinceBoot').grade | Should -Be 'ok'
+        $Real.values.'events.sinceBootOnly' | Should -BeExactly 'Rückblick reicht nur bis zum letzten Start'
+    }
+    It 'fuehrt die neuen Werte mit schlichter Bezeichnung und die Seiten im Nachweis' {   # Punkte 3, 6, 8
+        $Real.values.'maintenance.scanOffset' | Should -BeExactly 'Verzögerung geplanter Scans von Defender Antivirus'
+        $Real.values.'maintenance.scanRandomWindow' | Should -BeExactly 'Zeitfenster der zufälligen Startzeit geplanter Scans'
+        $Real.values.'network.rssGlobal' | Should -BeExactly 'Receive Side Scaling global in Windows'
+        $Real.values.'network.rssDisabled' | Should -BeExactly 'Receive Side Scaling global oder an einem VMXNET3-Adapter abgeschaltet'
+        $WorkerPerfHealthValues['maintenance.scanOffset'].Unit | Should -Be 'Minuten'; $WorkerPerfHealthValues['maintenance.scanRandomWindow'].Unit | Should -Be 'Minuten'
+        $proof = ([regex]::Match((Get-Content (Join-Path $PSScriptRoot '../docs/guidance/quellen.md') -Raw), '(?ms)^## Zustandsbild\s*$(.*?)(?=^## |\z)').Groups[1].Value) -replace '\s+', ' '
+        foreach ($w in 'schedule-antivirus-scans-powershell', 'msft-netoffloadglobalsetting', 'win32-tssessionsetting', 'win32-quickfixengineering', '`maintenance.scanOffset`', '`network.rssGlobal`') {
+            $proof | Should -Match ([regex]::Escape($w)) -Because $w }
+        $d = $Real.checks | Where-Object id -eq 'maintenance.defenderScanInWorkHours'
+        $d.meaning | Should -Match 'Verzögerung'; $d.meaning | Should -Not -Match 'nicht sein genauer Beginn'; $d.meaning | Should -Not -Match 'wertet die Zeit des Schnellscans nicht aus'
+        @($d.values) | Should -Contain 'maintenance.scanOffset'; @($d.values) | Should -Contain 'maintenance.scanRandomWindow'
     }
 }

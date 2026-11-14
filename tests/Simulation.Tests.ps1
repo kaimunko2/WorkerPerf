@@ -231,6 +231,9 @@ Describe 'Simuliertes Zustandsbild' {
         @((Get-V 'vda.wemServices').Value | Where-Object { $_.State -ne 'Running' -or $_.StartMode -ne 'Auto' }).Count | Should -Be 0
         (Get-V 'size.balloonDriver').Value | Should -Be 'Running'; (Get-V 'print.citrixPrintService').Value | Should -Be 'Running'; (Get-V 'maintenance.updateService').Value | Should -Be 'Disabled'
         (Get-V 'network.rss').Value[0].Enabled | Should -BeTrue; ((Get-V 'sessions.limits').Value | Select-Object -First 1).IdleLimitMin | Should -Be 180
+        # Task 14s: der globale Schalter fuer RSS, die Listener mit ihren eigenen Zeitlimits, die Verzoegerung geplanter Scans ohne Zufallsfenster der Plattform
+        (Get-V 'network.rssGlobal').Value | Should -BeExactly 'enabled'; @((Get-V 'sessions.limits').Value | ForEach-Object { $_.TimeLimitPolicy }) | Should -Be @(1, 1)
+        (Get-V 'maintenance.scanOffset').Value | Should -Be 120; (Get-V 'maintenance.scanRandomWindow').State | Should -Be 'absent'
         (Get-V 'operation.powerPlan').Value | Should -Be 'highPerformance'; (Get-V 'print.mappingClientVersion').Value | Should -Be '6.4.1'
         $wu = (Get-V 'security.services').Value | Where-Object Name -eq 'wuauserv'; $wu.State | Should -Be 'Stopped'; $wu.StartMode | Should -Be 'Disabled'      # das Drehbuch widerspricht sich nicht
         ((Get-V 'security.services').Value | Where-Object Name -eq 'CpSvc').State | Should -Be 'Running'
@@ -266,7 +269,7 @@ Describe 'Simuliertes Zustandsbild' {
             }
             else { & $test $v.Value $def.Type $id }
         }
-        $checked | Should -Be 91      # 103 values less the twelve absent and unreadable ones
+        $checked | Should -Be 93      # 106 values less the thirteen absent and unreadable ones
     }
     It 'passt zur simulierten Stunde' {
         # size from the simulation's constants, as Initialize-WorkerPerfSource reports it, and the first tick
