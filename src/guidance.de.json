@@ -1466,7 +1466,7 @@
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         },
         {
-          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des Hosts aus",
+          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
           "source": "GO-EUC (Empfehlung aus der Praxis): VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling"
