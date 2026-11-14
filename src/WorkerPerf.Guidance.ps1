@@ -12,10 +12,11 @@
 $script:WorkerPerfSituations = @('cpu', 'memory', 'disk', 'share', 'profile', 'delay.many', 'delay.single', 'chronic.network', 'chronic.resource',
     'crash', 'hang', 'service', 'print', 'profileerror', 'system', 'fallback')
 # spec 5.5 names the first 14; module, driver and count are needed by the event situations, the rest by the Lagebild,
-# the hints and the head of the copy text; skipped carries the labels of skipped categories
+# the hints and the head of the copy text; skipped carries the labels of skipped categories, parts the joined parts of
+# the red and the yellow sentence of the Lagebild
 $script:WorkerPerfGuidancePlaceholders = @('user', 'app', 'share', 'baseline', 'value', 'target', 'from', 'to', 'duration', 'affected', 'resource',
     'endpoint', 'endpointValue', 'security', 'module', 'driver', 'count', 'server', 'date', 'signals', 'message', 'bottlenecks', 'delays',
-    'events', 'chronic', 'minutes', 'incidents', 'skipped')
+    'events', 'chronic', 'minutes', 'incidents', 'skipped', 'parts')
 # conditions without a variable part (spec 5.4 and the additions of the measurement categories); lead.<resource> names the
 # lead resource of a bottleneck, so that the one entry for a chronic state can speak about the resource it is
 $script:WorkerPerfGuidanceConditions = @('cause.app', 'cause.security', 'cause.none', 'cause.nodata', 'cause.notmeasured', 'scan',
@@ -34,19 +35,25 @@ $script:WorkerPerfGuidanceCoincidenceConditions = @('pattern.overlap')
 $script:WorkerPerfGuidanceParts = @('version', 'terms', 'vendors', 'userView', 'lagebild', 'hints', 'copy', 'fallbackNote', 'situations')
 $script:WorkerPerfGuidancePartKeys = [ordered]@{
     'userView' = @('many', 'one', 'none', 'unknown', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before')
-    'lagebild' = @('red', 'yellow', 'green', 'greenSkipped')
+    'lagebild' = @('red', 'yellow', 'green', 'greenSkipped', 'partBottlenecks', 'partDelays', 'partEvents', 'partChronic', 'partSeparator', 'notMeasured')
     'hints'    = @('unmeasured', 'skipped', 'notFinished', 'error', 'errorNoMessage', 'stopped')
-    'copy'     = @('head', 'summaryHead', 'measure', 'cause', 'affected', 'checks', 'remedies', 'contact')
+    'copy'     = @('head', 'summaryHead', 'measure', 'cause', 'affected', 'checks', 'remedies', 'contact', 'maxChecks', 'maxRemedies', 'moreChecks', 'moreCheck',
+        'moreRemedies', 'moreRemedy')
 }
+# the keys of these parts that hold a number, not a text: how many checks and remedies a copy text carries (ruling P3-R59)
+$script:WorkerPerfGuidancePartNumbers = @('copy.maxChecks', 'copy.maxRemedies')
 # the placeholders a text of these parts may hold (ruling P3-R26, the contract with the catalogue): '<part>.<key>', else
-# '<part>.*' for every other key of the part; copy.cause, copy.checks, copy.remedies and copy.contact are labels
+# '<part>.*' for every other key of the part; copy.cause, copy.checks, copy.remedies and copy.contact are labels. The red
+# and the yellow sentence hold no count themselves: each count stands in its part (lagebild.part*), so that the part of
+# a category that was not measured can be left out (ruling P3-R49)
 $script:WorkerPerfGuidanceTextPlaceholders = @{
     'copy.head' = @('server', 'date'); 'copy.summaryHead' = @('server', 'date', 'from', 'to'); 'copy.measure' = @('value', 'target')
-    'copy.affected' = @('affected'); 'copy.*' = @()
+    'copy.affected' = @('affected'); 'copy.moreChecks' = @('count'); 'copy.moreRemedies' = @('count'); 'copy.*' = @()
     'userView.unknown' = @('duration', 'from', 'to'); 'userView.*' = @('affected', 'duration', 'from', 'to', 'count')
-    'lagebild.red' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents')
-    'lagebild.yellow' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents')
-    'lagebild.greenSkipped' = @('skipped'); 'lagebild.*' = @()
+    'lagebild.red' = @('parts', 'minutes', 'incidents')
+    'lagebild.yellow' = @('parts', 'minutes', 'incidents')
+    'lagebild.partBottlenecks' = @('bottlenecks'); 'lagebild.partDelays' = @('delays'); 'lagebild.partEvents' = @('events'); 'lagebild.partChronic' = @('chronic')
+    'lagebild.greenSkipped' = @('skipped'); 'lagebild.notMeasured' = @('skipped'); 'lagebild.*' = @()
     'hints.unmeasured' = @('signals'); 'hints.skipped' = @('skipped'); 'hints.error' = @('message'); 'hints.*' = @()
 }
 # list of a situation -> required text fields of its elements
@@ -96,6 +103,11 @@ function Assert-WorkerPerfGuidanceString([string]$Path, [string]$Entry, [string]
     if ($Value -isnot [string]) { Stop-WorkerPerfGuidance $Path $Entry $Item $Field 'ist kein Text' }
     if ([string]::IsNullOrWhiteSpace($Value)) { Stop-WorkerPerfGuidance $Path $Entry $Item $Field 'ist leer' }
     Test-WorkerPerfGuidanceText $Path $Entry $Item $Field $Value
+}
+
+function Test-WorkerPerfGuidanceCount($Value) {
+    # Whether a value of the catalogue is a whole number from 1 on (a JSON number without fraction; no text, no list).
+    return (($Value -is [int] -or $Value -is [long]) -and $Value -ge 1)
 }
 
 function Assert-WorkerPerfGuidanceField([string]$Path, [string]$Entry, [string]$Item, $Object, [string]$Field) {
@@ -180,6 +192,34 @@ function Assert-WorkerPerfGuidanceAlwaysValues([string]$Path, [string]$Entry, [s
     }
 }
 
+function Test-WorkerPerfGuidanceImpactVariants([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
+    # impactVariants (optional): other wordings of the impact of a situation, each with the conditions (when, at least
+    # one) under which it replaces impact, so that the sentence does not state as a fact what the capture did not
+    # measure. Like impact, a variant only uses values every incident has.
+    $variants = Get-WorkerPerfGuidanceMember $Entry 'impactVariants'
+    if ($null -eq $variants) { return }
+    if ($variants.Value -isnot [array]) { Stop-WorkerPerfGuidance $Path $Name '' 'impactVariants' 'ist keine Liste' }
+    $list = @($variants.Value)
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $item = "impactVariants[$i]"
+        if (-not (Test-WorkerPerfGuidanceObject $list[$i])) { Stop-WorkerPerfGuidance $Path $Name $item '' 'ist kein Objekt' }
+        Assert-WorkerPerfGuidanceField $Path $Name $item $list[$i] 'text'
+        foreach ($m in [regex]::Matches($list[$i].text, '\{([A-Za-z0-9]+)\}')) {
+            if ($script:WorkerPerfGuidanceAlwaysValues -cnotcontains $m.Groups[1].Value) {
+                Stop-WorkerPerfGuidance $Path $Name $item 'text' "enthaelt den Platzhalter '$($m.Value)', den nicht jeder Vorfall hat"
+            }
+        }
+        $when = Get-WorkerPerfGuidanceMember $list[$i] 'when'
+        if ($null -eq $when) { Stop-WorkerPerfGuidance $Path $Name $item 'when' 'fehlt' }
+        if ($when.Value -isnot [array] -or @($when.Value).Count -eq 0) { Stop-WorkerPerfGuidance $Path $Name $item 'when' 'ist keine Liste mit Bedingungen' }
+        foreach ($n in @($when.Value)) {
+            if ($n -isnot [string] -or -not (Test-WorkerPerfGuidanceCondition $n $Catalogue $Signals $Apps)) {
+                Stop-WorkerPerfGuidance $Path $Name $item 'when' "enthaelt die unbekannte Bedingung '$n'"
+            }
+        }
+    }
+}
+
 function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
     if (-not (Test-WorkerPerfGuidanceObject $Entry)) { Stop-WorkerPerfGuidance $Path $Name '' '' 'ist kein Objekt' }
     foreach ($f in 'title', 'meaning', 'impact', 'short') { Assert-WorkerPerfGuidanceField $Path $Name '' $Entry $f }
@@ -189,6 +229,7 @@ function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, 
         if ($m.Success) { Stop-WorkerPerfGuidance $Path $Name '' $f "darf keinen Platzhalter enthalten ('$($m.Value)')" }
     }
     foreach ($f in 'meaning', 'impact') { Assert-WorkerPerfGuidanceAlwaysValues $Path $Name $f $Entry.$f }
+    Test-WorkerPerfGuidanceImpactVariants $Path $Name $Entry $Catalogue $Signals $Apps
     foreach ($list in $script:WorkerPerfGuidanceItemFields.Keys) {
         $p = Get-WorkerPerfGuidanceMember $Entry $list
         if ($null -eq $p) { Stop-WorkerPerfGuidance $Path $Name '' $list 'fehlt' }
@@ -234,6 +275,10 @@ function Read-WorkerPerfGuidance([string]$Path, $Apps = $null) {
             if ($null -eq (Get-WorkerPerfGuidanceMember $o $k)) { Stop-WorkerPerfGuidance $Path $part '' $k 'fehlt' }
         }
         foreach ($p in $o.PSObject.Properties) {
+            if ($script:WorkerPerfGuidancePartNumbers -ccontains ($part + '.' + $p.Name)) {
+                if (-not (Test-WorkerPerfGuidanceCount $p.Value)) { Stop-WorkerPerfGuidance $Path $part '' $p.Name 'ist keine ganze Zahl ab 1' }
+                continue
+            }
             Assert-WorkerPerfGuidanceString $Path $part '' $p.Name $p.Value
             $allowed = $script:WorkerPerfGuidanceTextPlaceholders[$part + '.' + $p.Name]
             if ($null -eq $allowed) { $allowed = $script:WorkerPerfGuidanceTextPlaceholders[$part + '.*'] }
@@ -784,7 +829,8 @@ function Get-WorkerPerfGuidanceUserView($Catalogue, $Incident, [string[]]$Condit
 function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
     # The guidance of one incident: the catalogue entry of its situation (the fallback entry, marked, when the catalogue
     # has none), filled with the values of the facts (Get-WorkerPerfGuidanceFacts), with only the elements the facts
-    # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts.
+    # support, its technical name (Texts: Read-WorkerPerfTexts), the user's view and the terms used in its texts. The
+    # impact is the situation's impact, or the first of its impactVariants whose conditions all hold.
     $situation = [string](Get-WorkerPerfField $Facts 'Situation')
     $conditions = [string[]](Get-WorkerPerfGuidanceList $Facts 'Conditions')
     # Values: a hashtable or any other dictionary (an ordered one gives the same result)
@@ -803,6 +849,15 @@ function New-WorkerPerfGuidance($Catalogue, $Facts, $Incident, $Texts) {
     foreach ($f in 'title', 'meaning', 'impact', 'short') {
         $filled[$f] = $null
         $template = Get-WorkerPerfField $entry $f
+        # the impact in the first other wording whose conditions all hold (impactVariants), else as it stands
+        if ($f -eq 'impact') {
+            foreach ($variant in (Get-WorkerPerfGuidanceList $entry 'impactVariants')) {
+                $when = Get-WorkerPerfGuidanceList $variant 'when'
+                if ($when.Count -eq 0 -or @($when | Where-Object { $conditions -cnotcontains [string]$_ }).Count -gt 0) { continue }
+                $other = Get-WorkerPerfField $variant 'text'
+                if ($null -ne $other -and $null -ne (Format-WorkerPerfGuidanceText ([string]$other) $values)) { $template = $other; break }
+            }
+        }
         if ($null -ne $template) { $filled[$f] = Format-WorkerPerfGuidanceText ([string]$template) $values }
         if ($f -ne 'short' -and $null -ne $filled[$f]) { $templates.Add([string]$template) }
     }
@@ -1000,9 +1055,23 @@ function Format-WorkerPerfGuidancePart($Catalogue, [string]$Part, [string]$Key, 
     throw "Catalogue text '$Part.$Key' could not be filled."
 }
 
+# The parts of the red and the yellow sentence of the Lagebild, in their order: the catalogue text (lagebild.<Key>), the
+# value it names (Value: the placeholder of its count), the place of the report data whose category the count needs
+# (skipped[].places: 'events' as for the key figure of the page; a chronic state of the connection needs the ICA values,
+# 'citrix') and the states whose sentence lists the part (the yellow sentence says in its lead-in that there is no
+# bottleneck).
+$script:WorkerPerfLagebildParts = @(
+    @{ Key = 'partBottlenecks'; Value = 'bottlenecks'; Place = ''; States = @('red') }
+    @{ Key = 'partDelays'; Value = 'delays'; Place = ''; States = @('red', 'yellow') }
+    @{ Key = 'partEvents'; Value = 'events'; Place = 'events'; States = @('red', 'yellow') }
+    @{ Key = 'partChronic'; Value = 'chronic'; Place = 'citrix'; States = @('red', 'yellow') })
+
 function Get-WorkerPerfLagebild {
     # The situation summary of the capture (spec 3.1): state with symbol and word, sentence (catalogue part lagebild),
-    # key figures, hints on the capture (catalogue part hints) and the id of the most important incident.
+    # key figures, hints on the capture (catalogue part hints) and the id of the most important incident. The red and
+    # the yellow sentence are joined from their parts ($script:WorkerPerfLagebildParts); a part whose count is zero and
+    # whose category was left out is not listed (nothing that was not measured counts as zero, ruling P3-R49), and the
+    # sentence then ends with the reservation lagebild.notMeasured. A part with a real count stays.
     # Incidents: the capture's incidents only (Data.incidents). Incidents of the lookback (Data.before) count nowhere; the
     # caller does not pass them, and nothing is filtered here. Data: the report data (meta, sollIst, skipped). Texts:
     # Read-WorkerPerfTexts (symbol and word of the state).
@@ -1065,9 +1134,23 @@ function Get-WorkerPerfLagebild {
     }
     if ($signals.Count -gt 0) { $v['signals'] = $signals.ToArray() -join ', ' }
 
+    # the places of the report data that were not measured, as the page reads them for its key figures
+    $notMeasured = New-Object System.Collections.Generic.List[string]
+    foreach ($s in $skipped) { foreach ($place in (Get-WorkerPerfGuidanceList $s 'places')) { $notMeasured.Add([string]$place) } }
     $sentenceKey = $state
-    if ($state -eq 'green' -and @($skipped | Where-Object { [string](Get-WorkerPerfField $_ 'id') -ceq 'Ereignisse' }).Count -gt 0) { $sentenceKey = 'greenSkipped' }
+    $reserve = $false
+    if ($state -eq 'green') { if ($notMeasured.Contains('events')) { $sentenceKey = 'greenSkipped' } }
+    else {
+        $parts = New-Object System.Collections.Generic.List[string]
+        foreach ($part in $script:WorkerPerfLagebildParts) {
+            if ($part.States -cnotcontains $state) { continue }
+            if ($part.Place -and $notMeasured.Contains($part.Place) -and $v[$part.Value] -eq '0') { $reserve = $true; continue }
+            $parts.Add((Format-WorkerPerfGuidancePart $Catalogue 'lagebild' $part.Key $v))
+        }
+        if ($parts.Count -gt 0) { $v['parts'] = $parts.ToArray() -join (Format-WorkerPerfGuidancePart $Catalogue 'lagebild' 'partSeparator' $v) }
+    }
     $sentence = Format-WorkerPerfGuidancePart $Catalogue 'lagebild' $sentenceKey $v
+    if ($reserve) { $sentence += ' ' + (Format-WorkerPerfGuidancePart $Catalogue 'lagebild' 'notMeasured' $v) }
 
     # hints: what was left out on purpose before what could not be measured (ruling P3-R28); duration, interrupted and
     # stopflag give none (ruling P3-R5)
@@ -1242,14 +1325,32 @@ function Get-WorkerPerfCopyAffected($Incident, $Data, $Facts, $Catalogue, $Texts
     return (Format-WorkerPerfGuidancePart $Catalogue 'copy' 'affected' @{ affected = $affected })
 }
 
+function Get-WorkerPerfCopyLimit($Catalogue, [string]$Key) {
+    # How many steps of a list a copy text carries (copy.maxChecks, copy.maxRemedies of the catalogue); a value that is
+    # no whole number from 1 on (a catalogue changed after loading) stops with its name.
+    $n = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'copy') $Key
+    if (-not (Test-WorkerPerfGuidanceCount $n)) { throw "Catalogue value 'copy.$Key' is no whole number from 1 on." }
+    return [int]$n
+}
+
+function Get-WorkerPerfCopyMore($Catalogue, [int]$Left, [string]$One, [string]$Many) {
+    # The paragraph after a shortened block of a copy text: how many more steps stand in the report (catalogue texts
+    # copy.<One> for one, copy.<Many> with the number); nothing when no step was left out.
+    if ($Left -eq 1) { return (Format-WorkerPerfGuidancePart $Catalogue 'copy' $One @{}) }
+    if ($Left -gt 1) { return (Format-WorkerPerfGuidancePart $Catalogue 'copy' $Many @{ count = [string]$Left }) }
+}
+
 function Get-WorkerPerfCopyParagraphs {
     # The paragraphs of the copy text of one incident, unwrapped: head (copy.head), time and duration with title and
     # technical name (guide.tech; the date first for an incident before the capture), the user's view (guide.userView),
     # impact, measured value with target (copy.measure, dropped without a value), cause (copy.cause and the incident's
     # causeText, the part of its sentence on cause and context), affected (Get-WorkerPerfCopyAffected), then the numbered
     # checks (copy.checks; texts copy.check), the remedies (copy.remedies; '- ' and copy.remedy) and the contacts
-    # (copy.contact; '- '), each block after an empty paragraph. Guide: New-WorkerPerfGuidance of the incident; Data: the
-    # report data; Texts: Read-WorkerPerfTexts. Plain pipeline output (the caller writes @(...)).
+    # (copy.contact; '- '), each block after an empty paragraph. Of the checks and the remedies the text carries the first
+    # ones only, in the guide's order (copy.maxChecks, copy.maxRemedies), and says after a shortened block how many more
+    # stand in the report (copy.moreChecks, copy.moreRemedies; ruling P3-R59); it carries every contact. Guide:
+    # New-WorkerPerfGuidance of the incident; Data: the report data; Texts: Read-WorkerPerfTexts. Plain pipeline output
+    # (the caller writes @(...)).
     param($Incident, $Guide, $Data, $Catalogue, [Parameter(Mandatory = $true)]$Texts)
     $facts = Get-WorkerPerfCopyFacts $Incident $Data $Catalogue $Texts
     $v = $facts.Values
@@ -1269,16 +1370,23 @@ function Get-WorkerPerfCopyParagraphs {
     if ($checks.Count -gt 0) {
         ''
         Format-WorkerPerfGuidancePart $Catalogue 'copy' 'checks' @{}
-        for ($n = 0; $n -lt $checks.Count; $n++) {
+        $shown = [Math]::Min($checks.Count, (Get-WorkerPerfCopyLimit $Catalogue 'maxChecks'))
+        for ($n = 0; $n -lt $shown; $n++) {
             $c = $checks[$n]
             ('{0}. ' -f ($n + 1)) + (Format-WorkerPerfGuidanceWord $Texts 'copy.check' @([string](Get-WorkerPerfField $c 'text'), [string](Get-WorkerPerfField $c 'where'), [string](Get-WorkerPerfField $c 'sign')))
         }
+        Get-WorkerPerfCopyMore $Catalogue ($checks.Count - $shown) 'moreCheck' 'moreChecks'
     }
     $remedies = Get-WorkerPerfGuidanceList $Guide 'remedies'
     if ($remedies.Count -gt 0) {
         ''
         Format-WorkerPerfGuidancePart $Catalogue 'copy' 'remedies' @{}
-        foreach ($r in $remedies) { '- ' + (Format-WorkerPerfGuidanceWord $Texts 'copy.remedy' @([string](Get-WorkerPerfField $r 'precondition'), [string](Get-WorkerPerfField $r 'text'))) }
+        $shown = [Math]::Min($remedies.Count, (Get-WorkerPerfCopyLimit $Catalogue 'maxRemedies'))
+        for ($n = 0; $n -lt $shown; $n++) {
+            $r = $remedies[$n]
+            '- ' + (Format-WorkerPerfGuidanceWord $Texts 'copy.remedy' @([string](Get-WorkerPerfField $r 'precondition'), [string](Get-WorkerPerfField $r 'text')))
+        }
+        Get-WorkerPerfCopyMore $Catalogue ($remedies.Count - $shown) 'moreRemedy' 'moreRemedies'
     }
     $contacts = Get-WorkerPerfGuidanceList $Guide 'contacts'
     if ($contacts.Count -gt 0) {

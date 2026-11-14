@@ -45,7 +45,7 @@ Describe 'Durchlauf Simulation -> Bericht' {
         $i = Get-Hit 'backend'
         $i.delayProcs[0].name | Should -Be 'nexus.exe'; $i.resources | Should -Be @('endpoint')
         ($i.endpoints | Where-Object name -eq 'Oracle-Listener').maxMs | Should -BeGreaterOrEqual 200
-        $i.text | Should -Match 'außerhalb des Workers'
+        $i.text | Should -Match 'Die Ursache liegt vermutlich außerhalb des Servers'
     }
     It 'bewertet alle zwoelf Messwerte gegen das Soll' {
         $D.sollIst.Count | Should -Be 12; @($D.sollIst | Where-Object measured).Count | Should -Be 12
@@ -122,15 +122,38 @@ Describe 'Fokus, kein Befund, Zeitausschnitt' {
         $i[0].cause.kind | Should -Be 'nodata'; $i[0].main | Should -BeNullOrEmpty; $n.unmeasured.input | Should -BeTrue
         $i[0].text | Should -Match 'CPU-Engpass \(.+\)\. Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar\. Kein Hauptverursacher ermittelt: im Fenster liegen keine Prozessdaten vor\.$'
     }
-    It 'schliesst einen Engpass in einer nicht gemessenen Worker-Ressource nicht aus' {   # Abschlussrunde I3
+    It 'stellt die Verzoegerung nicht als Tatsache hin, wenn die Eingabeverzoegerung nicht gemessen wurde' {   # fix round 4, B2 (ruling P3-R65)
+        $n = Get-ReportData $R.NoData
+        $n.unmeasured.input | Should -BeTrue
+        $fact = 'Eingaben, Fensterwechsel und Bildaufbau reagierten für die betroffenen Benutzer spürbar verzögert.'
+        $likely = 'Eingaben, Fensterwechsel und Bildaufbau können für die Benutzer verzögert reagiert haben; die Eingabeverzögerung wurde nicht gemessen.'
+        $i = @($n.incidents | Where-Object { $_.type -eq 'engpass' -and $_.lead -eq 'cpu' })[0]
+        $i.guide.conditions | Should -Contain 'unmeasured.input.session'; $i.guide.userView | Should -Be 'Betroffene Sitzungen nicht bestimmbar.'
+        $i.guide.impact | Should -BeExactly $likely
+        # the copy text follows, with and without names
+        foreach ($t in $i.copy.named, $i.copy.anonymous) {
+            $flat = $t -replace '\r?\n\s*', ' '
+            $flat | Should -Match ([regex]::Escape($likely)); $flat | Should -Not -Match 'reagierten für die betroffenen Benutzer'
+        }
+        # the incident of the network path: nothing points to affected sessions that cannot be named
+        $u = @($n.incidents | Where-Object { $_.type -eq 'umfeld' })[0]
+        $u.guide.situation | Should -Be 'fallback'; $u.guide.impact | Should -BeExactly 'Ob Benutzer die Auffälligkeit gespürt haben, ist nicht bestimmbar: Die Eingabeverzögerung wurde nicht gemessen.'
+        # no incident of this report states a delay as a fact in its impact
+        foreach ($x in @($n.incidents)) { $x.guide.impact | Should -Not -Match '\b(reagierten|dauerten|ließen|wirkten dabei)\b' -Because "Vorfall $($x.id)" }
+        # with the input delay measured, the sentence stays as it was
+        $D.unmeasured.input | Should -BeFalse
+        $cpu = Get-Hit 'cpu'; $cpu.guide.conditions | Should -Not -Contain 'unmeasured.input.session'; $cpu.guide.impact | Should -BeExactly $fact
+        ($cpu.copy.named -replace '\r?\n\s*', ' ') | Should -Match ([regex]::Escape($fact))
+    }
+    It 'schliesst einen Engpass in einer nicht gemessenen Ressource des Servers nicht aus' {   # Abschlussrunde I3
         $disk = $Exp | Where-Object Key -eq 'disk'; $out = Join-Path $TestDrive 'novol.html'
         $bare = Copy-SimRun $R.Run (Join-Path $TestDrive 'novol') @('volumes.csv')
         [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $bare -OutFile $out -From (Get-ServerTime $R.Run ($disk.StartMs - 60000)) -To (Get-ServerTime $R.Run ($disk.EndMs + 60000)) 6>$null)
         $n = Get-ReportData $out
         $n.unmeasured.worker | Should -Be @('Datenträger-Antwortzeit'); ($n.sollIst | Where-Object id -eq 'disk.latency').measured | Should -BeFalse
         $i = @($n.incidents | Where-Object type -eq 'ohne-engpass'); $i.Count | Should -Be 1
-        $i[0].text | Should -Match 'Kein Engpass in den gemessenen Worker-Ressourcen\. Nicht gemessen: Datenträger-Antwortzeit; ein Engpass dort ist nicht ausgeschlossen\.'
-        $i[0].text | Should -Not -Match 'außerhalb des Workers'
+        $i[0].text | Should -Match 'Kein Engpass in den gemessenen Ressourcen des Servers\. Nicht gemessen: Datenträger-Antwortzeit; ein Engpass dort ist nicht ausgeschlossen\.'
+        $i[0].text | Should -Not -Match 'außerhalb des Servers'
     }
     It 'wertet einen Zeitausschnitt aus' {
         $out = Join-Path $TestDrive 'cut.html'; $from = [DateTimeOffset]::FromUnixTimeMilliseconds($R.StartMs + 240000).LocalDateTime
@@ -572,6 +595,63 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $all = @(Get-CopyTexts $D); $all.Count | Should -Be (2 * (12 + 4) + 2)
         foreach ($t in $all) { $t | Should -Not -BeNullOrEmpty; Get-LongLines $t | Should -BeNullOrEmpty }
     }
+    It 'nimmt in den Kopiertext eines Vorfalls nur die ersten Pruefschritte und Vorschlaege und sagt, wie viele weitere im Bericht stehen' {   # ruling P3-R59
+        # the numbers are the catalogue's and stand in the report data (the page folds what exceeds them)
+        $maxChecks = [int]$Catalogue.copy.maxChecks; $maxRemedies = [int]$Catalogue.copy.maxRemedies
+        $maxChecks | Should -Be 5; $maxRemedies | Should -Be 3; $D.guidance.copy.maxChecks | Should -Be 5; $D.guidance.copy.maxRemedies | Should -Be 3
+        function Get-CopySteps([string]$Text) {
+            # the numbered checks, the remedies and the lines on left-out steps of one copy text
+            $lines = @($Text -split "`r`n")
+            $at = [array]::IndexOf($lines, [string]$Catalogue.copy.remedies); $end = [array]::IndexOf($lines, [string]$Catalogue.copy.contact); if ($end -lt 0) { $end = $lines.Count }
+            $remedies = @(); if ($at -ge 0) { $remedies = @($lines[($at + 1)..($end - 1)] | Where-Object { $_ -match '^- ' }) }
+            @{ Checks = @($lines | Where-Object { $_ -match '^\d+\. ' }); Remedies = $remedies; Lines = $lines }
+        }
+        function Get-MoreLine([int]$Left, [string]$One, [string]$Many) { if ($Left -eq 1) { [string]$Catalogue.copy.$One } elseif ($Left -gt 1) { ([string]$Catalogue.copy.$Many).Replace('{count}', [string]$Left) } }
+        $more = @([string]$Catalogue.copy.moreCheck, [string]$Catalogue.copy.moreRemedy, ([string]$Catalogue.copy.moreChecks).Split('{')[0], ([string]$Catalogue.copy.moreRemedies).Split('{')[0])
+        # the print incident: the longest guidance of the hour; the report data keep every step
+        $print = Get-ByKey 'print.spooler'
+        $checks = @($print.guide.checks).Count; $remedies = @($print.guide.remedies).Count
+        $checks | Should -BeGreaterThan 10; $remedies | Should -BeGreaterThan 10
+        foreach ($t in $print.copy.named, $print.copy.anonymous) {
+            $s = Get-CopySteps $t
+            $s.Checks.Count | Should -Be 5; $s.Remedies.Count | Should -Be 3
+            @($s.Checks | ForEach-Object { ($_ -split '\. ', 2)[0] }) | Should -Be @('1', '2', '3', '4', '5')
+            $s.Lines | Should -Contain (Get-MoreLine ($checks - 5) 'moreCheck' 'moreChecks'); $s.Lines | Should -Contain (Get-MoreLine ($remedies - 3) 'moreRemedy' 'moreRemedies')
+            # the first steps of the guide, in its order
+            $flat = $t -replace "`r`n\s*", ' '
+            $last = -1
+            foreach ($c in @($print.guide.checks)[0..4]) { $here = $flat.IndexOf(([string]$c.text).Substring(0, 25)); $here | Should -BeGreaterThan $last; $last = $here }
+            # every contact
+            foreach ($c in @($print.guide.contacts)) { $flat.Contains(([string]$c.text).Substring(0, 20)) | Should -BeTrue }
+            $s.Lines.Count | Should -BeLessThan 110
+        }
+        # every incident of the report, with and without names: the steps the catalogue allows, the line only where steps are left out
+        $short = 0
+        foreach ($i in @($D.incidents) + @($D.before.incidents)) {
+            $checks = @($i.guide.checks).Count; $remedies = @($i.guide.remedies).Count
+            foreach ($t in $i.copy.named, $i.copy.anonymous) {
+                $s = Get-CopySteps $t
+                $s.Checks.Count | Should -Be ([Math]::Min($checks, $maxChecks)) -Because "Vorfall $($i.id)"; $s.Remedies.Count | Should -Be ([Math]::Min($remedies, $maxRemedies)) -Because "Vorfall $($i.id)"
+                $want = @(@((Get-MoreLine ($checks - $maxChecks) 'moreCheck' 'moreChecks'), (Get-MoreLine ($remedies - $maxRemedies) 'moreRemedy' 'moreRemedies')) | Where-Object { $_ })
+                @($s.Lines | Where-Object { $line = $_; @($more | Where-Object { $line.StartsWith($_) }).Count -gt 0 }) | Should -Be $want -Because "Vorfall $($i.id)"
+            }
+            if ($checks -le $maxChecks -and $remedies -le $maxRemedies) { $short++ }
+        }
+        $short | Should -BeGreaterThan 0                                                            # an incident with fewer steps has no such line
+        # the summary of the capture is not shortened and has no such line
+        foreach ($t in $D.copyAll.named, $D.copyAll.anonymous) {
+            @($t -split "`r`n" | Where-Object { $line = $_; @($more | Where-Object { $line.StartsWith($_) }).Count -gt 0 }) | Should -Be @()
+            @($t -split "`r`n" | Where-Object { $_ -match '^- ' }).Count | Should -Be (12 + 4)
+        }
+        # a masked report alike
+        foreach ($f in $R.Masked, $R.MaskedP) {
+            $x = Get-ReportData $f; $p = $x.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.event.kind -eq 'print' }
+            $s = Get-CopySteps $p.copy.named
+            $s.Checks.Count | Should -Be 5 -Because $f; $s.Remedies.Count | Should -Be 3 -Because $f; @($p.guide.checks).Count | Should -Be @($print.guide.checks).Count -Because $f
+            $s.Lines | Should -Contain (Get-MoreLine (@($p.guide.checks).Count - 5) 'moreCheck' 'moreChecks') -Because $f
+            $x.guidance.copy.maxChecks | Should -Be 5 -Because $f
+        }
+    }
     It 'maskiert Anleitung und Kopiertexte im maskierten Bericht und laesst die Fassung ohne Namen weg' {
         $m = Get-ReportData $R.Masked
         $m.copyAll.anonymous | Should -BeNullOrEmpty; $m.copyAll.named | Should -Not -Match 'SIM-VDA01'; (($m.incidents | Where-Object lead -eq 'cpu').copy.named) | Should -Not -Match 'user003'
@@ -648,15 +728,21 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $cpu = Get-ByKey 'cpu'
         $cpu.main.app | Should -Be 'EXCEL.EXE'; @($cpu.guide.conditions) | Should -Contain 'app.office'
         @($cpu.guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
-        # the memory bottleneck is caused by ms-teams.exe; a crash of OUTLOOK.EXE is an event incident of Microsoft Office
+        # the memory bottleneck is caused by ms-teams.exe; a crash of OUTLOOK.EXE is an event incident of Microsoft Outlook, which
+        # has its own key (Aussage angepasst, fix round 3 of Task 6, ruling P3-R57: before, Outlook was a process of 'office')
         @((Get-ByKey 'memory').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.teams')
-        @((Get-ByKey 'crash.manyusers').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        @((Get-ByKey 'crash.manyusers').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        @((Get-ByKey 'profile').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        # the steps for Outlook alone stand in the guidance of the profile bottleneck, the steps for every Office program in the crash's
+        @((Get-ByKey 'profile').guide.checks | Where-Object { $_.text -match 'OST-Datei von Outlook' }).Count | Should -Be 1
+        @((Get-ByKey 'crash.manyusers').guide.checks | Where-Object { $_.text -match 'Add-ins von OUTLOOK\.EXE' }).Count | Should -Be 1
+        @((Get-ByKey 'cpu').guide.checks + (Get-ByKey 'cpu').guide.remedies | Where-Object { ($_.text + $_.where + $_.sign) -match 'Outlook' }) | Should -Be @()
         # no incident of the hour is caused by another standard application; robocopy.exe (disk) is none
-        @(@($D.incidents) + @($D.before.incidents) | ForEach-Object { $_.guide.conditions } | Where-Object { $_ -like 'app.*' } | Sort-Object -Unique) | Should -Be @('app.office', 'app.teams')
+        @(@($D.incidents) + @($D.before.incidents) | ForEach-Object { $_.guide.conditions } | Where-Object { $_ -like 'app.*' } | Sort-Object -Unique) | Should -Be @('app.office', 'app.outlook', 'app.teams')
         @((Get-ByKey 'disk').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @()
         # the list as read, like the catalogue
         ($D.appList | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($AppList | ConvertTo-Json -Depth 20 -Compress)
-        @($D.appList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus')
+        @($D.appList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus', 'outlook')
         # a masked report keeps the keys (identifiers) and the condition
         foreach ($f in $R.Masked, $R.MaskedP) {
             $x = Get-ReportData $f

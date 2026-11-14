@@ -660,11 +660,11 @@ Describe 'Ereignisvorfaelle der simulierten Stunde' {
         $off = [int]$M.Meta.OffsetMinutes
         $at = { param($ms, $f) [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.AddMinutes($off).ToString($f, [cultureinfo]::InvariantCulture) }
         $text = @($lb.Incidents | ForEach-Object { Get-WorkerPerfEventIncidentText -Incident $_ -Model $M -Texts $Texts -Config $Cfg -OffsetMinutes $off })
-        $text[0] | Should -BeExactly ((& $at $exp[0].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von EXCEL.EXE (1-mal). Benutzer: user001. Fehlerhaftes Modul: simaddin.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Ursache liegt wahrscheinlich im Modul simaddin.dll (betrifft EXCEL.EXE, WINWORD.EXE).')
+        $text[0] | Should -BeExactly ((& $at $exp[0].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von EXCEL.EXE (1-mal). Benutzer: user001. Fehlerhaftes Modul: simaddin.dll. Fehlercode: 0xc0000005 (Zugriffsverletzung). Ursache liegt wahrscheinlich im Modul simaddin.dll (betrifft EXCEL.EXE, WINWORD.EXE).')
         $text[1] | Should -Match ('^' + [regex]::Escape((& $at $exp[1].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von WINWORD.EXE (1-mal). Benutzer: user002.'))
         $span = (& $at $exp[2].StartMs 'dd.MM.yyyy HH:mm:ss') + [char]0x2013 + $(if ((& $at $exp[2].StartMs 'yyyyMMdd') -eq (& $at $exp[2].EndMs 'yyyyMMdd')) { & $at $exp[2].EndMs 'HH:mm:ss' } else { & $at $exp[2].EndMs 'dd.MM.yyyy HH:mm:ss' })
         $text[2] | Should -BeExactly ($span + ': Absturz von nexus.exe (3-mal). Benutzer: user004. Fehlerhaftes Modul: nxreport.dll, immer dasselbe. Fehlercode: 0xc0000409 (Pufferüberlauf erkannt, Programm vom System beendet). Nur user004 betroffen, 3-mal: spricht für Profil oder Daten dieses Benutzers.')
-        $text[3] | Should -BeExactly ((& $at $exp[3].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von simscan.exe (1-mal). Sitzung nicht ermittelt. Fehlerhaftes Modul: simscan.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Kein Muster erkannt.')
+        $text[3] | Should -BeExactly ((& $at $exp[3].StartMs 'dd.MM.yyyy HH:mm:ss') + ': Absturz von simscan.exe (1-mal). Sitzung nicht ermittelt. Fehlerhaftes Modul: simscan.dll. Fehlercode: 0xc0000005 (Zugriffsverletzung). Kein Muster erkannt.')
         $script:SimLbText = $text
     }
     It 'liefert den Druckzustand der simulierten Stunde' {
@@ -903,7 +903,7 @@ Describe 'Klartext eines Ereignisvorfalls' {
     It 'nennt Kopf je Art, Zeit in Ortszeit und die Zusaetze' {
         $c = (Get-PatInc @(New-Ev 0 -Sid 0 -User '' -App 'spoolsv.exe' -Module 'hpsimgr.dll'))[0]
         $clock = [DateTimeOffset]::FromUnixTimeMilliseconds($T0).UtcDateTime.AddMinutes(60).ToString('HH:mm:ss')
-        Get-Text $c 60 | Should -BeExactly "$($clock): Druckproblem – Sim PCL 6 (1-mal). Ohne Benutzersitzung. Fehlerhaftes Modul: hpsimgr.dll, immer dasselbe. Fehlercode: 0xc0000005 (Zugriffsverletzung). Das Modul hpsimgr.dll gehört zum Druckertreiber Sim PCL 6."
+        Get-Text $c 60 | Should -BeExactly "$($clock): Druckproblem – Sim PCL 6 (1-mal). Ohne Benutzersitzung. Fehlerhaftes Modul: hpsimgr.dll. Fehlercode: 0xc0000005 (Zugriffsverletzung). Das Modul hpsimgr.dll gehört zum Druckertreiber Sim PCL 6."
         $h = (Get-PatInc @((New-Ev 0 'hang' -Module '' -More @{ Code = 'AppHangB1'; AppVersion = '1.0' }), (New-Ev 1 'hang' -Sid 4 -User 'user003' -Module '' -More @{ Code = 'AppHangB1'; AppVersion = '1.1' })))[0]
         Get-Text $h | Should -Match ': EXCEL\.EXE reagierte nicht und wurde beendet \(2-mal\)\. Benutzer: user002, user003\. Fehlercode: AppHangB1 \(wegen Nichtreagierens beendet\)\. Versionen: 1\.0, 1\.1\. Kein Muster erkannt\.$'
         $s = (Get-PatInc @(New-Ev 0 'service' '' 0 '' '' @{ Service = 'BrokerAgent'; Group = 'service'; Code = ''; Module = '' }))[0]
@@ -912,6 +912,22 @@ Describe 'Klartext eines Ereignisvorfalls' {
         Get-Text $p | Should -Match ': Profilproblem – Microsoft-Windows-User Profiles Service \(1-mal\)\. Benutzer: user014\. Kein Muster erkannt\.$'
         $y = (Get-PatInc @(New-Ev 0 'system' '' 0 '' '' @{ Group = 'storage'; Source = 'disk'; Object = 'D:'; Code = ''; Module = '' }))[0]
         Get-Text $y | Should -Match ': Systemfehler – Datenträgerfehler D: \(1-mal\)\. Ohne Benutzersitzung\. Kein Muster erkannt\.$'
+    }
+    It 'sagt "immer dasselbe" nur von einem Modul, das mehr als ein Ereignis nennt' {                # fix round 4, B3 (ruling P3-R65)
+        $one = (Get-PatInc @(New-Ev 0))[0]
+        $one.Count | Should -Be 1; $one.SameModule | Should -BeTrue
+        Get-Text $one | Should -Match ': Absturz von EXCEL\.EXE \(1-mal\)\. Benutzer: user002\. Fehlerhaftes Modul: vbe7\.dll\. Fehlercode: '
+        Get-Text $one | Should -Not -Match 'immer|dasselbe'
+        $two = (Get-PatInc @((New-Ev 0), (New-Ev 1)))[0]
+        $two.Count | Should -Be 2
+        Get-Text $two | Should -Match ': Absturz von EXCEL\.EXE \(2-mal\)\. Benutzer: user002\. Fehlerhaftes Modul: vbe7\.dll, immer dasselbe\. Fehlercode: '
+        # two events of which one names the module: said as before, with the numbers
+        $some = (Get-PatInc @((New-Ev 0), (New-Ev 1 -Module '')))[0]
+        Get-Text $some | Should -Match 'Fehlerhaftes Modul: vbe7\.dll \(1 von 2\)\.'; Get-Text $some | Should -Not -Match 'immer dasselbe'
+        # the texts: the sentence for one event is the sentence for several without the addition
+        $Texts['event.module.one'] | Should -BeExactly ' Fehlerhaftes Modul: {0}.'; $Texts['event.module.same'] | Should -BeExactly ' Fehlerhaftes Modul: {0}, immer dasselbe.'
+        # no other sentence of an event incident says "always" of a single event
+        foreach ($k in @($Texts.Keys | Where-Object { $_ -like 'event.*' -or $_ -like 'pattern.*' })) { if ($k -ne 'event.module.same') { $Texts[$k] | Should -Not -Match '\bimmer\b|\bjedes Mal\b|\bstets\b' -Because $k } }
     }
     It 'nennt gemischte Module mit Anzahl, Begleitereignisse mit Uhrzeit und ueberlappende Vorfaelle' {
         $perf = @(@{ Id = 2; StartMs = $T0; EndMs = $T0 + 60000 }, @{ Id = 5; StartMs = $T0 + 30000; EndMs = $T0 + 90000 })
@@ -1250,7 +1266,8 @@ Describe 'Kleine Korrekturen aus der Pruefung von Task 6' {
         $stop = New-Ev 0.1 'service' '' 0 '' '' @{ Service = 'Spooler'; Group = 'service'; Source = 'Service Control Manager'; EventId = 7034; Code = ''; Module = '' }
         $i = (Get-PatInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'), $stop))[0]
         $i.Count | Should -Be 2; $i.SameModule | Should -BeTrue
-        Get-Text $i | Should -Match ': Druckproblem – Sim PCL 6 \(2-mal\)\. Ohne Benutzersitzung\. Fehlerhaftes Modul: hpsimgr\.dll, immer dasselbe\. '
+        # fix round 4, B3: one record names the module (the service stop cannot), so nothing is "always the same"
+        Get-Text $i | Should -Match ': Druckproblem – Sim PCL 6 \(2-mal\)\. Ohne Benutzersitzung\. Fehlerhaftes Modul: hpsimgr\.dll\. '
         $j = (Get-PatInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'hpsimgr.dll'), (New-Ev 0.05 -App 'spoolsv.exe' -Sid 0 -User '' -Module '' -More @{ Driver = 'Sim PCL 6' }), $stop))[0]
         $j.SameModule | Should -BeFalse; Get-Text $j | Should -Match 'Fehlerhaftes Modul: hpsimgr\.dll \(1 von 2\)\.'
     }
@@ -1495,7 +1512,7 @@ Describe 'Muster mit weggelassenen Kategorien (Messkategorien Task 4)' {
     It 'sagt im Klartext, was nicht geprueft wurde, statt "kein Muster" und ohne Satz zur Sitzung' {
         $i = (Get-SkipInc @(New-Bare2 0) @('Prozesse', 'Drucken'))[0]
         Get-Unchecked $i | Should -Be @('printdriver/Drucken', 'users/Prozesse')
-        Get-Text $i | Should -Match ': Absturz von simtool\.exe \(1-mal\)\. Fehlerhaftes Modul: simtool\.dll, immer dasselbe\. Fehlercode: 0xc0000005 \(Zugriffsverletzung\)\. Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\)\.$'
+        Get-Text $i | Should -Match ': Absturz von simtool\.exe \(1-mal\)\. Fehlerhaftes Modul: simtool\.dll\. Fehlercode: 0xc0000005 \(Zugriffsverletzung\)\. Nicht geprüft: Bezug zu einem Druckertreiber \(Drucken nicht gemessen\), Zuordnung zu Benutzern und Sitzungen \(Prozesse nicht gemessen\)\.$'
         $z = (Get-SkipInc @((New-Ev 0 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown'), (New-Ev 1 -App 'spoolsv.exe' -Sid 0 -User '' -Module 'unknown')) @('Prozesse'))[0]
         Get-Text $z | Should -Match ' Ohne Benutzersitzung\. .* Kein Muster erkannt\.$'   # Sitzung 0 ist bekannt
         # Muster und nicht gepruefte Muster zusammen: erst die Aussagen, dann der Satz

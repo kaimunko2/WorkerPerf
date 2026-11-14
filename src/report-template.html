@@ -5,48 +5,65 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WorkerPerf Bericht</title>
 <style>
-:root {
+/* Two views of the same data. Both use the same building blocks (status marks, buttons, cards, charts, tables) and differ
+   only in the colour and spacing variables below: the guided view is light and roomy, the expert view dark and dense.
+   The appearance follows the view (body[data-view]), not the colour scheme of the operating system. On paper both views
+   use the light colours. */
+body {
   color-scheme: light;
-  --page: #f4f3f0; --surface: #fcfcfb; --border: #dedcd5; --grid: #e8e6e0;
-  --text: #0b0b0b; --text2: #52514e; --muted: #7b7a74; --hover: #efeee9; --sel: #e3edfb;
+  --page: #f2f4f7; --surface: #ffffff; --border: #d9dde3; --grid: #e8ebef;
+  --text: #111418; --text2: #4b5360; --muted: #656d7a; --hover: #eef1f5; --sel: #e1ecfb;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
-  --other: #b5b3ab; --bar: #9ec5f4;
-  --warn: #fab219; --crit: #d03b3b; --good: #0ca30c;
+  --other: #b5b9c0; --bar: #9ec5f4;
+  --warn: #f0a400; --warn-ink: #b97a00; --crit: #d03b3b; --good: #0c9a0c;
+  --accent: #1f62c4; --on-accent: #ffffff;
+  --fs: 15px; --gap: 20px; --pad: 18px 20px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+@media screen {
+  body[data-view="expert"] {
     color-scheme: dark;
-    --page: #111110; --surface: #1a1a19; --border: #383835; --grid: #2a2a28;
-    --text: #f0efec; --text2: #c3c2b7; --muted: #8f8e86; --hover: #242422; --sel: #1d2f47;
+    --page: #15171a; --surface: #1d2024; --border: #363a41; --grid: #2a2e34;
+    --text: #eef0f3; --text2: #c0c5cd; --muted: #8e959f; --hover: #262a30; --sel: #1d3152;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --other: #5c5b56; --bar: #184f95;
+    --other: #5c616a; --bar: #184f95;
+    --warn: #fab219; --warn-ink: #fab219; --crit: #d03b3b; --good: #0ca30c;
+    --accent: #3987e5; --on-accent: #0b1220;
   }
 }
+body[data-view="expert"] { --fs: 13px; --gap: 10px; --pad: 10px 12px; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
-header { padding: 20px 24px 0; }
-h1 { font-size: 22px; margin: 0 0 2px; font-weight: 600; }
+body { margin: 0; background: var(--page); color: var(--text); font: var(--fs)/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+#guided[hidden], #expert[hidden] { display: none; }
+/* head bar of both views: what was measured on the left, the switch between the views on the right */
+header { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.head-id { flex: 1 1 320px; min-width: 0; }
+h1 { font-size: 17px; margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 h2 { font-size: 16px; margin: 0 0 10px; font-weight: 600; }
 h3 { font-size: 13px; margin: 0; font-weight: 600; }
-.sub { color: var(--text2); }
+.sub { color: var(--text2); font-size: 13px; overflow-wrap: anywhere; }
 .sub .endreason { color: var(--text); font-weight: 600; }
+#viewSwitch { flex: none; margin-left: auto; border-radius: 8px; }
+#viewSwitch button { font-size: 13px; font-weight: 600; padding: 6px 16px; }
+#viewSwitch button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 /* masking level of the report, next to the subtitle; real text, so it is read aloud and printed */
-#maskInfo { margin-top: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+#maskInfo { margin-top: 2px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
 #maskInfo .sym { font-style: normal; margin-right: 4px; }
 /* categories left out with -Skip: named in the head and at every place that depends on them */
-#skipInfo { margin-top: 4px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+#skipInfo { margin-top: 2px; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
 #skipInfo .sym { font-style: normal; margin-right: 4px; color: var(--muted); }
 .notmeasured { color: var(--text2); font-size: 13px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 6px; overflow-wrap: anywhere; }
 .notmeasured .status { margin: 0 2px 0 0; }
 .notmeasured.inline { display: inline; padding: 0; border: 0; font-size: inherit; }
 .notmeasured.inline .status { font-size: inherit; }
+.notmeasured .opt { white-space: nowrap; }
 .toolbar[hidden], .seg[hidden] { display: none; }
 #tab-sessions > .notmeasured, #tab-apps > .notmeasured, #tab-procs > .notmeasured { margin-bottom: 10px; }
 .incident .patterns li.unchecked { color: var(--text2); }
 .incident .patterns li.unchecked .sym { font-style: normal; color: var(--muted); }
 .tl-row .notmeasured { margin: 3px 0; padding: 3px 8px; font-size: 12px; }
 .note { color: var(--muted); font-size: 12px; }
-.topbar { position: sticky; top: 0; z-index: 20; background: var(--page); }
+/* tab bar and zoom bar of the expert view stay under the head bar (--headh: its height, set by the script) */
+.topbar { position: sticky; top: var(--headh, 0px); z-index: 20; background: var(--page); }
 nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 nav button { font: inherit; color: var(--text2); background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; cursor: pointer; }
 nav button:hover { color: var(--text); }
@@ -58,9 +75,9 @@ nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(
 .zoombar button[hidden] { display: none; }
 .zoombar .note { margin-left: auto; }
 :focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
-main { padding: 20px 24px 60px; max-width: 1500px; }
+main { padding: 16px 24px 60px; max-width: 1500px; }
 section[hidden] { display: none; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--gap); margin-bottom: 16px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
 .tile .label { color: var(--text2); font-size: 12px; }
 .tile .value { font-size: 24px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
@@ -69,13 +86,17 @@ section[hidden] { display: none; }
 .tile .extra + .extra { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 .status { display: inline-block; margin: 4px 0 2px; font-size: 12px; font-weight: 600; color: var(--text); }
 .status .sym, .sig { font-style: normal; }
-.st-good .sym, .sig.st-good { color: var(--good); } .st-warn .sym, .sig.st-warn { color: var(--warn); }
+.st-good .sym, .sig.st-good { color: var(--good); } .st-warn .sym, .sig.st-warn { color: var(--warn-ink); }
 .st-crit .sym, .sig.st-crit { color: var(--crit); } .st-na .sym { color: var(--muted); }
 .status .pct { font-weight: 400; color: var(--text2); }
 .tile.info .value small { color: var(--text2); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 12px; margin-bottom: 12px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-width: 0; }
-.card.wide { margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: var(--pad); min-width: 0; }
+.card.wide { margin-bottom: var(--gap); }
+.btn { font: inherit; font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent); filter: brightness(1.1); }
 .cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .seg button { font: inherit; font-size: 12px; background: none; border: 0; color: var(--text2); padding: 3px 10px; cursor: pointer; }
@@ -91,7 +112,7 @@ section[hidden] { display: none; }
 .chart .band-warn line { stroke: var(--warn); }
 .chart .band-crit line { stroke: var(--crit); }
 .chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
-.chart .band-warn tspan.sym { fill: var(--warn); } .chart .band-crit tspan.sym { fill: var(--crit); }
+.chart .band-warn tspan.sym { fill: var(--warn-ink); } .chart .band-crit tspan.sym { fill: var(--crit); }
 .chart .selbox { fill: var(--s1); fill-opacity: .14; stroke: var(--s1); stroke-width: 1; }
 .chart .hit { cursor: crosshair; }
 .chartnote { color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -120,7 +141,7 @@ td .cellbar { display: inline-block; height: 8px; border-radius: 2px; background
 td .tag { color: var(--text2); font-size: 12px; }
 td .svc { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--muted); font-size: 12px; margin-left: 6px; }
 td .sig { margin-right: 4px; }
-.detail { margin-top: 16px; scroll-margin-top: 96px; }
+.detail { margin-top: 16px; scroll-margin-top: calc(var(--headh, 0px) + 96px); }
 .detail > .cardhead h2 { margin: 0; }
 .kv { display: flex; flex-wrap: wrap; gap: 4px 22px; color: var(--text2); font-size: 13px; margin-bottom: 12px; }
 .kv b { color: var(--text); font-weight: 600; }
@@ -135,7 +156,8 @@ td .sig { margin-right: 4px; }
 .nofinding .lead { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
 .nofinding .lead .sym { color: var(--good); font-style: normal; }
 .nofinding ul { margin: 6px 0 0; padding-left: 18px; }
-.nofinding li { margin: 2px 0; }
+.nofinding li { margin: 2px 0; overflow-wrap: anywhere; }
+.nofinding .mcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 12px 28px; margin-top: 10px; }
 .timeline { position: relative; padding-top: 18px; }
 .tl-row { display: flex; border-bottom: 1px solid var(--grid); }
 .tl-label { flex: 0 0 108px; font-size: 12px; color: var(--text2); padding: 5px 8px 0 0; }
@@ -161,28 +183,28 @@ td .sig { margin-right: 4px; }
 .mark.chronic.sev1::before { background: var(--warn); } .mark.chronic.sev2::before { background: var(--crit); }
 .mark.chronic > span { position: relative; background: var(--surface); padding: 0 6px 0 0; }
 .mark.chronic .sym { font-style: normal; }
-.mark.chronic.sev1 .sym { color: var(--warn); } .mark.chronic.sev2 .sym { color: var(--crit); }
+.mark.chronic.sev1 .sym { color: var(--warn-ink); } .mark.chronic.sev2 .sym { color: var(--crit); }
 .event { position: absolute; top: 3px; width: 7px; height: 16px; margin-left: -3px; cursor: help; }
 .event::before { content: ""; position: absolute; left: 2px; top: 0; width: 2px; height: 16px; background: var(--text2); opacity: .8; }
 .event:hover::before { opacity: 1; width: 3px; }
 .event[data-kind^="applocker"]::before { background: var(--s7); }
 .evlist { margin-top: 10px; font-size: 13px; }
-.evlist[hidden] { display: none; }
+#eventList { margin-top: 0; }
 .evlist summary { cursor: pointer; color: var(--text2); padding: 2px 0; }
 .evlist .tablewrap { margin-top: 6px; }
 .evlist .note { margin-top: 4px; }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text2); margin-top: 8px; }
 .tl-legend .sym { font-style: normal; }
-.tl-legend .st-warn .sym { color: var(--warn); } .tl-legend .st-crit .sym { color: var(--crit); }
+.tl-legend .st-warn .sym { color: var(--warn-ink); } .tl-legend .st-crit .sym { color: var(--crit); }
 .tl-legend i.ev { display: inline-block; width: 3px; height: 11px; background: var(--text2); vertical-align: -1px; margin-right: 4px; }
 .tl-legend i.rep { display: inline-block; height: 11px; border-left: 2px dashed var(--text); vertical-align: -1px; margin-right: 4px; }
 #incidents { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
-.incident { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 16px 12px; scroll-margin-top: 100px; }
+.incident { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 16px 12px; scroll-margin-top: calc(var(--headh, 0px) + 100px); }
 .incident.sev1 { border-left-color: var(--warn); } .incident.sev2 { border-left-color: var(--crit); }
 .ihead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 12px; color: var(--text2); }
 .ihead .badge { font-size: 12px; font-weight: 600; color: var(--text); }
 .ihead .badge .sym { font-style: normal; }
-.ihead .badge.st-warn .sym { color: var(--warn); } .ihead .badge.st-crit .sym { color: var(--crit); }
+.ihead .badge.st-warn .sym { color: var(--warn-ink); } .ihead .badge.st-crit .sym { color: var(--crit); }
 .ihead .itype { font-weight: 600; color: var(--text); }
 .ihead .flag { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; color: var(--text); }
 .ihead .when { margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -221,18 +243,19 @@ td.wrap .note { display: block; }
 .sharebar i { display: block; height: 100%; }
 .sharebar .b0 { background: var(--good); } .sharebar .b1 { background: var(--warn); } .sharebar .b2 { background: var(--crit); }
 .shares { font-variant-numeric: tabular-nums; color: var(--text2); font-size: 12px; }
-.shares .sym { font-style: normal; } .shares .st-good { color: var(--good); } .shares .st-warn { color: var(--warn); } .shares .st-crit { color: var(--crit); }
+.shares .sym { font-style: normal; } .shares .st-good { color: var(--good); } .shares .st-warn { color: var(--warn-ink); } .shares .st-crit { color: var(--crit); }
 #limits ul { margin: 0; padding-left: 18px; } #limits li { margin: 4px 0; }
-#quality .kv { margin-bottom: 10px; }
+.quality .kv { margin-bottom: 10px; }
 @media print { .incident .detail[hidden] { display: none; } }
 footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 1500px; }
+body[data-view="guided"] footer { max-width: 1100px; margin: 0 auto; }
 /* shown where the script does not run (it removes the message when it starts); it appears after a delay only, so it
    does not flash while a large report loads */
 #oldBrowser { margin: 16px 24px; padding: 12px 16px; border: 1px solid #d03b3b; border-radius: 8px; font-weight: 600; opacity: 0; animation: wp-old 0s linear 4s forwards; }
 @keyframes wp-old { to { opacity: 1; } }
 .tablenote { margin: -6px 0 14px; max-width: 110ch; }
 .mainline + .mainline { margin-top: 4px; }
-#quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } #quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }
+.quality .errlist { margin: 0 0 10px; padding-left: 18px; font-size: 13px; } .quality .errlist li { margin: 2px 0; overflow-wrap: anywhere; }
 /* events, the days before the capture, printing */
 .ihead .inum { color: var(--text2); font-variant-numeric: tabular-nums; }
 .incident .patterns li { padding: 2px 0; }
@@ -241,10 +264,10 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 .incident .detail .kv > span, #before .kv > span { min-width: 0; overflow-wrap: anywhere; }
 .incident .detail .kv button.more { margin-left: 4px; }
 .evlist td.wrap { min-width: 260px; max-width: 520px; }
-#before .bnote { margin: 0 0 8px; font-weight: 600; }
+.bnote { margin: 0 0 8px; font-weight: 600; }
 #before .incident + .incident { margin-top: 10px; }
-#before .capped, #quality .capped { margin: 0 0 10px; }
-.capped .sym { font-style: normal; color: var(--warn); }
+#before .capped, .quality .capped { margin: 0 0 10px; }
+.capped .sym { font-style: normal; color: var(--warn-ink); }
 .days { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; align-items: center; font-size: 13px; max-width: 640px; }
 .day { display: contents; }
 .day .dlabel { color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -255,15 +278,107 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
 #print .cardhead + h4 { margin-top: 4px; }
 .sess-events { margin: 0 0 16px; }
 .sess-events li { display: flex; gap: 10px; }
-@media print { nav, .toolbar, .zoombar { display: none; } .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; } }
+/* guided view: one column with the situation band, hints, timeline, incident cards, further incidents, the days before
+   the capture and two folded areas */
+#guided { max-width: 1100px; margin: 0 auto; padding: 24px 24px 40px; display: flex; flex-direction: column; gap: var(--gap); }
+#guided > [hidden] { display: none; }
+#guided h2 { font-size: 18px; margin: 8px 0 -6px; }
+#guided h3 { font-size: 15px; }
+#guided section > h2 { margin: 8px 0 12px; }
+#band { --tint: var(--surface); --edge: var(--muted); background: var(--tint); border: 1px solid var(--border); border-left: 6px solid var(--edge); border-radius: 10px; padding: 20px 24px; }
+#band[data-state="red"] { --tint: #fdeeee; --edge: var(--crit); border-color: #efc9c9; border-left-color: var(--edge); }
+#band[data-state="yellow"] { --tint: #fff5d9; --edge: var(--warn); border-color: #ead9a4; border-left-color: var(--edge); }
+#band[data-state="green"] { --tint: #e9f6ea; --edge: var(--good); border-color: #bfdfc2; border-left-color: var(--edge); }
+.band-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
+#bandState { flex: none; display: flex; align-items: center; gap: 10px; margin: 0; font-size: 22px; font-weight: 700; }
+#bandState .sym { font-size: 34px; line-height: 1; }
+#guided #bandSentence { flex: 1 1 360px; min-width: 0; margin: 0; font-size: 20px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+#kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.kpi { background: rgba(255, 255, 255, .78); border: 1px solid rgba(17, 20, 24, .1); border-radius: 8px; padding: 10px 14px; min-width: 0; }
+.kpi .num { display: block; font-size: 30px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi.zero .num { color: var(--muted); }
+.kpi .lbl { display: block; font-size: 13px; color: var(--text2); }
+.kpi .notmeasured { display: block; margin-top: 4px; font-size: 12px; }
+.band-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 12px; margin-top: 18px; }
+.band-actions label.inline { color: var(--text); }
+#hints { display: flex; flex-direction: column; gap: 6px; margin-top: -8px; }
+.hint { background: #fff5d9; border: 1px solid #ead9a4; border-radius: 8px; padding: 8px 14px 8px 38px; position: relative; overflow-wrap: anywhere; }
+.hint .sym { position: absolute; left: 14px; font-style: normal; color: var(--warn-ink); }
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
+.cards[hidden] { display: none; }
+.cards + .cards { margin-top: var(--gap); }
+.card.inc { display: flex; flex-direction: column; gap: 8px; border-left: 4px solid var(--border); }
+.card.inc.sev1 { border-left-color: var(--warn); } .card.inc.sev2 { border-left-color: var(--crit); }
+.card.inc p { margin: 0; overflow-wrap: anywhere; }
+.card-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; font-size: 13px; color: var(--text2); }
+.card-view { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.card-when { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card-foot .status { margin: 0; font-size: 13px; }
+#guided .card-title { font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.card.inc .card-cause { color: var(--text2); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-skip { color: var(--text2); font-size: 13px; }
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: auto; padding-top: 6px; }
+.card-short { max-width: 100%; font-size: 12px; font-weight: 600; color: var(--text2); background: var(--page); border: 1px solid var(--border); border-radius: 10px; padding: 1px 10px; overflow-wrap: anywhere; }
+.card-actions { display: flex; gap: 8px; margin-left: auto; }
+#more .group { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+#more .group + .group { margin-top: 8px; }
+#more summary { cursor: pointer; padding: 10px 16px; font-weight: 600; overflow-wrap: anywhere; }
+#more details .row { border-top: 1px solid var(--grid); }
+.row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 8px 16px; }
+.row .status { margin: 0; flex: none; }
+.row-when { flex: none; color: var(--text2); font-variant-numeric: tabular-nums; }
+.row-title { flex: 1 1 240px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.row .btn { margin-left: auto; padding: 4px 12px; }
+details.fold > summary { cursor: pointer; font-size: 15px; font-weight: 600; }
+details.fold[open] > summary { margin-bottom: 12px; }
+#aroundReported .grid3 { margin-top: 8px; }
+#aroundReported .chartbox { padding: 12px 14px; }
+.chart .repmark line { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 4; }
+@media (min-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 899px) {
+  header { position: static; padding: 10px 16px; }
+  .topbar { top: 0; }
+  #guided { padding: 16px 16px 32px; }
+  #band { padding: 16px; }
+  #kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .band-actions { justify-content: flex-start; }
+}
+@media print {
+  nav, .toolbar, .zoombar, #viewSwitch { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
+  #guided > section[hidden] { display: none; }
+}
 </style>
 </head>
-<body>
+<body data-view="guided">
 <div id="oldBrowser">Dieser Bericht benötigt einen aktuellen Browser (Microsoft Edge, Chrome oder Firefox).</div>
 <header>
-  <h1 id="title">WorkerPerf</h1>
-  <div class="sub" id="subtitle"></div>
+  <div class="head-id">
+    <h1 id="title">WorkerPerf</h1>
+    <div class="sub" id="subtitle"></div>
+  </div>
+  <div class="seg" id="viewSwitch" role="group" aria-label="Ansicht des Berichts" hidden>
+    <button type="button" data-view="guided" aria-pressed="true">Geführt</button><button type="button" data-view="expert" aria-pressed="false">Experte</button>
+  </div>
 </header>
+
+<div id="guided">
+  <section id="band" aria-labelledby="bandSentence">
+    <div class="band-head"><p id="bandState"></p><h2 id="bandSentence"></h2></div>
+    <div id="kpis"></div>
+    <div class="band-actions" id="bandActions"></div>
+  </section>
+  <div id="hints" hidden></div>
+  <section class="card" id="tlCard"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div></section>
+  <section class="card" id="aroundReported" hidden></section>
+  <h2 id="cardsHead" hidden>Vorfälle</h2>
+  <div class="cards" id="cards" hidden></div>
+  <section id="more" hidden></section>
+  <section id="beforeG" hidden></section>
+  <details class="card fold" id="measured"><summary>Was wurde gemessen, was nicht</summary><div class="nofinding" id="measuredBody"></div></details>
+  <details class="card fold" id="qualityG"><summary>Messqualität</summary><div class="quality" id="qualityGBody"></div></details>
+</div>
+
+<div id="expert" hidden>
 <div class="topbar">
   <nav role="tablist" aria-label="Bereiche des Berichts">
     <button role="tab" data-tab="findings" aria-selected="true" aria-controls="tab-findings">Befunde</button>
@@ -282,8 +397,8 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
   <section id="tab-findings" role="tabpanel">
     <div class="fhead"><h2 id="findHead"></h2><p class="focusinfo" id="focusInfo" hidden></p></div>
     <div class="card wide nofinding" id="noFinding" hidden></div>
-    <div class="card wide"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div>
-      <details class="evlist" id="eventList" hidden><summary></summary><div class="tablewrap small" style="max-height:360px"><table id="tEvents"></table></div><div class="note" id="eventMore"></div></details></div>
+    <div class="card wide" id="eventCard" hidden>
+      <details class="evlist" id="eventList"><summary></summary><div class="tablewrap small" style="max-height:360px"><table id="tEvents"></table></div><div class="note" id="eventMore"></div></details></div>
     <div id="incidents"></div>
     <div class="card wide" id="before" hidden></div>
     <div class="card wide" id="print" hidden></div>
@@ -293,7 +408,7 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
       Die Bewertung folgt den Befunden: Überschreitungen, die kürzer als die Mindestdauer eines Befunds sind, ändern sie nicht und stehen als „einzelne Überschreitungen“ dabei.</p>
     <div class="grid2" style="align-items:start">
       <div class="card" id="limits"></div>
-      <div class="card" id="quality"></div>
+      <div class="card quality" id="quality"></div>
     </div>
   </section>
 
@@ -348,6 +463,7 @@ footer { color: var(--muted); font-size: 12px; padding: 0 24px 30px; max-width: 
     <div class="detail" id="dProcs"></div>
   </section>
 </main>
+</div>
 <footer id="footer"></footer>
 
 <script id="wp-data" type="application/json">null</script>
@@ -410,7 +526,7 @@ const SKIP_AT = new Map(SKIPPED.flatMap((s) => s.places.map((p) => [p, s])));
 function notMeasured(place, inline) {
   const s = SKIP_AT.get(place); if (!s) return "";
   const tag = inline ? "span" : "div";
-  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)} (-Skip ${esc(s.id)})</${tag}>`;
+  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)} <span class="opt">(-Skip ${esc(s.id)})</span></${tag}>`;
 }
 const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
 // Small inline marker for table cells whose value reached a target band.
@@ -429,7 +545,21 @@ const FULL = (() => {
 const MIN_ZOOM = 10000;
 const zoomFns = [];
 const view = () => window.WP.zoom || FULL;
+// The two views of the page: the guided one the report opens in and the expert one. Each keeps its scroll position.
+const VIEWS = ["guided", "expert"], viewScroll = { guided: 0, expert: 0 };
 window.WP = {
+  view: "guided",
+  showView(name) {
+    if (!VIEWS.includes(name) || name === this.view) return;
+    viewScroll[this.view] = window.scrollY;
+    this.view = name;
+    document.body.dataset.view = name;
+    for (const v of VIEWS) document.getElementById(v).hidden = v !== name;
+    for (const b of document.querySelectorAll("#viewSwitch button")) b.setAttribute("aria-pressed", b.dataset.view === name ? "true" : "false");
+    window.scrollTo(0, viewScroll[name]);
+    // what was hidden so far is drawn now, in the width it has now
+    refreshCharts(); drawTimeline(false);
+  },
   zoom: null,
   setZoom(t0, t1) {
     t0 = Number(t0); t1 = Number(t1);
@@ -460,11 +590,23 @@ function updateZoomBar() {
 }
 function zoomChanged() { updateZoomBar(); refreshCharts(); for (const fn of zoomFns) fn(window.WP.zoom); }
 document.getElementById("zoomReset").addEventListener("click", () => window.WP.resetZoom());
+{
+  const sw = document.getElementById("viewSwitch"), head = document.querySelector("header");
+  sw.addEventListener("click", (ev) => { const b = ev.target.closest("button[data-view]"); if (b) window.WP.showView(b.dataset.view); });
+  sw.hidden = false;
+  // the bars of the expert view stick under the head bar: its height while it sticks (wide page), else none
+  const headHeight = () => document.documentElement.style.setProperty("--headh", (getComputedStyle(head).position === "sticky" ? head.offsetHeight : 0) + "px");
+  if (window.ResizeObserver) new ResizeObserver(headHeight).observe(head);
+  window.addEventListener("resize", headHeight);
+  headHeight();
+}
 
 // ---------- chart ----------
-// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window, legend })
+// chart(host, { series, axis: 'tick' | 'snap', signal, stacked, unit, decimals, limit, limitLabel, agg, yMax, yMaxFixed, height, empty, note, window, legend, mark, still })
 // legend: true names the series even when there is only one (charts of instances: which drive, share, endpoint, session).
 // window { t0, t1 } fixes the time range of a chart independent of the shared zoom (incident details).
+// mark { t, label } draws a dashed line with a label at a point in time (the reported time).
+// still: true leaves the shared zoom alone when the pointer is dragged over the chart (charts of the guided view).
 // A series is dense ({ values, o }) or sparse ({ t, v }). Sparse series with missing: 0 count absent points as 0 (input delay);
 // otherwise absent points are a gap (response times; dense series with resp: true drop their null values the same way).
 // Charts are drawn only while visible and redrawn when the zoom or the width changes.
@@ -678,6 +820,11 @@ function drawChart(host) {
     g += `<g class="limit"><line x1="${m.l}" x2="${W - m.r}" y1="${f1(Y(opt.limit))}" y2="${f1(Y(opt.limit))}" stroke="var(--text2)" stroke-width="1" stroke-dasharray="2 3"/>`;
     g += `<text x="${m.l + 6}" y="${f1(Y(opt.limit) + (Y(opt.limit) - m.t < 14 ? 13 : -4))}">${esc(opt.limitLabel || "")}</text></g>`;
   }
+  if (opt.mark && opt.mark.t >= z.t0 && opt.mark.t <= z.t1) {
+    const x = X(opt.mark.t), right = x < m.l + pw / 2;
+    g += `<g class="repmark limit"><line x1="${f1(x)}" x2="${f1(x)}" y1="${m.t}" y2="${m.t + ph}"/>` +
+      `<text x="${f1(x + (right ? 5 : -5))}" y="${m.t + 11}" text-anchor="${right ? "start" : "end"}">${esc(opt.mark.label || "")}</text></g>`;
+  }
 
   // legend from two series on, or for a single series when asked for; identity never by colour alone
   const anyFail = red.some((r) => r.failT.length), named = red.length > 1 || !!opt.legend;
@@ -724,7 +871,7 @@ function drawChart(host) {
     tip.style.left = Math.max(0, cx + 14 + tw > W ? cx - tw - 14 : cx + 14) + "px"; tip.style.top = "8px";
   }
   hit.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || opt.still) return;
     drag = { x0: pxOf(ev) }; hit.setPointerCapture(ev.pointerId); ev.preventDefault();
   });
   hit.addEventListener("pointermove", (ev) => {
@@ -1111,7 +1258,6 @@ function activate(name) {
   for (const b of tabButtons) { const on = b.dataset.tab === name; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; }
   for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== "tab-" + name;
   refreshCharts();
-  if (name === "findings") drawTimeline(false);
 }
 document.querySelector("nav").addEventListener("click", (ev) => { const b = ev.target.closest("button[data-tab]"); if (b) activate(b.dataset.tab); });
 document.querySelector("nav").addEventListener("keydown", (ev) => {
@@ -1244,23 +1390,31 @@ const incTime = (inc) => inc.type === "ereignis" ? evIncRange(inc) + (inc.end > 
   }
 }
 
-// no finding: explicit statement and what was (not) measured; the categories left out with -Skip come first under
-// "Nicht gemessen" (nothing of them counts as unremarkable)
-if (D.noFinding) {
-  const el = document.getElementById("noFinding"), meas = D.sollIst.filter((r) => r.measured), notm = D.sollIst.filter((r) => !r.measured);
-  // values that crossed a threshold without forming a finding (fewer points than the minimum) are named, not denied
-  const lone = meas.filter((r) => r.exceeded), below = (r) => (TH.get(r.id) || {}).direction === "low" ? "über" : "unter";
-  el.innerHTML = (lone.length
-    ? `<p class="lead"><i class="sym" aria-hidden="true">●</i> Kein Vorfall.</p>
-    <div>Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): ${lone.map((r) => `${esc(r.label)} Max ${fmtVal(r.max, r.unit)} (Soll ${below(r)} ${fmtLimit(r.warn, r.unit)})`).join("; ")}.</div>
-    <div class="note">Die Werte stehen im Soll-Ist-Vergleich unten.</div>`
+// What was measured and what was not; the categories left out with -Skip come first under "Nicht gemessen" (nothing of them
+// counts as unremarkable). Values that crossed a threshold without forming a finding (fewer points than the minimum) are
+// named, not denied. lead: the explicit statement of a capture without a finding stands before the lists. where: the place of
+// the target comparison as seen from the place of this text.
+function measuredHtml(lead, where) {
+  const meas = D.sollIst.filter((r) => r.measured), notm = D.sollIst.filter((r) => !r.measured);
+  const lone = meas.filter((r) => lead ? r.exceeded : loneExceed(r)), below = (r) => (TH.get(r.id) || {}).direction === "low" ? "über" : "unter";
+  const loneText = !lone.length ? "" : `
+    <div>Einzelne Überschreitungen ohne Befund (kürzer als die Mindestdauer): ${lone.map((r) => `${esc(r.label)} Max ${fmtVal(r.max, r.unit)} (Soll ${below(r)} ${fmtLimit(r.warn, r.unit)})`).join("; ")}.</div>`;
+  const ref = `Die Werte stehen im Soll-Ist-Vergleich ${where}.`;
+  return (!lead ? loneText + `<div class="note">${ref}</div>`
+    : lone.length ? `<p class="lead"><i class="sym" aria-hidden="true">●</i> Kein Vorfall.</p>${loneText}
+    <div class="note">${ref}</div>`
     : `<p class="lead"><i class="sym" aria-hidden="true">●</i> Keine Schwelle wurde überschritten.</p>
-    <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. Die Werte stehen im Soll-Ist-Vergleich unten.</div>`) + `
-    <div class="grid2" style="margin:10px 0 0">
+    <div class="note">Alle gemessenen Werte lagen im ganzen Zeitraum im Soll. ${ref}</div>`) + `
+    <div class="mcols">
       <div><h3>Gemessen (${meas.length})</h3><ul>${meas.map((r) => `<li>${esc(r.label)}: Max ${fmtVal(r.max, r.unit)} <span class="note">(Soll ${esc(r.ideal || "–")})</span></li>`).join("") || "<li>keine</li>"}</ul></div>
-      <div><h3>Nicht gemessen (${SKIPPED.length + notm.length})</h3><ul>${SKIPPED.map((c) => `<li data-skip="${esc(c.id)}">${esc(c.label)} <span class="note">– ${esc(c.text)} (-Skip ${esc(c.id)})</span></li>`).join("") +
+      <div class="notm"><h3>Nicht gemessen (${SKIPPED.length + notm.length})</h3><ul>${SKIPPED.map((c) => `<li data-skip="${esc(c.id)}">${esc(c.label)} <span class="note">– ${esc(c.text)} (-Skip ${esc(c.id)})</span></li>`).join("") +
         notm.map((r) => `<li>${esc(r.label)} <span class="note">– ${esc(r.detail || "Quelle nicht verfügbar")}</span></li>`).join("") || "<li>keine: alle Messwerte wurden erfasst</li>"}</ul></div>
     </div>`;
+}
+// no finding: explicit statement and what was (not) measured
+if (D.noFinding) {
+  const el = document.getElementById("noFinding");
+  el.innerHTML = measuredHtml(true, "unten");
   el.hidden = false;
 }
 
@@ -1362,7 +1516,7 @@ document.getElementById("tlLegend").innerHTML =
   `<span class="st-crit"><i class="sym" aria-hidden="true">◆</i> kritisch</span><span class="st-warn"><i class="sym" aria-hidden="true">▲</i> auffällig</span>` +
   (D.events.length ? `<span><i class="ev"></i>Ereignis (Tooltip mit Text und Uhrzeit in der Ortszeit des Ereignisses), eine Zeile je Gruppe: ${esc(EVENT_ROWS.map((g) => GROUP_WORD[g] || "Weitere Ereignisse").join(", "))}</span>` : "") +
   (FOCUS.reportedMs != null ? '<span><i class="rep"></i>gemeldete Uhrzeit</span>' : "") +
-  (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
+  (INC.length ? "<span>Klick auf eine Markierung öffnet den Vorfall in der Expertenansicht und stellt die Diagramme auf sein Zeitfenster ein.</span>" : "");
 WP.onZoom(updateTimelineZoom);
 // a time cut leaves events of the capture out of every list
 if (D.eventsOutsideCut > 0) {
@@ -1377,7 +1531,7 @@ if (D.eventsOutsideCut > 0) {
 {
   const MAX_EVENTS = 200, evs = D.events.map((e, k) => Object.assign({ k }, e)), box = document.getElementById("eventList");
   if (evs.length) {
-    box.hidden = false;
+    document.getElementById("eventCard").hidden = false;
     box.querySelector("summary").textContent = `Ereignisse (${fmt(evs.length, 0)})`;
     table("tEvents", [
       { key: "t", head: "Zeit", num: true, fmt: (v, r) => evTime(v, r.offsetMin, true) },
@@ -1666,9 +1820,17 @@ const onIncidentKey = (ev) => {
   ev.preventDefault(); setIncidentOpen(t.parentNode, !t.parentNode.classList.contains("open"));
 };
 for (const id of ["incidents", "before"]) { document.getElementById(id).addEventListener("click", onIncidentClick); document.getElementById(id).addEventListener("keydown", onIncidentKey); }
+// An incident opens in the expert view: its entry unfolded, the charts set to its window. The marks of the timeline and the
+// buttons "Öffnen" of the guided view lead there.
+function openInExpert(id) {
+  if (!incById.has(id)) return;
+  window.WP.showView("expert");
+  activate("findings");
+  showIncident(id, true);
+}
 document.getElementById("timeline").addEventListener("click", (ev) => {
   const m = ev.target.closest(".mark[data-incident], .mark-word[data-incident]");
-  if (m) showIncident(Number(m.dataset.incident), true);
+  if (m) openInExpert(Number(m.dataset.incident));
 });
 
 // ---------- findings: the days before the capture ----------
@@ -1839,28 +2001,132 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
       r.skipped ? `${plural(r.skipped, "Datensatz", "Datensätze")} nicht lesbar und übersprungen` : "", r.unformatted ? `${plural(r.unformatted, "Meldungstext", "Meldungstexte")} nicht lesbar` : ""].filter((x) => x);
     return `<li>${esc(r.label || r.log)}: ${parts.join(" · ")}</li>`;
   }).join("");
-  document.getElementById("quality").innerHTML = `<h3 style="margin-bottom:8px">Messqualität</h3>
-    <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
-      <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
-      <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
-      <span>Verdichtung <b>${burstText}</b></span>
-      <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)`}</span>` +
-      (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
-    (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
-    (reads ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</h4><ul class="errlist" id="eventReads">${reads}</ul>` +
-      '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>'
-      : notMeasured("events") ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</h4><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
-    (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors">${srcErr.map((e) =>
-      `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
-    `<div class="tablewrap small"><table id="tSources"></table></div>`;
-  table("tSources", [
-    { key: "label", head: "Quelle" },
-    // a log that could not be read at least once during the capture (M13); a switched-off log the lookback read (M14)
-    { key: "available", head: "Verfügbar", fmt: (v, r) => (v ? '<span class="status st-good"><i class="sym" aria-hidden="true">●</i> verfügbar</span>' : '<span class="status st-na"><i class="sym" aria-hidden="true">○</i> nicht verfügbar</span>') +
-      (r.readFailed ? ' <span class="status st-warn"><i class="sym" aria-hidden="true">▲</i> beim Lesen fehlgeschlagen</span>' : "") + (!v && r.lookbackRead ? ' <span class="note">im Rückblick gelesen</span>' : ""),
-      sortVal: (r) => r.available ? 1 : 0 },
-    { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
-  ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
+  // the same content twice: in the expert view and, folded, in the guided view (there its ids carry the suffix G)
+  const renderQuality = (host, sfx, head) => {
+    host.innerHTML = `${head}
+      <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
+        <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
+        <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
+        <span>Verdichtung <b>${burstText}</b></span>
+        <span>WorkerPerf selbst ${notMeasured("procs") ? notMeasured("procs", true) : `<b>${fmt(Q.collectorCpuPct, 2)} % der CPU-Zeit</b> (Spitze ${fmt(Q.collectorCpuMaxPct, 2)} % des Hosts)`}</span>` +
+        (unread.ticks || unread.snapshots || unreadMore.length ? `<span id="unreadable${sfx}">Übersprungene unlesbare Zeilen <b>${unreadText}</b></span>` : "") + `</div>` +
+      (BEFORE.capped.length ? `<p class="capped" id="lookbackCapped${sfx}"><i class="sym" aria-hidden="true">▲</i> Rückblick unvollständig gelesen für ${esc(logWords(BEFORE.capped))} (Obergrenze, Lesefehler oder Zeitbudget).</p>` : "") +
+      (reads ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</h4><ul class="errlist" id="eventReads${sfx}">${reads}</ul>` +
+        '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>'
+        : notMeasured("events") ? `<h4 style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</h4><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
+      (srcErr.length ? `<h4 style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</h4><ul class="errlist" id="sourceErrors${sfx}">${srcErr.map((e) =>
+        `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
+      `<div class="tablewrap small"><table id="tSources${sfx}"></table></div>`;
+    table("tSources" + sfx, [
+      { key: "label", head: "Quelle" },
+      // a log that could not be read at least once during the capture (M13); a switched-off log the lookback read (M14)
+      { key: "available", head: "Verfügbar", fmt: (v, r) => (v ? '<span class="status st-good"><i class="sym" aria-hidden="true">●</i> verfügbar</span>' : '<span class="status st-na"><i class="sym" aria-hidden="true">○</i> nicht verfügbar</span>') +
+        (r.readFailed ? ' <span class="status st-warn"><i class="sym" aria-hidden="true">▲</i> beim Lesen fehlgeschlagen</span>' : "") + (!v && r.lookbackRead ? ' <span class="note">im Rückblick gelesen</span>' : ""),
+        sortVal: (r) => r.available ? 1 : 0 },
+      { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
+    ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
+  };
+  renderQuality(document.getElementById("quality"), "", '<h3 style="margin-bottom:8px">Messqualität</h3>');
+  renderQuality(document.getElementById("qualityGBody"), "G", "");
+}
+
+// ---------- guided view ----------
+// State, sentence, key figures and hints of the situation summary, the ranking and the guidance of each incident come from the
+// report data; the page shows them as delivered and adds only the labels of its own elements. Every value is escaped.
+// Clock time and duration of an incident; an incident of the days before the capture with its date.
+function cardWhen(inc) {
+  if (inc.event && inc.event.before) return incTime(inc);
+  const ev = inc.type === "ereignis", a = ev ? inc.events[0] : null, b = ev ? inc.events[inc.events.length - 1] : null;
+  const span = inc.end - inc.start, sec = span > 0 && span < 60000;
+  const t0 = ev ? evTime(inc.start, a ? a.offsetMin : null, sec) : fmtTime(inc.start, sec), t1 = ev ? evTime(inc.end, b ? b.offsetMin : null, sec) : fmtTime(inc.end, sec);
+  return span > 0 ? `${t0}–${t1} · ${fmtSpan(span)}` : t0;
+}
+// The place of the page whose category decides whether the cause of a performance incident could be determined.
+const causePlace = (inc) => inc.type === "engpass" ? "incidents.contributors" : inc.type === "ohne-engpass" ? "incidents.delayProcs" : "";
+// A text without the sentence that ends with the reason of a category left out with -Skip.
+function withoutReason(text, reason) {
+  const at = text.indexOf(reason);
+  return at < 0 ? text : (text.substring(0, text.lastIndexOf(". ", at) + 1) + text.substring(at + reason.length)).trim();
+}
+// Card of an incident: only its two buttons can be operated. The cause line is one line; its full text is the tooltip.
+// Where the cause depends on a category left out with -Skip, the card says "nicht gemessen" with the reason; the sentence
+// of the cause text that gives the same reason is then left out of the line (it stays in the tooltip).
+function cardHtml(inc) {
+  const g = inc.guide || {}, k = sevKey(inc.severity), first = (g.checks || [])[0], full = inc.causeText || "";
+  const place = causePlace(inc), skip = SKIP_AT.get(place), cause = skip ? withoutReason(full, skip.text) : full;
+  return `<article class="card inc sev${k}" data-id="${inc.id}">
+    <div class="card-top"><span class="card-view">${esc(g.userView)}</span><span class="card-when">${esc(cardWhen(inc))}</span></div>
+    <h3 class="card-title">${esc(g.title)}</h3>
+    <p class="card-impact">${esc(g.impact)}</p>${skip ? `
+    <p class="card-skip">${notMeasured(place, true)}</p>` : ""}${cause ? `
+    <p class="card-cause" title="${esc(full)}">${esc(cause)}</p>` : ""}${first ? `
+    <p class="card-first"><b>Erster Schritt:</b> ${esc(first.text)}</p>` : ""}
+    <div class="card-foot">${statusHtml(k)}<span class="card-short">${esc(g.short)}</span><span class="card-actions"><button type="button" class="btn primary card-open">Öffnen</button><button type="button" class="btn card-copy">Kopieren</button></span></div>
+  </article>`;
+}
+// Line of an incident in the compact list after the cards.
+const rowHtml = (inc) => `<div class="row" data-id="${inc.id}">${statusHtml(sevKey(inc.severity))}<span class="row-when">${esc(cardWhen(inc))}</span><span class="row-title">${esc((inc.guide || {}).title)}</span><button type="button" class="btn row-open">Öffnen</button></div>`;
+{
+  const LB = D.lagebild, K = LB.kpis, hints = LB.hints || [];
+  // band: the state as symbol and word, the sentence, five key figures, the buttons
+  document.getElementById("band").dataset.state = LB.state;
+  const state = document.getElementById("bandState");
+  state.className = "status st-" + ({ red: "crit", yellow: "warn", green: "good" }[LB.state] || "na");
+  state.innerHTML = `<i class="sym" aria-hidden="true">${esc(LB.symbol)}</i> ${esc(LB.word)}`;
+  document.getElementById("bandSentence").textContent = LB.sentence;
+  // without the events of the capture no incident from events can form: that figure is not a 0
+  const kpi = (id, value, label, hint) => `<div class="kpi${!hint && !value ? " zero" : ""}" data-kpi="${id}"><span class="num">${hint ? "–" : fmt(value, Number.isInteger(value) ? 0 : 1)}</span><span class="lbl">${label}</span>${hint}</div>`;
+  document.getElementById("kpis").innerHTML = kpi("bottlenecks", K.bottlenecks, "Engpässe auf dem Server", "") +
+    kpi("delays", K.delays, K.delaysUnverified > 0 ? "Verzögerungen ohne erkannten Engpass" : "Verzögerungen von außen", "") +
+    kpi("events", K.events, "Abstürze und Fehler", notMeasured("events", true)) + kpi("chronic", K.chronic, "Dauerzustände", "") +
+    kpi("minutes", K.minutes, "Minuten mit spürbarer Störung", "");
+  // a masked report has no second version of the copy texts: the switch is left out
+  document.getElementById("bandActions").innerHTML = (incById.has(LB.top) ? '<button type="button" class="btn primary" id="openTop">Wichtigsten Vorfall öffnen</button>' : "") +
+    '<button type="button" class="btn" id="copyAll">Zusammenfassung kopieren</button>' +
+    (MASKED ? "" : '<label class="inline"><input type="checkbox" id="anonSwitch"> ohne Namen</label>');
+  const hintBox = document.getElementById("hints");
+  hintBox.innerHTML = hints.map((h) => `<div class="hint" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(h)}</div>`).join("");
+  hintBox.hidden = !hints.length;
+
+  // cards of the most important incidents in their ranking, the others as a compact list of groups
+  const pick = (ids) => (ids || []).map((id) => incById.get(id)).filter(Boolean), cards = pick(D.cards);
+  const cardBox = document.getElementById("cards"), more = document.getElementById("more");
+  cardBox.innerHTML = cards.map(cardHtml).join("");
+  cardBox.hidden = document.getElementById("cardsHead").hidden = !cards.length;
+  more.innerHTML = "<h2>Weitere Vorfälle</h2>" + (D.more || []).map((grp) => {
+    const rows = pick(grp.ids).map(rowHtml).join("");
+    return grp.ids.length > 1 ? `<details class="group"><summary>${esc(grp.label)}</summary>${rows}</details>` : `<div class="group">${rows}</div>`;
+  }).join("");
+  more.hidden = !(D.more || []).length;
+
+  // the days before the capture: the same cards in their own ranking, a long list folded after ten
+  const FOLD = 10, lookback = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start - b.start) || (a.id - b.id)), beforeBox = document.getElementById("beforeG");
+  if (lookback.length || notMeasured("before")) {
+    beforeBox.innerHTML = "<h2>Vor der Messung</h2>" + notMeasured("before") + (!lookback.length ? "" : `<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
+      <div class="cards">${lookback.slice(0, FOLD).map(cardHtml).join("")}</div>` + (lookback.length <= FOLD ? "" : `<div class="cards" hidden>${lookback.slice(FOLD).map(cardHtml).join("")}</div>
+      <p><button type="button" class="lnk more" id="beforeMoreG">weitere ${fmt(lookback.length - FOLD, 0)} Vorfälle anzeigen</button></p>`));
+    beforeBox.hidden = false;
+  }
+  document.getElementById("guided").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    if (b.id === "beforeMoreG") { b.parentNode.previousElementSibling.hidden = false; b.parentNode.remove(); return; }
+    if (b.id === "openTop") openInExpert(LB.top);
+    else if (b.matches(".card-open, .row-open")) openInExpert(Number(b.closest("[data-id]").dataset.id));
+  });
+
+  // no incident: what was measured stands open; with a reported time the values around it
+  document.getElementById("measuredBody").innerHTML = measuredHtml(!!D.noFinding, "der Expertenansicht");
+  document.getElementById("measured").open = !INC.length;
+  if (!INC.length && FOCUS.reportedMs != null) {
+    const box = document.getElementById("aroundReported"), t = FOCUS.reportedMs;
+    const common = { window: { t0: t - 900000, t1: t + 900000 }, mark: { t, label: "gemeldet " + fmtTime(t) }, still: true, agg: "max", height: 170 };
+    box.innerHTML = `<div class="cardhead"><h3>Um die gemeldete Zeit</h3><span class="note">${fmtDT(t)}, 15 Minuten davor und danach</span></div>
+      <div class="grid3">${chartBox("CPU-Auslastung (%)", "ar-cpu")}${chartBox("Arbeitsspeicher (% des RAM)", "ar-mem")}${chartBox("Eingabeverzögerung (ms)", "ar-input")}</div>`;
+    box.hidden = false;
+    chart(box.querySelector(".ar-cpu"), Object.assign({ series: [{ name: "CPU", values: H_.cpu }], unit: "%", decimals: 1, yMax: 100, yMaxFixed: true, signal: "cpu.host" }, common));
+    chart(box.querySelector(".ar-mem"), Object.assign({ series: [{ name: "physisch belegt", values: H_.memUsedPct }], unit: "%", decimals: 1, yMax: 100, yMaxFixed: true, signal: "mem.used" }, common));
+    chart(box.querySelector(".ar-input"), Object.assign({ series: [{ name: "Eingabeverzögerung", values: H_.inputMax }], unit: "ms", decimals: 0, signal: "input.session", note: "Höchster Wert aller Sitzungen." }, common));
+  }
 }
 drawTimeline(true);
 updateZoomBar();

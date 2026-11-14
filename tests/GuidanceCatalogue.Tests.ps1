@@ -4,8 +4,17 @@ BeforeAll {
     . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1')
     $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
     $script:CatalogueFile = Join-Path $PSScriptRoot '../src/guidance.de.json'
+    # the application list of the report (src/apps.json): its keys are the conditions app.<key> of the catalogue
+    $script:AppList = Read-WorkerPerfApps (Join-Path $PSScriptRoot '../src/apps.json')
     $script:SourcesFile = Join-Path $PSScriptRoot '../docs/guidance/quellen.md'
     $script:PrintVendors = @('Microsoft', 'Citrix', 'HP', 'Kyocera', 'Brother')
+    # the vendors a source may name (the printer vendors, the vendor of the printer mapping tool) and the sources from
+    # practice, which carry their mark in the source (spec 5.7)
+    $script:SourceVendors = $script:PrintVendors + 'AKI'
+    $script:PracticeSource = '^(Carl Stalhood|BIS-F) \(Empfehlung aus der Praxis\)$'
+    # where a change is made on non-persistent servers (spec 5.8): in the master image, or by a policy
+    $script:InImage = 'bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen'
+    $script:ByPolicy = 'eine Richtlinie wirkt auch auf nicht persistente Server'
     # the source of a print element that is the report's own guidance, not a vendor's recommendation (ruling P3-R35)
     $script:OwnSource = 'WorkerPerf: Hinweis zur Auswertung'
     # conditions that only name a gap (ruling P3-R36)
@@ -33,7 +42,7 @@ BeforeAll {
                 sessions = @(); sollIst = @(); unmeasured = @{ input = $false; worker = @() }; skipped = @()
                 print = @{ drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'HP'; type = 3; isolation = 'none' }); queues = @(@{ name = 'Q1'; maxJobs = 3; jobErrors = 1; notReadyErrors = 0 }) }
                 meta = @{ computer = 'SIM-VDA01'; offsetMin = 60; endReason = 'duration'; start = 1e12; end = 1e12 + 3600000 } }
-            Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = 60; Texts = $script:Texts }
+            Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = 60; Texts = $script:Texts; Apps = $script:AppList }
     }
     function New-Sig([string]$Id, [string]$Resource, [string]$Label, [double]$Peak, [string]$Unit, [string]$Ideal) {
         @{ id = $Id; label = $Label; resource = $Resource; peak = $Peak; unit = $Unit; ideal = $Ideal; severity = 2; start = [long](1e12 + 600000); end = [long](1e12 + 720000) }
@@ -74,17 +83,35 @@ BeforeAll {
             }
         }
     }
+    # the measured machine is "Server" in every text the report shows or offers to copy (wording rule of the customer,
+    # ruling P3-R66): the word Worker at the start of a word, also as the first part of a compound; the tool's name stays
+    $script:WorkerWord = '(?<![\p{L}\p{N}])Worker(?!Perf)'
+    function Get-CatalogueStrings($Node, [string]$Place) {
+        # every text of the catalogue file with its place ('situations.cpu.remedies[6].text'); the keys of terms are
+        # display words and count as texts. Not texts: version, vendors (keys and patterns), the conditions (when), and
+        # source, which quotes the title of a document literally
+        if ($Node -is [string]) { [pscustomobject]@{ Place = $Place; Text = $Node }; return }
+        if ($Node -is [array]) { for ($k = 0; $k -lt $Node.Count; $k++) { Get-CatalogueStrings $Node[$k] "$Place[$k]" }; return }
+        if ($Node -isnot [pscustomobject]) { return }
+        foreach ($p in $Node.PSObject.Properties) {
+            if ($p.Name -in 'when', 'source' -or ($Place -eq '' -and $p.Name -in 'version', 'vendors')) { continue }
+            $at = $p.Name; if ($Place) { $at = "$Place.$($p.Name)" }
+            if ($Place -eq 'terms') { [pscustomobject]@{ Place = "$at (Begriff)"; Text = $p.Name } }
+            Get-CatalogueStrings $p.Value $at
+        }
+    }
     function Get-Placeholders([string]$Text) { @([regex]::Matches($Text, '\{([A-Za-z0-9]+)\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) }
     function Get-Positions([string]$Text) { @([regex]::Matches($Text, '`([a-z.]+\.(?:checks|remedies|contacts)\[\d+\])`') | ForEach-Object { $_.Groups[1].Value }) }
     function Get-SourceRows([string]$Path) {
-        # the rows of the tables of adopted sources in docs/guidance/quellen.md: vendor (heading '## <vendor>', also the
-        # section 'WorkerPerf' of the report's own notes), title (first cell), the catalogue positions the row adopts (the
-        # first cell after the title that names positions) and the positions its remaining cells (the note) speak about
+        # the rows of the tables of adopted sources in docs/guidance/quellen.md: vendor or source from practice (heading
+        # '## <vendor>' or '## <vendor> – <topic>', also the section 'WorkerPerf' of the report's own notes), title (first
+        # cell), the catalogue positions the row adopts (the first cell after the title that names positions) and the
+        # positions its remaining cells (the note) speak about; a row without positions is no row of an adopted source
         $vendor = ''
         foreach ($line in [IO.File]::ReadAllLines($Path)) {
             $m = [regex]::Match($line, '^##\s+(.+?)\s*$')
-            if ($m.Success) { $vendor = $m.Groups[1].Value; continue }
-            if (@($script:PrintVendors + 'WorkerPerf') -cnotcontains $vendor -or $line -notmatch '^\|') { continue }
+            if ($m.Success) { $vendor = ($m.Groups[1].Value -split ' – ', 2)[0]; continue }
+            if ($line -notmatch '^\|') { continue }
             $cells = @($line.Trim('|') -split '\|')
             $positions = @(); $noted = @()
             for ($k = 1; $k -lt $cells.Count; $k++) {
@@ -99,7 +126,7 @@ BeforeAll {
 
 Describe 'Katalog in src' {
     BeforeAll {
-        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile
+        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile -Apps $script:AppList
         $script:Elements = @(Get-Elements $script:Real)
     }
     It 'hat fuer jede erzeugbare Situation einen vollstaendigen Eintrag' {
@@ -111,13 +138,13 @@ Describe 'Katalog in src' {
         foreach ($v in 'HP', 'Kyocera', 'Brother') {
             foreach ($e in @($print | Where-Object { $_.source -like "$v*" })) { @($e.when) | Should -Contain "driver.vendor.$v" -Because $e.text }
         }
-        # in every situation: a source names one of the five vendors or is exactly the report's own note (ruling P3-R35),
-        # and an element sourced from a printer vendor hangs on that vendor's driver
+        # in every situation: a source names a vendor or a source from practice with its mark (spec 5.7), or is exactly
+        # the report's own note (ruling P3-R35), and an element sourced from a printer vendor hangs on that vendor's driver
         @($Elements | Where-Object { $_.Source -ceq $OwnSource }).Count | Should -BeGreaterThan 0
         foreach ($e in @($Elements | Where-Object { $_.Source })) {
             if ($e.Source -ceq $OwnSource) { $e.Situation | Should -Be 'print' -Because $e.Position; continue }
             $vendor = ($e.Source -split ': ', 2)[0]
-            $PrintVendors | Should -Contain $vendor -Because $e.Position
+            ($SourceVendors -ccontains $vendor -or $vendor -cmatch $PracticeSource) | Should -BeTrue -Because "$($e.Position): $($e.Source)"
             ($e.Source -split ': ', 2)[1] | Should -Not -BeNullOrEmpty -Because $e.Position
             if ($vendor -in 'HP', 'Kyocera', 'Brother') { $e.When | Should -Contain "driver.vendor.$vendor" -Because $e.Position }
         }
@@ -144,12 +171,13 @@ Describe 'Katalog in src' {
         foreach ($other in @('HP', 'Kyocera', 'Brother') | Where-Object { $_ -ne $Vendor }) { @($all | Where-Object { $_.source -like "${other}: *" }).Count | Should -Be 0 -Because $other }
         foreach ($e in $all) { [string]$e.source | Should -Not -BeNullOrEmpty -Because $e.text }
     }
-    It 'zeigt ohne bekannten Hersteller nur Elemente von Microsoft und Citrix' {
+    It 'zeigt ohne bekannten Hersteller nur Elemente von Microsoft und Citrix und die zur Druckerzuordnung' {
         $ctx = New-Ctx; $ctx.Data.print.drivers[0].manufacturer = 'Acme Printing'
         $g = Get-Guide (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe' }; events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }) $ctx
         $all = @($g.checks) + @($g.remedies) + @($g.contacts)
         $all.Count | Should -BeGreaterThan 0
-        @($all | ForEach-Object { ($_.source -split ': ', 2)[0] } | Sort-Object -Unique | Where-Object { $_ -notin 'Microsoft', 'Citrix', 'WorkerPerf' }) | Should -Be @()
+        # Aussage angepasst (fix round 2, B5): the general steps on the mapping of printers carry the mapping tool's vendor
+        @($all | ForEach-Object { ($_.source -split ': ', 2)[0] } | Sort-Object -Unique | Where-Object { $_ -notin 'Microsoft', 'Citrix', 'WorkerPerf', 'AKI' }) | Should -Be @()
     }
     It 'stellt fuer einen Vorfall der Situation <S> eine vollstaendige Anleitung zusammen' -ForEach @(
         @{ S = 'cpu'; I = @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'main' }; main = @{ app = 'EXCEL.EXE'; a = 0; user = 'user003'; sharePct = 62; baselinePct = 4 }; affected = @(@{ s = 1 }, @{ s = 2 }) } }
@@ -225,7 +253,11 @@ Describe 'Katalog in src' {
     It 'haelt in den Texten ausserhalb der Situationen die vereinbarten Platzhalter ein' {                       # ruling P3-R26
         $allowed = @{ 'copy.head' = @('server', 'date'); 'copy.summaryHead' = @('server', 'date', 'from', 'to'); 'copy.measure' = @('value', 'target'); 'copy.affected' = @('affected')
             'copy.cause' = @(); 'copy.checks' = @(); 'copy.remedies' = @(); 'copy.contact' = @()
-            'lagebild.red' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents'); 'lagebild.yellow' = @('bottlenecks', 'delays', 'events', 'chronic', 'minutes', 'incidents')
+            # fix round 3 (rulings P3-R49, P3-R59): the counts stand in the parts of the red and the yellow sentence; the copy text says how many steps it left out
+            'copy.maxChecks' = @(); 'copy.maxRemedies' = @(); 'copy.moreChecks' = @('count'); 'copy.moreCheck' = @(); 'copy.moreRemedies' = @('count'); 'copy.moreRemedy' = @()
+            'lagebild.red' = @('parts', 'minutes', 'incidents'); 'lagebild.yellow' = @('parts', 'minutes', 'incidents')
+            'lagebild.partBottlenecks' = @('bottlenecks'); 'lagebild.partDelays' = @('delays'); 'lagebild.partEvents' = @('events'); 'lagebild.partChronic' = @('chronic')
+            'lagebild.partSeparator' = @(); 'lagebild.notMeasured' = @('skipped')
             'lagebild.green' = @(); 'lagebild.greenSkipped' = @('skipped'); 'hints.unmeasured' = @('signals'); 'hints.skipped' = @('skipped'); 'hints.error' = @('message')
             'hints.errorNoMessage' = @(); 'hints.notFinished' = @(); 'hints.stopped' = @(); 'userView.unknown' = @('duration', 'from', 'to') }
         foreach ($k in 'many', 'one', 'none', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { $allowed["userView.$k"] = @('affected', 'duration', 'from', 'to', 'count') }
@@ -242,6 +274,67 @@ Describe 'Katalog in src' {
         $Real.hints.unmeasured | Should -Match '\{signals\}'; $Real.hints.skipped | Should -Match '\{skipped\}'; $Real.hints.error | Should -Match '\{message\}'
         $Real.copy.measure | Should -Match '\{value\}'; $Real.copy.measure | Should -Match '\{target\}'; $Real.copy.affected | Should -Match '\{affected\}'
         $Real.copy.head | Should -Match '\{server\}'; $Real.copy.head | Should -Match '\{date\}'
+        # each part of the red and the yellow sentence names its count, both sentences their parts and the minutes
+        foreach ($k in 'red', 'yellow') { $Real.lagebild.$k | Should -Match '\{parts\}' -Because $k; $Real.lagebild.$k | Should -Match '\{minutes\}' -Because $k }
+        foreach ($k in 'Bottlenecks', 'Delays', 'Events', 'Chronic') { $Real.lagebild."part$k" | Should -Match ('^\{' + $k.ToLowerInvariant() + '\}-mal \S') -Because $k }
+        $Real.lagebild.notMeasured | Should -Match '\{skipped\}'; $Real.copy.moreChecks | Should -Match '\{count\}'; $Real.copy.moreRemedies | Should -Match '\{count\}'
+    }
+    It 'baut den roten und den gelben Satz des Lagebilds aus Teilen und zaehlt nicht Gemessenes nie als null' {     # fix round 3, A1 (ruling P3-R49)
+        $say = { param($Incidents, [string[]]$Skip)
+            $ctx = New-Ctx; $ctx.Data.skipped = @(Get-WorkerPerfSkippedOut $Skip $Texts)
+            (Get-WorkerPerfLagebild -Incidents $Incidents -Data $ctx.Data -Catalogue $Real -Texts $Texts).sentence }
+        $delay = New-Inc @{ id = 2; type = 'ohne-engpass'; severity = 1; affected = @(@{ s = 1 }) }
+        $crash = New-Inc @{ id = 3; type = 'ereignis'; start = [long](1e12 + 660000); end = [long](1e12 + 660000); event = @{ kind = 'crash'; app = 'simapp.exe' } }
+        $chronic = New-Inc @{ id = 4; type = 'umfeld'; chronic = $true; start = [long]1e12; end = [long](1e12 + 3600000); signals = @(New-Sig 'ica.rtt' 'network' 'ICA Round Trip' 225 'ms' 'unter 150 ms') }
+        $red = @((New-Engpass 'cpu'), $delay, $crash, $chronic)
+        # a complete capture: the sentence as before this round, word for word
+        & $say $red @() | Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Absturz oder Fehler, 1-mal Dauerzustand; 2 min mit spürbarer Störung.'
+        & $say @($delay) @() | Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung, 0-mal Absturz oder Fehler, 0-mal Dauerzustand; 2 min mit spürbarer Störung.'
+        # without events, without Citrix, without everything: no part that would count zero, and the reservation
+        & $say @((New-Engpass 'cpu'), $delay, $chronic) @('Ereignisse') |
+            Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Dauerzustand; 2 min mit spürbarer Störung. Nicht gemessen: Ereignisse.'
+        & $say @((New-Engpass 'cpu'), $delay, $crash) @('Citrix') |
+            Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Absturz oder Fehler; 2 min mit spürbarer Störung. Nicht gemessen: Citrix.'
+        $all = @($script:WorkerPerfCategories.Keys | Where-Object { $script:WorkerPerfCategories[$_].Active })
+        & $say @($delay) $all |
+            Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung; 2 min mit spürbarer Störung. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rückblick, Drucken, Gegenstellen.'
+        # a zero stands only for what was measured: without events none for crashes, without Citrix none for chronic states
+        foreach ($list in @($delay), @((New-Engpass 'cpu'), $delay)) {
+            & $say $list @('Ereignisse') | Should -Not -Match '(?<!\d)0-mal Absturz'; & $say $list @('Ereignisse') | Should -Match '(?<!\d)0-mal Dauerzustand'
+            & $say $list @('Citrix') | Should -Not -Match '(?<!\d)0-mal Dauerzustand'; & $say $list @('Citrix') | Should -Match '(?<!\d)0-mal Absturz'
+            & $say $list $all | Should -Not -Match '(?<!\d)0-mal'
+        }
+        # a category no part of the sentence depends on leaves the sentence as it is
+        & $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen') | Should -BeExactly (& $say $red @())
+    }
+    It 'nimmt in den Kopiertext die ersten fuenf Pruefschritte und drei Vorschlaege und sagt, wie viele weitere im Bericht stehen' {      # fix round 3, A2 (ruling P3-R59)
+        $Real.copy.maxChecks | Should -Be 5; $Real.copy.maxRemedies | Should -Be 3
+        $Real.copy.moreChecks | Should -BeExactly 'Weitere {count} Prüfschritte stehen im Bericht.'; $Real.copy.moreCheck | Should -BeExactly 'Ein weiterer Prüfschritt steht im Bericht.'
+        $Real.copy.moreRemedies | Should -BeExactly 'Weitere {count} Vorschläge stehen im Bericht.'; $Real.copy.moreRemedy | Should -BeExactly 'Ein weiterer Vorschlag steht im Bericht.'
+        # the print incident with an HP driver in the spooler: the longest guidance of the catalogue
+        $inc = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; causeText = 'Ohne Benutzersitzung.'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe'; driver = 'Sim PCL 6'; noUserSession = $true
+                patterns = @(@{ id = 'printdriver'; detail = @{ module = 'hpsimgr.dll'; driver = 'Sim PCL 6' } }); modules = @(@{ name = 'hpsimgr.dll'; count = 1 }) }
+            events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }
+        $g = Get-Guide $inc
+        $checks = @($g.checks).Count; $remedies = @($g.remedies).Count; $checks | Should -BeGreaterThan 10; $remedies | Should -BeGreaterThan 10
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts)
+        $numbered = @($p | Where-Object { $_ -match '^\d+\. ' }); $numbered.Count | Should -Be 5
+        for ($n = 0; $n -lt 5; $n++) { $numbered[$n].StartsWith(('{0}. {1}' -f ($n + 1), $g.checks[$n].text)) | Should -BeTrue -Because "Schritt $($n + 1)" }
+        $at = [array]::IndexOf($p, $Real.copy.remedies); $end = [array]::IndexOf($p, $Real.copy.contact)
+        $p[$at - 2] | Should -BeExactly "Weitere $($checks - 5) Prüfschritte stehen im Bericht."; $p[$at - 3] | Should -Be $numbered[4]
+        $proposals = @($p[($at + 1)..($end - 2)])
+        $proposals.Count | Should -Be 4; $proposals[3] | Should -BeExactly "Weitere $($remedies - 3) Vorschläge stehen im Bericht."
+        for ($n = 0; $n -lt 3; $n++) { $proposals[$n].EndsWith($g.remedies[$n].text) | Should -BeTrue -Because "Vorschlag $($n + 1)" }
+        # every contact
+        @($p[($end + 1)..($p.Count - 1)]).Count | Should -Be @($g.contacts).Count
+        # the guidance itself is complete, and a line of the text has at most 78 characters
+        @($g.checks).Count | Should -Be $checks
+        @((New-WorkerPerfCopyText -Incident $inc -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts) -split "`r`n" | Where-Object { $_.Length -gt 78 }) | Should -Be @()
+        # an incident with fewer steps: no such line (a chronic state of the connection)
+        $few = New-Inc @{ type = 'umfeld'; chronic = $true; start = [long]1e12; end = [long](1e12 + 3600000); signals = @(New-Sig 'ica.rtt' 'network' 'ICA Round Trip' 225 'ms' 'unter 150 ms') }
+        $g = Get-Guide $few
+        @($g.checks).Count | Should -BeLessOrEqual 5; @($g.remedies).Count | Should -BeLessOrEqual 3
+        @(Get-WorkerPerfCopyParagraphs -Incident $few -Guide $g -Data (New-Ctx).Data -Catalogue $Real -Texts $Texts | Where-Object { $_ -match 'stehen? im Bericht\.$' }) | Should -Be @()
     }
     It 'waehlt die Benutzersicht ohne Luecke, auch ohne Dauer und ohne Zahl der Betroffenen' {
         # a text that cannot be filled falls back to userView.unknown, which therefore needs no value at all
@@ -355,7 +448,8 @@ Describe 'Katalog in src' {
         @(Get-GuideTexts $g | Where-Object { $_ -match 'hpsimgr' }) | Should -Be @()
         @($g.remedies | Where-Object { $_.text -match 'Sim PCL 6' }).Count | Should -BeGreaterThan 0
         $vendors = @(@($g.checks) + @($g.remedies) + @($g.contacts) | ForEach-Object { ($_.source -split ': ', 2)[0] } | Sort-Object -Unique)
-        $vendors | Should -Be @('Citrix', 'HP', 'Microsoft')
+        # Aussage angepasst (fix round 2, B5): with the general steps on the mapping of printers
+        $vendors | Should -Be @('AKI', 'Citrix', 'HP', 'Microsoft', 'WorkerPerf')
         # an isolated type 4 driver of another vendor without a crash and without stuck queues: none of those variants
         $ctx = New-Ctx; $ctx.Data.print.drivers = @(@{ name = 'Sim PCL 6'; manufacturer = 'Acme'; type = 4; isolation = 'isolated' }); $ctx.Data.print.queues = @()
         $quiet = Get-Guide (New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; driver = 'Sim PCL 6' } }) $ctx
@@ -419,6 +513,49 @@ Describe 'Katalog in src' {
         }
         # titles tell the situations apart on cards and in groups
         @($WorkerPerfSituations | ForEach-Object { $Real.situations.$_.title } | Sort-Object -Unique).Count | Should -Be $WorkerPerfSituations.Count
+    }
+    It 'stellt die Verzoegerung bei <S> nicht als Tatsache hin, wenn die Eingabeverzoegerung nicht gemessen wurde' -ForEach @(      # fix round 4, B2 (ruling P3-R65)
+        @{ S = 'cpu'; I = @{ type = 'engpass'; lead = 'cpu'; cause = @{ kind = 'nodata' } }; Fact = 'reagierten für die betroffenen Benutzer spürbar verzögert' }
+        @{ S = 'disk'; I = @{ type = 'engpass'; lead = 'disk'; cause = @{ kind = 'nodata' } }; Fact = 'dauerten spürbar länger' }
+        @{ S = 'share'; I = @{ type = 'engpass'; lead = 'share'; cause = @{ kind = 'nodata' } }; Fact = 'ließen sich nur verzögert öffnen' }
+        @{ S = 'profile'; I = @{ type = 'engpass'; lead = 'profile'; cause = @{ kind = 'nodata' } }; Fact = 'reagierten träge' }
+        @{ S = 'chronic.resource'; I = @{ type = 'engpass'; lead = 'cpu'; chronic = $true; cause = @{ kind = 'nodata' } }; Fact = 'reagieren für die Benutzer dauerhaft zäher' }
+        @{ S = 'fallback'; I = @{ type = 'umfeld' }; Fact = 'zeigen die betroffenen Sitzungen' }
+    ) {
+        $inc = New-Inc $I
+        # measured: the impact as it stands
+        $g = Get-Guide $inc
+        $g.situation | Should -Be $S; $g.conditions | Should -Not -Contain 'unmeasured.input.session'
+        $g.impact | Should -BeExactly $Real.situations.$S.impact; $g.impact | Should -Match ([regex]::Escape($Fact))
+        # not measured: the row of the target comparison says so, and no session can be named
+        $ctx = New-Ctx; $ctx.Data.unmeasured.input = $true
+        $ctx.Data.sollIst = @(@{ id = 'input.session'; label = 'Eingabeverzögerung je Sitzung'; measured = $false; detail = '' })
+        $g = Get-Guide $inc $ctx
+        $g.conditions | Should -Contain 'unmeasured.input.session'; $g.conditions | Should -Contain 'affected.unknown'
+        $g.impact | Should -Not -Match ([regex]::Escape($Fact))
+        $g.impact | Should -Match '(?i)die Eingabeverzögerung wurde nicht gemessen\.$'
+        if ($S -ne 'fallback') { $g.impact | Should -Match '\b(können|kann)\b' }
+        $g.impact | Should -Not -Match '\b(reagierten|dauerten|ließen|wirkten|mussten)\b'
+        if ($S -ne 'chronic.resource') { $g.userView | Should -Match 'nicht bestimmbar' }
+        $g.terms | Should -Contain 'Eingabeverzögerung'
+        # the copy text carries the same sentence
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $g -Data $ctx.Data -Catalogue $Real -Texts $Texts)
+        $p | Should -Contain $g.impact; $p | Should -Not -Contain $Real.situations.$S.impact
+    }
+    It 'hat fuer jede Wirkung, die eine Verzoegerung als Tatsache nennt, eine Fassung ohne gemessene Eingabeverzoegerung' {      # fix round 4, B2
+        $with = @($WorkerPerfSituations | Where-Object { $Real.situations.$_.PSObject.Properties['impactVariants'] })
+        $with | Should -Be @('cpu', 'disk', 'share', 'profile', 'chronic.resource', 'fallback')
+        foreach ($s in $with) {
+            $variants = @($Real.situations.$s.impactVariants); $variants.Count | Should -Be 1 -Because $s
+            @($variants[0].when) | Should -Contain 'unmeasured.input.session' -Because $s
+            # one sentence, like the impact, with no placeholder
+            ([regex]::Matches($variants[0].text, '[.!?](?=\s|$)')).Count | Should -Be 1 -Because $s; $variants[0].text | Should -Not -Match '[{}]' -Because $s
+            $variants[0].text | Should -Not -BeExactly $Real.situations.$s.impact
+        }
+        # the situations of a measured resource without such a variant word their impact as a likelihood already; a
+        # delay without bottleneck and a slow network path are found by their own measured value
+        $Real.situations.memory.impact | Should -Match '^Anwendungen können träge reagiert haben'
+        foreach ($s in 'memory', 'delay.many', 'delay.single', 'chronic.network') { $Real.situations.$s.PSObject.Properties['impactVariants'] | Should -BeNullOrEmpty -Because $s }
     }
     It 'spricht beim Dauerzustand von <Lead> ueber diese Ressource und ueber keine andere' -ForEach @(           # ruling P3-R37
         @{ Lead = 'cpu'; Want = 'Prozessor'; Other = 'Arbeitsspeicher der virtuellen Maschine|Dateiserver|Speichersystem|Profilspeicher' }
@@ -509,13 +646,15 @@ Describe 'Katalog in src' {
         foreach ($e in @($Elements | Where-Object { $_.Situation -eq 'print' -and @($_.When | Where-Object { $_ -in $ownCases }).Count -gt 0 })) {
             $e.Source | Should -BeExactly $OwnSource -Because $e.Position
         }
-        # a print failure with every pattern of its own: five notes, each with the own source
+        # a print failure with every pattern of its own: five notes and the general step on the mapping of printers
+        # (fix round 2, B5), each with the own source
         $inc = New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe'; users = @('user003'); sessions = @(3); count = 3
                 patterns = @(@{ id = 'resource'; detail = @{} }, @{ id = 'securitymodule'; detail = @{} }, @{ id = 'oneuser'; detail = @{} }, @{ id = 'companion'; detail = @{} },
                     @{ id = 'overlap'; detail = @{} }) }; events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }
         $g = Get-Guide $inc
         $notes = @($g.checks | Where-Object { $_.source -ceq $OwnSource })
-        $notes.Count | Should -Be 5
+        $notes.Count | Should -Be 6
+        @($notes | Where-Object { $_.text -match '^Wenn ein Zuordnungswerkzeug die Drucker zuordnet' }).Count | Should -Be 1
         @($notes | Where-Object { $_.text -match 'user003' }).Count | Should -Be 1
         @($notes | Where-Object { $_.text -match 'Leistungsvorfalls: auch dessen Anleitung ansehen' }).Count | Should -Be 1
         # the service comes first, the coincidence in time after the patterns that say more
@@ -548,9 +687,10 @@ Describe 'Katalog in src' {
             @{ Conditions = @($guide.conditions); Values = $facts.Values; Shown = $shown; At = [array]::IndexOf($shown, $note); Gaps = $gaps }
         }
         # the coincidence in time is the only pattern and nothing else is known (for print: no crash of the spooler, no
-        # driver, no queue): the general steps lead in the order of the file, the note is the last step and never the first
+        # driver, no queue; an application that is no standard application of src/apps.json, which has steps of its own):
+        # the general steps lead in the order of the file, the note is the last step and never the first
         $ctx = New-Ctx; $ctx.Data.print = @{ drivers = @(); queues = @() }
-        $only = @{ kind = $S; app = 'EXCEL.EXE'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3; patterns = @(@{ id = 'overlap'; detail = @{} }) }
+        $only = @{ kind = $S; app = 'simapp.exe'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3; patterns = @(@{ id = 'overlap'; detail = @{} }) }
         $place = Get-NotePlace (New-Inc @{ type = 'ereignis'; event = $only }) $ctx
         $place.Conditions | Should -Be @('affected.one', 'pattern.overlap')
         $place.Shown[0] | Should -Match ('^' + [regex]::Escape($First))
@@ -560,7 +700,7 @@ Describe 'Katalog in src' {
         # with patterns that say more and with a pattern that was not checked: every other step precedes the note, only
         # the notes about a gap follow it
         $ctx = New-Ctx; $ctx.Data.skipped = @(@{ id = 'Drucken'; label = 'Drucken'; text = ''; places = @() })
-        $more = @{ kind = $S; key = 'Sim PCL 6'; app = 'EXCEL.EXE'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3
+        $more = @{ kind = $S; key = 'Sim PCL 6'; app = 'simapp.exe'; service = 'SimSvc'; users = @('user003'); sessions = @(3); count = 3
             patterns = @(@{ id = 'resource'; detail = @{} }, @{ id = 'oneuser'; detail = @{} }, @{ id = 'companion'; detail = @{} }, @{ id = 'overlap'; detail = @{} })
             unchecked = @(@{ id = 'printdriver'; category = 'Drucken' }) }
         $place = Get-NotePlace (New-Inc @{ type = 'ereignis'; event = $more; events = @(@{ app = 'spoolsv.exe'; kind = 'crash'; log = 'application' }) }) $ctx
@@ -640,19 +780,339 @@ Describe 'Katalog in src' {
         }
         $times | Should -BeGreaterThan 15
     }
+    It 'nennt bei jeder Abhilfe, die Treiber, Richtlinie, Registrierung oder Scan-Ausschluss aendert, den Ort der Aenderung auf nicht persistenten Servern' {      # fix round 2, B1 (spec 5.8)
+        $remedies = @($Elements | Where-Object { $_.List -eq 'remedies' })
+        $changing = @($remedies | Where-Object { $_.Texts[0] -match 'Treiber|Richtlinie|Registrierung|Ausschl|ausnehmen|Ausnahme' })
+        $changing.Count | Should -BeGreaterThan 40
+        foreach ($e in $changing) { ($e.Texts[0].Contains($InImage) -or $e.Texts[0].Contains($ByPolicy)) | Should -BeTrue -Because "$($e.Position): $($e.Texts[0])" }
+        # the master image for what is installed or set on the worker; a policy needs none
+        @($changing | Where-Object { $_.Texts[0].Contains($InImage) }).Count | Should -BeGreaterThan 25
+        foreach ($e in @($remedies | Where-Object { $_.Texts[0] -notmatch 'Richtlinie „' -and
+                    $_.Texts[0] -match '^Treiber \{driver\}|Treiber .*(installieren|entfernen|erneuern|verwenden)|Brother-Treiber|Kyocera-Treiber|HP Universal Print Driver (auf|in)' })) {
+            $e.Texts[0] | Should -Match ([regex]::Escape($InImage)) -Because $e.Position
+        }
+        # the same for a schedule or an exclusion of the protection software and for what is installed anew
+        foreach ($e in @($remedies | Where-Object { $_.Texts[0] -match '^Zeitplan der Scans|^Scan-Ausschl|auf den aktuellen Stand bringen|korrigierte Version (von|der)' })) {
+            $e.Texts[0] | Should -Match ([regex]::Escape($InImage)) -Because $e.Position
+        }
+        # what a restart of such a worker undoes says so
+        $undone = @($remedies | Where-Object { $_.Texts[0] -match '^Treiber \{driver\} entfernen|in der Reihenfolge von HP entfernen|mit KmUninstall\.exe|Brother-Treiber vollständig entfernen' })
+        $undone.Count | Should -Be 4
+        foreach ($e in $undone) { $e.Texts[0] | Should -Match 'am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image' -Because $e.Position }
+        # every element that empties the spool folder, in whatever words (follow-up of fix round 2: also Brother's reset)
+        $emptied = @($Elements | Where-Object { ($_.Texts -join ' ') -match '(Spool-Ordner|PRINTERS)[^;]*(löschen|leeren)|(löschen|leeren)[^;]*(Spool-Ordner|PRINTERS)' })
+        @($emptied | ForEach-Object { $_.Position }) | Should -Be @('print.remedies[10]', 'print.remedies[14]')
+        foreach ($e in $emptied) { $e.Texts[0] | Should -Match 'bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' -Because $e.Position }
+        # ending a process or restarting an application lasts until it starts or fills the memory again, as a restart does
+        $ended = @($remedies | Where-Object { $_.Texts[0] -match 'Prozess\b[^;]*\bbeenden' })
+        @($ended | ForEach-Object { $_.Position }) | Should -Be @('cpu.remedies[0]')
+        foreach ($e in $ended) { $e.Texts[0] | Should -Match 'das wirkt nur, bis die Anwendung wieder startet; startet sie von selbst, läuft sie nach der nächsten Anmeldung oder dem nächsten Neustart des Servers wieder$' -Because $e.Position }
+        $restarted = @($remedies | Where-Object { $_.Texts[0] -match 'schließen und neu starten' })
+        @($restarted | ForEach-Object { $_.Position }) | Should -Be @('memory.remedies[0]')
+        foreach ($e in $restarted) { $e.Texts[0] | Should -Match 'wie ein Neustart des Servers nur frei, bis \{app\} ihn wieder belegt$' -Because $e.Position }
+        # the terms explain both words, and a guidance with such a remedy lists them
+        foreach ($n in 'Master-Image', 'Nicht persistent') { @($Real.terms.PSObject.Properties.Name) | Should -Contain $n }
+        $g = Get-Guide (New-Engpass 'cpu' @{ cause = @{ kind = 'security'; security = @{ label = 'Die Schutzsoftware'; sharePct = 40 } }; main = $null })
+        $g.terms | Should -Contain 'Master-Image'; $g.terms | Should -Contain 'Nicht persistent'
+    }
+    It 'sagt bei einem <S> vor der Messung, dass der Rueckblick auf nicht persistenten Servern nur bis zum letzten Neustart reicht' -ForEach @(      # fix round 2, B2
+        @{ S = 'crash' }; @{ S = 'hang' }; @{ S = 'service' }; @{ S = 'print' }; @{ S = 'profileerror' }; @{ S = 'system' }
+    ) {
+        $ev = @{ kind = $S; app = 'simapp.exe'; service = 'SimSvc'; key = 'storage|D:'; users = @('user003'); count = 2 }
+        $g = Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = ($ev + @{ before = $true }) })
+        $g.conditions | Should -Contain 'before'
+        $step = @($g.checks | Where-Object { $_.text -match 'bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart' })
+        $step.Count | Should -Be 1
+        $step[0].text | Should -Match 'eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde$'
+        $step[0].where | Should -Match 'Vor der Messung'; $step[0].sign | Should -Match 'letzten Neustart'
+        # after the step that asks whether it happened again
+        $texts = @($g.checks | ForEach-Object { $_.text })
+        [array]::IndexOf($texts, $step[0].text) | Should -BeGreaterThan ([array]::IndexOf($texts, @($texts | Where-Object { $_ -match 'seit Beginn der Messung wieder' })[0]))
+        # an incident of the capture does not get it
+        @((Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = $ev })).checks | Where-Object { $_.text -match 'letzten Neustart' }) | Should -Be @()
+    }
+    It 'zeigt bei <App> als Hauptverursacher (<S>) nach dem allgemeinen ersten Schritt die Schritte dieser Anwendung' -ForEach @(      # fix round 2, B3
+        @{ S = 'cpu'; App = 'msedge.exe'; Key = 'edge'; Want = 'Browser-Task-Manager' }; @{ S = 'memory'; App = 'msedge.exe'; Key = 'edge'; Want = 'Browser-Task-Manager' }
+        @{ S = 'cpu'; App = 'EXCEL.EXE'; Key = 'office'; Want = 'Add-ins von EXCEL\.EXE' }; @{ S = 'memory'; App = 'WINWORD.EXE'; Key = 'office'; Want = 'Add-ins von WINWORD\.EXE' }
+        @{ S = 'cpu'; App = 'ms-teams.exe'; Key = 'teams'; Want = 'Medienoptimierung' }; @{ S = 'memory'; App = 'ms-teams.exe'; Key = 'teams'; Want = 'Medienoptimierung' }
+        @{ S = 'cpu'; App = 'msedgewebview2.exe'; Key = 'webview2'; Want = 'welche Anwendung msedgewebview2\.exe nutzt' }
+        # Aussage angepasst (fix round 3, B1): Outlook has its own key; the steps for every Office program stand under it a second time
+        @{ S = 'profile'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'OST-Datei' }; @{ S = 'share'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'PST- oder OST-Dateien' }
+        @{ S = 'disk'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Cache-Modus' }
+        @{ S = 'cpu'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Add-ins von OUTLOOK\.EXE' }; @{ S = 'memory'; App = 'OUTLOOK.EXE'; Key = 'outlook'; Want = 'Add-ins von OUTLOOK\.EXE' }
+    ) {
+        $g = Get-Guide (New-Engpass $S @{ main = @{ app = $App; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } })
+        $g.conditions | Should -Contain "app.$Key"
+        # the general step for a named cause stays first; the steps of the application follow it and carry their source
+        $first = @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and (@($_.when) -join ',') -eq 'cause.app' })[0]
+        $g.checks[0].text | Should -Be (Format-WorkerPerfGuidanceText $first.text @{ app = $App; user = 'user003'; from = '02:56'; to = '02:58' })
+        $own = @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and @($_.when) -contains "app.$Key" })
+        $own.Count | Should -BeGreaterThan 0
+        $shown = @($g.checks | ForEach-Object { $_.text })
+        $at = @($own | ForEach-Object { [array]::IndexOf($shown, (Format-WorkerPerfGuidanceText ([string]$_.text) @{ app = $App; user = 'user003'; from = '02:56'; to = '02:58' })) })
+        @($at | Where-Object { $_ -lt 1 }) | Should -Be @()
+        @($g.checks | Where-Object { $_.text -match $Want }).Count | Should -Be 1
+        # the steps of the application stand together, directly behind the steps for every named cause
+        $general = @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and (@($_.when) -join ',') -eq 'cause.app' -and -not $_.PSObject.Properties['source'] }).Count
+        ($at | Measure-Object -Minimum).Minimum | Should -Be $general
+        # no step of another standard application (a step for every Office program stands word for word under Outlook too)
+        $ownTexts = @($own | ForEach-Object { [string]$_.text })
+        foreach ($other in @($AppList.apps | ForEach-Object { $_.key } | Where-Object { $_ -ne $Key })) {
+            foreach ($el in @($Real.situations.$S.checks | Where-Object { $_.PSObject.Properties['when'] -and @($_.when) -contains "app.$other" -and $ownTexts -cnotcontains [string]$_.text })) {
+                $shown | Should -Not -Contain (Format-WorkerPerfGuidanceText ([string]$el.text) @{ app = $App; user = 'user003'; from = '02:56'; to = '02:58' })
+            }
+        }
+        foreach ($t in (Get-GuideTexts $g)) { $t | Should -Not -Match '[{}]' }
+    }
+    It 'fragt bei Teams zuerst nach der Medienoptimierung und nennt Einstellungen je Benutzer als solche' {      # fix round 2, B3
+        foreach ($s in 'cpu', 'memory') {
+            $teams = @($Real.situations.$s.checks | Where-Object { $_.PSObject.Properties['when'] -and @($_.when) -contains 'app.teams' })
+            $teams[0].text | Should -Match '^Prüfen, ob Teams in der Sitzung von \{user\} mit Medienoptimierung lief' -Because $s
+            $teams[0].source | Should -Be 'Citrix: Optimization for Microsoft Teams (New)'
+        }
+        $g = Get-Guide (New-Engpass 'cpu' @{ main = @{ app = 'ms-teams.exe'; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } })
+        $g.terms | Should -Contain 'Medienoptimierung'
+        # settings a user makes for himself are named as such
+        foreach ($p in 'Erweiterungen von Microsoft Edge abschalten', 'Schlafende Tabs in Microsoft Edge einschalten', 'Add-ins von \{app\}, die nicht gebraucht werden') {
+            $hit = @($Elements | Where-Object { $_.List -eq 'remedies' -and $_.Texts[0] -match $p })
+            $hit.Count | Should -BeGreaterThan 0 -Because $p
+            foreach ($e in $hit) { $e.Texts[0] | Should -Match 'Einstellung je Benutzer' -Because $e.Position }
+        }
+    }
+    It 'haengt jede Anwendungsbedingung an eine Anwendung der Liste und gibt jedem dieser Elemente eine Quelle' {      # fix round 2, A4, B3
+        $keys = @($AppList.apps | ForEach-Object { $_.key })
+        $appElements = @($Elements | Where-Object { @($_.When | Where-Object { $_ -like 'app.*' }).Count -gt 0 })
+        $appElements.Count | Should -BeGreaterThan 40
+        foreach ($e in $appElements) {
+            $e.Source | Should -Not -BeNullOrEmpty -Because $e.Position
+            foreach ($c in @($e.When | Where-Object { $_ -like 'app.*' })) { $keys | Should -Contain $c.Substring(4) -Because $e.Position }
+        }
+        # every standard application has steps; the four of the customer in the situations of the processor and the memory
+        foreach ($k in $keys) { @($appElements | Where-Object { $_.When -contains "app.$k" }).Count | Should -BeGreaterThan 0 -Because $k }
+        foreach ($k in 'edge', 'office', 'teams', 'webview2', 'outlook') {
+            foreach ($s in 'cpu', 'memory') { @($appElements | Where-Object { $_.Situation -eq $s -and $_.When -contains "app.$k" }).Count | Should -BeGreaterThan 0 -Because "$s $k" }
+        }
+        # a step of a performance incident for an application belongs to a named cause
+        foreach ($e in @($appElements | Where-Object { $_.Situation -in 'cpu', 'memory', 'disk', 'share', 'profile' })) { $e.When | Should -Contain 'cause.app' -Because $e.Position }
+        # without the list the catalogue is refused
+        { Read-WorkerPerfGuidance $CatalogueFile } | Should -Throw "*aber es ist keine Anwendungsliste angegeben*"
+    }
+    It 'nennt Workspace Environment Management als moeglichen Beteiligten an Prozessor und Arbeitsspeicher, mit der Quelle von Citrix' {      # fix round 2, B4
+        $g = Get-Guide (New-Engpass 'cpu')
+        $log = @($g.checks | Where-Object { $_.text -match 'Ereignisprotokoll des WEM-Agenten' })
+        $log.Count | Should -Be 1; $log[0].where | Should -Match 'WEM Agent Service, Ereignisse 7001 und 7002'; $log[0].sign | Should -Match 'Priorität eines Prozesses gesenkt'
+        $log[0].source | Should -Be 'Citrix: Agent event logs (WEM current release)'
+        $spike = @($g.remedies | Where-Object { $_.text -match 'CPU Spikes Protection' })
+        $spike.Count | Should -Be 1; $spike[0].source | Should -Be 'Citrix: CPU Management (WEM current release)'
+        $spike[0].text | Should -Match 'senkt die Priorität eines Prozesses'; $spike[0].text | Should -Match 'laut Citrix nicht dafür gedacht, die Gesamtlast zu senken'
+        $g.terms | Should -Contain 'Workspace Environment Management'
+        $g = Get-Guide (New-Engpass 'memory')
+        $log = @($g.checks | Where-Object { $_.text -match 'Ereignisprotokoll des WEM-Agenten' })
+        $log.Count | Should -Be 1; $log[0].where | Should -Match 'Ereignisse 8001 bis 8003'; $log[0].sign | Should -Match 'Arbeitsspeicher untätiger Prozesse in die Auslagerungsdatei'
+        $limit = @($g.remedies | Where-Object { $_.text -match 'Leerlaufgrenze der Speicheroptimierung' })
+        $limit.Count | Should -Be 1; $limit[0].source | Should -Be 'Citrix: Memory Management (WEM current release)'; $limit[0].text | Should -Match 'höchstens 5 %'
+        # every element that names WEM's protection or optimisation carries a source of Citrix or of practice
+        foreach ($e in @($Elements | Where-Object { ($_.Texts -join ' ') -match 'CPU-Spitzenschutz|Speicheroptimierung von Citrix|WEM-Agent\b' })) { $e.Source | Should -Match '^(Citrix: |Carl Stalhood \(Empfehlung aus der Praxis\): )' -Because $e.Position }
+        # the role Citrix covers the VDA and the WEM agent: no step calls a process of the role a part of the VDA
+        foreach ($e in @($Elements | Where-Object { $_.When -contains 'role.Citrix' })) { ($e.Texts -join ' ') | Should -Match 'VDA oder Workspace Environment Management' -Because $e.Position }
+    }
+    It 'setzt bei der Zuordnung der Drucker keine Citrix-Richtlinien voraus und nennt die Punkte des Herstellers des Zuordnungswerkzeugs mit ihrer Version' {      # fix round 2, B5
+        $print = @($Elements | Where-Object { $_.Situation -eq 'print' })
+        # a step that depends on Citrix policies or on printers created by Citrix says so
+        foreach ($e in @($print | Where-Object { $_.List -eq 'checks' -and $_.Texts[0] -match 'Citrix-Richtlinie „' })) { $e.Texts[0] | Should -Match '^Wenn die Drucker über Citrix-Richtlinien zugeordnet werden: ' -Because $e.Position }
+        foreach ($e in @($Elements | Where-Object { $_.List -eq 'remedies' -and $_.Texts[0] -match 'Citrix-Richtlinie „|Citrix-Universaltreiber als Regel' })) {
+            $e.Texts[1] | Should -Match 'die Drucker über Citrix-Richtlinien zugeordnet werden|Citrix die Drucker anlegt' -Because $e.Position
+        }
+        @($print | Where-Object { ($_.Texts -join ' ') -match 'werden die Drucker in den Sitzungen nicht angelegt' }) | Should -Be @()
+        # the general step on the mapping at logon and reconnect is the report's own note and names no product
+        $own = @($print | Where-Object { $_.Texts[0] -match '^Wenn ein Zuordnungswerkzeug die Drucker zuordnet: ' })
+        $own.Count | Should -Be 1; $own[0].Source | Should -BeExactly $OwnSource; $own[0].When | Should -Be @()
+        $own[0].Texts[0] | Should -Match 'bei der Anmeldung und nach einer Wiederverbindung'; ($own[0].Texts -join ' ') | Should -Not -Match 'PrinTaurus|AKI'
+        # the vendor's points: each in an element of its own source, with the version the release notes name
+        $aki = @($Elements | Where-Object { $_.Source -like 'AKI: *' })
+        @($aki | ForEach-Object { $_.Source } | Sort-Object -Unique) | Should -Be @('AKI: Release Notes 6.2 deutsch', 'AKI: Release Notes PrinTaurus 6.4')
+        $points = @{ 'zum selben Release|denselben Release-Stand' = '6\.4'; 'doppelt angezeigten Druckern auf Version 6\.4' = 'älter als Version 6\.4'
+            'Lokale IPP-Druckerwarteschlangen' = 'PrinTaurus 6\.4 im Einsatz'; 'Standarddrucker' = '6\.2' }
+        foreach ($p in $points.Keys) {
+            $hit = @($aki | Where-Object { $_.Situation -eq 'print' -and ($_.Texts -join ' ') -match $p })
+            $hit.Count | Should -BeGreaterThan 0 -Because $p
+            foreach ($e in $hit) { ($e.Texts -join ' ') | Should -Match $points[$p] -Because "$($e.Position): $p" }
+        }
+        foreach ($e in @($aki | Where-Object { $_.Situation -eq 'print' -and $_.List -eq 'remedies' })) { $e.Texts[1] | Should -Match '6\.[24]' -Because $e.Position }
+        # outside the print situation the vendor's elements hang on its client; the list of driver vendors is not extended
+        foreach ($e in @($aki | Where-Object { $_.Situation -ne 'print' })) { $e.When | Should -Contain 'app.printaurus' -Because $e.Position }
+        @($Real.vendors | ForEach-Object { $_.key }) | Should -Be @('HP', 'Kyocera', 'Brother', 'Microsoft', 'Citrix')
+        foreach ($kind in 'crash', 'hang') {
+            $g = Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = $kind; app = 'PtSmartSpreadClient.exe'; users = @('user003'); sessions = @(3) } })
+            $g.conditions | Should -Contain 'app.printaurus'
+            @($g.checks | Where-Object { $_.source -like 'AKI: *' }).Count | Should -BeGreaterThan 0 -Because $kind
+        }
+    }
+    It 'formuliert eine Empfehlung aus der Praxis nie als Empfehlung des Herstellers und nennt beim Energiesparplan die Sicht der Hersteller' {      # fix round 2, B6 (spec 5.7)
+        $practice = @($Elements | Where-Object { $_.Source -match 'Empfehlung aus der Praxis' })
+        $practice.Count | Should -BeGreaterThan 10
+        @($practice | ForEach-Object { ($_.Source -split ' \(', 2)[0] } | Sort-Object -Unique) | Should -Be @('BIS-F', 'Carl Stalhood')
+        foreach ($e in $practice) {
+            $e.Source | Should -Match '^(Carl Stalhood|BIS-F) \(Empfehlung aus der Praxis\): .+' -Because $e.Position
+            $all = $e.Texts -join ' '
+            $all | Should -Match 'Empfehlung aus der Praxis|Praxisquelle' -Because $e.Position
+            $all | Should -Not -Match 'laut (Microsoft|Citrix|VMware)|(Microsoft|Citrix|VMware) empfiehlt|empfiehlt (Microsoft|Citrix|VMware)' -Because $e.Position
+        }
+        # the power plan: the practice sources rule (the customer's exception), the text names the vendors' view
+        $power = @($practice | Where-Object { ($_.Texts -join ' ') -match 'Energiesparplan' })
+        @($power | ForEach-Object { $_.Situation } | Sort-Object -Unique) | Should -Be @('cpu', 'delay.many', 'delay.single')
+        foreach ($e in $power) {
+            $all = $e.Texts -join ' '
+            $all | Should -Match '„Höchstleistung“' -Because $e.Position
+            $all | Should -Match 'Microsoft liefert Windows Server mit „Ausbalanciert“ aus|Microsoft Windows Server mit „Ausbalanciert“ ausliefert' -Because $e.Position
+            $all | Should -Match 'VMware .*„Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen' -Because $e.Position
+        }
+        @($power | Where-Object { $_.List -eq 'remedies' }).Count | Should -Be 3
+        foreach ($e in @($power | Where-Object { $_.List -eq 'remedies' })) { $e.Texts[0] | Should -Match ([regex]::Escape($InImage)) -Because $e.Position; $e.Source | Should -BeLike 'BIS-F *' }
+        foreach ($n in 1, 3) {
+            $g = Get-Guide (New-Inc @{ type = 'ohne-engpass'; affected = @(1..$n | ForEach-Object { @{ s = $_ } }) })
+            @($g.checks | Where-Object { $_.text -eq 'Energiesparplan des Servers feststellen' }).Count | Should -Be 1 -Because "$n Sitzungen"
+            @($g.remedies | Where-Object { $_.text -match '^Energiesparplan „Höchstleistung“ einstellen' }).Count | Should -Be 1 -Because "$n Sitzungen"
+            $g.terms | Should -Contain 'Energiesparplan'
+        }
+        # receive-side scaling follows the vendor: the catalogue has no word about it
+        @($Elements | Where-Object { ($_.Texts -join ' ') -match 'Receive Side Scaling|RSS' }) | Should -Be @()
+        # nothing that only holds for Provisioning Services
+        @($Elements | Where-Object { ($_.Texts -join ' ') -match 'Provisioning|PVS|Schreibcache' }) | Should -Be @()
+    }
+    It 'zeigt die Schritte zu Outlook nur bei Outlook und dort vor den allgemeinen, bei <App> (<S>) keinen' -ForEach @(      # fix round 3, B1 (ruling P3-R57)
+        @(foreach ($a in 'WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'ONENOTE.EXE', 'MSACCESS.EXE') { foreach ($s in 'hang', 'crash', 'cpu', 'memory', 'disk', 'share', 'profile') { @{ App = $a; S = $s } } })
+    ) {
+        if ($S -in 'hang', 'crash') { $inc = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = $S; app = $App; users = @('user003'); sessions = @(3) } } }
+        else { $inc = New-Engpass $S @{ main = @{ app = $App; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } } }
+        $g = Get-Guide $inc
+        @($g.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.office')
+        @(Get-GuideTexts $g | Where-Object { $_ -match 'Outlook|OST-|PST-|Cache-Modus' }) | Should -Be @()
+    }
+    It 'haengt die Schritte, die nur fuer Outlook gelten, an die Anwendung Outlook und zeigt ihr auch die Schritte fuer jedes Office-Programm' {      # fix round 3, B1 (ruling P3-R57)
+        # the application list: Outlook last, its process in no other application; the order of the five before it unchanged
+        @($AppList.apps | ForEach-Object { $_.key }) | Should -Be @('edge', 'webview2', 'office', 'teams', 'printaurus', 'outlook')
+        $outlook = @($AppList.apps | Where-Object { $_.key -eq 'outlook' })[0]
+        $outlook.label | Should -BeExactly 'Microsoft Outlook'; @($outlook.processes) | Should -Be @('OUTLOOK.EXE')
+        @(($AppList.apps | Where-Object { $_.key -eq 'office' }).processes) | Should -Be @('WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'ONENOTE.EXE', 'MSACCESS.EXE')
+        @(Get-WorkerPerfGuidanceAppMatches $AppList 'outlook.exe') | Should -Be @('outlook'); @(Get-WorkerPerfGuidanceAppMatches $AppList 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE') | Should -Be @('office')
+        $office = @($Elements | Where-Object { $_.When -contains 'app.office' }); $own = @($Elements | Where-Object { $_.When -contains 'app.outlook' })
+        # no element starts with the prefix any more; none for every Office program names Outlook or its files
+        @($Elements | Where-Object { $_.Texts[0] -match '^Bei Outlook' }) | Should -Be @()
+        foreach ($e in $office) { ($e.Texts -join ' ') | Should -Not -Match 'Outlook|OST|PST|Postfach' -Because $e.Position }
+        # the steps for Outlook alone: each names Outlook or its data file, none stands under another application
+        $only = @($own | Where-Object { $t = $_.Texts[0]; @($office | Where-Object { $_.Texts[0] -ceq $t }).Count -eq 0 })
+        @($only | ForEach-Object { $_.Situation + '.' + $_.List } | Sort-Object) | Should -Be @('disk.checks', 'hang.checks', 'hang.checks', 'hang.checks', 'profile.checks', 'profile.remedies', 'share.checks')
+        foreach ($e in $only) { ($e.Texts -join ' ') | Should -Match 'Outlook' -Because $e.Position; $e.Source | Should -BeLike 'Microsoft: *' -Because $e.Position }
+        # Outlook is an Office program: every step for every Office program stands a second time, word for word and with
+        # its source, under Outlook, in the same list after the Office steps, and after the steps for Outlook alone
+        $office.Count | Should -Be 6
+        foreach ($e in $office) {
+            $twin = @($own | Where-Object { $_.Situation -eq $e.Situation -and $_.List -eq $e.List -and ($_.Texts -join '|') -ceq ($e.Texts -join '|') })
+            $twin.Count | Should -Be 1 -Because $e.Position
+            $twin[0].Source | Should -BeExactly $e.Source -Because $e.Position
+            (@($twin[0].When) -join ',') | Should -Be ((@($e.When) -join ',').Replace('app.office', 'app.outlook')) -Because $e.Position
+            $index = { param($x) [int]($x.Position -replace '^.*\[(\d+)\]$', '$1') }
+            (& $index $twin[0]) | Should -BeGreaterThan (& $index $e) -Because $e.Position
+            foreach ($o in @($only | Where-Object { $_.Situation -eq $e.Situation -and $_.List -eq $e.List })) { (& $index $o) | Should -BeLessThan (& $index $twin[0]) -Because $o.Position }
+        }
+        ($own.Count - $only.Count) | Should -Be $office.Count
+        # a hang of Outlook: its three steps, before every general step of the situation
+        $g = Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'hang'; app = 'OUTLOOK.EXE'; users = @('user003'); sessions = @(3) } })
+        @($g.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.outlook')
+        $shown = @($g.checks | ForEach-Object { $_.text })
+        $general = @($Real.situations.hang.checks | Where-Object { -not $_.PSObject.Properties['when'] -or @($_.when).Count -eq 0 } | ForEach-Object { [string]$_.text })
+        $firstGeneral = @($shown | ForEach-Object { [array]::IndexOf($general, $_) -ge 0 }).IndexOf($true); $firstGeneral | Should -BeGreaterThan 2
+        $steps = @($only | Where-Object { $_.Situation -eq 'hang' })
+        foreach ($e in $steps) { $at = [array]::IndexOf($shown, $e.Texts[0]); $at | Should -BeGreaterThan -1 -Because $e.Position; $at | Should -BeLessThan $firstGeneral -Because $e.Position }
+        @($g.checks | Where-Object { $_.text -match 'Add-in von Outlook wegen langsamer Ausführung' }).Count | Should -Be 1
+        @($g.checks | Where-Object { $_.text -match '^Größe der OST-Datei von Outlook' }).Count | Should -Be 1
+        @($g.checks | Where-Object { $_.text -match '^Prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist' }).Count | Should -Be 1
+        # a crash and a processor bottleneck of Outlook show what Word shows
+        foreach ($kind in 'crash', 'cpu', 'memory') {
+            $make = { param($app) if ($kind -eq 'crash') { New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = $app; users = @('user003'); sessions = @(3) } } }
+                else { New-Engpass $kind @{ main = @{ app = $app; a = 9; user = 'user003'; sharePct = 62; baselinePct = 4 } } } }
+            $word = Get-Guide (& $make 'WINWORD.EXE'); $mail = Get-Guide (& $make 'OUTLOOK.EXE')
+            foreach ($list in 'checks', 'remedies') {
+                @($mail.$list | ForEach-Object { $_.text }) | Should -Be @($word.$list | ForEach-Object { $_.text.Replace('WINWORD.EXE', 'OUTLOOK.EXE') }) -Because "$kind $list"
+            }
+            @($mail.checks | Where-Object { $_.text -match 'Add-ins von OUTLOOK\.EXE' }).Count | Should -Be 1 -Because $kind
+        }
+    }
+    It 'sagt im Glossar zum Zuordnungswerkzeug der Drucker nur, was belegt ist' {                                   # fix round 3, B2
+        $term = [string]$Real.terms.PrinTaurus
+        $term | Should -BeExactly 'Drucklösung der AKI GmbH, mit der in dieser Umgebung die Drucker zugeordnet werden; ihr SmartSpread Client ist auf dem Server installiert.'
+        # nothing on rules of the mapping, nothing on how often or where the client runs
+        $term | Should -Not -Match 'Regel|Sitzung|läuft|je Benutzer|Anmeldung'
+        # the record of sources names the statement as the customer's, in the target environment and in the vendor's section
+        $doc = [IO.File]::ReadAllText($SourcesFile, [Text.Encoding]::UTF8)
+        foreach ($h in 'Zielumgebung', 'AKI') {
+            $at = $doc.IndexOf("`n## $h`n"); $next = $doc.IndexOf("`n## ", $at + 4)
+            $section = $doc.Substring($at, $next - $at)
+            $section | Should -Match 'Angabe des Auftraggebers vom 13\.11\.2026' -Because $h
+            $section | Should -Match 'Drucklösung' -Because $h
+            $section | Should -Not -Match 'läuft dafür|nach Regeln zu' -Because $h
+        }
+    }
+    It 'stellt kein Bezeichnungswort direkt vor seinen Platzhalter' {                                             # ruling P3-R45
+        # the replacement name of a masked report starts with the word: "Server Server 01"
+        $all = New-Object System.Collections.Generic.List[string]
+        foreach ($e in $Elements) { foreach ($t in $e.Texts) { $all.Add($t) } }
+        foreach ($s in $WorkerPerfSituations) { foreach ($f in 'title', 'meaning', 'impact') { $all.Add([string]$Real.situations.$s.$f) } }
+        foreach ($s in $WorkerPerfSituations) { if ($Real.situations.$s.PSObject.Properties['impactVariants']) { foreach ($v in @($Real.situations.$s.impactVariants)) { $all.Add([string]$v.text) } } }
+        foreach ($part in 'copy', 'userView', 'lagebild', 'hints') { foreach ($p in $Real.$part.PSObject.Properties) { $all.Add([string]$p.Value) } }
+        $all.Add([string]$Real.fallbackNote); foreach ($p in $Real.terms.PSObject.Properties) { $all.Add([string]$p.Value) }
+        $all.Count | Should -BeGreaterThan 1000
+        $pattern = '(?<![\p{L}\p{N}-])(Benutzer|Server|Client|Freigabe|Drucker|Domäne)\s+[„"(]*\{(user|server|resource|endpoint|driver|app|security|module|share)\}'
+        @($all | Where-Object { $_ -cmatch $pattern }) | Should -Be @()
+        $Real.copy.head | Should -Be 'WorkerPerf: {server}, {date}'; $Real.copy.summaryHead | Should -Match 'Messung auf \{server\} am \{date\}'
+        # the pattern finds what it is meant to find
+        'Messung auf Server {server} am' | Should -MatchExactly $pattern; 'Nur Benutzer „{user}“ ist betroffen' | Should -MatchExactly $pattern
+        'in der Sitzung von {user}' | Should -Not -MatchExactly $pattern; 'eines Benutzers {duration} lang' | Should -Not -MatchExactly $pattern
+    }
+    It 'nennt die gemessene Maschine in jedem Text des Katalogs Server, nie Worker' {                              # fix round 4, A3 (ruling P3-R66)
+        $strings = @(Get-CatalogueStrings (Get-Content -LiteralPath $CatalogueFile -Raw -Encoding UTF8 | ConvertFrom-Json) '')
+        $strings.Count | Should -BeGreaterThan 1200
+        # every text the loader knows is among them: an element's texts, a situation's, the parts outside the situations
+        $places = @($strings | ForEach-Object { $_.Place })
+        foreach ($p in 'terms.Master-Image', 'terms.Master-Image (Begriff)', 'copy.head', 'userView.many', 'lagebild.red', 'hints.skipped', 'fallbackNote',
+            'situations.cpu.title', 'situations.cpu.short', 'situations.cpu.meaning', 'situations.cpu.impact', 'situations.cpu.checks[0].text', 'situations.cpu.checks[0].where',
+            'situations.cpu.checks[0].sign', 'situations.cpu.remedies[0].text', 'situations.cpu.remedies[0].precondition', 'situations.print.contacts[0].text',
+            'situations.cpu.impactVariants[0].text') { $places | Should -Contain $p }
+        @($places | Where-Object { $_ -match '\.(when|source)(\[|$)|^(version|vendors)' }) | Should -Be @()
+        @($strings | Where-Object { $_.Text -cmatch $WorkerWord } | ForEach-Object { $_.Place }) | Should -Be @()
+        # the fixed phrases of spec 5.8 say Server
+        $InImage | Should -BeExactly 'bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen'
+        $ByPolicy | Should -BeExactly 'eine Richtlinie wirkt auch auf nicht persistente Server'
+        @($strings | Where-Object { $_.Text.Contains($InImage) }).Count | Should -BeGreaterThan 40; @($strings | Where-Object { $_.Text.Contains($ByPolicy) }).Count | Should -BeGreaterThan 10
+        # the pattern finds the word of its own and the first part of a compound, and leaves the tool's name
+        foreach ($t in 'auf dem Worker', 'außerhalb des Workers', 'bei nicht persistenten Workern im Master-Image', 'in den gemessenen Worker-Ressourcen', '(Worker)', 'Citrix-Worker') { $t | Should -MatchExactly $WorkerWord }
+        foreach ($t in 'WorkerPerf: Hinweis zur Auswertung', 'Start-WorkerPerfCapture.ps1', 'auf dem Server', 'worker') { $t | Should -Not -MatchExactly $WorkerWord }
+    }
+    It 'nennt die gemessene Maschine in jedem Satz der Auswertung Server, nie Worker' {                           # fix round 4, A3 (ruling P3-R66)
+        $Texts.Count | Should -BeGreaterThan 190
+        @($Texts.Keys | Where-Object { $Texts[$_] -cmatch $WorkerWord } | Sort-Object) | Should -Be @()
+        $Texts['ohne'] | Should -Match 'ohne Engpass auf dem Server \('; $Texts['ohne.skipped'] | Should -Match 'ohne erkannten Engpass auf dem Server \('
+        $Texts['umfeld.network'] | Should -Match 'Betrifft die Sitzung, nicht den Server\.$'; $Texts['ohne.cause'] | Should -Match 'außerhalb des Servers oder in der Anwendung selbst'
+        # the cause of a delay without bottleneck is a likelihood, as the meaning of the incident says (fix round 4, B1; ruling P3-R63)
+        $Texts['ohne.cause'] | Should -BeExactly ' Die Ursache liegt vermutlich außerhalb des Servers oder in der Anwendung selbst (Datenbank, Proxy, Netz).'
+        foreach ($k in @($Texts.Keys | Where-Object { $_ -like 'ohne*' })) { if ($Texts[$k] -match 'Ursache') { $Texts[$k] | Should -Match 'vermutlich|nicht ausgeschlossen' -Because $k } }
+        foreach ($s in 'delay.many', 'delay.single') { $Real.situations.$s.meaning | Should -Match 'vermutlich' -Because $s }
+        $Texts['ohne.unmeasured'] | Should -Match '^ Kein Engpass in den gemessenen Ressourcen des Servers\. Nicht gemessen: '
+    }
 }
 
 Describe 'Katalog an der simulierten Stunde ohne Prozesse' {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
-        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile
+        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile -Apps $script:AppList
         # one hour recorded with -Skip Prozesse and its report data as the report script builds them (dot-sourced in a child
         # scope, which keeps $data); the names below are not used by the report script
         $catSimRun = Invoke-SimCapture (Join-Path $TestDrive 'sim') @{ Skip = @('Prozesse') }
         $catSimRoles = New-SimRoleFile (Join-Path $TestDrive 'roles.sim.json')
         $catSimReport = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'
         $script:SimData = & { $null = . $catSimReport -Path $catSimRun -OutFile (Join-Path $TestDrive 'report.html') -RoleFile $catSimRoles 6>$null; $data }
-        $script:SimCtx = @{ Data = $SimData; Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = [int]$SimData.meta.offsetMin; Texts = $script:Texts }
+        $script:SimCtx = @{ Data = $SimData; Thresholds = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json'); OffsetMinutes = [int]$SimData.meta.offsetMin; Texts = $script:Texts; Apps = $script:AppList }
         $script:UsersStep = 'Betroffene Benutzer über ihre Meldungen feststellen: Prozesse wurden nicht gemessen'
         function Get-SimGuide($Incident) { Get-Guide $Incident $script:SimCtx }
     }
@@ -703,10 +1163,24 @@ Describe 'Katalog an der simulierten Stunde ohne Prozesse' {
 
 Describe 'Nachweis der Druckempfehlungen' {
     BeforeAll {
-        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile
+        $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile -Apps $script:AppList
         $script:Sourced = @(Get-Elements $script:Real | Where-Object { $_.Source })
         $script:Rows = @(Get-SourceRows $script:SourcesFile)
         $script:Doc = [IO.File]::ReadAllText($script:SourcesFile, [Text.Encoding]::UTF8)
+        function Get-NamedElements([string]$Text) {
+            # the elements a text of the record names by list, first words in quotation marks and situation (Abhilfe „… …“
+            # der Situation `print`): the words as written, and the positions of the elements of that list whose text
+            # starts with them (a placeholder in its declared form ‹…› back to the placeholder). One position: found.
+            $forms = @{}; foreach ($m in [regex]::Matches($script:Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
+            $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
+            foreach ($m in [regex]::Matches(($Text -replace '\s+', ' '), '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`')) {
+                $words = $m.Groups[2].Value; foreach ($f in $forms.Keys) { $words = $words.Replace($f, $forms[$f]) }
+                $list = $lists[$m.Groups[1].Value]; $situation = $m.Groups[3].Value
+                $elements = @($script:Real.situations.$situation.$list); $hits = @()
+                for ($k = 0; $k -lt $elements.Count; $k++) { if (([string]$elements[$k].text).StartsWith($words, [StringComparison]::Ordinal)) { $hits += "$situation.$list[$k]" } }
+                [pscustomobject]@{ Name = $m.Value; Words = $words; Positions = $hits }
+            }
+        }
     }
     It 'fuehrt jedes Element mit Quelle an seiner Stelle unter seinem Dokument' {
         $Sourced.Count | Should -BeGreaterThan 20
@@ -726,8 +1200,14 @@ Describe 'Nachweis der Druckempfehlungen' {
                 $bySource[$p] | Should -BeExactly "$($row.Vendor): $($row.Title)" -Because $p
                 $seen.ContainsKey($p) | Should -BeFalse -Because "$p steht zweimal im Nachweis"; $seen[$p] = $true
             }
-            # a note speaks only about elements of its own row
-            foreach ($p in $row.Noted) { $row.Positions | Should -Contain $p -Because "Hinweis zu $($row.Title)" }
+            # a note names an element by its first words, never by its position (fix round 4, C4), and speaks only about
+            # elements of its own row
+            $row.Noted | Should -Be @() -Because "Hinweis zu $($row.Title)"
+            foreach ($n in @(Get-NamedElements $row.Line)) {
+                $n.Words | Should -Not -Match '[‹›]' -Because $n.Name
+                $n.Positions.Count | Should -Be 1 -Because "$($n.Name) im Hinweis zu $($row.Title)"
+                $row.Positions | Should -Contain $n.Positions[0] -Because "$($n.Name) im Hinweis zu $($row.Title)"
+            }
             if ($row.Vendor -eq 'WorkerPerf') { continue }
             $row.Line | Should -Match 'https://' -Because $row.Title
             $row.Line | Should -Match '2026-11-13' -Because $row.Title
@@ -740,11 +1220,120 @@ Describe 'Nachweis der Druckempfehlungen' {
         $Doc | Should -Match '(?m)^## Auf dem Zielsystem zu bestätigen$'
         $at = $Doc.IndexOf("`n## Auf dem Zielsystem zu bestätigen`n")
         $section = $Doc.Substring($at)
-        # every position the list names exists in the catalogue
-        $all = @(Get-Elements $Real | ForEach-Object { $_.Position })
-        $named = @(Get-Positions $section); $named.Count | Should -BeGreaterThan 3
-        foreach ($p in $named) { $all | Should -Contain $p }
+        # the list names its elements by their first words, never by their position (fix round 4, C4); each is found
+        @(Get-Positions $section) | Should -Be @()
+        $named = @(Get-NamedElements $section); $named.Count | Should -Be 6
+        foreach ($n in $named) { $n.Words | Should -Not -Match '[‹›]' -Because $n.Name; $n.Positions.Count | Should -Be 1 -Because $n.Name }
+        # what the list says about them still stands in them
+        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $texts = @($named | ForEach-Object { $byPosition[$_.Positions[0]].Texts -join ' ' })
+        $texts[0] | Should -Match 'DependOnService'
+        $texts[1] | Should -Match 'Isolate print drivers from applications'; $texts[2] | Should -Match 'Execute print drivers in isolated processes'
+        $texts[3] | Should -Match 'Override print driver execution compatibility setting reported by print driver'
+        $texts[4] | Should -Match 'Druckverwaltung'; $texts[5] | Should -Match 'Druckverwaltung'
+        @($named | ForEach-Object { $_.Positions[0] -replace '\[\d+\]$', '' }) | Should -Be @('print.checks', 'crash.checks', 'print.checks', 'print.remedies', 'print.checks', 'print.remedies')
         foreach ($word in 'DependOnService', 'Betriebsbereit', 'PrintDriverIsolationOverrideCompat', 'temporäres Profil') { $section | Should -Match ([regex]::Escape($word)) }
+    }
+    It 'nennt im Abschnitt Zielumgebung die Elemente mit ihren ersten Worten statt mit ihrer Stelle' {                           # fix round 3, A4
+        $at = $Doc.IndexOf("`n## Zielumgebung`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
+        $section = $Doc.Substring($at, $next - $at) -replace '\s+', ' '
+        # one position only: the example that explains what a position is
+        @(Get-Positions $section | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
+        $forms = @{}; foreach ($m in [regex]::Matches($Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
+        $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
+        $named = @([regex]::Matches($section, '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`'))
+        @($named | ForEach-Object { $_.Groups[3].Value + ': ' + $_.Groups[2].Value }) | Should -Be @('crash: Ausnahme oder korrigierte Version der Schutzsoftware', 'print: Spool-Ordner von Hand leeren',
+            'print: Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt', 'cpu: ‹Anwendung› vom Benutzer schließen lassen', 'memory: ‹Anwendung› schließen und neu starten lassen')
+        foreach ($m in $named) {
+            # the words as the catalogue writes them: a placeholder in its declared form back to the placeholder
+            $words = $m.Groups[2].Value; foreach ($f in $forms.Keys) { $words = $words.Replace($f, $forms[$f]) }
+            $words | Should -Not -Match '[‹›]'
+            $hit = @($Real.situations.($m.Groups[3].Value).($lists[$m.Groups[1].Value]) | Where-Object { ([string]$_.text).StartsWith($words, [StringComparison]::Ordinal) })
+            $hit.Count | Should -Be 1 -Because $m.Value
+        }
+        # what the section says about these elements still stands in them
+        $find = { param($s, $start) @($Real.situations.$s.remedies | Where-Object { ([string]$_.text).StartsWith($start, [StringComparison]::Ordinal) })[0] }
+        (& $find 'crash' 'Ausnahme oder korrigierte Version der Schutzsoftware').text | Should -Match 'korrigierte Version bei nicht persistenten Servern im Master-Image'
+        foreach ($start in 'Spool-Ordner von Hand leeren', 'Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt') { (& $find 'print' $start).text | Should -Match 'setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' }
+        (& $find 'cpu' '{app} vom Benutzer schließen lassen').text | Should -Match 'das wirkt nur, bis die Anwendung wieder startet'
+        (& $find 'memory' '{app} schließen und neu starten lassen').text | Should -Match 'nur frei, bis \{app\} ihn wieder belegt$'
+    }
+    It 'zeigt einen Platzhalter des Katalogs im Nachweis in Winkeln mit seinem erklaerten Namen, nie als Satzteil' {              # fix round 3, A5
+        # the forms the record declares
+        $forms = @{}; foreach ($m in [regex]::Matches($Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms[$m.Groups[2].Value] = '‹' + $m.Groups[1].Value + '›' }
+        $forms['app'] | Should -BeExactly '‹Anwendung›'; $forms['user'] | Should -BeExactly '‹Benutzer›'
+        # every such form in the record is a declared one; no brace stands outside the declaration
+        foreach ($m in [regex]::Matches($Doc, '‹[^›]*›')) { $forms.Values | Should -Contain $m.Value }
+        @([regex]::Matches($Doc, '\{\w+\}') | ForEach-Object { $_.Value } | Sort-Object -Unique) | Should -Be @($forms.Keys | ForEach-Object { '{' + $_ + '}' } | Sort-Object)
+        @([regex]::Matches($Doc, '`\{\w+\}`')).Count | Should -Be @([regex]::Matches($Doc, '\{\w+\}')).Count
+        # the tables of the printer vendors carry summaries written by hand: no brace, no other form
+        foreach ($row in $Rows) { $row.Line | Should -Not -Match '[{}]' -Because $row.Title }
+        # the sections of the sources added later (AKI to BIS-F) carry the first words of each element's text: up to the
+        # first colon, semicolon or opening bracket after the twentieth character, at most 110 characters, and every
+        # placeholder in its declared form
+        $label = { param([string]$Text)
+            $cut = $Text.Length
+            foreach ($sep in ': ', '; ', ' (') { $k = $Text.IndexOf($sep, [StringComparison]::Ordinal); if ($k -gt 20 -and $k -lt $cut) { $cut = $k } }
+            $t = [regex]::Replace($Text.Substring(0, $cut), '\{(\w+)\}', { param($m) if ($forms.ContainsKey($m.Groups[1].Value)) { $forms[$m.Groups[1].Value] } else { $m.Value } }).Replace('|', '/')
+            if ($t.Length -gt 110) { $t = $t.Substring(0, 107).TrimEnd() + ' …' }
+            $t }
+        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $from = $Doc.IndexOf("`n## AKI`n"); $to = $Doc.IndexOf("`n## Ausnahmen: Praxisquelle vor Hersteller`n"); $from | Should -BeGreaterThan 0; $to | Should -BeGreaterThan $from
+        $labels = 0; $withForm = New-Object System.Collections.Generic.List[string]
+        foreach ($line in @($Doc.Substring($from, $to - $from) -split "`n" | Where-Object { $_ -match '^\| ' })) {
+            $cells = @($line -split ' \| ')
+            if ($cells.Count -lt 5 -or $cells[3] -notmatch '^`') { continue }
+            foreach ($entry in @($cells[3] -split '<br>')) {
+                $m = [regex]::Match($entry, '^`([a-z.]+\.(?:checks|remedies|contacts)\[\d+\])` (.+)$'); $m.Success | Should -BeTrue -Because $entry
+                $e = $byPosition[$m.Groups[1].Value]; $e | Should -Not -BeNullOrEmpty -Because $entry
+                $want = & $label $e.Texts[0]
+                $want | Should -Not -Match '[{}]' -Because "$($e.Position): ein Platzhalter hat im Nachweis keine erklaerte Form"
+                # a step for every Office program that stands a second time for Outlook says so
+                if ($e.When -contains 'app.outlook' -and @($Sourced | Where-Object { $_.When -contains 'app.office' -and $_.Texts[0] -ceq $e.Texts[0] }).Count -gt 0) { $want += ' (für Outlook)' }
+                $m.Groups[2].Value | Should -BeExactly $want -Because $e.Position
+                $labels++; if ($want -match '‹') { $withForm.Add($e.Position) }
+            }
+        }
+        $labels | Should -BeGreaterThan 80
+        # the labels with a placeholder today: the steps that name the application or the user in their first words
+        $withForm.Count | Should -BeGreaterThan 9
+        foreach ($p in 'cpu.checks[6]', 'cpu.checks[7]', 'cpu.checks[8]', 'memory.checks[5]') { $withForm | Should -Contain $p }
+        $Doc | Should -Match 'Add-ins von ‹Anwendung› prüfen'; $Doc | Should -Match 'in der Sitzung von ‹Benutzer› mit Medienoptimierung lief'
+    }
+    It 'nennt die gemessene Maschine im Nachweis Server, nie Worker' {                                                              # fix round 4, A1 (ruling P3-R66)
+        # every line; of a row of a table of adopted sources not the first cell, which quotes the title of a document literally
+        $lines = @($Doc -split "`n"); $hits = New-Object System.Collections.Generic.List[string]
+        for ($n = 0; $n -lt $lines.Count; $n++) {
+            $text = $lines[$n]
+            if ($text -match '^\| .*? \| <https://') { $text = $text.Substring($text.IndexOf(' | <https://')) }
+            if ($text -cmatch $WorkerWord) { $hits.Add("Zeile $($n + 1): $($lines[$n].Substring(0, [Math]::Min(80, $lines[$n].Length)))") }
+        }
+        $hits.ToArray() | Should -Be @()
+        $Doc | Should -Match 'allgemein so beschreiben lässt: Server mit mehreren Sitzungen'
+        # where a row names the print servers and the measured server, it tells them apart
+        $Doc | Should -Match ([regex]::Escape('(Einrichtung der Druckserver, auf dem gemessenen Server nicht sichtbar)'))
+        $Doc | Should -Match ([regex]::Escape('(Komponenten der Druckserver, nicht des gemessenen Servers)'))
+    }
+    It 'nennt in den Hinweisen der Tabellen die Elemente mit ihren ersten Worten und erklaert die Form' {                          # fix round 4, C4
+        # the notes of the tables name twenty elements today; the test of the rows checks each against its row
+        $inNotes = @($Rows | ForEach-Object { Get-NamedElements $_.Line })
+        $inNotes.Count | Should -BeGreaterThan 15
+        @($inNotes | Where-Object { $_.Positions.Count -ne 1 } | ForEach-Object { $_.Name }) | Should -Be @()
+        # outside the tables a position stands only where the record explains what a position is
+        $prose = @($Doc -split "`n" | Where-Object { $_ -notmatch '^\|' }) -join "`n"
+        @(Get-Positions $prose | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
+        $Doc | Should -Match 'der Abschnitt „Auf dem Zielsystem zu bestätigen“ und die Hinweise in den\s+Tabellen\s+nennen\s+ein\s+Element\s+nicht\s+mit\s+seiner\s+Stelle'
+        $Doc | Should -Match '‹Treiber› für `\{driver\}`'
+        # the finder finds what it is meant to find, and nothing for words no element starts with
+        $found = @(Get-NamedElements 'siehe Abhilfe „Spool-Ordner von Hand leeren …“ der Situation `print` und Prüfschritt „Gibt es nicht …“ der Situation `cpu`')
+        $found.Count | Should -Be 2; $found[0].Positions.Count | Should -Be 1; $found[0].Positions[0] | Should -Match '^print\.remedies\[\d+\]$'; $found[1].Positions.Count | Should -Be 0
+    }
+    It 'bricht den Fliesstext vor den Tabellen und die Liste am Ende nach hoechstens 120 Zeichen um' {                             # fix round 4, C3
+        $lines = @($Doc -split "`n")
+        $firstTable = [array]::IndexOf($lines, '## Microsoft'); $firstTable | Should -BeGreaterThan 50
+        $last = [array]::IndexOf($lines, '## Auf dem Zielsystem zu bestätigen'); $last | Should -BeGreaterThan $firstTable
+        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) { if (($n -lt $firstTable -or $n -gt $last) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
+        $long | Should -Be @()
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
         @($Sourced | Where-Object { $_.Source -match 'Generic PCL' }) | Should -Be @()
@@ -768,5 +1357,35 @@ Describe 'Nachweis der Druckempfehlungen' {
             foreach ($line in $rejected) { @($reasons | Where-Object { $line.Contains($_) }).Count | Should -BeGreaterThan 0 -Because $line }
         }
         $Doc | Should -Match 'ein zweites Mal'
+    }
+    It 'hat je Quelle aus der Praxis, fuer AKI, fuer WEM und fuer die Anwendungen einen Abschnitt und nennt die Ausnahme des Auftraggebers' {      # fix round 2, B8
+        $headings = @([regex]::Matches($Doc, '(?m)^## (.+)$') | ForEach-Object { $_.Groups[1].Value })
+        foreach ($h in 'Zielumgebung', 'AKI', 'Citrix – Workspace Environment Management', 'Microsoft – Edge und WebView2', 'Microsoft – Office', 'Microsoft – Teams',
+            'Carl Stalhood (Empfehlung aus der Praxis)', 'BIS-F (Empfehlung aus der Praxis)', 'Ausnahmen: Praxisquelle vor Hersteller', 'WorkerPerf', 'Auf dem Zielsystem zu bestätigen') {
+            $headings | Should -Contain $h
+        }
+        # every source of an element is a row of the section of its vendor or source from practice
+        foreach ($source in @($Sourced | ForEach-Object { $_.Source } | Sort-Object -Unique)) {
+            $vendor, $title = $source -split ': ', 2
+            @($Rows | Where-Object { $_.Vendor -ceq $vendor -and $_.Title -ceq $title }).Count | Should -Be 1 -Because $source
+        }
+        # the sections of the new sources say what was left out
+        foreach ($h in 'AKI', 'Citrix – Workspace Environment Management', 'Microsoft – Edge und WebView2', 'Microsoft – Office', 'Microsoft – Teams',
+            'Carl Stalhood (Empfehlung aus der Praxis)', 'BIS-F (Empfehlung aus der Praxis)') {
+            $at = $Doc.IndexOf("`n## $h`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
+            $section = $Doc.Substring($at, $next - $at)
+            $section | Should -Match '### Nicht aufgenommen' -Because $h
+            @(($section -split '### Nicht aufgenommen', 2)[1] -split "`n" | Where-Object { $_ -match '^\|' -and $_ -notmatch '^\|\s*(-+|Empfehlung)' }).Count | Should -BeGreaterThan 0 -Because $h
+        }
+        # the exception: the power plan, with the customer's reason and both vendors' statements
+        $at = $Doc.IndexOf("`n## Ausnahmen: Praxisquelle vor Hersteller`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
+        $section = $Doc.Substring($at, $next - $at)
+        foreach ($word in 'Energiesparplan', 'Höchstleistung', 'Ausbalanciert', 'VMware', 'Begründung des Auftraggebers', 'Citrix-Terminalserver', 'Receive Side Scaling', '2026-11-13') { $section | Should -Match ([regex]::Escape($word)) }
+        @(Get-Positions $section) | Should -Be @()
+        # the target environment is described generally
+        $at = $Doc.IndexOf("`n## Zielumgebung`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
+        $section = $Doc.Substring($at, $next - $at)
+        foreach ($word in 'Machine Creation Services', 'nicht persistent', 'Master-Image', 'Workspace Environment Management', 'PrinTaurus SmartSpread') { $section | Should -Match ([regex]::Escape($word)) }
+        $section | Should -Match ([regex]::Escape($InImage)); $section | Should -Match ([regex]::Escape($ByPolicy))
     }
 }
