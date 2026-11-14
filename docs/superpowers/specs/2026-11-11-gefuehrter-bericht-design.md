@@ -122,6 +122,8 @@ Jede Situation, die die Auswertung erzeugen kann, wird genau einer Kennung zugeo
 
 Dazu ein gemeinsamer Abschnitt `terms` mit Fachbegriffen und ihren Erklärungen.
 
+Ergänzt während der Umsetzung: Ein Eintrag kann im freiwilligen Feld `impactVariants` andere Fassungen der Wirkung angeben, jede mit einer Liste von Bedingungen (`when`, mindestens eine, Bedingungen nach Abschnitt 5.4) und einem Text (`text`). Eine Variante wird gebraucht, wo `impact` sonst etwas als Tatsache sagen würde, was die Messung nicht gemessen hat, etwa eine Verzögerung der Eingaben, obwohl die Eingabeverzögerung nicht gemessen wurde (`unmeasured.input.session`). Die Auswertung nimmt die erste Variante in der Reihenfolge der Datei, deren Bedingungen alle zutreffen; trifft keine zu, gilt `impact`. Wie `impact` enthält eine Variante nur Platzhalter, für die jeder Vorfall einen Wert hat; die Prüfung der Datei verlangt das. Aus derselben Durchsicht stammt eine Regel für den Satz eines Vorfalls aus Ereignissen: „immer dasselbe“ sagt er von einem fehlerhaften Modul nur, wenn mehr als ein Ereignis das Modul nennt; ein einzelnes Ereignis nennt nur sein Modul.
+
 ### 5.4 Bedingungen
 
 Schritte, Vorschläge und Kontakte können an Bedingungen hängen. Eine Bedingung ist eine benannte Tatsache, die das Auswertungsskript aus dem Vorfall ableitet:

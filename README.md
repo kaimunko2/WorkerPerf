@@ -6,20 +6,24 @@
 >   von einem echten VDA (Windows Server 2022, deutsche Oberfläche, Citrix): welche Zähler, Klassen und Namen dort
 >   vorhanden sind (siehe [Datenquellen](#datenquellen)). Getestet ist sie bisher nur unter Linux mit
 >   nachgestellten Windows-Aufrufen; **auf einem echten Server ist sie noch nicht gelaufen.** Der nächste Schritt
->   ist eine Kurzmessung auf einem Worker (siehe [Offene Punkte](#offene-punkte)).
-> - Das **Quellen-Prüfskript** bleibt der erste Schritt auf jedem weiteren Worker. Es liest nur, dauert einige
+>   ist eine Kurzmessung auf einem Server (siehe [Offene Punkte](#offene-punkte)).
+> - Das **Quellen-Prüfskript** bleibt der erste Schritt auf jedem weiteren Server. Es liest nur, dauert einige
 >   Minuten und schreibt eine JSON-Datei, in der Benutzer-, Client- und Servernamen maskiert sind; die Datei vor der
->   Weitergabe bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Worker:
+>   Weitergabe bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Server:
 >
 >   ```powershell
 >   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources.ps1 -OutFile C:\Temp
 >   ```
 >
 >   Anleitung: [docs/vda-probe/README.md](docs/vda-probe/README.md).
-> - Was die laufende Messung den Worker selbst kostet und woran man es ablesen kann:
->   [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker).
+> - Was die laufende Messung den Server selbst kostet und woran man es ablesen kann:
+>   [Auswirkung der Messung auf den Server](#auswirkung-der-messung-auf-den-server).
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
+> - **Geführter Bericht:** Der Bericht öffnet mit einem Lagebild und Vorfallskarten; jeder Vorfall hat Prüfschritte,
+>   Vorschläge zur Abhilfe mit Quelle und einen Text zum Kopieren. Die Expertenansicht zeigt alle Messwerte für einen
+>   gemeinsamen Zeitraum (siehe [Der Bericht](#der-bericht)). Fertig und mit der Simulation getestet; die Texte der
+>   Anleitung sind erst an echten Aufzeichnungen zu bewerten.
 > - **Ereignisse, Abstürze und Drucken:** Auswertung und Bericht sind fertig und mit der Simulation getestet
 >   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Die Windows-Datenquelle liest alle Protokolle aus
 >   `events.json`, den Rückblick, die Treiberliste und die Zähler der Druckwarteschlangen. **Auf einem echten Server
@@ -29,15 +33,21 @@
 >   Das ist fertig und mit der Simulation getestet; **unter Windows PowerShell 5.1 auf einem Server ist es noch
 >   nicht gelaufen.**
 > - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Leistungsvorfällen und vier Vorfällen aus
->   Ereignissen](https://kaimunko2.github.io/WorkerPerf/) (GitHub Pages; Einrichtung siehe [Demo-Bericht](#demo-bericht)).
+>   Ereignissen](https://kaimunko2.github.io/WorkerPerf/), simulierte Daten (GitHub Pages; Einrichtung siehe
+>   [Demo-Bericht](#demo-bericht)).
 
-Zeichnet Performance und Ressourcenverbrauch eines Citrix-Terminalserver-Workers
+Zeichnet Performance und Ressourcenverbrauch eines Citrix-Terminalservers
 (Citrix DaaS / CVAD Multi-Session VDA, Shared Desktop) auf und wertet sie für einen
 Messzeitraum aus: Der Bericht nennt Engpässe als **Vorfälle**, ihren Hauptverursacher bis auf
 Sitzung, Anwendung und Prozess, die betroffenen Sitzungen und den Vergleich mit dem Soll. Dazu kommen Störungen
 aus den Windows-Ereignisprotokollen – Abstürze und Hänger von Anwendungen, ausgefallene Dienste, Druckprobleme,
 Profil- und Systemfehler – als eigene Vorfälle mit Hinweisen auf die Ursache, die Tage vor der Messung und der
 Zustand des Druckens.
+
+Der Bericht ist für Administratoren geschrieben, die ein gemeldetes Problem selbst eingrenzen wollen: Er öffnet mit
+einem Lagebild, ordnet die Vorfälle nach Wichtigkeit und nennt zu jedem Vorfall Prüfschritte, mögliche Abhilfe als
+Vorschlag und an wen man sich wendet. Jeder Vorfall und die ganze Messung lassen sich als kurzer Text in ein Ticket
+kopieren. Eine Expertenansicht zeigt alle Messwerte, Diagramme und Tabellen für einen frei wählbaren Zeitraum.
 
 - Keine Installation, keine Module, kein Agent: drei PowerShell-Skripte (ab Windows PowerShell 5.1) –
   Prüfskript, Collector und Auswertung.
@@ -49,17 +59,17 @@ Zustand des Druckens.
 ## Ablauf
 
 ```text
-VDA (Worker)                                   anderer Rechner (empfohlen)
+VDA (Server)                                   anderer Rechner (empfohlen)
 Start-WorkerPerfCapture.ps1  ──►  CSV-Ordner  ──►  New-WorkerPerfReport.ps1  ──►  report.html
 ```
 
 ### 1. Aufzeichnen
 
-> **Noch nicht auf einem echten Worker erprobt:** Die Windows-Datenquelle ist geschrieben, aber bisher nur mit
-> nachgestellten Windows-Aufrufen getestet. Die erste Messung auf einem Worker sollte eine Kurzmessung von etwa
+> **Noch nicht auf einem echten Server erprobt:** Die Windows-Datenquelle ist geschrieben, aber bisher nur mit
+> nachgestellten Windows-Aufrufen getestet. Die erste Messung auf einem Server sollte eine Kurzmessung von etwa
 > 10 Minuten sein (siehe [Offene Punkte](#offene-punkte)).
 
-Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Host-Signale (CPU, Speicher,
+Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Server-Signale (CPU, Speicher,
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
 nimmt er einen Schnappschuss der Prozesse, Sitzungen und Citrix-Werte, prüft die Gegenstellen und liest
 die Ereignisse. Solange ein Auslöser-Signal über seiner Schwelle liegt (und 60 Sekunden danach, je Signal
@@ -68,7 +78,7 @@ denn ein Schnappschuss entsteht immer in einem schnellen Takt, also im ersten Ta
 `-BurstIntervalSeconds` (5 s) – bei einem Takt von 2 s jeder dritte.
 
 ```powershell
-# Messung über vier Stunden auf dem Worker, in einer administrativen Konsole
+# Messung über vier Stunden auf dem Server, in einer administrativen Konsole
 .\src\Start-WorkerPerfCapture.ps1 -OutputPath D:\WorkerPerf -DurationMinutes 240
 ```
 
@@ -98,17 +108,30 @@ Aufräumen noch läuft) folgt ein letzter Abruf ohne diesen Abstand. Der Collect
 enthält. **Stand:** Die Windows-Datenquelle liest das alles; auf einem echten Server ist sie dafür noch nicht
 gelaufen (siehe [Datenquellen](#datenquellen)).
 
+**Rückblick auf nicht persistenten Servern:** Ein Server, der bei jedem Neustart neu aus dem Master-Image entsteht
+(etwa mit Machine Creation Services, nicht persistent), verliert dabei seine Ereignisprotokolle: Sie liegen auf der
+Platte des Image, nicht zentral. Der Rückblick reicht dort nur bis zum letzten Start des Servers, auch wenn
+`-EventLookbackDays` mehr Tage nennt. Der Bericht kennt den letzten Start nicht; die Tage davor sehen im Abschnitt
+„Vor der Messung" aus wie Tage ohne Ereignisse. Die Prüfschritte eines Vorfalls vor der Messung weisen darauf hin.
+Daraus folgt für den Zeitpunkt:
+
+- Die Messung (oder den Schnelllauf mit `-HealthOnly`, der ebenfalls den Rückblick liest) auf dem Server starten, auf
+  dem das Problem gemeldet wurde, und zwar bevor er neu startet. Ein Neustart, der das Problem beheben soll, löscht
+  auch die Ereignisse, die seine Ursache zeigen könnten.
+- Was vor dem letzten Start geschah, zeigt kein Rückblick. Eine Störung aus dieser Zeit erfasst erst eine neue
+  Messung, die läuft, wenn die Störung wieder auftritt.
+
 Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) stehen in
 `src\endpoints.json`; als Vorlage dient `src\endpoints.example.json`. Fehlt die Datei, entfallen die Proben.
 
 > **Geplant, noch nicht beschrieben:** der Betrieb als geplante Aufgabe unter SYSTEM. Das Rezept folgt, sobald
-> der Collector auf einem Worker im Vordergrund gelaufen ist; bis dahin bitte interaktiv in einer administrativen
+> der Collector auf einem Server im Vordergrund gelaufen ist; bis dahin bitte interaktiv in einer administrativen
 > Konsole messen, damit Warnungen sichtbar sind.
 
 | Parameter | Bedeutung |
 |---|---|
 | `-OutputPath` | Basisordner; je Lauf entsteht `<COMPUTER>_<yyyyMMdd-HHmmss>`. Standard: `%ProgramData%\WorkerPerf` |
-| `-FastIntervalSeconds` | schneller Takt für Host-Signale und Eingabeverzögerung, 1–60 s, Standard 2 s |
+| `-FastIntervalSeconds` | schneller Takt für Server-Signale und Eingabeverzögerung, 1–60 s, Standard 2 s |
 | `-IntervalSeconds` | Abstand der regulären Schnappschüsse (Prozesse, Sitzungen), 5–3600 s, Standard 15 s |
 | `-BurstIntervalSeconds` | Mindestabstand der Schnappschüsse, solange ein Auslöser-Signal über der Schwelle liegt, Standard 5 s; wirksam wird der nächste schnelle Takt, mit den Standardwerten also 6 s |
 | `-BurstHoldSeconds` | so lange nach dem letzten Auslöser bleibt die Verdichtung aktiv, Standard 60 s |
@@ -142,7 +165,7 @@ nicht. Der Standard bleibt deshalb der vollständige Lauf.
 | `Rueckblick` | Ereignisse der Tage vor der Messung | einmalig beim Start | der Abschnitt „Vor der Messung" |
 | `Drucken` | Treiberliste, Zähler der Warteschlangen | die Treiberliste einmalig beim Start, die Zähler der Warteschlangen je regulärem Schnappschuss | Druckzustand, Treiberbezug bei Druckvorfällen |
 | `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | ein Verbindungsaufbau je Ziel und regulärem Schnappschuss | Erreichbarkeit und Antwortzeit der Ziele |
-| `Zustand` | das Zustandsbild (geplant) | einmalig beim Start | der Bereich „Zustand des Workers" |
+| `Zustand` | das Zustandsbild (geplant) | einmalig beim Start | der Bereich „Zustand des Servers" |
 
 Regeln:
 
@@ -195,18 +218,20 @@ Im Bericht steht an jeder Stelle, die von einer weggelassenen Kategorie abhängt
 ```
 
 Erzeugt `report.html` im Aufzeichnungsordner (oder `-OutFile`). Die Auswertung bewertet jede Messreihe
-gegen die Schwellwerte, fasst die Befunde zu Vorfällen zusammen (Engpass auf dem Worker, Verzögerung
+gegen die Schwellwerte, fasst die Befunde zu Vorfällen zusammen (Engpass auf dem Server, Verzögerung
 ohne Engpass, Umfeld, Dauerzustand), nennt Betroffene und Verursacher im Klartext und stellt alle
 Messwerte dem Soll gegenüber. Aus den Ereignissen bildet sie Vorfälle aus Ereignissen und gleicht sie mit der
 Messung ab (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Findet sie nichts, sagt der Bericht das
-ausdrücklich.
+ausdrücklich. Zu jedem Vorfall stellt sie aus dem Katalog `src\guidance.de.json` die Anleitung zusammen, ordnet die
+Vorfälle, bildet das Lagebild und schreibt die Texte zum Kopieren (siehe [Der Bericht](#der-bericht)). Die Seite
+zeigt nur, was die Auswertung so vorbereitet hat.
 
 **Uhrzeiten:** `-From`, `-To` und `-ReportedTime` sind Ortszeit des gemessenen Servers – dieselbe Zeit, die der
 Bericht überall anzeigt –, auch wenn der auswertende Rechner in einer anderen Zeitzone steht.
 
-**Wo auswerten:** Lange Aufzeichnungen besser auf einem anderen Rechner als dem Worker auswerten. Die Auswertung
-belegt einen Kern und für acht simulierte Stunden rund 600 MB Arbeitsspeicher (gemessen unter PowerShell 7);
-unter Windows PowerShell 5.1 kann sie dafür eine Minute oder länger brauchen.
+**Wo auswerten:** Lange Aufzeichnungen besser auf einem anderen Rechner als dem gemessenen Server auswerten. Die
+Auswertung belegt einen Kern und für acht simulierte Stunden rund 600 MB Arbeitsspeicher (gemessen unter
+PowerShell 7); unter Windows PowerShell 5.1 kann sie dafür eine Minute oder länger brauchen.
 
 | Parameter | Bedeutung |
 |---|---|
@@ -215,15 +240,19 @@ unter Windows PowerShell 5.1 kann sie dafür eine Minute oder länger brauchen.
 | `-From`, `-To` | nur Messungen in diesem Zeitraum bewerten, als Ortszeit des gemessenen Servers; liegt der Zeitraum außerhalb der Aufzeichnung, nennt die Meldung deren Zeitraum |
 | `-ThresholdFile` | Schwellwerte, Standard `thresholds.json` neben dem Skript |
 | `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System, Drucken), Standard `roles.json` neben dem Skript |
+| `-GuidanceFile` | Katalog der Anleitung (Situationen, Prüfschritte, Vorschläge, Texte des geführten Berichts), Standard `guidance.de.json` neben dem Skript; siehe [Der Katalog der Anleitung](#der-katalog-der-anleitung) |
+| `-AppsFile` | Liste der Standardanwendungen mit den Namen ihrer Prozesse (für die Bedingungen `app.<Anwendung>` des Katalogs), Standard `apps.json` neben dem Skript |
 | `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
 | `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben. Liegt sie vor Beginn der Messung, nennt der Block „Vor der Messung" die Ereignisse bis 15 Minuten um diese Uhrzeit |
 | `-TopProcesses` | Zahl der Einzelprozesse je Rangliste (CPU-Zeit, Spitzenspeicher), Standard 150 |
 | `-Mask` | Namen im Bericht ersetzen: `Personen` (Benutzer und Clients) oder `Alles` (auch Server, Freigaben, Domänen, Adressen, Drucker); siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben) |
 | `-MaskMapFile` | nur mit `-Mask`: schreibt die Zuordnung der Ersatznamen zu den echten Namen in diese Datei; ohne den Parameter entsteht keine solche Datei |
 
-Schwellwerte, Rollen und die Liste der Ereignisse (`events.json`) werden erst bei der Auswertung gelesen. Eine
-Messung lässt sich deshalb jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der
-Hauptanwendung in `roles.json` eingetragen sind.
+Schwellwerte, Rollen, die Liste der Ereignisse (`events.json`), der Katalog der Anleitung (`guidance.de.json`) und
+die Liste der Standardanwendungen (`apps.json`) werden erst bei der Auswertung gelesen. Eine Messung lässt sich
+deshalb jederzeit mit geänderten Dateien neu auswerten, etwa nachdem die Prozessnamen der Hauptanwendung in
+`roles.json` eingetragen sind. Katalog und Anwendungsliste prüft die Auswertung, bevor sie die Aufzeichnung liest;
+ein Fehler bricht mit einer Meldung ab, die Eintrag und Feld nennt.
 
 ### Bericht maskiert weitergeben
 
@@ -242,7 +271,7 @@ Andere Namen und Angaben bleiben stehen (siehe Tabelle und „Grenzen" weiter un
 | Clientnamen | Client 01, 02 … | ebenso |
 | Benutzer in Pfaden und Instanznamen (Profilordner, Containerpfade, Sitzungsnamen) | ersetzt | ebenso |
 | Konten-SIDs | ersetzt | ebenso |
-| Server- und Computernamen, auch der Worker selbst | bleiben | Server 01, 02 … |
+| Server- und Computernamen, auch der gemessene Server selbst | bleiben | Server 01, 02 … |
 | Freigaben | bleiben | Freigabe 01, 02 … |
 | Domänen | bleiben | Domäne 01 … |
 | IP-Adressen | bleiben | Adresse 01 … |
@@ -286,16 +315,21 @@ Fehlt er, ist der Bericht nicht maskiert.
   maskierten Bericht. Sie können Namen enthalten, die die Auswertung nicht kennt. Art und Quelle der Ereignisse
   bleiben; wo sonst die Meldung stünde, steht „Meldung entfernt (maskiert)".
 - Ein mit `-FocusUser` gemeldeter Benutzer, den die Aufzeichnung nicht kennt (Tippfehler, andere Schreibweise, ein
-  anderer Worker), erscheint im maskierten Bericht als „(Name entfernt)". Ein gefundener Benutzer erhält seinen
+  anderer Server), erscheint im maskierten Bericht als „(Name entfernt)". Ein gefundener Benutzer erhält seinen
   Ersatznamen.
 - Die Aufzeichnung selbst wird nie verändert und enthält immer die echten Namen. Die Maskierung betrifft nur den
   Bericht. Aus derselben Aufzeichnung lässt sich jederzeit auch ein Bericht ohne Maskierung erstellen.
+- Die Anleitung, das Lagebild und die Texte zum Kopieren entstehen vor der Maskierung und werden mit den übrigen
+  Daten des Berichts maskiert. Ein maskierter Bericht hat deshalb keinen Schalter „ohne Namen". Ein Bericht ohne
+  `-Mask` bietet jeden Text zum Kopieren zusätzlich ohne Namen an: mit den Ersatznamen der Stufe `Alles`, also
+  denselben wie ein Bericht derselben Aufzeichnung mit `-Mask Alles`, mit denselben Grenzen (siehe
+  [Kopieren](#kopieren)).
 
 **Wohin mit den Dateien:**
 
 - Bei `-Mask Alles` immer `-OutFile` angeben und eine Datei außerhalb des Aufzeichnungsordners wählen. Der Grund:
-  Ohne `-OutFile` landet der Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Workers, und die
-  Konsole zeigt diesen Pfad an. Auch der Dateiname selbst darf den Worker nicht nennen; sonst bricht die Auswertung
+  Ohne `-OutFile` landet der Bericht im Aufzeichnungsordner. Dessen Name enthält den Namen des Servers, und die
+  Konsole zeigt diesen Pfad an. Auch der Dateiname selbst darf den Server nicht nennen; sonst bricht die Auswertung
   mit einer Meldung ab.
 - Die Ordner für `-OutFile` und `-MaskMapFile` müssen schon vorhanden sein; die Auswertung legt sie nicht an und
   bricht vor der Auswertung mit einer Meldung ab, wenn einer fehlt. `-MaskMapFile` darf keine vorhandene Datei im
@@ -355,10 +389,10 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 
 Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle und Muster, die die Auswertung finden soll.
 
-## Auswirkung der Messung auf den Worker
+## Auswirkung der Messung auf den Server
 
 Der Collector ist ein einzelner Prozess `powershell.exe`, der nur liest und in den Ausgabeordner schreibt. Was er auf
-einem Windows-Worker kostet, ist **noch nicht gemessen**, weil die Windows-Datenquelle noch nicht auf einem echten
+einem Windows-Server kostet, ist **noch nicht gemessen**, weil die Windows-Datenquelle noch nicht auf einem echten
 Server gelaufen ist. Dieser Abschnitt beschreibt, was der Collector wann tut, was das Prüfskript auf dem geprüften VDA
 (6 vCPUs, 11 Sitzungen, rund 800 Prozesse) dazu gemessen hat, und woran man die Last während einer Messung abliest.
 Zahlen ohne Messung sind als Schätzung gekennzeichnet.
@@ -382,8 +416,8 @@ länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
   (`WmiPrvSE.exe`, er beantwortet die CIM-Abfragen), den Ereignisprotokolldienst (`EventLog`, ein `svchost.exe`; er
   beantwortet die Ereignisabfragen) und die Anbieter der Leistungsindikatoren.
   *Schätzung für den geprüften VDA:* Ein Schnappschuss dauerte dort 0,4 s. Selbst wenn diese 0,4 s vollständig
-  einen Kern belegten, wären das alle 15 s 2,7 % eines Kerns, auf 6 vCPUs also **rund 0,4 % des Hosts**; während
-  einer Verdichtung (alle 6 s) 6,7 % eines Kerns, **rund 1,1 % des Hosts**. Hinzu kommt der schnelle Takt. Was er
+  einen Kern belegten, wären das alle 15 s 2,7 % eines Kerns, auf 6 vCPUs also **rund 0,4 % des Servers**; während
+  einer Verdichtung (alle 6 s) 6,7 % eines Kerns, **rund 1,1 % des Servers**. Hinzu kommt der schnelle Takt. Was er
   unter Windows PowerShell 5.1 kostet, ist **nicht gemessen**; die erste Kurzmessung zeigt es (siehe unten).
 - **Arbeitsspeicher:** ein PowerShell-Prozess. Seine Größe ist nicht gemessen; der Bericht führt ihn in der
   Prozessliste als Collector, mit Working Set und CPU-Zeit.
@@ -410,7 +444,7 @@ Der Bericht zeigt im Block **„Messqualität"**:
 | Messdauer je Takt (Ø, Max) | Dauer der Lesung aller Leistungsindikatoren eines Takts (`CollectMs` in `ticks.csv`) |
 | je Schnappschuss (Ø, Max) | Dauer eines Schnappschusses von der Abfrage bis zum Schreiben der Zeilen, am Stützpunkt mit der Dienstliste und der Abfrage der Profilcontainer, beim regulären Schnappschuss mit dem Abruf der Ereignisse und der Zähler der Druckwarteschlangen (`CollectMs` in `snapshots.csv`); die Verbindungsproben zählen nicht mit. Der Unterschied zwischen regulären (`R`) und verdichteten (`B`) Schnappschüssen ist ungefähr die Zeit der Ereignis- und Warteschlangenabrufe |
 | Verdichtung | Dauer, Zahl der Takte und der zusätzlichen Schnappschüsse und ihr gemessener Abstand |
-| WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Hosts) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Hosts; die Spitze ist der höchste Anteil an der Host-Kapazität in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` (CIM-Abfragen) und des Ereignisprotokolldienstes (`svchost.exe` mit dem Dienst `EventLog`, Ereignisabfragen) für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei diesen Prozessen |
+| WorkerPerf selbst … % der CPU-Zeit (Spitze … % des Servers) | CPU-Zeit des Collector-Prozesses (PID in `meta.json`) als Anteil an der CPU-Zeit **aller aufgezeichneten Prozesse**, nicht an der Kapazität des Servers; die Spitze ist der höchste Anteil an der Kapazität des Servers in einem Schnappschuss-Intervall. Die Arbeit von `WmiPrvSE.exe` (CIM-Abfragen) und des Ereignisprotokolldienstes (`svchost.exe` mit dem Dienst `EventLog`, Ereignisabfragen) für den Collector ist darin nicht enthalten; sie steht in der Prozessliste bei diesen Prozessen |
 | Übersprungene unlesbare Zeilen | nur, wenn `ticks.csv`, `snapshots.csv`, `events.csv`, `events_before.csv`, `printdrivers.csv` oder `printqueues.csv` unlesbare Zeilen enthalten; `ticks.csv` und `snapshots.csv` stehen dann immer, die übrigen Dateien nur mit übersprungenen Zeilen |
 | Rückblick unvollständig gelesen | nur, wenn ein Protokoll beim Rückblick die Obergrenze erreichte, nicht lesbar war oder das Zeitbudget ablief (`LookbackCapped` in `meta.json`) |
 | Ereignisprotokolle: nicht vollständig aufgezeichnet | nur, wo eine Zahl über null liegt: je Protokoll die Ereignisse über der Obergrenze eines Abrufs („mindestens", weil höchstens 1000 je Abruf gezählt werden), die übersprungenen nicht lesbaren Datensätze und die Meldungstexte, die sich nicht formatieren ließen (`EventReadCounts` in `meta.json`); Aufzeichnungen ohne diese Zähler zeigen nichts |
@@ -427,7 +461,7 @@ innerhalb der Schleife, also entscheidet seine Dauer im Vergleich zum Takt, ob T
 | je Schnappschuss, Max | unter der Hälfte des Takts (unter 1 s) | bis zum Takt (1–2 s) | über dem Takt (über 2 s): dann fällt mindestens ein Takt aus |
 | Messdauer je Takt, Ø | unter 10 % des Takts (unter 200 ms) | 10–25 % (200–500 ms) | über 25 % (über 500 ms): der Collector ist dann ein Viertel der Zeit beschäftigt |
 | Verspätete oder ausgelassene Takte, Anteil an allen Takten | unter 1 % | 1–5 % | über 5 % |
-| WorkerPerf selbst, Spitze in % des Hosts | unter 2 % | 2–5 % | über 5 % |
+| WorkerPerf selbst, Spitze in % des Servers | unter 2 % | 2–5 % | über 5 % |
 | Fehlgeschlagene Abfragen | keine | einzelne | dieselbe Quelle wiederholt |
 | je Schnappschuss, Ø der regulären (`R`) gegen den der verdichteten (`B`) in `snapshots.csv` | Unterschied unter 100 ms | 100–500 ms | über 500 ms: die Ereignisabfragen sind teuer (Schätzung, nicht gemessen) |
 
@@ -477,7 +511,7 @@ Ausgabeordner und über `-DurationMinutes`.
 
 ### Empfehlung für den ersten Einsatz
 
-Zuerst eine Kurzmessung von 10 Minuten auf dem Test-Worker mit angemeldeten Benutzern, in einer administrativen
+Zuerst eine Kurzmessung von 10 Minuten auf einem Testserver mit angemeldeten Benutzern, in einer administrativen
 Konsole (`-DurationMinutes 10`), danach den Bericht erstellen und den Block „Messqualität" mit der Tabelle oben
 vergleichen. Erst dann eine Messung über mehrere Stunden starten.
 
@@ -491,8 +525,8 @@ verdichteten (`B`) Schnappschüsse vergleichen.
 ## Demo-Bericht
 
 **[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
-erfundenen Worker `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver,
-Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Worker, ein Dauerzustand der Netzstrecke eines Benutzers)
+erfundenen Server `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver,
+Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Server, ein Dauerzustand der Netzstrecke eines Benutzers)
 und vier Vorfälle aus Ereignissen (eine Anwendung stürzt bei drei Benutzern im selben Modul ab, ein Absturz
 unmittelbar nach dem Arbeitsspeicher-Engpass, ein Ausfall der Druckwarteschlange in einem Treibermodul, ein
 Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung und der Zustand des Druckens. Alle
@@ -501,6 +535,12 @@ Messung nennen fast alle einen Benutzer, deshalb zeigt die Demo dort die Muster 
 Modul"; ein echter Rückblick kann Benutzer nur nennen, wenn die Ereignisse ein Konto tragen (siehe
 [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Ein simulierter Absturz ohne Sitzung und Konto zeigt, wie der
 Bericht das sagt.
+
+Die Demo öffnet in der geführten Ansicht mit dem Lagebild; der Kopf nennt „(simulierte Daten)". Von dort führen die
+Karten in die Vorfallsansicht und „In der Expertenansicht zeigen" in die Expertenansicht mit dem Zeitraum des
+Vorfalls. Die Adresse hält jede Stelle fest; <https://kaimunko2.github.io/WorkerPerf/#v=expert> öffnet zum Beispiel
+gleich die Expertenansicht. Die Anleitung der Demo stammt aus dem mitgelieferten Katalog, genau wie bei einer echten
+Messung. Namen von Servern, Benutzern und Freigaben sind erfunden (`fs01`, `user003`, `sim.local`).
 
 Die Seite liegt als `pages/index.html` im Repository. Der Workflow `.github/workflows/pages.yml` veröffentlicht bei
 jedem Push auf `main`, der diesen Ordner ändert, **nur den Ordner `pages/`** auf GitHub Pages – nichts sonst aus dem
@@ -522,126 +562,353 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 
 ## Der Bericht
 
+Der Bericht ist eine einzelne HTML-Datei ohne nachgeladene Inhalte. Er läuft ohne Netz, auch von einer Freigabe
+(`file://`). Er hat zwei Ansichten aus denselben Daten; der Umschalter „Geführt | Experte" steht oben rechts.
+
+| Ansicht | Wofür | Inhalt |
+|---|---|---|
+| **Geführt** (Start, hell) | Was ist los, und was ist zu tun? | Lagebild, Vorfallskarten, Vorfallsansicht mit Prüfschritten und Vorschlägen, Texte zum Kopieren |
+| **Experte** (dunkel, dicht) | die Messwerte im Einzelnen | Vorfallsspalte, ein gemeinsamer Zeitraum, Kacheln, Diagramme, acht Reiter mit Tabellen |
+
+Der Bericht öffnet in der geführten Ansicht. Die zuletzt gewählte Ansicht merkt er sich für diese Datei im Browser,
+soweit der Browser das zulässt; wer die Datei später ohne Adresse öffnet, sieht diese Ansicht. Anleitung,
+Rangfolge, Lagebild und Texte zum Kopieren stellt die Auswertung zusammen; die Seite zeigt sie nur an.
+
+Der Zustand steht überall als Symbol und Wort, nie nur als Farbe: `◆ kritisch`, `▲ auffällig`, `● normal`,
+`○ nicht gemessen`. Zeiten erscheinen in der Ortszeit des gemessenen Servers. Ein Ereignis erscheint in der Ortszeit
+seines eigenen Zeitstempels; liegt zwischen einem Tag vor der Messung und der Messung eine Umstellung auf Sommer- oder
+Winterzeit, zeigt der Bericht beide jeweils in ihrer eigenen Ortszeit.
+
+### Geführte Ansicht
+
+**Lagebild.** Oben steht ein farbiges Band. Es nennt den Zustand als Symbol und Wort und in einem Satz, zum Beispiel
+„Handlungsbedarf: 5-mal Engpass auf dem Server, 2-mal Verzögerung, 4-mal Absturz oder Fehler, 1-mal Dauerzustand;
+12,9 min mit spürbarer Störung."
+
+| Band | Zustand | wann |
+|---|---|---|
+| rot | `◆ kritisch` | mindestens ein Engpass, eine kritische Verzögerung ohne Engpass oder ein Vorfall aus Ereignissen in einer Benutzersitzung |
+| gelb | `▲ auffällig` | andere Vorfälle, etwa Auffälligkeiten im Umfeld oder Dauerzustände |
+| grün | `● normal` | kein Vorfall: „Keine Störung erkannt." |
+
+Darunter stehen fünf Kennzahlen. Vorfälle aus den Tagen vor der Messung zählen in keiner davon.
+
+| Kennzahl | zählt |
+|---|---|
+| Engpässe auf dem Server | Engpässe bei CPU, Arbeitsspeicher, Datenträger, Freigabe oder Profilcontainer |
+| Verzögerungen von außen | Verzögerungen ohne Engpass und Vorfälle im Umfeld; heißt „Verzögerungen ohne erkannten Engpass", wenn eine davon nicht geprüft werden konnte (`-Skip Laufwerke`) |
+| Abstürze und Fehler | Vorfälle aus Ereignissen der Messzeit; ohne `Ereignisse` steht „–" mit dem Grund |
+| Dauerzustände | Dauerzustände; ohne `Citrix` steht statt einer 0 „–" mit dem Grund |
+| Minuten mit spürbarer Störung | die Dauer der Zeitfenster aller Vorfälle außer den Dauerzuständen; überlappende Fenster zählen einmal |
+
+Im Band stehen die Knöpfe „Wichtigsten Vorfall öffnen" (nur mit Vorfall), „Zusammenfassung kopieren" und der Schalter
+„ohne Namen" (siehe [Kopieren](#kopieren)). Unter dem Band stehen Hinweise, wenn sie die Aussage einschränken: nicht
+gemessene Werte, mit `-Skip` weggelassene Kategorien, eine Aufzeichnung, die nicht regulär, vorzeitig oder mit einem
+Fehler endete.
+
+Darunter folgen:
+
+- **Zeitleiste der Messung** (Einzelheiten unter [Inhalte im Einzelnen](#inhalte-im-einzelnen)). Ein Klick auf eine
+  Markierung öffnet die Vorfallsansicht ihres Vorfalls.
+- **Vorfallskarten** für die zehn wichtigsten Vorfälle. Zuerst stehen Engpässe, kritische Verzögerungen und Vorfälle
+  aus Ereignissen, dann die übrigen Vorfälle, zuletzt die Dauerzustände. Innerhalb dieser Gruppen entscheidet die Zahl
+  der betroffenen Sitzungen, dann die Dauer, dann die Uhrzeit; ein Vorfall aus Ereignissen ohne bekannte Sitzung steht
+  hinter den anderen seiner Gruppe. Eine Karte zeigt die Einordnung in Benutzersicht („Spürbar für 8 Sitzungen,
+  1,5 Minuten lang."), Uhrzeit und Dauer, einen Titel in Alltagssprache, die Wirkung in einem Satz, den Verursacher
+  oder einen Hinweis, den ersten Prüfschritt, den Zustand, ein Kürzel der Ressource und die Knöpfe „Öffnen" und
+  „Kopieren".
+- **Weitere Vorfälle** ab dem elften als kompakte Liste. Vorfälle derselben Art mit demselben Verursacher stehen
+  zusammen („6-mal Prozessor des Servers ausgelastet durch EXCEL.EXE von user003") und klappen auf.
+- **Vor der Messung**: die Vorfälle aus den Tagen vor der Messung als Karten in eigener Rangfolge, nach zehn Karten
+  gefaltet, mit dem Hinweis „Für diese Zeit liegen keine Messwerte vor."
+- **Was wurde gemessen, was nicht** und **Messqualität**, beide eingeklappt. Ohne Vorfall ist der erste Bereich
+  offen. Gibt es keinen Vorfall, aber eine gemeldete Uhrzeit (`-ReportedTime`), zeigt die Ansicht zusätzlich CPU,
+  Arbeitsspeicher und Eingabeverzögerung 15 Minuten vor und nach dieser Uhrzeit.
+
+### Vorfallsansicht
+
+Eine Karte, eine Zeile der Liste, eine Markierung der Zeitleiste oder „Wichtigsten Vorfall öffnen" öffnet die
+Vorfallsansicht. Im Kopf stehen der Titel in Alltagssprache, darunter klein die Fachbezeichnung, Zustand, Nummer,
+Zeit, Dauer und die Einordnung in Benutzersicht. Knöpfe: „Zusammenfassung kopieren" mit dem Schalter „ohne Namen",
+„In der Expertenansicht zeigen", „Zurück zum Lagebild" (aus der Expertenansicht geöffnet: „Zurück zur
+Expertenansicht") und „Nächster Vorfall" in der Rangfolge. Dann folgen immer dieselben fünf Abschnitte:
+
+| Abschnitt | Inhalt |
+|---|---|
+| **Was war los** | zwei bis drei Sätze, was passiert ist, und die Wirkung auf die Benutzer; daneben ein kleines Diagramm des auslösenden Messwerts mit den Schwellen und dem Vorfall getönt, mit Vor- und Nachlauf. Ein Vorfall aus Ereignissen hat kein Diagramm; ein Vorfall vor der Messung sagt, dass für diese Zeit keine Messwerte vorliegen |
+| **Wer oder was hat es verursacht** | Hauptverursacher mit Anwendung, Benutzer, Anteil und üblichem Wert, Begleiter, „Kein einzelner Hauptverursacher", wo das gilt; bei einer Verzögerung ohne Engpass, dass die Ursache vermutlich außerhalb des Servers oder in der Anwendung liegt, und was dafür spricht |
+| **Was ist zu tun** | nummerierte Prüfschritte mit „Wo:" und „Woran erkennbar:", die naheliegendsten zuerst; abgesetzt „Mögliche Abhilfe – Vorschlag" als „Wenn …, dann: …"; „An wen wenden". Unter jedem Element steht seine Quelle, wo es eine hat. Sichtbar sind die ersten fünf Prüfschritte und drei Vorschläge, der Rest hinter „Weitere … anzeigen" |
+| **Wer war betroffen** | die betroffenen Sitzungen mit Benutzer, Client und höchster Verzögerung; ohne gemessene Eingabeverzögerung der Satz, dass die Betroffenen nicht bestimmbar sind |
+| **Belege** (eingeklappt) | der Fachsatz des Vorfalls und alles, was ihn stützt (siehe [Inhalte im Einzelnen](#inhalte-im-einzelnen)), am Ende, was nicht gemessen wurde |
+
+Fachbegriffe sind unterlegt. Ihre Erklärung aus dem Katalog erscheint beim Überfahren mit der Maus, beim Antippen und
+mit der Tastatur. Hat der Katalog für eine Art von Vorfall keine eigene Anleitung, sagt ein Hinweis über den
+Schritten das, und es folgen nur allgemeine Schritte.
+
+**Die Anleitung ist ein Vorschlag.** Ein Element erscheint nur, wenn die Messung seine Bedingung stützt. Ob die
+Voraussetzung eines Vorschlags zutrifft, entscheidet, wer den Bericht liest. Eine Ursache, die die Messung nicht
+belegen kann, nennt der Bericht als Vermutung („vermutlich", „wahrscheinlich", „spricht für").
+
+### Kopieren
+
+| Knopf | Text |
+|---|---|
+| „Zusammenfassung kopieren" im Band | Kopf mit Server und Zeitraum, das Lagebild in einem Satz, alle Vorfälle der Messung in Kurzform, danach die Vorfälle vor der Messung |
+| „Kopieren" auf einer Karte, „Zusammenfassung kopieren" in der Vorfallsansicht | Kopfzeile mit Server und Datum; Zeit, Dauer und Titel; Einordnung in Benutzersicht; Wirkung; höchster Messwert mit Soll; Ursache; betroffene Sitzungen; die ersten fünf Prüfschritte und drei Vorschläge, dann „Weitere … stehen im Bericht."; an wen wenden |
+
+Die Texte sind reiner Text mit höchstens 78 Zeichen je Zeile und stimmen mit der Vorfallsansicht überein. Wie viele
+Prüfschritte und Vorschläge ein Text enthält, steht im Katalog (`copy.maxChecks`, `copy.maxRemedies`).
+
+**Ohne Namen:** Mit dem Schalter „ohne Namen" kopiert der Bericht dieselben Texte mit den Ersatznamen der Stufe
+`-Mask Alles` („Benutzer 12", „Server 01"); es sind dieselben wie in einem maskierten Bericht derselben Aufzeichnung.
+Anwendungs- und Prozessnamen bleiben. Was sonst bleibt, steht unter
+[Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Ein maskierter Bericht hat den Schalter nicht; seine
+Texte sind schon maskiert.
+
+Der Bericht kopiert über die Zwischenablage des Browsers, sonst über den älteren Kopierbefehl. Gelingt beides nicht,
+öffnet sich ein Feld mit dem markierten Text zum Kopieren von Hand. Nach Erfolg zeigt der Knopf kurz „✓ Kopiert".
+
+### Expertenansicht
+
+- **Zeitraumleiste** oben: nennt den geltenden Zeitraum („Zeitraum 14.11.2026 12:34:52–12:37:22 (2,5 min) ·
+  Vorfall 7: …" oder „gesamte Messung") und hat den Knopf „Gesamte Messung". Stützen sich die Werte der Tabellen auf
+  weniger als drei Schnappschüsse, steht die Zahl dabei („▲ Tabellenwerte gestützt auf 1 Schnappschuss").
+- **Vorfallsspalte** links: alle Vorfälle mit Zustand, Zeit, Art, Verursacher in einer Zeile, „Geführt öffnen" und
+  der Nummer. Vorfälle des gemeldeten Benutzers stehen zuerst, dann nach Zeit, Dauerzustände zuletzt. Ein Klick auf
+  einen Eintrag setzt den Zeitraum auf den Vorfall mit Vor- und Nachlauf (mindestens 30 Sekunden je Seite) und tönt
+  ihn in allen Diagrammen; ein zweiter Klick kehrt zur gesamten Messung zurück. Ein Dauerzustand, der die ganze
+  Messung füllt, setzt keinen Zeitraum. Unter 1180 Pixel Breite faltet die Spalte zu einer Liste über den Kacheln
+  („Liste anzeigen").
+- **Kacheln** je Messwert: Maximum, Ø und P95, Zustand als Symbol und Wort mit dem Zeitanteil über dem Soll, das Soll
+  und die am stärksten betroffene Instanz, alles für den geltenden Zeitraum.
+- **Diagramme** mit gemeinsamer Zeitachse: CPU und Arbeitsspeicher nach Verursacher (aufteilbar „Server | nach Sitzung
+  | nach Anwendung"), CPU, Prozessor-Warteschlange, Arbeitsspeicher, Eingabeverzögerung (auch der Hauptanwendung),
+  Antwortzeiten von Datenträgern, Freigaben und Gegenstellen, Durchsatz, IOPS, Netzwerk und Sitzungen. Ein Fadenkreuz
+  nennt Uhrzeit und Wert, bei Messwerten mit Soll auch den Zustand. Ein Eintrag der Vorfallsspalte unter der Maus
+  zeigt sein Zeitfenster in den Diagrammen; die Maus über einem Diagramm hebt die Vorfälle dieser Zeit in der Spalte
+  hervor.
+- **Reiter** mit den Tabellen:
+
 | Reiter | Inhalt |
 |---|---|
-| **Befunde** (Startreiter) | ein Satz mit der Zahl der Vorfälle je Typ, Zeitleiste, Vorfallsliste, „Vor der Messung", „Drucken", Soll-Ist-Tabelle, Grenzen der Aussage, Messqualität |
-| **Übersicht** | je Messwert eine Kachel mit Maximum, Ø, P95 und Bewertung gegen das Soll, CPU und RAM gestapelt nach Sitzung oder Anwendung, Host-Verläufe für CPU, Speicher, Eingabeverzögerung, Datenträger, Freigaben, Gegenstellen, Netzwerk, Sitzungszahl |
-| **Sitzungen** | je Sitzung: Benutzer, Client, Dauer, Aktiv-Anteil, CPU-Anteil/-Zeit/Ø/P95/Max, RAM, Commit, I/O, ICA RTT. Detail: Sitzungsereignisse (Anmeldung, Abmeldung, Trennen, Wiederverbinden) mit Uhrzeit, Verläufe, Anwendungen und Prozesse der Sitzung, Citrix-Messwerte |
-| **Anwendungen** | je Prozessname über alle Sitzungen: Instanzen, CPU, RAM gesamt und je Instanz, I/O. Detail: Verläufe und betroffene Sitzungen |
+| **Soll-Ist** | je Messwert Soll, Bewertung, Ø, P95, Maximum, Zeitanteile, am stärksten betroffene Instanz, Herkunft des Sollwerts |
+| **Sitzungen** | je Sitzung: Benutzer, Client, Dauer, Aktiv-Anteil, CPU-Anteil/-Zeit/Ø/P95/Max, RAM, Commit, I/O, Zahl der Prozesse, Eingabeverzögerung, ICA RTT. Detail: Sitzungsereignisse (Anmeldung, Abmeldung, Trennen, Wiederverbinden) mit Uhrzeit, Verläufe, Anwendungen und Prozesse der Sitzung, Citrix-Messwerte |
+| **Anwendungen** | je Prozessname über alle Sitzungen: Sitzungen, Instanzen, CPU, RAM gesamt und je Instanz, I/O. Detail: Verläufe und betroffene Sitzungen |
 | **Prozesse** | die ressourcenintensivsten Einzelprozesse mit Verlauf (CPU, Working Set), Handles, Threads |
+| **Messqualität** | wie unter [Was die Messung über ihre eigenen Kosten aufzeichnet](#was-die-messung-über-ihre-eigenen-kosten-aufzeichnet), dazu „Grenzen der Aussage" |
+| **Ereignisse** | die Ereignisse des Zeitraums (die ersten 200); eine Zeile setzt den Zeitraum auf eine Minute vor bis eine Minute nach dem Ereignis |
+| **Drucken** | Druckertreiber, Warteschlangen und Druckprozesse |
+| **Vor der Messung** | die Ereignisse und Vorfälle der Tage vor der Messung |
 
-Alle Tabellen sind sortier- und filterbar; Zeiten erscheinen in der Ortszeit des gemessenen Servers. Ein Ereignis
-erscheint in der Ortszeit seines eigenen Zeitstempels; liegt zwischen einem Tag vor der Messung und der Messung
-eine Umstellung auf Sommer- oder Winterzeit, zeigt der Bericht beide jeweils in ihrer eigenen Ortszeit.
+**Ein gemeinsamer Zeitraum.** Ein Klick auf einen Vorfall, Ziehen mit gedrückter Maustaste in einem Diagramm, eine
+Zeile der Ereignisse oder „Gesamte Messung" setzt ihn. Diagramme, Kacheln, Soll-Ist und alle Tabellen beziehen sich
+immer auf denselben Zeitraum; die Reiter nennen die Zahl ihrer Zeilen darin. Wer im Zeitraum ohne Last war, fehlt in
+den Tabellen; ein Hinweis über der Tabelle sagt, wie viele von wie vielen Last hatten. Ein Messwert ohne Messpunkt im
+Zeitraum steht als „○ nicht gemessen – keine Messwerte im gewählten Zeitraum", nie als „normal". Die Tabellen im
+Detail einer Sitzung oder Anwendung, die Paare aus Sitzung und Anwendung zeigen, bleiben Werte der ganzen Messung und
+sagen das. Alle Tabellen sind sortier- und filterbar.
 
-Der Reiter **Befunde** beantwortet die Frage aus der Meldung von oben nach unten:
+### Adresse, Zurück-Taste und Tastatur
 
-- **Zeitleiste:** ein Balken über die ganze Messung. Jeder Vorfall ist eine Markierung von Beginn bis Ende
-  mit Symbol und Farbe der Schwere (`▲ auffällig`, `◆ kritisch`); überlappende Vorfälle liegen in eigenen
+- **Adresse:** Sie hält Ansicht, Vorfall und Zeitraum fest, etwa `report.html#v=expert&i=7&t0=…&t1=…` (`t0` und
+  `t1` in Millisekunden). Ein Lesezeichen oder ein Link öffnet dieselbe Stelle. Eine unbekannte Nummer oder ein
+  ungültiger Zeitraum öffnet das Lagebild oder die gesamte Messung, ohne Fehler.
+- **Zurück-Taste:** Sie führt innerhalb des Berichts zurück: Wechsel der Ansicht, Öffnen und Schließen einer
+  Vorfallsansicht und ein gesetzter Zeitraum sind je ein Schritt. Der Fokus kehrt zu dem Element zurück, das den
+  Schritt ausgelöst hat.
+- **Tastatur:** Alles ist mit der Tastatur erreichbar, der Fokus ist sichtbar. Esc schließt zuerst die Erklärung eines
+  Fachbegriffs, dann die Vorfallsansicht. In der Vorfallsspalte wechseln ↑, ↓, Pos1 und Ende zwischen den Einträgen,
+  Enter setzt den Zeitraum, Umschalt+Enter öffnet die Vorfallsansicht. Die Reiter wechseln mit ← und →, Pos1 und Ende.
+  In einer Tabelle sortiert Enter oder die Leertaste auf einer Spaltenüberschrift, Enter auf einer Zeile öffnet ihr
+  Detail.
+- **Schmale Breite:** Zielgerät ist der PC. Unter 900 Pixel stehen alle Bereiche in einer Spalte, ohne seitliches
+  Scrollen der Seite; breite Tabellen scrollen in sich, die erste Spalte bleibt stehen.
+- **Bewegung:** Überblenden beim Wechsel, Gleiten der Diagramme bei neuem Zeitraum, Bestätigung an Knöpfen; jede
+  Bewegung dauert unter 250 ms. Meldet das Betriebssystem „Bewegung reduzieren", bewegt sich nichts.
+- **Farben:** Die Farben der aufgeteilten Diagramme sind in beiden Ansichten rechnerisch auf Unterscheidbarkeit
+  geprüft, auch bei Farbfehlsichtigkeit (simulierte Rot-, Grün- und Blaublindheit), und auf Kontrast zum
+  Hintergrund. Im gewählten Zeitfenster behält jede Fläche die Farbe ihrer Legende.
+- **Drucken:** Der Druck zeigt die Ansicht vom Bildschirm; eingeklappte Bereiche sind dabei offen, die
+  Expertenansicht druckt alle Reiter.
+
+### Der Katalog der Anleitung
+
+Alle Texte der Anleitung stehen in `src/guidance.de.json`, nicht im Code: Titel, Erklärungen, Wirkung, Prüfschritte,
+Vorschläge, Kontakte, Fachbegriffe, die Sätze des Lagebilds, die Hinweise und die Bausteine der Texte zum Kopieren.
+Eine eigene Fassung übergibt `-GuidanceFile`. Die Auswertung prüft die Datei vor dem Lesen der Aufzeichnung: Aufbau,
+Pflichtfelder, bekannte Bedingungen und Platzhalter. Ein Fehler bricht mit einer Meldung ab, die Eintrag und Feld
+nennt. Die verwendete Fassung steht in den Daten des Berichts.
+
+- **Situationen:** Jeder Vorfall gehört zu genau einer Situation, etwa `cpu`, `memory`, `share`, `delay.many`,
+  `chronic.network`, `crash`, `print`; was nicht passt, zu `fallback`. Ein Eintrag hat `title`, `short`, `meaning`,
+  `impact`, `checks` (Text, `where`, `sign`), `remedies` (Text, `precondition`) und `contacts`.
+- **Bedingungen (`when`):** Ein Element erscheint nur, wenn alle seine Bedingungen zutreffen; ein Element ohne
+  Bedingung gilt immer. Bedingungen sind Tatsachen, die die Auswertung aus dem Vorfall ableitet, etwa `cause.app`
+  (ein Hauptverursacher ist benannt), `cause.security`, `scan`, `endpoint.slow`, `role.<Rolle>`, `app.<Anwendung>`
+  (aus `src/apps.json`), `unmeasured.<Signal>`, `skipped.<Kategorie>`, `pattern.<Muster>`, `driver.v3`,
+  `driver.vendor.<Hersteller>`, `spooler.crash` oder `before` (Vorfall vor der Messung).
+- **Reihenfolge:** Elemente mit zutreffender Bedingung stehen vor den allgemeinen, sonst gilt die Reihenfolge der
+  Datei. Hinweise auf nicht Gemessenes stehen nach den allgemeinen Schritten.
+- **Platzhalter** wie `{user}`, `{app}`, `{value}`, `{target}`, `{from}`, `{duration}`, `{endpoint}` füllt die
+  Auswertung aus dem Vorfall. Fehlt ein Wert, entfällt das ganze Element; der Bericht zeigt keinen Text mit Lücke.
+- **`impactVariants`** (freiwillig): andere Fassungen der Wirkung mit Bedingungen. Die erste, deren Bedingungen alle
+  zutreffen, ersetzt `impact`; so behauptet der Satz keine Verzögerung, die nicht gemessen wurde.
+
+**Herkunft der Empfehlungen.** Jedes Element der Situation `print`, jedes Element aus einer Quelle der Praxis und
+die Schritte zu den Standardanwendungen und zu Workspace Environment Management nennen in `source` ihre Quelle; der
+Bericht zeigt sie beim Element. Die Druckempfehlungen stammen aus der Dokumentation von
+Microsoft, Citrix, HP, Kyocera und Brother. Der Nachweis [docs/guidance/quellen.md](docs/guidance/quellen.md) nennt
+je Hersteller und Quelle die Dokumente mit Adresse und Abrufdatum, welches Element sie stützen und was nicht
+aufgenommen wurde. Eine Empfehlung ohne belegbare Quelle steht nicht im Katalog. Vorschläge, die eine Einstellung
+ändern, nennen das Master-Image oder die Richtlinie als Ort der Änderung, weil die Zielumgebung aus nicht
+persistenten Servern besteht.
+
+Zwölf Quellen aus der Praxis ergänzen die Hersteller. Ihre Elemente nennen in `source` den Zusatz „Empfehlung aus der
+Praxis" und sind nie als Empfehlung eines Herstellers formuliert. Widerspricht eine Quelle aus der Praxis dem
+Hersteller, gilt der Hersteller; die eine Ausnahme ist der Energiesparplan „Höchstleistung". Ein Element aus der
+Praxis steht hinter den Elementen der Hersteller derselben Bedingung. Es verdrängt keinen früheren Schritt aus den
+ersten fünf Prüfschritten und drei Vorschlägen eines Vorfalls; ein Test prüft das an jedem Vorfall der
+Testberichte. Eine Aussage, die ein vorhandenes Element nur stützt, steht als Satz mit dem Namen der Quelle darin.
+
+| Quelle aus der Praxis | Thema | Grenze |
+|---|---|---|
+| Carl Stalhood | Anleitungen zu Citrix | Citrix-Versionen bis 2411 |
+| BIS-F | Skripte zum Versiegeln des Master-Image | dokumentiert bis Windows Server 2019 |
+| GO-EUC | Laborvergleiche von Einstellungen | Zahlen nur unter den Testbedingungen, meist ohne Schutzsoftware und mit einer Sitzung je Maschine |
+| James Kindon | Workspace Environment Management, Profilverwaltung | keine Zahlen; jüngste Beiträge von 2023 |
+| James Rankin | Messreihen zur Dauer der Anmeldung | Labor mit Windows Server 2019 oder Windows 10, nicht unter Last |
+| Thomas Kötzing | Drucken, Anmeldung, Profile | meist ohne Messung; Druckregeln aus der Zeit von Windows Server 2008 R2 |
+| Manuel Winkel | einzelne Themen: Teams, WEM, Beobachtungen aus Projekten | keine Messungen, oft ein einzelner Kundenfall |
+| Aaron Parker | einzelne Themen: Größe und Inhalt von Profilcontainern | für FSLogix geschrieben; nur Pfade und Gründe übertragbar |
+| Trentent Tye | einzelne Themen: langsame Anmeldungen | Messungen auf Windows Server 2008 R2, Mechanismus übertragbar, nicht die Zahl |
+| John Billekens | einzelne Themen: Scan-Ausschlüsse der Hersteller | Sammlung, jeder Eintrag gegen das Dokument des Herstellers zu lesen |
+| Guy Leech | einzelne Themen: Fehlersuche | Methode, keine Messung auf Windows Server 2022 |
+| Benny Tritsch | einzelne Themen: Messung der Benutzererfahrung | nennt keine Schwellen, keine Einstellungen |
+
+Eine Zahl aus einer Quelle der Praxis steht im Katalog nur mit ihren Bedingungen und ihrem Jahr; sie ist nie ein
+Sollwert. Eine Quelle kommt nur mit Zustimmung des Auftraggebers hinzu. Der Katalog ist ein Startstand: Seine Texte
+sind erst an echten Aufzeichnungen zu bewerten.
+
+### Inhalte im Einzelnen
+
+- **Zeitleiste** (geführte Ansicht): ein Balken über die ganze Messung. Jeder Vorfall ist eine Markierung von Beginn
+  bis Ende mit Symbol und Farbe der Schwere (`▲ auffällig`, `◆ kritisch`); überlappende Vorfälle liegen in eigenen
   Zeilen. Neben der Markierung eines Vorfalls aus Ereignissen steht das Wort seiner Art (Absturz, Hänger, Dienst,
   Drucken, Profil, System); ein Vorfall aus einem einzigen Ereignis ist eine schmale Markierung an seinem Zeitpunkt.
   Dauerzustände stehen als schmale Linie darunter, Ereignisse als kleine Striche in einer Zeile je Gruppe
   (Anwendungen, Dienste, Datenträger, Speicher, Dateiserver, Profile, Drucken, Sitzungen, Schutzsoftware; Zeit und
-  Text im Tooltip, die Uhrzeit dort in der Ortszeit des Ereignisses), die gemeldete Uhrzeit als senkrechte Linie. Ein Klick auf eine Markierung öffnet den Vorfall
-  und stellt alle Diagramme auf sein Zeitfenster mit Rand. Unter der Zeitleiste stehen die Ereignisse auch als
-  Liste (die ersten 200). Wertet der Bericht nur einen Ausschnitt aus (`-From`, `-To`), sagt er, wie viele Ereignisse der
+  Text im Tooltip, die Uhrzeit dort in der Ortszeit des Ereignisses), die gemeldete Uhrzeit als senkrechte Linie. Ein
+  Klick auf eine Markierung öffnet die Vorfallsansicht. Als Liste stehen die Ereignisse im Reiter „Ereignisse" der
+  Expertenansicht. Wertet der Bericht nur einen Ausschnitt aus (`-From`, `-To`), sagt er, wie viele Ereignisse der
   Aufzeichnung außerhalb liegen.
-- **Vorfallstypen:** *Engpass* – eine Ressource des Workers (CPU, Arbeitsspeicher, Datenträger, Freigabe,
+- **Vorfallstypen:** *Engpass* – eine Ressource des Servers (CPU, Arbeitsspeicher, Datenträger, Freigabe,
   Profilcontainer) lag über dem Soll und Benutzer spürten es. *Verzögerung ohne Engpass* – Benutzer warteten,
-  ohne dass der Worker ausgelastet war; die Ursache liegt in der Anwendung oder dahinter (Datenbank, Proxy,
-  Netz). Ohne `Laufwerke` (`-Skip Laufwerke`) ist nicht geprüft, ob Laufwerke, Profilcontainer oder Freigaben
-  langsam waren; eine solche Verzögerung heißt dann *Verzögerung ohne erkannten Engpass*, im Satz, im Typ und in
-  der Zählung des Kopfsatzes. *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine Gegenstelle, nicht der Worker.
+  ohne dass der Server ausgelastet war; die Ursache liegt vermutlich in der Anwendung oder dahinter (Datenbank,
+  Proxy, Netz). Ohne `Laufwerke` (`-Skip Laufwerke`) ist nicht geprüft, ob Laufwerke, Profilcontainer oder Freigaben
+  langsam waren; eine solche Verzögerung heißt dann *Verzögerung ohne erkannten Engpass*, im Satz, im Typ, in den
+  Kennzahlen und in der Zählung über der Vorfallsspalte. *Umfeld* – auffällig ist die Strecke zum Benutzer oder eine
+  Gegenstelle, nicht der Server.
   *Vorfall aus Ereignissen* – ein Absturz, Hänger, Dienstausfall, Druck-, Profil- oder Systemfehler aus den
   Ereignisprotokollen (siehe [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)).
-- **Vorfallsliste:** je Vorfall Schwere, Typ und ein Absatz im Klartext. Ein Klick auf den Text klappt die
-  Belege auf: Betroffene mit ihrer höchsten Eingabeverzögerung, Hauptverursacher, Verlauf der beteiligten
-  Messwerte, je Ressource die Ranglisten der Prozesse, Anwendungen und Sitzungen mit Anteil und Normalwert,
-  Prozesse mit der höchsten Eingabeverzögerung, Gegenstellen, ICA Round Trip, Anteil der Schutzprodukte,
-  Ereignisse und Dauerzustände im Hintergrund. Vorfälle im Umfeld und Dauerzustände zeigen nur Belege ihrer
-  eigenen Befunde (eigene Sitzung, eigene Gegenstelle), keine Ereignisse des Zeitraums. Ein Leistungsvorfall
-  verweist auf die Vorfälle aus Ereignissen in seinem Zeitraum. Ein Vorfall aus Ereignissen zeigt aufgeklappt Anzahl,
-  Zeitraum, Benutzer und Sitzungen, Anwendung und Version, fehlerhafte Module und Fehlercodes, die zutreffenden
-  Muster (oder „Kein Muster erkannt"), seine Ereignisse und die zeitgleichen Leistungsvorfälle; bei mehr als 50
-  Ereignissen stehen die ersten 49 und das letzte in der Liste, und der Bericht sagt das. Ein Klick auf einen
-  Benutzer, eine Anwendung, einen Prozess oder einen Vorfall öffnet ihn.
-- **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit;
-  Vorfälle des Benutzers stehen zuerst, Vorfälle bis 15 Minuten um die gemeldete Uhrzeit sind gekennzeichnet. Liegt
-  die gemeldete Uhrzeit in der Aufzeichnung, aber außerhalb des mit `-From`/`-To` gewählten Zeitraums, sagt der Kopf
-  das und, wenn der Zeitraum Ereignisse der Aufzeichnung auslässt, wie viele. Ohne `Ereignisse` oder `Prozesse`
-  sagt der Satz zum Benutzer, dass Abstürze und Hänger nicht gezählt sind, mit dem Grund der Kategorie.
-- **Vor der Messung:** die Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine
-  Messwerte vor." Der Block nennt zwei Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart
-  (Absturz, Hänger, Dienst, Drucken, Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die
-  Vorfälle dieser Tage mit Datum und Mustern (nach 20 Vorfällen gefaltet, der Rest auf Klick), ein Hinweis, wenn der
-  Rückblick eines Protokolls unvollständig gelesen ist (Obergrenze, Lesefehler oder Zeitbudget), mit der Zeit seines
-  ältesten gelesenen Ereignisses, damit die Tage davor nicht als ruhige Tage gelesen werden, ein Hinweis auf
-  Datensätze und Meldungstexte, die der Rückblick nicht lesen konnte, und mit `-ReportedTime` vor Beginn der Messung
-  die Ereignisse bis 15 Minuten um diese Uhrzeit, wenn es solche gibt. Der erste und der letzte Tag der Balken sind
-  als „Teil des Tages" gekennzeichnet: Der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm. Der Block
-  sagt, was gelesen wurde: War der Rückblick abgeschaltet (`-Skip Rueckblick` oder `-EventLookbackDays 0`), steht
-  nur das da, mit „nicht gemessen" und dem Grund; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht gelesen werden, weil die
-  Ereignisquellen nicht verfügbar waren (so heute unter Windows), ebenso, jeweils ohne Zahlen. Waren nur einige
-  Protokolle verfügbar, nennt er die gelesenen und die nicht gelesenen, und Zahlen, Balken und Vorfälle gelten nur
-  für die gelesenen. Wurden alle Protokolle gelesen und enthalten sie keine Ereignisse, sagt der Block, dass in
-  diesen Tagen keine Ereignisse der erfassten Arten in den Protokollen stehen. Aufzeichnungen im Format 2 haben keinen Rückblick; dort
-  erscheint der Block nur mit Ereignissen um eine gemeldete Uhrzeit vor der Messung.
-- **Drucken:** die Druckertreiber mit Hersteller, Version, Bauart (Typ 3 oder Typ 4), Isolierung und ob sie an
-  einem Vorfall beteiligt waren („beteiligt" oder, wenn das fehlerhafte Modul zu mehreren Treibern gehört,
-  „möglicherweise beteiligt"); die Druckwarteschlangen mit der höchsten Zahl wartender Aufträge und dem Zuwachs der
-  Auftrags- und „nicht bereit"-Fehler während der Messung; die Prozesse der Rolle „Drucken" mit CPU-Höchstwert und
-  Arbeitsspeicher am Anfang, am Ende und höchstens, ohne Bewertung. Wurde ein Druckprozess neu gestartet, steht er
-  in einer Zeile: Anfang des ersten, Ende des letzten Prozesses. Der Block erscheint nur mit Treibern oder
-  Warteschlangen, oder wenn `Drucken` weggelassen wurde; dann sagt er bei Treibern und Warteschlangen „nicht
-  gemessen".
-- **Soll-Ist-Tabelle:** je Messwert Soll, Bewertung, Ø, P95, Maximum, die Zeitanteile normal / auffällig /
-  kritisch als Balken und in Zahlen, die am stärksten betroffene Instanz und die Herkunft des Sollwerts mit
-  Link auf die Quelle. Nicht gemessene Werte stehen mit `○ nicht gemessen` und dem Grund darin. Bei Messwerten
-  mit mehreren Instanzen (Sitzungen, Laufwerke, Freigaben, Gegenstellen) gelten Ø, P95 und Maximum für die
-  jeweils schlechteste Instanz je Zeitpunkt.
+- **Belege einer Vorfallsansicht:** der Fachsatz des Vorfalls, Betroffene mit ihrer höchsten Eingabeverzögerung,
+  Hauptverursacher, Verlauf der beteiligten Messwerte, je Ressource die Ranglisten der Prozesse, Anwendungen und
+  Sitzungen mit Anteil und Normalwert, Prozesse mit der höchsten Eingabeverzögerung, Gegenstellen, ICA Round Trip,
+  Anteil der Schutzprodukte, Ereignisse und Dauerzustände im Hintergrund. Vorfälle im Umfeld und Dauerzustände zeigen
+  nur Belege ihrer eigenen Befunde (eigene Sitzung, eigene Gegenstelle), keine Ereignisse des Zeitraums. Ein
+  Leistungsvorfall verweist auf die Vorfälle aus Ereignissen in seinem Zeitraum. Ein Vorfall aus Ereignissen zeigt in
+  den Belegen Anzahl, Zeitraum, Benutzer und Sitzungen, Anwendung und Version, fehlerhafte Module und Fehlercodes, die
+  zutreffenden Muster (oder „Kein Muster erkannt"), seine Ereignisse und die zeitgleichen Leistungsvorfälle; bei mehr
+  als 50 Ereignissen stehen die ersten 49 und das letzte in der Liste, und der Bericht sagt das. Ein Klick auf einen
+  Benutzer, eine Anwendung oder einen Prozess öffnet ihn in der Expertenansicht, ein Klick auf einen anderen Vorfall
+  dessen Vorfallsansicht.
+- **Fokus:** mit `-FocusUser` und `-ReportedTime` nennt der Kopf den Benutzer und die gemeldete Uhrzeit. In der
+  Vorfallsspalte stehen Vorfälle des Benutzers zuerst; dort und in der Vorfallsansicht sind sie gekennzeichnet, ebenso
+  Vorfälle bis 15 Minuten um die gemeldete Uhrzeit. Die Rangfolge der Karten bleibt. Liegt die gemeldete Uhrzeit in
+  der Aufzeichnung, aber außerhalb des mit `-From`/`-To` gewählten Zeitraums, sagt der Kopf das und, wenn der Zeitraum
+  Ereignisse der Aufzeichnung auslässt, wie viele. Ohne `Ereignisse` oder `Prozesse` sagt der Satz zum Benutzer, dass
+  Abstürze und Hänger nicht gezählt sind, mit dem Grund der Kategorie.
+- **Vor der Messung** (Reiter der Expertenansicht; die Vorfälle auch als Karten in der geführten Ansicht): die
+  Ereignisse der Tage vor dem Start, mit dem Hinweis „Für diese Zeit liegen keine Messwerte vor." Der Block nennt zwei
+  Zahlen: alle Ereignisse aus diesen Tagen und davon die mit einer Vorfallsart (Absturz, Hänger, Dienst, Drucken,
+  Profil, System); die Balken je Tag zählen die zweiten. Darunter stehen die Vorfälle dieser Tage mit Datum und
+  Mustern (nach 20 Vorfällen gefaltet, der Rest auf Klick), ein Hinweis, wenn der Rückblick eines Protokolls
+  unvollständig gelesen ist (Obergrenze, Lesefehler oder Zeitbudget), mit der Zeit seines ältesten gelesenen
+  Ereignisses, damit die Tage davor nicht als ruhige Tage gelesen werden, ein Hinweis auf Datensätze und
+  Meldungstexte, die der Rückblick nicht lesen konnte, und mit `-ReportedTime` vor Beginn der Messung die Ereignisse
+  bis 15 Minuten um diese Uhrzeit, wenn es solche gibt. Der erste und der letzte Tag der Balken sind als „Teil des
+  Tages" gekennzeichnet: Der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm. Der Block sagt, was
+  gelesen wurde: War der Rückblick abgeschaltet (`-Skip Rueckblick` oder `-EventLookbackDays 0`), steht nur das da,
+  mit „nicht gemessen" und dem Grund; fehlt die Datei `events_before.csv`, sagt er das; konnte der Rückblick nicht
+  gelesen werden, weil die Ereignisquellen nicht verfügbar waren (so heute unter Windows), ebenso, jeweils ohne
+  Zahlen. Waren nur einige Protokolle verfügbar, nennt er die gelesenen und die nicht gelesenen, und Zahlen, Balken
+  und Vorfälle gelten nur für die gelesenen. Wurden alle Protokolle gelesen und enthalten sie keine Ereignisse, sagt
+  der Block, dass in diesen Tagen keine Ereignisse der erfassten Arten in den Protokollen stehen. Aufzeichnungen im
+  Format 2 haben keinen Rückblick; dort erscheint der Block nur mit Ereignissen um eine gemeldete Uhrzeit vor der
+  Messung. Auf nicht persistenten Servern reicht der Rückblick nur bis zum letzten Start (siehe [1.
+  Aufzeichnen](#1-aufzeichnen)).
+- **Drucken** (Reiter der Expertenansicht): die Druckertreiber mit Hersteller, Version, Bauart (Typ 3 oder Typ 4),
+  Isolierung und ob sie an einem Vorfall beteiligt waren („beteiligt" oder, wenn das fehlerhafte Modul zu mehreren
+  Treibern gehört, „möglicherweise beteiligt"); die Druckwarteschlangen mit der höchsten Zahl wartender Aufträge und
+  dem Zuwachs der Auftrags- und „nicht bereit"-Fehler während der Messung; die Prozesse der Rolle „Drucken" mit
+  CPU-Höchstwert und Arbeitsspeicher am Anfang, am Ende und höchstens, ohne Bewertung. Wurde ein Druckprozess neu
+  gestartet, steht er in einer Zeile: Anfang des ersten, Ende des letzten Prozesses. Ohne Treiber und Warteschlangen
+  sagt der Reiter, dass die Aufzeichnung dazu nichts enthält; wurde `Drucken` weggelassen, steht bei Treibern und
+  Warteschlangen „nicht gemessen".
+- **Soll-Ist-Tabelle** (Reiter der Expertenansicht, für den gewählten Zeitraum): je Messwert Soll, Bewertung, Ø, P95,
+  Maximum, die Zeitanteile normal / auffällig / kritisch als Balken und in Zahlen, die am stärksten betroffene Instanz
+  und die Herkunft des Sollwerts mit Link auf die Quelle. Nicht gemessene Werte stehen mit `○ nicht gemessen` und dem
+  Grund darin. Bei Messwerten mit mehreren Instanzen (Sitzungen, Laufwerke, Freigaben, Gegenstellen) gelten Ø, P95 und
+  Maximum für die jeweils schlechteste Instanz je Zeitpunkt.
 - **Bewertung von Kacheln und Tabellenzeilen:** eine Regel für Kacheln, Tabelle und Vorfälle. `◆ kritisch` oder
   `▲ auffällig` ist ein Messwert nur, wenn er einen Befund hat, also die Schwelle so lange überschritten war, wie
   `minTicks` verlangt. Einzelne Überschreitungen darunter lassen die Bewertung bei `● normal` und stehen als
   „einzelne Überschreitungen" dabei; die Zeitanteile und das Maximum zeigen sie weiterhin.
-- Ohne Vorfall sagt der Reiter das ausdrücklich: „Keine Schwelle wurde überschritten." oder, wenn einzelne Werte
+- **Ohne Vorfall** sagt der Bericht das ausdrücklich: im Band „Keine Störung erkannt.", in „Was wurde gemessen, was
+  nicht" und über den Kacheln der Expertenansicht „Keine Schwelle wurde überschritten." oder, wenn einzelne Werte
   über einer Schwelle lagen, ohne einen Befund zu bilden, „Kein Vorfall. Einzelne Überschreitungen ohne Befund …"
   mit Messwert und Maximum. Dazu listet er die gemessenen und die nicht gemessenen Werte; unter „Nicht gemessen"
-  stehen zuerst die mit `-Skip` weggelassenen Kategorien. Ohne `Ereignisse` heißt der Kopfsatz „Keine Vorfälle aus
-  den gemessenen Werten; Vorfälle aus Ereignissen wurden nicht erfasst (-Skip Ereignisse)."; mit Vorfällen hängt er
-  den zweiten Teil an die Zählung an.
+  stehen zuerst die mit `-Skip` weggelassenen Kategorien. Ohne `Ereignisse` heißt der Satz im Band „In den gemessenen
+  Werten keine Störung erkannt; Vorfälle aus Ereignissen wurden nicht erfasst. …" und die Zählung über der
+  Vorfallsspalte „Keine Vorfälle aus den gemessenen Werten; Vorfälle aus Ereignissen wurden nicht erfasst (-Skip
+  Ereignisse)."; mit Vorfällen hängt sie den zweiten Teil an die Zählung an.
 - **Nicht gemessen:** Fehlt die Eingabeverzögerung, sagt ein Vorfall „Eingabeverzögerung nicht gemessen; betroffene
-  Sitzungen sind nicht bestimmbar." Fehlt der Messwert einer Worker-Ressource, schließt eine „Verzögerung ohne
-  Engpass" einen Engpass dort nicht aus und nennt die fehlenden Messwerte.
-- **Weggelassene Kategorien (`-Skip`):** Der Kopf nennt sie unter dem Untertitel („○ Nicht gemessen (-Skip):
-  Prozesse, Rückblick"). An jeder Stelle, die von einer weggelassenen Kategorie abhängt, steht
-  „○ nicht gemessen – <Grund> (-Skip <Kategorie>)" statt einer leeren Tabelle, eines leeren Diagramms oder „keine":
-  ohne `Prozesse` die Reiter Anwendungen und Prozesse, die gestapelten Diagramme, die Hauptanwendung, die
-  Ressourcen der Sitzungen (in der Tabelle „–", in der Sitzungsansicht CPU, Arbeitsspeicher, I/O, Anwendungen und
-  Prozesse), in einem Vorfall die Schutzprodukte und die Prozesse mit der höchsten Eingabeverzögerung (den
-  Verursacher nennt der Satz), die Prozesse der Rolle Drucken und im Fuß die Prozesszahlen und der Anteil von
-  WorkerPerf; ohne `Laufwerke` die Diagramme der Laufwerke und der Freigaben und in der Sitzungsansicht die
-  Antwortzeit des Profilcontainers; ohne `Citrix` in der Sitzungsansicht ICA Round Trip und die Citrix-Messwerte und
+  Sitzungen sind nicht bestimmbar." Die Wirkung eines Engpasses sagt dann nur, dass Benutzer verzögert gewesen sein
+  können. Fehlt der Messwert einer Ressource des Servers, schließt eine „Verzögerung ohne Engpass" einen Engpass dort
+  nicht aus und nennt die fehlenden Messwerte.
+- **Weggelassene Kategorien (`-Skip`):** Der Kopf nennt sie unter dem Untertitel („○ Nicht gemessen (-Skip): Prozesse,
+  Rückblick"), ein Hinweis unter dem Band ebenso. Der Satz im Band nennt keine Zahl einer weggelassenen Kategorie und
+  endet mit „Nicht gemessen: …"; die Kennzahlen „Abstürze und Fehler" (ohne `Ereignisse`) und „Dauerzustände" (ohne
+  `Citrix`, wenn kein Dauerzustand erkannt ist) zeigen „–" mit dem Grund. Karten und Vorfallsspalte sagen beim
+  Verursacher „○ nicht gemessen", wo er von der Kategorie abhängt. An jeder Stelle, die von einer weggelassenen
+  Kategorie abhängt, steht „○ nicht gemessen – <Grund> (-Skip <Kategorie>)" statt einer leeren Tabelle, eines leeren
+  Diagramms oder „keine": ohne `Prozesse` die Reiter Anwendungen und Prozesse, die gestapelten Diagramme, die
+  Hauptanwendung, die Ressourcen der Sitzungen (in der Tabelle „–", im Detail einer Sitzung CPU, Arbeitsspeicher, I/O,
+  Anwendungen und Prozesse), in einem Vorfall die Schutzprodukte und die Prozesse mit der höchsten Eingabeverzögerung
+  (den Verursacher nennt der Satz), die Prozesse der Rolle Drucken und im Fuß die Prozesszahlen und der Anteil von
+  WorkerPerf; ohne `Laufwerke` die Diagramme der Laufwerke und der Freigaben und im Detail einer Sitzung die
+  Antwortzeit des Profilcontainers; ohne `Citrix` im Detail einer Sitzung ICA Round Trip und die Citrix-Messwerte und
   in einem Vorfall den ICA Round Trip; ohne `Gegenstellen` das Diagramm der Gegenstellen und die Gegenstellen eines
   Vorfalls; ohne `Ereignisse` eine Zeile der Zeitleiste, die Sitzungsereignisse, „Ereignisse im Fenster" und die
-  Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` den Block „Vor der Messung"; ohne `Drucken` im Block
-  „Drucken" Treiber und Warteschlangen. Ob ein Druckertreiber an einem Vorfall beteiligt war, prüft der Bericht an
-  den Vorfällen während und vor der Messung: Fehlt `Ereignisse`, heißt es „nein (vor der Messung)", fehlt
-  `Rueckblick`, „nein (während der Messung)", fehlen beide, steht statt „nein" ein „–", jeweils mit dem Grund unter
-  der Tabelle. Unter „Grenzen der Aussage" entfallen die Sätze zu Kategorien, die nicht gemessen wurden. Nichts davon
-  zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer weggelassenen Kategorie
-  als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten weder als erfüllt noch als
-  verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein
-  Hauptverursacher ermittelt: Prozesse wurden bei dieser Messung nicht erfasst." Ein Muster eines Vorfalls aus
-  Ereignissen, das eine weggelassene Kategorie bräuchte, steht als „nicht geprüft: …" (etwa „Bezug zu einem
-  Druckertreiber (Drucken nicht gemessen)") und nie als „Kein Muster erkannt"; fehlen mehrere der Kategorien, mit
-  deren Vorfällen ein Absturz zusammentreffen könnte, nennt eine Aussage sie zusammen („Zusammentreffen mit Vorfällen
-  der Kategorien Laufwerke, Citrix, Gegenstellen (nicht gemessen)"). Ohne `Prozesse` sagt ein Absturz nichts über
-  seine Sitzung, auch nicht „Sitzung nicht ermittelt".
-- **Messqualität:** verspätete oder ausgelassene Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des
-  Collectors, übersprungene unlesbare Zeilen (auch der Ereignis- und Druckdateien), ein unvollständig gelesener
-  Rückblick, je Ereignisprotokoll nicht aufgezeichnete Ereignisse, übersprungene Datensätze und nicht lesbare
-  Meldungstexte, und fehlgeschlagene Abfragen der Datenquelle. Der Kopf des Berichts sagt, wenn eine Aufzeichnung nicht regulär
-  oder mit einem Fehler endete.
+  Ereignisprotokolle unter „Messqualität"; ohne `Rueckblick` den Reiter und den Bereich „Vor der Messung"; ohne
+  `Drucken` im Reiter „Drucken" Treiber und Warteschlangen. Ob ein Druckertreiber an einem Vorfall beteiligt war,
+  prüft der Bericht an den Vorfällen während und vor der Messung: Fehlt `Ereignisse`, heißt es „nein (vor der
+  Messung)", fehlt `Rueckblick`, „nein (während der Messung)", fehlen beide, steht statt „nein" ein „–", jeweils mit
+  dem Grund unter der Tabelle. Unter „Grenzen der Aussage" entfallen die Sätze zu Kategorien, die nicht gemessen
+  wurden. Nichts davon zählt als unauffällig: In der Soll-Ist-Tabelle und den Kacheln stehen die Messwerte einer
+  weggelassenen Kategorie als „○ nicht gemessen" mit dem Vermerk `abgeschaltet (-Skip <Kategorie>)`; sie gelten weder
+  als erfüllt noch als verletzt. Der Hauptverursacher eines Engpasses heißt ohne `Prozesse` „Kein Hauptverursacher
+  ermittelt: Prozesse wurden bei dieser Messung nicht erfasst." Ein Muster eines Vorfalls aus Ereignissen, das eine
+  weggelassene Kategorie bräuchte, steht als „nicht geprüft: …" (etwa „Bezug zu einem Druckertreiber (Drucken nicht
+  gemessen)") und nie als „Kein Muster erkannt"; fehlen mehrere der Kategorien, mit deren Vorfällen ein Absturz
+  zusammentreffen könnte, nennt eine Aussage sie zusammen („Zusammentreffen mit Vorfällen der Kategorien Laufwerke,
+  Citrix, Gegenstellen (nicht gemessen)"). Ohne `Prozesse` sagt ein Absturz nichts über seine Sitzung, auch nicht
+  „Sitzung nicht ermittelt".
+- **Messqualität** (eingeklappt in der geführten Ansicht, Reiter der Expertenansicht): verspätete oder ausgelassene
+  Takte, Messdauer, Zeit im Verdichtungsmodus, Anteil des Collectors, übersprungene unlesbare Zeilen (auch der
+  Ereignis- und Druckdateien), ein unvollständig gelesener Rückblick, je Ereignisprotokoll nicht aufgezeichnete
+  Ereignisse, übersprungene Datensätze und nicht lesbare Meldungstexte, und fehlgeschlagene Abfragen der Datenquelle.
+  Der Kopf des Berichts und ein Hinweis unter dem Band sagen, wenn eine Aufzeichnung nicht regulär oder mit einem
+  Fehler endete.
 
 ### Vorfälle aus Ereignissen
 
@@ -673,14 +940,15 @@ der Messung nicht anschlagen**, weil kein Benutzer bekannt ist.
 
 Abstürze und Hänger in Sitzung 0 (ohne Benutzersitzung) bilden erst ab dem zweiten Mal derselben Anwendung einen
 Vorfall, in der Messzeit wie davor; ein einzelner steht in der Messzeit nur als Ereignis in der Zeitleiste. Konten,
-die keine Person sind, gelten dabei nie als Benutzer: System- und Dienstkonten wie `SYSTEM`, `DWM-1` oder Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die
-Konten virtueller Domänen wie `NT SERVICE\MSSQLSERVER` oder `IIS APPPOOL\DefaultAppPool` (`nonPersonDomains`).
-Ereignisse derselben Art und desselben Schlüssels (Anwendung, Dienst, Treiber oder Drucker, Quelle, betroffenes
-Laufwerk oder Server) gehören zu einem Vorfall, solange zwischen zwei aufeinanderfolgenden höchstens 30 Minuten liegen
-(`eventGroupMinutes` in `thresholds.json`). Ein Vorfall nennt Anzahl, Zeitraum, Benutzer, Versionen der Anwendung,
-fehlerhafte Module mit Anzahl und ob es immer dasselbe war, und die Fehlercodes mit einer Erklärung in
-Alltagssprache. In einer Benutzersitzung gilt er als `◆ kritisch`, sonst als `▲ auffällig`. Sitzungsereignisse
-bilden keine Vorfälle; sie stehen in der Zeitleiste und bei der Sitzung.
+die keine Person sind, gelten dabei nie als Benutzer: System- und Dienstkonten wie `SYSTEM`, `DWM-1` oder
+Computerkonten `NAME$` (`nonPersonAccounts` in `events.json`) und die Konten virtueller Domänen wie `NT
+SERVICE\MSSQLSERVER` oder `IIS APPPOOL\DefaultAppPool` (`nonPersonDomains`). Ereignisse derselben Art und desselben
+Schlüssels (Anwendung, Dienst, Treiber oder Drucker, Quelle, betroffenes Laufwerk oder Server) gehören zu einem
+Vorfall, solange zwischen zwei aufeinanderfolgenden höchstens 30 Minuten liegen (`eventGroupMinutes` in
+`thresholds.json`). Ein Vorfall nennt Anzahl, Zeitraum, Benutzer, Versionen der Anwendung, fehlerhafte Module mit
+Anzahl und ob es immer dasselbe war („immer dasselbe" nur, wenn mehr als ein Ereignis das Modul nennt), und die
+Fehlercodes mit einer Erklärung in Alltagssprache. In einer Benutzersitzung gilt er als `◆ kritisch`, sonst als `▲
+auffällig`. Sitzungsereignisse bilden keine Vorfälle; sie stehen in der Zeitleiste und bei der Sitzung.
 
 Für jeden Vorfall prüft die Auswertung diese Muster und nennt alle, die zutreffen:
 
@@ -705,18 +973,25 @@ gelten nur die Muster ohne Messwerte (alle außer Speichermangel und zeitgleich)
 
 ### Lesehilfe zu den Messwerten
 
-- **CPU %** ist immer auf die gesamte Host-Kapazität bezogen (alle logischen CPUs = 100 %).
-  Die Werte aller Prozesse summieren sich damit zur Host-Auslastung.
+- **CPU %** ist immer auf die gesamte Kapazität des Servers bezogen (alle logischen CPUs = 100 %).
+  Die Werte aller Prozesse summieren sich damit zur Auslastung des Servers.
 - **CPU-Zeit s** sind tatsächlich verbrauchte CPU-Sekunden; **CPU-Anteil %** ist der Anteil an der
   von allen Prozessen zusammen verbrauchten CPU-Zeit.
 - **RAM** ist die Summe der Working Sets. Gemeinsam genutzte Seiten (DLLs) werden dabei mehrfach
   gezählt – die Summe über alle Sitzungen kann über dem physisch belegten Speicher liegen.
   **Commit** (Private Bytes) ist die belastbarere Größe für Sizing-Fragen.
 - **I/O** umfasst alle Lese-/Schreibvorgänge eines Prozesses (Datei, Netzwerk, Geräte).
+- **Ø (Mittelwert über die Zeit):** In den Tabellen der Sitzungen, Anwendungen und Prozesse ist Ø ein Mittelwert
+  über die Zeit. Jeder Schnappschuss steht für die Zeit seit dem vorigen. Während eines Vorfalls folgen die
+  Schnappschüsse dichter aufeinander (alle 6 statt alle 15 Sekunden); ein einfacher Mittelwert der Schnappschüsse
+  würde die Vorfälle deshalb zu stark gewichten. So gerechnet sind CPU Ø, RAM Ø, die Zahl der Prozesse oder
+  gleichzeitigen Instanzen und ICA RTT Ø, bei Sitzungen über die Zeit ihrer Anwesenheit, bei Prozessen über ihre
+  Laufzeit. P95 und Max sind Werte der Schnappschüsse, CPU-Zeit und I/O Summen. Für einen gewählten Zeitraum rechnet
+  die Seite dieselben Werte aus den Verläufen; für die gesamte Messung ergeben sich die Werte der Auswertung.
 - **Eingabeverzögerung** ist die Zeit, die eine Eingabe des Benutzers (Taste, Maus) wartet, bis die Anwendung
   sie verarbeitet – die Messgröße für „alles war zäh". Prozesse, die als SYSTEM laufen, sind nicht enthalten.
 - **Dauerzustand** ist ein Befund, der länger als 15 Minuten anhält, etwa eine dauerhaft langsame Netzstrecke
-  eines Benutzers. Er steht als eigener Vorfall am Ende der Liste und als Hintergrund bei den Vorfällen, in deren
+  eines Benutzers. Er steht als eigener Vorfall am Ende der Rangfolge und als Hintergrund bei den Vorfällen, in deren
   Zeitraum er fortbesteht (der Dauerzustand einer Sitzung nur bei Vorfällen dieser Sitzung).
 - **Hauptverursacher** ist die Anwendung in einer Sitzung mit dem größten Anteil an der führenden Ressource des
   Vorfalls – genannt erst ab einem Anteil von 10 %. Erreicht ihn niemand, sagt der Bericht das („Kein einzelner
@@ -728,6 +1003,10 @@ gelten nur die Muster ohne Messwerte (alle außer Speichermangel und zeitgleich)
   es **größter Verbraucher**: Lief im Fenster ein Virenscan, rät der Bericht, Zeitplan und Umfang des Scans zu
   prüfen, sonst die Scan-Ausschlüsse. Ohne `Ereignisse` ist kein Virenscan bekannt; dann sagt er, dass nicht erfasst
   ist, ob einer lief, und rät zu beidem.
+- **Ursache als Vermutung:** Was die Messung nicht belegen kann, sagt der Bericht als Vermutung. Bei einer
+  Verzögerung ohne Engpass liegt die Ursache „vermutlich außerhalb des Servers oder in der Anwendung selbst"; die
+  Muster der Vorfälle aus Ereignissen sagen „wahrscheinlich" oder „spricht für". Ein zeitliches Zusammentreffen ist
+  kein Beweis für Ursache und Wirkung.
 - **Normalwert** („sonst … %") ist der Anteil desselben Prozesses, derselben Anwendung oder Sitzung außerhalb
   der Vorfälle (Dauerzustände ausgenommen); ohne solche Messungen steht ein Strich. Ein hoher Anteil mit
   niedrigem Normalwert zeigt einen Ausreißer, ein hoher Anteil mit gleich hohem Normalwert einen gewohnten
@@ -856,17 +1135,18 @@ Treiberimporte (600, 601) als eigene Art ohne Vorfall, beide mit dem Treibername
 Meldungen ohne bekannte Felder bleiben draußen.
 
 Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
-anderen Worker, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es
+anderen Server, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es
 erscheint im Bericht als „nicht gemessen". Die CIM-Klassen `Win32_PerfRawData_*` nutzt der Collector nicht; für
 `VM Processor` gab es auf dem VDA keine.
 
-**Schneller Takt 2 s und Eingabeverzögerung:** `Max Input Delay` ist ein fortlaufender Zähler (`AverageCount64`).
-Im Prüfergebnis wuchs sein Basiswert bei Abfragen im Abstand von 1 s und von 2 s jeweils um genau eins, und jeder
-berechnete Wert war der Zuwachs des Rohwerts. Daraus folgt – als Schluss aus dieser Rechnung, nicht gemessen –,
-dass eine Abfrage alle 2 s die höchste Verzögerung seit der vorigen Abfrage liefert, also das Maximum beider
-Sekunden; ein 2-s-Abstand mit zwei verschiedenen Spitzen kam im Prüfergebnis nicht vor. Der Standard von
-`-FastIntervalSeconds` bleibt deshalb 2 s; die erste echte Messung soll das bestätigen (siehe Offene Punkte). Liest ein zweites Programm denselben Zähler gleichzeitig (etwa die Leistungsüberwachung),
-teilen sich die Abfragen auf, und der Collector sieht den Mittelwert zweier Höchstwerte.
+**Schneller Takt 2 s und Eingabeverzögerung:** `Max Input Delay` ist ein fortlaufender Zähler (`AverageCount64`). Im
+Prüfergebnis wuchs sein Basiswert bei Abfragen im Abstand von 1 s und von 2 s jeweils um genau eins, und jeder
+berechnete Wert war der Zuwachs des Rohwerts. Daraus folgt – als Schluss aus dieser Rechnung, nicht gemessen –, dass
+eine Abfrage alle 2 s die höchste Verzögerung seit der vorigen Abfrage liefert, also das Maximum beider Sekunden; ein
+2-s-Abstand mit zwei verschiedenen Spitzen kam im Prüfergebnis nicht vor. Der Standard von `-FastIntervalSeconds`
+bleibt deshalb 2 s; die erste echte Messung soll das bestätigen (siehe Offene Punkte). Liest ein zweites Programm
+denselben Zähler gleichzeitig (etwa die Leistungsüberwachung), teilen sich die Abfragen auf, und der Collector sieht
+den Mittelwert zweier Höchstwerte.
 
 Der Collector spricht seine Datenquelle über eine feste Schnittstelle an: die Simulation (`-Simulate`) oder die
 Windows-Datenquelle. Was die Aufzeichnung als verfügbar oder nicht verfügbar meldet, steht in `meta.json`
@@ -894,7 +1174,7 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
 ## Offene Punkte
 
 - **Windows-Datenquelle auf einem echten Server:** noch nicht gelaufen. Erster Schritt ist eine Kurzmessung
-  (`Start-WorkerPerfCapture.ps1 -DurationMinutes 10` in einer administrativen Konsole auf einem Worker mit
+  (`Start-WorkerPerfCapture.ps1 -DurationMinutes 10` in einer administrativen Konsole auf einem Server mit
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
@@ -913,16 +1193,17 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   Bei der ersten Kurzmessung die Zahl der Ereignisse je Quelle in `events.csv` mit einer Abfrage von Hand über
   dasselbe Zeitfenster vergleichen.
 - **Kennungen der Citrix-Profilverwaltung:** Der Collector liest sie nach Ebene, weil die Bedeutung der einzelnen
-  Kennungen noch nicht bekannt ist: Fehler bilden Profilprobleme, Warnungen stehen nur in der Ereignisliste. Die
-  erste echte Aufzeichnung zeigt, welche Warnungen zählen und welche Fehler Routinemeldungen sind; beides lässt sich
-  in `events.json` mit einem Eintrag für diese Kennungen ändern (er geht dem Eintrag nach Ebene vor). Diese Ereignisse teilen sich die Obergrenzen des Anwendungsprotokolls
-  (200 je Abruf, 2000 im Rückblick) mit Abstürzen, Hängern und Profilfehlern: sind ihre Warnungen häufig, verdrängen
-  sie im Rückblick ältere Ereignisse der anderen Quellen, und das Anwendungsprotokoll gilt dann als unvollständig.
+  Kennungen noch nicht bekannt ist: Fehler bilden Profilprobleme, Warnungen stehen nur in der Ereignisliste. Die erste
+  echte Aufzeichnung zeigt, welche Warnungen zählen und welche Fehler Routinemeldungen sind; beides lässt sich in
+  `events.json` mit einem Eintrag für diese Kennungen ändern (er geht dem Eintrag nach Ebene vor). Diese Ereignisse
+  teilen sich die Obergrenzen des Anwendungsprotokolls (200 je Abruf, 2000 im Rückblick) mit Abstürzen, Hängern und
+  Profilfehlern: sind ihre Warnungen häufig, verdrängen sie im Rückblick ältere Ereignisse der anderen Quellen, und
+  das Anwendungsprotokoll gilt dann als unvollständig.
 - **Fehlgeschlagene Treiberimporte (Druckdienst 600 und 601):** Sie können bei jeder Anmeldung entstehen, wenn der
   Treiber eines Clientdruckers nicht importiert werden kann, und sind dann ein Dauerzustand, kein Vorfall. Der
   Collector zeichnet sie auf (Art `driver-import`, mit dem Treibernamen); der Bericht nennt sie in der
   Ereignisliste als „Treiberimport fehlgeschlagen", bildet aus ihnen aber keinen Druckvorfall und nennt ihretwegen
-  keinen Treiber „beteiligt". Wie häufig sie sind, soll eine spätere Auswertung des Zustands des Workers bewerten.
+  keinen Treiber „beteiligt". Wie häufig sie sind, soll eine spätere Auswertung des Zustands des Servers bewerten.
 - **Benannte Startzeit bei `Application Error` 1000:** Der Name `ProcessCreationTime`, den `events.json` vor der
   Position `#9` nennt, ist nicht geprüft; ein Server mit unbenannten Feldern liest die Position.
 - **Benutzer aus dem Konto des Ereignisses:** Ereignisse ohne Benutzer in den Datenfeldern (Absturz, Profilfehler)
@@ -941,7 +1222,7 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   und prüfen, dass kein echter Benutzer-, Client- oder Servername mehr darin steht.
 - **Kosten des schnellen Takts unter Windows PowerShell 5.1:** nicht gemessen. Gemessen ist nur die Prozessabfrage
   des Prüfskripts (0,4 s für 800 Prozesse). Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
-  „Messqualität" (siehe [Auswirkung der Messung auf den Worker](#auswirkung-der-messung-auf-den-worker)).
+  „Messqualität" (siehe [Auswirkung der Messung auf den Server](#auswirkung-der-messung-auf-den-server)).
 - **Einheit der entzogenen CPU-Zeit:** Der Collector liest den Rohwert von `VM Processor` / `CPU stolen time`
   als Millisekunden der ganzen VM und teilt durch die Zahl der vCPUs; der Zählertyp `Timer100Ns` würde 100 ns
   bedeuten, was Werte im Bereich von Millionstel Prozent ergäbe. Bestätigen oder widerlegen lässt sich das bei
@@ -964,7 +1245,7 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   `ICA Session` hat rund 80 Zähler je Sitzung; mit dem Standard von `-CitrixMetricFilter` (Latenz, Round Trip,
   Bandbreite) und ohne Bandbreiten von 0 bleiben je Sitzung und Schnappschuss etwa 5 bis 10 Zeilen.
 - **Eingabeverzögerung mit `minTicks` 1:** Jeder einzelne Takt ab 150 ms bildet einen Befund. Auf einem echten
-  Worker kann das viele kurze Vorfälle erzeugen und Sitzungen als „betroffen" zählen, die nur einen kurzen
+  Server kann das viele kurze Vorfälle erzeugen und Sitzungen als „betroffen" zählen, die nur einen kurzen
   Ausschlag hatten. Mit der ersten echten Aufzeichnung ansehen und `minTicks` in `thresholds.json` anpassen.
 - **Speicher-Zuordnung über Working Sets:** Unter Speicherdruck verkleinert Windows die Working Sets; der
   Verursacher kann dadurch kleiner erscheinen. Private Bytes werden mit aufgezeichnet, aber noch nicht für die
