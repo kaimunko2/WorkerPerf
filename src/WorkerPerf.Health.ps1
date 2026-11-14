@@ -804,7 +804,7 @@ function Test-WorkerPerfHealthRecord($Value) {
     return ($Value -is [System.Collections.IDictionary] -or $Value -is [System.Management.Automation.PSCustomObject])
 }
 
-function Test-WorkerPerfHealthContent([string]$Type, $Value) {
+function Test-WorkerPerfHealthFactContent([string]$Type, $Value) {
     # True when a content fits a type of the value list: number, bool and time as such; every other type (text, value)
     # takes a single value or $null, no record and no list.
     if ($Type -ceq 'number') { return (Test-WorkerPerfHealthNumber $Value) }
@@ -824,7 +824,7 @@ function ConvertTo-WorkerPerfHealthReadFact([string]$Id, $Entry) {
     if ($state -ne 'read') { return (New-WorkerPerfHealthFact $state $reason $value) }
     $def = $script:WorkerPerfHealthValues[$Id]
     if ($def.Type -ne 'list') {
-        if (-not (Test-WorkerPerfHealthContent $def.Type $value)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+        if (-not (Test-WorkerPerfHealthFactContent $def.Type $value)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
         return (New-WorkerPerfHealthFact 'read' '' $value)
     }
     if ($null -eq $value -or $value -is [string]) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
@@ -836,7 +836,7 @@ function ConvertTo-WorkerPerfHealthReadFact([string]$Id, $Entry) {
         if ($null -eq $def.Fields) { continue }
         foreach ($field in $def.Fields.Keys) {
             $content = Get-WorkerPerfHealthModelMember $item $field
-            if ($null -ne $content -and -not (Test-WorkerPerfHealthContent $def.Fields[$field] $content)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+            if ($null -ne $content -and -not (Test-WorkerPerfHealthFactContent $def.Fields[$field] $content)) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
         }
     }
     return (New-WorkerPerfHealthFact 'read' '' $items)
