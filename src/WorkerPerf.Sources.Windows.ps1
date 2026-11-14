@@ -3322,7 +3322,14 @@ function Read-WorkerPerfWinHealthVda($Ctx) {
         foreach ($regPath in @($script:WorkerPerfWinVdaPolicyKey) + @($script:WorkerPerfWinVdaKeys)) { if (Test-WorkerPerfRegistryValueSet (& $valuesOf $regPath) $Name) { $found = $true } }
         $found }
     $wemGroups = $script:WorkerPerfHealthWemServices
-    $wemAgent = { @(& $byDisplay $wemGroups[0]) }
+    # a service of a WEM group, by service name or display name; Name is the one that matched, the service name first
+    $byWemGroup = { param([string[]]$Names)
+        foreach ($svc in @(Get-WorkerPerfWinHealthServices $Ctx)) {
+            $svcName = [string](Get-WorkerPerfField $svc 'Name'); $display = [string](Get-WorkerPerfField $svc 'DisplayName')
+            $matched = $(if ($Names -contains $svcName) { $svcName } elseif ($Names -contains $display) { $display } else { $null })
+            if ($null -ne $matched) { [ordered]@{ Name = $matched; Service = $svc } }
+        } }
+    $wemAgent = { @(& $byWemGroup $wemGroups[0] | ForEach-Object { $_.Service }) }
     # a value as the registry gives it: an array (multi-string, binary) is not unrolled
     $wemRegistry = { param([string]$Key, [string]$Name)
         $wemValues = & $valuesOf $Key
@@ -3365,8 +3372,8 @@ function Read-WorkerPerfWinHealthVda($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'vda.wemServices' {
         if (@(& $wemAgent).Count -eq 0) { New-WorkerPerfHealthValue 'absent' 'notInstalled'; return }
         foreach ($group in $wemGroups) {
-            foreach ($svc in @(& $byDisplay $group)) {
-                [ordered]@{ Name = [string](Get-WorkerPerfField $svc 'DisplayName'); State = [string](Get-WorkerPerfField $svc 'State'); StartMode = [string](Get-WorkerPerfField $svc 'StartMode') }
+            foreach ($hit in @(& $byWemGroup $group)) {
+                [ordered]@{ Name = $hit.Name; State = [string](Get-WorkerPerfField $hit.Service 'State'); StartMode = [string](Get-WorkerPerfField $hit.Service 'StartMode') }
             }
         }
     }

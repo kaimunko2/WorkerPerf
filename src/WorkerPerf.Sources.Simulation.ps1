@@ -835,7 +835,7 @@ function Get-WorkerPerfHealth {
                 [ordered]@{ Key = 'ICAPolicies'; Name = 'SimDruckerzuweisung'; Value = '\\prn01\Etage2' })
             'vda.persistentDataLocation' = & $ok 'D:\PersistentData'; 'vda.wemService' = & $ok 'Running'
             # the simulation has no process entries for the two WEM services; SENS runs in a svchost.exe of the process list
-            'vda.wemServices' = & $ok @(foreach ($n in 'Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'System Event Notification Service') { & $running $n })
+            'vda.wemServices' = & $ok @(foreach ($n in 'Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'SENS') { & $running $n })
             'vda.wemVersion' = & $ok '2407.1.0.1'; 'vda.wemServer' = & $ok 'wem01.sim.local'; 'vda.wemCacheLocation' = & $ok 'D:\WEMCache'
             'vda.wemGpNetworkTimeout' = & $ok 120; 'vda.teamsService' = & $ok 'Running'; 'vda.webSocketService' = & $ok 'Running'
         }) 0

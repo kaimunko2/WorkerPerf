@@ -227,6 +227,8 @@ Describe 'Simuliertes Zustandsbild' {
         @((Get-V 'events.logs').Value).Count | Should -Be 8; @((Get-V 'vda.services').Value.Name) | Should -Be @('BrokerAgent', 'PorticaService', 'CitrixHealthMon', 'ctxProfile', 'CpSvc')
         @((Get-V 'sessions.localProfiles').Value.Path)[-1] | Should -Be 'C:\Users\Administrator'; ((Get-V 'security.services').Value | Where-Object Name -eq 'RpcSs').State | Should -Be 'Running'
         (Get-V 'vda.wemServer').Value | Should -Be 'wem01.sim.local'; (Get-V 'vda.wemCacheLocation').Value | Should -Be 'D:\WEMCache'; @((Get-V 'vda.wemServices').Value).Count | Should -Be 3
+        @((Get-V 'vda.wemServices').Value | ForEach-Object { $_.Name }) | Should -Be @('Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'SENS')   # ZB-R34
+        @((Get-V 'vda.wemServices').Value | Where-Object { $_.State -ne 'Running' -or $_.StartMode -ne 'Auto' }).Count | Should -Be 0
         (Get-V 'size.balloonDriver').Value | Should -Be 'Running'; (Get-V 'print.citrixPrintService').Value | Should -Be 'Running'; (Get-V 'maintenance.updateService').Value | Should -Be 'Disabled'
         (Get-V 'network.rss').Value[0].Enabled | Should -BeTrue; ((Get-V 'sessions.limits').Value | Select-Object -First 1).IdleLimitMin | Should -Be 180
         (Get-V 'operation.powerPlan').Value | Should -Be 'highPerformance'; (Get-V 'print.mappingClientVersion').Value | Should -Be '6.4.1'

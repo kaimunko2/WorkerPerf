@@ -190,7 +190,7 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
     It 'liest den WEM-Agenten, die Dienste der Teams-Umleitung und den bestaendigen Datenort' {
         $h = Read-Health
         (Get-V $h 'vda.wemService').Value | Should -Be 'Running'; (Get-V $h 'vda.wemVersion').Value | Should -Be '2407.1.0.1'
-        @((Get-V $h 'vda.wemServices').Value.Name) | Should -Be @('Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'System Event Notification Service')
+        @((Get-V $h 'vda.wemServices').Value.Name) | Should -Be @('Citrix WEM Agent Host Service', 'Citrix WEM User Logon Service', 'SENS')
         @((Get-V $h 'vda.wemServices').Value.StartMode | Select-Object -Unique) | Should -Be @('Auto')
         (Get-V $h 'vda.wemServer').Value | Should -Be 'wem01.klinik.example'; (Get-V $h 'vda.wemCacheLocation').Value | Should -Be 'D:\WEMCache'; (Get-V $h 'vda.wemGpNetworkTimeout').Value | Should -Be 120
         (Get-V $h 'vda.teamsService').Value | Should -Be 'Running'; (Get-V $h 'vda.webSocketService').Value | Should -Be 'Running'; (Get-V $h 'vda.persistentDataLocation').Value | Should -Be 'D:\PersistentData'
@@ -205,6 +205,20 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
         $h = Read-Health; foreach ($id in 'vda.wemService', 'vda.wemServices', 'vda.wemCacheLocation', 'vda.wemGpNetworkTimeout') { (Get-V $h $id).Reason | Should -Be 'notInstalled' -Because $id }
         $script:WinFake.Calls.Keys | Should -Not -Contain 'registry:SOFTWARE\Policies\Norskale\Agent Host'
         (Get-V $h 'vda.version').State | Should -Be 'read'; $h.Areas['vda'].Status | Should -Be 'read'
+    }
+    It 'findet den Windows-Dienst des WEM-Agenten am Dienstnamen SENS, auch unter einem deutschen Anzeigenamen' {   # ZB-R34
+        $sens = $script:WinFake.Services | Where-Object Name -eq 'SENS'
+        $sens.DisplayName = 'Benachrichtigungsdienst f' + [char]0xFC + 'r Systemereignisse'
+        $list = @((Get-V (Read-Health) 'vda.wemServices').Value); $list.Count | Should -Be 3
+        $list[2].Name | Should -Be 'SENS'; $list[2].State | Should -Be 'Running'; $list[2].StartMode | Should -Be 'Auto'
+        ($list | ConvertTo-Json) | Should -Not -Match 'Benachrichtigungsdienst'                   # kein Anzeigename des Servers in der Liste
+        # Regel: ein Dienst gehoert zur Gruppe, wenn sein Dienstname oder sein Anzeigename einer ihrer Namen ist; der
+        # Dienstname zaehlt zuerst. Ohne den Dienst SENS findet ein Dienst mit dem Anzeigenamen SENS die Gruppe ueber
+        # diesen Namen; der englische Anzeigename des echten Dienstes ist kein Name der Gruppe.
+        $sens.Name = 'SimSens'; $sens.DisplayName = 'System Event Notification Service'
+        $list = @((Get-V (Read-Health) 'vda.wemServices').Value); $list.Count | Should -Be 2; @($list.Name) | Should -Not -Contain 'System Event Notification Service'
+        $sens.DisplayName = 'sens'; $sens.State = 'Stopped'
+        $list = @((Get-V (Read-Health) 'vda.wemServices').Value); $list.Count | Should -Be 3; $list[2].Name | Should -Be 'sens'; $list[2].State | Should -Be 'Stopped'
     }
     It 'findet das Programm eines Dienstes auch in Anfuehrungszeichen und mit Argumenten' {
         Get-WorkerPerfServiceExe '"C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe" /svc' | Should -Be 'C:\Program Files\Citrix\User Profile Manager\UserProfileManager.exe'

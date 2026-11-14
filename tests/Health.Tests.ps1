@@ -329,6 +329,15 @@ Describe 'Fakten des Zustandsbilds' {
         & $val 'vda.wemServicesNotReady' | Should -Be 2; & $val 'print.citrixMapping' | Should -BeTrue      # der Anmeldedienst steht, der dritte Dienst fehlt in der Liste
         $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 164                       # gelesene Werte sind selbst Fakten
     }
+    It 'findet den Windows-Dienst des WEM-Agenten am Dienstnamen SENS' {   # ZB-R34
+        $citrix = @(@{ Name = 'Citrix WEM Agent Host Service'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'Citrix WEM User Logon Service'; State = 'Running'; StartMode = 'Auto' })
+        $count = { param($Third) (Get-Facts @{ 'vda.wemService' = 'Running'; 'vda.wemServices' = @($citrix + @($Third)) })['vda.wemServicesNotReady'].Value }
+        & $count @{ Name = 'SENS'; State = 'Running'; StartMode = 'Auto' } | Should -Be 0
+        & $count @{ Name = 'sens'; State = 'Running'; StartMode = 'Auto' } | Should -Be 0                # Namen ohne Ruecksicht auf Gross- und Kleinschreibung
+        # eine alte Aufzeichnung mit dem englischen Anzeigenamen: kein Name der Gruppe, der Dienst gilt als fehlend
+        & $count @{ Name = 'System Event Notification Service'; State = 'Running'; StartMode = 'Auto' } | Should -Be 1
+        & $count @{ Name = 'SENS'; State = 'Stopped'; StartMode = 'Auto' } | Should -Be 1
+    }
     It 'gibt den Zustand der Eingangswerte weiter und nennt nichts Zaehlbares nicht vorhanden' {
         $f = Get-Facts @{ 'size.commitLimitMB' = 98304; 'size.commitPeakMB' = (New-WorkerPerfHealthValue 'unreadable' 'rights'); 'profile.containers' = @(); 'sessions.list' = @(); 'size.memTotalMB' = 65536
             'sessions.limits' = @(@{ Terminal = 'RDP-Tcp'; DisconnectedLimitMin = 0 }); 'vda.version' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }

@@ -54,9 +54,12 @@ $script:WorkerPerfHealthAreas = @('size', 'operation', 'sessions', 'vda', 'profi
 # Keywords that Error of an area can carry besides the message of an exception: overall time limit reached, no reader,
 # not read, not in the file.
 $script:WorkerPerfHealthAreaErrors = @('budget', 'noReader', 'notRead', 'notInFile')
-# The services the WEM agent needs, each as the list of its documented display names; the first group is the agent service.
+# The services the WEM agent needs, each as the list of its names; the first group is the agent service. A service belongs
+# to a group when its service name or its display name is one of the group's names (case-insensitive); the list
+# vda.wemServices records the name that matched, the service name first. The two Citrix services go by their documented
+# display names (English in every language), the Windows service by its service name SENS: its display name is localized.
 $script:WorkerPerfHealthWemServices = @(@('Citrix WEM Agent Host Service', 'Norskale Agent Host Service'),
-    @('Citrix WEM User Logon Service', 'Citrix WEM Agent User Logon Service'), @('System Event Notification Service'))
+    @('Citrix WEM User Logon Service', 'Citrix WEM Agent User Logon Service'), @('SENS'))
 
 # The fixed list of read values, in the order of the plan's tables: id -> Area, Type, Unit, Fields (only for a list:
 # field name -> type) and Documented ($false: the read source is not documented; the value is a raw value only).

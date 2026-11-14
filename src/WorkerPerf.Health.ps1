@@ -1095,7 +1095,8 @@ function Add-WorkerPerfHealthVdaFacts($F, $Ctx) {
     $F['vda.controllerCount'] = Get-WorkerPerfHealthDerived $F @('vda.controllers') { @($F['vda.controllers'].Value).Count }
     $F['vda.controllersNotFqdn'] = Get-WorkerPerfHealthDerived $F @('vda.controllers') {
         Get-WorkerPerfHealthCountWhere $F['vda.controllers'].Value { [string](Get-WorkerPerfHealthItemField $_ 'Kind') -ne 'fqdn' } }
-    # a group is ready when the list names a service with one of its display names that runs and starts automatically
+    # a group is ready when the list names a service with one of the group's names (the name the collector recorded) that
+    # runs and starts automatically
     $F['vda.wemServicesNotReady'] = Get-WorkerPerfHealthDerived $F @('vda.wemService', 'vda.wemServices') {
         $notReady = 0
         foreach ($group in $script:WorkerPerfHealthWemServices) {

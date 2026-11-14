@@ -231,7 +231,7 @@ Describe 'Zustandsbild: Format und Werteliste' {
         @($h.Areas.Keys) | Should -Be $WorkerPerfHealthAreas; $h.Areas['size'].Status | Should -Be 'failed'; $h.Areas['size'].Error | Should -Be 'notRead'; $h.Areas['events'].Status | Should -Be 'read'
         $h.Areas['apps'].Values['apps.probes'].State | Should -Be 'unreadable'
         $WorkerPerfHealthAreaErrors | Should -Be @('budget', 'noReader', 'notRead', 'notInFile')
-        @($WorkerPerfHealthWemServices).Count | Should -Be 3; $WorkerPerfHealthWemServices[0] | Should -Be @('Citrix WEM Agent Host Service', 'Norskale Agent Host Service'); $WorkerPerfHealthWemServices[2] | Should -Be @('System Event Notification Service')
+        @($WorkerPerfHealthWemServices).Count | Should -Be 3; $WorkerPerfHealthWemServices[0] | Should -Be @('Citrix WEM Agent Host Service', 'Norskale Agent Host Service'); $WorkerPerfHealthWemServices[2] | Should -Be @('SENS')
         ConvertTo-WorkerPerfHealthTime ([datetime]::new(1970, 1, 2, 0, 0, 0, [DateTimeKind]::Utc)) | Should -Be 86400000; ConvertTo-WorkerPerfHealthTime ([datetime]::MinValue) | Should -Be 0
     }
     It 'speichert keine Zahl, die nicht endlich ist' {
