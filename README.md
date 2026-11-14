@@ -589,7 +589,8 @@ Winterzeit, zeigt der Bericht beide jeweils in ihrer eigenen Ortszeit.
 
 **Lagebild.** Oben steht ein farbiges Band. Es nennt den Zustand als Symbol und Wort und in einem Satz, zum Beispiel
 „Handlungsbedarf wegen Engpass auf dem Server (5), Verzögerung (2), Absturz oder Fehler (4), Dauerzustand (1);
-12,9 min mit spürbarer Störung."
+12,9 min mit spürbarer Störung." Eine Art von Vorfall, die nicht vorkam, fehlt im Satz; die Kennzahlen darunter
+zeigen ihre 0.
 
 | Band | Zustand | wann |
 |---|---|---|

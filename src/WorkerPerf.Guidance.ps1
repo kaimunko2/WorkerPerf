@@ -1100,9 +1100,10 @@ function Get-WorkerPerfLagebildIncompleteLogs($Data) {
 function Get-WorkerPerfLagebild {
     # The situation summary of the capture (spec 3.1): state with symbol and word, sentence (catalogue part lagebild),
     # key figures, hints on the capture (catalogue part hints) and the id of the most important incident. The red and
-    # the yellow sentence are joined from their parts ($script:WorkerPerfLagebildParts); a part whose count is zero and
-    # whose category was left out is not listed (nothing that was not measured counts as zero, ruling P3-R49), and the
-    # sentence then ends with the reservation lagebild.notMeasured. A part with a real count stays. A category the capture
+    # the yellow sentence are joined from their parts ($script:WorkerPerfLagebildParts); a part whose count is zero is not
+    # listed (the key figures show the zero). If its category was left out, the sentence ends with the reservation
+    # lagebild.notMeasured (nothing that was not measured counts as zero, ruling P3-R49). A part with a real count stays,
+    # also when its category was left out. A category the capture
     # never recorded (Data.unrecorded: the event logs of a capture from before their recording) counts like one left out
     # for the sentence and its reservation, but not for the hint on what -Skip left out. A log of the capture that could
     # not be read or lost events at the cap of a read (Data.quality: sources events.<id> with readFailed, eventReads with
@@ -1183,7 +1184,8 @@ function Get-WorkerPerfLagebild {
         $parts = New-Object System.Collections.Generic.List[string]
         foreach ($part in $script:WorkerPerfLagebildParts) {
             if ($part.States -cnotcontains $state) { continue }
-            if ($part.Place -and $notMeasured.Contains($part.Place) -and $v[$part.Value] -eq '0') { $reserve = $true; continue }
+            # a part that counts nothing is not listed; one whose category was not measured gives the reservation
+            if ($v[$part.Value] -eq '0') { if ($part.Place -and $notMeasured.Contains($part.Place)) { $reserve = $true }; continue }
             $parts.Add((Format-WorkerPerfGuidancePart $Catalogue 'lagebild' $part.Key $v))
         }
         if ($parts.Count -gt 0) { $v['parts'] = $parts.ToArray() -join (Format-WorkerPerfGuidancePart $Catalogue 'lagebild' 'partSeparator' $v) }
@@ -1343,12 +1345,12 @@ function Get-WorkerPerfConcerned($Incident, $Data, $Texts) {
     # the users no listed session names), note (a sentence of the texts, or ''), notChecked (the note is the reason why
     # the users were not checked: unchecked 'users' of the event).
     #   performance incident: its affected sessions (input delay over the target); without any, a note why
-    #     (affected.none.inputUnmeasured, affected.none.chronic, affected.none);
+    #     (concerned.none.inputUnmeasured, concerned.none.chronic, concerned.none);
     #   incident of the surroundings: the sessions whose own measured value is over its target, then its affected sessions;
     #     a note on the input delay of these sessions (affected.note.inputUnmeasured, affected.note.inputBelow), without
     #     any session affected.note.endpoint;
     #   event incident: its sessions and the users they do not name (by the users of Data.sessions); without either, the
-    #     unchecked reason, else event.session.unknown, event.nouser or affected.none.event.
+    #     unchecked reason, else event.session.unknown, event.nouser or concerned.none.event.
     # Returns an ordered table.
     $known = @{}
     foreach ($s in (Get-WorkerPerfGuidanceList $Data 'sessions')) { $i = Get-WorkerPerfField $s 'i'; if ($null -ne $i) { $known[[int]$i] = [string](Get-WorkerPerfField $s 'user') } }
@@ -1373,7 +1375,7 @@ function Get-WorkerPerfConcerned($Incident, $Data, $Texts) {
             if ($unchecked.Count -gt 0) { $note = [string](Get-WorkerPerfField $unchecked[0] 'text'); $notChecked = $true }
             elseif ([bool](Get-WorkerPerfField $ev 'sessionUnknown')) { $note = (Get-WorkerPerfGuidanceWord $Texts 'event.session.unknown').Trim() }
             elseif ([bool](Get-WorkerPerfField $ev 'noUserSession')) { $note = (Get-WorkerPerfGuidanceWord $Texts 'event.nouser').Trim() }
-            else { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.event' }
+            else { $note = Get-WorkerPerfGuidanceWord $Texts 'concerned.none.event' }
         }
     }
     elseif ($type -eq 'umfeld') {
@@ -1386,9 +1388,9 @@ function Get-WorkerPerfConcerned($Incident, $Data, $Texts) {
     else {
         foreach ($a in $affected) { & $add (Get-WorkerPerfField $a 's') }
         if ($sessions.Count -eq 0) {
-            if ($inputUnmeasured) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.inputUnmeasured' }
-            elseif ([bool](Get-WorkerPerfField $Incident 'chronic')) { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none.chronic' }
-            else { $note = Get-WorkerPerfGuidanceWord $Texts 'affected.none' }
+            if ($inputUnmeasured) { $note = Get-WorkerPerfGuidanceWord $Texts 'concerned.none.inputUnmeasured' }
+            elseif ([bool](Get-WorkerPerfField $Incident 'chronic')) { $note = Get-WorkerPerfGuidanceWord $Texts 'concerned.none.chronic' }
+            else { $note = Get-WorkerPerfGuidanceWord $Texts 'concerned.none' }
         }
     }
     return [ordered]@{ sessions = [int[]]$sessions.ToArray(); users = [int[]]$users.ToArray(); note = $note; notChecked = $notChecked }

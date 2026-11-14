@@ -352,7 +352,7 @@ Describe 'Ereignisvorfaelle im Bericht' {
         # C1: the crash of the lookback without session and account is an incident of its own, worded as unknown session
         $ns = @($D.before.incidents | Where-Object { $_.event.app -eq 'simscan.exe' })
         $ns.Count | Should -Be 1; $ns[0].severity | Should -Be 1; $ns[0].event.sessionUnknown | Should -BeTrue
-        $ns[0].text | Should -Match 'Absturz von simscan\.exe \(1-mal\)\. Sitzung nicht ermittelt\. .*Kein Muster erkannt\.$'
+        $ns[0].text | Should -Match 'Absturz von simscan\.exe \(einmal\)\. Sitzung nicht ermittelt\. .*Kein Muster erkannt\.$'
         $D.before.days | Should -Be 7; $D.before.eventCount | Should -Be 6; ($D.before.perDay | Measure-Object count -Sum).Sum | Should -Be 6   # C1: ein Absturz ohne Sitzung dazu
         ($D.print.drivers | Where-Object involved).name | Should -Be 'HP Universal Printing PCL 6 (Sim)'
         ($D.print.queues | Where-Object name -eq 'PRN-EG-01').maxJobs | Should -Be 3; ($D.print.queues | Where-Object name -eq 'PRN-EG-01').jobErrors | Should -Be 1
@@ -905,7 +905,7 @@ Describe 'Abschlussrunde Teil B' {
         @($O.lagebild.hints | Where-Object { $_ -match 'Skip' }).Count | Should -Be 0
         ($O.copyAll.named -replace "`r`n", ' ') | Should -Match 'Nicht gemessen: Ereignisse\.'
         # the capture with its logs: a measured count, nothing unrecorded
-        @($D.unrecorded).Count | Should -Be 0; $D.lagebild.sentence | Should -Match '4-mal Absturz oder Fehler'
+        @($D.unrecorded).Count | Should -Be 0; $D.lagebild.sentence | Should -Match 'Absturz oder Fehler \(4\)'      # final residuals, item 1: the count in brackets
     }
     It 'nennt unter dem Lagebild ein Ereignisprotokoll, das nicht gelesen werden konnte oder Ereignisse verlor' {   # final review I2
         $run = Copy-SimRun $R.Run (Join-Path $TestDrive 'failedlog')

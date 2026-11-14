@@ -912,6 +912,7 @@
           "sign": "Laufwerk-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder mehrmals mit demselben Verursacher"
         },
         {
+          "when": ["cause.none"],
           "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): Größe der Datei mcsdif.vhdx und freien Platz auf dem Cache-Datenträger des Servers prüfen; nach der Praxisquelle Thomas Kötzing (2024) wird die Datei nicht wieder kleiner; sie zeigt also den höchsten Stand seit dem Start und nicht die aktuelle Belegung",
           "where": "Cache-Datenträger des Servers: Datei mcsdif.vhdx und freier Platz; Leistungsüberwachung: Indikatoren „Citrix MCS“; Citrix Studio: Maschinenkatalog",
           "sign": "Datei seit dem Start deutlich gewachsen (der Cache im Arbeitsspeicher ist übergelaufen) oder wenig freier Platz; läuft der Cache-Datenträger voll, werden die Sitzungen laut Citrix unbenutzbar; nach Manuel Winkel (2026) auch der umgekehrte Fall: ein angehängter Datenträger ohne die Datei mcsdif.vhdx und ohne Schreibzugriffe, dann arbeitet der Cache nicht",

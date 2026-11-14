@@ -123,6 +123,31 @@ Describe 'Funktionsnamen' {
     }
 }
 
+Describe 'JSON-Dateien' {
+    It 'nennt in keinem Objekt einer JSON-Datei in src einen Schluessel zweimal' {     # final residuals: affected.none stood twice in texts.de.json
+        # ConvertFrom-Json keeps one of two equal keys without a word, so the other text is lost; keys that differ only in
+        # case count as equal, as for the hashtable of Read-WorkerPerfTexts
+        $twice = { param($Element, [string]$At)
+            if ($Element.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+                $seen = @{}
+                foreach ($p in $Element.EnumerateObject()) {
+                    if ($seen.ContainsKey($p.Name)) { "$At.$($p.Name)" } else { $seen[$p.Name] = $true }
+                    & $twice $p.Value "$At.$($p.Name)"
+                }
+            }
+            elseif ($Element.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) { $k = 0; foreach ($v in $Element.EnumerateArray()) { & $twice $v "$At[$k]"; $k++ } }
+        }
+        $files = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.json); $files.Count | Should -BeGreaterThan 5
+        foreach ($f in $files) {
+            $doc = [System.Text.Json.JsonDocument]::Parse([IO.File]::ReadAllText($f.FullName))
+            try { @(& $twice $doc.RootElement '') | Should -Be @() -Because $f.Name } finally { $doc.Dispose() }
+        }
+        # the check finds a key that stands twice
+        $doc = [System.Text.Json.JsonDocument]::Parse('{ "a": 1, "b": { "c": 1, "C": 2 }, "a": 3 }')
+        try { @(& $twice $doc.RootElement '') | Should -Be @('.b.C', '.a') } finally { $doc.Dispose() }
+    }
+}
+
 Describe 'Sprachmodus' {                                                              # Abschlussrunde I9
     It '<Script> bricht im eingeschraenkten Sprachmodus mit einer deutschen Meldung ab' -TestCases @(
         @{ Script = 'Start-WorkerPerfCapture.ps1'; Arguments = '-Simulate -DurationMinutes 60 -OutputPath .' }

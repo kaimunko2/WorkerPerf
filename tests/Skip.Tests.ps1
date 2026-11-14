@@ -187,7 +187,9 @@ Describe 'Berichtsdaten mit weggelassenen Kategorien' {
         & $norm $out | Should -BeExactly (& $norm $Rep.Voll.Report)
         # das neue Feld der Berichtsdaten, leer; Aussage angepasst (Gefuehrter Bericht, Task 7): nach ihm folgen die Felder des gefuehrten Berichts
         $fields = @($D.Voll.PSObject.Properties.Name)
-        @($D.Voll.skipped).Count | Should -Be 0; @($fields[($fields.IndexOf('skipped') + 1)..($fields.Count - 1)]) | Should -Be @('guidance', 'lagebild', 'order', 'cards', 'more', 'copyAll')
+        # Aussage angepasst (final residuals): the final fix wave put the field unrecorded after skipped (empty here: the logs were recorded)
+        @($D.Voll.skipped).Count | Should -Be 0; @($D.Voll.unrecorded).Count | Should -Be 0
+        @($fields[($fields.IndexOf('skipped') + 1)..($fields.Count - 1)]) | Should -Be @('unrecorded', 'guidance', 'lagebild', 'order', 'cards', 'more', 'copyAll')
     }
     It 'nennt fuer weggelassene Ereignisse keine Zaehler der Messung und laesst den Rueckblick leer, wenn er weggelassen ist' {
         # ohne Ereignisse: die Zaehler der Messung fehlen (die Seite sagt dann nichts ueber sie, skipped nennt den Grund);

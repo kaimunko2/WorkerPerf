@@ -120,11 +120,17 @@ BeforeAll {
         while ($n -gt 0 -and ([string]$list[$n - 1].source).Contains($script:PracticeMark)) { $n-- }
         for ($k = 0; $k -lt $n; $k++) { $list[$k] }
     }
-    # final fix wave, items 4 and 7: the remedy on the SMB client came with a source of round 5 (James Rankin) and carries
-    # Microsoft's page as its source since then; it stands last by ruling and was never shown before round 5, so for the
-    # invariant of P3-R75 it stays an element of round 5. The other elements that changed from a source of round 5 to the
-    # vendor's document are the vendor's elements now, as the record states the rule (by the source)
-    $script:RoundFiveOrigin = '^Drosselung des SMB-Clients abschalten'
+    # final fix wave, items 4 and 7, and final residuals, item 2 (ruling P3-R82): the elements that came with a source of
+    # round 5 and carry the vendor's document as their source since the final fix wave are still elements of round 5 for
+    # the invariant of P3-R75: what an incident showed before round 5 never had them. The test knows them by their origin
+    # (the start of their text), not by their current source: the remedy on the SMB client (James Rankin, now Microsoft),
+    # the signatures in the master image (John Billekens, now Citrix), the steps on MCS I/O (GO-EUC and Thomas Kötzing,
+    # now Citrix), the CPU ready time of the VMware host (GO-EUC, now VMware) and the Outlook data files in the scan
+    # exclusions (John Billekens, now Microsoft)
+    $script:RoundFiveOrigins = @('Drosselung des SMB-Clients abschalten', 'Signaturen der Schutzsoftware im Master-Image aktuell halten',
+        'Wenn der Maschinenkatalog MCS I/O nutzt', 'Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat',
+        'Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst')
+    $script:RoundFiveOrigin = '^(' + (($script:RoundFiveOrigins | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
     function Test-RoundFive($Item) { ([string]$Item.source -match $script:RoundFiveSource) -or ([string]$Item.text -match $script:RoundFiveOrigin) }
     function Get-Displaced($Guide) {
         # ruling P3-R75: leave out the elements of the ten further sources; the first five checks and the first three
@@ -354,7 +360,11 @@ Describe 'Katalog in src' {
         # a complete capture: each part names its count after the word (final fix wave, items 13 and 18: no "1-mal", no
         # label before the parts that would stand after the state word of the copy text as a second label)
         & $say $red @() | Should -BeExactly 'Handlungsbedarf wegen Engpass auf dem Server (1), Verzögerung (1), Absturz oder Fehler (1), Dauerzustand (1); 2 min mit spürbarer Störung.'
-        & $say @($delay) @() | Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server – Verzögerung (1), Absturz oder Fehler (0), Dauerzustand (0); 2 min mit spürbarer Störung.'
+        # final residuals, item 3: a part without an incident is left out of the red and the yellow sentence
+        & $say @($delay) @() | Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server – Verzögerung (1); 2 min mit spürbarer Störung.'
+        & $say @($crash, $chronic) @() | Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server – Absturz oder Fehler (1), Dauerzustand (1); 0 min mit spürbarer Störung.'
+        & $say @((New-Engpass 'cpu'), $delay) @() | Should -BeExactly 'Handlungsbedarf wegen Engpass auf dem Server (1), Verzögerung (1); 2 min mit spürbarer Störung.'
+        & $say @((New-Engpass 'cpu'), $chronic) @() | Should -BeExactly 'Handlungsbedarf wegen Engpass auf dem Server (1), Dauerzustand (1); 2 min mit spürbarer Störung.'
         # without events, without Citrix, without everything: no part that would count zero, and the reservation
         & $say @((New-Engpass 'cpu'), $delay, $chronic) @('Ereignisse') |
             Should -BeExactly 'Handlungsbedarf wegen Engpass auf dem Server (1), Verzögerung (1), Dauerzustand (1); 2 min mit spürbarer Störung. Nicht gemessen: Ereignisse.'
@@ -363,11 +373,12 @@ Describe 'Katalog in src' {
         $all = @($script:WorkerPerfCategories.Keys | Where-Object { $script:WorkerPerfCategories[$_].Active })
         & $say @($delay) $all |
             Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server – Verzögerung (1); 2 min mit spürbarer Störung. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rückblick, Drucken, Gegenstellen, Zustandsbild.'
-        # a zero stands only for what was measured: without events none for crashes, without Citrix none for chronic states
+        # no zero in the sentence (final residuals, item 3); the reservation names only what was not measured: without
+        # events the crashes, without Citrix the chronic states
         foreach ($list in @($delay), @((New-Engpass 'cpu'), $delay)) {
-            & $say $list @('Ereignisse') | Should -Not -Match 'Absturz oder Fehler \(0\)'; & $say $list @('Ereignisse') | Should -Match 'Dauerzustand \(0\)'
-            & $say $list @('Citrix') | Should -Not -Match 'Dauerzustand \(0\)'; & $say $list @('Citrix') | Should -Match 'Absturz oder Fehler \(0\)'
-            & $say $list $all | Should -Not -Match '\(0\)'
+            foreach ($skip in @(), @('Ereignisse'), @('Citrix'), $all) { & $say $list $skip | Should -Not -Match '\(0\)|Absturz oder Fehler|Dauerzustand' }
+            & $say $list @() | Should -Not -Match 'Nicht gemessen'
+            & $say $list @('Ereignisse') | Should -Match 'Nicht gemessen: Ereignisse\.$'; & $say $list @('Citrix') | Should -Match 'Nicht gemessen: Citrix\.$'
         }
         # a category no part of the sentence depends on leaves the sentence as it is
         & $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen') | Should -BeExactly (& $say $red @())
@@ -1128,11 +1139,26 @@ Describe 'Katalog in src' {
         @(Get-NumberWithoutYear 'nach James Rankin (Test mit Windows Server 2019 und Office 2016) dauerte die Anmeldung 40 Sekunden länger').Count | Should -Be 1
         @(Get-NumberWithoutYear 'der Schritt dauert 40 Sekunden; nach James Rankin (2021) ist das üblich') | Should -Be @()
     }
+    It 'stellt den Schritt zu MCS I/O ohne einzelnen Verursacher unter die ersten fuenf Pruefschritte' {      # final residuals, item 2 (ruling P3-R83)
+        # a step that came with round 5 and has a telling condition keeps its place by the rule of the ranking: without a
+        # single cause the check of the cache of MCS I/O is a fitting early step, for the memory and for the drive
+        foreach ($s in 'memory', 'disk') {
+            $g = Get-Guide (New-Engpass $s @{ cause = @{ kind = 'none' }; main = $null })
+            $at = [array]::IndexOf(@($g.checks | ForEach-Object { ([string]$_.text).StartsWith('Wenn der Maschinenkatalog MCS I/O nutzt', [StringComparison]::Ordinal) }), $true)
+            $at | Should -BeGreaterOrEqual 0 -Because $s; $at | Should -BeLessThan 5 -Because $s
+            Test-RoundFive $g.checks[$at] | Should -BeTrue -Because $s
+            # the steps of the catalogue's own that say there is no single cause stand before it
+            $g.checks[0].text | Should -Match '^Kein einzelner Verursacher' -Because $s
+        }
+    }
     It 'haelt die frueheren Schritte auch ohne einzelnen Verursacher und bei nicht Gemessenem in Sicht' {      # round 5, fix round 1, item 1 (ruling P3-R75)
         # incidents the test reports do not hold: without a single cause, as a chronic state, with a category left out
         $long = @{ chronic = $true; end = [long](1e12 + 4200000); cause = @{ kind = 'none' }; main = $null }
+        # Aussage angepasst (final residuals, item 2, ruling P3-R83): no memory incident without a single cause. By the rule of
+        # the ranking an element with a telling condition keeps its place, also one that came with round 5: the step on the
+        # cache of MCS I/O (cause.none) stands among the first five there and in a drive incident without a single cause,
+        # and later steps of before round 5 move behind it (pinned in its own test below)
         $cases = [ordered]@{
-            'Arbeitsspeicher ohne Verursacher' = (New-Engpass 'memory' @{ cause = @{ kind = 'none' }; main = $null })
             'Prozessor ohne Verursacher' = (New-Engpass 'cpu' @{ cause = @{ kind = 'none' }; main = $null })
             'Freigabe ohne Verursacher' = (New-Engpass 'share' @{ cause = @{ kind = 'none' }; main = $null })
             'Dauerzustand Prozessor' = (New-Engpass 'cpu' $long); 'Dauerzustand Arbeitsspeicher' = (New-Engpass 'memory' $long)
@@ -1140,14 +1166,15 @@ Describe 'Katalog in src' {
         }
         foreach ($name in $cases.Keys) { $g = Get-Guide $cases[$name]; @($g.checks).Count | Should -BeGreaterThan 2 -Because $name; @(Get-OutOfView $g) | Should -Be @() -Because $name }
         # where no step with a more telling condition from practice is shown, the order holds as well: the earlier steps lead
-        foreach ($name in 'Arbeitsspeicher ohne Verursacher', 'Freigabe ohne Verursacher', 'Dauerzustand Prozessor', 'Systemfehler') { @(Get-Displaced (Get-Guide $cases[$name])) | Should -Be @() -Because $name }
+        foreach ($name in 'Freigabe ohne Verursacher', 'Dauerzustand Prozessor', 'Systemfehler') { @(Get-Displaced (Get-Guide $cases[$name])) | Should -Be @() -Because $name }
         # with -Skip Prozesse the two notes on the cause that was not measured stand before every general step from practice
         $ctx = New-Ctx; $ctx.Data.skipped = @(@{ id = 'Prozesse'; label = 'Prozesse'; text = ''; places = @() }); $ctx.Data.apps = @()
         foreach ($s in 'cpu', 'memory', 'disk', 'share', 'profile') {
             $g = Get-Guide (New-Engpass $s @{ cause = @{ kind = 'notmeasured' }; main = $null }) $ctx
             @(Get-OutOfView $g) | Should -Be @() -Because $s
             $at = [array]::IndexOf(@($g.checks | ForEach-Object { $_.text -match 'ohne „-Skip Prozesse“ wiederholen' }), $true); $at | Should -BeGreaterThan 0 -Because $s
-            for ($k = 0; $k -lt $at; $k++) { [string]$g.checks[$k].source | Should -Not -Match $RoundFiveSource -Because "$s, Schritt $($k + 1)" }
+            # final residuals, item 2: by origin, also an element that carries the vendor's document since the final fix wave
+            for ($k = 0; $k -lt $at; $k++) { Test-RoundFive $g.checks[$k] | Should -BeFalse -Because "$s, Schritt $($k + 1)" }
         }
         # a delay with drives and endpoints not measured: the notes on both gaps before the general steps from practice
         $ctx = New-Ctx; $ctx.Data.sollIst = @(@{ id = 'probe.connect'; measured = $false })
@@ -1156,6 +1183,10 @@ Describe 'Katalog in src' {
             $g = Get-Guide (New-Inc @{ type = 'ohne-engpass'; unverified = $true; affected = @(1..$n | ForEach-Object { @{ s = $_ } }) }) $ctx
             @(Get-OutOfView $g) | Should -Be @() -Because "$n Sitzungen"; @(Get-Displaced $g) | Should -Be @() -Because "$n Sitzungen"
             $gapAt = @(0..(@($g.checks).Count - 1) | Where-Object { $g.checks[$_].text -match 'nicht gemessen' }); $gapAt.Count | Should -Be 2 -Because "$n Sitzungen"
+            # ruling P3-R84: this order is classed by the current source, not by origin: an element that carries a vendor's
+            # document since the final fix wave (the CPU ready time of the VMware host) ranks as the vendor's among the
+            # general steps, before the notes on gaps; the first five checks and three remedies (Get-OutOfView,
+            # Get-Displaced above) and the note of -Skip Prozesse are classed by origin
             for ($k = 0; $k -lt $gapAt[-1]; $k++) { [string]$g.checks[$k].source | Should -Not -Match $RoundFiveSource -Because "$n Sitzungen, Schritt $($k + 1)" }
             @($g.checks | Where-Object { [string]$_.source -match $RoundFiveSource }).Count | Should -BeGreaterThan 1 -Because "$n Sitzungen"
         }
@@ -1182,9 +1213,9 @@ Describe 'Katalog in src' {
             $texts = @($Real.situations.($place.S).($place.L) | ForEach-Object { [string]$_.text })
             $a = @(0..($texts.Count - 1) | Where-Object { $texts[$_].StartsWith($place.Own) }); $b = @(0..($texts.Count - 1) | Where-Object { $texts[$_].StartsWith($place.New) })
             $a.Count | Should -Be 1 -Because $place.Own; $b.Count | Should -Be 1 -Because $place.New; $b[0] | Should -BeGreaterThan $a[0] -Because $place.New
-            # Aussage angepasst (final fix wave, parked item): the step on MCS I/O of the memory stands only without a single
-            # cause, with the source of Citrix; the others stay general
-            if ($place.S -eq 'memory') { @($Real.situations.memory.checks[$b[0]].when) | Should -Be @('cause.none'); continue }
+            # Aussage angepasst (final fix wave, parked item; final residuals, item 2, ruling P3-R82): the steps on MCS I/O of
+            # the memory and of the drive stand only without a single cause, with the source of Citrix; the others stay general
+            if ($place.S -in 'memory', 'disk') { @($Real.situations.($place.S).checks[$b[0]].when) | Should -Be @('cause.none') -Because $place.S; continue }
             $Real.situations.($place.S).($place.L)[$b[0]].PSObject.Properties['when'] | Should -BeNullOrEmpty -Because $place.New
         }
     }
@@ -1279,15 +1310,24 @@ Describe 'Katalog in src' {
     }
     It 'nimmt nie den Programmordner einer Anwendung vom Scan aus' {      # final fix wave, item 1
         # a statement (the part of a text between two semicolons) that names a program folder together with an exclusion
-        # says that it is not to be excluded
+        # says that it is not to be excluded: every word of the exclusion in it stands negated („nicht ausnehmen“,
+        # „keinen Scan-Ausschluss“). Final residuals, item 4: a „nicht“ elsewhere in the statement („bei nicht persistenten
+        # Servern“) exempts nothing, and „ohne Ausschluss“ (said of the finding) is no negation
         $folder = 'Programm(-| )?ordner|Programm- und Datenordner|Programmverzeichnis|Installationsordner|Ordner viel genutzter Anwendungen'
-        $exclude = 'ausnehm|ausgenommen|Ausschluss|Ausschlüsse|ausschließ'
-        $wrong = { param([string]$Text) @(Get-Statements $Text | Where-Object { $_ -match $folder -and $_ -match $exclude -and $_ -notmatch '\bnicht\b' }) }
+        $exclude = '(?<!\b(?:nicht|kein|keine|keinen)\s+(?:vom Scan\s+)?(?:\p{L}+-)?)(?:ausnehm|ausgenommen|auszunehmen|Ausschluss|Ausschlüsse|ausschließ|auszuschließen)'
+        $wrong = { param([string]$Text) @(Get-Statements $Text | Where-Object { $_ -match $folder -and $_ -match $exclude }) }
         foreach ($e in $Elements) { foreach ($t in $e.Texts) { @(& $wrong $t) | Should -Be @() -Because $e.Position } }
-        # the rule finds the wording of before
-        @(& $wrong 'Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (…)').Count | Should -Be 1
+        # the rule finds the wording of before, also the remedy with its „nicht“ of the non-persistent servers
+        @(& $wrong 'Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)').Count | Should -Be 1
         @(& $wrong 'Echtzeitprüfung ohne Scan-Ausschluss für die Ordner viel genutzter Anwendungen').Count | Should -Be 1
+        @(& $wrong 'Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss').Count | Should -Be 1
         @(& $wrong 'Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Programmordner oder Prozesse').Count | Should -Be 1
+        @(& $wrong 'den Programmordner nicht vergessen und vom Scan ausnehmen').Count | Should -Be 1
+        # and lets the negated exclusion pass
+        foreach ($ok in 'den Programmordner der Anwendung nicht ausnehmen', 'den Programmordner nicht vom Scan ausnehmen', 'für den Programmordner keinen Scan-Ausschluss einrichten',
+            'mit Microsoft Defender gilt die Form mit den Prozessen des Agenten, nicht der Ordner: Microsoft führt Programmordner unter den Ordnern, die man nicht ausnehmen soll') {
+            @(& $wrong $ok) | Should -Be @() -Because $ok
+        }
         # the exclusions for the largest I/O producer: its processes with the full path, data folders only where its vendor names
         # them, the program folder not, with Microsoft's page as the source
         # (Microsoft's own scoped exclusions for the WebView2 runtime stand under that application, as its vendor names them)
@@ -1365,6 +1405,19 @@ Describe 'Katalog in src' {
         @((& $byStart 'memory' 'checks' 'Wenn der Maschinenkatalog MCS I/O nutzt').When) | Should -Be @('cause.none')
         @((Get-Guide (New-Engpass 'memory')).checks | Where-Object { $_.text -match 'MCS I/O' }) | Should -Be @()
         @((Get-Guide (New-Engpass 'memory' @{ cause = @{ kind = 'none' }; main = $null })).checks | Where-Object { $_.text -match 'MCS I/O' }).Count | Should -Be 1
+        # final residuals, item 2 (ruling P3-R82): the one of the drive as well; with -Skip Prozesse it no longer stands
+        # before the note on the repetition without -Skip
+        @((& $byStart 'disk' 'checks' 'Wenn der Maschinenkatalog MCS I/O nutzt').When) | Should -Be @('cause.none')
+        @((Get-Guide (New-Engpass 'disk')).checks | Where-Object { $_.text -match 'MCS I/O' }) | Should -Be @()
+        @((Get-Guide (New-Engpass 'disk' @{ cause = @{ kind = 'notmeasured' }; main = $null })).checks | Where-Object { $_.text -match 'MCS I/O' }) | Should -Be @()
+        @((Get-Guide (New-Engpass 'disk' @{ cause = @{ kind = 'none' }; main = $null })).checks | Where-Object { $_.text -match 'MCS I/O' }).Count | Should -Be 1
+        # the elements the invariant of P3-R75 knows by their origin: each start names elements that carry a vendor's
+        # document now (a start that names nothing, or an element with a source of round 5, would be a stale entry)
+        foreach ($start in $RoundFiveOrigins) {
+            $hit = @($Elements | Where-Object { $_.Texts[0].StartsWith($start, [StringComparison]::Ordinal) }); $hit.Count | Should -BeGreaterThan 0 -Because $start
+            foreach ($e in $hit) { $e.Source | Should -Not -Match $RoundFiveSource -Because $e.Position; $e.Source | Should -Not -BeNullOrEmpty -Because $e.Position }
+        }
+        @($Elements | Where-Object { $_.Texts[0] -match $RoundFiveOrigin }).Count | Should -Be 10
     }
     It 'fuehrt unter einer Verzoegerung laufender Sitzungen keinen Schritt zur Dauer der Anmeldung' {      # round 5, fix round 1, item 5 (ruling P3-R76)
         $delay = @($Elements | Where-Object { $_.Situation -in 'delay.many', 'delay.single' })
@@ -1594,7 +1647,8 @@ Describe 'Katalog an der simulierten Stunde: Reihenfolge vor den Quellen aus der
             $g = @($all | Where-Object { [int]$_.id -eq $pin.Id })[0].guide
             foreach ($list in 'Checks', 'Remedies') {
                 $shown = @($g.($list.ToLowerInvariant())); $kept = @($pin.$list).Count
-                for ($k = 0; $k -lt [Math]::Min($kept, $shown.Count); $k++) { [string]$shown[$k].source | Should -Not -Match $new -Because "Vorfall $($pin.Id): $list[$k]" }
+                # final residuals, item 2: by origin (Test-RoundFive), also an element that carries the vendor's document now
+                for ($k = 0; $k -lt [Math]::Min($kept, $shown.Count); $k++) { Test-RoundFive $shown[$k] | Should -BeFalse -Because "Vorfall $($pin.Id): $list[$k] <$($shown[$k].text)>" }
                 $seen += @($shown | Where-Object { [string]$_.source -match $new }).Count
             }
         }
