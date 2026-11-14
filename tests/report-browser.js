@@ -19,7 +19,7 @@ const rgbOf = (c) => Array.isArray(c) ? c.slice(0, 3) : c.trim().startsWith('#')
 const toLinear = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
 const fromLinear = (v) => { v = Math.min(1, Math.max(0, v)); return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055); };
 // contrast of two colours after WCAG 2 (relative luminance)
-const luminance = (c) => { const [r, g, b] = rgbOf(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const luminance = (c) => { const [r, g, b] = rgbOf(c).map(toLinear); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 // CIELAB (D65) of an sRGB colour
 function labOf(c) {
@@ -93,6 +93,9 @@ async function checkColourMath() {                                     // Farbab
   const near = (t, a, b) => colourDiff(simulateCvd(t, a), simulateCvd(t, b)) < colourDiff(a, b) / 2;
   ok(near('protan', '#d62728', '#2ca02c') && near('deutan', '#d62728', '#2ca02c') && near('tritan', '#1f77b4', '#2ca02c') && !near('tritan', '#d62728', '#2ca02c'), 'die Simulation verwechselt, was die jeweilige Farbfehlsichtigkeit verwechselt');
   ok(Math.abs(contrast('#000000', '#ffffff') - 21) < 1e-9 && Math.abs(contrast('rgb(118, 118, 118)', '#ffffff') - 4.54) < 0.01, 'WCAG-Kontrast: Schwarz auf Weiss 21:1, #767676 auf Weiss 4,54:1');
+  // (Task 11, fix round 1) one linearisation for contrast and CIELAB, also for mixed colours with fractional channels (the colours
+  // as drawn inside an incident's window)
+  ok([10.2, 10.25, 10.3].every((v) => Math.abs(luminance([v, v, v]) - toLinear(v)) < 1e-12), 'die Leuchtdichte linearisiert wie CIELAB (sRGB), auch zwischen ganzen Kanalwerten');
   ok(paletteOk(['#000000', '#0000ff', '#00ff00', '#ff0000', '#ffff00', '#ff00ff', '#00ffff', '#888888'], '#ffffff') === false && paletteCheck(['#2a78d6', '#2a78d7'], '#ffffff').normal < 1, 'die Pruefung der Palette lehnt ab, was die Schwellen verfehlt');
 }
 const paletteText = (p) => `ΔE2000 normal ${p.normal.toFixed(1)} (${p.worst.normal}), Protanopie ${p.protan.toFixed(1)} (${p.worst.protan}), Deuteranopie ${p.deutan.toFixed(1)} (${p.worst.deutan}), Tritanopie ${p.tritan.toFixed(1)} (${p.worst.tritan}), Kontrast ${p.contrast.toFixed(2)}:1`;
@@ -984,10 +987,16 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   ok(await place() === home, 'die Zurueck-Taste des Browsers schliesst die Vorfallsansicht: ' + await place());
   await page.goForward();
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id) && await page.evaluate(() => window.WP.incident) === id, 'Vorwaerts oeffnet sie wieder');
-  // "Naechster Vorfall" does not lengthen the way back
-  await page.click('#ivNext'); await page.click('#ivNext');
+  // (fix round 1, item 13; P3-R79: "Naechster Vorfall" is a step of its own; before, it replaced the step and back led to the
+  // situation summary at once) back returns to the incident read before, then to the situation summary
+  const n0 = await page.evaluate(() => history.length);
+  await page.click('#ivNext'); const id2 = Number(await iv.getAttribute('data-id')); await page.click('#ivNext');
+  ok(await page.evaluate(() => history.length) === n0 + 2 && id2 !== id, '"Naechster Vorfall" schreibt einen Schritt: ' + (await page.evaluate(() => history.length) - n0));
+  await page.goBack(); await page.waitForFunction((i) => window.WP.incident === i, id2);
+  ok(await iv.isVisible() && (await page.evaluate(() => location.hash)).includes('i=' + id2), 'nach "Naechster Vorfall" fuehrt ein Schritt zurueck zum Vorfall davor: ' + await page.evaluate(() => location.hash));
+  await page.goBack(); await page.waitForFunction((i) => window.WP.incident === i, id);
   await page.goBack(); await ivClosed(page);
-  ok(await place() === home, 'nach "Naechster Vorfall" fuehrt ein Schritt zurueck zum Lagebild: ' + await place());
+  ok(await place() === home, 'und zwei Schritte zurueck zum Lagebild: ' + await place());
   // from the incident view to the expert view and back with the browser
   await page.click(opener); await ivExpert(page);
   ok(await page.evaluate(() => window.WP.view) === 'expert' && await page.locator(`#incList .inc[data-id="${id}"].selected`).isVisible(), 'In der Expertenansicht zeigen hebt den Vorfall dort hervor');
@@ -1047,6 +1056,8 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   await page.evaluate((i) => window.WP.openIncident(i), id);
   await page.click('#ivNext');
   ok((await backLabel()).includes('Zurück zur Expertenansicht') && JSON.parse(await state()).wpFrom === 'expert', '"Naechster Vorfall" behaelt die Herkunft: ' + await state());
+  await page.goBack(); await page.waitForFunction((i) => window.WP.incident === i, id);          // (P3-R79) the incident before
+  ok((await backLabel()).includes('Zurück zur Expertenansicht') && JSON.parse(await state()).wpFrom === 'expert', 'zurueck zum Vorfall davor, mit derselben Herkunft: ' + await state());
   await page.goBack();
   await page.waitForFunction(() => window.WP.view === 'expert');
   // back in the situation summary, the incident view opened there returns there again
@@ -1066,7 +1077,11 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   ok(nextId !== id && await state() === JSON.stringify({ wpIncident: nextId }), '"Naechster Vorfall" schreibt den Schritt der Vorfallsansicht allein: ' + await state());
   await page.reload();
   ok(await page.evaluate(() => window.WP.view) === 'guided' && await iv.isVisible() && await iv.getAttribute('data-id') === String(nextId) && await page.locator('#expert').isHidden(), 'Neuladen zeigt die Vorfallsansicht des naechsten Vorfalls');
-  // (Task 11: one step back is the expert view the reader came back from with the head bar, the second the incident before)
+  // (Task 11: one step back is the expert view the reader came back from with the head bar, the second the incident before;
+  // fix round 1, P3-R79: before both, the incident view of the incident before "Naechster Vorfall")
+  await page.goBack();
+  await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', id);
+  ok((await state()) === JSON.stringify({ wpIncident: id }), 'ein Schritt zurueck: der Vorfall vor "Naechster Vorfall": ' + await state());
   await page.goBack();
   await page.waitForFunction(() => window.WP.view === 'expert');
   ok(await page.locator('#expert').isVisible() && (await page.evaluate(() => location.hash)).startsWith('#v=expert'), 'ein Schritt zurueck: die Expertenansicht, aus der die Kopfleiste zurueckfuehrte');
@@ -1074,6 +1089,7 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', id);
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'noch ein Schritt zurueck: der Vorfall davor');
   await page.goForward(); await page.waitForFunction(() => window.WP.view === 'expert');
+  await page.goForward(); await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', id);
   await page.goForward();
   await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', nextId);
   // "Zurueck zum Lagebild" leads to the situation summary (Task 11: as a step of its own, before: back over every step of the
@@ -2769,12 +2785,16 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   ok(!covered.length && oneSeries >= 3 && !alike.length, 'Vorfall ohne Dauer: nichts in der Farbe der Flaeche liegt ueber den Messlinien oder Flaechen, die Marke gleicht keiner Messlinie (gestrichelt, andere Farbe; ' + oneSeries + ' Diagramme mit einer Reihe): ' + covered.concat(alike.map((k) => 'gleicht einer Linie: ' + k)).slice(0, 4).join(' | '));
   let info = await page.locator('#rangeInfo').innerText();
   ok(info.endsWith(`· Vorfall ${crash.id}: Anwendungsabsturz`) && !info.includes('Vorfall aus Ereignissen'), 'Zeitraumleiste nennt einen Vorfall aus Ereignissen bei seiner Art, ohne das Wort doppelt: ' + info);
-  // a span with a duration: tinted; in the stacked charts above the areas, with its two edges; never in the way of the pointer
+  // a span with a duration: tinted behind the lines; never in the way of the pointer. (Task 11, fix round 1, P3-R78: in the
+  // stacked charts nothing lies over the areas inside the window: the veil covers the plot outside it, the window has its two
+  // edges and the tinted strip above the plot; before, veil and tint lay over the areas in the window)
   await pick(page, cpu.id);
   const bands = await page.evaluate(() => ['chCpuStack', 'chMemStack', 'chCpu'].map((id) => { const svg = document.querySelector(`#${id} svg`), b = svg.querySelector('.incband'), g = svg.querySelector('g[clip-path]'), r = b.getBoundingClientRect();
-    document.getElementById(id).scrollIntoView({ block: 'center' }); const q = b.getBoundingClientRect(), at = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
-    return [b.tagName, r.width > 100, !!(g.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), svg.querySelectorAll('.incedge').length, svg.querySelectorAll('.incveil').length, getComputedStyle(b).pointerEvents, at && at.getAttribute('class')].join(); }));
-  ok(bands[0] === 'rect,true,true,1,1,none,hit' && bands[1] === bands[0] && bands[2] === 'rect,true,false,0,0,none,hit', 'Vorfall mit Dauer: getoent; in den gestapelten Diagrammen liegt der Bereich ueber den Flaechen, mit seinen Raendern; der Zeiger erreicht das Diagramm: ' + bands.join(' | '));
+    const c = svg.querySelector('clipPath rect'), veil = svg.querySelector('.incveil'), bb = b.getBBox(), mid = Number(c.getAttribute('y')) + Number(c.getAttribute('height')) / 2, inVeil = (x) => !!veil && veil.isPointInFill(new DOMPoint(x, mid));
+    document.getElementById(id).scrollIntoView({ block: 'center' }); const q = b.getBoundingClientRect(), p = svg.querySelector('.hit').getBoundingClientRect(), at = document.elementFromPoint(q.left + q.width / 2, p.top + p.height / 2);
+    return [b.tagName, r.width > 100, !!(g.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING), bb.y + bb.height <= Number(c.getAttribute('y')), svg.querySelectorAll('.incedge').length, svg.querySelectorAll('.incveil').length,
+      inVeil(bb.x + bb.width / 2), inVeil(bb.x - 5) || inVeil(bb.x + bb.width + 5), getComputedStyle(b).pointerEvents, at && at.getAttribute('class')].join(); }));
+  ok(bands[0] === 'rect,true,true,true,1,1,false,true,none,hit' && bands[1] === bands[0] && bands[2] === 'rect,true,false,false,0,0,false,false,none,hit', 'Vorfall mit Dauer: getoent; in den gestapelten Diagrammen liegt im Fenster nichts ueber den Flaechen (Schleier ausserhalb, Raender, Streifen ueber dem Diagramm); der Zeiger erreicht das Diagramm: ' + bands.join(' | '));
   // -- item 19: the way into the guided view on the chosen entry
   const lnk = await page.evaluate(() => { const e = document.querySelector('#incList .inc.selected'); return [getComputedStyle(e.querySelector('.inc-guided')).color, getComputedStyle(e).backgroundColor]; });
   ok(contrast(lnk[0], lnk[1]) >= 4.5, '"Geführt öffnen" auf dem gewaehlten Eintrag: Kontrast mindestens 4,5:1: ' + contrast(lnk[0], lnk[1]).toFixed(2));
@@ -2983,17 +3003,14 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   // also says "Host" and "des Hosts" for the hypervisor in a sentence about VMware, before or after the word: "ob die Summe
   // der vCPU zum Host passt, beurteilt die Betreuung von VMware", "… Co-Stop des Hosts" after "der VMware-Host" more than
   // 150 characters before. "Host" or "Hosts" as a word of its own in a sentence, or a part of one after a semicolon, that names
-  // VMware is the hypervisor. (Task 11: the catalogue after round 5's fix round puts a semicolon part between them: "…: die
-  // CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware …; die Praxisquelle GO-EUC (2026) wertet dazu auch
-  // CPU-Latenz und Co-Stop des Hosts aus" in a sentence that starts with "ob der VMware-Host dem Server Rechenzeit entzogen hat".
-  // "Hosts" after the "VMware-Host" in a whole sentence, semicolons included, is the hypervisor too.)
-  const sentenceBefore = (text, i) => text.substring(Math.max(...['. ', '! ', '? ', '\n'].map((x) => text.lastIndexOf(x, i))) + 1, i);
+  // VMware is the hypervisor. (Task 11, fix round 1: the catalogue says "Co-Stop des VMware-Hosts", which the rule for
+  // "VMware-" covers; a "Hosts" far behind a "VMware-Host", past semicolons, is no exception: the probe below.)
   const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
   const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
-    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))) && !(m[0] === 'Hosts' && /VMware-Host/.test(sentenceBefore(text, m.index))))
+    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
     .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
   ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2 &&
-    hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts. ' + 'Text. '.repeat(30) + 'Last des Hosts; Wert des Hosts').length === 2,
+    hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts.').length === 1 && hostWords('dazu Co-Stop des VMware-Hosts.').length === 0,
     'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
   const ownHost = hostWords(own);
   ok(own.includes('% des Servers') && own.includes('Server-Kapazität') && ownHost.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Host": ' + ownHost.join(' | '));
@@ -3022,6 +3039,70 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
 // the background a chart is drawn on: the card of the split CPU chart in the colours of the view on screen
 const chartGround = (page) => page.evaluate(() => getComputedStyle(document.querySelector('#chCpuStack').closest('.card')).backgroundColor);
 const seriesColours = (page) => page.evaluate(() => [1, 2, 3, 4, 5, 6, 7, 8].map((k) => getComputedStyle(document.body).getPropertyValue('--s' + k).trim()));
+// (fix round 1, item 1; P3-R78) The colours of the series as they are drawn inside the window of the chosen incident, computed
+// from the DOM: at a point of each series inside the window (the middle of its longest run on one of five verticals, where no
+// later series covers it), the ground with every shape that covers the point composited over it in the order of drawing (fill
+// and stroke, each with its opacities and those of its ancestors). The window is the x extent of the chart's .incband. Returns
+// null without a window, else { legend: [{ name, swatch }], drawn: [{ name, swatch, drawn, at }] }.
+const windowColours = (page, sel) => page.evaluate((sel) => {
+  const host = document.querySelector(sel), svg = host && host.querySelector('svg'), plot = svg && svg.querySelector('g[clip-path]'), band = svg && svg.querySelector('.incband:not(.incmark)');
+  if (!band || !plot) return null;
+  const rgba = (c) => { const m = c && c !== 'none' ? c.match(/[\d.]+/g) : null; return m ? [+m[0], +m[1], +m[2], m.length > 3 ? +m[3] : 1] : null; };
+  let ground = null;
+  for (let e = svg; e && !ground; e = e.parentElement) { const c = rgba(getComputedStyle(e).backgroundColor); if (c && c[3] > 0) ground = c; }
+  const alphaOf = (e) => { let a = 1; for (let x = e; x && x !== host; x = x.parentElement) a *= parseFloat(getComputedStyle(x).opacity); return a; };
+  const shapes = [...svg.querySelectorAll('path, rect, line, polyline, polygon, circle, ellipse')].filter((e) => !e.closest('defs') && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none');
+  const paints = (e, pt) => {
+    const s = getComputedStyle(e), out = [], f = rgba(s.fill), k = rgba(s.stroke);
+    if (f && f[3] * parseFloat(s.fillOpacity) > 0 && e.isPointInFill(pt)) out.push([f, f[3] * parseFloat(s.fillOpacity)]);
+    if (k && k[3] * parseFloat(s.strokeOpacity) > 0 && parseFloat(s.strokeWidth) > 0 && e.isPointInStroke(pt)) out.push([k, k[3] * parseFloat(s.strokeOpacity)]);
+    return out;
+  };
+  const colourAt = (pt) => { let c = ground.slice(0, 3); for (const e of shapes) for (const [p, a0] of paints(e, pt)) { const a = a0 * alphaOf(e); c = c.map((v, i) => v * (1 - a) + p[i] * a); } return c; };
+  const nameOf = (v) => (v.match(/var\((--[\w-]+)\)/) || [])[1];
+  const legend = [...host.querySelectorAll('.legend i[style]')].map((i) => { const s = getComputedStyle(i); return { name: nameOf(i.getAttribute('style')), swatch: rgba(i.classList.contains('dash') ? s.borderTopColor : s.backgroundColor).slice(0, 3) }; });
+  const series = [...plot.querySelectorAll('path')].filter((p) => nameOf(p.getAttribute('fill') || '') || (p.getAttribute('fill') === 'none' && nameOf(p.getAttribute('stroke') || '')));
+  const covers = (p, pt) => p.getAttribute('fill') !== 'none' ? p.isPointInFill(pt) : p.isPointInStroke(pt);
+  const bb = band.getBBox(), clip = svg.querySelector('clipPath rect'), top = Number(clip.getAttribute('y')) + 2, bottom = top + Number(clip.getAttribute('height')) - 4;
+  const xs = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => bb.x + 4 + f * (bb.width - 8)), drawn = [];
+  series.forEach((p, k) => {
+    let best = null;
+    for (const x of xs) {
+      let run = 0;
+      for (let y = top + 0.5; y <= bottom + 1; y += 1) {
+        const pt = new DOMPoint(x, y), on = y <= bottom && covers(p, pt) && !series.slice(k + 1).some((q) => covers(q, pt));
+        if (on) { run++; continue; }
+        if (run && (!best || run > best.run)) best = { run, x, y: y - 1 - (run - 1) / 2 };
+        run = 0;
+      }
+    }
+    const name = nameOf(p.getAttribute('fill') !== 'none' ? p.getAttribute('fill') : p.getAttribute('stroke')), sw = legend.find((l) => l.name === name);
+    if (best && sw && best.run >= (p.getAttribute('fill') !== 'none' ? 3 : 1)) drawn.push({ name, swatch: sw.swatch, drawn: colourAt(new DOMPoint(best.x, best.y)), at: [Math.round(best.x), Math.round(best.y)] });
+  });
+  return { legend, drawn };
+}, sel);
+// the thresholds of the palette on the colours as drawn: every pair differs by at least 12 (CIEDE2000) for normal vision and
+// by at least 6 after each simulated deficiency, and every drawn colour lies nearest its own legend swatch, in each of the four.
+// Nothing is painted over the series in the window (P3-R78): each drawn colour is its swatch (CIEDE2000 below 1, "off").
+const SIGHTS = ['normal', 'protan', 'deutan', 'tritan'];
+function windowCheck(w, least = 3) {
+  const out = { n: w ? w.drawn.length : 0, normal: Infinity, protan: Infinity, deutan: Infinity, tritan: Infinity, worst: {}, astray: [], off: 0 };
+  if (!w) return Object.assign(out, { ok: false });
+  for (const s of w.drawn) out.off = Math.max(out.off, colourDiff(s.drawn, s.swatch));
+  const sim = (t, c) => t === 'normal' ? c : simulateCvd(t, c);
+  for (const t of SIGHTS) {
+    for (let i = 0; i < w.drawn.length; i++) for (let j = i + 1; j < w.drawn.length; j++) {
+      const d = colourDiff(sim(t, w.drawn[i].drawn), sim(t, w.drawn[j].drawn)); if (d < out[t]) { out[t] = d; out.worst[t] = w.drawn[i].name + '/' + w.drawn[j].name; }
+    }
+    for (const s of w.drawn) {
+      const near = w.legend.map((l) => [l.name, colourDiff(sim(t, s.drawn), sim(t, l.swatch))]).sort((a, b) => a[1] - b[1])[0];
+      if (near[0] !== s.name) out.astray.push(`${t}: ${s.name} -> ${near[0]}`);
+    }
+  }
+  out.ok = out.n >= least && out.off < 1 && out.normal >= 12 && out.protan >= 6 && out.deutan >= 6 && out.tritan >= 6 && !out.astray.length;
+  return out;
+}
+const windowText = (c) => `${c.n} Reihen, ΔE2000 normal ${c.normal.toFixed(1)} (${c.worst.normal}), Protanopie ${c.protan.toFixed(1)} (${c.worst.protan}), Deuteranopie ${c.deutan.toFixed(1)} (${c.worst.deutan}), Tritanopie ${c.tritan.toFixed(1)} (${c.worst.tritan}), groesste Abweichung vom Legendenfeld ${c.off.toFixed(2)}` + (c.astray.length ? ', naeher an fremdem Feld: ' + c.astray.slice(0, 4).join(' ') : '');
 async function checkNavigation(browser, dir, scheme) {
   const file = path.join(dir, 'report.html');
   const { page, D } = await open(browser, file, scheme);
@@ -3081,6 +3162,39 @@ async function checkNavigation(browser, dir, scheme) {
     ok(p.ok && paletteOk(cols, bg), 'Reihenfarben unterscheidbar, auch bei Farbfehlsichtigkeit: ' + view + ' (' + cols.join(' ') + ' auf ' + bg + '): ' + paletteText(p));
   }
   await c.close();
+  // (fix round 1, item 1; P3-R78) Inside the window of the chosen incident, where the reader reads the split charts, the series
+  // keep the colours of their legend: the stacked charts mark the window without painting over the series in it. The thresholds
+  // of the palette hold for the colours as drawn there, and each lies nearest its own legend swatch. The time window of an entry
+  // shows only while the pointer is over the entry or the entry has the keyboard's focus (:focus-visible).
+  const x = await browser.newPage({ viewport: { width: 1400, height: 900 }, colorScheme: scheme }); x.errors = []; x.on('pageerror', (e) => x.errors.push(e.message));
+  const still = () => x.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
+  await x.goto('file://' + file + '?w#v=expert');
+  await x.click(`#incList .inc[data-id="${cpu.id}"] .inc-main`); await x.mouse.move(0, 0); await still();
+  ok(await x.locator(`#incList .inc[data-id="${cpu.id}"].selected`).count() === 1 && await x.locator('#charts .hoverband').count() === 0, 'nach dem Klick auf einen Eintrag, der Zeiger fort: kein Zeitfenster des Ueberfahrens in den Diagrammen: ' + await x.locator('#charts .hoverband').count());
+  const order = await x.locator('#incList .inc[data-id] button.inc-main').evaluateAll((els) => els.map((e) => Number(e.closest('.inc').dataset.id))), k = order.indexOf(cpu.id);
+  for (const by of ['sessions', 'apps']) {
+    await x.evaluate((b) => { for (const s of ['#segCpu', '#segMem']) document.querySelector(`${s} button[data-by=${b}]`).click(); }, by);
+    await x.focus(`#incList .inc[data-id="${order[k ? k - 1 : k + 1]}"] .inc-main`); await x.keyboard.press(k ? 'ArrowDown' : 'ArrowUp'); await still();
+    const fv = await x.evaluate((id) => { const a = document.activeElement; return !!a.closest(`.inc[data-id="${id}"]`) && a.matches(':focus-visible'); }, cpu.id);
+    const hov = await x.evaluate(() => [...document.querySelectorAll('#charts svg')].filter((s) => s.querySelector('.hoverband')).length);
+    ok(fv && hov >= 10, 'Tastaturfokus auf dem gewaehlten Eintrag: sein Zeitfenster in den Diagrammen (' + by + '): ' + fv + ' ' + hov);
+    for (const id of ['#chCpuStack', '#chMemStack']) {
+      const w = await windowColours(x, id), cw = windowCheck(w);
+      ok(cw.ok, `Expertenansicht ${id} nach ${by === 'apps' ? 'Anwendungen' : 'Sitzungen'}: im Fenster des Vorfalls (mit Zeitfenster des Eintrags) behalten die Reihen die Farben ihrer Legende: ` + windowText(cw));
+    }
+  }
+  // the guided view: the chart of the incident with the most sessions (lines over the tinted span; line charts keep their band).
+  // In the simulated hour the eight sessions wait alike: inside the window their lines lie on each other and one is seen; it
+  // keeps the colour of its swatch
+  const many = D.incidents.filter((i) => i.type !== 'ereignis').sort((a, b) => (b.signals || []).filter((s) => s.id === 'input.session').length - (a.signals || []).filter((s) => s.id === 'input.session').length)[0];
+  await x.goto(`file://${file}?g#v=guided&i=${many.id}`); await still();
+  const gw = await windowColours(x, '#incident .iv-plot'), gc = windowCheck(gw, 1);
+  ok(gc.ok, 'gefuehrte Ansicht, Vorfall ' + many.id + ': im getoenten Fenster behalten die Linien die Farben ihrer Legende: ' + windowText(gc));
+  // (fix round 1, item 15) the guided view's legend swatches are larger: a pair near the threshold is easier to tell
+  const sw = await x.locator('#incident .iv-plot .legend i:not(.dash):not(.failmark)').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }));
+  ok(sw.length >= 3 && sw.every(([w, h]) => w >= 16 && h >= 12), 'gefuehrte Ansicht: Legendenfelder mindestens 16 x 12 px: ' + JSON.stringify(sw[0]));
+  ok(x.errors.length === 0, 'Skriptfehler Farben im Fenster: ' + x.errors.join(' | '));
+  await x.close();
 }
 
 // The address in detail (Task 11, additions c-f): every way of changing the screen is a step of the history, back and forward
@@ -3088,19 +3202,22 @@ async function checkNavigation(browser, dir, scheme) {
 // incident column, the copy dialog, motion, the crosshair, narrow widths.
 const addr = (page) => page.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))));
 const focusName = (page) => page.evaluate(() => { const a = document.activeElement; return !a || a === document.body ? 'body' : a.id || a.className || a.tagName; });
+// (fix round 1, item 2) the focus is moved away before back or forward: what holds it afterwards was put there by the page
+const blur = (page) => page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
 async function checkAddress(browser, dir, scheme) {
   const file = path.join(dir, 'report.html');
   const { page, D } = await open(browser, file, scheme);
   const cpu = D.incidents.find((i) => i.lead === 'cpu'), disk = D.incidents.find((i) => i.lead === 'disk'), len = () => page.evaluate(() => history.length);
   // the switch of the head bar is a step; back gives the focus to the switch that opened the expert view, forward to the
-  // heading of the view it shows
+  // heading of the view it shows. (fix round 1, item 2: the focus is moved away before each step, and the exact target is
+  // asserted; before, the switch kept the focus of its click and any element of the head bar passed)
   let n = await len();
   await showExpert(page);
   ok(await len() === n + 1 && (await addr(page)).v === 'expert', 'Umschalter: ein Schritt, die Adresse nennt die Expertenansicht: ' + JSON.stringify(await addr(page)));
-  await page.goBack(); await page.waitForFunction(() => window.WP.view === 'guided');
+  await blur(page); await page.goBack(); await page.waitForFunction(() => window.WP.view === 'guided');
   ok(await page.evaluate(() => document.activeElement === document.querySelector('#viewSwitch button[data-view=expert]')), 'Zurueck: der Fokus steht auf dem Umschalter, der die Expertenansicht geoeffnet hat: ' + await focusName(page));
-  await page.goForward(); await page.waitForFunction(() => window.WP.view === 'expert');
-  ok(await focusName(page) !== 'body' && await page.evaluate(() => document.getElementById('expert').contains(document.activeElement) || document.activeElement.closest('header') !== null), 'Vorwaerts: der Fokus steht in der Expertenansicht, nie auf <body>: ' + await focusName(page));
+  await blur(page); await page.goForward(); await page.waitForFunction(() => window.WP.view === 'expert');
+  ok(await focusName(page) === 'incHead', 'Vorwaerts: der Fokus steht auf der Ueberschrift der Vorfallsspalte (der Schritt davor hat kein oeffnendes Element): ' + await focusName(page));
   // a click on an incident entry: one step with range and incident; a second click lets go (one more step)
   n = await len();
   await page.click(`#incList .inc[data-id="${cpu.id}"] .inc-main`);
@@ -3116,10 +3233,11 @@ async function checkAddress(browser, dir, scheme) {
   a = await addr(page);
   // (a range that still reaches into the chosen incident keeps the choice, Task 10: the address names it as long as it is chosen)
   ok(await len() === n + 1 && Number(a.t0) === dragged.t0 && Number(a.t1) === dragged.t1 && a.i === chosen, 'Ziehen im Diagramm: ein Schritt am Ende, die Adresse haelt den neuen Zeitraum und den gewaehlten Vorfall: ' + (await len() - n) + ' ' + JSON.stringify(a) + ' ' + chosen);
-  await page.goBack(); await page.waitForFunction((t) => window.WP.zoom && window.WP.zoom.t0 !== t, dragged.t0);
+  await blur(page); await page.goBack(); await page.waitForFunction((t) => window.WP.zoom && window.WP.zoom.t0 !== t, dragged.t0);
   ok(await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).isVisible() && (await addr(page)).i === String(cpu.id) && JSON.stringify(await page.evaluate(() => window.WP.zoom)) === JSON.stringify({ t0: Number(a0.t0), t1: Number(a0.t1) }), 'Zurueck: der Zeitraum des Vorfalls und seine Wahl sind wieder da');
-  ok(await page.evaluate((id) => document.activeElement === document.querySelector(`#incList .inc[data-id="${id}"] .inc-main`) || document.activeElement.closest('#charts') !== null || document.activeElement.id === 'incHead', cpu.id), 'Zurueck: der Fokus steht beim Diagramm oder beim Eintrag, nie auf <body>: ' + await focusName(page));
-  await page.goBack(); await page.waitForFunction(() => window.WP.zoom === null);
+  // (fix round 1, item 2) the chart takes no focus when it is dragged: the entry clicked before kept it and opened the step
+  ok(await page.evaluate((id) => document.activeElement === document.querySelector(`#incList .inc[data-id="${id}"] .inc-main`), cpu.id), 'Zurueck aus dem gezogenen Zeitraum: der Fokus steht auf dem Eintrag, der ihn hielt: ' + await focusName(page));
+  await blur(page); await page.goBack(); await page.waitForFunction(() => window.WP.zoom === null);
   ok((await addr(page)).t0 === undefined && await page.locator('#incList .inc.selected').count() === 0, 'noch ein Schritt zurueck: die ganze Messung');
   ok(await page.evaluate((id) => document.activeElement === document.querySelector(`#incList .inc[data-id="${id}"] .inc-main`), cpu.id), 'Zurueck: der Fokus steht auf dem Eintrag, der den Zeitraum gesetzt hatte: ' + await focusName(page));
   // "Gesamte Messung" is a step too
@@ -3141,18 +3259,30 @@ async function checkAddress(browser, dir, scheme) {
   ok(await page.locator(`#incList .inc[data-id="${entries[1]}"] .inc-main`).getAttribute('aria-keyshortcuts') === 'Shift+Enter', 'der Eintrag nennt seine zweite Taste (aria-keyshortcuts)');
   await page.keyboard.press('Shift+Enter'); await page.waitForFunction(() => window.WP.view === 'guided');
   ok(await page.locator(`#incident[data-id="${entries[1]}"]`).isVisible() && (await addr(page)).v === 'guided' && (await addr(page)).i === String(entries[1]), 'Umschalt+Eingabetaste: die gefuehrte Vorfallsansicht des Eintrags');
-  await page.goBack(); await page.waitForFunction(() => window.WP.view === 'expert');
-  ok(await onEntry() === entries[1], 'Zurueck aus der Vorfallsansicht: der Fokus steht wieder auf dem Eintrag: ' + await focusName(page));
+  await blur(page); await page.goBack(); await page.waitForFunction(() => window.WP.view === 'expert');
+  ok(await onEntry() === entries[1] && await page.evaluate(() => document.activeElement.matches('button.inc-main')), 'Zurueck aus der Vorfallsansicht: der Fokus steht wieder auf dem Eintrag: ' + await focusName(page));
   // into the guided view with the switch, back: the expert view at its place
   await page.evaluate(() => window.WP.closeIncident());
-  // every element can be reached with Tab and shows its focus: the switch, a card button, a tab, a term
-  for (const sel of ['#viewSwitch button[data-view=guided]', '#xtabs button[aria-selected=true]', `#incList .inc[data-id="${entries[0]}"] .inc-main`, `#incList .inc[data-id="${entries[0]}"] .inc-guided`, '#rangeAll:not([disabled]), #viewSwitch button[data-view=expert]']) {
+  // (fix round 1, item 4) an address typed while the page is open is written back as the page understood it
+  for (const [typed, want] of [['#v=expert&t0=abc', '#v=expert'], [`#v=expert&i=${cpu.id}`, '#v=expert'], [`#v=expert&x=1&t0=${a0.t0}&t1=${a0.t1}`, `#v=expert&t0=${a0.t0}&t1=${a0.t1}`]]) {
+    await page.evaluate((h) => { location.hash = h; }, typed);
+    await page.waitForFunction((w) => location.hash === w, want, { timeout: 3000 }).catch(() => {});
+    ok(await page.evaluate(() => location.hash) === want && await page.evaluate(() => history.state && history.state.wpView) === 'expert', 'eingetippte Adresse ' + typed + ': so zurueckgeschrieben, wie die Seite sie versteht: ' + await page.evaluate(() => location.hash));
+  }
+  // every element can be reached with Tab and shows its focus: the switch, a tab, an entry, its link, "Gesamte Messung"; in the
+  // guided view a card button, in the incident view a term (fix round 1, item 5: the card button and the term were named here
+  // but not checked)
+  const tabTo = [['expert', '#viewSwitch button[data-view=guided]'], ['expert', '#xtabs button[aria-selected=true]'], ['expert', `#incList .inc[data-id="${entries[0]}"] .inc-main`], ['expert', `#incList .inc[data-id="${entries[0]}"] .inc-guided`],
+    ['expert', '#rangeAll:not([disabled]), #viewSwitch button[data-view=expert]'], ['guided', `#cards .card.inc .card-open`], ['incident', '#incident .term']];
+  for (const [where, sel] of tabTo) {
+    if (where === 'guided' && await page.evaluate(() => window.WP.view) !== 'guided') await showGuided(page);
+    if (where === 'incident' && await page.evaluate(() => window.WP.incident) === null) { await page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-open`); await page.locator('#incident').waitFor(); }
     const el = page.locator(sel).first();
     await page.evaluate(() => document.activeElement && document.activeElement.blur());
     let hit = false;
     for (let k = 0; k < 80 && !hit; k++) { await page.keyboard.press('Tab'); hit = await el.evaluate((e) => e === document.activeElement); }
     const ring = hit ? await el.evaluate((e) => { const s = getComputedStyle(e); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2; }) : false;
-    ok(hit && ring, 'mit Tab erreichbar und mit sichtbarem Fokus: ' + sel);
+    ok(hit && ring, 'mit Tab erreichbar und mit sichtbarem Fokus: ' + sel + ' (' + where + ')');
   }
   ok(page.errors.length === 0, 'Skriptfehler Adresse: ' + page.errors.join(' | '));
   await page.close();
@@ -3223,9 +3353,94 @@ async function checkAddress(browser, dir, scheme) {
   await x.page.hover(`#incList .inc[data-id="${disk.id}"] .inc-main`);
   const hov = await x.page.evaluate(() => [...document.querySelectorAll('#charts svg')].filter((s) => s.querySelector('.hoverband')).length);
   ok(hov >= 10, 'Ueberfahren eines Eintrags zeigt sein Zeitfenster in den Diagrammen: ' + hov);
+  // (fix round 1, item 6) a range change while an entry shows its window places the window once in each chart drawn (it placed
+  // it in every chart for each chart drawn)
+  const placed = await x.page.evaluate((c) => {
+    const box = document.getElementById('charts'), ob = new MutationObserver(() => {}); ob.observe(box, { childList: true, subtree: true });
+    window.WP.setZoom(c.start - 600000, c.end + 600000);
+    const added = ob.takeRecords().flatMap((r) => [...r.addedNodes]).filter((e) => e.classList && e.classList.contains('hoverband')).length; ob.disconnect();
+    return [added, box.querySelectorAll('svg').length, box.querySelectorAll('.hoverband').length];
+  }, { start: disk.start, end: disk.end });
+  ok(placed[0] <= placed[1] && placed[2] >= 10, 'ein neuer Zeitraum, waehrend ein Eintrag sein Zeitfenster zeigt: das Fenster wird je Diagramm einmal gesetzt: ' + placed.join(' '));
   await x.page.mouse.move(0, 0);
   ok(await x.page.locator('#charts .hoverband').count() === 0 && x.page.errors.length === 0, 'und nimmt es wieder weg');
   await x.page.close();
+}
+
+// Task 11, fix round 1: where the focus goes (items 2, 10, 11, 12), how a focused row shows (item 9), the folded incident list
+// after a choice (item 14)
+const activeName = (page) => page.evaluate(() => { const a = document.activeElement; if (!a || a === document.body) return 'body'; if (a.id) return '#' + a.id;
+  const e = a.closest('[data-id]'); return a.tagName.toLowerCase() + (a.className ? '.' + a.className.trim().split(' ').pop() : '') + (e ? '@' + e.dataset.id : ''); });
+async function checkFocusFix(browser, dir, scheme) {
+  const file = path.join(dir, 'report.html');
+  const { page, D } = await open(browser, file, scheme);
+  const cpu = D.incidents.find((i) => i.lead === 'cpu'), disk = D.incidents.find((i) => i.lead === 'disk'), card = D.cards[1], loose = D.more[0].ids[0];
+  // item 12: opened with the keyboard, the incident view gives the focus to its title; the first Tab reaches "Zurueck", and the
+  // row of buttons still stands above the head
+  await page.focus(`#cards .card.inc[data-id="${cpu.id}"] .card-open`); await page.keyboard.press('Enter'); await page.locator('#incident').waitFor();
+  const t0 = await activeName(page); await page.keyboard.press('Tab');
+  const above = await page.evaluate(() => document.querySelector('#incident .iv-nav').getBoundingClientRect().bottom <= document.querySelector('#incident .iv-head').getBoundingClientRect().top);
+  ok(t0 === '#ivTitle' && await activeName(page) === '#ivBack' && above, 'Vorfallsansicht: der erste Tab nach dem Titel erreicht "Zurueck", die Knopfzeile steht ueber dem Kopf: ' + t0 + ' -> ' + await activeName(page) + ' ' + above);
+  // item 2, an opener that was hidden: "In der Expertenansicht zeigen", then back: the button is on screen again and takes the focus
+  await ivExpert(page); await blur(page); await page.goBack(); await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await activeName(page) === '#ivExpert', 'zurueck aus der Expertenansicht in die Vorfallsansicht: der Fokus steht auf "In der Expertenansicht zeigen": ' + await activeName(page));
+  await page.keyboard.press('Escape'); await ivClosed(page);
+  // items 9 and 10: a focused row and a focused column head show their ring inside the cells; Enter on a row keeps the focus on it
+  await showTab(page, 'sessions');
+  await page.focus('#tSessions tbody tr:nth-child(3)'); await page.keyboard.press('Shift+Tab');
+  const ring = (sel) => page.evaluate((sel) => {
+    const e = document.activeElement, probe = document.createElement('i'); probe.style.color = 'var(--s1)'; document.body.appendChild(probe); const c = getComputedStyle(probe).color; probe.remove();
+    const has = (el, sh) => getComputedStyle(el).boxShadow.split(/,(?![^(]*\))/).map((x) => x.trim()).includes(`${c} ${sh} inset`);
+    if (!e.matches(sel) || !e.matches(':focus-visible')) return 'nicht fokussiert: ' + e.tagName;
+    if (e.tagName === 'TH') return getComputedStyle(e).outlineStyle === 'none' && has(e, '0px 0px 0px 2px') ? 'ok' : 'Kopf: ' + getComputedStyle(e).boxShadow;
+    const cells = [...e.cells], first = cells[0], last = cells[cells.length - 1], r = first.getBoundingClientRect(), at = document.elementFromPoint(r.left + 1, r.top + r.height / 2);
+    const fine = getComputedStyle(e).outlineStyle === 'none' && cells.every((x) => has(x, '0px 2px 0px 0px') && has(x, '0px -2px 0px 0px')) && has(first, '2px 0px 0px 0px') && has(last, '-2px 0px 0px 0px') && first.contains(at);
+    return fine ? 'ok' : 'Zeile: ' + getComputedStyle(e).outlineStyle + ' / ' + getComputedStyle(first).boxShadow;
+  }, sel);
+  ok(await ring('#tSessions tbody tr') === 'ok', 'Tabellenzeile mit Tastaturfokus: der Ring liegt in ihren Zellen, die feste erste Spalte eingeschlossen: ' + await ring('#tSessions tbody tr'));
+  const rowId = await page.evaluate(() => document.activeElement.dataset.id);
+  await page.keyboard.press('Enter');
+  ok(await page.evaluate((id) => document.activeElement.matches('#tSessions tbody tr.selected') && document.activeElement.dataset.id === id, rowId), 'Eingabetaste auf einer Sitzung: der Fokus bleibt auf der gewaehlten Zeile: ' + await activeName(page));
+  await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Shift+Tab');
+  while (await page.evaluate(() => document.activeElement.tagName === 'TR')) await page.keyboard.press('Shift+Tab');
+  ok(await ring('#tSessions th') === 'ok', 'Spaltenkopf mit Tastaturfokus: der Ring liegt im Kopf: ' + await ring('#tSessions th'));
+  await showTab(page, 'events');
+  await page.focus('#tEvents tbody tr:nth-child(3)'); await page.keyboard.press('Shift+Tab');
+  const evId = await page.evaluate(() => document.activeElement.dataset.id);
+  await page.keyboard.press('Enter'); await page.waitForFunction(() => window.WP.zoom !== null);
+  ok(await page.evaluate((id) => document.activeElement.matches('#tEvents tbody tr.selected') && document.activeElement.dataset.id === id, evId), 'Eingabetaste auf einem Ereignis (die Tabelle folgt dem neuen Zeitraum): der Fokus bleibt auf der gewaehlten Zeile: ' + await activeName(page));
+  ok(page.errors.length === 0, 'Skriptfehler Fokus (Korrekturrunde): ' + page.errors.join(' | '));
+  await page.close();
+  // item 11: an incident view opened from a bookmark: "Zurueck zum Lagebild" gives the focus to the card of the incident, or to
+  // the sentence of the band where it has no card; Enter on "In der Expertenansicht zeigen" to the chosen entry, on "Gesamte
+  // Messung" to the heading of the incident column
+  const b = await browser.newPage({ viewport: { width: 1400, height: 900 }, colorScheme: scheme }); b.errors = []; b.on('pageerror', (e) => b.errors.push(e.message));
+  for (const [id, want] of [[card, `button.card-open@${card}`], [loose, '#bandSentence']]) {
+    await b.goto(`file://${file}?b${id}#v=guided&i=${id}`); await b.locator('#incident').waitFor();
+    await b.focus('#ivBack'); await b.keyboard.press('Enter'); await ivClosed(b);
+    const seen = await b.evaluate(() => { const r = document.activeElement.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; });
+    ok(await activeName(b) === want && seen, 'aus einem Lesezeichen geoeffnet, "Zurueck zum Lagebild": der Fokus steht auf ' + want + ', im Bild: ' + await activeName(b) + ' ' + seen);
+  }
+  await b.goto(`file://${file}?bx#v=guided&i=${cpu.id}`); await b.locator('#incident').waitFor();
+  await b.focus('#ivExpert'); await b.keyboard.press('Enter'); await b.waitForFunction(() => window.WP.view === 'expert');
+  ok(await activeName(b) === `button.inc-main@${cpu.id}`, 'Eingabetaste auf "In der Expertenansicht zeigen": der Fokus steht auf dem gewaehlten Eintrag: ' + await activeName(b));
+  await b.focus('#rangeAll'); await b.keyboard.press('Enter'); await b.waitForFunction(() => window.WP.zoom === null);
+  ok(await activeName(b) === '#incHead', 'Eingabetaste auf "Gesamte Messung" (danach gesperrt): der Fokus steht auf der Ueberschrift der Vorfallsspalte: ' + await activeName(b));
+  ok(b.errors.length === 0, 'Skriptfehler Fokus nach Lesezeichen: ' + b.errors.join(' | '));
+  await b.close();
+  // item 14: below 1180 px the unfolded list folds after a choice, the charts come into view, the focus stays on the toggle;
+  // item 2, an opener that is hidden: back gives the focus to the heading of the column
+  const n = await browser.newPage({ viewport: { width: 1100, height: 800 }, colorScheme: scheme }); n.errors = []; n.on('pageerror', (e) => n.errors.push(e.message));
+  await n.goto(`file://${file}?n#v=expert`); await n.click('#incToggle');
+  ok(await n.locator('#incList').isVisible(), '1100 px: die Liste der Vorfaelle klappt auf');
+  await n.click(`#incList .inc[data-id="${disk.id}"] .inc-main`);
+  await n.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running')); await n.waitForTimeout(500);
+  const fold = await n.evaluate(() => { const c = document.querySelector('#charts .card svg').getBoundingClientRect(); return [document.getElementById('incList').getClientRects().length === 0, document.getElementById('incToggle').getAttribute('aria-expanded'), document.activeElement.id, c.top < window.innerHeight - 100]; });
+  ok(fold.join() === 'true,false,incToggle,true' && await n.evaluate(() => window.WP.zoom !== null), '1100 px, ein Vorfall gewaehlt: die Liste klappt zu, die Diagramme kommen ins Bild, der Fokus steht auf dem Umschalter der Liste: ' + fold.join());
+  await blur(n); await n.goBack(); await n.waitForFunction(() => window.WP.zoom === null);
+  ok(await activeName(n) === '#incHead', 'zurueck, der Eintrag liegt in der zugeklappten Liste: der Fokus steht auf der Ueberschrift der Vorfallsspalte: ' + await activeName(n));
+  ok(n.errors.length === 0, 'Skriptfehler schmale Vorfallsliste: ' + n.errors.join(' | '));
+  await n.close();
 }
 
 // every check function with the colour scheme of the system, then those that need one scheme only
@@ -3233,9 +3448,9 @@ async function checkAddress(browser, dir, scheme) {
 // the incident view, of copying, of printing and of the points carried from the review run once)
 const PER_SCHEME = [checkNavigation, checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
-const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording];
+const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording, checkFocusFix];
 // the colour functions serve other scripts too (require): the checks run only when this file is called
-module.exports = { deltaE2000, simulateCvd, contrast, labOf, colourDiff, paletteCheck };
+module.exports = { deltaE2000, simulateCvd, contrast, labOf, colourDiff, paletteCheck, windowColours, windowCheck };
 if (require.main === module) (async () => {
   const args = process.argv.slice(2), option = (name) => { const k = args.indexOf(name); return k < 0 ? null : args.splice(k, 2)[1]; };
   const only = option('--only'), oneScheme = option('--scheme'), dir = path.resolve(args[0]);

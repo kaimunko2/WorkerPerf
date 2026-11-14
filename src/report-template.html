@@ -179,6 +179,8 @@ section[hidden] { display: none; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .legend i.dash { height: 0; border-top: 2px dashed; border-radius: 0; width: 14px; }
 .legend i.failmark { width: 2px; height: 10px; border-radius: 0; background: var(--crit); }
+/* the guided view names up to eight series on light ground: larger fields tell two colours near each other apart */
+body[data-view="guided"] .legend i:not(.dash):not(.failmark) { width: 18px; height: 12px; }
 .chart { position: relative; touch-action: none; }
 .chart svg { display: block; overflow: hidden; user-select: none; }
 .chart text { fill: var(--text2); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
@@ -187,11 +189,13 @@ section[hidden] { display: none; }
 .chart .band-warn text, .chart .band-crit text, .chart .limit text { fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .chart .band-warn tspan.sym { fill: var(--warn-ink); } .chart .band-crit tspan.sym { fill: var(--crit); }
 .chart .selbox { fill: var(--s1); fill-opacity: .14; stroke: var(--s1); stroke-width: 1; }
-/* the time of the chosen incident: a tinted span behind the lines; in a stacked chart above its opaque areas, with a veil
-   and two edges; a span of a few pixels (an incident without duration) as a mark of its own, a line with a cap above the plot */
+/* the time of the chosen incident: a tinted span behind the lines; in a stacked chart nothing over its areas inside the window
+   (P3-R78): a veil over the plot outside it, its two edges and a strip above the plot; a span of a few pixels (an incident
+   without duration) as a mark of its own, a line with a cap above the plot */
 .chart .incband { fill: var(--s1); fill-opacity: .1; pointer-events: none; }
 body[data-view="expert"] .chart .incband { fill-opacity: .16; }
-.chart .incveil { fill: var(--text); fill-opacity: .07; pointer-events: none; }
+.chart .incband.incstrip, body[data-view="expert"] .chart .incband.incstrip { fill-opacity: 1; }
+.chart .incveil { fill: var(--surface); fill-opacity: .55; pointer-events: none; }
 .chart .incedge { fill: none; stroke: var(--text); stroke-width: 1; stroke-opacity: .85; pointer-events: none; }
 .chart .incband.incmark, body[data-view="expert"] .chart .incband.incmark { fill: none; fill-opacity: 1; stroke: var(--text); stroke-width: 2; stroke-dasharray: 5 3; }
 .chart .inccap { fill: var(--s1); stroke: var(--s1); stroke-width: 2; stroke-linejoin: round; pointer-events: none; }
@@ -241,6 +245,14 @@ td .sig { margin-right: 4px; }
 /* the one cell of an empty table (its sentence) is no cell of the close grid: it keeps its room and does not stick */
 :is(#tSessions, #tApps, #tProcs) td.empty { padding: 30px; position: static; white-space: normal; background: none; box-shadow: none; }
 #tProcs td .svc { max-width: 150px; }
+/* A focused row or column head draws its ring inside its cells: an outline would be cut by the frame of the table, hidden by
+   the sticky first column and, on the first row, by the sticky head. (:is() with the ids gives these rules the weight of the
+   rules of the three close tables above, for every table.) */
+:is(#tSessions, #tApps, #tProcs, table) tbody tr:focus-visible { outline: none; }
+:is(#tSessions, #tApps, #tProcs, table) tbody tr:focus-visible > td { box-shadow: inset 0 2px var(--s1), inset 0 -2px var(--s1); }
+:is(#tSessions, #tApps, #tProcs, table) tbody tr:focus-visible > td:first-child { box-shadow: inset 2px 0 var(--s1), inset 0 2px var(--s1), inset 0 -2px var(--s1), 1px 0 0 var(--border); }
+:is(#tSessions, #tApps, #tProcs, table) tbody tr:focus-visible > td:last-child { box-shadow: inset -2px 0 var(--s1), inset 0 2px var(--s1), inset 0 -2px var(--s1); }
+:is(#tSessions, #tApps, #tProcs, table) th:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--s1); }
 /* a long name of a printer driver wraps, so the columns behind it stay in the picture */
 #tPrintDrivers td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 160px; }
 .detail { margin-top: 16px; scroll-margin-top: calc(var(--headh, 0px) + var(--barh, 40px) + 10px); }
@@ -433,7 +445,9 @@ details.fold[open] > summary { margin-bottom: 12px; }
    head holds title, time and classification, the chart of the first section is small */
 #incident { display: flex; flex-direction: column; gap: 16px; }
 #incident p { overflow-wrap: anywhere; }
-.iv-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+/* the button row stands above the head but follows the title in the page: the first Tab from the title (which takes the focus
+   when the view opens) reaches "Zurück" */
+.iv-nav { order: -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .iv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .iv-actions label.inline { color: var(--text); }
 .iv-head { border-left: 6px solid var(--border); padding: 16px 24px; }
@@ -551,7 +565,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
    (the target table needs 835 px) */
 @media (max-width: 1179px) {
   .xcols { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
-  #incCol { position: static; max-height: none; }
+  #incCol { position: static; max-height: none; scroll-margin-top: calc(var(--headh, 0px) + var(--barh, 40px) + 10px); }
   #incToggle { display: inline-block; }
   #incCol:not(.unfolded) #incList { display: none; }
   #incList { max-height: 60vh; }
@@ -596,6 +610,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 /* the incident under the pointer in a chart, and the time window of the entry under the pointer */
 .inc.hl { background: var(--hover); box-shadow: inset 0 0 0 1px var(--s1); }
 .chart .hoverband { fill: var(--text); fill-opacity: .1; stroke: var(--text2); stroke-opacity: .6; stroke-dasharray: 3 3; pointer-events: none; }
+.chart .hoverband.hoveredge { fill: none; stroke: var(--text); stroke-opacity: .8; }
 @media (prefers-reduced-motion: reduce) {
   *:not(#oldBrowser), *::before, *::after { transition: none !important; animation: none !important; }
 }
@@ -922,7 +937,8 @@ function rangeText(r, sec) {
 // A range that is set (a click on an incident, the end of a drag, "Gesamte Messung", a row of the events) is a step of the
 // history; one that comes with a step already written by the same action (the way into the expert view) goes into that step.
 function zoomChanged() { refreshRange(); for (const fn of zoomFns) fn(window.WP.zoom); rangeStep(); }
-document.getElementById("rangeAll").addEventListener("click", () => window.WP.resetZoom());
+// "Gesamte Messung" is disabled once the whole capture shows: the focus moves to the place of the view (landFocus)
+document.getElementById("rangeAll").addEventListener("click", (ev) => { window.WP.resetZoom(); landFocus(ev.currentTarget); });
 // The range bar sticks under the head bar and the incident column under both: the height of the head bar while it sticks
 // (wide page), else none, and the height of the range bar while it is shown. The hint of the range bar on how to choose a
 // range is shown only where it fits beside the range on the one line of the bar. Called whenever the bars or their content
@@ -1131,9 +1147,10 @@ function drawChart(host) {
   // An incident without duration gets its own mark with a cap above the plot (below): the plot moves down by a few pixels so
   // that the cap and its halo stay clear of the top edge of the plot, where a full stacked chart draws its total. The width of
   // the plot is known only later (labels may widen the right margin): the room is taken where the span would be a mark in the
-  // widest plot, which it is in every narrower one.
+  // widest plot, which it is in every narrower one. A stacked chart keeps that room always: there the strip that marks the
+  // window of the chosen incident stands above the plot (below), and the plot does not move when an incident is chosen.
   const band = chartBand(opt, z);
-  if (band && (Math.min(z.t1, band.t1) - Math.max(z.t0, band.t0)) / (z.t1 - z.t0) * (W - m.l - m.r) < BAND_MIN) m.t += 4;
+  if (stacked || band && (Math.min(z.t1, band.t1) - Math.max(z.t0, band.t0)) / (z.t1 - z.t0) * (W - m.l - m.r) < BAND_MIN) m.t += 4;
   if (marked) H += 14;
   let pw = W - m.l - m.r;
   const ph = H - m.t - m.b;
@@ -1234,11 +1251,14 @@ function drawChart(host) {
   g += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--border)"/>`;
   g += xlab;
 
-  // The time of the incident: a tinted span behind the lines. The areas of a stacked chart are opaque: there the span is
-  // drawn above them, with a veil and its two edges. A span narrower than BAND_MIN px (an incident without duration: a crash,
-  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own, a dashed line in the text colour
-  // with a cap in the colour of the tint above the plot. The dashes and the colour tell it from the line of a chart with one
-  // series. Like the span it lies behind the lines and above the areas of a stacked chart; only the cap, which stands in the
+  // The time of the incident: a tinted span behind the lines. The areas of a stacked chart are opaque, and nothing is painted
+  // over them inside the window (P3-R78: there the reader reads the culprit by the colour of its legend, also with a colour
+  // vision deficiency): the parts of the plot outside the window are veiled in the surface colour, the window has its two
+  // edges and a strip in the colour of the tint above the plot. A span narrower than BAND_MIN px (an incident without
+  // duration: a crash, a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own, a dashed line
+  // in the text colour with a cap in the colour of the tint above the plot. The dashes and the colour tell it from the line of a
+  // chart with one series. Like the span it lies behind the lines; in a stacked chart the dashed line (no tint) lies above the
+  // areas. Only the cap, which stands in the
   // margin above the plot, has a halo in the surface colour: nothing in that colour is drawn over what was measured, so every
   // curve stays whole at the very moment of the incident. None of them catches the pointer.
   let bandUnder = "", bandOver = "";
@@ -1251,7 +1271,10 @@ function drawChart(host) {
       if (stacked) bandOver = mark; else bandUnder = mark;
     } else {
       const rect = (cls) => `<rect class="${cls}" x="${f1(a)}" y="${m.t}" width="${f1(b - a)}" height="${ph}"/>`;
-      if (stacked) bandOver = rect("incveil") + rect("incband") + `<path class="incedge" d="M${f1(a)} ${m.t}V${m.t + ph}M${f1(b)} ${m.t}V${m.t + ph}"/>`;
+      // the strip lies in the room kept above a stacked plot: it ends 3 px above the plot, clear of a total at 100 %
+      const outside = (x0, x1) => x1 - x0 < 0.5 ? "" : `M${f1(x0)} ${m.t}H${f1(x1)}V${m.t + ph}H${f1(x0)}Z`;
+      if (stacked) bandOver = `<path class="incveil" d="${outside(m.l, a) + outside(b, m.l + pw)}"/><rect class="incband incstrip" x="${f1(a)}" y="${m.t - 7}" width="${f1(b - a)}" height="4"/>` +
+        `<path class="incedge" d="M${f1(a)} ${m.t - 7}V${m.t + ph}M${f1(b)} ${m.t - 7}V${m.t + ph}"/>`;
       else bandUnder = rect("incband");
     }
   }
@@ -1323,8 +1346,8 @@ function drawChart(host) {
   const toTime = (px) => z.t0 + ((Math.max(m.l, Math.min(W - m.r, px)) - m.l) / pw) * span;
   // where the plot lies, for the time window of an incident entry under the pointer (hoverWindow); only in the charts that
   // follow the shared range
-  st.geo = opt.window || opt.still ? null : { X, z, top: m.t, h: ph, left: m.l, right: W - m.r };
-  if (hoverInc != null) hoverWindow(hoverInc);
+  st.geo = opt.window || opt.still ? null : { X, z, top: m.t, h: ph, left: m.l, right: W - m.r, stacked };
+  if (hoverInc != null) placeHoverWindow(host);
   const nearest = (xs, t) => { if (!xs.length) return -1; let j = lowerBound(xs, t); if (j >= xs.length) j = xs.length - 1; if (j > 0 && t - xs[j - 1] < xs[j] - t) j--; return j; };
   let drag = null;
   const pxOf = (ev) => { const r = svg.getBoundingClientRect(); return ev.clientX - r.left; };
@@ -1426,7 +1449,12 @@ function table(id, cols, rows, opt) {
     el.innerHTML = h + "</tbody>";
   }
   function sortBy(k) { if (st.key === k) st.dir = -st.dir; else { st.key = k; st.dir = cols.find((c) => c.key === k).num ? -1 : 1; } render(); el.querySelector(`th[data-k="${k}"]`)?.focus(); }
-  function choose(tr) { if (!tr || !opt.onSelect) return; st.selected = Number(tr.dataset.id); render(); opt.onSelect(st.selected); }
+  // the chosen row is drawn anew (and the table again where the choice sets the range): the focus goes to it, where it was
+  function choose(tr) {
+    if (!tr || !opt.onSelect) return;
+    st.selected = Number(tr.dataset.id); render(); opt.onSelect(st.selected);
+    el.querySelector("tbody tr.selected")?.focus({ preventScroll: true });
+  }
   el.addEventListener("click", (ev) => {
     const th = ev.target.closest("th");
     if (th) { sortBy(th.dataset.k); return; }
@@ -2123,7 +2151,14 @@ function toggleIncident(id) {
 }
 document.getElementById("incList").addEventListener("click", (ev) => {
   const entry = ev.target.closest(".inc[data-id]"); if (!entry) return;
-  if (ev.target.closest(".inc-guided")) window.WP.openIncident(Number(entry.dataset.id)); else toggleIncident(Number(entry.dataset.id));
+  if (ev.target.closest(".inc-guided")) { window.WP.openIncident(Number(entry.dataset.id)); return; }
+  toggleIncident(Number(entry.dataset.id));
+  // below 1180 px the unfolded list lies over the tiles: after a choice it folds, so tiles and charts come into view; the focus
+  // stays at the column, on its toggle
+  if (incCol.classList.contains("unfolded") && getComputedStyle(incToggle).display !== "none") {
+    foldIncidents(false); incToggle.focus({ preventScroll: true });
+    incCol.scrollIntoView({ block: "start", behavior: scrollMode() });
+  }
 });
 // Keyboard in the incident column: the arrow keys (and Home, End) move between the entries, Enter sets the range of the
 // entry (it is a button), Shift+Enter opens its guided incident view (named by aria-keyshortcuts on every entry).
@@ -2141,26 +2176,37 @@ document.getElementById("incList").addEventListener("click", (ev) => {
   });
   // An entry under the pointer or the focus shows its time window in the charts; the pointer over a chart lights up the
   // entries of the incidents at that time (markIncidentsAt).
+  // The window shows while the pointer is over an entry or an entry has the keyboard's focus (:focus-visible); an entry clicked
+  // with the mouse keeps its focus, but its window goes when the pointer leaves the column.
   const hoverOf = (ev) => { const e = ev.target.closest(".inc[data-id]"); return e && e.querySelector("button.inc-main") ? Number(e.dataset.id) : null; };
+  const keyed = () => { const a = document.activeElement; return a && list.contains(a) && a.matches(":focus-visible") ? hoverOf({ target: a }) : null; };
   list.addEventListener("mouseover", (ev) => hoverWindow(hoverOf(ev)));
-  list.addEventListener("mouseleave", () => hoverWindow(list.contains(document.activeElement) ? hoverOf({ target: document.activeElement }) : null));
-  list.addEventListener("focusin", (ev) => hoverWindow(hoverOf(ev)));
+  list.addEventListener("mouseleave", () => hoverWindow(keyed()));
+  list.addEventListener("focusin", (ev) => { if (ev.target.matches(":focus-visible")) hoverWindow(hoverOf(ev)); });
   list.addEventListener("focusout", (ev) => { if (!list.contains(ev.relatedTarget)) hoverWindow(null); });
 }
-// The time window of an incident as a dashed, lightly tinted span over the charts that follow the shared range (null: none).
+// The time window of an incident entry (null: none) in the charts that follow the shared range (hoverWindow); a chart drawn
+// anew places its own (placeHoverWindow, from drawChart). A line chart shows it as a dashed, lightly tinted span; a stacked chart
+// by its two dashed edges joined above the plot, never as a tint over its areas (P3-R78).
 function hoverWindow(id) {
   hoverInc = id;
-  const inc = id == null ? null : incById.get(id);
-  for (const host of CHARTS) {
-    const geo = host._wp && host._wp.geo, svg = host.querySelector("svg"); if (!geo || !svg) continue;
-    svg.querySelector(".hoverband")?.remove();
-    if (!inc || !isShown(host)) continue;
-    const a = Math.max(geo.left, geo.X(Math.max(geo.z.t0, inc.start))), b = Math.min(geo.right, geo.X(Math.min(geo.z.t1, inc.end)));
-    if (b < geo.left || a > geo.right || inc.end < geo.z.t0 || inc.start > geo.z.t1) continue;
-    const w = Math.max(3, b - a), r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    r.setAttribute("class", "hoverband"); r.setAttribute("x", (Math.min(a, geo.right - w)).toFixed(1)); r.setAttribute("y", geo.top); r.setAttribute("width", w.toFixed(1)); r.setAttribute("height", geo.h);
-    svg.querySelector(".cross").before(r);
+  for (const host of CHARTS) placeHoverWindow(host);
+}
+function placeHoverWindow(host) {
+  const geo = host._wp && host._wp.geo, svg = host.querySelector("svg"); if (!geo || !svg) return;
+  svg.querySelector(".hoverband")?.remove();
+  const inc = hoverInc == null ? null : incById.get(hoverInc);
+  if (!inc || !isShown(host)) return;
+  const a = Math.max(geo.left, geo.X(Math.max(geo.z.t0, inc.start))), b = Math.min(geo.right, geo.X(Math.min(geo.z.t1, inc.end)));
+  if (b < geo.left || a > geo.right || inc.end < geo.z.t0 || inc.start > geo.z.t1) return;
+  const w = Math.max(3, b - a), x = Math.min(a, geo.right - w), ns = "http://www.w3.org/2000/svg", r = document.createElementNS(ns, geo.stacked ? "path" : "rect");
+  if (geo.stacked) {
+    r.setAttribute("class", "hoverband hoveredge");
+    r.setAttribute("d", `M${x.toFixed(1)} ${geo.top + geo.h}V${geo.top - 7}H${(x + w).toFixed(1)}V${geo.top + geo.h}`);
+  } else {
+    r.setAttribute("class", "hoverband"); r.setAttribute("x", x.toFixed(1)); r.setAttribute("y", geo.top); r.setAttribute("width", w.toFixed(1)); r.setAttribute("height", geo.h);
   }
+  svg.querySelector(".cross").before(r);
 }
 // The entries of the incidents at a time of a chart under the pointer (tol: a few pixels in ms; null: none). An incident that
 // lasts the whole capture (a chronic state) would always light up: it is left out.
@@ -2170,12 +2216,14 @@ function markIncidentsAt(t, tol) {
     e.classList.toggle("hl", t != null && !!inc && !inc.chronic && !(inc.start <= FULL.t0 && inc.end >= FULL.t1) && t >= inc.start - tol && t <= inc.end + tol);
   }
 }
-// below 900 px the column is a list over the tiles that unfolds
-document.getElementById("incToggle").addEventListener("click", (ev) => {
-  const open = document.getElementById("incCol").classList.toggle("unfolded");
-  ev.currentTarget.setAttribute("aria-expanded", open ? "true" : "false");
-  ev.currentTarget.textContent = open ? "Liste verbergen" : "Liste anzeigen";
-});
+// below 1180 px the column is a list over the tiles that unfolds
+const incCol = document.getElementById("incCol"), incToggle = document.getElementById("incToggle");
+function foldIncidents(open) {
+  incCol.classList.toggle("unfolded", open);
+  incToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  incToggle.textContent = open ? "Liste verbergen" : "Liste anzeigen";
+}
+incToggle.addEventListener("click", () => foldIncidents(!incCol.classList.contains("unfolded")));
 
 // Cause box in the evidence of an incident: the same statement as the incident's text, by type.
 // engpass: the main cause, a security product as the largest consumer, or why no main cause is named.
@@ -2434,6 +2482,7 @@ function openInExpert(id) {
     if (rest) { rest.hidden = false; document.getElementById("beforeMore")?.remove(); }
     entry.classList.add("selected");
     entry.scrollIntoView({ behavior: scrollMode(), block: "center" });
+    landFocus(document.activeElement);
     return;
   }
   selectIncident(id);
@@ -2441,6 +2490,8 @@ function openInExpert(id) {
   // the column stands under the head bar and the range bar: their heights are settled before the entry is brought into it
   syncBars();
   document.querySelector(`#incList .inc[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+  // the button that led here went with the incident view: the focus moves to the chosen entry
+  landFocus(document.activeElement);
 }
 // a mark of the timeline opens its incident
 document.getElementById("timeline").addEventListener("click", (ev) => {
@@ -3141,13 +3192,13 @@ function renderIncident(id) {
   const remedyList = (list) => `<ul>${list.map((r) => `<li>${r.precondition ? `<p class="tx pre"><b>Wenn</b> ${termHtml(r.precondition, terms)},</p>` : ""}<p class="tx act">${r.precondition ? "<b>dann:</b> " : ""}${termHtml(r.text, terms)}</p>${sourceHtml(r.source)}</li>`).join("")}</ul>`;
   const next = nextIncident(id);
   ivEl.dataset.id = id;
-  ivEl.innerHTML = `<div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> ${ivFrom && ivFrom.view === "expert" ? "Zurück zur Expertenansicht" : "Zurück zum Lagebild"}</button>
-      <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button>${next == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div></div>
-    <div class="iv-head card sev${k}">
+  ivEl.innerHTML = `<div class="iv-head card sev${k}">
       <h2 class="iv-title" id="ivTitle" tabindex="-1">${esc(g.title || typeText(inc))}</h2>${g.tech ? `
       <p class="iv-tech">${esc(g.tech)}</p>` : ""}
       <p class="iv-meta">${statusHtml(k)}<span class="inum">Vorfall ${inc.id}</span><span class="iv-when">${esc(incWhen(inc))}</span>${g.userView ? `<span class="iv-view">${esc(g.userView)}</span>` : ""}${flagsHtml(inc)}</p>
-    </div>${text || lead ? `
+    </div>
+    <div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> ${ivFrom && ivFrom.view === "expert" ? "Zurück zur Expertenansicht" : "Zurück zum Lagebild"}</button>
+      <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button>${next == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div></div>${text || lead ? `
     <section class="iv-what card"><h3>Was war los</h3>
       <div class="iv-cols${text && lead ? "" : " single"}">${text ? `<div class="iv-text">${text}</div>` : ""}${lead ? `
         <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: ${caption}</p></div>` : ""}</div></section>` : ""}${cause.skip || cause.text ? `
@@ -3222,6 +3273,13 @@ function histWrite(push, state) {
   if (push) { trail = trail.slice(0, at + 1); trail.push({ key, el: document.activeElement }); at++; } else trail[at].key = key;
   fresh = true; queueMicrotask(() => { fresh = false; });
 }
+// A step the page did not write itself (a load, an address typed while the page is open) is written back with the address as
+// the page understood it (an unknown incident or a range that cannot be read is gone); the trail starts anew from it.
+function settle(step) {
+  const address = addressOf(step);
+  try { history.replaceState(step, "", address); } catch (e) { /* no history */ }
+  trail = [{ key: stepKey(step, address), el: null }]; at = 0;
+}
 // the step of the screen as it is now (the incident view keeps the origin of its step)
 function screenStep() { return stepFor(window.WP.view, window.WP.incident, ivFrom && ivFrom.view); }
 function rangeStep() { if (!applying) histWrite(!fresh, screenStep()); }
@@ -3240,7 +3298,7 @@ function showIncidentView(id, step) {
 }
 function hideIncidentView() {
   if (window.WP.incident == null) return;
-  const from = ivFrom || { view: "guided", y: 0, el: null }, shown = window.WP.view === "guided";
+  const id = window.WP.incident, from = ivFrom || { view: "guided", y: 0, el: null }, shown = window.WP.view === "guided";
   window.WP.incident = null; ivFrom = null;
   ivEl.hidden = true; ivEl.innerHTML = ""; delete ivEl.dataset.id; guidedEl.classList.remove("in-incident");
   hideTerm();
@@ -3248,7 +3306,7 @@ function hideIncidentView() {
   if (!shown) { viewScroll.guided = from.y; return; }
   if (from.view === "guided") { drawTimeline(false); refreshCharts(); window.scrollTo(0, from.y); }
   else { setView(from.view); viewScroll.guided = from.y; }
-  if (from.el && from.el.isConnected && from.el.focus) from.el.focus({ preventScroll: true });
+  landFocus(from.el, id);
 }
 // into the expert view (from the incident view, a link of its evidence): a step of the history like the switch of the head bar
 function showExpertView() { window.WP.showView("expert"); }
@@ -3256,11 +3314,11 @@ window.WP.incident = null;
 window.WP.openIncident = function (id) {
   id = Number(id);
   if (!incById.has(id)) return;
-  // From one incident to the next the step of the incident view stays one step (it is replaced). Opened from elsewhere, the
-  // incident view is a new step that names the view it was opened from. The step is written before the view scrolls to its
-  // top: the browser keeps the scroll position of the step it leaves.
+  // Every incident view opened is a step: from one incident to the next ("Nächster Vorfall", P3-R79) the back button returns
+  // to the incident read before; the step keeps the view the first one was opened from. The step is written before the view
+  // scrolls to its top: the browser keeps the scroll position of the step it leaves.
   const shown = this.view === "guided" && this.incident != null;
-  histWrite(!shown, stepFor("guided", id, shown ? ivFrom && ivFrom.view : this.view));
+  histWrite(true, stepFor("guided", id, shown ? ivFrom && ivFrom.view : this.view));
   showIncidentView(id);
 };
 // Closing the incident view ("Zurück", Esc) returns to the view it was opened from, as a new step: the browser's back button
@@ -3312,13 +3370,28 @@ function applyStep(st, a) {
 function viewHeading() {
   return document.getElementById(window.WP.view === "expert" ? "incHead" : window.WP.incident != null ? "ivTitle" : "bandSentence");
 }
+// An element that can keep the focus: on screen and not disabled (a button that went away with its view, or "Gesamte Messung",
+// which is disabled once the whole capture shows, cannot).
+const canFocus = (el) => !!el && el !== document.body && el.isConnected && isShown(el) && !el.disabled && !!el.focus;
+// The focus after a step that leaves the element that took it (closing an incident view opened from a bookmark, "In der
+// Expertenansicht zeigen", "Gesamte Messung"): that element where it can keep it, else the place of the view on screen: in the
+// situation summary the card of the incident (id) or the sentence of the band, in the expert view the chosen entry or the
+// heading of the column, in the incident view its title. Never <body>. The page keeps its scroll position for the element itself;
+// a place found instead is brought into view where it lies outside it (the card after a bookmark: the summary shows its top).
+function landFocus(el, id) {
+  if (canFocus(el)) { el.focus({ preventScroll: true }); return; }
+  const pick = (sel) => { const e = sel && document.querySelector(sel); return canFocus(e) ? e : null; };
+  const to = window.WP.view === "expert" ? pick("#incList .inc.selected .inc-main") || viewHeading()
+    : window.WP.incident != null ? viewHeading() : pick(id != null && `#cards .card.inc[data-id="${id}"] .card-open`) || viewHeading();
+  if (to && to.focus) to.focus();
+}
 window.addEventListener("popstate", (ev) => {
   const left = trail[at], key = stepKey(ev.state, location.hash || "");
   // where the page now stands in its trail: next to the step it left (back or forward), else anywhere, else unknown (reload)
   const near = [at - 1, at + 1].find((k) => trail[k] && trail[k].key === key);
   const k = near != null ? near : trail.findIndex((x) => x.key === key);
-  applyStep(ev.state, readAddress());
-  if (k >= 0) at = k; else { trail = [{ key, el: null }]; at = 0; }
+  const step = applyStep(ev.state, readAddress());
+  if (k >= 0) at = k; else settle(step);
   // the focus: on the element that opened the step that was left, where it is still on screen; else on the heading
   const el = left && left.el, target = el && el !== document.body && el.isConnected && isShown(el) ? el : viewHeading();
   if (target && target.focus) target.focus({ preventScroll: true });
@@ -3350,8 +3423,8 @@ document.addEventListener("keydown", (ev) => {
 // is written back with the address as the page understood it (an unknown incident or a range that cannot be read is gone).
 {
   const a = readAddress(), st = histState();
-  if (a.any || st) { const step = applyStep(st, a); try { history.replaceState(step, "", addressOf(step)); } catch (e) { /* no history */ } trail = [{ key: stepKey(step, addressOf(step)), el: null }]; }
-  else if (rememberedView() === "expert") { setView("expert"); try { history.replaceState({ wpView: "expert" }, "", addressOf({ wpView: "expert" })); } catch (e) { /* no history */ } trail = [{ key: stepKey({ wpView: "expert" }, addressOf({ wpView: "expert" })), el: null }]; }
+  if (a.any || st) settle(applyStep(st, a));
+  else if (rememberedView() === "expert") { setView("expert"); settle({ wpView: "expert" }); }
 }
 </script>
 </body>
