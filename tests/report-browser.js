@@ -411,6 +411,10 @@ const unfoldSteps = async (page) => { const closed = page.locator('#incident .iv
 // the steps and proposals of the incident view that are in the picture, and the lines that fold the rest
 const stepsShown = (page) => page.evaluate(() => { const seen = (sel) => [...document.querySelectorAll('#incident ' + sel)].filter((e) => e.offsetParent !== null && !e.closest('details.morefold:not([open])')).length;
   return { checks: seen('ol.checks > li'), remedies: seen('.remedies li'), folds: [...document.querySelectorAll('#incident .iv-todo details.morefold > summary')].map((x) => x.textContent) }; });
+// the lines that fold the rest of a guidance's checks beyond five (or maxChecks) and of its proposals beyond three (or
+// maxRemedies), worded for the numbers of its report data (the catalogue grows: a count of steps is never a literal of these checks)
+const foldsOf = (g, maxChecks = 5, maxRemedies = 3) => [[g.checks.length - maxChecks, 'Weiteren Prüfschritt anzeigen', 'Prüfschritte'], [g.remedies.length - maxRemedies, 'Weiteren Vorschlag anzeigen', 'Vorschläge']]
+  .filter(([n]) => n > 0).map(([n, one, many]) => n === 1 ? one : `Weitere ${n} ${many} anzeigen`).join('|');
 const deNum = (v) => v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
 
 async function checkIncidentView(browser, dir, scheme) {
@@ -497,7 +501,8 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   ok(fold[0] === 0 && fold[1] === 1400 && fold[2] === 900 && fold[3] < 900 && fold[4] < 900 && (await steps.first().innerText()).includes('Woran erkennbar:'), 'erster Bildschirm: "Was ist zu tun" und der ganze erste Schritt ohne Scrollen: ' + fold.join(' '));
   // a long list shows its first five checks and three proposals; a line folds the rest and goes away when they are shown
   const shown = await stepsShown(page);
-  ok(g.checks.length === 7 && g.remedies.length === 4 && shown.checks === 5 && shown.remedies === 3 && shown.folds.join('|') === 'Weitere 2 Prüfschritte anzeigen|Weiteren Vorschlag anzeigen', 'lange Listen: fuenf Schritte und drei Vorschlaege, der Rest hinter einer Zeile: ' + JSON.stringify(shown));
+  // (literals adapted, P3-R1: since the catalogue's round 5 the CPU incident has 9 checks, not 7; the numbers come from the data)
+  ok(g.checks.length > 5 && g.remedies.length > 3 && shown.checks === 5 && shown.remedies === 3 && shown.folds.length === 2 && shown.folds.join('|') === foldsOf(g), 'lange Listen: fuenf von ' + g.checks.length + ' Schritten und drei von ' + g.remedies.length + ' Vorschlaegen, der Rest hinter einer Zeile: ' + JSON.stringify(shown) + ' statt ' + foldsOf(g));
   await unfoldSteps(page);
   const all = await stepsShown(page);
   ok(all.checks === g.checks.length && all.remedies === g.remedies.length && await iv.locator('.iv-todo details.morefold > summary:visible').count() === 0 && await iv.locator('.iv-todo ol.checks').nth(1).getAttribute('start') === '6', 'aufgeklappt: alle Schritte, weiter gezaehlt ab 6, die Zeile ist weg: ' + JSON.stringify(all));
@@ -572,15 +577,16 @@ async function checkIncidentContent(browser, dir, scheme) {         // Vorfallsa
   await ivOpen(page, print.id);
   ok(await iv.locator('.iv-what .iv-chart').count() === 0 && await iv.locator('.iv-what svg').count() === 0 && (await iv.locator('.iv-what').innerText()).includes(pg.meaning), 'Vorfall aus Ereignissen: kein Diagramm eines Messwerts');
   const psteps = iv.locator('.iv-todo ol.checks > li'), prem = iv.locator('.iv-todo .remedies li'), pcon = iv.locator('.iv-todo .contact li');
-  // 15 checks and 17 proposals: five and three are shown, "An wen wenden" is reachable without scrolling through all of them
+  // many checks and proposals (two-digit numbers): five and three are shown, "An wen wenden" is reachable without scrolling
+  // through all of them (literals adapted, P3-R1: the catalogue's round 5 gives 17 and 19 instead of 15 and 17; from the data)
   const pshown = await stepsShown(page), ptop = await iv.locator('.iv-todo .contact').evaluate((e) => Math.round(e.getBoundingClientRect().top + window.scrollY));
-  ok(pg.checks.length === 15 && pg.remedies.length === 17 && pshown.checks === 5 && pshown.remedies === 3 && pshown.folds.join('|') === 'Weitere 10 Prüfschritte anzeigen|Weitere 14 Vorschläge anzeigen', 'Druckproblem: fuenf von 15 Schritten und drei von 17 Vorschlaegen, der Rest eingeklappt: ' + JSON.stringify(pshown));
+  ok(pg.checks.length >= 15 && pg.remedies.length >= 13 && pshown.checks === 5 && pshown.remedies === 3 && pshown.folds.join('|') === foldsOf(pg), 'Druckproblem: fuenf von ' + pg.checks.length + ' Schritten und drei von ' + pg.remedies.length + ' Vorschlaegen, der Rest eingeklappt: ' + JSON.stringify(pshown) + ' statt ' + foldsOf(pg));
   ok(await iv.locator('.iv-todo .contact').isVisible() && ptop < 3 * 900, 'Druckproblem: "An wen wenden" steht innerhalb der ersten drei Bildschirme: ' + ptop);
   await iv.locator('.iv-todo details.morefold > summary').first().focus(); await page.keyboard.press('Enter');
-  ok((await stepsShown(page)).checks === 15 && (await stepsShown(page)).remedies === 3, 'die Zeile ist mit der Tastatur bedienbar und klappt nur ihre Liste auf');
+  ok((await stepsShown(page)).checks === pg.checks.length && (await stepsShown(page)).remedies === 3, 'die Zeile ist mit der Tastatur bedienbar und klappt nur ihre Liste auf');
   await unfoldSteps(page);
   const ptop2 = await iv.locator('.iv-todo .contact').evaluate((e) => Math.round(e.getBoundingClientRect().top + window.scrollY));
-  ok((await stepsShown(page)).remedies === 17 && ptop2 > ptop + 1500, 'aufgeklappt stehen alle Schritte da: ' + ptop2);
+  ok((await stepsShown(page)).remedies === pg.remedies.length && ptop2 > ptop + 1500, 'aufgeklappt stehen alle Schritte da: ' + ptop2);
   ok(await psteps.count() === pg.checks.length && await prem.count() === pg.remedies.length && await pcon.count() === pg.contacts.length && pg.checks.concat(pg.remedies, pg.contacts).every((x) => x.source), 'Druckproblem: Schritte, Abhilfe und Ansprechpartner');
   for (let k = 0; k < pg.checks.length; k++) ok((await psteps.nth(k).locator('.src').innerText()) === 'Quelle: ' + pg.checks[k].source, 'Quelle steht beim Schritt ' + (k + 1));
   for (let k = 0; k < pg.remedies.length; k++) ok((await prem.nth(k).locator('.src').innerText()) === 'Quelle: ' + pg.remedies[k].source, 'Quelle steht bei der Abhilfe ' + (k + 1));
@@ -699,8 +705,9 @@ async function checkIncidentStates(browser, dir, scheme) {          // Vorfallsa
   ok(await ivSections(rd.page) === IV_SECTIONS && await rd.page.locator('#incident ol.checks').count() === 0 && await rd.page.locator('#incident .remedies li').count() > 0 && await bareParts(rd.page) === '', 'nur Abhilfe: der Abschnitt ohne leere Schrittliste');
   // the numbers of items shown before the fold come from the report data when it carries them
   const rs = rd.D.incidents.find((i) => i.lead === 'share'), rshown = (await ivOpen(rd.page, rs.id), await stepsShown(rd.page));
-  // (literal adapted, P3-R1: the catalogue after its round 3 gives this incident six checks, not seven; the number comes from the data)
-  ok(rs.guide.checks.length >= 4 && rs.guide.remedies.length === 1 && rshown.checks === 2 && rshown.remedies === 1 && rshown.folds.join('|') === `Weitere ${rs.guide.checks.length - 2} Prüfschritte anzeigen` && await rd.page.locator('#incident ol.checks').nth(1).getAttribute('start') === '3', 'Zahl der gezeigten Schritte aus den Berichtsdaten (maxChecks, maxRemedies): ' + JSON.stringify(rshown));
+  // (literal adapted, P3-R1: the catalogue after its round 3 gives this incident six checks, not seven; the number comes from the data.
+  // Since its round 5 it has three proposals instead of one: one is shown, the line folds the other two)
+  ok(rs.guide.checks.length >= 4 && rs.guide.remedies.length >= 1 && rshown.checks === 2 && rshown.remedies === 1 && rshown.folds.join('|') === foldsOf(rs.guide, 2, 1) && rshown.folds[0] === `Weitere ${rs.guide.checks.length - 2} Prüfschritte anzeigen` && await rd.page.locator('#incident ol.checks').nth(1).getAttribute('start') === '3', 'Zahl der gezeigten Schritte aus den Berichtsdaten (maxChecks, maxRemedies): ' + JSON.stringify(rshown) + ' statt ' + foldsOf(rs.guide, 2, 1));
   ok(rd.page.errors.length === 0, 'Skriptfehler fehlende Teile: ' + rd.page.errors.join(' | '));
   await rd.page.close();
   // incidents of the surroundings: a session with input delay over its target shows both values and no note; an endpoint alone
@@ -2373,18 +2380,21 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
       wrong.push(st.id + ': ' + JSON.stringify(st) + ' statt ' + JSON.stringify([r.max, r.avg, r.p95, r.pctNormal, r.pctWarn, r.pctCrit, r.status, r.worstInstance]));
   }
   ok(stats.length === D.sollIst.length && stats.filter((x) => x.series).length === D.sollIst.length - 1 && stats.every((x) => x.snaps === D.snapT.length) && !wrong.length, 'rangeStats ueber die ganze Messung ergibt den Soll-Ist-Vergleich: ' + wrong.join(' | '));
-  const rowsAll = await page.evaluate(() => ['sessions', 'apps', 'procs'].map((k) => rangeRows(k, FULL.t0, FULL.t1).map((r) => [k === 'procs' ? r.k : r.i, r.cpuSec, r.cpuMax, r.wsMax, r.cpuShare, r.inMax, r.cpuAvg, r.wsAvg])));
+  const rowsAll = await page.evaluate(() => ['sessions', 'apps', 'procs'].map((k) => rangeRows(k, FULL.t0, FULL.t1).map((r) => [k === 'procs' ? r.k : r.i, r.cpuSec, r.cpuMax, r.wsMax, r.cpuShare, r.inMax, r.cpuAvg, r.wsAvg, r.rttAvg])));
   const drift = [];
   rowsAll[0].forEach((r) => { const x = D.sessions.find((y) => y.i === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.01)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1) && near(r[4], x.cpuShare, 0.2) && r[5] === x.inMax)) drift.push('Sitzung ' + r[0] + ' ' + JSON.stringify(r)); });
   rowsAll[2].forEach((r) => { const x = D.procs.find((y) => y.k === r[0]); if (!(near(r[1], x.cpuSec, Math.max(2, x.cpuSec * 0.02)) && near(r[2], x.cpuMax, 0.01) && near(r[3], x.wsMax, 1))) drift.push('Prozess ' + r[0] + ' ' + JSON.stringify(r)); });
-  // (fix round 1, item 1) the means are means over time. CPU: the delivered CPU seconds over the capacity of the seconds the
-  // item is covered by snapshots; for a process that is the mean the report data state (cpuAvg), within rounding. Working
-  // set: the mean of the series weighted by the seconds each snapshot stands for.
+  // (fix round 1, item 1; fix round 2, P3-R77) the means are means over time, and a range that covers the whole capture gives
+  // the means the report data state, within the rounding of the series (CPU 0,01 %, working set 1 MB, round trip 0,1 ms):
+  // for sessions, applications and processes. CPU: the delivered CPU seconds over the capacity of the seconds the item is
+  // covered by snapshots. Working set: the mean of the series weighted by the seconds each snapshot stands for.
   const nS = D.snapT.length, means = [];
+  [[rowsAll[0], D.sessions, (x) => x.i, 'Sitzung '], [rowsAll[1], D.apps, (x) => x.i, 'Anwendung '], [rowsAll[2], D.procs, (x) => x.k, 'Prozess ']].forEach(([rows, list, id, what]) => rows.forEach((r) => { const x = list.find((y) => id(y) === r[0]);
+    if (!(near(r[6], x.cpuAvg, 0.011) && near(r[7], x.wsAvg, 1.01) && (what !== 'Sitzung ' || (x.rttAvg == null ? r[8] == null : near(r[8], x.rttAvg, 0.11))))) means.push(what + (x.user || x.name) + ' geliefert: CPU ' + r[6] + ' / ' + x.cpuAvg + ', RAM ' + r[7] + ' / ' + x.wsAvg + ', RTT ' + r[8] + ' / ' + x.rttAvg); }));
   rowsAll[2].forEach((r) => { const x = D.procs.find((y) => y.k === r[0]), m = timeMeans(D, x, 0, nS); if (!(near(r[6], x.cpuAvg, 0.02) && near(r[6], 100 * x.cpuSec / (D.meta.cores * m.cpuCov), Math.max(0.02, r[6] * 0.03)) && near(r[7], m.wsAvg, 1))) means.push('Prozess ' + x.name + ' ' + x.pid + ': ' + r[6] + ' / ' + x.cpuAvg + ', ' + r[7] + ' / ' + m.wsAvg); });
   [[rowsAll[0], D.sessions, 'Sitzung '], [rowsAll[1], D.apps, 'Anwendung ']].forEach(([rows, list, what]) => rows.forEach((r) => { const x = list.find((y) => y.i === r[0]), m = timeMeans(D, x, 0, nS);
     if (!(near(r[6], 100 * x.cpuSec / (D.meta.cores * m.cpuCov), Math.max(0.02, r[6] * 0.01)) && near(r[6], m.cpuAvg, 0.005) && near(r[7], m.wsAvg, 1))) means.push(what + (x.user || x.name) + ': ' + r[6] + ' / ' + m.cpuAvg + ', ' + r[7] + ' / ' + m.wsAvg); }));
-  ok(rowsAll[2].length > 200 && rowsAll[2].some((r) => r[6] > 1) && !means.length, 'rangeRows ueber die ganze Messung: CPU Ø und RAM Ø sind Mittel ueber die Zeit, bei Prozessen der gelieferte Wert: ' + means.slice(0, 4).join(' | '));
+  ok(rowsAll[2].length > 200 && rowsAll[2].some((r) => r[6] > 1) && rowsAll[0].some((r) => r[8] != null) && !means.length, 'rangeRows ueber die ganze Messung: CPU Ø, RAM Ø und ICA RTT Ø sind Mittel ueber die Zeit und die gelieferten Werte (Sitzungen, Anwendungen, Prozesse): ' + means.slice(0, 4).join(' | '));
   const bare = D.apps.filter((a) => !a.cpu && !a.ws).length;
   ok(rowsAll[0].length === D.sessions.length && rowsAll[1].length === D.apps.length - bare && bare > 0 && rowsAll[2].length === D.procs.length && !drift.length, 'rangeRows ueber die ganze Messung: alle Sitzungen und Prozesse mit ihren Werten, Anwendungen ohne Verlauf fehlen: ' + drift.slice(0, 3).join(' | '));
 
@@ -2582,20 +2592,28 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   const cpu = D.incidents.find((i) => i.lead === 'cpu'), crash = D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'crash' && i.end === i.start);
   const pick = (p, id) => p.click(`#incList .inc[data-id="${id}"] .inc-main`);
   const num = (s) => parseFloat(s.replace(/\./g, '').replace(',', '.'));
-  // -- item 1: the means of the tables are means over time; a range one second shorter than the capture shows no jump
+  // -- item 1: the means of the tables are means over time; a range one second shorter than the capture shows no jump.
+  // (fix round 2, P3-R77) For the whole capture the tables show the values the report data state: they are means over time.
   const avgCells = () => page.evaluate(() => ['tSessions', 'tApps', 'tProcs'].map((id) => { const t = document.getElementById(id), c = [...t.querySelectorAll('thead th')].findIndex((x) => x.textContent.startsWith('CPU Ø %'));
     return [...t.querySelectorAll('tbody tr[data-id]')].map((r) => [Number(r.dataset.id), r.cells[c].textContent]); }));
   const whole = await avgCells(), nS = D.snapT.length, lists = [D.sessions, D.apps, D.procs], key = [(x) => x.i, (x) => x.i, (x) => x.k], off = [];
-  whole.forEach((rows, k) => rows.forEach(([id, text]) => { const x = lists[k].find((y) => key[k](y) === id), m = x.cpu ? timeMeans(D, x, 0, nS).cpuAvg : x.cpuAvg; if (!(Math.abs(num(text) - m) <= 0.011)) off.push(k + ':' + id + ' ' + text + ' statt ' + m); }));
+  whole.forEach((rows, k) => rows.forEach(([id, text]) => { const x = lists[k].find((y) => key[k](y) === id), m = x.cpu ? timeMeans(D, x, 0, nS).cpuAvg : x.cpuAvg; if (!(Math.abs(num(text) - m) <= 0.011 && num(text) === x.cpuAvg)) off.push(k + ':' + id + ' ' + text + ' statt ' + m + ' (geliefert ' + x.cpuAvg + ')'); }));
   const excel = D.procs.filter((x) => x.name === 'EXCEL.EXE').sort((a, b) => b.cpuSec - a.cpuSec)[0], excelSess = D.sessions.find((s) => s.i === excel.s);
   const cell = (rows, id) => num(rows.find((r) => r[0] === id)[1]);
-  ok(whole[0].length === D.sessions.length && whole[1].length === D.apps.length && whole[2].length === D.procs.length && !off.length && cell(whole[2], excel.k) === excel.cpuAvg && Math.abs(excelSess.cpuAvg - cell(whole[0], excelSess.i)) > 1,
-    'gesamte Messung: "CPU Ø %" ist das Mittel ueber die Zeit (Prozess: der gelieferte Wert; Sitzung: nicht das Mittel der Schnappschuesse): ' + off.slice(0, 3).join(' | '));
+  // (the session of the CPU incident: the plain mean of its snapshots lies more than one point above the mean over time)
+  const plain = (a) => { const v = a.filter((x) => x != null); return v.reduce((x, y) => x + y, 0) / v.length; };
+  ok(whole[0].length === D.sessions.length && whole[1].length === D.apps.length && whole[2].length === D.procs.length && !off.length && cell(whole[2], excel.k) === excel.cpuAvg && cell(whole[0], excelSess.i) === excelSess.cpuAvg && plain(excelSess.cpu) - cell(whole[0], excelSess.i) > 1,
+    'gesamte Messung: "CPU Ø %" ist der gelieferte Wert und das Mittel ueber die Zeit (Sitzung: nicht das Mittel der Schnappschuesse): ' + off.slice(0, 3).join(' | '));
+  // "RAM Ø" and, for sessions, "Prozesse Ø" and "ICA RTT Ø ms": the cells of the whole capture are the delivered values
+  const wsOff = await page.evaluate(() => [['tSessions', D.sessions, ['wsAvg', 'procsAvg', 'rttAvg']], ['tApps', D.apps, ['wsAvg', 'instAvg', 'wsPerInst']], ['tProcs', D.procs, ['wsAvg']]].flatMap(([id, list, keys]) => { const t = document.getElementById(id);
+    const cols = keys.map((k) => [k, [...t.querySelectorAll('thead th')].findIndex((x) => x.dataset.k === k)]).filter(([, c]) => c >= 0), by = new Map(list.map((x) => [String(id === 'tProcs' ? x.k : x.i), x]));
+    return [...t.querySelectorAll('tbody tr[data-id]')].flatMap((r) => cols.filter(([k, c]) => r.cells[c].textContent !== (k === 'wsAvg' || k === 'wsPerInst' ? fmtMB(by.get(r.dataset.id)[k]) : fmt(by.get(r.dataset.id)[k], k === 'instAvg' ? 1 : 0))).map(([k, c]) => id + ' ' + r.dataset.id + ' ' + k + ': ' + r.cells[c].textContent)); }));
+  ok(!wsOff.length, 'gesamte Messung: "RAM Ø", "Prozesse Ø", "gleichzeitig Ø", "RAM Ø je Instanz" und "ICA RTT Ø ms" sind die gelieferten Werte: ' + wsOff.slice(0, 3).join(' | '));
   await page.evaluate(() => window.WP.setZoom(FULL.t0, FULL.t1 - 1000));
   const shorter = await avgCells(), jumps = []; let compared = 0;
   whole.forEach((rows, k) => rows.forEach(([id, text]) => { const x = lists[k].find((y) => key[k](y) === id), now = shorter[k].find((r) => r[0] === id); if (!x.cpu || x.cpu.length < 30 || !now) return; compared++;
     if (Math.abs(num(now[1]) - num(text)) > Math.max(0.05, 0.03 * num(text))) jumps.push(k + ':' + id + ' ' + text + ' -> ' + now[1]); }));
-  const wsJump = await page.evaluate(() => ['sessions', 'apps', 'procs'].flatMap((k) => { const w = new Map(wholeRows(k).map((r) => [k === 'procs' ? r.k : r.i, r])); return rangeRows(k, FULL.t0, FULL.t1 - 1000).filter((r) => (r.ws || []).length >= 30)
+  const wsJump = await page.evaluate(() => ['sessions', 'apps', 'procs'].flatMap((k) => { const w = new Map(D[k].map((r) => [k === 'procs' ? r.k : r.i, r])); return rangeRows(k, FULL.t0, FULL.t1 - 1000).filter((r) => (r.ws || []).length >= 30)
     .filter((r) => Math.abs(r.wsAvg - w.get(k === 'procs' ? r.k : r.i).wsAvg) > Math.max(1, 0.03 * r.wsAvg)).map((r) => k + ' ' + (r.name || r.user)); }));
   ok(await page.evaluate(() => window.WP.zoom !== null) && compared > 150 && !jumps.length && Math.abs(cell(shorter[2], excel.k) - excel.cpuAvg) <= 0.02 && !wsJump.length, 'ein Zeitraum, eine Sekunde kuerzer als die Messung: "CPU Ø %" und "RAM Ø" springen nicht: ' + jumps.slice(0, 3).concat(wsJump.slice(0, 3)).join(' | '));
   // -- item 15: the use of the sessions is computed once per range; the two functions take their bounds in either order
@@ -2629,14 +2647,33 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   await pick(page, crash.id);
   const marks = await page.locator('#charts .card svg').evaluateAll((svgs) => svgs.map((svg) => { const m = svg.querySelector('.incband'); if (!m || !m.classList.contains('incmark')) return null;
     const cs = getComputedStyle(m), c = svg.querySelector('clipPath rect'), grid = svg.querySelector('line[stroke="var(--grid)"]');
-    return { stroke: cs.stroke, width: parseFloat(cs.strokeWidth), solid: cs.strokeDasharray === 'none', op: parseFloat(cs.strokeOpacity) * parseFloat(cs.opacity) * parseFloat(cs.fillOpacity), ground: getComputedStyle(svg.closest('.card')).backgroundColor,
-      grid: getComputedStyle(grid).stroke, tall: m.getBBox().height - Number(c.getAttribute('height')), wide: m.getBBox().width, halo: !!svg.querySelector('.inchalo'), over: !!(svg.querySelector('g[clip-path]').compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING),
-      stack: !!svg.closest('#chCpuStack, #chMemStack'), lines: svg.querySelectorAll('g[clip-path] path[fill="none"]').length,
-      free: cs.pointerEvents === 'none', n: svg.querySelectorAll('.incband').length }; }));
-  const weak = marks.filter((m) => !(m && m.n === 1 && m.op === 1 && m.width >= 2 && m.solid && contrast(m.stroke, m.ground) >= 3 && m.stroke !== m.grid && m.tall >= 4 && m.wide >= 8 && m.halo && m.over === m.stack && (m.stack || m.lines >= 1) && m.free));
+    // (fix round 2, item 2) the mark is a dashed line (the stem, .incmark) and a cap of its own above the plot (.inccap) with a halo
+    const cap = svg.querySelector('.inccap'), halo = svg.querySelector('.inchalo'), cc = cap ? getComputedStyle(cap) : null, box = m.getBBox(), cb = cap ? cap.getBBox() : null, plot = { y: Number(c.getAttribute('y')) + 2, h: Number(c.getAttribute('height')) - 4 };
+    const ground = getComputedStyle(svg.closest('.card')).backgroundColor, g = svg.querySelector('g[clip-path]'), lineStrokes = [...g.querySelectorAll('path[fill="none"]')].map((e) => getComputedStyle(e).stroke);
+    // what is drawn in the surface colour after the measured lines or areas and reaches into the plot at the time of the mark
+    const cover = [...svg.querySelectorAll('path, rect, line, circle, polygon')].filter((e) => !g.contains(e) && !e.closest('defs') && (g.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)).filter((e) => { const s = getComputedStyle(e);
+      if (s.visibility === 'hidden' || s.display === 'none') return false;
+      const sw = s.stroke === ground && parseFloat(s.strokeWidth) > 0 && parseFloat(s.strokeOpacity) > 0 ? parseFloat(s.strokeWidth) / 2 : null, fl = s.fill === ground && parseFloat(s.fillOpacity) > 0;
+      if (sw == null && !fl) return false;
+      const b = e.getBBox(), d = sw || 0; return b.x - d <= box.x + 1 && b.x + b.width + d >= box.x - 1 && b.y + b.height + d > plot.y + 0.25 && b.y - d < plot.y + plot.h - 0.25; }).map((e) => e.getAttribute('class') || e.tagName);
+    return { stroke: cs.stroke, width: parseFloat(cs.strokeWidth), solid: cs.strokeDasharray === 'none', op: parseFloat(cs.strokeOpacity) * parseFloat(cs.opacity) * parseFloat(cs.fillOpacity), ground,
+      grid: getComputedStyle(grid).stroke, tall: cb ? box.y + box.height - cb.y - Number(c.getAttribute('height')) : 0, wide: cb ? cb.width : 0, halo: !!halo, over: !!(g.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING),
+      stack: !!svg.closest('#chCpuStack, #chMemStack'), lines: lineStrokes.length,
+      free: cs.pointerEvents === 'none' && !!cc && cc.pointerEvents === 'none' && !!halo && getComputedStyle(halo).pointerEvents === 'none', n: svg.querySelectorAll('.incband').length,
+      caps: svg.querySelectorAll('.inccap').length, capFill: cc ? cc.fill : '', capSolid: !!cc && cc.strokeDasharray === 'none' && parseFloat(cc.fillOpacity) * parseFloat(cc.opacity) === 1, capAbove: !!cb && cb.y + cb.height <= plot.y,
+      haloOnCap: !!halo && halo.getAttribute('d') === cap.getAttribute('d') && svg.querySelectorAll('.inchalo').length === 1 && getComputedStyle(halo).stroke === ground,
+      likeLine: lineStrokes.length === 1 && lineStrokes[0] === cs.stroke, sameHue: lineStrokes.includes(cs.stroke), cover }; }));
+  const weak = marks.filter((m) => !(m && m.n === 1 && m.op === 1 && m.width >= 2 && !m.solid && contrast(m.stroke, m.ground) >= 3 && m.stroke !== m.grid && m.tall >= 4 && m.wide >= 8 && m.halo && m.over === m.stack && (m.stack || m.lines >= 1) && m.free
+    && m.caps === 1 && m.capSolid && m.capAbove && contrast(m.capFill, m.ground) >= 3));
   // (follow-up: above the lines the mark and its halo cut a gap into every curve at the very moment of the incident)
-  ok(crash.end === crash.start && marks.length === 14 && marks.filter((m) => m && m.stack).length === 2 && !weak.length, 'Vorfall ohne Dauer: in jedem Diagramm eine eigene Marke (Linie mit Kappe ueber dem Diagramm, deckend, Kontrast mindestens 3:1 zum Grund, hinter den Messlinien und ueber den Flaechen eines gestapelten Diagramms, ohne den Zeiger zu fangen): ' +
-    JSON.stringify(weak[0] || null) + ' ' + (marks[0] ? contrast(marks[0].stroke, marks[0].ground).toFixed(2) : ''));
+  ok(crash.end === crash.start && marks.length === 14 && marks.filter((m) => m && m.stack).length === 2 && !weak.length, 'Vorfall ohne Dauer: in jedem Diagramm eine eigene Marke (gestrichelte Linie mit deckender Kappe ueber dem Diagramm, Kontrast mindestens 3:1 zum Grund, hinter den Messlinien und ueber den Flaechen eines gestapelten Diagramms, ohne den Zeiger zu fangen): ' +
+    JSON.stringify(weak[0] || null) + ' ' + (marks[0] ? contrast(marks[0].stroke, marks[0].ground).toFixed(2) + ' ' + (marks[0].capFill ? contrast(marks[0].capFill, marks[0].ground).toFixed(2) : 'keine Kappe') : ''));
+  // (fix round 2, item 2) at the time of the incident nothing in the surface colour lies over what was measured (the halo
+  // belongs to the cap alone), and the mark cannot be taken for the line of a chart with one series: it is dashed and has
+  // another colour than every measured line of its chart
+  const covered = marks.map((m, k) => m && (m.cover.length || !m.haloOnCap) ? k + ': ' + m.cover.join('+') + (m.haloOnCap ? '' : ' Hof nicht nur an der Kappe') : '').filter(Boolean);
+  const oneSeries = marks.filter((m) => m && !m.stack && m.lines === 1).length, alike = marks.map((m, k) => m && (m.solid || m.likeLine || m.sameHue) ? k : -1).filter((k) => k >= 0);
+  ok(!covered.length && oneSeries >= 3 && !alike.length, 'Vorfall ohne Dauer: nichts in der Farbe der Flaeche liegt ueber den Messlinien oder Flaechen, die Marke gleicht keiner Messlinie (gestrichelt, andere Farbe; ' + oneSeries + ' Diagramme mit einer Reihe): ' + covered.concat(alike.map((k) => 'gleicht einer Linie: ' + k)).slice(0, 4).join(' | '));
   let info = await page.locator('#rangeInfo').innerText();
   ok(info.endsWith(`· Vorfall ${crash.id}: Anwendungsabsturz`) && !info.includes('Vorfall aus Ereignissen'), 'Zeitraumleiste nennt einen Vorfall aus Ereignissen bei seiner Art, ohne das Wort doppelt: ' + info);
   // a span with a duration: tinted; in the stacked charts above the areas, with its two edges; never in the way of the pointer
@@ -2757,30 +2794,36 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   const um = await openExpert(browser, path.join(dir, 'report.html'), scheme), us = D.sessions.find((x) => x.user && x.client && x.domain);
   await showTab(um.page, 'sessions'); await um.page.click(`#tSessions tbody tr[data-id="${us.i}"]`);
   ok(oneLine(await um.page.locator('#dSessions .kv').innerText()).includes(`Domäne ${us.domain} Client ${us.client} Anmeldung`), 'unmaskiert: die Beschriftungen stehen vor ihren Werten');
-  // -- item 1 (follow-up): every mean ("Ø") of the tabs of sessions, applications and processes says in its title which mean
-  // it is. CPU and working set of the three tables are means over time (from the series). What the report data hold no series
-  // for is the plain mean of the snapshots as delivered, and says so: processes and instances at a time, the working set per
-  // instance, the working set of one application in one session (the pair tables of the details), the ICA round trip.
-  // (an application whose working set over time differs from the delivered plain mean by more than a twentieth)
-  const ma = D.apps.filter((a) => a.ws && a.wsPerInst != null && a.instAvg > 1.2 && Math.abs(timeMeans(D, a, 0, D.snapT.length).wsAvg - a.wsAvg) > 0.05 * a.wsAvg).sort((a, b) => b.sess - a.sess)[0];
+  // -- item 1 (follow-up; fix round 2, P3-R77): every mean ("Ø") of the tabs of sessions, applications and processes says in
+  // its title which mean it is. The report data state means over time, so every one of them is a mean over time and no title
+  // claims a mean of the snapshots: CPU and working set of the three tables, processes and instances at a time, the working
+  // set per instance, the working set of one application in one session (the pair tables of the details), the ICA round
+  // trip and the Citrix values of a session.
+  // (an application whose working set over time differs from the plain mean of its snapshots by more than a twentieth)
+  const plainMean = (a) => { const v = a.filter((x) => x != null); return v.reduce((x, y) => x + y, 0) / v.length; };
+  const ma = D.apps.filter((a) => a.ws && a.wsPerInst != null && a.instAvg > 1.2 && Math.abs(plainMean(a.ws) - a.wsAvg) > 0.05 * a.wsAvg).sort((a, b) => b.sess - a.sess)[0];
   await showTab(um.page, 'apps'); await um.page.click(`#tApps tbody tr[data-id="${ma.i}"]`);
   await um.page.locator('#dApps table tbody tr').first().waitFor();
   const means = await um.page.evaluate(() => [...document.querySelectorAll('#xt-sessions th, #xt-apps th, #xt-procs th, #dApps .kv span')].filter((e) => e.textContent.includes('Ø'))
     .map((e) => [e.closest('table') ? e.closest('table').id.replace(/\d+$/, '') : 'kv', (e.closest('table') ? e.textContent : e.childNodes[0].textContent).trim(), e.title || '']));
-  const OVER_TIME = /^(|.*, )Mittelwert über die (Zeit|Laufzeit)( |,|$)/, OF_SNAPS = /Mittelwert (der|über die) Schnappschüsse/;
-  const timeMean = ['tSessions|CPU Ø %', 'tSessions|RAM Ø', 'tApps|CPU Ø %', 'tApps|RAM Ø gesamt', 'tProcs|CPU Ø %', 'tProcs|RAM Ø', 'sp|CPU Ø %', 'sp|RAM Ø'];
-  const snapMean = ['tSessions|Prozesse Ø', 'sa|RAM Ø', 'tApps|gleichzeitig Ø', 'tApps|RAM Ø je Instanz', 'as|RAM Ø', 'kv|gleichzeitig Ø', 'kv|RAM je Instanz Ø'].concat(D.sessions.some((x) => x.rttAvg != null) ? ['tSessions|ICA RTT Ø ms'] : []);
+  const OVER_TIME = /(^|, | als )Mittelwert über die (Zeit|Laufzeit)( |,|$)/, OF_SNAPS = /Mittel(wert)? (der|über die) Schnappschüsse/;
+  const timeMean = ['tSessions|CPU Ø %', 'tSessions|RAM Ø', 'tApps|CPU Ø %', 'tApps|RAM Ø gesamt', 'tProcs|CPU Ø %', 'tProcs|RAM Ø', 'sp|CPU Ø %', 'sp|RAM Ø',
+    'tSessions|Prozesse Ø', 'sa|RAM Ø', 'tApps|gleichzeitig Ø', 'tApps|RAM Ø je Instanz', 'as|RAM Ø', 'kv|gleichzeitig Ø', 'kv|RAM je Instanz Ø'].concat(D.sessions.some((x) => x.rttAvg != null) ? ['tSessions|ICA RTT Ø ms'] : [], D.citrix.some((c) => c.s === us.i) ? ['sx|Ø'] : []);
+  const snapMean = [];                                             // (fix round 2) none is left
   const said = new Map(means.map(([t, h, title]) => [t + '|' + h, title]));
   const untold = means.filter(([, , title]) => OVER_TIME.test(title) === OF_SNAPS.test(title)).map(([t, h, title]) => `${t}|${h}: "${title}"`)
     .concat(timeMean.filter((k) => !OVER_TIME.test(said.get(k) || '')).map((k) => k + ' nicht ueber die Zeit'), snapMean.filter((k) => !OF_SNAPS.test(said.get(k) || '')).map((k) => k + ' nicht als Mittel der Schnappschuesse'));
-  ok(means.length >= timeMean.length + snapMean.length && !untold.length, 'jeder Mittelwert der Reiter Sitzungen, Anwendungen und Prozesse sagt im Titel, ob er ueber die Zeit oder ueber die Schnappschuesse gebildet ist: ' + untold.slice(0, 4).join(' | '));
-  // the titles are true: a mean of the snapshots is the delivered value; the mean over time beside it is not the delivered plain mean
+  ok(means.length >= timeMean.length + snapMean.length && D.citrix.some((c) => c.s === us.i) && !untold.length && !means.some(([, , title]) => OF_SNAPS.test(title)),
+    'jeder Mittelwert der Reiter Sitzungen, Anwendungen und Prozesse sagt im Titel, dass er ueber die Zeit gebildet ist, keiner nennt sich Mittel der Schnappschuesse: ' + untold.concat(means.filter(([, , title]) => OF_SNAPS.test(title)).map(([t, h]) => t + '|' + h + ' nennt die Schnappschuesse')).slice(0, 4).join(' | '));
+  // the titles are true: every cell is the delivered value, and the delivered working set is the mean over time of its series,
+  // not the plain mean of the snapshots; the value per instance is the quotient of the two delivered means
   const maRow = await um.page.evaluate((i) => { const t = document.getElementById('tApps'), col = (k) => [...t.querySelectorAll('thead th')].findIndex((x) => x.dataset.k === k), r = t.querySelector(`tbody tr[data-id="${i}"]`), a = D.apps.find((x) => x.i === i);
     const pt = document.querySelector('#dApps table'), pc = [...pt.querySelectorAll('thead th')].findIndex((x) => x.dataset.k === 'wsAvg'), pair = D.pairs.filter((x) => x.a === i).sort((x, y) => y.cpuSec - x.cpuSec)[0];
     return { perInst: r.cells[col('wsPerInst')].textContent, perInstData: fmtMB(a.wsPerInst), inst: r.cells[col('instAvg')].textContent, instData: fmt(a.instAvg, 1), ws: r.cells[col('wsAvg')].textContent, wsData: fmtMB(a.wsAvg), wsTime: fmtMB(snapUse(a, 0, GRID.snap.length).wsAvg),
       pair: pt.querySelector(`tbody tr[data-id="${pair.s}"]`).cells[pc].textContent, pairData: fmtMB(pair.wsAvg), kv: document.querySelector('#dApps .kv').textContent }; }, ma.i);
-  ok(maRow.perInst === maRow.perInstData && maRow.inst === maRow.instData && maRow.pair === maRow.pairData && maRow.kv.includes('RAM je Instanz Ø ' + maRow.perInstData) && maRow.ws === maRow.wsTime && maRow.ws !== maRow.wsData,
-    `die Titel stimmen: "RAM Ø je Instanz", "gleichzeitig Ø" und "RAM Ø" je Sitzung sind die gelieferten Mittel der Schnappschuesse, "RAM Ø gesamt" ist das Mittel ueber die Zeit (${ma.name}: ${JSON.stringify(maRow).substring(0, 260)})`);
+  ok(maRow.perInst === maRow.perInstData && maRow.inst === maRow.instData && maRow.pair === maRow.pairData && maRow.kv.includes('RAM je Instanz Ø ' + maRow.perInstData) && maRow.ws === maRow.wsData
+    && Math.abs(timeMeans(D, ma, 0, D.snapT.length).wsAvg - ma.wsAvg) <= 1.01 && Math.abs(plainMean(ma.ws) - ma.wsAvg) > 0.05 * ma.wsAvg && Math.abs(ma.wsAvg / ma.instAvg - ma.wsPerInst) <= 0.06 * ma.wsPerInst,
+    `die Titel stimmen: "RAM Ø je Instanz", "gleichzeitig Ø", "RAM Ø" je Sitzung und "RAM Ø gesamt" sind die gelieferten Werte, "RAM Ø gesamt" ist das Mittel ueber die Zeit und nicht das Mittel der Schnappschuesse (${ma.name}: ${JSON.stringify(maRow).substring(0, 260)})`);
   await um.page.close();
 
   // -- items 2, 20: 1920 x 1080: the three wide tables fit their box; every row of charts holds plots of one height
@@ -2843,10 +2886,17 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   // (P3-R71, "durchgehend Server") The measured machine is never called "Host": not in the page's own texts, not in what the
   // page shows, not in the texts of the report data and of the text files they come from. "Host" stays where it means the
   // hypervisor ("VMware-Host", the "Hosts" of vCenter in the terms of the catalogue) and in "hostbasiert" (a kind of printer
-  // driver); names of programs ("CtxSvcHost.exe") are no words of their own.
+  // driver); names of programs ("CtxSvcHost.exe") are no words of their own. (fix round 2: since its round 5 the catalogue
+  // also says "Host" and "des Hosts" for the hypervisor in a sentence about VMware, before or after the word: "ob die Summe
+  // der vCPU zum Host passt, beurteilt die Betreuung von VMware", "… Co-Stop des Hosts" after "der VMware-Host" more than
+  // 150 characters before. "Host" or "Hosts" as a word of its own in a sentence, or a part of one after a semicolon, that names
+  // VMware is the hypervisor.)
+  const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
   const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
-    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index)))).map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
-  ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2, 'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
+    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
+    .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
+  ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2,
+    'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
   const ownHost = hostWords(own);
   ok(own.includes('% des Servers') && own.includes('Server-Kapazität') && ownHost.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Host": ' + ownHost.join(' | '));
   const strings = (v, out) => { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) v.forEach((x) => strings(x, out)); else if (v && typeof v === 'object') Object.values(v).forEach((x) => strings(x, out)); return out; };

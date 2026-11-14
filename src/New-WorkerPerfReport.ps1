@@ -240,11 +240,27 @@ function Get-MetaValue([string]$Name) {
     return (Get-WorkerPerfField $model.Meta $Name)
 }
 
+function Get-TimeMean([double[]]$Values) {
+    # Mean over time of a snapshot series (NaN = no value): every snapshot weighs the seconds it stands for, see
+    # $snapWeight. Without a value NaN; where the snapshots with a value stand for no time, their plain mean.
+    $sum = 0.0; $sec = 0.0; $plain = 0.0; $n = 0
+    for ($i = 0; $i -lt $Values.Length; $i++) {
+        $v = $Values[$i]
+        if ($v -ne $v -or [double]::IsInfinity($v)) { continue }
+        $sum += $v * $snapWeight[$i]; $sec += $snapWeight[$i]; $plain += $v; $n++
+    }
+    if ($sec -gt 0) { return $sum / $sec }
+    if ($n -gt 0) { return $plain / $n }
+    return $nan
+}
+
 function Get-EntitySummary($Entity) {
     # Statistics and snapshot-grid series of a group of processes (a session or an application), taken over the
-    # snapshots in which the group had at least one living process.
+    # snapshots in which the group had at least one living process. The means (CPU, working set, private bytes, number
+    # of processes) are means over time, see $snapWeight; the percentile and the maximum are those of the snapshots.
     $cpuPct = New-WorkerPerfNanArray $nP; $wsMB = New-WorkerPerfNanArray $nP; $ioKBs = New-WorkerPerfNanArray $nP
     $present = 0; $cpuMs = 0.0; $io = 0.0; $nSum = 0; $nMax = 0
+    $sec = 0.0; $cpuSec = 0.0; $cpuW = 0.0; $wsW = 0.0; $privW = 0.0; $nW = 0.0
     $cpuL = New-Object System.Collections.Generic.List[double]
     $wsL = New-Object System.Collections.Generic.List[double]
     $privL = New-Object System.Collections.Generic.List[double]
@@ -255,19 +271,24 @@ function Get-EntitySummary($Entity) {
         if ($c -le 0) { continue }
         $present++; $nSum += $c
         if ($c -gt $nMax) { $nMax = $c }
+        $sw = $snapWeight[$i]; $sec += $sw
         $pct = $cpuA[$i] * $capFactor[$i]
-        $cpuPct[$i] = $pct; if ($pct -eq $pct) { $cpuL.Add($pct) }
-        $wsMB[$i] = $wsA[$i] / 1024.0; $wsL.Add($wsMB[$i])
-        $privL.Add($privA[$i] / 1024.0)
+        $cpuPct[$i] = $pct; if ($pct -eq $pct) { $cpuL.Add($pct); $cpuW += $pct * $sw; $cpuSec += $sw }
+        $wsMB[$i] = $wsA[$i] / 1024.0; $wsL.Add($wsMB[$i]); $wsW += $wsMB[$i] * $sw
+        $privL.Add($privA[$i] / 1024.0); $privW += $privA[$i] / 1024.0 * $sw
+        $nW += $c * $sw
         if ($snapSecArr[$i] -gt 0) { $ioKBs[$i] = $ioA[$i] / 1024.0 / $snapSecArr[$i] }
     }
     $c = Get-Stats $cpuL.ToArray(); $w = Get-Stats $wsL.ToArray(); $p = Get-Stats $privL.ToArray()
-    $nAvg = 0.0
+    # (snapshots that stand for no time: the plain means)
+    $cpuAvg = $c.Avg; $wsAvg = $w.Avg; $privAvg = $p.Avg; $nAvg = 0.0
     if ($present -gt 0) { $nAvg = $nSum / $present }
+    if ($cpuSec -gt 0) { $cpuAvg = $cpuW / $cpuSec }
+    if ($sec -gt 0) { $wsAvg = $wsW / $sec; $privAvg = $privW / $sec; $nAvg = $nW / $sec }
     return @{
         Present = $present; CpuMs = $cpuMs; IoBytes = $io
-        CpuAvg = $c.Avg; CpuP95 = $c.P95; CpuMax = $c.Max
-        WsAvg = $w.Avg; WsMax = $w.Max; PrivAvg = $p.Avg; PrivMax = $p.Max
+        CpuAvg = $cpuAvg; CpuP95 = $c.P95; CpuMax = $c.Max
+        WsAvg = $wsAvg; WsMax = $w.Max; PrivAvg = $privAvg; PrivMax = $p.Max
         NAvg = $nAvg; NMax = $nMax
         Cpu = $cpuPct; Ws = $wsMB; Io = $ioKBs
     }
@@ -387,6 +408,10 @@ $cores = [int]$model.Meta.Cores
 $offsetMin = [double]$model.Meta.OffsetMinutes
 $fastSec = [double]$model.Meta.FastSec
 $snapSecArr = [double[]]$snap.ElapsedSec
+# The seconds each snapshot stands for in a mean over time. The rule is stated once, in Import-WorkerPerfRun
+# (WorkerPerf.Load.ps1, "Means over time"): every mean of the report data for sessions, applications, processes and
+# pairs follows it, and so do the means the report page computes for a time range.
+$snapWeight = [double[]]$snap.WeightSec
 $capFactor = New-Object double[] $nP          # CPU ms -> % of the host capacity in the snapshot
 for ($i = 0; $i -lt $nP; $i++) {
     $capMs = $snapSecArr[$i] * 1000.0 * $cores
@@ -752,7 +777,7 @@ foreach ($s in $sessions) {
         }
         if ($allN -gt 0) { $inWarnPct = [Math]::Round(100.0 * $warnN / $allN, 1) }
     }
-    $rttSt = Get-CleanStats ([double[]]$s.Rtt)
+    $rttSt = Get-CleanStats ([double[]]$s.Rtt)          # percentile and maximum of the snapshots; the mean is taken over time
     $activePct = $null
     if ([int]$s.SeenN -gt 0) { $activePct = [Math]::Round(100.0 * [int]$s.ActiveN / [int]$s.SeenN, 1) }
     $idleMaxMin = $null
@@ -770,7 +795,7 @@ foreach ($s in $sessions) {
             cpuAvg = (Get-Round $sum.CpuAvg 2); cpuP95 = (Get-Round $sum.CpuP95 2); cpuMax = (Get-Round $sum.CpuMax 2)
             wsAvg = (Get-Round $sum.WsAvg 0); wsMax = (Get-Round $sum.WsMax 0); privAvg = (Get-Round $sum.PrivAvg 0); privMax = (Get-Round $sum.PrivMax 0)
             ioMB = [Math]::Round($sum.IoBytes / 1MB, 1); procsAvg = [Math]::Round($sum.NAvg, 1); procsMax = $sum.NMax
-            rttAvg = (Get-Round $rttSt.Avg 1); rttP95 = (Get-Round $rttSt.P95 1); rttMax = (Get-Round $rttSt.Max 1)
+            rttAvg = (Get-Round (Get-TimeMean ([double[]]$s.Rtt)) 1); rttP95 = (Get-Round $rttSt.P95 1); rttMax = (Get-Round $rttSt.Max 1)
             inP95 = (Get-Round $inSt.P95 1); inMax = (Get-Round $inSt.Max 1); inWarnPct = $inWarnPct; profileVolume = $profileVolume
             cpu = (New-JsonSeries $sum.Cpu 2); ws = (New-JsonSeries $sum.Ws 0); io = (New-JsonSeries $sum.Io 1); rtt = (New-JsonSeries ([double[]]$s.Rtt) 1)
             inT = (New-JsonIntegers $inT); inMs = (New-JsonSeries $inMs.ToArray() 1); events = $ownEvents
@@ -784,8 +809,7 @@ foreach ($key in $pairKeys) {
     $pr = $model.Pairs[$key]
     $a = [int]$pr.A
     if ($appSessions.ContainsKey($a)) { $appSessions[$a]++ } else { $appSessions[$a] = 1 }
-    $wsAvg = 0.0
-    if ([int]$pr.Snaps -gt 0) { $wsAvg = [double]$pr.WsSumKB / [int]$pr.Snaps / 1024.0 }
+    $wsAvg = [double]$pr.WsAvgKB / 1024.0             # mean over the time the pair had a living process
     $pairsOut.Add([ordered]@{
             s = [int]$pr.S; a = $a; inst = [int]$pr.Instances; cpuSec = [Math]::Round([double]$pr.CpuMs / 1000.0, 1)
             wsAvg = [Math]::Round($wsAvg, 0); wsMax = [Math]::Round([double]$pr.WsMaxKB / 1024.0, 0); ioMB = [Math]::Round([double]$pr.IoBytes / 1MB, 1)
@@ -1003,9 +1027,10 @@ foreach ($k in $selK) {
     $pr = $procAll[$k]
     $f0 = [int]$pr.FirstP; $f1 = [int]$pr.LastP
     $cpuA = $pCpu[$k]; $wsA = $pWs[$k]
-    $carry = $nan; $lifeSec = 0.0
+    $carry = $nan; $lifeSec = 0.0; $cpuW = 0.0; $cpuSec = 0.0
     for ($p = $f0; $p -le $f1; $p++) {
         $cpuA[$p] = $cpuA[$p] * $capFactor[$p]
+        if ($cpuA[$p] -eq $cpuA[$p]) { $cpuW += $cpuA[$p] * $snapWeight[$p]; $cpuSec += $snapWeight[$p] }
         if ($wsA[$p] -eq $wsA[$p]) { $carry = $wsA[$p] / 1024.0 }
         $wsA[$p] = $carry
         $lifeSec += $snapSecArr[$p]
@@ -1016,8 +1041,11 @@ foreach ($k in $selK) {
         for ($p = $f0; $p -le $f1; $p++) { if ($wsA[$p] -eq $wsA[$p]) { if ($null -eq $wsFirst) { $wsFirst = [Math]::Round($wsA[$p]) }; $wsLast = [Math]::Round($wsA[$p]) } }
         $printWs[$k] = @{ Start = $wsFirst; End = $wsLast }
     }
+    # mean CPU load over the time the process was seen (see $snapWeight); where its snapshots stand for no time, the CPU
+    # time over the capacity of the seconds measured
     $cpuAvg = $null
-    if ($lifeSec -gt 0 -and $cores -gt 0) { $cpuAvg = [Math]::Round([double]$pr.CpuMs / ($lifeSec * 1000.0 * $cores) * 100.0, 2) }
+    if ($cpuSec -gt 0) { $cpuAvg = [Math]::Round($cpuW / $cpuSec, 2) }
+    elseif ($lifeSec -gt 0 -and $cores -gt 0) { $cpuAvg = [Math]::Round([double]$pr.CpuMs / ($lifeSec * 1000.0 * $cores) * 100.0, 2) }
     $startMs = $null
     if ($null -ne $pr.StartMs) { $startMs = [long]$pr.StartMs }
     $procOut.Add([ordered]@{

@@ -185,8 +185,9 @@ section[hidden] { display: none; }
 body[data-view="expert"] .chart .incband { fill-opacity: .16; }
 .chart .incveil { fill: var(--text); fill-opacity: .07; pointer-events: none; }
 .chart .incedge { fill: none; stroke: var(--text); stroke-width: 1; stroke-opacity: .85; pointer-events: none; }
-.chart .incband.incmark, body[data-view="expert"] .chart .incband.incmark { fill-opacity: 1; stroke: var(--s1); stroke-width: 2; stroke-linejoin: round; }
-.chart .inchalo { fill: none; stroke: var(--surface); stroke-width: 5; pointer-events: none; }
+.chart .incband.incmark, body[data-view="expert"] .chart .incband.incmark { fill: none; fill-opacity: 1; stroke: var(--text); stroke-width: 2; stroke-dasharray: 5 3; }
+.chart .inccap { fill: var(--s1); stroke: var(--s1); stroke-width: 2; stroke-linejoin: round; pointer-events: none; }
+.chart .inchalo { fill: none; stroke: var(--surface); stroke-width: 4; stroke-linejoin: round; pointer-events: none; }
 .chart .hit { cursor: crosshair; }
 .chartnote { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); white-space: nowrap; z-index: 5; display: none; max-width: 420px; overflow: hidden; }
@@ -1176,16 +1177,18 @@ function drawChart(host) {
 
   // The time of the incident: a tinted span behind the lines. The areas of a stacked chart are opaque: there the span is
   // drawn above them, with a veil and its two edges. A span narrower than BAND_MIN px (an incident without duration: a crash,
-  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own, a line with a cap over the
-  // plot. Like the span it lies behind the lines (the curve stays whole at the very moment of the incident) and above the
-  // areas of a stacked chart. None of them catches the pointer.
+  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own, a dashed line in the text colour
+  // with a cap in the colour of the tint above the plot. The dashes and the colour tell it from the line of a chart with one
+  // series. Like the span it lies behind the lines and above the areas of a stacked chart; only the cap, which stands in the
+  // margin above the plot, has a halo in the surface colour: nothing in that colour is drawn over what was measured, so every
+  // curve stays whole at the very moment of the incident. None of them catches the pointer.
   const band = chartBand(opt, z);
   let bandUnder = "", bandOver = "";
   if (band) {
     const a = X(Math.max(z.t0, band.t0)), b = X(Math.min(z.t1, band.t1));
     if (b - a < BAND_MIN) {
-      const x = f1(Math.max(m.l + 1, Math.min(m.l + pw - 1, (a + b) / 2))), line = `M${x} ${m.t}V${m.t + ph}`;
-      const mark = `<path class="inchalo" d="${line}"/><path class="incband incmark" d="${line}M${x} ${m.t - 1}l-5 -7h10z"/>`;
+      const x = f1(Math.max(m.l + 1, Math.min(m.l + pw - 1, (a + b) / 2))), cap = `M${x} ${m.t - 2}l-5 -6h10z`;
+      const mark = `<path class="incband incmark" d="M${x} ${m.t}V${m.t + ph}"/><path class="inchalo" d="${cap}"/><path class="inccap" d="${cap}"/>`;
       if (stacked) bandOver = mark; else bandUnder = mark;
     } else {
       const rect = (cls) => `<rect class="${cls}" x="${f1(a)}" y="${m.t}" width="${f1(b - a)}" height="${ph}"/>`;
@@ -1533,13 +1536,12 @@ chart("chSess", { axis: "snap", series: [{ name: "aktiv", color: "--s3", values:
 
 // ---------- sessions ----------
 const anyRtt = D.sessions.some((s) => s.rttAvg != null);
-// the 95th percentile of the CPU load is taken over the snapshots, the means of CPU and working set over time (see snapUse).
-// A mean the report data hold no series for (processes or instances at a time, the working set of one application in one
-// session) and the mean of the ICA round trip are plain means of the snapshots: every column and key figure with a "Ø" says
-// in its title which of the two it is.
-const SNAPS_DENSER = " (während eines Vorfalls folgen sie dichter aufeinander)";
-const P95_TITLE = "95. Perzentil der Schnappschüsse" + SNAPS_DENSER, SNAP_MEAN = "Mittelwert der Schnappschüsse" + SNAPS_DENSER;
-const PER_INST_TITLE = "Working Set aller Instanzen durch die Zahl gleichzeitiger Instanzen, beides als " + SNAP_MEAN;
+// Every mean ("Ø") of the tables and key figures is a mean over time, as the report data state it and as snapUse takes it
+// for a range (the rule: snapSec); its title says so. The 95th percentile of the CPU load is a percentile of the snapshots
+// and says that.
+const P95_TITLE = "95. Perzentil der Schnappschüsse (während eines Vorfalls folgen sie dichter aufeinander)";
+const INST_MEAN = "Zahl gleichzeitiger Instanzen, Mittelwert über die Zeit, in der die Anwendung lief";
+const PER_INST_TITLE = "Working Set aller Instanzen durch die Zahl gleichzeitiger Instanzen, beides als Mittelwert über die Zeit";
 const sessCols = [
   { key: "user", head: "Benutzer", fmt: (v, r) => esc(sessLabel(r)), sortVal: (r) => sessLabel(r) },
   { key: "client", head: "Client", fmt: (v) => esc(v || "–") },
@@ -1554,12 +1556,12 @@ const sessCols = [
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("privMax", "Commit Max", 0, "Private Bytes (zugesicherter Speicher)", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0, "gelesene + geschriebene Daten aller Prozesse (Datei, Netzwerk, Geräte)"),
-  cNum("procsAvg", "Prozesse Ø", 0, SNAP_MEAN),
+  cNum("procsAvg", "Prozesse Ø", 0, "Zahl der Prozesse der Sitzung, Mittelwert über die Zeit der Anwesenheit"),
   cSig("inP95", "Eingabe P95 ms", "input.session", 0, "Eingabeverzögerung, 95. Perzentil über Takte mit Verzögerung"),
   cSig("inMax", "Eingabe Max ms", "input.session", 0, "höchste Eingabeverzögerung"),
   cNum("inWarnPct", "Eingabe ab auffällig %", 1, "Anteil der Takte der Sitzung mit Eingabeverzögerung ab 'auffällig'")
 ];
-if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0, SNAP_MEAN), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
+if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0, "Mittelwert über die Zeit, aus den Schnappschüssen mit einem Messwert"), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
 // the resources of a session are sums over its processes: without process data their 0 is no measured value
 const SESS_RES = ["cpuShare", "cpuSec", "cpuAvg", "cpuP95", "cpuMax", "wsAvg", "wsMax", "privMax", "ioMB", "procsAvg"];
 if (notMeasured("sessions.resources")) {
@@ -1571,7 +1573,7 @@ if (notMeasured("sessions.resources")) {
 const pairCols = (first) => [first,
   cNum("inst", "Instanzen", 0),
   cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
-  cNum("wsAvg", "RAM Ø", 0, SNAP_MEAN, { fmt: fmtMB, bar: true }),
+  cNum("wsAvg", "RAM Ø", 0, "Working Set der Anwendung in der Sitzung, Mittelwert über die Zeit, in der sie dort lief", { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 1)];
 const procName = (v, r) => esc(v) + (r.isCollector ? ' <span class="tag">(WorkerPerf selbst)</span>' : "") +
@@ -1641,9 +1643,9 @@ function showSession(i) {
   if (res.profile) q("chart-profile").innerHTML = res.profile;
   else if (vol) chart(q("chart-profile"), { series: [{ name: vol.label || vol.name, t: vol.t, v: vol.ms }], unit: "ms", decimals: 1, signal: "disk.latency", agg: "max", empty: "Keine Messwerte des Profilcontainers." });
   if (!res.procs) table("sa" + u, pairCols({ key: "a", head: "Anwendung", fmt: (v) => esc(appByIdx.get(v)?.name), sortVal: (r) => appByIdx.get(r.a)?.name || "" }), D.pairs.filter((p) => p.s === i), { sort: "cpuSec", id: (r) => r.a, text: () => "", onSelect: (a) => { activate("apps"); appTable.select(a); } });
-  if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1, "Mittelwert über die Schnappschüsse mit einem Wert: Bandbreiten von 0 zeichnet der Collector nicht auf, ihr Mittel gilt nur für die Zeit mit Datenverkehr"), cNum("max", "Max", 1), cNum("n", "Messungen", 0, "Schnappschüsse mit einem Wert")], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
+  if (ctx.length) table("sx" + u, [{ key: "metric", head: "Messwert" }, { key: "source", head: "Quelle" }, { key: "instance", head: "Instanz", fmt: (v) => esc(v || "–") }, cNum("avg", "Ø", 1, "Mittelwert über die Zeit, aus den Schnappschüssen mit einem Wert: Bandbreiten von 0 zeichnet der Collector nicht auf, ihr Mittel gilt nur für die Zeit mit Datenverkehr"), cNum("max", "Max", 1), cNum("n", "Messungen", 0, "Schnappschüsse mit einem Wert")], ctx.map((c, k) => Object.assign({ k }, c)), { sort: "metric", id: (r) => r.k, text: () => "" });
   // the processes of the session follow the range
-  const procs = wholeRows("procs").filter((p) => p.s === i), inRange = () => { const z = window.WP.zoom; return z ? rangeRows("procs", z.t0, z.t1).filter((p) => p.s === i) : procs; };
+  const procs = D.procs.filter((p) => p.s === i), inRange = () => { const z = window.WP.zoom; return z ? rangeRows("procs", z.t0, z.t1).filter((p) => p.s === i) : procs; };
   rangeFollow.delete("dSessions");
   if (!res.procs) {
     const pt = table("sp" + u, procCols(false), inRange(), { sort: "cpuSec", id: (r) => r.k, text: () => "", rowClass: (r) => r.isCollector ? "collector" : "", empty: NONE_ACTIVE,
@@ -1663,7 +1665,7 @@ function showApp(i) {
   const a = appByIdx.get(i), host = document.getElementById("dApps"), u = ++uid;
   const noSeries = "Kein Verlauf gespeichert: Anwendung mit weniger als 0,1 % CPU-Anteil und unter 50 MB Working Set.";
   host.innerHTML = `<div class="cardhead"><h2>${esc(a.name)}</h2></div>
-    <div class="kv">${WHOLE_KV}${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span title="${SNAP_MEAN}">gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span title="${PER_INST_TITLE}">RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
+    <div class="kv">${WHOLE_KV}${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span title="${INST_MEAN}">gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span title="${PER_INST_TITLE}">RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
     <div class="pathline">${esc(a.path || "–")}</div>
     <div class="grid2">${chartBox("CPU aller Instanzen (% des Servers)", "chart-cpu")}${chartBox("Working Set aller Instanzen (MB)", "chart-ws")}</div>
     <h2>Sitzungen mit dieser Anwendung${WHOLE_H}</h2><div class="tablewrap" style="max-height:340px"><table id="as${u}"></table></div>`;
@@ -1677,7 +1679,7 @@ const appTable = table("tApps", [
   roleCol,
   cNum("sess", "Sitzungen", 0, "Anzahl Sitzungen, in denen die Anwendung lief"),
   cNum("inst", "Instanzen", 0, "Anzahl beobachteter Prozessinstanzen"),
-  cNum("instAvg", "gleichzeitig Ø", 1, SNAP_MEAN),
+  cNum("instAvg", "gleichzeitig Ø", 1, INST_MEAN),
   cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
   cNum("cpuSec", "CPU-Zeit s", 0),
   cNum("cpuAvg", "CPU Ø %", 2, "alle Instanzen zusammen, Mittelwert über die Zeit, % der Server-Kapazität"),
@@ -2615,16 +2617,26 @@ function rangedSoll(r, z) {
     status: st.status || (st.series && !st.n ? "na" : 0), wholeStatus: !st.series,
     empty: !st.series ? "kein Verlauf in den Berichtsdaten: für einen Zeitraum nicht auswertbar" : !st.n ? "keine Messwerte im gewählten Zeitraum" : "" });
 }
-// A snapshot holds what happened since the snapshot before it: it stands for the interval that ends with it (the first one
-// for one regular snapshot interval). A range takes the snapshots whose own time lies in it, so its edges are attributed like
+// The seconds a snapshot stands for in a mean over time. The rule is the one of the report data (stated in
+// Import-WorkerPerfRun of WorkerPerf.Load.ps1, "Means over time"), so a range that covers the whole capture gives the means
+// the report data state, within the rounding of the series: a snapshot holds what happened since the snapshot before it and
+// stands for the interval that ends with it (the first one for one regular snapshot interval); snapshots follow each other
+// faster while an incident lasts, so a plain mean of the snapshots would lean towards the incidents.
+// A range takes the snapshots whose own time lies in it, so its edges are attributed like
 // this: the first snapshot of the range counts with its whole interval, also the part of it before the start of the range;
 // the time between the last snapshot of the range and its end belongs to the next snapshot and is left out. A range is
 // covered by whole snapshot intervals, shifted towards the past by up to one of them (6 s during an incident, else 15 s).
-function snapSec(i) { const S = GRID.snap; return (i > 0 ? S[i] - S[i - 1] : (M.snapSec || 0) * 1000) / 1000; }
+function snapSec(i) { const S = GRID.snap; return Math.max(0, i > 0 ? S[i] - S[i - 1] : (M.snapSec || 0) * 1000) / 1000; }
+// The mean over time of the values of a snapshot series at the snapshots lo to hi - 1 (null: no value at that snapshot).
+function timeMean(values, lo, hi) {
+  let sum = 0, sec = 0, plain = 0, n = 0;
+  for (let i = lo; i < Math.min(hi, values.length); i++) { const v = values[i]; if (v == null) continue; const s = snapSec(i); sum += v * s; sec += s; plain += v; n++; }
+  // (snapshots that stand for no time, in a capture without the length of its snapshot interval: their plain mean)
+  return sec > 0 ? sum / sec : n ? plain / n : null;
+}
 // CPU (% of the server), working set (MB) and I/O (KB/s) of an item at the snapshots lo to hi - 1. Its means are means over
-// time: every snapshot weighs as many seconds as it stands for. Snapshots follow each other faster while an incident lasts,
-// so a plain mean of the snapshots would lean towards the incidents. cpuAvg is the CPU time over the capacity of the seconds
-// covered, as the report data state it for a process; cpuP95 is the percentile of the snapshot values (its column says so).
+// time (see snapSec): cpuAvg is the CPU time over the capacity of the seconds covered by its snapshots; cpuP95 is the
+// percentile of the snapshot values (its column says so).
 function snapUse(it, lo, hi) {
   const o = it.o || 0, c = [];
   let cpuSec = 0, cpuCov = 0, cpuSum = 0, wsSum = 0, wsCov = 0, wsPlain = 0, wsN = 0, wsMax = null, ioMB = it.io ? 0 : null, load = false;
@@ -2649,22 +2661,7 @@ function sessionUse(lo, hi) {
   if (sessUseOf.key !== key) { const use = D.sessions.map((s) => snapUse(s, lo, hi)); sessUseOf = { key, use, total: use.reduce((x, u) => x + u.cpuSec, 0) }; }
   return sessUseOf;
 }
-// The rows of the whole capture as the report data hold them. Their two means (CPU and working set) are the means over time of
-// their series, like the means of a range: the same row then reads the same for the whole capture and for a range that is a
-// moment shorter. (The report data state the mean of a process over time; for sessions and applications, and for the working
-// set, they state the plain mean of the snapshots.) A row without a series keeps the values as delivered.
-const WHOLE_ROWS = {};
-function wholeRows(kind) {
-  if (!WHOLE_ROWS[kind]) {
-    const n = GRID.snap.length;
-    WHOLE_ROWS[kind] = D[kind].map((it) => {
-      if (!it.cpu && !it.ws) return it;
-      const u = snapUse(it, 0, n);
-      return Object.assign({}, it, { cpuAvg: u.cpuAvg == null ? it.cpuAvg : u.cpuAvg, wsAvg: u.wsAvg == null ? it.wsAvg : u.wsAvg });
-    });
-  }
-  return WHOLE_ROWS[kind];
-}
+// The rows of the whole capture are the report data as delivered (D.sessions, D.apps, D.procs); the rows of a range:
 // Sessions ("sessions"), applications ("apps") or processes ("procs") with their values in a time range, from their snapshot
 // series: who has no snapshot with load in the range is left out, and so is an application or a process without a series.
 // A value the report data hold no series for is null (the tables show "–"). Sessions are listed by their presence where the
@@ -2673,7 +2670,7 @@ function wholeRows(kind) {
 function rangeRows(kind, t0, t1, use) {
   if (t1 < t0) [t0, t1] = [t1, t0];
   const S = GRID.snap, T = GRID.tick, lo = lowerBound(S, t0), hi = upperBound(S, t1);
-  const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null, p95 = (a) => a.length ? a[Math.max(0, Math.ceil(0.95 * a.length) - 1)] : null, top = (a) => a.length ? a[a.length - 1] : null;
+  const p95 = (a) => a.length ? a[Math.max(0, Math.ceil(0.95 * a.length) - 1)] : null, top = (a) => a.length ? a[a.length - 1] : null;
   const su = use || sessionUse(lo, hi), sessUse = su.use, total = su.total;
   if (kind === "sessions") {
     const byPresence = hi <= lo || !!notMeasured("sessions.resources"), tlo = lowerBound(T, t0), thi = upperBound(T, t1), warn = (TH.get("input.session") || {}).warn;
@@ -2684,7 +2681,7 @@ function rangeRows(kind, t0, t1, use) {
       const ticks = Math.max(0, upperBound(T, Math.min(t1, s.last)) - lowerBound(T, Math.max(t0, s.first))), rtt = (s.rtt || []).slice(lo, hi).filter((v) => v != null).sort((a, b) => a - b);
       return Object.assign({}, s, { durMin: Math.max(0, Math.min(t1, s.last) - Math.max(t0, s.first)) / 60000, activePct: null, cpuShare: total > 0 ? 100 * u.cpuSec / total : null, cpuSec: hi > lo ? u.cpuSec : null,
         cpuAvg: u.cpuAvg, cpuP95: u.cpuP95, cpuMax: u.cpuMax, wsAvg: u.wsAvg, wsMax: u.wsMax, privMax: null, ioMB: hi > lo ? u.ioMB : null, procsAvg: null,
-        inP95: p95(ins), inMax: top(ins), inWarnPct: ticks && warn != null ? 100 * ins.filter((v) => v >= warn).length / ticks : null, rttAvg: mean(rtt), rttMax: top(rtt) });
+        inP95: p95(ins), inMax: top(ins), inWarnPct: ticks && warn != null ? 100 * ins.filter((v) => v >= warn).length / ticks : null, rttAvg: timeMean(s.rtt || [], lo, hi), rttMax: top(rtt) });
     });
   }
   if (kind === "apps") {
@@ -2724,7 +2721,7 @@ function refreshRange() {
   sollTable.setRows(soll);
   note("sollRange", z ? `${when}: Ø, P95, Max und Zeitanteile aus den Messpunkten im Zeitraum; die Bewertung folgt den Befunden, die in den Zeitraum reichen.` : "");
   // the use of the sessions in the range: computed once, for the three tables
-  const use = z ? sessionUse(lowerBound(GRID.snap, z.t0), upperBound(GRID.snap, z.t1)) : null, rows = (kind) => z ? rangeRows(kind, z.t0, z.t1, use) : wholeRows(kind);
+  const use = z ? sessionUse(lowerBound(GRID.snap, z.t0), upperBound(GRID.snap, z.t1)) : null, rows = (kind) => z ? rangeRows(kind, z.t0, z.t1, use) : D[kind];
   const sess = rows("sessions"), apps = rows("apps"), procs = rows("procs");
   sessTable.setRows(sess); appTable.setRows(apps); procTable.setRows(procs);
   // A range without a snapshot (shorter than the time between two of them): nothing of the applications and processes was

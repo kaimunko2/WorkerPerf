@@ -69,6 +69,30 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
         $m.Snap.N | Should -Be 1
         $m.Proc[0].WsMaxKB | Should -Be 51200; $m.Proc[0].PrivMaxKB | Should -Be 51200
     }
+    It 'mittelt das Working Set ueber die Zeit, nicht ueber die Schnappschuesse' {             # P3-R77
+        # Schnappschuesse bei 4, 6, 10 und 16 s statt alle 4 s: jeder steht fuer die Sekunden seit dem vorigen, der erste
+        # fuer ein regulaeres Intervall (4 s), also 4, 2, 4 und 6 s
+        $f = $Files.Clone()
+        $f['snapshots.csv'] = @((New-SnapLine 0 'K'), "1,2,$(Get-Ts 6),2,R,1,1,3,3,20", "2,4,$(Get-Ts 10),4,R,1,1,3,3,20", "3,7,$(Get-Ts 16),6,R,1,1,3,3,20")
+        $f['citrix.csv'] = @('1,Citrix_Euem_RoundTrip,5,,RoundtripTime,20', '2,Citrix_Euem_RoundTrip,5,,RoundtripTime,100', '4,Citrix_Euem_RoundTrip,5,,RoundtripTime,40', '7,Citrix_Euem_RoundTrip,5,,RoundtripTime,40')
+        $m = Import-TestRun 'weight' $f
+        $m.Snap.WeightSec | Should -Be @(4, 2, 4, 6)
+        # ein Citrix-Messwert: 20, 100, 40, 40 ms -> (80 + 200 + 160 + 240) / 16; ueber die Schnappschuesse waeren es 50
+        $m.Citrix[0].Avg | Should -Be 42.5; $m.Citrix[0].N | Should -Be 4; $m.Citrix[0].Max | Should -Be 100
+        # K0 EXCEL: 100 MB in den ersten drei Schnappschuessen (10 s), 200 MB im vierten (6 s); ueber die Schnappschuesse waeren es 128000
+        $m.Proc[0].WsAvgKB | Should -Be ((102400 * 10 + 204800 * 6) / 16)
+        $m.Proc[0].WsAvgKB | Should -Be 140800
+        # chrome in der Sitzung von alice: K1 und K2 mit je 50 MB in den ersten beiden Schnappschuessen (6 s), danach K2 allein (10 s)
+        $a = $m.Sessions | Where-Object User -eq 'alice'; $chrome = $m.Apps | Where-Object Name -eq 'chrome.exe'; $notepad = $m.Apps | Where-Object Name -eq 'notepad.exe'
+        $pair = $m.Pairs["$($a.Index)|$($chrome.Index)"]
+        $pair.WsAvgKB | Should -Be 70400                                                # (102400 * 6 + 51200 * 10) / 16
+        $pair.WsSumKB | Should -Be 307200; $pair.Snaps | Should -Be 4                   # Summe und Zahl der Schnappschuesse bleiben, was sie sind (Mittel 76800)
+        $m.Pairs["$($a.Index)|$($notepad.Index)"].WsAvgKB | Should -Be 10240            # K4 nur im letzten Schnappschuss
+        # ein Zeitausschnitt: sein erster Schnappschuss steht fuer ein regulaeres Intervall
+        (Import-TestRun 'weightcut' $f @{ From = $Base.AddSeconds(5).DateTime }).Snap.WeightSec | Should -Be @(4, 4, 6)
+        # gleichmaessige Schnappschuesse: das Mittel ueber die Zeit ist das Mittel der Schnappschuesse
+        $script:M.Snap.WeightSec | Should -Be @(4, 4, 4, 4); $script:M.Pairs["$($A.Index)|$($chrome.Index)"].WsAvgKB | Should -Be 76800
+    }
     It 'uebergeht Zeilen jenseits des letzten vollstaendigen Schnappschusses' {        # Review Focus 3
         $f = $Files.Clone(); $f['processes.csv'] = @($Files['processes.csv']) + '4,0,999,1,1,0,0,0,1,1' + '4,0,12'; $f['procend.csv'] = @('2,1', '9,77')
         (Import-TestRun 'abort' $f).TotalCpuMs | Should -Be 650
