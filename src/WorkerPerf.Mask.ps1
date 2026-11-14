@@ -40,7 +40,7 @@ $script:WorkerPerfMaskKeyedMaps = @()
 $script:WorkerPerfMaskKeywordFields = @(
     'type', 'kind', 'group', 'log', 'lead', 'resource', 'resources', 'measure', 'scope', 'status', 'direction', 'isolation',
     'endReason', 'metric', 'signalId', 'id', 'day', 'capped', 'worker', 'snapKind', 'unit', 'url',
-    'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places', 'unchecked.category',
+    'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places', 'unrecorded.places', 'unchecked.category',
     'situation', 'conditions', 'lagebild.state', 'print.involvedFrom', 'apps.key',
     'health.state', 'health.catalogueVersion', 'grade', 'apps.state', 'checks.app', 'source.date', 'checks.relates', 'raw.area',
     'raw.state', 'raw.reason', 'incidents.health', 'checks.cause')

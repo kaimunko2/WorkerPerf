@@ -1081,7 +1081,7 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         @($l.Keys) | Should -Be @('state', 'symbol', 'word', 'sentence', 'kpis', 'hints', 'top')
         @($l.kpis.Keys) | Should -Be @('bottlenecks', 'delays', 'delaysUnverified', 'events', 'chronic', 'minutes')
-        $l.symbol | Should -Be ([string][char]0x25C6); $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'; $l.kpis.minutes | Should -Be 4; $l.kpis.minutes | Should -BeOfType [double]
+        $l.symbol | Should -Be ([string][char]0x25C6); $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen.'; $l.kpis.minutes | Should -Be 4; $l.kpis.minutes | Should -BeOfType [double]
         , $l.hints | Should -BeOfType [string[]]; $l.hints.Count | Should -Be 0
         # yellow: a delay of severity 1, an event outside a session, a chronic bottleneck
         $ev = New-Ev 4 0 10; $ev.severity = 1
@@ -1113,32 +1113,32 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         $skip = { param([string[]]$Ids) @(foreach ($id in $Ids) { [ordered]@{ id = $id; label = $id; text = ''; places = [string[]]@($script:WorkerPerfCategories[$id].Places) } }) }
         $say = { param($Incidents, [string[]]$Ids) $ctx = New-Ctx; $ctx.Data.skipped = @(& $skip $Ids); Get-WorkerPerfLagebild -Incidents $Incidents -Data $ctx.Data -Catalogue $Cat -Texts $Texts }
         $red = @((New-R 2 'engpass' 1 120 0), (New-R 3 'ohne-engpass' 2 120 600))
-        # everything measured: every part, also one that counts nothing
-        (& $say $red @()).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        # everything measured: a part that counts nothing is left out (final residuals, item 3), without the reservation
+        (& $say $red @()).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen.'
         # without events: no "0 Ereignisse", and the reservation; the key figure stays (the page writes "nicht gemessen" there)
         $l = & $say $red @('Ereignisse')
-        $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.'
+        $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Ereignisse.'
         $l.kpis.events | Should -Be 0; $l.kpis.chronic | Should -Be 0; @($l.kpis.Keys) | Should -Be @('bottlenecks', 'delays', 'delaysUnverified', 'events', 'chronic', 'minutes')
         $l.hints | Should -Be @('Abgeschaltet: Ereignisse.')
         # without Citrix a chronic state of the connection cannot be found: no "0 Dauerzustaende"
-        (& $say $red @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse. Nicht gemessen: Citrix.'
+        (& $say $red @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Citrix.'
         # both: the reservation names every category left out, as the green sentence does
         (& $say $red @('Prozesse', 'Citrix', 'Ereignisse')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Prozesse, Citrix, Ereignisse.'
         (& $say $red $script:WorkerPerfCategories.Keys).sentence | Should -Match '^Rot: 1 Engpaesse, 1 Verzoegerungen\. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\.$'
         # a category no part depends on: the sentence of a complete capture
-        (& $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        (& $say $red @('Prozesse', 'Laufwerke', 'Rueckblick', 'Drucken', 'Gegenstellen')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen.'
         # a real count stays, although its category was left out: a chronic bottleneck without Citrix, an event incident
-        (& $say ($red + (New-R 5 'engpass' 3 600 0 -Chronic)) @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 1 Dauerzustaende.'
-        (& $say ($red + (New-Ev 7 0 900)) @('Ereignisse')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Ereignisse, 0 Dauerzustaende.'
+        (& $say ($red + (New-R 5 'engpass' 3 600 0 -Chronic)) @('Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Dauerzustaende.'
+        (& $say ($red + (New-Ev 7 0 900)) @('Ereignisse')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Ereignisse.'
         (& $say ($red + (New-Ev 7 0 900)) @('Ereignisse', 'Citrix')).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 1 Ereignisse. Nicht gemessen: Ereignisse, Citrix.'
         # yellow: the same rule
         $yellow = @((New-R 1 'ohne-engpass' 1 90 0 -Sev 1))
-        (& $say $yellow @()).sentence | Should -Be 'Gelb: 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
-        (& $say $yellow @('Ereignisse')).sentence | Should -Be 'Gelb: 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.'
+        (& $say $yellow @()).sentence | Should -Be 'Gelb: 1 Verzoegerungen.'
+        (& $say $yellow @('Ereignisse')).sentence | Should -Be 'Gelb: 1 Verzoegerungen. Nicht gemessen: Ereignisse.'
         (& $say $yellow @('Citrix', 'Ereignisse')).sentence | Should -Be 'Gelb: 1 Verzoegerungen. Nicht gemessen: Citrix, Ereignisse.'
         # the place decides, not the name of the category
         $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = @() })
-        (Get-WorkerPerfLagebild -Incidents $red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Ereignisse, 0 Dauerzustaende.'
+        (Get-WorkerPerfLagebild -Incidents $red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen.'
         $script:WorkerPerfLagebildParts | ForEach-Object { $_.Place } | Should -Be @('', '', 'events', 'citrix')
         # fix round 4, C2: the placeholder of a part's count stands under Value; no key shares its name with a property of the table
         $script:WorkerPerfLagebildParts | ForEach-Object { $_.Value } | Should -Be @('bottlenecks', 'delays', 'events', 'chronic')
@@ -1151,7 +1151,22 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
         # the summary to copy carries the same sentence
         $l = & $say $red @('Ereignisse'); $ctx = New-Ctx; $ctx.Data.skipped = @(& $skip @('Ereignisse'))
         $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @() -Order @() -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
-        $p[1] | Should -Be ($l.symbol + ' ' + $l.word + ': Rot: 1 Engpaesse, 1 Verzoegerungen, 0 Dauerzustaende. Nicht gemessen: Ereignisse.')
+        $p[1] | Should -Be ($l.symbol + ' ' + $l.word + ': Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Ereignisse.')
+    }
+    It 'laesst im roten und gelben Satz einen Teil ohne Vorfall weg; die Kennzahl bleibt 0' {          # final residuals, item 3
+        # red without a bottleneck: a critical delay alone, an event in a session alone
+        $l = Get-WorkerPerfLagebild -Incidents @((New-R 3 'ohne-engpass' 2 120 0)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        $l.state | Should -Be 'red'; $l.sentence | Should -Be 'Rot: 1 Verzoegerungen.'
+        $l.kpis.bottlenecks | Should -Be 0; $l.kpis.events | Should -Be 0; $l.kpis.chronic | Should -Be 0
+        $e = New-Ev 7 1 600; $e.event.inSession = $true
+        (Get-WorkerPerfLagebild -Incidents @($e, (New-R 5 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Ereignisse, 1 Dauerzustaende.'
+        # yellow: a chronic state alone, an event outside a session alone
+        $y = Get-WorkerPerfLagebild -Incidents @((New-R 5 'umfeld' 1 3600 0 -Chronic)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        $y.state | Should -Be 'yellow'; $y.sentence | Should -Be 'Gelb: 1 Dauerzustaende.'; $y.kpis.delays | Should -Be 0; $y.kpis.events | Should -Be 0
+        (Get-WorkerPerfLagebild -Incidents @((New-Ev 7 0 600)) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Gelb: 1 Ereignisse.'
+        # a zero of a category that was not measured: left out as well, with the reservation (ruling P3-R49)
+        $ctx = New-Ctx; $ctx.Data.skipped = @([ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = ''; places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) })
+        (Get-WorkerPerfLagebild -Incidents @((New-R 5 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Gelb: 1 Dauerzustaende. Nicht gemessen: Ereignisse.'
     }
     It 'gibt die Hinweise zur Messung in ihrer Reihenfolge' {                                          # addition b)
         $ctx = New-Ctx
@@ -1222,7 +1237,7 @@ Describe 'Rangfolge, Gruppen, Lagebild' {
                 $c.lagebild.partBottlenecks = '{bottlenecks}'; $c.lagebild.partDelays = '{delays}'; $c.lagebild.partEvents = '{events}'; $c.lagebild.partChronic = '{chronic}' })
         $ctx = New-Ctx
         $l = Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0), (New-R 3 'umfeld' 1 3600 0 -Chronic)) -Data $ctx.Data -Catalogue $cat -Texts $Texts
-        $l.sentence | Should -Be '2 Vorfaelle: 1/0/0/1, 1,3 min.'
+        $l.sentence | Should -Be '2 Vorfaelle: 1/1, 1,3 min.'      # Aussage angepasst (final residuals, item 3): no part that counts nothing
         # texts the loader rejects (ruling P3-R26), set after loading: a value the summary does not have stops it
         $cat.lagebild.red = '{incidents} Vorfaelle auf {server} am {date}.'; $cat.lagebild.yellow = 'Gelb auf {server}, {skipped}.'; $cat.hints.notFinished = 'Auf {server} nicht beendet ({message}).'
         (Get-WorkerPerfLagebild -Incidents @((New-R 2 'engpass' 1 77 0)) -Data $ctx.Data -Catalogue $cat -Texts $Texts).sentence | Should -Be '1 Vorfaelle auf SIM-VDA01 am 09.09.2001.'
@@ -1311,7 +1326,7 @@ Describe 'Kopiertexte' {
         $dash = [string][char]0x2013
         $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001', "02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU)", '2 Sitzungen waren betroffen.', 'Langsam.', 'Messwert: 100 %, Soll unter 75 %'
             'Verursacher: Hauptverursacher: EXCEL.EXE in der Sitzung von user003 mit 62 % der CPU-Zeit (sonst 4 %).', 'Betroffen: 2', ''
-            'Empfohlene Pruefschritte:', "1. Pruefen ${dash} Ort; erkennbar an Merkmal", '', 'Moegliche Abhilfe (Vorschlag):', '- Wenn Voraussetzung: Abhelfen', '', 'Ansprechpartner:', '- Kontakt')
+            'Empfohlene Pruefschritte:', "1. Pruefen. Wo: Ort. Woran erkennbar: Merkmal", '', 'Moegliche Abhilfe (Vorschlag):', '- Wenn Voraussetzung: Abhelfen', '', 'Ansprechpartner:', '- Kontakt')
         $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
         # the users of the affected sessions
@@ -1320,7 +1335,7 @@ Describe 'Kopiertexte' {
         # without remedies and contacts: neither label
         $g.remedies = @(); $g.contacts = @()
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
-        $p[-1] | Should -Be "1. Pruefen ${dash} Ort; erkennbar an Merkmal"; $p | Should -Not -Contain $Cat.copy.remedies
+        $p[-1] | Should -Be "1. Pruefen. Wo: Ort. Woran erkennbar: Merkmal"; $p | Should -Not -Contain $Cat.copy.remedies
         # a chronic state without affected sessions names none, as its sentence (Get-WorkerPerfIncidentText) does
         $i = New-Inc @{ type = 'umfeld'; chronic = $true; start = 1e12; end = 1e12 + 3600000; signals = @(@{ id = 'ica.rtt'; resource = 'network'; peak = 225; unit = 'ms'; ideal = 'unter 150 ms'; severity = 1 }) }
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
@@ -1337,8 +1352,8 @@ Describe 'Kopiertexte' {
         $tail = { param($Catalogue = $Cat) $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Catalogue -Texts $Texts); @($p[([array]::IndexOf($p, $Cat.copy.checks) - 1)..($p.Count - 1)]) }
         # seven checks, five remedies, four contacts: the first five and three in the guide's order, one line after each shortened block, every contact
         & $steps 7 5 4
-        & $tail | Should -Be @('', 'Empfohlene Pruefschritte:', "1. Schritt 1 ${dash} Ort; erkennbar an Merkmal", "2. Schritt 2 ${dash} Ort; erkennbar an Merkmal", "3. Schritt 3 ${dash} Ort; erkennbar an Merkmal",
-            "4. Schritt 4 ${dash} Ort; erkennbar an Merkmal", "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal", 'Weitere 2 Pruefschritte im Bericht.', '', 'Moegliche Abhilfe (Vorschlag):',
+        & $tail | Should -Be @('', 'Empfohlene Pruefschritte:', "1. Schritt 1. Wo: Ort. Woran erkennbar: Merkmal", "2. Schritt 2. Wo: Ort. Woran erkennbar: Merkmal", "3. Schritt 3. Wo: Ort. Woran erkennbar: Merkmal",
+            "4. Schritt 4. Wo: Ort. Woran erkennbar: Merkmal", "5. Schritt 5. Wo: Ort. Woran erkennbar: Merkmal", 'Weitere 2 Pruefschritte im Bericht.', '', 'Moegliche Abhilfe (Vorschlag):',
             '- Wenn Voraussetzung: Abhilfe 1', '- Wenn Voraussetzung: Abhilfe 2', '- Wenn Voraussetzung: Abhilfe 3', 'Weitere 2 Vorschlaege im Bericht.', '', 'Ansprechpartner:',
             '- Kontakt 1', '- Kontakt 2', '- Kontakt 3', '- Kontakt 4')
         # the guide itself stays complete: the report shows every step
@@ -1364,7 +1379,7 @@ Describe 'Kopiertexte' {
             $lines = Get-Lines (New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Mask $mask)
             @($lines | Where-Object { $_ -match '^\d+\. ' }).Count | Should -Be 5; @($lines | Where-Object { $_ -match '^- Wenn ' }).Count | Should -Be 3
             $lines | Should -Contain 'Weitere 2 Pruefschritte im Bericht.'; $lines | Should -Contain 'Weitere 2 Vorschlaege im Bericht.'
-            [array]::IndexOf($lines, 'Weitere 2 Pruefschritte im Bericht.') | Should -Be ([array]::IndexOf($lines, "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal") + 1)
+            [array]::IndexOf($lines, 'Weitere 2 Pruefschritte im Bericht.') | Should -Be ([array]::IndexOf($lines, "5. Schritt 5. Wo: Ort. Woran erkennbar: Merkmal") + 1)
         }
         # the summary of the capture names no steps and no such line
         $i.guide = $g
@@ -1439,7 +1454,7 @@ Describe 'Kopiertexte' {
         $l = Get-WorkerPerfLagebild -Incidents @($a, $b) -Data $ctx.Data -Catalogue $Cat -Texts $Texts
         $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($a, $b) -Order @(5, 2, 5) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
         $dash = [string][char]0x2013
-        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001, 02:46 bis 03:46', ([string][char]0x25C6 + ' kritisch: Rot: 1 Engpaesse, 0 Verzoegerungen, 1 Ereignisse, 0 Dauerzustaende.'), 'Abgeschaltet: Laufwerke.', 'Nicht gemessen: ICA Round Trip.', ''
+        $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001, 02:46 bis 03:46', ([string][char]0x25C6 + ' kritisch: Rot: 1 Engpaesse, 1 Ereignisse.'), 'Abgeschaltet: Laufwerke.', 'Nicht gemessen: ICA Round Trip.', ''
             '- 02:51: Titel crash (Vorfall aus Ereignissen · Anwendungsabsturz). Langsam.', "- 02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU). Langsam.")
         $t = New-WorkerPerfCopySummary -Incidents @($a, $b) -Order @(5, 2) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts
         $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
@@ -1653,5 +1668,114 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $lines = @($plain -split "`r`n")
         $at = [array]::IndexOf($lines, $Texts['copy.before']); $at | Should -BeGreaterThan 12
         @($lines[($at + 1)..($lines.Count - 1)] | Where-Object { $_ -match '^- \d\d\.\d\d\.\d{4} \d\d:\d\d' }).Count | Should -Be 4
+    }
+}
+Describe 'Abschlussrunde Teil B: Ereignisprotokolle, Betroffene, Fakten, Mitternacht' {
+    BeforeAll {
+        function New-Guided($Incident, $Ctx = (New-Ctx)) {
+            $Incident.guide = New-WorkerPerfGuidance -Catalogue $Cat -Facts (Get-WorkerPerfGuidanceFacts -Incident $Incident -Context $Ctx -Catalogue $Cat) -Incident $Incident -Texts $Texts
+            $Incident
+        }
+        $script:Unrecorded = @([ordered]@{ id = 'Ereignisse'; label = 'Ereignisse'; text = 'keine Protokolle'; places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) })
+        $script:Red = @((New-Inc @{ id = 2; type = 'engpass'; affected = @(@{ s = 1 }) }), (New-Inc @{ id = 3; type = 'ohne-engpass'; start = 1e12 + 900000; end = 1e12 + 960000; affected = @(@{ s = 2 }) }))
+    }
+    It 'zaehlt Abstuerze einer Aufzeichnung ohne Ereignisprotokolle nicht als gemessene 0' {        # final review I2
+        $ctx = New-Ctx; $ctx.Data.unrecorded = $Unrecorded
+        $l = Get-WorkerPerfLagebild -Incidents $Red -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Ereignisse.'
+        # never recorded is not left out with -Skip: no hint on -Skip
+        $l.hints.Count | Should -Be 0
+        (Get-WorkerPerfLagebild -Incidents @() -Data $ctx.Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Keine Störung erkannt; nicht erfasst: Ereignisse.'
+        # together with a category left out: both in the reservation, only the one left out in the hint
+        $ctx.Data.skipped = @([ordered]@{ id = 'Citrix'; label = 'Citrix'; text = ''; places = [string[]]@($script:WorkerPerfCategories['Citrix'].Places) })
+        $l = Get-WorkerPerfLagebild -Incidents $Red -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        $l.sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen. Nicht gemessen: Citrix, Ereignisse.'; $l.hints | Should -Be @('Abgeschaltet: Citrix.')
+        # the summary to copy says the same
+        $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @() -Order @() -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $p[1] | Should -BeLike '*Nicht gemessen: Citrix, Ereignisse.'
+        # with the logs recorded the 0 is a measured one: no part, no reservation (final residuals, item 3)
+        (Get-WorkerPerfLagebild -Incidents $Red -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts).sentence | Should -Be 'Rot: 1 Engpaesse, 1 Verzoegerungen.'
+    }
+    It 'nennt unter dem Lagebild ein Ereignisprotokoll, das nicht gelesen werden konnte oder Ereignisse verlor' {   # final review I2
+        $ctx = New-Ctx
+        $ctx.Data.quality = @{ sources = @(@{ id = 'cpu.host'; label = 'CPU'; readFailed = $true }, @{ id = 'events.system'; label = 'Ereignisprotokoll System'; readFailed = $true }
+                @{ id = 'events.application'; label = 'Ereignisprotokoll Anwendung'; readFailed = $false })
+            eventReads = @(@{ log = 'application'; label = 'Ereignisprotokoll Anwendung'; dropped = 12; skipped = 0; unformatted = 0 }
+                @{ log = 'system'; label = 'Ereignisprotokoll System'; dropped = 3; skipped = 0; unformatted = 0 }, @{ log = 'defender'; label = 'Defender'; dropped = 0; skipped = 4; unformatted = 0 }) }
+        $want = [string]::Format($Texts['hint.eventsIncomplete'], 'Ereignisprotokoll System, Ereignisprotokoll Anwendung')
+        (Get-WorkerPerfLagebild -Incidents $Red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints | Should -Be @($want)
+        $want | Should -Match 'Messqualität'
+        # a skipped record is no lost event; nothing failed: no hint
+        $ctx.Data.quality = @{ sources = @(@{ id = 'events.system'; label = 'Ereignisprotokoll System'; readFailed = $false }); eventReads = @(@{ log = 'defender'; label = 'Defender'; dropped = 0; skipped = 4; unformatted = 2 }) }
+        (Get-WorkerPerfLagebild -Incidents $Red -Data $ctx.Data -Catalogue $Cat -Texts $Texts).hints.Count | Should -Be 0
+    }
+    It 'bestimmt die Betroffenen einmal fuer Vorfallsansicht und Kopiertext' {                       # final review M6
+        $ctx = New-Ctx; $ctx.Data.sessions = @(@{ i = 20; id = 21; user = 'user020' }, @{ i = 4; id = 5; user = 'user004' }, @{ i = 5; id = 6; user = 'user005' })
+        # the chronic network state of one user (incident 1 of the simulated hour): its session by its own value, no input delay over the target
+        $net = New-Guided (New-Inc @{ id = 1; type = 'umfeld'; chronic = $true; start = 1e12; end = 1e12 + 3600000
+                signals = @(@{ id = 'ica.rtt'; resource = 'network'; s = 20; peak = 225; unit = 'ms'; ideal = 'unter 150 ms'; severity = 1 }, @{ id = 'probe.connect'; s = -1; peak = 1; unit = 'ms'; severity = 1 }) }) $ctx
+        $c = Get-WorkerPerfConcerned $net $ctx.Data $Texts
+        @($c.Keys) | Should -Be @('sessions', 'users', 'note', 'notChecked'); , $c.sessions | Should -BeOfType [int[]]
+        $c.sessions | Should -Be @(20); $c.note | Should -Be $Texts['affected.note.inputBelow']
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $net -Guide $net.guide -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $p | Should -Contain 'Betroffen: 1 (user020)'
+        # the list the incident carries is the one the copy text counts
+        $net.concerned = [ordered]@{ sessions = [int[]]@(20, 4); users = [int[]]@(); note = ''; notChecked = $false }
+        @(Get-WorkerPerfCopyParagraphs -Incident $net -Guide $net.guide -Data $ctx.Data -Catalogue $Cat -Texts $Texts) | Should -Contain 'Betroffen: 2 (user020, user004)'
+        # input delay of other sessions: they follow the sessions of the own values; without any session the endpoint note
+        $net.affected = @(@{ s = 5; peakMs = 600 }); $net.Remove('concerned')
+        (Get-WorkerPerfConcerned $net $ctx.Data $Texts).sessions | Should -Be @(20, 5); (Get-WorkerPerfConcerned $net $ctx.Data $Texts).note | Should -Be ''
+        $ep = New-Inc @{ type = 'umfeld'; signals = @(@{ id = 'probe.connect'; s = -1; peak = 900; unit = 'ms'; severity = 2 }) }
+        (Get-WorkerPerfConcerned $ep $ctx.Data $Texts).note | Should -Be $Texts['affected.note.endpoint']
+        $ctx.Data.unmeasured = @{ input = $true; worker = @() }
+        (Get-WorkerPerfConcerned (New-Inc @{ type = 'umfeld'; signals = @(@{ id = 'ica.rtt'; s = 4; peak = 300; severity = 2 }) }) $ctx.Data $Texts).note | Should -Be $Texts['affected.note.inputUnmeasured']
+        # a performance incident: its affected sessions; without any the reason
+        (Get-WorkerPerfConcerned $Red[0] $ctx.Data $Texts).sessions | Should -Be @(1)
+        (Get-WorkerPerfConcerned (New-Inc @{ type = 'engpass' }) $ctx.Data $Texts).note | Should -Be $Texts['concerned.none.inputUnmeasured']
+        $ctx.Data.unmeasured = @{ input = $false; worker = @() }
+        (Get-WorkerPerfConcerned (New-Inc @{ type = 'engpass'; chronic = $true }) $ctx.Data $Texts).note | Should -Be $Texts['concerned.none.chronic']
+        (Get-WorkerPerfConcerned (New-Inc @{ type = 'engpass' }) $ctx.Data $Texts).note | Should -Be $Texts['concerned.none']
+        # an event: its sessions, then the users no session names (as indices of event.users); without both the reason
+        $ev = New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessions = @(4, 9); users = @('user004', 'user007', 'user007') } }
+        $c = Get-WorkerPerfConcerned $ev $ctx.Data $Texts
+        $c.sessions | Should -Be @(4, 9); $c.users | Should -Be @(1); $c.note | Should -Be ''
+        @(Get-WorkerPerfCopyParagraphs -Incident (New-Guided $ev $ctx) -Guide $ev.guide -Data $ctx.Data -Catalogue $Cat -Texts $Texts) | Should -Contain 'Betroffen: 2 (user004, user007)'
+        $cases = @(@{ E = @{ sessionUnknown = $true }; Want = 'Sitzung nicht ermittelt.' }, @{ E = @{ noUserSession = $true }; Want = 'Ohne Benutzersitzung.' }
+            @{ E = @{}; Want = $Texts['concerned.none.event'] })
+        foreach ($k in $cases) {
+            $e = @{ kind = 'crash' }; foreach ($x in $k.E.Keys) { $e[$x] = $k.E[$x] }
+            $c = Get-WorkerPerfConcerned (New-Inc @{ type = 'ereignis'; event = $e }) $ctx.Data $Texts
+            $c.note | Should -Be $k.Want; $c.notChecked | Should -BeFalse
+        }
+        $c = Get-WorkerPerfConcerned (New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; sessionUnknown = $true; unchecked = @(@{ id = 'users'; text = 'ohne Prozesse' }) } }) $ctx.Data $Texts
+        $c.note | Should -Be 'ohne Prozesse'; $c.notChecked | Should -BeTrue
+    }
+    It 'nimmt die Fakten, die der Aufrufer schon berechnet hat' {                                   # final review M3
+        $i = New-Guided (New-Inc @{ id = 2; type = 'engpass'; lead = 'cpu'; start = 1e12; end = 1e12 + 120000 })
+        $facts = Get-WorkerPerfGuidanceFacts -Incident $i -Context (New-Ctx) -Catalogue $Cat
+        $facts.Values['server'] = 'GEGEBEN'; $facts.Values['from'] = '07:07'; $facts.Values.Remove('to'); $facts.Values.Remove('duration')
+        $given = New-Object 'System.Collections.Generic.Dictionary[object,object]'; $given.Add($i, $facts)
+        $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $i.guide -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Facts $given)
+        $p[0] | Should -Be 'WorkerPerf GEGEBEN, 09.09.2001'; $p[1] | Should -BeLike '07:07: *'
+        $l = Get-WorkerPerfLagebild -Incidents @($i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
+        @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($i) -Order @(2) -Lagebild $l -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Facts $given)[-1] | Should -BeLike '- 07:07: *'
+        # an incident the table does not hold gets its own facts
+        $other = New-Guided (New-Inc @{ id = 3; type = 'engpass'; lead = 'cpu'; start = 1e12; end = 1e12 + 120000 })
+        @(Get-WorkerPerfCopyParagraphs -Incident $other -Guide $other.guide -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Facts $given)[0] | Should -Be 'WorkerPerf SIM-VDA01, 09.09.2001'
+    }
+    It 'nennt bei einer Messung ueber Mitternacht beide Tage und das Datum der Vorfaelle am zweiten Tag' {   # final review M7
+        # 23:30 to 07:30 server time (UTC+1)
+        $ctx = New-Ctx; $t0 = [long]1000074600000; $ctx.Data.meta = @{ computer = 'SIM-VDA01'; offsetMin = 60; endReason = 'duration'; start = $t0; end = $t0 + 8 * 3600000 }
+        $late = New-Guided (New-Inc @{ id = 4; type = 'engpass'; lead = 'cpu'; start = $t0 + 600000; end = $t0 + 720000 }) $ctx
+        $night = New-Guided (New-Inc @{ id = 5; type = 'engpass'; lead = 'cpu'; start = $t0 + 6000000; end = $t0 + 6120000 }) $ctx
+        $l = Get-WorkerPerfLagebild -Incidents @($late, $night) -Data $ctx.Data -Catalogue $Cat -Texts $Texts
+        $p = @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($late, $night) -Order @(4, 5) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)
+        $dash = [string][char]0x2013
+        $p[0] | Should -Be 'WorkerPerf SIM-VDA01, 09.09.2001, 23:30 bis 10.09.2001 07:30'
+        $p[-2] | Should -BeLike "- 23:40${dash}23:42 (2 Minuten): *"
+        $p[-1] | Should -BeLike "- 10.09.2001 01:10${dash}01:12 (2 Minuten): *"
+        # one day: as before
+        $ctx.Data.meta.end = $t0 + 1200000
+        @(Get-WorkerPerfCopySummaryParagraphs -Incidents @($late) -Order @(4) -Lagebild $l -Data $ctx.Data -Catalogue $Cat -Texts $Texts)[0] | Should -Be 'WorkerPerf SIM-VDA01, 09.09.2001, 23:30 bis 23:50'
     }
 }

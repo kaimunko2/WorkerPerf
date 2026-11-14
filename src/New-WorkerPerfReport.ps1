@@ -1,7 +1,9 @@
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
-    Builds a self-contained, offline HTML report from a WorkerPerf capture folder (format 2).
+    Builds a self-contained, offline HTML report from a WorkerPerf capture folder (format 3, as
+    Start-WorkerPerfCapture.ps1 writes it; captures of the older format are read as well).
 
 .DESCRIPTION
     Reads the capture with Import-WorkerPerfRun, rates every measurement series against the
@@ -253,11 +255,27 @@ function Get-MetaValue([string]$Name) {
     return (Get-WorkerPerfField $model.Meta $Name)
 }
 
+function Get-TimeMean([double[]]$Values) {
+    # Mean over time of a snapshot series (NaN = no value): every snapshot weighs the seconds it stands for, see
+    # $snapWeight. Without a value NaN; where the snapshots with a value stand for no time, their plain mean.
+    $sum = 0.0; $sec = 0.0; $plain = 0.0; $n = 0
+    for ($i = 0; $i -lt $Values.Length; $i++) {
+        $v = $Values[$i]
+        if ($v -ne $v -or [double]::IsInfinity($v)) { continue }
+        $sum += $v * $snapWeight[$i]; $sec += $snapWeight[$i]; $plain += $v; $n++
+    }
+    if ($sec -gt 0) { return $sum / $sec }
+    if ($n -gt 0) { return $plain / $n }
+    return $nan
+}
+
 function Get-EntitySummary($Entity) {
     # Statistics and snapshot-grid series of a group of processes (a session or an application), taken over the
-    # snapshots in which the group had at least one living process.
+    # snapshots in which the group had at least one living process. The means (CPU, working set, private bytes, number
+    # of processes) are means over time, see $snapWeight; the percentile and the maximum are those of the snapshots.
     $cpuPct = New-WorkerPerfNanArray $nP; $wsMB = New-WorkerPerfNanArray $nP; $ioKBs = New-WorkerPerfNanArray $nP
     $present = 0; $cpuMs = 0.0; $io = 0.0; $nSum = 0; $nMax = 0
+    $sec = 0.0; $cpuSec = 0.0; $cpuW = 0.0; $wsW = 0.0; $privW = 0.0; $nW = 0.0
     $cpuL = New-Object System.Collections.Generic.List[double]
     $wsL = New-Object System.Collections.Generic.List[double]
     $privL = New-Object System.Collections.Generic.List[double]
@@ -268,19 +286,24 @@ function Get-EntitySummary($Entity) {
         if ($c -le 0) { continue }
         $present++; $nSum += $c
         if ($c -gt $nMax) { $nMax = $c }
+        $sw = $snapWeight[$i]; $sec += $sw
         $pct = $cpuA[$i] * $capFactor[$i]
-        $cpuPct[$i] = $pct; if ($pct -eq $pct) { $cpuL.Add($pct) }
-        $wsMB[$i] = $wsA[$i] / 1024.0; $wsL.Add($wsMB[$i])
-        $privL.Add($privA[$i] / 1024.0)
+        $cpuPct[$i] = $pct; if ($pct -eq $pct) { $cpuL.Add($pct); $cpuW += $pct * $sw; $cpuSec += $sw }
+        $wsMB[$i] = $wsA[$i] / 1024.0; $wsL.Add($wsMB[$i]); $wsW += $wsMB[$i] * $sw
+        $privL.Add($privA[$i] / 1024.0); $privW += $privA[$i] / 1024.0 * $sw
+        $nW += $c * $sw
         if ($snapSecArr[$i] -gt 0) { $ioKBs[$i] = $ioA[$i] / 1024.0 / $snapSecArr[$i] }
     }
     $c = Get-Stats $cpuL.ToArray(); $w = Get-Stats $wsL.ToArray(); $p = Get-Stats $privL.ToArray()
-    $nAvg = 0.0
+    # (snapshots that stand for no time: the plain means)
+    $cpuAvg = $c.Avg; $wsAvg = $w.Avg; $privAvg = $p.Avg; $nAvg = 0.0
     if ($present -gt 0) { $nAvg = $nSum / $present }
+    if ($cpuSec -gt 0) { $cpuAvg = $cpuW / $cpuSec }
+    if ($sec -gt 0) { $wsAvg = $wsW / $sec; $privAvg = $privW / $sec; $nAvg = $nW / $sec }
     return @{
         Present = $present; CpuMs = $cpuMs; IoBytes = $io
-        CpuAvg = $c.Avg; CpuP95 = $c.P95; CpuMax = $c.Max
-        WsAvg = $w.Avg; WsMax = $w.Max; PrivAvg = $p.Avg; PrivMax = $p.Max
+        CpuAvg = $cpuAvg; CpuP95 = $c.P95; CpuMax = $c.Max
+        WsAvg = $wsAvg; WsMax = $w.Max; PrivAvg = $privAvg; PrivMax = $p.Max
         NAvg = $nAvg; NMax = $nMax
         Cpu = $cpuPct; Ws = $wsMB; Io = $ioKBs
     }
@@ -511,18 +534,24 @@ function ConvertTo-ReportDrivers($PrintState) {
 
 function Add-ReportIncidentGuide([object[]]$Incidents, $Data) {
     # The fields of the guided report of each incident of the report data (both ways: the incidents of the capture and of
-    # the lookback): guide, and health, the checks of the health picture that may contribute to it. Reads the script values
+    # the lookback): guide; concerned, who was affected, once for the incident view and the copy text; and health, the
+    # checks of the health picture that may contribute to it. Returns the facts of each incident, computed once: for its
+    # guidance, its copy text and its line in the summary (keyed by the incident's record). Reads the script values
     # $guidance, $thresholds, $eventOffset, $texts and $appList.
     $guideContext = @{ Data = $Data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
+    $factsOf = New-Object 'System.Collections.Generic.Dictionary[object,object]'
     foreach ($inc in $Incidents) {
         $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
+        $factsOf.Add($inc, $facts)
         $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
+        $inc['concerned'] = Get-WorkerPerfConcerned $inc $Data $texts
         # the checks of the health picture that may contribute to it: by its situation and the patterns of its events
         $patternIds = [string[]]@(foreach ($pattern in @(Get-WorkerPerfField (Get-WorkerPerfField $inc 'event') 'patterns')) {
                 if ($null -ne $pattern) { [string](Get-WorkerPerfField $pattern 'id') } })
         $situation = [string](Get-WorkerPerfField $inc['guide'] 'situation')
         $inc['health'] = [string[]]@(Get-WorkerPerfHealthIncidentChecks -Result $Data['health'] -Situation $situation -Patterns $patternIds)
     }
+    return , $factsOf
 }
 
 function Set-ReportBeforeRank([object[]]$BeforeInc) {
@@ -531,12 +560,12 @@ function Set-ReportBeforeRank([object[]]$BeforeInc) {
     for ($n = 0; $n -lt $beforeByTime.Count; $n++) { $beforeByTime[$n]['rank'] = $n + 1 }
 }
 
-function Get-ReportCopyParagraphs([object[]]$Incidents, $Data) {
-    # the copy texts of the incidents as unwrapped paragraphs, one list per incident (reads the script values $guidance and
-    # $texts)
+function Get-ReportCopyParagraphs([object[]]$Incidents, $Data, $FactsOf) {
+    # the copy texts of the incidents as unwrapped paragraphs, one list per incident; $FactsOf: the facts of each incident
+    # (Add-ReportIncidentGuide) (reads the script values $guidance and $texts)
     $copyParagraphs = New-Object System.Collections.Generic.List[object]
     foreach ($inc in $Incidents) {
-        $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $Data -Catalogue $guidance -Texts $texts))
+        $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $Data -Catalogue $guidance -Texts $texts -Facts $FactsOf))
     }
     return , $copyParagraphs.ToArray()
 }
@@ -788,9 +817,9 @@ if ($model.Meta.HealthOnly) {
         Clear-WorkerPerfReportFreeText $data
     }
     $beforeInc = @($data['before']['incidents'])
-    Add-ReportIncidentGuide -Incidents $beforeInc -Data $data
+    $factsOf = Add-ReportIncidentGuide -Incidents $beforeInc -Data $data
     Set-ReportBeforeRank $beforeInc
-    $copyParagraphs = Get-ReportCopyParagraphs -Incidents $beforeInc -Data $data
+    $copyParagraphs = Get-ReportCopyParagraphs -Incidents $beforeInc -Data $data -FactsOf $factsOf
     $anonymousMask = $null
     if (-not $Mask) { $anonymousMask = New-ReportMask 'Alles' }
     Add-ReportCopyTexts -Incidents $beforeInc -Paragraphs $copyParagraphs -Data $data -AnonymousMask $anonymousMask
@@ -820,6 +849,10 @@ $cores = [int]$model.Meta.Cores
 $offsetMin = [double]$model.Meta.OffsetMinutes
 $fastSec = [double]$model.Meta.FastSec
 $snapSecArr = [double[]]$snap.ElapsedSec
+# The seconds each snapshot stands for in a mean over time. The rule is stated once, in Import-WorkerPerfRun
+# (WorkerPerf.Load.ps1, "Means over time"): every mean of the report data for sessions, applications, processes and
+# pairs follows it, and so do the means the report page computes for a time range.
+$snapWeight = [double[]]$snap.WeightSec
 $capFactor = New-Object double[] $nP          # CPU ms -> % of the host capacity in the snapshot
 for ($i = 0; $i -lt $nP; $i++) {
     $capMs = $snapSecArr[$i] * 1000.0 * $cores
@@ -1113,7 +1146,7 @@ foreach ($s in $sessions) {
         }
         if ($allN -gt 0) { $inWarnPct = [Math]::Round(100.0 * $warnN / $allN, 1) }
     }
-    $rttSt = Get-CleanStats ([double[]]$s.Rtt)
+    $rttSt = Get-CleanStats ([double[]]$s.Rtt)          # percentile and maximum of the snapshots; the mean is taken over time
     $activePct = $null
     if ([int]$s.SeenN -gt 0) { $activePct = [Math]::Round(100.0 * [int]$s.ActiveN / [int]$s.SeenN, 1) }
     $idleMaxMin = $null
@@ -1131,7 +1164,7 @@ foreach ($s in $sessions) {
             cpuAvg = (Get-Round $sum.CpuAvg 2); cpuP95 = (Get-Round $sum.CpuP95 2); cpuMax = (Get-Round $sum.CpuMax 2)
             wsAvg = (Get-Round $sum.WsAvg 0); wsMax = (Get-Round $sum.WsMax 0); privAvg = (Get-Round $sum.PrivAvg 0); privMax = (Get-Round $sum.PrivMax 0)
             ioMB = [Math]::Round($sum.IoBytes / 1MB, 1); procsAvg = [Math]::Round($sum.NAvg, 1); procsMax = $sum.NMax
-            rttAvg = (Get-Round $rttSt.Avg 1); rttP95 = (Get-Round $rttSt.P95 1); rttMax = (Get-Round $rttSt.Max 1)
+            rttAvg = (Get-Round (Get-TimeMean ([double[]]$s.Rtt)) 1); rttP95 = (Get-Round $rttSt.P95 1); rttMax = (Get-Round $rttSt.Max 1)
             inP95 = (Get-Round $inSt.P95 1); inMax = (Get-Round $inSt.Max 1); inWarnPct = $inWarnPct; profileVolume = $profileVolume
             cpu = (New-JsonSeries $sum.Cpu 2); ws = (New-JsonSeries $sum.Ws 0); io = (New-JsonSeries $sum.Io 1); rtt = (New-JsonSeries ([double[]]$s.Rtt) 1)
             inT = (New-JsonIntegers $inT); inMs = (New-JsonSeries $inMs.ToArray() 1); events = $ownEvents
@@ -1145,8 +1178,7 @@ foreach ($key in $pairKeys) {
     $pr = $model.Pairs[$key]
     $a = [int]$pr.A
     if ($appSessions.ContainsKey($a)) { $appSessions[$a]++ } else { $appSessions[$a] = 1 }
-    $wsAvg = 0.0
-    if ([int]$pr.Snaps -gt 0) { $wsAvg = [double]$pr.WsSumKB / [int]$pr.Snaps / 1024.0 }
+    $wsAvg = [double]$pr.WsAvgKB / 1024.0             # mean over the time the pair had a living process
     $pairsOut.Add([ordered]@{
             s = [int]$pr.S; a = $a; inst = [int]$pr.Instances; cpuSec = [Math]::Round([double]$pr.CpuMs / 1000.0, 1)
             wsAvg = [Math]::Round($wsAvg, 0); wsMax = [Math]::Round([double]$pr.WsMaxKB / 1024.0, 0); ioMB = [Math]::Round([double]$pr.IoBytes / 1MB, 1)
@@ -1364,9 +1396,10 @@ foreach ($k in $selK) {
     $pr = $procAll[$k]
     $f0 = [int]$pr.FirstP; $f1 = [int]$pr.LastP
     $cpuA = $pCpu[$k]; $wsA = $pWs[$k]
-    $carry = $nan; $lifeSec = 0.0
+    $carry = $nan; $lifeSec = 0.0; $cpuW = 0.0; $cpuSec = 0.0
     for ($p = $f0; $p -le $f1; $p++) {
         $cpuA[$p] = $cpuA[$p] * $capFactor[$p]
+        if ($cpuA[$p] -eq $cpuA[$p]) { $cpuW += $cpuA[$p] * $snapWeight[$p]; $cpuSec += $snapWeight[$p] }
         if ($wsA[$p] -eq $wsA[$p]) { $carry = $wsA[$p] / 1024.0 }
         $wsA[$p] = $carry
         $lifeSec += $snapSecArr[$p]
@@ -1377,8 +1410,11 @@ foreach ($k in $selK) {
         for ($p = $f0; $p -le $f1; $p++) { if ($wsA[$p] -eq $wsA[$p]) { if ($null -eq $wsFirst) { $wsFirst = [Math]::Round($wsA[$p]) }; $wsLast = [Math]::Round($wsA[$p]) } }
         $printWs[$k] = @{ Start = $wsFirst; End = $wsLast }
     }
+    # mean CPU load over the time the process was seen (see $snapWeight); where its snapshots stand for no time, the CPU
+    # time over the capacity of the seconds measured
     $cpuAvg = $null
-    if ($lifeSec -gt 0 -and $cores -gt 0) { $cpuAvg = [Math]::Round([double]$pr.CpuMs / ($lifeSec * 1000.0 * $cores) * 100.0, 2) }
+    if ($cpuSec -gt 0) { $cpuAvg = [Math]::Round($cpuW / $cpuSec, 2) }
+    elseif ($lifeSec -gt 0 -and $cores -gt 0) { $cpuAvg = [Math]::Round([double]$pr.CpuMs / ($lifeSec * 1000.0 * $cores) * 100.0, 2) }
     $startMs = $null
     if ($null -ne $pr.StartMs) { $startMs = [long]$pr.StartMs }
     $procOut.Add([ordered]@{
@@ -1448,6 +1484,14 @@ $printOut = [ordered]@{ drivers = $driversOut; queues = $queuesOut.ToArray(); pr
 #region ---------- write report -----------------------------------------------------------
 
 $snapKindText = [string]::Join('', [string[]]@($snap.Kind))
+function Get-UnrecordedOut {
+    # The event logs count as not recorded when the capture's sources name none of them and Ereignisse was not left out:
+    # the page and the situation summary then never show a measured 0 for crashes and errors.
+    if (@($model.Skip) -contains 'Ereignisse') { return }
+    if (@($model.Sources.Keys | Where-Object { ([string]$_).StartsWith('events.') }).Count -gt 0) { return }
+    [ordered]@{ id = 'Ereignisse'; label = [string]$texts['skip.label.Ereignisse']; text = [string]$texts['unrecorded.text.Ereignisse']
+        places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) }
+}
 $data = [ordered]@{
     meta = $meta; quality = $quality; thresholds = $thresholdsOut.ToArray()
     tickT = (New-JsonIntegers $tick.TimeMs); snapT = (New-JsonIntegers $snap.TimeMs); snapKind = $snapKindText
@@ -1465,6 +1509,9 @@ $data = [ordered]@{
     health = (Get-WorkerPerfHealthResult -Model $model -Catalogue $healthCatalogue -EventConfig $eventConfig -Roles $roles -Texts $texts)
     # the categories -Skip left out, with their reason and the places of the page that depend on them (last field)
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
+    # the categories the capture never recorded, in the form of skipped without a switch (id, label, reason, places): the
+    # event logs of a capture from before their recording (its sources name no log events.<id>), unless -Skip left them out
+    unrecorded = @(Get-UnrecordedOut)
 }
 
 # The guided report (rulings P3-R8, P3-R9): guidance, ranking, situation summary, groups and copy texts are built from the
@@ -1481,7 +1528,7 @@ if ($Mask) {
 $captureInc = @($data['incidents'])
 $beforeInc = @($data['before']['incidents'])
 $allInc = @($captureInc + $beforeInc)
-Add-ReportIncidentGuide -Incidents $allInc -Data $data
+$factsOf = Add-ReportIncidentGuide -Incidents $allInc -Data $data
 # rank: 1-based in its own list; the capture's incidents by importance, the lookback's by time
 $order = [int[]]@(Get-WorkerPerfIncidentRanking -Incidents $captureInc)
 $incById = @{}
@@ -1492,8 +1539,8 @@ $lagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue
 $cardCount = 10
 $more = @(Get-WorkerPerfIncidentGroups -Incidents $captureInc -Order $order -Cards $cardCount -OffsetMinutes $eventOffset -Texts $texts)
 # the copy texts as unwrapped paragraphs, one list per incident of allInc
-$copyParagraphs = Get-ReportCopyParagraphs -Incidents $allInc -Data $data
-$summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+$copyParagraphs = Get-ReportCopyParagraphs -Incidents $allInc -Data $data -FactsOf $factsOf
+$summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc -Facts $factsOf)
 # the catalogue as read (like thresholds): set below, masked as one composed text in a masked run (ruling P3-R10)
 $data['guidance'] = $null
 $data['lagebild'] = $lagebild
@@ -1520,7 +1567,7 @@ else {
         $data['meta']['endMessage'] = $null
         try {
             $anonymousLagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue $guidance -Texts $texts
-            $anonymousSummary = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $anonymousLagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+            $anonymousSummary = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $anonymousLagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc -Facts $factsOf)
         }
         finally { $data['meta']['endMessage'] = $keptEndMessage }
     }

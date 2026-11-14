@@ -1,4 +1,8 @@
-BeforeDiscovery { $script:Sources = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.ps1) }
+BeforeDiscovery {
+    $script:Sources = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.ps1)
+    # the scripts with comment-based help (a .SYNOPSIS line of their own)
+    $script:HelpScripts = @($script:Sources | Where-Object { [IO.File]::ReadAllText($_.FullName) -match '(?m)^\s*\.SYNOPSIS\s*$' })
+}
 
 BeforeAll {
     function Get-CompatViolations([string]$Path) {
@@ -90,6 +94,17 @@ Describe 'Quelltext' {
     It '<_.Name> haelt die Regeln ein' -ForEach $Sources { Get-CompatViolations $_.FullName | Should -BeNullOrEmpty }
 }
 
+Describe 'Hilfe' {                                                                   # Task 12 Fix 1 O2
+    It 'findet die Skripte mit Hilfe' { @($HelpScripts).Count | Should -BeGreaterThan 0 }
+    It 'Get-Help <_.Name> zeigt die Kurzbeschreibung' -ForEach $HelpScripts {
+        # #Requires directly before the help block hides the help: Get-Help then shows only the syntax.
+        $text = [IO.File]::ReadAllText($_.FullName)
+        $synopsis = [regex]::Match($text, '(?m)^\s*\.SYNOPSIS\s*\r?\n\s*(\S.*?)\s*$').Groups[1].Value
+        $synopsis | Should -Not -BeNullOrEmpty
+        ([string](Get-Help $_.FullName).Synopsis).Trim() | Should -BeLike "$([WildcardPattern]::Escape($synopsis))*"
+    }
+}
+
 Describe 'Funktionsnamen' {
     It 'definiert keinen Funktionsnamen in mehr als einer Datei' {               # Task 14b: Format-WorkerPerfNumber stand in zwei Dateien
         # The data sources WorkerPerf.Sources.*.ps1 define the same fixed names on purpose: they are not compared with each other.
@@ -105,6 +120,31 @@ Describe 'Funktionsnamen' {
         }
         $clashes = @($owners.Keys | Where-Object { $owners[$_].Count -gt 1 } | Sort-Object | ForEach-Object { "$_ ($($owners[$_] -join ', '))" })
         $clashes | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'JSON-Dateien' {
+    It 'nennt in keinem Objekt einer JSON-Datei in src einen Schluessel zweimal' {     # final residuals: affected.none stood twice in texts.de.json
+        # ConvertFrom-Json keeps one of two equal keys without a word, so the other text is lost; keys that differ only in
+        # case count as equal, as for the hashtable of Read-WorkerPerfTexts
+        $twice = { param($Element, [string]$At)
+            if ($Element.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+                $seen = @{}
+                foreach ($p in $Element.EnumerateObject()) {
+                    if ($seen.ContainsKey($p.Name)) { "$At.$($p.Name)" } else { $seen[$p.Name] = $true }
+                    & $twice $p.Value "$At.$($p.Name)"
+                }
+            }
+            elseif ($Element.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) { $k = 0; foreach ($v in $Element.EnumerateArray()) { & $twice $v "$At[$k]"; $k++ } }
+        }
+        $files = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.json); $files.Count | Should -BeGreaterThan 5
+        foreach ($f in $files) {
+            $doc = [System.Text.Json.JsonDocument]::Parse([IO.File]::ReadAllText($f.FullName))
+            try { @(& $twice $doc.RootElement '') | Should -Be @() -Because $f.Name } finally { $doc.Dispose() }
+        }
+        # the check finds a key that stands twice
+        $doc = [System.Text.Json.JsonDocument]::Parse('{ "a": 1, "b": { "c": 1, "C": 2 }, "a": 3 }')
+        try { @(& $twice $doc.RootElement '') | Should -Be @('.b.C', '.a') } finally { $doc.Dispose() }
     }
 }
 

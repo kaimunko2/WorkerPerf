@@ -430,7 +430,7 @@ function Import-WorkerPerfRun {
             Sources = $sources
             Tick = @{ N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); Burst = [bool[]]@(); CollectMs = [double[]]@(); Raw = $raw; Signal = $signal }
             Snap = @{
-                N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); Kind = [string[]]@(); TickPos = [int[]]@()
+                N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); WeightSec = [double[]]@(); Kind = [string[]]@(); TickPos = [int[]]@()
                 Sessions = [double[]]@(); ActiveSessions = [double[]]@(); Processes = [double[]]@(); RowsWritten = [double[]]@(); CollectMs = [double[]]@()
             }
             Sessions = [object[]]@()
@@ -592,6 +592,23 @@ function Import-WorkerPerfRun {
     if ($nP -eq 0) { throw "Die Aufzeichnung enthaelt im gewaehlten Zeitraum keinen Schnappschuss (snapshots.csv ohne lesbare Zeilen)." }
     $snapT = $snapTL.ToArray()
     $snapMs = $snapMsL.ToArray()
+    # Means over time. This is the one rule for every mean ("average") the analysis states from snapshots: for sessions,
+    # applications, processes, pairs of session and application and the Citrix values. The report script
+    # (Get-EntitySummary, Get-TimeMean) and the report page (snapSec in report-template.html) follow it.
+    # A snapshot holds what happened since the snapshot before it, so it stands for the seconds between the two (taken
+    # from their time stamps); the first snapshot of the capture or of a time range stands for one regular snapshot
+    # interval. A mean weighs every snapshot with a value by these seconds. Snapshots follow each other faster while an
+    # incident lasts, so a plain mean of the snapshots would lean towards the incidents. Where the snapshots of a value
+    # stand for no time at all (one snapshot of a capture without a snapshot interval), its mean is their plain mean.
+    # A percentile or a maximum stays that of the snapshots. $snapCum[i] is the time the snapshots before position i
+    # stand for.
+    $snapWeight = New-Object double[] $nP; $snapCum = New-Object double[] ($nP + 1)
+    for ($i = 0; $i -lt $nP; $i++) {
+        $w = $snapSec
+        if ($i -gt 0) { $w = ($snapMs[$i] - $snapMs[$i - 1]) / 1000.0 }
+        if (-not ($w -gt 0)) { $w = 0.0 }
+        $snapWeight[$i] = $w; $snapCum[$i + 1] = $snapCum[$i] + $w
+    }
     $snapTickPos = New-Object int[] $nP
     for ($i = 0; $i -lt $nP; $i++) {
         $pos = -1
@@ -1033,10 +1050,10 @@ function Import-WorkerPerfRun {
             $key = $f[$cSrc] + '|' + $sessIdx + '|' + $f[$cInst] + '|' + $metric
             $a = $citrixAgg[$key]
             if ($null -eq $a) {
-                $a = @{ Source = $f[$cSrc]; SessionIndex = $sessIdx; Instance = $f[$cInst]; Metric = $metric; Sum = 0.0; Max = $nan; N = 0 }
+                $a = @{ Source = $f[$cSrc]; SessionIndex = $sessIdx; Instance = $f[$cInst]; Metric = $metric; Sum = 0.0; Max = $nan; N = 0; SecSum = 0.0; Sec = 0.0 }
                 $citrixAgg[$key] = $a; $citrixOrder.Add($key)
             }
-            $a.Sum += $val; $a.N++
+            $a.Sum += $val; $a.N++; $a.SecSum += $val * $snapWeight[$sp]; $a.Sec += $snapWeight[$sp]
             if ([double]::IsNaN($a.Max) -or $val -gt $a.Max) { $a.Max = $val }
             if ($sessIdx -ge 0) {
                 $slot = -1
@@ -1054,7 +1071,9 @@ function Import-WorkerPerfRun {
     $citrix = New-Object System.Collections.Generic.List[object]
     foreach ($key in $citrixOrder) {
         $a = $citrixAgg[$key]
-        $citrix.Add(@{ Source = $a.Source; SessionIndex = $a.SessionIndex; Instance = $a.Instance; Metric = $a.Metric; Avg = ($a.Sum / $a.N); Max = $a.Max; N = $a.N })
+        # mean over the time of the snapshots with a value (see $snapWeight)
+        if ($a.Sec -gt 0) { $avg = $a.SecSum / $a.Sec } else { $avg = $a.Sum / $a.N }
+        $citrix.Add(@{ Source = $a.Source; SessionIndex = $a.SessionIndex; Instance = $a.Instance; Metric = $a.Metric; Avg = $avg; Max = $a.Max; N = $a.N })
     }
     foreach ($si in $ctxTmp.Keys) {
         $s = $sessions[[int]$si]
@@ -1155,6 +1174,7 @@ function Import-WorkerPerfRun {
     $pFirst = New-Object int[] $nK; $pLast = New-Object int[] $nK; $pWsSince = New-Object int[] $nK
     $pCpu = New-Object double[] $nK; $pCpuMax = New-Object double[] $nK; $pIo = New-Object double[] $nK
     $pWsMax = New-Object double[] $nK; $pWsSum = New-Object double[] $nK; $pPrivMax = New-Object double[] $nK
+    $pWsSec = New-Object double[] $nK              # working set times the seconds it held (mean over time, see $snapWeight)
     $pHandles = New-Object int[] $nK; $pThreads = New-Object int[] $nK
     $pRole = New-Object string[] $nK; $pRoleLabel = New-Object string[] $nK
     $alive = New-Object System.Collections.Generic.List[int]
@@ -1169,11 +1189,13 @@ function Import-WorkerPerfRun {
     $aCpuA = New-Object object[] ($nK + 1); $aIoA = New-Object object[] ($nK + 1); $aWsA = New-Object object[] ($nK + 1); $aPrivA = New-Object object[] ($nK + 1); $aNA = New-Object object[] ($nK + 1)
     $pairKeys = New-Object System.Collections.Generic.List[string]
     $pairByKey = @{}
-    # pair working set: Cur holds from position Since on; Sum and Max cover the positions before Since
+    # pair working set: Cur holds from position Since on; Sum and Max cover the positions before Since; Sec is Cur times
+    # the seconds it held, AliveSec the seconds of the positions with a living process (mean over time, see $snapWeight)
     $prS = New-Object int[] ($nK + 1); $prA = New-Object int[] ($nK + 1); $prInst = New-Object int[] ($nK + 1)
     $prCpu = New-Object double[] ($nK + 1); $prIo = New-Object double[] ($nK + 1)
     $prCur = New-Object double[] ($nK + 1); $prSince = New-Object int[] ($nK + 1); $prSum = New-Object double[] ($nK + 1); $prMax = New-Object double[] ($nK + 1)
     $prAlive = New-Object int[] ($nK + 1); $prSnaps = New-Object int[] ($nK + 1)      # living processes; positions with at least one
+    $prSec = New-Object double[] ($nK + 1); $prAliveSec = New-Object double[] ($nK + 1)
     $rowStart = New-Object int[] ($nP + 1)
     $rowK = New-Object System.Collections.Generic.List[int]
     $rowCpu = New-Object System.Collections.Generic.List[double]
@@ -1228,8 +1250,9 @@ function Import-WorkerPerfRun {
         $sWs[$si] += $pWs[$K]; $sPriv[$si] += $pPriv[$K]; $sN[$si]++
         $aWs[$ai] += $pWs[$K]; $aPriv[$ai] += $pPriv[$K]; $aN[$ai]++
         if ($prSince[$pi] -lt $Pos) {
-            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
-            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi] }
+            $sec = $snapCum[$Pos] - $snapCum[$prSince[$pi]]
+            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi]); $prSec[$pi] += $prCur[$pi] * $sec
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi]; $prAliveSec[$pi] += $sec }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
             $prSince[$pi] = $Pos
         }
@@ -1245,13 +1268,14 @@ function Import-WorkerPerfRun {
         $sWs[$si] -= $pWs[$K]; $sPriv[$si] -= $pPriv[$K]; $sN[$si]--
         $aWs[$ai] -= $pWs[$K]; $aPriv[$ai] -= $pPriv[$K]; $aN[$ai]--
         if ($prSince[$pi] -lt $Pos) {
-            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi])
-            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi] }
+            $sec = $snapCum[$Pos] - $snapCum[$prSince[$pi]]
+            $prSum[$pi] += $prCur[$pi] * ($Pos - $prSince[$pi]); $prSec[$pi] += $prCur[$pi] * $sec
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $Pos - $prSince[$pi]; $prAliveSec[$pi] += $sec }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
             $prSince[$pi] = $Pos
         }
         $prCur[$pi] -= $pWs[$K]; $prAlive[$pi]--
-        $pWsSum[$K] += $pWs[$K] * ($Pos - $pWsSince[$K])
+        $pWsSum[$K] += $pWs[$K] * ($Pos - $pWsSince[$K]); $pWsSec[$K] += $pWs[$K] * ($snapCum[$Pos] - $snapCum[$pWsSince[$K]])
         $pLast[$K] = $Pos - 1
     }
 
@@ -1332,13 +1356,14 @@ function Import-WorkerPerfRun {
             $sWs[$si] += $dWs; $sPriv[$si] += $dPriv; $aWs[$ai] += $dWs; $aPriv[$ai] += $dPriv
             if ($dWs -ne 0) {
                 if ($prSince[$pi] -lt $pos) {
-                    $prSum[$pi] += $prCur[$pi] * ($pos - $prSince[$pi])
-                    if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $pos - $prSince[$pi] }
+                    $sec = $snapCum[$pos] - $snapCum[$prSince[$pi]]
+                    $prSum[$pi] += $prCur[$pi] * ($pos - $prSince[$pi]); $prSec[$pi] += $prCur[$pi] * $sec
+                    if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $pos - $prSince[$pi]; $prAliveSec[$pi] += $sec }
                     if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
                     $prSince[$pi] = $pos
                 }
                 $prCur[$pi] += $dWs
-                $pWsSum[$k] += $pWs[$k] * ($pos - $pWsSince[$k]); $pWsSince[$k] = $pos
+                $pWsSum[$k] += $pWs[$k] * ($pos - $pWsSince[$k]); $pWsSec[$k] += $pWs[$k] * ($snapCum[$pos] - $snapCum[$pWsSince[$k]]); $pWsSince[$k] = $pos
                 $pWs[$k] = $ws
             }
             if ($ws -gt $pWsMax[$k]) { $pWsMax[$k] = $ws }
@@ -1364,12 +1389,14 @@ function Import-WorkerPerfRun {
     $kByPid = @{}
     for ($k = 0; $k -lt $nK; $k++) {
         if ($pSess[$k] -lt 0) { continue }              # unknown or not alive in the range
-        if ($pState[$k] -eq 1) { $pWsSum[$k] += $pWs[$k] * ($nP - $pWsSince[$k]); $pLast[$k] = $nP - 1 }
-        $span = $pLast[$k] - $pFirst[$k] + 1
+        if ($pState[$k] -eq 1) { $pWsSum[$k] += $pWs[$k] * ($nP - $pWsSince[$k]); $pWsSec[$k] += $pWs[$k] * ($snapCum[$nP] - $snapCum[$pWsSince[$k]]); $pLast[$k] = $nP - 1 }
+        # mean working set over the time the process was seen (see $snapWeight)
+        $span = $pLast[$k] - $pFirst[$k] + 1; $spanSec = $snapCum[$pLast[$k] + 1] - $snapCum[$pFirst[$k]]
+        if ($spanSec -gt 0) { $wsAvg = $pWsSec[$k] / $spanSec } else { $wsAvg = $pWsSum[$k] / $span }
         $procs[$k] = @{
             K = $k; Pid = $iPid[$k]; Name = $iName[$k]; Sid = $iSid[$k]; StartMs = $iStart[$k]; Path = $iPath[$k]; Services = $iSvc[$k]; Cmd = $iCmd[$k]
             SessionIndex = $pSess[$k]; AppIndex = $pApp[$k]; Role = $pRole[$k]; RoleLabel = $pRoleLabel[$k]; IsCollector = ($iPid[$k] -eq $collectorPid)
-            FirstP = $pFirst[$k]; LastP = $pLast[$k]; CpuMs = $pCpu[$k]; CpuMaxPct = $pCpuMax[$k]; WsMaxKB = $pWsMax[$k]; WsAvgKB = ($pWsSum[$k] / $span)
+            FirstP = $pFirst[$k]; LastP = $pLast[$k]; CpuMs = $pCpu[$k]; CpuMaxPct = $pCpuMax[$k]; WsMaxKB = $pWsMax[$k]; WsAvgKB = $wsAvg
             PrivMaxKB = $pPrivMax[$k]; IoBytes = $pIo[$k]; Handles = $pHandles[$k]; Threads = $pThreads[$k]
         }
         if (-not $kByPid.ContainsKey($iPid[$k])) { $kByPid[$iPid[$k]] = New-Object System.Collections.Generic.List[int] }
@@ -1378,11 +1405,19 @@ function Import-WorkerPerfRun {
     $pairs = @{}
     for ($pi = 0; $pi -lt $pairKeys.Count; $pi++) {
         if ($prSince[$pi] -lt $nP) {
-            $prSum[$pi] += $prCur[$pi] * ($nP - $prSince[$pi])
-            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $nP - $prSince[$pi] }
+            $sec = $snapCum[$nP] - $snapCum[$prSince[$pi]]
+            $prSum[$pi] += $prCur[$pi] * ($nP - $prSince[$pi]); $prSec[$pi] += $prCur[$pi] * $sec
+            if ($prAlive[$pi] -gt 0) { $prSnaps[$pi] += $nP - $prSince[$pi]; $prAliveSec[$pi] += $sec }
             if ($prCur[$pi] -gt $prMax[$pi]) { $prMax[$pi] = $prCur[$pi] }
         }
-        $pairs[$pairKeys[$pi]] = @{ S = $prS[$pi]; A = $prA[$pi]; Instances = $prInst[$pi]; CpuMs = $prCpu[$pi]; IoBytes = $prIo[$pi]; WsSumKB = $prSum[$pi]; WsMaxKB = $prMax[$pi]; Snaps = $prSnaps[$pi] }
+        # mean working set of the pair over the time it had a living process (see $snapWeight); WsSumKB and Snaps are the
+        # sum over the snapshots and their number
+        $wsAvg = 0.0
+        if ($prAliveSec[$pi] -gt 0) { $wsAvg = $prSec[$pi] / $prAliveSec[$pi] } elseif ($prSnaps[$pi] -gt 0) { $wsAvg = $prSum[$pi] / $prSnaps[$pi] }
+        $pairs[$pairKeys[$pi]] = @{
+            S = $prS[$pi]; A = $prA[$pi]; Instances = $prInst[$pi]; CpuMs = $prCpu[$pi]; IoBytes = $prIo[$pi]
+            WsSumKB = $prSum[$pi]; WsMaxKB = $prMax[$pi]; Snaps = $prSnaps[$pi]; WsAvgKB = $wsAvg
+        }
     }
 
     # input delay per process: the process that had the PID at the snapshot of the tick
@@ -1433,7 +1468,7 @@ function Import-WorkerPerfRun {
             Raw = $raw; Signal = $signal
         }
         Snap = @{
-            N = $nP; TimeMs = $snapMs; ElapsedSec = $snapNum['ElapsedSec'].ToArray(); Kind = $kinds; TickPos = $snapTickPos
+            N = $nP; TimeMs = $snapMs; ElapsedSec = $snapNum['ElapsedSec'].ToArray(); WeightSec = $snapWeight; Kind = $kinds; TickPos = $snapTickPos
             Sessions = $snapNum['Sessions'].ToArray(); ActiveSessions = $snapNum['ActiveSessions'].ToArray()
             Processes = $snapNum['Processes'].ToArray(); RowsWritten = $snapNum['RowsWritten'].ToArray(); CollectMs = $snapNum['CollectMs'].ToArray()
         }

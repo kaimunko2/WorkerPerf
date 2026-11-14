@@ -93,6 +93,53 @@ Describe 'Durchlauf Simulation -> Bericht' {
         (Get-Hit 'backend').cause | Should -BeNullOrEmpty
     }
 }
+Describe 'Mittelwerte der simulierten Stunde' {                                       # P3-R77
+    BeforeAll {
+        # Jeder Schnappschuss steht fuer die Sekunden seit dem vorigen, der erste fuer ein regulaeres Intervall (die Regel
+        # steht in src/WorkerPerf.Load.ps1). Waehrend eines Vorfalls folgen die Schnappschuesse dichter aufeinander.
+        $script:SnapW = New-Object double[] $D.snapT.Count; $SnapW[0] = [double]$D.meta.snapSec
+        for ($i = 1; $i -lt $SnapW.Length; $i++) { $SnapW[$i] = ($D.snapT[$i] - $D.snapT[$i - 1]) / 1000.0 }
+        function Get-SeriesMean($Series, [int]$Offset, [bool]$OverTime) {
+            # mean of the values of a snapshot series (null = no value): over time or over the snapshots
+            $sum = 0.0; $cov = 0.0
+            for ($i = 0; $i -lt $Series.Count; $i++) {
+                if ($null -eq $Series[$i]) { continue }
+                $w = 1.0; if ($OverTime) { $w = $SnapW[$Offset + $i] }
+                $sum += [double]$Series[$i] * $w; $cov += $w
+            }
+            if ($cov -le 0) { return $null }
+            $sum / $cov
+        }
+    }
+    It 'nennt fuer jede Sitzung, Anwendung und jeden Prozess das Mittel ueber die Zeit ihrer Verlaeufe' {
+        $off = New-Object System.Collections.Generic.List[string]; $n = 0
+        foreach ($kind in 'sessions', 'apps', 'procs') {
+            foreach ($x in @($D.$kind)) {
+                if ($null -eq $x.cpu -or $null -eq $x.ws) { continue }
+                $o = 0; if ($kind -eq 'procs') { $o = [int]$x.o }
+                $cpu = Get-SeriesMean $x.cpu $o $true; $ws = Get-SeriesMean $x.ws $o $true; $n++
+                # Verlaeufe und Mittel sind gerundet (CPU auf 0,01 %, Working Set auf 1 MB)
+                if ([Math]::Abs($cpu - $x.cpuAvg) -gt 0.011 -or [Math]::Abs($ws - $x.wsAvg) -gt 1.01) { $off.Add("$kind $($x.name)$($x.user): CPU $($x.cpuAvg) statt $cpu, RAM $($x.wsAvg) statt $ws") }
+            }
+        }
+        $n | Should -BeGreaterThan 250
+        $off | Should -BeNullOrEmpty
+    }
+    It 'neigt die Mittel nicht mehr zu den Vorfaellen' {
+        # user003 traegt den CPU-Engpass: in den dichten Schnappschuessen des Vorfalls liegt seine Last hoch
+        $u = $D.sessions | Where-Object user -eq 'user003'
+        (Get-SeriesMean $u.cpu 0 $false) - $u.cpuAvg | Should -BeGreaterThan 1
+        # CPU-Zeit durch die Kapazitaet der Zeit, die die Schnappschuesse der Sitzung abdecken
+        $covered = 0.0; for ($i = 0; $i -lt $u.cpu.Count; $i++) { if ($null -ne $u.cpu[$i]) { $covered += $SnapW[$i] } }
+        [Math]::Abs(100 * $u.cpuSec / ($D.meta.cores * $covered) - $u.cpuAvg) | Should -BeLessThan 0.02
+        # ms-teams.exe von user007 waechst im Speicher-Engpass: das Mittel der Schnappschuesse laege weit ueber dem Mittel ueber die Zeit
+        $t = $D.procs | Where-Object { $_.name -eq 'ms-teams.exe' } | Sort-Object wsMax -Descending | Select-Object -First 1
+        (Get-SeriesMean $t.ws ([int]$t.o) $false) - $t.wsAvg | Should -BeGreaterThan 1000
+        # "RAM Ø je Instanz" ist der Quotient der beiden Mittel ueber die Zeit
+        $a = $D.apps | Where-Object name -eq 'EXCEL.EXE'
+        [Math]::Abs($a.wsAvg / $a.instAvg - $a.wsPerInst) | Should -BeLessThan (0.06 * $a.wsPerInst)
+    }
+}
 Describe 'Fokus, kein Befund, Zeitausschnitt' {
     It 'hebt Vorfaelle des gemeldeten Benutzers und der gemeldeten Uhrzeit hervor' {
         $f = Get-ReportData $R.Focus
@@ -239,6 +286,44 @@ Describe 'Kleine Aufzeichnung: Maskierung, Fokus, Uhrzeit, Fehlermeldungen' {
         $d.meta.start | Should -Be ([DateTimeOffset]'2026-01-15T08:00:10+02:00').ToUnixTimeMilliseconds()
         { Invoke-Small 'cutout' @{ From = [datetime]'2026-01-15 10:00:09' } } | Should -Throw '*liegt ausserhalb der Aufzeichnung (15.01.2026 08:00:02 bis 15.01.2026 08:00:16, Ortszeit des Servers)*'
     }
+    It 'nennt die Mittelwerte von Sitzungen, Anwendungen, Paaren und Prozessen als Mittel ueber die Zeit' {     # P3-R77
+        # 4 Kerne; Schnappschuesse bei 4, 6, 10 und 16 s: sie stehen fuer 4 s (der erste: ein regulaeres Intervall), 2 s, 4 s
+        # und 6 s. K0 EXCEL (PID 100) lebt durchgehend, K1 EXCEL (PID 200) ab dem dritten Schnappschuss, K2 notepad ruht.
+        $run = Write-TestRun 'means' @{
+            'ticks.csv' = @(0..7 | ForEach-Object { New-TickLine $_ })
+            'snapshots.csv' = @("0,1,$(Get-Ts 4),4,K,1,1,3,3,20", "1,2,$(Get-Ts 6),2,R,1,1,3,3,20", "2,4,$(Get-Ts 10),4,R,1,1,3,3,20", "3,7,$(Get-Ts 16),6,R,1,1,3,3,20")
+            'sessions.csv' = @(0..3 | ForEach-Object { "$_,2,user1,DOM,Active,ICA-1,CL1,,0" })
+            'procinfo.csv' = @('0,100,1,EXCEL.EXE,2,,C:\x\EXCEL.EXE,,', '1,200,1,EXCEL.EXE,2,,C:\x\EXCEL.EXE,,', '2,300,1,notepad.exe,2,,C:\x\notepad.exe,,')
+            'processes.csv' = @('0,0,160,102400,102400,0,0,0,10,2', '0,2,0,10240,10240,0,0,0,10,2', '1,0,800,204800,204800,0,0,0,10,2',
+                                '2,1,320,51200,51200,0,0,0,10,2', '3,0,480,122880,122880,0,0,0,10,2')
+            'citrix.csv' = @('1,Citrix_Euem_RoundTrip,2,,RoundtripTime,20', '2,Citrix_Euem_RoundTrip,2,,RoundtripTime,100', '4,Citrix_Euem_RoundTrip,2,,RoundtripTime,40', '7,Citrix_Euem_RoundTrip,2,,RoundtripTime,40')
+        }
+        $out = Join-Path $TestDrive 'means.html'; [void](& $Report -Path $run -OutFile $out 6>$null); $j = Get-ReportData $out
+        # Sitzung: CPU 1 %, 10 %, 2 %, 2 % der Kapazitaet des Schnappschusses -> (1*4 + 10*2 + 2*4 + 2*6) / 16 = 2,75 (= 1760 ms CPU-Zeit
+        # durch 4 Kerne mal 16 s); ueber die Schnappschuesse waeren es 3,75
+        $s = $j.sessions | Where-Object user -eq 'user1'
+        $s.cpuAvg | Should -Be 2.75; $s.cpuSec | Should -Be 1.8
+        # Working Set 110, 210, 260, 180 MB -> (440 + 420 + 1040 + 1080) / 16 = 186,25 (Schnappschuesse: 190); Private Bytes ebenso
+        $s.wsAvg | Should -Be 186; $s.privAvg | Should -Be 186; $s.wsMax | Should -Be 260
+        # Prozesse 2, 2, 3, 3 -> (8 + 4 + 12 + 18) / 16 = 2,625 (Schnappschuesse: 2,5)
+        $s.procsAvg | Should -Be 2.6; $s.procsMax | Should -Be 3
+        # ICA RTT 20, 100, 40, 40 ms -> (80 + 200 + 160 + 240) / 16 = 42,5 (Schnappschuesse: 50)
+        $s.rttAvg | Should -Be 42.5; $s.rttMax | Should -Be 100
+        $j.citrix[0].avg | Should -Be 42.5; $j.citrix[0].max | Should -Be 100; $j.citrix[0].n | Should -Be 4       # derselbe Messwert in der Tabelle der Citrix-Messwerte
+        # Anwendung EXCEL.EXE: CPU wie die Sitzung; Working Set 100, 200, 250, 170 MB -> 2820 / 16 = 176,25 (Schnappschuesse: 180);
+        # Instanzen 1, 1, 2, 2 -> 26 / 16 = 1,625 (Schnappschuesse: 1,5); je Instanz 176,25 / 1,625 = 108,5 (Schnappschuesse: 120)
+        $a = $j.apps | Where-Object name -eq 'EXCEL.EXE'
+        $a.cpuAvg | Should -Be 2.75; $a.wsAvg | Should -Be 176; $a.instAvg | Should -Be 1.6; $a.instMax | Should -Be 2; $a.wsPerInst | Should -Be 108
+        # das Paar Sitzung x EXCEL.EXE: wie die Anwendung (Schnappschuesse: 180); notepad ruht mit 10 MB
+        ($j.pairs | Where-Object a -eq $a.i).wsAvg | Should -Be 176
+        ($j.pairs | Where-Object a -eq ($j.apps | Where-Object name -eq 'notepad.exe').i).wsAvg | Should -Be 10
+        # Prozess K0: CPU 1 %, 10 %, 0 %, 2 % -> 36 / 16 = 2,25; Working Set 100, 200, 200, 120 MB -> 2320 / 16 = 145 (Schnappschuesse: 155)
+        $p = $j.procs | Where-Object pid -eq 100
+        $p.cpuAvg | Should -Be 2.25; $p.wsAvg | Should -Be 145
+        # Prozess K1 lebt 10 s: CPU 2 %, 0 % -> 8 / 10 = 0,8; Working Set 50 MB
+        $p = $j.procs | Where-Object pid -eq 200
+        $p.cpuAvg | Should -Be 0.8; $p.wsAvg | Should -Be 50
+    }
     It 'nennt einen fehlenden Aufzeichnungsordner' {
         { & $Report -Path (Join-Path $TestDrive 'fehlt') -OutFile (Join-Path $TestDrive 'y.html') 6>$null } | Should -Throw '*Aufzeichnungsordner*'
     }
@@ -268,7 +353,7 @@ Describe 'Ereignisvorfaelle im Bericht' {
         # C1: the crash of the lookback without session and account is an incident of its own, worded as unknown session
         $ns = @($D.before.incidents | Where-Object { $_.event.app -eq 'simscan.exe' })
         $ns.Count | Should -Be 1; $ns[0].severity | Should -Be 1; $ns[0].event.sessionUnknown | Should -BeTrue
-        $ns[0].text | Should -Match 'Absturz von simscan\.exe \(1-mal\)\. Sitzung nicht ermittelt\. .*Kein Muster erkannt\.$'
+        $ns[0].text | Should -Match 'Absturz von simscan\.exe \(einmal\)\. Sitzung nicht ermittelt\. .*Kein Muster erkannt\.$'
         $D.before.days | Should -Be 7; $D.before.eventCount | Should -Be 6; ($D.before.perDay | Measure-Object count -Sum).Sum | Should -Be 6   # C1: ein Absturz ohne Sitzung dazu
         ($D.print.drivers | Where-Object involved).name | Should -Be 'HP Universal Printing PCL 6 (Sim)'
         ($D.print.queues | Where-Object name -eq 'PRN-EG-01').maxJobs | Should -Be 3; ($D.print.queues | Where-Object name -eq 'PRN-EG-01').jobErrors | Should -Be 1
@@ -948,5 +1033,94 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         $run = Copy-SimRun $R.Run (Join-Path $TestDrive 'appscopy'); [IO.File]::WriteAllText((Join-Path $run 'apps.json'), '{ kaputt')
         $f = Join-Path $TestDrive 'appscopy.html'; [void](& $ReportScript -Path $run -OutFile $f -RoleFile $RoleFile 6>$null)
         @((Get-ReportData $f).health.areas.grade) | Should -Be @($D.health.areas.grade)
+    }
+}
+Describe 'Abschlussrunde Teil B' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+        $script:ReportScript = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $script:Roles = Join-Path $TestDrive 'r/roles.sim.json'
+        $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+        function Set-MetaText([string]$Run, [scriptblock]$Change) { $f = Join-Path $Run 'meta.json'; [IO.File]::WriteAllText($f, (& $Change ([IO.File]::ReadAllText($f)))) }
+    }
+    It 'zaehlt in einer Aufzeichnung ohne Ereignisprotokolle keine Abstuerze als 0' {                 # final review I2
+        # a capture from before the events were recorded: no events files, no source events.<log>
+        $old = Copy-SimRun $R.Run (Join-Path $TestDrive 'old') @('events.csv', 'events_before.csv')
+        Set-MetaText $old { param($t) $t -replace '"events\.[^"]+"\s*:\s*\{[^{}]*\}\s*,?\s*', '' -replace ',(\s*\})', '$1' }
+        $file = Join-Path $TestDrive 'report-old.html'
+        [void](& $ReportScript -Path $old -OutFile $file -RoleFile $Roles 6>$null)
+        $O = Get-ReportData $file
+        @($O.unrecorded).Count | Should -Be 1; $O.unrecorded[0].id | Should -Be 'Ereignisse'; $O.unrecorded[0].text | Should -Be $Texts['unrecorded.text.Ereignisse']
+        @($O.unrecorded[0].places) | Should -Be @('events', 'sessions.events', 'incidents.events'); @($O.skipped).Count | Should -Be 0
+        $O.lagebild.kpis.events | Should -Be 0
+        $O.lagebild.sentence | Should -Not -Match 'Absturz'; $O.lagebild.sentence | Should -Match 'Nicht gemessen: Ereignisse\.$'
+        @($O.lagebild.hints | Where-Object { $_ -match 'Skip' }).Count | Should -Be 0
+        ($O.copyAll.named -replace "`r`n", ' ') | Should -Match 'Nicht gemessen: Ereignisse\.'
+        # the capture with its logs: a measured count, nothing unrecorded
+        @($D.unrecorded).Count | Should -Be 0; $D.lagebild.sentence | Should -Match 'Absturz oder Fehler \(4\)'      # final residuals, item 1: the count in brackets
+    }
+    It 'nennt unter dem Lagebild ein Ereignisprotokoll, das nicht gelesen werden konnte oder Ereignisse verlor' {   # final review I2
+        $run = Copy-SimRun $R.Run (Join-Path $TestDrive 'failedlog')
+        Set-MetaText $run { param($t) ($t -replace '("events\.system"\s*:\s*\{)', '$1 "ReadFailed": true,') -replace '"EventReadCounts"\s*:\s*\{\s*\}', '"EventReadCounts": { "application": { "SkippedRecords": 0, "UnformattedMessages": 0, "DroppedEvents": 40 } }' }
+        $file = Join-Path $TestDrive 'report-failedlog.html'
+        [void](& $ReportScript -Path $run -OutFile $file -RoleFile $Roles 6>$null)
+        $F = Get-ReportData $file
+        $want = [string]::Format($Texts['hint.eventsIncomplete'], ($Texts['source.events.system'] + ', ' + $Texts['source.events.application']))
+        @($F.lagebild.hints) | Should -Contain $want
+        ($F.copyAll.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($want))
+        @($D.lagebild.hints).Count | Should -Be 0
+    }
+    It 'berechnet die Fakten je Vorfall einmal und nennt bei einer Messung ueber Mitternacht beide Tage' {   # final review M3, M7
+        # the capture as one that starts at 23:30 server time: every time stamp the same instant in another offset
+        $night = Copy-SimRun $R.Run (Join-Path $TestDrive 'night')
+        $first = [DateTimeOffset]::Parse((Get-Content (Join-Path $night 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture)
+        $minutes = ((23 * 60 + 30) - ($first.UtcDateTime.Hour * 60 + $first.UtcDateTime.Minute) + 2880) % 1440; if ($minutes -ge 720) { $minutes -= 1440 }
+        $offset = [TimeSpan]::FromMinutes($minutes)
+        $stamp = New-Object System.Text.RegularExpressions.Regex '\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?([+-]\d\d:\d\d|Z)'
+        foreach ($f in Get-ChildItem -LiteralPath $night -File) {
+            $text = [IO.File]::ReadAllText($f.FullName)
+            $text = $stamp.Replace($text, { param($m) [DateTimeOffset]::Parse($m.Value, [cultureinfo]::InvariantCulture).ToOffset($offset).ToString('yyyy-MM-ddTHH:mm:ss.fffffffzzz', [cultureinfo]::InvariantCulture) })
+            [IO.File]::WriteAllText($f.FullName, $text)
+        }
+        $file = Join-Path $TestDrive 'report-night.html'
+        $global:WpFactsCalls = 0
+        $bp = Set-PSBreakpoint -Command 'Get-WorkerPerfGuidanceFacts' -Action { $global:WpFactsCalls++ }
+        try { [void](& $ReportScript -Path $night -OutFile $file -RoleFile $Roles 6>$null) } finally { Remove-PSBreakpoint -Breakpoint $bp }
+        $N = Get-ReportData $file
+        # once per incident of the capture and of the days before it
+        $global:WpFactsCalls | Should -Be (@($N.incidents).Count + @($N.before.incidents).Count)
+        $N.meta.offsetMin | Should -Be $minutes
+        $day1 = Format-WorkerPerfEventDate ([long]$N.meta.start) $minutes; $day2 = Format-WorkerPerfEventDate ([long]$N.meta.end) $minutes
+        $day1 | Should -Not -Be $day2
+        $lines = @($N.copyAll.named -split "`r`n")
+        ($lines[0..1] -join ' ') | Should -Match ("am {0}, 23:30 bis {1} 00:30 Uhr" -f [regex]::Escape($day1), [regex]::Escape($day2))
+        # the incidents after midnight with their date, those before it without
+        $after = @($N.incidents | Where-Object { -not $_.chronic -and (Format-WorkerPerfEventDate ([long]$_.start) $minutes) -eq $day2 })
+        $before = @($N.incidents | Where-Object { -not $_.chronic -and (Format-WorkerPerfEventDate ([long]$_.start) $minutes) -eq $day1 })
+        $after.Count | Should -BeGreaterThan 0; $before.Count | Should -BeGreaterThan 0
+        $joined = $N.copyAll.named -replace "`r`n +", ' '
+        foreach ($i in $after) { $joined | Should -Match ("(?m)^- {0} {1}" -f [regex]::Escape($day2), (Format-WorkerPerfClock ([long]$i.start) $minutes).Substring(0, 5)) -Because "Vorfall $($i.id)" }
+        foreach ($i in $before) { $joined | Should -Match ("(?m)^- {0}" -f (Format-WorkerPerfClock ([long]$i.start) $minutes).Substring(0, 5)) -Because "Vorfall $($i.id)" }
+        # the copy texts of the incidents are those of the capture as it is, apart from times and dates
+        @($N.incidents).Count | Should -Be @($D.incidents).Count
+    }
+    It 'beschreibt die Skripte ohne alte Bezeichnungen' {                                              # parked: English synopses
+        foreach ($s in 'Start-WorkerPerfCapture.ps1', 'New-WorkerPerfReport.ps1') {
+            $help = Get-Help (Join-Path $PSScriptRoot "../src/$s")
+            ([string]$help.Synopsis) | Should -Not -Match 'terminal server worker|format 2' -Because $s
+        }
+        ([string](Get-Help (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1')).Synopsis) | Should -Match "format $script:WorkerPerfFormatVersion\b"
+    }
+    It 'nennt im README die Kosten der Fassung ohne Namen und die Grenze eines Zeitraums bei Laufwerken und Freigaben' {   # P3-R81, P3-R73
+        $readme = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../README.md')) -replace '\s+', ' '
+        $readme | Should -Match 'liest die Auswertung die Namen der ganzen Aufzeichnung ein zweites Mal'
+        $readme | Should -Match 'etwa eine Sekunde je Stunde Aufzeichnung'
+        $readme | Should -Match 'Bekannte Grenze: Bei Laufwerken und Freigaben zählt ein gewählter Zeitraum auch Messpunkte mit'
+    }
+    It 'enthaelt in der Seite keine Konstante und keine Funktion, die nirgends benutzt wird' {           # final review M8
+        $page = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/report-template.html'))
+        $script = $page.Substring($page.IndexOf('<script>'))
+        $names = @([regex]::Matches($script, '(?m)^(?:const|let|function)\s+([A-Za-z_$][\w$]*)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $names.Count | Should -BeGreaterThan 100
+        @($names | Where-Object { [regex]::Matches($script, '(?<![\w$]|(?<!\.\.)\.)' + [regex]::Escape($_) + '(?![\w$])').Count -lt 2 }) | Should -BeNullOrEmpty
     }
 }
