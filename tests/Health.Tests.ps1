@@ -1612,6 +1612,24 @@ Describe 'Fakten nach der Quellenpruefung (Task 14s)' {
         $f = & $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = (New-WorkerPerfHealthValue 'unreadable' 'timeout') }
         $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'
         $f = & $scan @{ 'maintenance.scanDay' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') }; $f.State | Should -Be 'absent'; $f.Reason | Should -Be 'notInstalled'
+        # Korrekturrunde 1, Punkt 2: der Beginn wird in eine Woche zurueckgerechnet; Montag 02:00 plus zwei Wochen und 8 Stunden ist Montag 09:30 bis 10:30
+        (& $scan @{ 'maintenance.scanDay' = 2; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = (2 * 7 * 1440 + 480) }).Value | Should -BeTrue
+        (& $scan @{ 'maintenance.scanDay' = 2; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = (2 * 7 * 1440 + 480); 'maintenance.scanRandomize' = $false }).Value | Should -BeTrue
+        (& $scan @{ 'maintenance.scanDay' = 1; 'maintenance.scanTime' = '02:00'; 'maintenance.scanOffset' = (3 * 7 * 1440 + 480) }).Value | Should -BeFalse      # Sonntag 09:30
+        Test-WorkerPerfHealthScanWindow 7 0 (7 * 1440) @{ WorkStart = 7; WorkEnd = 18 } | Should -BeTrue                                                        # eine Woche lang: sofort
+        # Korrekturrunde 1, Punkt 3: erst der Tag und der Schnellscan, dann das Fenster, und nur fuer einen Scan, den es gibt
+        $bad = New-WorkerPerfHealthValue 'unreadable' 'timeout'
+        foreach ($part in 'maintenance.scanOffset', 'maintenance.scanRandomize', 'maintenance.scanRandomWindow') {
+            $f = & $scan @{ 'maintenance.scanDay' = 8; 'maintenance.scanTime' = '02:00'; $part = $bad }; $f.State | Should -Be 'read' -Because $part; $f.Value | Should -BeFalse -Because $part
+        }
+        (& $scan @{ 'maintenance.quickScanTime' = '06:00' }).Value | Should -BeTrue                                                                              # kein Tag des geplanten Scans
+        $f = & $scan @{ 'maintenance.quickScanTime' = '02:00' }; $f.State | Should -Be 'read'; $f.Value | Should -BeFalse
+        $f = & $scan @{ 'maintenance.scanDay' = $bad; 'maintenance.quickScanTime' = '02:00' }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'
+        (& $scan @{ 'maintenance.scanDay' = $bad; 'maintenance.quickScanTime' = '06:00' }).Value | Should -BeTrue
+        $f = & $scan @{ 'maintenance.quickScanTime' = '06:00'; 'maintenance.scanOffset' = $bad }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'
+        $f = & $scan @{}; $f.State | Should -Be 'absent'; $f.Reason | Should -Be ''                                                                             # weder Tag noch Schnellscan
+        $f = & $scan @{ 'maintenance.scanDay' = 8; 'maintenance.quickScanTime' = $bad }; $f.State | Should -Be 'unreadable'; $f.Reason | Should -Be 'timeout'      # Schnellscan unbekannt
+        (& $scan @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '05:00'; 'maintenance.quickScanTime' = $bad }).Value | Should -BeTrue
         # gerendert: der Befund nennt den wirksamen Beginn
         $x = Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '05:00'; 'maintenance.scanOffset' = 120 } @{} 'maintenance.defenderScanInWorkHours' $Real
         $x.grade | Should -Be 'check'; $x.finding | Should -Match 'wirksame Beginn'; $x.finding | Should -Match 'eingestellte Zeit: 05:00 Uhr'
@@ -1622,19 +1640,22 @@ Describe 'Fakten nach der Quellenpruefung (Task 14s)' {
         $lim = { param($terminal, $policy, $min) [ordered]@{ Terminal = $terminal; IdleLimitMin = $min; DisconnectedLimitMin = $min; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true; TimeLimitPolicy = $policy } }
         $f = Get-Facts @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 240), (& $lim 'RDP-Tcp' 1 0)) }
         $f['sessions.disconnectLimitMin'].Value | Should -Be 240; $f['sessions.idleLimitMin'].Value | Should -Be 240
-        foreach ($case in @(@((& $lim 'ICA-CGP' 0 240)), @((& $lim 'ICA-CGP' 0 0)), @((& $lim 'ICA-CGP' 0 0), (& $lim 'RDP-Tcp' 1 0)))) {
+        # ein Listener je Benutzer macht beide Fakten nicht pruefbar, auch neben einem Listener mit einem Zeitlimit des Servers (Entscheidung ZB-R55)
+        foreach ($case in @(@((& $lim 'ICA-CGP' 0 240)), @((& $lim 'ICA-CGP' 0 0)), @((& $lim 'ICA-CGP' 0 0), (& $lim 'RDP-Tcp' 1 0)),
+                @((& $lim 'RDP-Tcp' 0 30), (& $lim 'ICA-CGP' 1 180)), @((& $lim 'ICA-CGP' 1 180), (& $lim 'RDP-Tcp' 0 0)))) {
             $f = Get-Facts @{ 'sessions.limits' = $case }
-            foreach ($id in 'sessions.disconnectLimitMin', 'sessions.idleLimitMin') { $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -Be 'notRecorded' -Because $id }
+            foreach ($id in 'sessions.disconnectLimitMin', 'sessions.idleLimitMin') { $f[$id].State | Should -Be 'unreadable' -Because $id; $f[$id].Reason | Should -BeExactly 'perUser' -Because $id }
         }
-        # ein Listener mit den Werten des Servers zaehlt neben einem mit den Werten je Benutzer
-        (Get-Facts @{ 'sessions.limits' = @((& $lim 'RDP-Tcp' 0 30), (& $lim 'ICA-CGP' 1 180)) })['sessions.disconnectLimitMin'].Value | Should -Be 180
         # ein Eintrag einer frueheren Fassung ohne das Feld: wie bisher
         (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 90 }) })['sessions.disconnectLimitMin'].Value | Should -Be 90
         (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 0 }) })['sessions.disconnectLimitMin'].State | Should -Be 'absent'
         # gerendert: beide Pruefungen sind im Fall je Benutzer nicht pruefbar, mit den Werten des Listeners wie bisher
+        $perUser = 'Der Wert konnte nicht gelesen werden: ein Listener lässt die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht.'
         foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
             $x = Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 0 0)) } @{} $id $Real
-            $x.grade | Should -Be 'unknown' -Because $id; $x.finding | Should -BeExactly 'Der Wert konnte nicht gelesen werden: die Aufzeichnung enthält die Daten dafür nicht.' -Because $id
+            $x.grade | Should -Be 'unknown' -Because $id; $x.finding | Should -BeExactly $perUser -Because $id
+            $x = Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 0 0), (& $lim 'RDP-Tcp' 1 30)) } @{} $id $Real                                  # gemischte Listener
+            $x.grade | Should -Be 'unknown' -Because $id; $x.finding | Should -BeExactly $perUser -Because $id
             (Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 0)) } @{} $id $Real).grade | Should -Be 'check' -Because $id
             (Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 1 120)) } @{} $id $Real).grade | Should -Be 'ok' -Because $id
         }
@@ -1721,5 +1742,13 @@ Describe 'Fakten nach der Quellenpruefung (Task 14s)' {
         $d = $Real.checks | Where-Object id -eq 'maintenance.defenderScanInWorkHours'
         $d.meaning | Should -Match 'Verzögerung'; $d.meaning | Should -Not -Match 'nicht sein genauer Beginn'; $d.meaning | Should -Not -Match 'wertet die Zeit des Schnellscans nicht aus'
         @($d.values) | Should -Contain 'maintenance.scanOffset'; @($d.values) | Should -Contain 'maintenance.scanRandomWindow'
+    }
+    It 'haelt im Nachweis fest, was .NET mit der Liste der Umbenennungen tut und was der erste Lauf bestaetigen muss' {   # Korrekturrunde 1, Punkte 5 und 6
+        $proof = ([regex]::Match((Get-Content (Join-Path $PSScriptRoot '../docs/guidance/quellen.md') -Raw), '(?ms)^## Zustandsbild\s*$(.*?)(?=^## |\z)').Groups[1].Value) -replace '\s+', ' '
+        $proof | Should -Not -Match 'nur die letzte vor dem Ende der Liste lässt \.NET weg'
+        $proof | Should -Match 'nur weg, wenn der gespeicherten Liste ihr abschließendes Nullzeichen fehlt'
+        $confirm = [regex]::Match($proof, '### Auf dem Zielsystem zu bestätigen(.*)$').Groups[1].Value
+        foreach ($w in 'ScanScheduleQuickScanTime', '00:00', 'SchedulerRandomizationTime', 'TimeLimitPolicy', 'Computerrichtlinie', 'MSFT_NetOffloadGlobalSetting') {
+            $confirm | Should -Match ([regex]::Escape($w)) -Because $w }
     }
 }

@@ -88,7 +88,10 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
         $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll', '') }
         (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
-        # .NET laesst die leere Zeichenkette vor dem Abschluss der Liste weg: die letzte Loeschung zaehlt trotzdem
+        # zwei Umbenennungen und zwei Loeschungen, acht Zeichenketten: vier Operationen (ein Leser, der leere Zeichenketten weglaesst, kaeme auf drei)
+        $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\alt1.dll', '', '\??\C:\Sim\b.tmp', '!\??\C:\Sim\b.dll', '\??\C:\Sim\alt2.dll', '') }
+        (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 4
+        # fehlt der gespeicherten Liste ihr abschliessendes Nullzeichen, laesst .NET die leere Zeichenkette am Ende weg: die letzte Loeschung zaehlt trotzdem
         $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll') }
         (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
         $script:WinFake.Registry[$sm] = [ordered]@{}; (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 0
@@ -205,8 +208,9 @@ Describe 'Zustandsbild unter Windows: Sitzungen, Citrix VDA, Profilverwaltung' {
         @($l[0].Keys) | Should -Be @($WorkerPerfHealthValues['sessions.limits'].Fields.Keys)
         $script:WinFake.Cim['Win32_TSSessionSetting'][1].TimeLimitPolicy = [uint32]0
         ((Get-V (Read-Health) 'sessions.limits').Value | Where-Object Terminal -eq 'ICA-CGP').TimeLimitPolicy | Should -Be 0
+        # eine Klasse ohne TimeLimitPolicy: eine Abfrage, die die Eigenschaft nennt, scheiterte wie unter Windows (CimSelect); der Leser fragt ohne Liste
         $script:WinFake.Cim['Win32_TSSessionSetting'] = @([pscustomobject]@{ TerminalName = 'RDP-Tcp'; IdleSessionLimit = [uint32]0; DisconnectedSessionLimit = [uint32]0 })
-        $old = (Get-V (Read-Health) 'sessions.limits').Value[0]; $old.Contains('TimeLimitPolicy') | Should -BeTrue; $old.TimeLimitPolicy | Should -BeNullOrEmpty
+        $v = Get-V (Read-Health) 'sessions.limits'; $v.State | Should -Be 'read'; $old = $v.Value[0]; $old.Contains('TimeLimitPolicy') | Should -BeTrue; $old.TimeLimitPolicy | Should -BeNullOrEmpty
     }
     It 'liest Version, Dienste und Controllerliste des VDA; die Richtlinie geht vor' {
         $h = Read-Health; $h.Areas['vda'].Status | Should -Be 'read'
@@ -443,7 +447,8 @@ Describe 'Zustandsbild unter Windows: Drucken, Sicherheitsprodukte, Netz, Wartun
         $script:WinFake.Calls['cim:MSFT_NetOffloadGlobalSetting'] | Should -Be 1
         $script:WinFake.Cim['MSFT_NetOffloadGlobalSetting'][0].ReceiveSideScaling = [byte]0
         (Get-V (Read-Health) 'network.rssGlobal').Value | Should -BeExactly 'disabled'
-        $script:WinFake.Cim['MSFT_NetOffloadGlobalSetting'] = @([pscustomobject]@{ TaskOffload = [byte]1 })                  # die Klasse ohne die Eigenschaft
+        # die Klasse ohne die Eigenschaft: eine Abfrage, die sie nennt, scheitert wie unter Windows (CimSelect); der Leser fragt ohne Liste der Eigenschaften
+        $script:WinFake.Cim['MSFT_NetOffloadGlobalSetting'] = @([pscustomobject]@{ TaskOffload = [byte]1 })
         $v = Get-V (Read-Health) 'network.rssGlobal'; $v.State | Should -Be 'absent'; $v.Reason | Should -Be ''
         $script:WinFake.CimFail['MSFT_NetOffloadGlobalSetting'] = New-WinStandInMissingClass                                 # die Klasse fehlt
         $h = Read-Health; $v = Get-V $h 'network.rssGlobal'; $v.State | Should -Be 'absent'; $v.Reason | Should -Be ''; $h.Areas['network'].Status | Should -Be 'read'

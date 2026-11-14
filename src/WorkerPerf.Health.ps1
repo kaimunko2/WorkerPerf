@@ -113,7 +113,7 @@ $script:WorkerPerfHealthCopyKeys = [ordered]@{
     unknownOne = @(); unknownMany = @('n'); changed = @('list'); changedItem = @('label', 'value', 'default', 'unit')
     notApplicable = @('reason'); eventsUnchecked = @(); incidentNote = @(); noValue = @(); yes = @(); no = @(); reasonRights = @()
     reasonNotInstalled = @('label'); reasonNotInUse = @('label'); reasonAppNotInstalled = @('app'); reasonTimeout = @(); reasonError = @()
-    reasonAbsent = @(); reasonSkipped = @('category'); reasonNotRecorded = @(); kindVendor = @(); kindPractice = @(); kindRule = @()
+    reasonAbsent = @(); reasonSkipped = @('category'); reasonNotRecorded = @(); reasonPerUser = @(); kindVendor = @(); kindPractice = @(); kindRule = @()
     environment = @(); eventsReach = @('from', 'boot'); appInstalled = @('app'); appNotInstalled = @('app'); appUnknown = @('app', 'reason')
     appInstalledLabel = @(); valueSet = @(); valueNotSet = @(); stateRead = @(); stateAbsent = @(); stateUnreadable = @('reason')
     stateNotApplicable = @('reason'); copyHead = @('server', 'date'); copyCheckTitle = @('area', 'title', 'grade'); copyAreaTitle = @('area', 'grade')
@@ -803,8 +803,9 @@ $script:WorkerPerfHealthPerDayColumns = [ordered]@{ 'crash' = 'Crash'; 'hang' = 
     'print' = 'Print'; 'system.fileserver' = 'Fileserver'; 'profileerror' = 'Profileerror' }
 
 function Test-WorkerPerfHealthFactReason([string]$Reason) {
-    # The reasons of a read value plus those only the evaluation gives: notRecorded, notInUse, skipped:<category>.
-    if (@('', 'rights', 'notInstalled', 'timeout', 'error', 'notRecorded', 'notInUse') -ccontains $Reason) { return $true }
+    # The reasons of a read value plus those only the evaluation gives: notRecorded, notInUse, perUser (a listener lets
+    # the users' own time limits apply), skipped:<category>.
+    if (@('', 'rights', 'notInstalled', 'timeout', 'error', 'notRecorded', 'notInUse', 'perUser') -ccontains $Reason) { return $true }
     if ($Reason.StartsWith('skipped:', [StringComparison]::Ordinal)) { return (@($script:WorkerPerfCategories.Keys) -ccontains $Reason.Substring(8)) }
     return $false
 }
@@ -1058,10 +1059,13 @@ function Test-WorkerPerfHealthScanWindow([int]$Day, [double]$From, [double]$To, 
     # True when a minute of the window From..To (minutes after midnight of the scan day, both ends included; below 0
     # the day before, from 1440 on the days after) lies in the working hours. Day as the Defender schedule gives it:
     # 0 every day, 1 to 7 Sunday to Saturday. The working hours: Monday to Friday, workStartHour up to workEndHour.
+    # The start is taken into one week (minutes from Sunday 00:00), so an offset of weeks lands on its weekday; a window
+    # of a week or more holds working hours at once.
     $week = 7 * 1440
+    if ($To - $From -ge $week) { return ($Ctx.WorkEnd -gt $Ctx.WorkStart) }
     $days = @($Day - 1); if ($Day -eq 0) { $days = @(0..6) }
     foreach ($d in $days) {
-        $a = $d * 1440 + $From; $b = $d * 1440 + $To
+        $a = $d * 1440 + $From; $a = $a - [Math]::Floor($a / $week) * $week; $b = $a + ($To - $From)
         foreach ($w in 1..5) {
             $start = $w * 1440 + $Ctx.WorkStart * 60; $end = $w * 1440 + $Ctx.WorkEnd * 60
             foreach ($shift in @(-$week, 0, $week)) { if ($a + $shift -lt $end -and $b + $shift -ge $start) { return $true } }
@@ -1136,20 +1140,20 @@ function Add-WorkerPerfHealthSessionFacts($F, $Ctx) {
                 $h = ((Get-WorkerPerfHealthReadAt $Ctx) - [double]$at) / 3600000; if ($h -gt $hours) { $hours = $h } }
         }
         Get-WorkerPerfHealthRound $hours }
-    # the smallest limit of the listeners whose limits are in effect: a listener with TimeLimitPolicy 0 (per user) lets
-    # the users' own time limits apply, which the health picture does not read (Win32_TSSessionSetting); an entry
-    # without the field (an older capture) counts as before. No limit in effect and a listener per user: not known
-    # (unreadable with notRecorded: the capture does not hold the users' limits).
+    # the smallest limit of the listeners: a listener with TimeLimitPolicy 0 (per user) lets the users' own time limits
+    # apply, which the health picture does not read (Win32_TSSessionSetting). One such listener makes both facts not
+    # known, also beside a listener with a limit of its own (ruling ZB-R55): unreadable with the reason perUser. An
+    # entry without the field (an older capture) counts as before.
     foreach ($pair in @(@('sessions.disconnectLimitMin', 'DisconnectedLimitMin'), @('sessions.idleLimitMin', 'IdleLimitMin'))) {
         $field = $pair[1]
         $F[$pair[0]] = Get-WorkerPerfHealthDerived $F @('sessions.limits') {
-            $perUser = $false
+            foreach ($l in @($F['sessions.limits'].Value)) {
+                $policy = Get-WorkerPerfHealthModelMember $l 'TimeLimitPolicy'
+                if ($null -ne $policy -and [double]$policy -eq 0) { return (New-WorkerPerfHealthFact 'unreadable' 'perUser') }
+            }
             $limits = @(foreach ($l in @($F['sessions.limits'].Value)) {
-                    $policy = Get-WorkerPerfHealthModelMember $l 'TimeLimitPolicy'
-                    if ($null -ne $policy -and [double]$policy -eq 0) { $perUser = $true; continue }
                     $m = Get-WorkerPerfHealthItemField $l $field; if ($null -ne $m -and [double]$m -gt 0) { [double]$m } })
             if ($limits.Count -gt 0) { ($limits | Measure-Object -Minimum).Minimum }
-            elseif ($perUser) { New-WorkerPerfHealthFact 'unreadable' 'notRecorded' }
             else { New-WorkerPerfHealthFact 'absent' } }
     }
     $F['sessions.unloadedProfiles'] = Get-WorkerPerfHealthDerived $F @('sessions.localProfiles') {
@@ -1393,11 +1397,40 @@ function Add-WorkerPerfHealthMaintenanceFacts($F, $Ctx) {
     # The scans of Defender Antivirus start at their EFFECTIVE time ("Schedule antivirus scans using PowerShell"): the
     # configured time plus ScanScheduleOffset (absent: 120 minutes), with the random start on (RandomizeScheduleTaskTimes,
     # absent: on) widened by SchedulerRandomizationTime before and after (absent: 30 minutes). True when any minute of
-    # such a window lies in the working hours. Two scans count: the scheduled scan (scanDay with scanTime, whatever its
-    # type, quick or full) and, where its time is read, the daily quick scan (quickScanTime, every day). Without a read
-    # time of the scheduled scan the fact takes its state, as before; a part of the window that is not readable makes
-    # the fact unreadable.
-    $F['maintenance.scanInWorkHours'] = Get-WorkerPerfHealthDerived $F @('maintenance.scanDay') {
+    # such a window lies in the working hours. Two scans count: the scheduled scan (scanDay 0 to 7 with scanTime,
+    # whatever its type, quick or full) and, where its time is read, the daily quick scan (quickScanTime, every day).
+    # First the scans that exist are found (scanDay outside 0 to 7, e.g. 8 = never: no scheduled scan; scanDay absent:
+    # only the quick scan); the parts of the window are looked at only when there is a scan. No scan and nothing
+    # unknown: false. Without a quick scan and with a scanDay that is not read, the fact takes the state of the two, as
+    # before. A scheduled scan whose time is not read, and a scanDay or quick-scan time that is unreadable, leave the
+    # fact with that state, unless a scan that is read already lies in the working hours. A part of the window that is
+    # not readable makes the fact unreadable.
+    $F['maintenance.scanInWorkHours'] = Invoke-WorkerPerfHealthRule {
+        $scans = New-Object System.Collections.Generic.List[object]
+        $open = $null
+        $quick = $F['maintenance.quickScanTime']
+        if ($quick.State -ceq 'read' -and $null -ne $quick.Value) {
+            $at = ConvertTo-WorkerPerfHealthClockMinutes $quick.Value
+            if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+            $scans.Add(@(0, $at))
+        }
+        elseif ($quick.State -ceq 'unreadable') { $open = New-WorkerPerfHealthFact 'unreadable' $quick.Reason }
+        $dayFact = $F['maintenance.scanDay']
+        if ($dayFact.State -ceq 'read') {
+            $day = [int]$dayFact.Value
+            if ($day -ge 0 -and $day -le 7) {
+                $time = $F['maintenance.scanTime']
+                if ($time.State -ceq 'read') {
+                    $at = ConvertTo-WorkerPerfHealthClockMinutes $time.Value
+                    if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
+                    $scans.Add(@($day, $at))
+                }
+                elseif ($null -eq $open) { $open = New-WorkerPerfHealthFact $time.State $time.Reason }
+            }
+        }
+        elseif ($scans.Count -eq 0) { return (Get-WorkerPerfHealthBlocking $F @('maintenance.scanDay', 'maintenance.quickScanTime')) }
+        elseif ($dayFact.State -ceq 'unreadable' -and $null -eq $open) { $open = New-WorkerPerfHealthFact 'unreadable' $dayFact.Reason }
+        if ($scans.Count -eq 0) { if ($null -ne $open) { return $open }; return $false }
         $offset = 120.0; $spread = 30.0
         $o = $F['maintenance.scanOffset']
         if ($o.State -ceq 'unreadable') { return (New-WorkerPerfHealthFact 'unreadable' $o.Reason) } elseif ($o.State -ceq 'read') { $offset = [double]$o.Value }
@@ -1406,19 +1439,11 @@ function Add-WorkerPerfHealthMaintenanceFacts($F, $Ctx) {
         if ($random.State -ceq 'read' -and $random.Value -eq $false) { $spread = 0.0 }
         elseif ($window.State -ceq 'unreadable') { return (New-WorkerPerfHealthFact 'unreadable' $window.Reason) }
         elseif ($window.State -ceq 'read') { $spread = [double]$window.Value }
-        $quick = $F['maintenance.quickScanTime']
-        if ($quick.State -ceq 'read' -and $null -ne $quick.Value) {
-            $at = ConvertTo-WorkerPerfHealthClockMinutes $quick.Value
-            if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
-            if (Test-WorkerPerfHealthScanWindow 0 ($at + $offset - $spread) ($at + $offset + $spread) $Ctx) { return $true }
+        foreach ($scan in $scans) {
+            if (Test-WorkerPerfHealthScanWindow $scan[0] ($scan[1] + $offset - $spread) ($scan[1] + $offset + $spread) $Ctx) { return $true }
         }
-        $day = [int]$F['maintenance.scanDay'].Value
-        if ($day -lt 0 -or $day -gt 7) { return $false }
-        $time = $F['maintenance.scanTime']
-        if ($time.State -cne 'read') { return (New-WorkerPerfHealthFact $time.State $time.Reason) }
-        $at = ConvertTo-WorkerPerfHealthClockMinutes $time.Value
-        if ($null -eq $at) { return (New-WorkerPerfHealthFact 'unreadable' 'error') }
-        Test-WorkerPerfHealthScanWindow $day ($at + $offset - $spread) ($at + $offset + $spread) $Ctx }
+        if ($null -ne $open) { return $open }
+        $false }
     # Windows Update with the policy option 4 (download and install at the scheduled time): ScheduledInstallDay and
     # ScheduledInstallTime, without them every day at 03:00 (Microsoft). Without the policy Windows downloads and
     # installs at a time the policy does not give: not known (absent). Other options install nothing by schedule.
@@ -1604,9 +1629,9 @@ function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catal
 }
 
 function Get-WorkerPerfHealthReasonText($Catalogue, $Texts, [string]$Reason, [string]$Label = '') {
-    # The text of the reason of a fact: copy.reasonRights, reasonTimeout, reasonError, reasonNotRecorded, reasonAbsent
-    # (absent without a reason), reasonSkipped with skip.label.<category> of the texts, reasonNotInstalled and
-    # reasonNotInUse with the label of the fact.
+    # The text of the reason of a fact: copy.reasonRights, reasonTimeout, reasonError, reasonNotRecorded, reasonPerUser,
+    # reasonAbsent (absent without a reason), reasonSkipped with skip.label.<category> of the texts, reasonNotInstalled
+    # and reasonNotInUse with the label of the fact.
     if ($Reason.StartsWith('skipped:', [StringComparison]::Ordinal)) {
         $category = $Reason.Substring(8)
         $key = 'skip.label.' + $category
@@ -1618,6 +1643,7 @@ function Get-WorkerPerfHealthReasonText($Catalogue, $Texts, [string]$Reason, [st
         'rights' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonRights') }
         'timeout' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonTimeout') }
         'notRecorded' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonNotRecorded') }
+        'perUser' { return (Get-WorkerPerfHealthCopyText $Catalogue 'reasonPerUser') }
         'notInstalled' { return (Get-WorkerPerfHealthCopy $Catalogue 'reasonNotInstalled' @{ label = $Label }) }
         'notInUse' { return (Get-WorkerPerfHealthCopy $Catalogue 'reasonNotInUse' @{ label = $Label }) }
     }

@@ -3262,8 +3262,9 @@ function Read-WorkerPerfWinHealthOperation($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingRename' {
         # one operation is a source and its target, the target empty for a delete (MoveFileEx: "szSrcFile\0\0"); the
         # empty strings are kept, so the count of strings over two is the count of operations. The paths are not kept.
-        # .NET drops only the empty string right before the end of the list (a delete as the last operation): an odd
-        # count still counts its last operation.
+        # .NET (RegistryKey.GetValue) keeps every empty string of a list that ends with its closing null; it drops the
+        # last one only when the stored list lacks that terminator (a delete as the last operation): an odd count still
+        # counts its last operation.
         $sm = Get-WorkerPerfRegistryValues 'SYSTEM\CurrentControlSet\Control\Session Manager'
         $entries = 0
         if ($null -ne $sm -and $sm['Values'].Contains('PendingFileRenameOperations')) { $entries = @($sm['Values']['PendingFileRenameOperations']).Count }
@@ -3308,10 +3309,10 @@ function Read-WorkerPerfWinHealthSessions($Ctx) {
     Set-WorkerPerfWinHealthValue $Ctx 'sessions.limits' {
         # the limits in milliseconds as minutes (0 = no limit); FromPolicy: the disconnected limit comes from a policy
         # TimeLimitPolicy: 0 = the users' own time limits are in effect (per user), 1 = the listener's limits override
-        # them (Server Override); $null when the class does not give it
-        $tsProps = @('TerminalName', 'IdleSessionLimit', 'DisconnectedSessionLimit', 'ActiveSessionLimit', 'BrokenConnectionAction', 'PolicySourceDisconnectedSessionLimit',
-            'TimeLimitPolicy')
-        foreach ($ts in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_TSSessionSetting' 'root\CIMv2\TerminalServices' -Property $tsProps)) {
+        # them (Server Override); $null when the class does not give it. No property list (one instance per listener):
+        # with -Property Get-CimInstance runs SELECT <properties> FROM the class, and a property the class lacks would
+        # fail the whole query instead of leaving this one field empty.
+        foreach ($ts in @(Get-WorkerPerfWinHealthCim $Ctx 'Win32_TSSessionSetting' 'root\CIMv2\TerminalServices')) {
             Assert-WorkerPerfWinHealthTimeLeft $Ctx
             $tsSource = Get-WorkerPerfField $ts 'PolicySourceDisconnectedSessionLimit'
             $fromPolicy = $null
@@ -3619,9 +3620,10 @@ function Read-WorkerPerfWinHealthNetwork($Ctx) {
     }
     Set-WorkerPerfWinHealthValue $Ctx 'network.rssGlobal' {
         # the global switch of Windows (MSFT_NetOffloadGlobalSetting.ReceiveSideScaling: 0 Disabled, 1 Enabled), not the
-        # output of a program; a missing class or property is absent
+        # output of a program; a missing class or property is absent. No property list (one instance): with -Property
+        # the query would name ReceiveSideScaling and fail as a whole where the class lacks it.
         $found = $null
-        try { $found = @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_NetOffloadGlobalSetting' 'root\StandardCimv2' -Property ReceiveSideScaling) }
+        try { $found = @(Get-WorkerPerfWinHealthCim $Ctx 'MSFT_NetOffloadGlobalSetting' 'root\StandardCimv2') }
         catch [System.Management.Automation.PipelineStoppedException] { throw }
         catch { if (-not (Test-WorkerPerfWinMissingClass $_.Exception)) { throw } }
         if ($null -ne $found -and $found.Count -gt 0) { ConvertTo-WorkerPerfRssState (Get-WorkerPerfField $found[0] 'ReceiveSideScaling') }

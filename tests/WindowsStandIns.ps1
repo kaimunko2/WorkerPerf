@@ -67,6 +67,8 @@ function Reset-WinStandIns {
         # health picture: Delay/DelayOnce: call key -> milliseconds the stand-in waits before the call (DelayOnce only
         # for the next call); RegistryFail/CimFail/LogFail: registry key, CIM class or log name -> exception thrown
         Delay = @{}; DelayOnce = @{}; RegistryFail = @{}; CimFail = @{}; LogFail = @{}
+        # CIM classes whose fake instances answer a query with -Property as Windows does (see Get-CimInstance)
+        CimSelect = @('MSFT_NetOffloadGlobalSetting', 'Win32_TSSessionSetting')
         # registry below HKLM: key -> values (hashtables ignore case); the subkeys of a key are the keys listed directly below it
         Registry = @{
             'SOFTWARE\VMware, Inc.\VMware Tools' = [ordered]@{}
@@ -457,6 +459,14 @@ function Get-CimInstance {
                 if ($ClassName -eq 'Citrix_VirtualDesktopInfo') { throw (New-WinStandInMissingNamespace) }
                 throw "Stand-in kennt $ClassName nicht"
             }
+            # with -Property Get-CimInstance runs the WQL query SELECT <properties> FROM <class>; for the classes in
+            # CimSelect (fakes that carry every property of the class) a property the instance lacks fails the whole query
+            # (InvalidQuery), as on Windows; the other fakes hold only what their tests need
+            if ($PSBoundParameters.ContainsKey('Property') -and $script:WinFake.CimSelect -contains $ClassName) { foreach ($item in @($script:WinFake.Cim[$ClassName])) {
+                foreach ($name in @($Property)) {
+                    if ($null -ne $item -and $null -eq $item.PSObject.Properties[$name]) { throw (New-Object WinStandInCimException -ArgumentList "Ungueltige Abfrage: $name", 'InvalidQuery') }
+                }
+            } }
             $script:WinFake.Cim[$ClassName]
         }
     }

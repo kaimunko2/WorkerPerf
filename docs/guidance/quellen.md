@@ -1562,10 +1562,11 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   für die Benutzer nur, wenn der Listener sie vorgibt; sonst gelten die Einstellungen des Benutzerkontos
   (`sessions.disconnectLimit`, `sessions.idleLimit`). Die Seite nennt dafür die Eigenschaft TimeLimitPolicy: „Per User
   (0) The user's time-limits policy settings are in effect. Server Override (1) The user's time-limits policy settings
-  are overridden by the server.“ Das Zustandsbild liest sie als Feld `TimeLimitPolicy` von `sessions.limits`. Die
-  Zeitlimits nehmen nur die Listener mit dem Wert 1 (und Einträge älterer Aufzeichnungen ohne das Feld); hat keiner
-  davon ein Zeitlimit und lässt ein Listener die Zeitlimits je Benutzer gelten, sind beide Prüfungen nicht prüfbar
-  („die Aufzeichnung enthält die Daten dafür nicht“: die Zeitlimits der Benutzerkonten liest das Zustandsbild nicht).
+  are overridden by the server.“ Das Zustandsbild liest sie als Feld `TimeLimitPolicy` von `sessions.limits`. Lässt
+  ein Listener die Zeitlimits je Benutzer gelten (Wert 0), sind beide Prüfungen nicht prüfbar, auch wenn ein anderer
+  Listener ein eigenes Zeitlimit hat (Entscheidung ZB-R55); der Grund sagt, dass die Zeitlimits je Benutzer gelten und
+  das Zustandsbild die Einstellungen der Benutzerkonten nicht liest. Sonst nehmen die Prüfungen das kleinste Zeitlimit
+  der Listener (Einträge älterer Aufzeichnungen ohne das Feld zählen wie bisher).
 - Microsoft, „Schedule antivirus scans using PowerShell“,
   https://learn.microsoft.com/en-us/defender-endpoint/schedule-antivirus-scans-powershell (Stand der Seite
   2026-08-21, Abruf 2026-11-14): „ScanScheduleOffset: Specifies the fixed number of minutes to delay scheduled scan
@@ -1640,8 +1641,10 @@ Was die Quellenprüfung der Recherchen zu einzelnen Werten festhält, auf die si
   Dokument von Microsoft, und sind beim ersten Lauf zu bestätigen. Die Klasse `Win32_NetworkAdapter` nennt Microsoft
   veraltet.
 - `operation.pendingRename` zählt die Operationen des Werts `PendingFileRenameOperations`: je Operation eine Quelle und
-  ein Ziel, bei einer Löschung ein leeres Ziel (MoveFileEx, Tabelle oben). Der Leser behält die leeren Zeichenketten;
-  nur die letzte vor dem Ende der Liste lässt .NET weg, deshalb zählt eine ungerade Zahl ihre letzte Operation mit.
+  ein Ziel, bei einer Löschung ein leeres Ziel (MoveFileEx, Tabelle oben). Der Leser behält die leeren Zeichenketten.
+  .NET lässt eine leere Zeichenkette am Ende nur weg, wenn der gespeicherten Liste ihr abschließendes Nullzeichen fehlt
+  (RegistryKey.GetValue, Referenzquelle von .NET Framework); für diesen Fall zählt eine ungerade Zahl ihre letzte
+  Operation mit.
   `operation.lastUpdate` liest die Formen, die Microsoft für das Installationsdatum nennt (oben bei
   „Win32_QuickFixEngineering class“).
 - `maintenance.scanInWorkHours` prüft den wirksamen Beginn der Scans von Defender Antivirus: die eingestellte Zeit plus
@@ -1786,3 +1789,10 @@ Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog angepasst
 - **Netz** (`network.rss`, `network.timeSource`, `network.dnsCount`): die Bezeichnung der Eigenschaft für Receive Side
   Scaling in den erweiterten Eigenschaften des Adapters und die Namen der Einstellungen des Windows-Zeitdienstes in der
   Gruppenrichtlinie.
+- **Erster Lauf auf dem Server** (Entscheidung ZB-R56; `maintenance.scanInWorkHours`, `sessions.limits`,
+  `network.rssGlobal`): ob Get-MpPreference für eine nicht gesetzte tägliche Zeit des Schnellscans
+  (ScanScheduleQuickScanTime) 00:00 meldet (bis dahin gilt 00:00 als eingestellte Zeit); ob
+  SchedulerRandomizationTime ohne Einstellung 0 liest (dann nimmt der Fakt ein Fenster von 0 statt 30 Minuten); was
+  TimeLimitPolicy eines Listeners sagt, wenn eine Computerrichtlinie die Zeitlimits setzt (bei 0 wären beide
+  Prüfungen nicht prüfbar, obwohl das Zeitlimit der Richtlinie gilt); ob die Klasse MSFT_NetOffloadGlobalSetting auf
+  dem Server vorhanden ist (sonst ist `network.rssGlobal` nicht vorhanden).

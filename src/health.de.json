@@ -296,6 +296,7 @@
     "reasonAbsent": "auf diesem Server nicht vorhanden",
     "reasonSkipped": "{category} nicht erfasst (-Skip)",
     "reasonNotRecorded": "die Aufzeichnung enthält die Daten dafür nicht",
+    "reasonPerUser": "ein Listener lässt die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht",
     "kindVendor": "Empfehlung des Herstellers",
     "kindPractice": "Empfehlung aus der Praxis",
     "kindRule": "Faustregel",
