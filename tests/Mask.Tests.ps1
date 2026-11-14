@@ -613,6 +613,97 @@ Describe 'Abschlussrunde: Profilordner, Hostnamen, Bezeichnungen und weitere Pfa
         @(Get-WorkerPerfMaskVocabularyHits -Mask $m -Texts @{ a = 'nichts' }) | Should -Be @('Benutzer 04')
     }
 }
+Describe 'Namen aus health.json: Typzusaetze und Grenzfaelle' {                                     # Task 15, ZB-R27
+    BeforeAll {
+        function Write-HealthFile([string]$Dir, [hashtable]$Values) {
+            # health.json with the given values (id -> @{ State; Reason; Value }), each in the area of its id
+            $areas = [ordered]@{}
+            foreach ($id in $Values.Keys) {
+                $a = $id.Split('.')[0]
+                if (-not $areas.Contains($a)) { $areas[$a] = [ordered]@{ Status = 'read'; DurationMs = 0; Error = ''; Values = [ordered]@{} } }
+                $areas[$a]['Values'][$id] = $Values[$id]
+            }
+            $json = [ordered]@{ FormatVersion = 1; ReadAt = '2026-11-12T10:00:00.0000000+01:00'; DurationMs = 0; Areas = $areas } | ConvertTo-Json -Depth 12
+            [IO.File]::WriteAllText((Join-Path $Dir 'health.json'), $json)
+        }
+        function New-Read($Value) { [ordered]@{ State = 'read'; Reason = ''; Value = $Value } }
+        $script:HealthRun = Write-TestRun 'mask-health' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'sessions.csv' = $null; 'shares.csv' = $null; 'volumes.csv' = $null
+            'probes.csv' = $null; 'events.csv' = $null }
+        $script:HealthValues = @{
+            # :path (WinStation), :user with the domain of the same entry, :domain, :client; an entry that is no record; null and empty fields
+            'sessions.list' = New-Read @([ordered]@{ Id = 1; State = 'Active'; WinStation = 'ICA-CGP#1'; User = 'hu.eins'; Domain = 'HDOM'; Client = 'HWS-01' }, 'kein Eintrag',
+                [ordered]@{ Id = 2; State = 'Active'; WinStation = ''; User = 'HDOM2\hu.zwei'; Domain = ''; Client = '' },
+                [ordered]@{ Id = 3; State = 'Active'; WinStation = $null; User = $null; Domain = $null; Client = $null })
+            # :path: a user folder; the folders of the built-in account belong to no person
+            'sessions.localProfiles' = New-Read @([ordered]@{ Path = 'C:\Users\hu.vier' }, [ordered]@{ Path = 'C:\Users\Administrator' }, [ordered]@{ Path = 'C:\Users\administrator.HDOM' })
+            # :host: a full host name, an IPv6 address with zone index, a host name with a trailing dot, empty, null, a number
+            'vda.controllers' = New-Read @([ordered]@{ Entry = 'hddc1.edge.test'; Kind = 'fqdn'; From = 'policy' }, [ordered]@{ Entry = 'fe80::1%12'; Kind = 'ip'; From = 'policy' },
+                [ordered]@{ Entry = 'hddc2.edge.test.'; Kind = 'fqdn'; From = 'policy' }, [ordered]@{ Entry = ''; Kind = ''; From = '' }, [ordered]@{ Entry = $null; Kind = ''; From = '' }, 7)
+            'vda.policyRaw' = New-Read @([ordered]@{ Key = 'ICAPolicies'; Name = 'Drucker'; Value = '\\hfree1\Etage' })     # :free
+            'vda.persistentDataLocation' = [ordered]@{ State = 'absent'; Reason = ''; Value = '\\habsent\daten' }              # not read
+            'vda.wemServices' = New-Read @([ordered]@{ Name = 'HEdgeService'; State = 'Running'; StartMode = 'Auto' })       # :protected
+            'vda.wemServer' = New-Read 'fd00:30::7'                                                                         # :host, IPv6
+            'vda.wemCacheLocation' = New-Read '\\hfs1'                                                                      # :path, UNC with only a server
+            'profile.policyGpo' = New-Read @([ordered]@{ Key = ''; Name = 'PathToUserStore'; Value = '\\hfree2\p' })          # :free
+            # :path (UNC with share, UPM mount), :user without a domain field
+            'profile.containers' = New-Read @([ordered]@{ Location = '\\hfs2\prof$\hu.drei\c.vhdx'; Mount = 'C:\Users\hu.drei_UPM_local\M'; Owner = 'hu.drei'; SessionId = 4 })
+            'security.defenderExclusionPaths' = New-Read @([ordered]@{ Path = 'C:\Users\hfree3\x' })                       # :free
+            'security.defenderSharedSignatures' = [ordered]@{ State = 'unreadable'; Reason = 'error'; Value = '\\hunread\sig' }   # not read
+            'security.filters' = New-Read @([ordered]@{ Name = 'HEdgeFilter'; Altitude = '1'; Instances = 1; Legacy = $false })   # :protected
+            'network.smbConnections' = New-Read @([ordered]@{ Share = '\\hfs3\daten' }, [ordered]@{ Share = '\\hfs4' }, [ordered]@{ Share = '\\hfs5\' })   # :share, also with only a server
+            'network.dnsServers' = New-Read @([ordered]@{ Interface = 4; Address = '10.30.0.10' }, [ordered]@{ Interface = 4; Address = 'fe80::2%3' })   # :address
+            'network.timeServers' = New-Read '  hzeit.edge.test   10.30.0.20  fe80::3 '                                     # :hosts with several blanks
+            'maintenance.tasks' = New-Read @([ordered]@{ Path = '\hfree4'; Action = '\\hfree5\a.exe' })                     # :free
+            'apps.probes' = New-Read @([ordered]@{ App = 'office'; Id = 'x'; Kind = 'registryValue'; Value = '\\hfree6\v'; Names = '\\hfree7\n' })   # value, :free
+            # malformed values: a list given as a text, a value that is no record, a text given as a list
+            'size.pagefiles' = New-Read 'kein Liste'; 'security.services' = 5; 'vda.desktopService' = New-Read @('a', 'b')
+        }
+        Write-HealthFile $HealthRun $HealthValues
+        $script:HealthExp = @('server:T1=Server 01', 'server:h=Server 02',
+            'user:hu.eins=Benutzer 01', 'domain:HDOM=Domäne 01', 'client:HWS-01=Client 01', 'user:hu.zwei=Benutzer 02', 'domain:HDOM2=Domäne 02',
+            'user:hu.vier=Benutzer 03',
+            'server:hddc1.edge.test=Server 03', 'server:hddc1=Server 03', 'domain:edge.test=Domäne 03', 'address:fe80::1%12=Adresse 01',
+            'server:hddc2.edge.test=Server 04', 'server:hddc2=Server 04',
+            'address:fd00:30::7=Adresse 02', 'server:hfs1=Server 05',
+            'share:\\hfs2\prof$=Freigabe 01', 'server:hfs2=Server 06', 'user:hu.drei=Benutzer 04',
+            'share:\\hfs3\daten=Freigabe 02', 'server:hfs3=Server 07', 'server:hfs4=Server 08', 'server:hfs5=Server 09',
+            'address:10.30.0.10=Adresse 03', 'address:fe80::2%3=Adresse 04',
+            'server:hzeit.edge.test=Server 10', 'server:hzeit=Server 10', 'address:10.30.0.20=Adresse 05', 'address:fe80::3=Adresse 06')
+    }
+    It 'nimmt je Typzusatz die Namen in der Reihenfolge der Werteliste auf' {
+        Get-RunEntries $HealthRun 'Alles' | Should -Be $HealthExp
+        Get-RunEntries $HealthRun 'Personen' | Should -Be @('user:hu.eins=Benutzer 01', 'client:HWS-01=Client 01', 'user:hu.zwei=Benutzer 02', 'user:hu.vier=Benutzer 03', 'user:hu.drei=Benutzer 04')
+    }
+    It 'nimmt aus freiem Text, Anwendungswerten und nicht gelesenen Werten nichts und schuetzt die Namen mit :protected' {
+        $m = New-WorkerPerfMask -Path $HealthRun -Level 'Alles' -Texts $Texts
+        $names = @($m.Entries | ForEach-Object Name)
+        foreach ($n in 'hfree1', 'hfree2', 'hfree3', 'hfree4', 'hfree5', 'hfree6', 'hfree7', 'habsent', 'hunread', 'Administrator', 'administrator.HDOM', 'kein Liste') {
+            @($names | Where-Object { $_ -like "*$n*" }).Count | Should -Be 0 -Because $n
+        }
+        $names | Should -Not -Contain 'a'; $names | Should -Not -Contain 'b'
+        foreach ($p in 'HEdgeService', 'HEdgeFilter') { $m.Protected | Should -Contain $p }
+    }
+    It 'ersetzt die Namen aus health.json im Text' {
+        $m = New-WorkerPerfMask -Path $HealthRun -Level 'Alles' -Texts $Texts
+        Hide-WorkerPerfReportText 'Controller hddc2.edge.test. und hddc1, DNS fe80::1%12 und fe80::3, Dateiserver \\hfs4, WEM fd00:30::7, als Administrator' $m |
+            Should -Be 'Controller Server 04. und Server 03, DNS Adresse 01 und Adresse 06, Dateiserver \\Server 08, WEM Adresse 02, als Administrator'
+    }
+    It 'verliert bei einem Fehler nur den Wert, an dem er auftritt' {
+        Mock Add-WorkerPerfMaskHost { throw 'kaputt' } -ParameterFilter { $HostName -eq 'hddc1.edge.test' }
+        $e = @(Get-RunEntries $HealthRun 'Alles')
+        foreach ($x in 'server:hddc1.edge.test', 'address:fe80::1%12', 'server:hddc2.edge.test') { @($e | Where-Object { $_ -like "$x=*" }).Count | Should -Be 0 -Because $x }
+        foreach ($x in 'user:hu.vier', 'address:fd00:30::7', 'server:hfs1', 'user:hu.drei', 'server:hzeit.edge.test', 'address:fe80::3') { @($e | Where-Object { $_ -like "$x=*" }).Count | Should -Be 1 -Because $x }
+    }
+    It 'nimmt aus einer Datei ohne Bereiche, mit Bereichen ohne Werte oder mit Werten anderer Form nichts und wirft nicht: <Json>' -TestCases @(
+        @{ Json = '[]' }, @{ Json = '{}' }, @{ Json = '{"Areas":5}' }, @{ Json = '{"Areas":{"vda":5}}' }, @{ Json = '{"Areas":{"vda":{"Values":[1,2]}}}' },
+        @{ Json = '{"Areas":{"vda":{"Values":{"vda.controllers":{"State":"read","Value":{"Entry":"hddc9"}}}}}}' }, @{ Json = '' }) {
+        $dir = Write-TestRun 'mask-health-odd' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'sessions.csv' = $null; 'shares.csv' = $null; 'volumes.csv' = $null
+            'probes.csv' = $null; 'events.csv' = $null }
+        [IO.File]::WriteAllText((Join-Path $dir 'health.json'), $Json)
+        $e = @(Get-RunEntries $dir 'Alles')
+        $e | Should -Be @('server:T1=Server 01', 'server:h=Server 02')                  # a list given as one record is no list (the loader drops it too)
+    }
+}
 Describe 'Simulierte Stunde, maskiert' {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
@@ -752,14 +843,42 @@ Describe 'Simulierte Stunde, maskiert' {
                 $exp.Add(('user:user{0:000}=Benutzer {0:00}' -f $i)); if ($i -eq 1) { $exp.Add('domain:CONTOSO=Domäne 02') }; $exp.Add(('client:WS-{0}=Client {1:00}' -f (1037 + 37 * $i), $i))
             }
             foreach ($x in 'share:\\fs01\daten=Freigabe 01', 'share:\\fs01\profile$=Freigabe 02', 'printer:PRN-EG-01=Drucker 01', 'printer:PRN-OG-02=Drucker 02') { $exp.Add($x) }
+            # Aussage geaendert (Task 15): die Namen aus health.json folgen auf alle anderen
+            foreach ($x in 'user:user026=Benutzer 26', 'server:ddc01.sim.local=Server 05', 'server:ddc01=Server 05', 'server:ddc02.sim.local=Server 06', 'server:ddc02=Server 06',
+                'server:wem01.sim.local=Server 07', 'server:wem01=Server 07', 'share:\\fs01\defsig$=Freigabe 03', 'address:10.20.0.10=Adresse 01', 'address:10.20.0.11=Adresse 02',
+                'address:fd00:20::10=Adresse 03', 'server:zeit01.sim.local=Server 08', 'server:zeit01=Server 08', 'address:10.20.0.20=Adresse 04') { $exp.Add($x) }
             @($Sim.Mask.Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement }) | Should -Be $exp.ToArray()
             $Sim.MaskedJson | Should -Not -Match 'user0\d\d'; $Sim.MaskedJson | Should -Not -Match 'CONTOSO'; $Sim.MaskedJson | Should -Match 'Benutzer 01'
             Get-LeftNames $Sim.Masked $Sim.Mask | Should -BeNullOrEmpty
         }
         It 'enthaelt bei Personen keinen Benutzer, Client und kein Konto mehr' {
-            $Sim.MaskP.Entries.Count | Should -Be 50; $Sim.MaskedJsonP | Should -Not -Match 'user0\d\d'; $Sim.MaskedJsonP | Should -Not -Match 'WS-1\d\d\d'
+            $Sim.MaskP.Entries.Count | Should -Be 51                                     # Aussage geaendert (Task 15): user026 aus health.json
+            $Sim.MaskedJsonP | Should -Not -Match 'user0\d\d'; $Sim.MaskedJsonP | Should -Not -Match 'WS-1\d\d\d'
             $Sim.MaskedJsonP | Should -Match 'CONTOSO'                                           # Domaenen ersetzt erst Alles
             Get-LeftNames $Sim.MaskedP $Sim.MaskP | Should -BeNullOrEmpty
+        }
+        It 'sammelt die Namen aus health.json nach allen anderen und laesst die bisherigen Nummern stehen' {   # Review Focus 4
+            $e = @($Sim.Mask.Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement })
+            $e[-14..-1] | Should -Be @('user:user026=Benutzer 26', 'server:ddc01.sim.local=Server 05', 'server:ddc01=Server 05', 'server:ddc02.sim.local=Server 06', 'server:ddc02=Server 06',
+                'server:wem01.sim.local=Server 07', 'server:wem01=Server 07',
+                'share:\\fs01\defsig$=Freigabe 03', 'address:10.20.0.10=Adresse 01', 'address:10.20.0.11=Adresse 02', 'address:fd00:20::10=Adresse 03',
+                'server:zeit01.sim.local=Server 08', 'server:zeit01=Server 08', 'address:10.20.0.20=Adresse 04')
+            $e[0] | Should -Be 'server:SIM-VDA01=Server 01'; $e | Should -Contain 'share:\\fs01\profile$=Freigabe 02'; @($e | Where-Object { $_ -like 'share:*' }).Count | Should -Be 3
+            @($Sim.Mask.Entries | Where-Object Name -eq 'Administrator').Count | Should -Be 0                  # der Ordner des eingebauten Kontos ist keine Person
+            foreach ($p in 'WdFilter', 'upmjit', 'BrokerAgent', 'WinDefend', 'Citrix WEM Agent Host Service') { $Sim.Mask.Protected | Should -Contain $p }
+            Hide-WorkerPerfReportText 'DNS fd00:20::10 und 10.20.0.10, Controller ddc01.sim.local, WEM wem01.sim.local, Zeit zeit01.sim.local, Profil C:\Users\user026, als Administrator anmelden' $Sim.Mask |
+                Should -Be 'DNS Adresse 03 und Adresse 01, Controller Server 05, WEM Server 07, Zeit Server 08, Profil C:\Users\Benutzer 26, als Administrator anmelden'
+            @($Sim.MaskP.Entries | Where-Object Kind -eq 'user').Count | Should -Be 26
+        }
+        It 'sammelt aus freiem Servertext nichts und uebersteht eine fehlende oder beschaedigte Datei' {
+            $run = Copy-SimRun $SimRun (Join-Path $TestDrive 'maskhealth'); $f = Join-Path $run 'health.json'
+            $names = { @((New-WorkerPerfMask -Path $run -Level 'Alles' -Texts $Texts).Entries | ForEach-Object Name) }
+            & $names | Should -Not -Contain 'prn01'                                    # steht nur in einem Richtlinienwert (freier Text)
+            @(& $names | Where-Object { $_ -match 'office\$' }).Count | Should -Be 0   # die Updatequelle von Office steht nur in einem Anwendungswert mit names: true (freier Text)
+            [IO.File]::WriteAllText($f, [IO.File]::ReadAllText($f).Replace('ddc02.sim.local', 'fd00:20::5'))             # ein Controller, der als IPv6-Adresse eingetragen ist
+            $v6 = (New-WorkerPerfMask -Path $run -Level 'Alles' -Texts $Texts).Entries | Where-Object Name -eq 'fd00:20::5'; $v6.Kind | Should -Be 'address'; $v6.Replacement | Should -Match '^Adresse \d\d$'
+            [IO.File]::WriteAllText($f, '{ kein json'); $broken = @(& $names); $broken | Should -Not -Contain 'ddc01.sim.local'; $broken | Should -Contain 'user001'
+            Remove-Item $f; @(& $names).Count | Should -Be $broken.Count
         }
         It 'laesst bei <Level> Aufbau und Schluesselwoerter stehen, auch wenn Benutzer wie Felder und Schluesselwoerter heissen' -TestCases @(
             @{ Level = 'Alles' }, @{ Level = 'Personen' }) {                                    # P2-R10
@@ -912,7 +1031,7 @@ Describe 'Simulierte Stunde, maskiert' {
             $before = @(Get-ChildItem $TestDrive -Filter '*.maskmap.json' -Recurse).Count
             [void](New-Masked 'nomap' @{ Mask = 'Alles' }); @(Get-ChildItem $TestDrive -Filter '*.maskmap.json' -Recurse).Count | Should -Be $before
             $map = Get-Content (Join-Path $TestDrive 'm1.maskmap.json') -Raw | ConvertFrom-Json
-            $map.level | Should -Be 'Alles'; @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 25; @($map.entries | Where-Object kind -eq 'printer').replacement | Should -Be @('Drucker 01', 'Drucker 02')
+            $map.level | Should -Be 'Alles'; @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 26; @($map.entries | Where-Object kind -eq 'printer').replacement | Should -Be @('Drucker 01', 'Drucker 02')   # Aussage geaendert (Task 15): user026 aus health.json
             { New-Masked 'x' @{ MaskMapFile = (Join-Path $TestDrive 'y.maskmap.json') } } | Should -Throw '*setzt -Mask voraus*'
             { New-Masked 'SIM-VDA01-bericht' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
             { New-Masked 'sim-vda01' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
@@ -924,7 +1043,7 @@ Describe 'Simulierte Stunde, maskiert' {
             $map = [IO.File]::ReadAllText($m) | ConvertFrom-Json
             $map.level | Should -Be 'Personen'
             @($map.entries | ForEach-Object kind | Sort-Object -Unique) | Should -Be @('client', 'user')
-            @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 25
+            @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 26                                   # Aussage geaendert (Task 15): user026 aus health.json
             $bytes = [IO.File]::ReadAllBytes($m); $bytes[0] | Should -Be ([byte][char]'{')                 # ohne BOM
         }
         It 'ersetzt im Zeitausschnitt auch einen Benutzer ohne Sitzung darin wie im ganzen Bericht' {
