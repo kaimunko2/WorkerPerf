@@ -1217,10 +1217,10 @@ angepasst.
 
 Der Katalog `src/health.de.json` bewertet das Zustandsbild des Servers. Jede Prüfung nennt im Feld `source` eine Quelle
 mit Titel, Adresse und Datum und im Feld `kind` ihre Art: „Empfehlung des Herstellers“ (`vendor`), „Empfehlung aus der
-Praxis“ (`practice`) oder „Faustregel“ (`rule`). Dieser Abschnitt weist die Quellen nach. Er enthält die Prüfungen der
-Bereiche Größe und Reserve, Betrieb, Sitzungen, Citrix VDA, Profilverwaltung, Drucken, Sicherheitsprodukte, Netz und
-Dateiserver, Ereignisbild und Wartung in der Arbeitszeit; der Bereich Anwendungen folgt. Stand: Katalog `version`
-2026-11-14.
+Praxis“ (`practice`) oder „Faustregel“ (`rule`). Dieser Abschnitt weist die Quellen nach. Er enthält die 80 Prüfungen
+der Bereiche Größe und Reserve, Betrieb, Sitzungen, Citrix VDA, Profilverwaltung, Drucken, Sicherheitsprodukte, Netz und
+Dateiserver, Ereignisbild, Wartung in der Arbeitszeit und Anwendungen, die Lesequellen der gelesenen Werte und die
+Kandidaten der Recherchen, die keine Prüfung wurden. Stand: Katalog `version` 2026-11-14.
 
 Wie die Quellen geprüft wurden:
 
@@ -1232,6 +1232,11 @@ Wie die Quellen geprüft wurden:
   Nennt eine Seite keinen Stand, steht das Datum des Abrufs da.
 - Die Seiten von Citrix unter docs.citrix.com stehen mit der Adresse da, die sie am 14.11.2026 haben: Die früheren
   Adressen mit `/en-us/` leiten heute auf `/us/en/` weiter (derselbe Pfad).
+- Jede Recherche, auf die sich der Katalog stützt, hat eine doppelte Quellenprüfung: Zwei unabhängige Prüfungen haben
+  jeden Eintrag mit seiner Seite verglichen, eine dritte hat sie am 14.11.2026 zusammengeführt und jeden Eintrag als
+  „supported“, „partly“ oder „unsupported“ eingestuft. Wo ein Eintrag nur zum Teil gestützt ist, steht im Katalog nur
+  der gestützte Teil. Seiten von Microsoft, die seit der Recherche umgezogen oder umbenannt sind, stehen mit dem Titel
+  und der Adresse da, die sie am 14.11.2026 haben; der frühere Titel steht dabei.
 - Eine Prüfung aus einer Praxisquelle heißt nie „Empfehlung des Herstellers“. Widerspricht eine Praxisquelle dem
   Hersteller, gilt der Hersteller, und der Katalog nennt den Widerspruch. Die Ausnahmen legt der Auftraggeber fest; sie
   stehen unten.
@@ -1261,9 +1266,9 @@ Die geltende Liste der Praxisquellen. Eine weitere Quelle kommt nur mit Zustimmu
 Kasper Johansen stand ebenfalls auf der Liste des Auftraggebers: Sein Blog ist nicht mehr erreichbar, nicht verwendet.
 
 Alle zwölf Quellen wurden am 13.11.2026 recherchiert, jeder Eintrag mit einer Gegenprüfung an der Seite. Die Art
-`practice` tragen Prüfungen, deren Quelle carlstalhood.com, BIS-F oder Trentent Tye ist. Acht weitere Praxisquellen
-stehen als zweite Quelle im Text einzelner Prüfungen (unten: „auch gestützt durch“). Von Benny Tritsch stützt sich in
-den zehn Bereichen dieses Abschnitts keine Prüfung.
+`practice` tragen Prüfungen, deren Quelle carlstalhood.com, BIS-F, Trentent Tye oder Manuel Winkel ist. Acht weitere
+Praxisquellen stehen als zweite Quelle im Text einzelner Prüfungen (unten: „auch gestützt durch“). Von Benny Tritsch
+stützt sich in den elf Bereichen dieses Abschnitts keine Prüfung.
 
 ### Quellen aus der Praxis: BIS-F
 
@@ -1274,10 +1279,10 @@ Server 2019. Der Katalog kennzeichnet sie deshalb als ältere Praxis.
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
 | 97_PrepBISF_PRE_BaseImage.ps1 (Skript im Quelltext von BIS-F) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1 | letzter Eintrag der Historie im Skript: 22.11.2020 | 2026-11-13 | `operation.powerPlan` (zweite Praxisquelle im Text: BIS-F stellt beim Versiegeln den Plan „High Performance“ ein, ohne Bedingung) |
-| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Vorschlag zum Vorgehen: BIS-F bietet eine eigene Richtlinie an, die den Cache des WEM-Agenten auf den beständigen Datenträger legt; für MCS setzt das einen VDA ab 1903 mit Speicheroptimierung (MCSIO) voraus) |
-| BISF.psm1 (Quelltext von BIS-F, Funktionen Use-BISFMCSConfig und Move-BISFEvtLogs) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Global/BISF.psm1 | Quelltext ohne Datum | 2026-11-14 | `events.sinceBoot` (BIS-F verlegt die Ereignisprotokolle auf das Cache-Laufwerk, für MCS nur mit einem VDA ab 1903 und der Richtlinie „Configure Citrix MCS Device“; dass sie so einen Neustart überstehen, ist eine Folgerung des Katalogs) |
+| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Vorschlag zum Vorgehen: BIS-F bietet eine eigene Richtlinie an, die den Cache des WEM-Agenten auf den beständigen Datenträger legt; wirksam nur mit einem Schreibcache-Laufwerk von Provisioning Services oder, für MCS, einem VDA ab 1903 mit Speicheroptimierung (MCSIO); ältere Praxis, Stand 2019 bis 2021. Ist die Umleitung abgeschaltet, trägt BIS-F den Programmordner des Agenten als Ort ein: Deshalb sagt der Befund „In Ordnung“ nur, dass ein Ort eingetragen ist, nicht, dass er beständig ist) |
+| BISF.psm1 (Quelltext von BIS-F, Funktionen Use-BISFMCSConfig und Move-BISFEvtLogs) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Global/BISF.psm1 | Quelltext ohne Datum | 2026-11-14 | `events.sinceBoot` (BIS-F verlegt die Ereignisprotokolle auf das Cache-Laufwerk: auf das Schreibcache-Laufwerk von Provisioning Services oder, für MCS, nur mit einem VDA ab 1903 und der Richtlinie „Configure Citrix MCS Device“, und nur, wenn die Umleitung nicht abgeschaltet und das Laufwerk erreichbar ist; der Fall Provisioning Services steht nicht im Text der Prüfung, weil der Katalog für MCS gilt; dass die Protokolle so einen Neustart überstehen, ist eine Folgerung des Katalogs) |
 | BaseImageScriptFramework.adml (Hilfetexte der Richtlinienvorlage, Text `POL_MCSCfg_Help`) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/ADMX/en-US/BaseImageScriptFramework.adml | Quelltext ohne Datum | 2026-11-14 | `events.sinceBoot` („With a configured MCSIO Disk the event logs and spool directory is redirected to the persistent drive“) |
-| System Optimizations | https://eucweb.com/docs/bisf-7-1912/system-optimizations | 2020-01-08 | 2026-11-14 | `maintenance.updateServiceEnabled` („Set Windows Update Service to Disabled“; die Seite nennt keinen Zweck, die Begründung im Text der Prüfung ist die des Katalogs); `network.rss` (der Schritt „Disable Receive Side Scaling (RSS)“: BIS-F widerspricht hier VMware, es gilt der Hersteller) |
+| System Optimizations | https://eucweb.com/docs/bisf-7-1912/system-optimizations | 2020-01-08 | 2026-11-14 | `maintenance.updateServiceEnabled` („Set Windows Update Service to Disabled“; die Seite nennt keinen Zweck, die Begründung im Text der Prüfung ist die des Katalogs; nach dem Quelltext von BIS-F bleibt der Dienst nur im gemeinsam genutzten Modus des Abbilds deaktiviert, im privaten, beständigen Modus startet die Personalisierung von BIS-F ihn bei jedem Start wieder mit dem Starttyp „Automatisch“); `network.rss` (der Schritt „Disable Receive Side Scaling (RSS)“: BIS-F widerspricht hier VMware, es gilt der Hersteller) |
 | 7.1912.0 (Versionshinweise) | https://eucweb.com/docs/bis-f-release-notes/7-x-all-version/7-1912-0 | Dokumentation 7.1912 | 2026-11-14 | `network.rss` (die Versionshinweise nennen „Removed the disabling of Receive Side Scaling“; Skript und Seite „System Optimizations“ führen den Schritt weiter) |
 
 ### Quellen aus der Praxis: carlstalhood.com
@@ -1287,7 +1292,7 @@ Gruppenrichtlinien ist älter und nennt Windows Server 2022 nur am Rand.
 
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
-| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr; die Schwelle des Katalogs liegt mit 24000 MB knapp unter 24 GB, siehe „Schwellen“), `security.networkProtection` („Disable Network protection and configure Citrix’s antivirus exclusions“; Stalhood nennt als Quelle den Citrix-Artikel CTX319676, der sich nicht öffnen ließ; der Netzwerkschutz ist eine Schutzfunktion, die Entscheidung liegt beim Sicherheitsteam) |
+| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr; die Schwelle des Katalogs liegt mit 24000 MB knapp unter 24 GB, siehe „Schwellen“), `security.networkProtection` („Disable Network protection and configure Citrix’s antivirus exclusions“; Stalhood nennt als Quelle den Citrix-Artikel CTX319676, der sich nicht öffnen ließ; der Netzwerkschutz ist eine Schutzfunktion, die Entscheidung liegt beim Sicherheitsteam; Stalhood sagt „Disable“, der Katalog meldet nur die Einstellung „blockieren“ und hält „überwachen“ für unschädlich, weil es nichts blockiert: eine Lesart des Katalogs) |
 | Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Multi-Session-Server regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
 | Group Policy Computer Settings for VDAs | https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/ | 2023-11-03 | 2026-11-13 | `sessions.disconnectLimit`, `sessions.idleLimit` (Zeitlimits per Gruppenrichtlinie, „3 hours or similar“: eine Größenordnung, keine Schwelle; die Prüfliste „Citrix Health Check“ nennt die Zeitlimits ebenfalls) |
 
@@ -1303,14 +1308,27 @@ direkt verbundene Drucker.
 
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
-| Printers and their impact on logon duration | https://trentent.github.io/2019/03/05/printers-and-their-impact-on-logon-duration/ | 2019-03-05 | 2026-11-14 | `print.operationalLogOff` (das Betriebsprotokoll des Druckdienstes ist eine der vier Protokollierungen, die seine Auswertung der Anmeldedauer auf dem Server braucht: „additional logging is required on the Citrix server side“; eine Größe des Protokolls und Ereigniskennungen sind nicht übernommen) |
+| Printers and their impact on logon duration | https://trentent.github.io/2019/03/05/printers-and-their-impact-on-logon-duration/ | 2019-03-05 | 2026-11-14 | `print.operationalLogOff` (das Betriebsprotokoll zum Drucken ist eine der vier Protokollierungen, die seine Auswertung der Anmeldedauer auf dem Server braucht: „additional logging is required on the Citrix server side“; eine Größe des Protokolls und Ereigniskennungen sind nicht übernommen) |
+
+### Quellen aus der Praxis: deyda.net
+
+Beiträge von Manuel Winkel. Der Beitrag ist von 2026 und beschreibt die Installation des neuen Teams auf Citrix-Servern
+mit Windows Server 2022.
+
+| Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
+|---|---|---|---|---|
+| Install new Microsoft Teams (version 2) in Citrix | https://www.deyda.net/index.php/en/2026/08/10/install-new-microsoft-teams-version-2-in-citrix/ | 2026-09-21 (veröffentlicht 2026-08-10) | 2026-11-14 | `apps.teamsClassic` („Important! If there is still a old Teams installation on the system, it must be uninstalled first.“; er nennt die Installation mit dem Bootstrapper „the recommended version on Citrix Worker machines“ und entfernt die alte Installation mit dessen Option; der Beitrag sagt nur „old Teams installation“, dass die Prüfung das maschinenweit installierte klassische Teams an dem Ort sucht, den Citrix nennt, ist die Festlegung des Katalogs) |
+
+Nicht übernommen aus diesem Beitrag: den Wert disableAutoUpdate als zweite Quelle von `apps.teamsAutoUpdate`, denn sein
+Satz, das sei ab Citrix Virtual Apps and Desktops 2402 nicht mehr nötig, folgt auf einen Block mit zwei Werten und lässt
+offen, welchen er meint.
 
 ### Weitere Praxisquellen als zweite Quelle
 
 Der Katalog führt je Prüfung eine Quelle im Feld `source`. Wo eine weitere Praxisquelle dieselbe Prüfung stützt, steht
 ihre Aussage im Text der Prüfung, mit dem Namen der Quelle und, bei einer Messung, mit deren Bedingungen. Die Art der
-Prüfung ändert sich dadurch nicht. Abruf der Seiten: 2026-11-13, für die Prüfungen der Bereiche Drucken bis Wartung in
-der Arbeitszeit 2026-11-14.
+Prüfung ändert sich dadurch nicht. Abruf der Seiten: 2026-11-13, für die Prüfungen der Bereiche Drucken bis Anwendungen
+2026-11-14.
 
 - `size.workerCpu`, `size.workerCpuMax` – auch gestützt durch: GO-EUC, „Impact of sizing RDSH VMs“,
   https://www.go-euc.com/impact-of-sizing-rdsh-vms/, 2019-02-27. Lasttest von 2019 mit Windows Server 2016 unter ESXi
@@ -1371,9 +1389,9 @@ der Arbeitszeit 2026-11-14.
   Drittherstellern isoliert betreiben, genannt für den HP Universal Print Driver; die Angabe „mindestens Version 5.x“
   ist überholt und nicht übernommen); Thomas Kötzing, „Ein echter Kunden-Support-Fall, gelöst mit Hilfe von KI!“,
   https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/, 2025-05-27 (ein Fall
-  mit wiederholten Abstürzen des Druckdienstes und einem Treiber von Konica Minolta von 2021: empfohlen sind ein neuerer
-  64-Bit-Treiber und die Isolierung per Gruppenrichtlinie; übernommen sind die Empfehlungen, kein Ergebnis, und nicht
-  die Erklärung des Beitrags zu 32-Bit-Treibern).
+  mit wiederholten Abstürzen des Dienstes Druckwarteschlange und einem Treiber von Konica Minolta von 2021: empfohlen
+  sind ein neuerer 64-Bit-Treiber und die Isolierung per Gruppenrichtlinie; übernommen sind die Empfehlungen, kein
+  Ergebnis, und nicht die Erklärung des Beitrags zu 32-Bit-Treibern).
 - `print.isolationOff` – auch gestützt durch: dieselben zwei Beiträge von Thomas Kötzing,
   https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/, 2017-02-08, und
   https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/, 2025-05-27
@@ -1411,6 +1429,12 @@ der Arbeitszeit 2026-11-14.
   Programmen, die bei der Anmeldung starten, überwiegend Autostart-Einträge je Benutzer; als entbehrlich nennt er
   „OneNote QuickNotes, Adobe Reader and Google Chrome update tasks“; einer der sechs Punkte ist eine geplante Aufgabe).
   Die Zahl ist keine Schwelle.
+- `apps.edgeStartupBoost` – auch gestützt durch: Aaron Parker, „Support Frontline Workers on Shared Virtual Desktops“,
+  https://stealthpuppy.com/m365apps-frontline-workers/, 2023-04-09 („This policy will cause several Microsoft Edge
+  processes to start at sign-in and the web apps will be created soon after. If you’re concerned about CPU and RAM
+  consumption, this may be a trade-off for an improved user experience.“; gezeigt auf Windows Server 2022 mit vielen
+  Sitzungen). Parker schaltet Startboost ein, damit zwangsinstallierte Web-Apps bei der Anmeldung angelegt werden, und
+  rät nicht zum Wert 0; die Prüfung bleibt deshalb eine Faustregel.
 
 ### Ausnahmen: Praxisquelle vor Hersteller
 
@@ -1445,7 +1469,7 @@ und Betriebserfahrung, die Herstellerdokumentation nicht.
 | Hersteller | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|---|
 | Microsoft | How to determine the appropriate page file size for 64-bit versions of Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/how-to-determine-the-appropriate-page-file-size-for-64-bit-versions-of-windows | 2026-02-12 | 2026-11-13 | `size.pagefilePresent` (`vendor`); als Beleg der Faustregeln `size.commitHeadroom` (Zusagegrenze = Arbeitsspeicher und alle Auslagerungsdateien) und `operation.diskFree` (eine vom System verwaltete Auslagerungsdatei wächst nur, solange Platz frei ist) |
-| Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge, für große Webanwendungen und Erweiterungen mehr; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens) |
+| Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13, 2026-11-14 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge, für große Webanwendungen und Erweiterungen mehr; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens); `apps.edgeAutoUpdate` (`vendor`: „For non-persisted machines, the best practice to disable automatic updates and update Microsoft Edge by updating the golden image to ensure that there are no version mismatches among the pool of virtual machines.“; Carl Stalhood nennt das für Edge nicht, er nennt nur die Updates von Google Chrome); als Beleg der Faustregel `apps.edgeUserDataDir` („Redirecting or roaming any UDF content is not supported and should be avoided, as it can cause reliability and performance issues related with many state-preserving files, databases, and caches.“, „Microsoft Edge Enterprise sync doesn't carry these risk and is therefore the recommended way to sync Edge user data.“; zu einem Ordner, der nur lokal verlegt ist, sagt die Seite nichts) |
 | Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | `maintenance.sessionTriggerTasks` (`vendor`: „it is useful to focus specifically on the tasks that are configured to run on idle, at user sign-in, or on session connect and disconnect“; die Seite lässt diese Aufgaben ansehen, sie nennt sie nicht fehlerhaft); als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; diese Seite nennt keine Zahl) |
 | Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (die Seite beschreibt den Wert `PendingFileRenameOperations`; was ein Eintrag auf einem nicht persistenten Server bedeutet, ist die Faustregel des Katalogs und steht nicht auf der Seite) |
 | VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` (Windows Server 2022: ab 10.3.5, für die beste Leistung ab 12.0.0; Windows Server 2025: ab 11.3.0, für die beste Leistung ab 12.5.0; die Seite führt die Angaben unter „VMware Tools support for Guest Operating Systems“, ein Stand unter dem Mindeststand ist danach nicht unterstützt) |
@@ -1456,17 +1480,24 @@ und Betriebserfahrung, die Herstellerdokumentation nicht.
 | Citrix | WEM health check tool | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/wem-health-check-tool.html | 2026-11-12 | 2026-11-13 | `vda.wemServices` |
 | Citrix | Agent (install and configure) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-13 | `vda.wemCache` (Abschnitt „Prerequisites“: Der Cache des Agenten soll nach Möglichkeit an einem beständigen Ort liegen), `vda.wemGpTimeout` (Abschnitt „System settings“) |
 | Citrix | Profile Management policy descriptions and defaults | https://docs.citrix.com/us/en/profile-management/current-release/settings/descriptions-and-defaults.html | 2026-10-29 | 2026-11-13 | als Beleg der Faustregel `profile.containerFull` (90 % ist die Vorgabe für die Belegung, ab der ein Container automatisch vergrößert wird; keine Empfehlung im engen Sinn) |
-| Microsoft | Printer Driver Isolation | https://learn.microsoft.com/en-us/windows-hardware/drivers/print/printer-driver-isolation | 2025-05-01 | 2026-11-14 | `print.driversInSpooler` (`vendor`: „By isolating the driver, the administrator can prevent a fault in a driver component from halting the print service“); als Beleg der Faustregel `print.isolationOff` (die Seite nennt das Abschalten der Isolierung als Mittel für die Fehlersuche: „To support troubleshooting“) |
+| Microsoft | Printer Driver Isolation | https://learn.microsoft.com/en-us/windows-hardware/drivers/print/printer-driver-isolation | 2025-05-01 | 2026-11-14 | als Beleg der Faustregel `print.driversInSpooler` („By isolating the driver, the administrator can prevent a fault in a driver component from halting the print service“; die Seite nennt einen Vorteil der Isolierung, keine Empfehlung: Entscheidung ZB-R54, bis Task 14c `vendor`; „By default, if the INF file that installs a printer driver does not indicate that the driver supports driver isolation, the printer class installer configures the driver to run in the spooler process“); als Beleg der Faustregel `print.isolationOff` (die Seite nennt das Abschalten der Isolierung als Mittel für die Fehlersuche: „To support troubleshooting“) |
 | Citrix | Best practices, security considerations, and default operations | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/printing/printing-best-practices.html | 2026-11-12 | 2026-11-14 | `print.kernelModeV2` (`vendor`: „Try to avoid using version 2 kernel-mode drivers“); als Beleg der Faustregel `print.driverCount` („Minimize the number of printer drivers installed on Multi-session OS machines“, „Use the Universal printer driver or Windows-native drivers“: gemeint sind der Citrix-Universaltreiber und die eigenen Windows-Treiber der Drucker, nicht die mit Windows gelieferten; die Seite nennt keine Zahl). Die Seite schränkt selbst ein: „Some of these best practices might not apply to your Site“. Ihr Satz zur automatischen Installation mitgelieferter Treiber ist nicht übernommen (ohne Wirkung ab VDA 7.16 unter Windows Server 2012 und neuer) |
 | AKI | Release Notes PrinTaurus 6.4 | https://www.aki-gmbh.com/download/47826/ | 2025-02-16 | 2026-11-14 | `print.mappingClientSupported` (Kapitel 1: „Zum 31. Dezember 2025 kündigen wir alle PrinTaurus Versionen < 6.2. ab.“; als Hinweise im Text: „Alle Software-Komponenten sollten zur gleichen Release-Version gehören!“ steht unter den Hinweisen zum Update auf 6.4; Kapitel 2: lokale IPP-Druckerwarteschlangen sind „in dieser Version nur für Fat Clients verfügbar“ und in Citrix- oder Terminalserver-Umgebungen nicht unterstützt) |
 | Microsoft | Microsoft Defender Antivirus compatibility with other security products | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-compatibility | 2026-08-21 | 2026-11-14 | `security.twoScanners` (auf Windows Server wechselt Defender Antivirus neben dem Schutzprodukt eines anderen Herstellers nicht von selbst in die passive Betriebsart; „set Microsoft Defender Antivirus to passive mode to prevent problems caused by having multiple antivirus products installed on a server“ mit dem Wert ForceDefenderPassiveMode; für einen Server ohne Anbindung an Defender for Endpoint: „disable/uninstall Microsoft Defender Antivirus manually to prevent problems caused by having multiple antivirus products installed on a server“), `security.passiveWithoutMde` („In general, Microsoft Defender Antivirus can be set to passive mode only on endpoints that are onboarded to Defender for Endpoint“; für den Server ohne Anbindung derselbe Satz wie oben) |
 | Citrix | Endpoint Security, Antivirus, and Antimalware Best Practices (CTX696648) | https://support.citrix.com/external/article/CTX696648/endpoint-security-antivirus-and-antimalw.html | 2026-05-25 | 2026-11-14 | `security.citrixExclusions` (Abschnitt „Virtual Delivery Agents“: die Prozesse UserProfileManager.exe, BrokerAgent.exe und CtxSvcHost.exe stehen dort neben weiteren; „Review these recommendations with your vendor and security team“, „confirm they exist before you create an exclusion policy“), `security.wemExclusions` (Abschnitt „Workspace Environment Management“: Citrix nennt den Programmordner des Agenten und seine Prozesse). Der Stand ist das Datum „Updated On“ der Seite (05-25-2026) |
 | Microsoft | Detect, enable, and disable SMBv1, SMBv2, and SMBv3 in Windows | https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3 | 2025-03-11 | 2026-11-14 | `network.smb1` („SMBv1 has significant security vulnerabilities, and we strongly encourage you not to use it“) |
-| Microsoft | Best practices for DNS client settings in Windows Server | https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/best-practices-for-dns-client-settings | 2026-02-12 | 2026-11-14 | `network.dnsCount` (`vendor`, Abschnitt zu Mitgliedsservern: „Configure the primary and secondary DNS client settings to point to local primary and secondary DNS servers“); als Beleg der Faustregel `network.dnsPublic` („Don't configure the client DNS settings to point to your ISP's DNS servers“; dass eine öffentliche Adresse ein solcher Server ist, ist die Annahme des Katalogs). Der Titel ist die Überschrift der Seite; im Browser heißt sie „Recommendations for Domain Name System (DNS) client settings“ |
+| Microsoft | Best practices for DNS client settings in Windows Server | https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/best-practices-for-dns-client-settings | 2026-02-12 | 2026-11-14 | `network.dnsCount` (`vendor`, Abschnitt zu Mitgliedsservern: „Configure the primary and secondary DNS client settings to point to local primary and secondary DNS servers“, ohne lokale DNS-Server einer, „that can be reached through a reliable WAN link“; die Regel gilt seit Task 14c nur für Mitglieder einer Domäne); als Beleg der Faustregel `network.dnsPublic` (die Seite lässt Servern, die nicht Mitglied der Domäne sind, andere Einstellungen zu; die Regel gilt seit Task 14c nur für Mitglieder einer Domäne) („Don't configure the client DNS settings to point to your ISP's DNS servers“; dass eine öffentliche Adresse ein solcher Server ist, ist die Annahme des Katalogs). Der Titel ist die Überschrift der Seite; im Browser heißt sie „Recommendations for Domain Name System (DNS) client settings“ |
 | Microsoft | Set-MpPreference | https://learn.microsoft.com/en-us/powershell/module/defender/set-mppreference?view=windowsserver2022-ps | 2024-03-27 | 2026-11-14 | `maintenance.defenderRandomize` („Randomized start times can distribute the impact of scanning“; der zufällige Startzeitpunkt ist die Voreinstellung) |
 | Microsoft | Configure Microsoft Defender Antivirus on a remote desktop or virtual desktop infrastructure environment | https://learn.microsoft.com/en-us/defender-endpoint/deployment-vdi-microsoft-defender-antivirus | 2026-08-20 | 2026-11-14 | als Beleg der Faustregeln `maintenance.defenderFullScan` (die Seite nennt einen täglichen Schnellscan und „Run a weekly scheduled scan (quick or full)“ mit der Art „Not configured“; einen Satz gegen den vollständigen Scan enthält sie nicht, deshalb ist die Prüfung keine Empfehlung des Herstellers) und `security.signatureAge` (Signaturen erscheinen „typically published once every three to four hours“; eine Schwelle nennt Microsoft nicht) |
 | Microsoft | Windows Time Service Tools and Settings | https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings | 2025-09-18 | 2026-11-14 | als Beleg der Faustregel `network.timeSource` („By default, a computer that's joined to a domain synchronizes time through a domain hierarchy“; die Seite beschreibt die Voreinstellung und spricht keine Empfehlung aus) |
-| Microsoft | Eventlog Key | https://learn.microsoft.com/en-us/windows/win32/eventlog/eventlog-key | 2025-08-14 | 2026-11-14 | als Beleg der Faustregel `events.retainFull` („When the log file reaches its maximum size, you must clear the log manually; otherwise, new events are discarded“) |
+| Microsoft | wevtutil | https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/wevtutil | 2023-02-03 | 2026-11-14 | als Beleg der Faustregel `events.retainFull` („If an event log reaches its maximum size and the log retention mode is true, existing events are retained, and incoming events are discarded.“). Bis Task 14c stand hier die Seite „Eventlog Key“ der älteren Ereignisprotokoll-Schnittstelle von Windows Server 2003, Windows XP und Windows 2000 (Quellenprüfung `events.retainFull`) |
+| Microsoft | Microsoft Edge - Update policies | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-update-policies | 2026-08-18 | 2026-11-14 | `apps.edgeUpdateCheckOff` (`vendor`: „Set this policy to the value 0 to disable all periodic network traffic by Microsoft Edge Update. This isn't recommended, as it prevents Microsoft Edge Update itself from receiving stability and security updates.“), `apps.edgeWebView2Update` (`vendor`: „Automatic updates are enabled by default. Disabling automatic updates for the WebView2 Runtime might cause compatibility issues with applications that depend on this component.“); für `apps.edgeAutoUpdate` die zwei Bedingungen der Richtlinien („This policy is available only on Windows instances that are joined to a Microsoft® Active Directory® domain.“, „Can be overridden for individual channels by specifying the 'Update policy override' policy for those specific channels.“) und „Always allow updates (1) (recommended)“ als allgemeine Vorgabe |
+| Microsoft | StartupBoostEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/StartupBoostEnabled | 2026-05-22 | 2026-11-14 | als Beleg der Faustregel `apps.edgeStartupBoost` („Allows Microsoft Edge processes to start at OS sign-in and restart in background after the last browser window is closed.“, „If you don't configure this policy, startup boost may initially be off or on.“; die Seite beschreibt nur das Verhalten; dass es auf einem Server mit vielen Sitzungen je Sitzung Arbeitsspeicher kostet, ist die Begründung des Katalogs). Die frühere Adresse unter `/microsoft-edge-browser-policies/` leitet hierher |
+| Microsoft | Fix high CPU or memory usage in Microsoft Edge | https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/performance/edge-high-cpu-memory | 2026-06-03 | 2026-11-14 | `apps.edgeBackgroundMode` (`vendor`: „If Edge continues to use excessive CPU after you close all windows, background processes are still running.“, „Turn off Continue running background extensions and apps when Microsoft Edge is closed.“, „For enterprise management, see the BackgroundModeEnabled policy.“), `apps.edgeSleepingTabs` (`vendor`: „Turn on sleeping tabs“, „For enterprise management, see the SleepingTabsEnabled, SleepingTabsTimeout, and SleepingTabsBlockedForUrls policies.“; eine Schwelle für die Zeit bis zum Schlafen nennt der Katalog nicht) |
+| Microsoft | AutoDiscardSleepingTabsEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/AutoDiscardSleepingTabsEnabled | 2026-10-07 | 2026-11-14 | `apps.edgeAutoDiscard` (`vendor`: „Auto discard reduces memory usage by discarding inactive background tabs. … By default, auto discard is turned on.“, mit der Bedingung „Microsoft Edge discards an eligible background tab after it has remained in the background through three consecutive browsing sessions, including the current one. A new browsing session begins when the browser is used more than 12 hours after the start of the previous session, or more than 18 hours on devices with 16 GB or more of memory.“) |
+| Microsoft | On-premises sync for Active Directory (AD) users | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-on-premises-sync | 2026-11-03 | 2026-11-14 | `apps.edgeRoamingProfile` (`vendor`: „If there are simultaneous on-premises sessions running, data on any of the computers may be unexpectedly overwritten by data from another computer the next time you start a browser session.“, „On-premises sync only works with the profile associated with an Active Directory (AD) account. If this profile doesn't exist, on-premises sync won't work.“; die Seite „Microsoft Edge for Virtual desktop infrastructure (VDI)“ ergänzt „On-premises sync doesn't support syncing multiple concurrent sessions.“) |
+| Microsoft | Install Office on a custom VHD image | https://learn.microsoft.com/en-us/azure/virtual-desktop/install-office-on-wvd-master-image | 2025-06-20 | 2026-11-14 | als Beleg der Faustregel `apps.officeUpdateUi` (das Beispiel setzt `hideenabledisableupdates` und `hideupdatenotifications` auf 1, ohne zu sagen, wozu; die Seite gilt für Microsoft 365 Apps auf Windows 10 und 11 Enterprise mit mehreren Sitzungen: „Windows 10 Enterprise multi-session and Windows 11 Enterprise-multi-session only support the following versions of Office“; für Office LTSC auf Windows Server hat Microsoft keine Seite. Die Seite „Change the Microsoft 365 Apps update channel for devices in your organization“ nennt „Hide option to enable or disable updates = Enabled“ zusammen mit eingeschalteten automatischen Updates: Der ausgeblendete Schalter heißt also nicht, dass die Updates abgeschaltet sind) |
+| Microsoft | Install Teams for Virtualized Desktop Infrastructure (VDI) | https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy | 2026-08-25 | 2026-11-14 | `apps.teamsAutoUpdate` (`vendor`, Abschnitt „Disable Teams autoupdate in non-persistent VDI“: „To prevent Teams from autoupdating, use the following registry key on the virtual machine. Only Teams builds higher than 23306.3314.2555.9628 in VDI can process this registry key.“, „If this regkey is present in the virtual machine, Teams MSIX installer doesn't attempt to install or upgrade the Teams Meeting add-In (TMA). Administrators must provision TMA using scripts or other deployment tools.“; einen Grund wie Last oder Speicherplatz nennt die Seite nicht), `apps.teamsWebView2` (`vendor`: „WebView2 framework required in Windows Server and Windows 10/11 Multi-User environments“, „Update to the most current version.“; dieselbe Seite: „End-of-support dates for Windows Server 2019 and Windows Server 2022 are October 2025 and October 2026 respectively.“, während ihre Liste der Voraussetzungen Windows Server 2022 weiter führt; „Plan upgrades.“ steht dort für Windows Server 2016 und 2019, nicht für 2022); als Beleg der Faustregel `apps.teamsFallback` („When users connect from an unsupported endpoint, the users are in fallback mode, in which Audio/Video isn't optimized.“, „If the value isn't present or is set to 0 (zero), fallback mode is enabled.“, „This registry key can only be processed by Teams 24257.x.x.x or higher.“; einen Sollwert nennt die Seite nicht) |
 | Microsoft | Step 4: Configure Group Policy Settings for Automatic Updates | https://learn.microsoft.com/en-us/windows-server/administration/windows-server-update-services/deploy/4-configure-group-policy-settings-for-automatic-updates | 2025-06-05 | 2026-11-14 | als Beleg der Faustregel `maintenance.updateInstallInWorkHours` (Option 4: „If no schedule is specified, the default schedule for all installations is every day at 3:00 AM“; „Starting with Windows 8, you can set updates to install during automatic maintenance“; ohne Richtlinie lädt und installiert Windows nach dieser Seite automatisch, der Zeitpunkt ist dann aus den gelesenen Werten nicht bekannt) |
 
 Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (Abruf 2026-11-13 oder 2026-11-14):
@@ -1614,9 +1645,92 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   geführten Berichts (`src/guidance.de.json`; Belegstellen und Bestätigung auf dem Zielsystem weiter oben in dieser
   Datei). Von dort stammt auch die Bedingung, die Wirkung zuerst auf einem Testserver zu prüfen, weil bei der Isolierung
   „keine“ der Hersteller des Treibers die Isolierung nicht zugesagt hat.
-- AKI, „Release Notes 6.2 deutsch“, https://www.aki-gmbh.com/download/45927/, Kapitel 4: Das Installationspaket heißt
-  „PrinTaurus SmartSpread Client x64.msi“ und trägt in Release 6.2 die Version 6.2.1; daraus entsteht der Wert
-  `print.mappingClientVersion`.
+- AKI, „Release Notes 6.2 deutsch“, https://www.aki-gmbh.com/download/45927/ (Stand 2022-03-28), Kapitel 4: Das
+  Installationspaket heißt „PrinTaurus SmartSpread Client x64.msi“ und trägt in Release 6.2 die Version 6.2.1; daraus
+  entsteht der Wert `print.mappingClientVersion`. Die Zählung zeigt AKI nur für Release 6.2: Dass spätere Releases
+  ebenso gezählt werden und der Eintrag unter den installierten Programmen diese Zahl trägt, dokumentiert AKI nicht
+  (Quellenprüfung `pt.rec.supported-version`, partly; der erste Lauf bestätigt Name und Zählung). „Alle
+  Software-Komponenten sollten zur gleichen Release-Version gehören!“ heißt: zum selben Release gehören, die
+  Versionsnummern der Komponenten eines Release unterscheiden sich (`print.mappingClientSupported`, im Vorschlag zum
+  Vorgehen).
+- Microsoft, „Guidance on disabling system services on Windows Server 2016 with Desktop Experience“,
+  https://learn.microsoft.com/en-us/windows-server/security/windows-services/security-guidelines-for-disabling-system-services-in-windows-server
+  (Stand der Seite 2024-08-22, Abruf 2026-11-14): Der Dienst „System Event Notification Service“ hat den Dienstnamen
+  SENS und den Starttyp „Automatic“. Diese Seite ist die zweite Quelle für den Dienstnamen SENS in `vda.wemServices`;
+  die Seiten von Citrix nennen nur den Anzeigenamen.
+- Citrix, „Agent event logs“ (Workspace Environment Management, Current Release),
+  https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/agent-event-logs.html (Stand
+  der Seite 2026-11-12, Abruf 2026-11-14): „6011 Info File-based cache information: Sync mode: {sync mode} , Cache
+  location: {location}“, „6013 Error Unable to save cache to persistent data location.“ und „6018 Info File-based cache
+  synchronization succeeded. Cache location: {location}“. Danach nutzt auch der Agent eigener WEM-Server ab 2603 einen
+  Cache an einem beständigen Datenort; eine Seite, die das beschreibt, gibt es für eigene WEM-Server nicht, und die
+  Ereignisliste von 2507 endet bei 6007 (`vda.wemCache`).
+- Citrix, „Agent (install and configure)“ (Tabelle oben), zum Wert GpNetworkStartTimeoutPolicyValue: Die Seite nennt ihn
+  „created during installation“ mit der Vorgabe 120 und schreibt zugleich „If you don't configure the preceding settings
+  using the command line, the WEM agent installer does not process them during installation.“ Der Wert kann also fehlen,
+  und ein fehlender Wert ist kein Befund (`vda.wemGpTimeout`, Quellenprüfung WEM-F14 und WEM-R16).
+- Microsoft, „Set-MpPreference“ (Tabelle oben): „Network protection on Windows Server also requires that the
+  AllowNetworkProtectionOnWinServer and (for Windows Server 2016 or Windows Server 2012 R2)
+  AllowNetworkProtectionDownLevel parameters are set to the value $true.“; Microsoft, „Defender CSP“,
+  https://learn.microsoft.com/en-us/windows/client-management/mdm/defender-csp (Stand der Seite 2026-10-14): „If false,
+  the value of EnableNetworkProtection will be ignored.“ Das Zustandsbild liest AllowNetworkProtectionOnWinServer nicht;
+  der Befund von `security.networkProtection` sagt das.
+- Microsoft, „MSFT_MpComputerStatus class“,
+  https://learn.microsoft.com/en-us/previous-versions/windows/desktop/defender/msft-mpcomputerstatus (Stand der Seite
+  2018-05-31): „Antivirus Signature age in days- if signatures have never been updated you will see an age of 65535
+  days“ (`security.signatureAge`, im Befund).
+- Microsoft, „Configure custom exclusions for Microsoft Defender Antivirus“,
+  https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-configure (Stand der Seite
+  2026-09-09): Mit HideExclusionsFromLocalAdmins sind die Ausschlüsse „aren't visible in Get-MpPreference or Registry
+  Editor“, und die Seite „Configure Microsoft Defender Antivirus on a remote desktop or virtual desktop infrastructure
+  environment“ nennt für VDI „Control whether or not exclusions are visible to Local Admins: Enabled“. Der Befund von
+  `security.citrixExclusions` und `security.wemExclusions` sagt, dass die Liste dann leer erscheinen kann und nicht
+  aussagekräftig ist.
+- Microsoft, „Enterprise management of WebView2“, https://learn.microsoft.com/en-us/deployedge/webview2-enterprise
+  (Stand der Seite 2026-09-11): „However, users should not stop updating their WebView2 Runtime; users should not remain
+  on an older version of the WebView2 Runtime.“ (`apps.edgeWebView2Update`). Dass ein Update, das ein nicht persistenter
+  Server selbst lädt, nach dem Neustart weg ist und deshalb das Master-Image die aktuelle Runtime tragen muss, ist eine
+  Folgerung des Katalogs. Microsoft, „WebView2 end-user FAQ“,
+  https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/end-user-faq (Stand der Seite 2023-04-03): „Most
+  people will see WebView2 used by Widgets, Teams, Office, Outlook, Weather, and many more applications.“
+- Microsoft, „SleepingTabsEnabled“,
+  https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/SleepingTabsEnabled (Stand der Seite 2026-05-22):
+  „By default, sleeping tabs is turned on.“, „If this policy is not configured, users can choose whether to enable
+  sleeping tabs.“; Microsoft, „BackgroundModeEnabled“,
+  https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/BackgroundModeEnabled (Stand der Seite
+  2026-05-22): „If you don't configure this policy, background mode is initially turned off“ (`apps.edgeSleepingTabs`,
+  `apps.edgeBackgroundMode`, in den Befunden).
+- Microsoft, „UserDataDir“, https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/UserDataDir (Stand der
+  Seite 2026-05-22): „To avoid data loss or other errors, don't configure this policy to a volume's root directory or to
+  a directory that's used for other purposes, because Microsoft Edge manages its contents.“ (`apps.edgeUserDataDir`, im
+  Vorschlag zum Vorgehen).
+- Citrix, „HDX features managed through the registry“,
+  https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/hdx-registry-settings.html
+  (Stand der Seite 2026-11-09, Abruf 2026-11-14), Abschnitt „Microsoft Teams fallback mode“: „If you are using a
+  Workspace app version/platform OS that does not support Microsoft Teams optimization, fallback registry keys do not
+  apply.“ (`apps.teamsFallback`). Microsoft knüpft den Rückfall an Benutzer an einem nicht unterstützten Endgerät,
+  Citrix an die Workspace-App und das Betriebssystem des Endgeräts; der Text der Prüfung nennt beide.
+- Citrix, „Optimization for Microsoft Teams (Classic)“,
+  https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams.html (Stand der
+  Seite 2026-11-09, Abruf 2026-11-14): Im Rückfall auf die älteren HDX-Techniken „HDX technologies use server-side
+  rendering. Expect high CPU consumption on the VDA when you turn on video.“ (`apps.teamsFallback`; die Seite gilt für
+  das klassische Teams und die Optimierung über WebRTC, für das neue Teams nennt Microsoft das Rendern auf der VM erst
+  für die Zeit nach dem 1. April 2027). Für das klassische Teams, maschinenweit installiert, nennt die Seite den Ort
+  `C:\Program Files (x86)\Microsoft\Teams\current\Teams.exe`; eine Installation je Benutzer liegt im Profil
+  (`apps.teamsClassic`).
+- VMware, „SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility“ (Tabelle oben): „When you
+  create a virtual machine, the default controller is optimized for best performance.“ und „Disks on VMware Paravirtual
+  SCSI controllers might not experience optimal performance if they have snapshots or if the hosts memory is
+  overcommitted.“ (`size.storageController`, Quellenprüfung VM-14).
+- VMware, „Poor network performance or high network latency on Windows virtual machines“ (Tabelle oben): „If the power
+  saving configuration appears to be related to the performance problems, a customized power plan based on the
+  performance and power saving requirements should be created.“ und „If you are unsure about which power saving
+  configuration is recommended for your system, engage your hardware vendor.“ (`operation.powerPlan`, Quellenprüfung
+  VM-19).
+- VMware, „VMware Tools Lifecycle Management“ (Tabelle oben): Die Regel von `size.vmTools` prüft die Hauptversion 12
+  (Windows Server 2022); für Windows Server 2025 nennt VMware 12.5.0, das die Regel nicht unterscheidet. Ob immer auf
+  die neueste Version zu gehen ist, sagen die Seiten von VMware widersprüchlich; der Katalog nennt keine aktuelle
+  Versionsnummer (Quellenprüfung VM-01).
 
 ### Hinweise zu gelesenen Werten
 
@@ -1677,6 +1791,34 @@ Was die Quellenprüfung der Recherchen zu einzelnen Werten festhält, auf die si
   der Quellenprüfung `network.rssDisabled`; die übrigen Regeln sind unverändert.
 - `print.mappingClientVersion`: Der Hersteller dokumentiert den Namen des Installationspakets, nicht den Eintrag unter
   den installierten Programmen; ob der Eintrag so heißt, zeigt der erste Lauf.
+- `vda.wemVersion`: Den Namen der Programmdatei nennt Citrix auf der Seite „View log files“; dass ihre Dateiversion die
+  Version des Agenten ist, dokumentiert Citrix nicht. Der erste Schritt von `vda.wemCache` vergleicht die Version mit
+  2408.1.0.1 und 2603 auf dieser Grundlage. `vda.wemServer` kann ein Name oder eine IP-Adresse sein.
+- `network.timeType`, `network.timeServers`: Der zuerst gelesene Schlüssel der Richtlinie
+  (`HKLM\SOFTWARE\Policies\Microsoft\W32Time\Parameters`) steht nicht auf der Seite „Windows Time service tools and
+  settings“; sie ordnet die Richtlinie des NTP-Clients `…\Policies\Microsoft\W32Time\TimeProviders\NtpClient` zu und
+  sagt, dass Werte der Richtlinie die Werte des Dienstes überschreiben. Mit der Richtlinie des NTP-Clients nutzt ein
+  Mitglied einer Domäne den Wert NtpServer nicht; der Rohwert „Zeitquellen“ ist dann nicht die wirksame Quelle.
+- `print.driversV2`, `print.vendorDrivers`: MajorVersion und Manufacturer von MSFT_PrinterDriver stehen auf keiner
+  geöffneten Seite (der Leser ist erprobt); „Typ 2 = Kernelmodus“ ist die Zuordnung des Katalogs.
+  `print.isolationExecution`, `print.isolationOverride`: Die Seite „Policy CSP - ADMX_Printing“ führt unter den
+  Betriebssystemen nur Builds von Windows 10 und 11; „0 = aus“ ist die Kodierung der ADMX-Datei, nicht ein Satz der
+  Seite.
+- `events.logs`: Der älteste Eintrag eines Protokolls kommt aus dem EventLogReader mit „EventLogQuery.ReverseDirection“
+  in der Vorgabe false, also dem ältesten Eintrag zuerst.
+- `security.defenderSignatureAgeDays`: Einheit und der Wert 65535 für „nie aktualisiert“ stehen auf der Seite
+  „MSFT_MpComputerStatus class“. `security.defenderSignaturesOutOfDate`: Was Defender Antivirus für veraltet hält,
+  dokumentiert Microsoft nicht; der Wert ist nur Rohwert. `security.defenderVersion` ist die Eigenschaft
+  AMProductVersion („Product version“), deshalb heißt der Wert „Produktversion von Defender Antivirus“.
+  `security.defenderService`: Dass ein Server ohne den Dienst WinDefend Defender Antivirus nicht installiert hat, ist
+  eine Folgerung des Katalogs.
+- Werte der Anwendungen: Die Dateiversion von msedge.exe als Version von Edge ist Praxis (EDGE-F01); dass der Schlüssel
+  `HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration` eine Installation von Office zeigt, ist eine Folgerung des
+  Katalogs (F-OFC-01); der Ordner des Besprechungs-Add-ins ist der Zielordner aus Microsofts Beispiel für msiexec, den
+  Ordner der Option --installTMA nennt Microsoft nicht, und ein fehlender Ordner beweist nicht, dass kein
+  maschinenweites Add-in da ist (TEAMS-F12); MaxFPS wirkt nur mit der Bildschirmfreigabe von der VM, die Microsoft für
+  Windows-Endgeräte als Vorschau nennt (TEAMS-F06, TEAMS-R25); die Zahl der Outlook-Add-ins umfasst nur maschinenweit
+  eingetragene VSTO-Add-ins (F-OFC-21). Keine Prüfung stützt sich auf diese Werte.
 
 ### Legenden der Kennwörter
 
@@ -1699,10 +1841,16 @@ Herstellerdokument“ (Stand 2026-11-13): `sessions.disconnectedOld`, `sessions.
 `maintenance.defenderFullScan` führt der Plan als Empfehlung des Herstellers. Die Seite von Microsoft, die er nennt,
 enthält am 14.11.2026 keinen Satz gegen einen vollständigen Scan; die Prüfung ist deshalb eine Faustregel.
 
+Ebenso sind seit Task 14c zwei Prüfungen Faustregeln, die der Plan als Empfehlung des Herstellers führt:
+`print.driversInSpooler` (die Seite „Printer Driver Isolation“ nennt einen Vorteil der Isolierung, keine Empfehlung;
+Entscheidung ZB-R54) und `apps.teamsFallback` (Microsoft und Citrix beschreiben den Wert DisableFallback, keiner nennt
+einen Sollwert). Beide nennen die Seite als Beleg. `apps.edgeStartupBoost`, `apps.edgeUserDataDir` und
+`apps.officeUpdateUi` sind schon nach dem Plan Faustregeln mit einer Seite von Microsoft als Beleg.
+
 ### Schwellen
 
-Die Schwellen der zehn Bereiche mit ihrer Herkunft. Eine Schwelle lässt sich im Katalog ändern; der Bericht nennt im
-Kopf jede Abweichung vom ausgelieferten Wert.
+Die Schwellen der elf Bereiche mit ihrer Herkunft (der Bereich Anwendungen hat keine). Eine Schwelle lässt sich im
+Katalog ändern; der Bericht nennt im Kopf jede Abweichung vom ausgelieferten Wert.
 
 | Schwelle | Wert | Verwendet von | Herkunft der Zahl |
 |---|---|---|---|
@@ -1730,7 +1878,163 @@ Kopf jede Abweichung vom ausgelieferten Wert.
 
 Feste Zahlen in Regeln, die aus dem Dokument des Herstellers stammen und deshalb keine Schwellen sind: 12 (Hauptversion
 der VMware Tools), 30 (Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden), 602 (Version 6.2 des PrinTaurus
-SmartSpread Client: Hauptversion mal 100 plus Nebenversion).
+SmartSpread Client: Hauptversion mal 100 plus Nebenversion) und im Bereich Anwendungen die Werte 0, 1 und 2 der
+Richtlinien von Edge, Office und Teams, so wie Microsoft sie für diese Richtlinien nennt.
+
+### Lesequellen
+
+Die Dokumente, die beschreiben, woher ein gelesener Wert kommt (Spalte „Dokument“ der Wertetabellen des Plans). Jede
+Seite wurde am 14.11.2026 geöffnet; „Stand der Seite“ ist das Datum, das die Seite nennt (bei Microsoft Learn „Last
+updated on“, bei Seiten ohne dieses Feld das Datum ihrer Metadaten). Ein Wert ohne Dokument ist **nicht dokumentiert**:
+Er steht als Rohwert da, und keine Prüfung stützt sich auf ihn.
+
+| Dokument | Adresse | Stand der Seite | Abruf | Werte |
+|---|---|---|---|---|
+| Win32_ComputerSystem class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-computersystem | 2021-01-06 | 2026-11-14 | `size.cpuLogical`, `size.cpuSockets`, `size.memTotalMB`, `size.pagefileManaged`, `size.hypervisor`, `size.model`, `network.domainMember` |
+| GetPerformanceInfo function (psapi.h) | https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getperformanceinfo | 2021-10-13 | 2026-11-14 | `size.commitTotalMB`, `size.commitLimitMB`, `size.commitPeakMB` |
+| PERFORMANCE_INFORMATION structure (psapi.h) | https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information | 2024-02-22 | 2026-11-14 | dieselben |
+| Win32_PageFileUsage class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pagefileusage | 2021-01-06 | 2026-11-14 | `size.pagefiles` |
+| Win32_Service class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-service | 2021-01-06 | 2026-11-14 | `size.vmtoolsService` (Dienstname nicht dokumentiert), `vda.services`, `vda.desktopService`, `vda.wemService`, `vda.wemServices`, `profile.service`, `print.spooler`, `print.spoolerStartMode`, `print.citrixPrintService`, `security.services`, `security.applockerService`, `network.timeService`, `maintenance.searchService`, `maintenance.updateService` |
+| Windows Installer Properties for the Uninstall Registry Key | https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key | 2021-03-30 | 2026-11-14 | `size.vmtoolsVersion`, `vda.version` (das Muster des Namens bestätigt der erste Lauf), `print.mappingClientVersion` |
+| Win32_NetworkAdapter class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-networkadapter | 2022-05-31 | 2026-11-14 | `size.netAdapters` (Microsoft nennt die Klasse veraltet) |
+| Win32_SCSIController class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-scsicontroller | 2021-01-06 | 2026-11-14 | `size.storageControllers` |
+| Win32_SystemDriver class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemdriver | 2021-01-06 | 2026-11-14 | `size.balloonDriver`, `network.smb1` |
+| Memory Balloon Driver (VMware) | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/administering-memory-resources/memory-balloon-driver.html | 2026-10-28 | 2026-11-14 | `size.balloonDriver` (VMware nennt den Treiber vmmemctl; dass der Treiberdienst so heißt, bestätigt der erste Lauf) |
+| Win32_OperatingSystem class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-operatingsystem | 2023-03-27 | 2026-11-14 | `operation.lastBoot`, `operation.volumes` |
+| MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-14 | `operation.pendingRename` |
+| Win32_QuickFixEngineering class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-quickfixengineering | 2021-01-06 | 2026-11-14 | `operation.lastUpdate`, `operation.lastUpdateId` |
+| PowerGetActiveScheme function (powersetting.h) | https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme | 2024-02-22 | 2026-11-14 | `operation.powerPlan` |
+| Power Policy Settings | https://learn.microsoft.com/en-us/windows/win32/power/power-policy-settings | 2025-07-14 | 2026-11-14 | `operation.powerPlan` |
+| Win32_LogicalDisk class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-logicaldisk | 2022-05-07 | 2026-11-14 | `operation.volumes` |
+| WTSINFOW structure (wtsapi32.h) | https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/ns-wtsapi32-wtsinfow | 2022-09-01 | 2026-11-14 | `sessions.list` |
+| WTS_INFO_CLASS enumeration (wtsapi32.h) | https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/ne-wtsapi32-wts_info_class | 2025-11-21 | 2026-11-14 | `sessions.list` |
+| WTS_CONNECTSTATE_CLASS enumeration (wtsapi32.h) | https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/ne-wtsapi32-wts_connectstate_class | 2024-02-22 | 2026-11-14 | `sessions.list` |
+| Win32_TSSessionSetting class | https://learn.microsoft.com/en-us/windows/win32/termserv/win32-tssessionsetting | 2020-12-11 | 2026-11-14 | `sessions.limits` |
+| Win32_UserProfile class | https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85) | 2015-08-31 | 2026-11-14 | `sessions.localProfiles` |
+| VDA Registration Failure with Event ID: 1001 (CTX133769; früher „… Event ID 1“) | https://support.citrix.com/external/article/CTX133769/vda-registration-failure-with-event-id-1.html | 2024-07-12 | 2026-11-14 | `vda.desktopService` (nennt den Dienst mit diesem Namen) |
+| VDA registration (Citrix Virtual Apps and Desktops 2203 LTSR) | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/manage-deployment/vda-registration.html | 2026-11-12 | 2026-11-14 | `vda.controllers`, `vda.listOfSids`, `vda.farmGuid`, `vda.persistentDataLocation` |
+| ONPREM/CVAD 2203CU2/ Citrix Studio policies are not getting applied to random VDAs (CTX557768) | https://support.citrix.com/external/article/CTX557768/onpremcvad-2203cu2-citrix-studio-policie.html | 2024-07-12 | 2026-11-14 | `vda.policyRaw` (der Schlüssel; die Wertnamen sind **nicht dokumentiert**, Rohwert) |
+| View log files (Workspace Environment Management) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/view-log-files.html | 2026-11-12 | 2026-11-14 | `vda.wemVersion` (der Name der Programmdatei; die Version aus der Dateiversion ist nicht dokumentiert) |
+| How to properly bind WEM agent machines with WEM broker server on a first time setup (CTX238676) | https://support.citrix.com/external/article/CTX238676/how-to-properly-bind-wem-agent-machines-with-wem-broker-server-on-a-first-time-setup.html | 2024-07-12 | 2026-11-14 | `vda.wemServer` (Name oder IP-Adresse) |
+| Agent (install and configure) (Workspace Environment Management) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-14 | `vda.wemService`, `vda.wemServices`, `vda.wemCacheLocation`, `vda.wemGpNetworkTimeout` |
+| WEM health check tool | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/wem-health-check-tool.html | 2026-11-12 | 2026-11-14 | `vda.wemServices` |
+| Guidance on disabling system services on Windows Server 2016 with Desktop Experience | https://learn.microsoft.com/en-us/windows-server/security/windows-services/security-guidelines-for-disabling-system-services-in-windows-server | 2024-08-22 | 2026-11-14 | `vda.wemServices` (Dienstname SENS) |
+| Monitor, troubleshoot, and support Microsoft Teams (Citrix) | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams/teams-monitor-ts-support.html | 2026-11-09 | 2026-11-14 | `vda.teamsService`, `vda.webSocketService` |
+| Perform advanced troubleshooting (Profile Management; früher „Advanced troubleshooting checklist“) | https://docs.citrix.com/us/en/profile-management/current-release/troubleshoot/advanced-checklist.html | 2026-10-29 | 2026-11-14 | `profile.service`, `profile.version` |
+| Registry locations for Citrix Profile Management (CTX288248) | https://support.citrix.com/external/article/CTX288248/registry-locations-for-citrix-profile-ma.html | 2024-07-12 | 2026-11-14 | `profile.policyGpo`, `profile.policyStudio` (die Schlüssel; die Lage der Werte ist **nicht dokumentiert**, Rohwerte) |
+| MSFT_Disk class | https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-disk | 2023-01-09 | 2026-11-14 | `profile.containers` |
+| MSFT_Partition class | https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-partition | 2023-01-09 | 2026-11-14 | `profile.containers` |
+| MSFT_Volume class | https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-volume | 2023-01-09 | 2026-11-14 | `profile.containers` |
+| Printer driver isolation | https://learn.microsoft.com/en-us/windows-hardware/drivers/print/printer-driver-isolation | 2025-05-01 | 2026-11-14 | `print.isolationExecution`, `print.isolationOverride` (Wirkung) |
+| Policy CSP - ADMX_Printing | https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-printing | 2026-10-14 | 2026-11-14 | `print.isolationExecution`, `print.isolationOverride` (Schlüssel und Wertname; nur Builds von Windows 10 und 11 genannt) |
+| Printing policy settings (Citrix Virtual Apps and Desktops 2203 LTSR) | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/policies/reference/ica-policy-settings/printing-policy-settings.html | 2026-11-12 | 2026-11-14 | `print.citrixPrintService` („Citrix Print Manager service (CpSvc.exe)“) |
+| Get-WinEvent (PowerShell 5.1) | https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-5.1 | 2026-08-12 | 2026-11-14 | `print.operationalLog`, `events.logs` |
+| EventLogConfiguration Class | https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.eventing.reader.eventlogconfiguration?view=windowsdesktop-11.0 | 2025-07-01 | 2026-11-14 | `print.operationalLog`, `events.logs` |
+| EventLogReader Class | https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.eventing.reader.eventlogreader?view=windowsdesktop-11.0 | 2025-07-01 | 2026-11-14 | `events.logs` |
+| EventLogQuery.ReverseDirection Property | https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.eventing.reader.eventlogquery.reversedirection?view=windowsdesktop-11.0 | 2025-07-01 | 2026-11-14 | `events.logs` (Feld Oldest: Vorgabe false, ältester Eintrag zuerst) |
+| Release Notes 6.2 deutsch (AKI), Kapitel 4 | https://www.aki-gmbh.com/download/45927/ | 2022-03-28 | 2026-11-14 | `print.mappingClientVersion` (Name des Installationspakets und Version 6.2.1) |
+| Configure Microsoft Defender Antivirus on Windows Server (früher „Microsoft Defender Antivirus on Windows Server“; die alte Adresse leitet hierher) | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-windows-server-configure | 2026-07-17 | 2026-11-14 | `security.defenderService`, `security.defenderForcePassive` |
+| Get-MpComputerStatus | https://learn.microsoft.com/en-us/powershell/module/defender/get-mpcomputerstatus?view=windowsserver2022-ps | 2016-12-20 | 2026-11-14 | `security.defenderMode`, `security.defenderRealTime`, `security.defenderSignatureAgeDays`, `security.defenderSignaturesOutOfDate` (Bedeutung nicht dokumentiert, Rohwert), `security.defenderVersion` |
+| MSFT_MpComputerStatus class | https://learn.microsoft.com/en-us/previous-versions/windows/desktop/defender/msft-mpcomputerstatus | 2018-05-31 | 2026-11-14 | `security.defenderSignatureAgeDays` (Tage; 65535 = nie aktualisiert), `security.defenderVersion` (AMProductVersion = Produktversion) |
+| Microsoft Defender Antivirus compatibility with other security products | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-compatibility | 2026-08-21 | 2026-11-14 | `security.defenderMode` |
+| Configure tamper protection for Microsoft Defender Antivirus on Windows (früher „Protect security settings with tamper protection“) | https://learn.microsoft.com/en-us/defender-endpoint/tamper-protection-windows-configure | 2026-09-08 | 2026-11-14 | `security.defenderTamper` |
+| Set-MpPreference | https://learn.microsoft.com/en-us/powershell/module/defender/set-mppreference?view=windowsserver2022-ps | 2024-03-27 | 2026-11-14 | `security.defenderExclusionPaths`, `security.defenderExclusionExtensions`, `security.defenderExclusionProcesses`, `security.defenderSharedSignatures`, `security.defenderNetworkProtection`, `maintenance.scanDay`, `maintenance.scanTime`, `maintenance.quickScanTime`, `maintenance.scanType`, `maintenance.scanRandomize`, `maintenance.scanCpuLoad` |
+| Schedule antivirus scans using PowerShell | https://learn.microsoft.com/en-us/defender-endpoint/schedule-antivirus-scans-powershell | 2026-08-21 | 2026-11-14 | `maintenance.scanOffset`, `maintenance.scanRandomWindow` |
+| Exclusions in Microsoft Defender Antivirus (früher „Configure exclusions for files opened by processes“; die alte Adresse leitet hierher) | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-overview | 2026-07-17 | 2026-11-14 | `security.defenderExclusionProcesses` |
+| Configure custom exclusions for Microsoft Defender Antivirus | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-exclusions-configure | 2026-09-09 | 2026-11-14 | `security.defenderExclusionPaths`, `security.defenderExclusionExtensions`, `security.defenderExclusionProcesses` (HideExclusionsFromLocalAdmins; dass ein Eintrag „N/A“ einen verborgenen Ausschluss zeigt, ist **nicht dokumentiert**) |
+| Onboard Windows devices to Microsoft Defender for Endpoint with Configuration Manager | https://learn.microsoft.com/en-us/defender-endpoint/configure-endpoints-sccm | 2026-09-22 | 2026-11-14 | `security.mdeOnboarding` |
+| Troubleshoot Microsoft Defender for Endpoint onboarding issues | https://learn.microsoft.com/en-us/defender-endpoint/troubleshoot-onboarding | 2026-03-05 | 2026-11-14 | `security.mdeOnboarding`, `security.mdeService` |
+| FilterFindFirst function (fltuser.h) | https://learn.microsoft.com/en-us/windows/win32/api/fltuser/nf-fltuser-filterfindfirst | 2021-10-13 | 2026-11-14 | `security.filters` |
+| FilterFindNext function (fltuser.h) | https://learn.microsoft.com/en-us/windows/win32/api/fltuser/nf-fltuser-filterfindnext | 2024-02-22 | 2026-11-14 | `security.filters` |
+| FILTER_AGGREGATE_STANDARD_INFORMATION structure (fltuserstructures.h) | https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/fltuserstructures/ns-fltuserstructures-_filter_aggregate_standard_information | 2021-04-01 | 2026-11-14 | `security.filters` |
+| Get-SmbClientConfiguration | https://learn.microsoft.com/en-us/powershell/module/smbshare/get-smbclientconfiguration?view=windowsserver2022-ps | 2022-06-23 | 2026-11-14 | `network.smbRequireSigning`, `network.smbDirectoryCache`, `network.smbFileInfoCache`, `network.smbFileNotFoundCache` |
+| What is Server Message Block signing? (früher „Overview of Server Message Block signing in Windows“) | https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-signing-overview | 2024-10-25 | 2026-11-14 | `network.smbRequireSigning` (die Vorgabe auf Windows Server 2022 nennt die Seite nicht) |
+| Detect, enable, and disable SMBv1, SMBv2, and SMBv3 in Windows | https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3 | 2025-03-11 | 2026-11-14 | `network.smb1` |
+| Get-SmbConnection | https://learn.microsoft.com/en-us/powershell/module/smbshare/get-smbconnection?view=windowsserver2022-ps | 2016-12-20 | 2026-11-14 | `network.smbConnections` (die Eigenschaft Signed zeigt die Seite nicht; fehlt sie, bleibt das Feld leer) |
+| Win32_NetworkAdapterConfiguration class | https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-networkadapterconfiguration | 2021-05-14 | 2026-11-14 | `network.dnsServers` |
+| Get-NetAdapterRss | https://learn.microsoft.com/en-us/powershell/module/netadapter/get-netadapterrss?view=windowsserver2022-ps | 2016-12-20 | 2026-11-14 | `network.rss` |
+| MSFT_NetAdapterRssSettingData class | https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/netadaptercimprov/msft-netadapterrsssettingdata | 2024-05-09 | 2026-11-14 | `network.rss` |
+| MSFT_NetOffloadGlobalSetting class | https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/nettcpipprov/msft-netoffloadglobalsetting | 2018-05-31 | 2026-11-14 | `network.rssGlobal` |
+| Windows Time service tools and settings | https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings | 2025-09-18 | 2026-11-14 | `network.timeType`, `network.timeServers` (der Schlüssel der Richtlinie unter `…\Policies\Microsoft\W32Time\Parameters` steht nicht auf der Seite) |
+| TaskService.Connect method | https://learn.microsoft.com/en-us/windows/win32/taskschd/taskservice-connect | 2021-08-19 | 2026-11-14 | `maintenance.tasks`, `maintenance.taskCount` |
+| ITaskFolder::GetTasks method (taskschd.h) | https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskfolder-gettasks | 2021-10-13 | 2026-11-14 | `maintenance.tasks`, `maintenance.taskCount` |
+| Trigger Types | https://learn.microsoft.com/en-us/windows/win32/taskschd/trigger-types | 2020-08-19 | 2026-11-14 | `maintenance.tasks` |
+| TASK_TRIGGER_TYPE2 enumeration (taskschd.h) | https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_trigger_type2 | 2022-01-31 | 2026-11-14 | `maintenance.tasks` |
+| Manage additional Windows Update settings | https://learn.microsoft.com/en-us/windows/deployment/update/waas-wu-settings | 2026-02-11 | 2026-11-14 | `maintenance.updateOptions`, `maintenance.updateDay`, `maintenance.updateHour`, `maintenance.updateService` |
+| Manage device restarts after updates | https://learn.microsoft.com/en-us/windows/deployment/update/waas-restart | 2025-09-30 | 2026-11-14 | `maintenance.updateNoRebootWithUsers` |
+| **nicht dokumentiert** | – | – | – | `size.vmtoolsPresent`, `operation.pendingServicing`, `operation.pendingUpdate`, `security.applockerCollections` (nur Zahlen, keine Regelinhalte) |
+
+Die Proben der Anwendungsliste (`src/apps.json`). Die Spalte „Stütze“ nennt den Eintrag der Recherche und das Urteil der
+doppelten Quellenprüfung; wo es „partly“ ist, steht die Grenze dabei.
+
+| Anwendung | Probe | Dokument | Adresse | Stand der Seite | Stütze |
+|---|---|---|---|---|---|
+| `edge` | `installed`, `version` | Microsoft Edge stops responding or doesn't start | https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/performance/edge-crashes-fails-to-launch | 2026-06-03 | EDGE-F01 partly (die Datei steht am Pfad aus dem Testbefehl der Seite; die Dateiversion als Version von Edge ist Praxis) |
+| `edge` | `webview2Version` (auch bei `teams`) | Distribute your app and the WebView2 Runtime | https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution | 2025-10-15 | EDGE-F03 partly (nur die maschinenweite Installation unter HKLM; eine Installation je Benutzer ist nicht ausgeschlossen) |
+| `edge` | `updateDefault`, `updateStable` | Microsoft Edge - Update policies | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-update-policies | 2026-08-18 | EDGE-F28 partly, EDGE-F29 partly (nur auf Windows in einer Active-Directory-Domäne; die Vorgabe je Kanal geht der Vorgabe für alle Kanäle vor) |
+| `edge` | `updateWebView2`, `updateCheckMinutes` | Microsoft Edge - Update policies | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-update-policies | 2026-08-18 | EDGE-F30, EDGE-F31 supported |
+| `edge` | `startupBoost` | StartupBoostEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/StartupBoostEnabled | 2026-05-22 | EDGE-F06 supported |
+| `edge` | `backgroundMode` | BackgroundModeEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/BackgroundModeEnabled | 2026-05-22 | EDGE-F07 supported |
+| `edge` | `sleepingTabs` | SleepingTabsEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/SleepingTabsEnabled | 2026-05-22 | EDGE-F08 supported (eine Richtlinie je Benutzer sieht die Probe nicht) |
+| `edge` | `autoDiscard` | AutoDiscardSleepingTabsEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/AutoDiscardSleepingTabsEnabled | 2026-10-07 | EDGE-F10 supported |
+| `edge` | `roamingProfile` | RoamingProfileSupportEnabled | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/RoamingProfileSupportEnabled | 2026-10-07 | EDGE-F18 supported |
+| `edge` | `userDataDir` | UserDataDir | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/UserDataDir | 2026-05-22 | EDGE-F17 supported |
+| `edge` | `diskCacheDir` | DiskCacheDir | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/DiskCacheDir | 2026-05-22 | EDGE-F16 supported |
+| `edge` | `forcedExtensions` | ExtensionInstallForcelist | https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/ExtensionInstallForcelist | 2026-07-09 | EDGE-F27 supported (nur die Zahl) |
+| `edge` | `updateService` | **nicht dokumentiert** für Windows Server (Name und Starttyp nur auf „Guidance on disabling system services on Windows IoT Enterprise“) | https://learn.microsoft.com/en-us/windows/iot/iot-enterprise/optimize/services | 2026-06-24 | EDGE-F36 partly; `documented: false` |
+| `office` | `installed`, `updateChannel` | Set the Microsoft 365 apps update channel using the settings catalog in Microsoft Intune | https://learn.microsoft.com/en-us/intune/device-configuration/settings-catalog/update-office | 2026-04-30 | F-OFC-01 partly (der Schlüssel als Zeichen einer Installation ist eine Folgerung des Katalogs), F-OFC-02 partly (Typ und Kennung des Kanals von Office LTSC nicht dokumentiert) |
+| `office` | `updateUrl`, `policyUpdatePath`, `policyUpdateBranch` | Change the Microsoft 365 Apps update channel for devices in your organization | https://learn.microsoft.com/en-us/microsoft-365-apps/updates/change-update-channels | 2026-10-14 | F-OFC-04 partly (Inhalt von `UpdateUrl` nicht dokumentiert, maskiert wie ein Pfad), F-OFC-13 supported |
+| `office` | `hideUpdateNotifications`, `hideEnableDisableUpdates` | Install Office on a custom VHD image | https://learn.microsoft.com/en-us/azure/virtual-desktop/install-office-on-wvd-master-image | 2025-06-20 | F-OFC-13 supported (Beispielwerte ohne Begründung, Seite für Microsoft 365 Apps) |
+| `office` | `updateTask` | Update Office LTSC 2024 | https://learn.microsoft.com/en-us/office/ltsc/2024/update | 2026-02-12 | F-OFC-17 supported |
+| `office` | `perUserCatalog` | Enable native Outlook search experience (Profile Management) | https://docs.citrix.com/us/en/profile-management/current-release/configure/enable-native-outlook-search-experience.html | 2026-10-29 | F-OFC-30 partly (empfohlener Wert hängt vom Betriebssystem ab; Outlook LTSC 2024 nicht unter den Voraussetzungen) |
+| `office` | `outlookAddins`, `outlookAddinsWow` | Registry entries for VSTO Add-ins | https://learn.microsoft.com/en-us/visualstudio/vsto/registry-entries-for-vsto-add-ins?view=visualstudio | 2025-10-30 | F-OFC-21 partly (zählt nur maschinenweit eingetragene Add-ins) |
+| `office` | `version`, `platform`, `updatesEnabled` | **nicht dokumentiert** (die Namen stehen nur als Eigenschaften einer Inventarklasse) | – | – | F-OFC-05, F-OFC-07, F-OFC-08 partly; `documented: false` |
+| `teams` | `installed`, `version` | Install Teams for Virtualized Desktop Infrastructure (VDI); Prevent antivirus and DLP tools from blocking or crashing Microsoft Teams (früher „Include or exclude Teams from antivirus or DLP applications“) | https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy ; https://learn.microsoft.com/en-us/troubleshoot/microsoftteams/teams-administration/include-exclude-teams-from-antivirus-dlp | 2026-08-25; 2026-11-09 | TEAMS-F03 supported |
+| `teams` | `disableAutoUpdate` | Install Teams for Virtualized Desktop Infrastructure (VDI) | https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy | 2026-08-25 | TEAMS-F04 supported |
+| `teams` | `disableFallback` | Install Teams for Virtualized Desktop Infrastructure (VDI); HDX features managed through the registry (Citrix) | https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy ; https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/hdx-registry-settings.html | 2026-08-25; 2026-11-09 | TEAMS-F05 partly (ausgewertet erst ab Teams 24257; nach Citrix ohne Wirkung, wenn Workspace-App oder Endgerät die Optimierung nicht unterstützen) |
+| `teams` | `maxFps` | New VDI solution for Teams | https://learn.microsoft.com/en-us/microsoftteams/vdi-2 | 2026-11-12 | TEAMS-F06 supported (wirkt nur mit der Bildschirmfreigabe von der VM) |
+| `teams` | `meetingAddin` | Install Teams for Virtualized Desktop Infrastructure (VDI) | https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy | 2026-08-25 | TEAMS-F12 partly (Zielordner aus Microsofts Beispiel für msiexec; ein fehlender Ordner beweist nicht, dass kein maschinenweites Add-in da ist) |
+| `teams` | `classicTeams` | Optimization for Microsoft Teams (Classic) (Citrix) | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams.html | 2026-11-09 | TEAMS-F13 partly (nur die maschinenweite Installation; eine Installation je Benutzer und die Variante „Teams Installer“ sieht die Probe nicht) |
+
+### Nicht aufgenommen
+
+Kandidaten der Recherchen, die keine Prüfung wurden, mit dem Grund. Was die Quellenprüfung eines Eintrags nur zum Teil
+stützt und keine Prüfung trägt, ist hier nicht einzeln aufgeführt; die Prüfdateien der Recherchen nennen es.
+
+| Bereich | Kandidat | Grund |
+|---|---|---|
+| Größe und Reserve | Auslagerungsdatei mindestens Arbeitsspeicher minus Reservierung | die Reservierung ist lokal nur über nicht dokumentierte Zähler lesbar |
+| Größe und Reserve | CPU Hot Add, vNUMA, Bereitschaftszeit der Prozessoren (CPU Ready) | im Gast nicht lesbar oder nur als Zähler des Hosts |
+| Größe und Reserve | Auslagerungsdatei fest eingestellt (BIS-F) | BIS-F setzt sie nur auf Wunsch und ohne Begründung |
+| Größe und Reserve | Schreibcache, Geister-Netzwerkadapter, Auslagerungsdatei auf dem Cache-Laufwerk | gilt nur für Provisioning Services |
+| Betrieb | Zeiten bis zu Standby und Ruhezustand des aktiven Energiesparplans | Carl Stalhood ordnet sie eher virtuellen Desktops zu; die Werteliste liest sie nicht |
+| Citrix VDA | WEM-Server als vollständiger Name in der Richtlinie | nach der Quellenprüfung kein Pflichtwert |
+| Citrix VDA | CPU- und Speicheroptimierung von WEM, „Launch agent on reconnection“ | Einstellungen lokal nicht lesbar oder nicht belegt |
+| Citrix VDA | Prüfungen auf die zwei Citrix-Dienste der Teams-Umleitung | sie gehören zur Optimierung über WebRTC, die für Windows-Endgeräte abgekündigt ist (für macOS, Linux, ChromeOS und HTML5 nach Citrix nicht; Microsoft nennt für macOS spätere Daten); die Zustände stehen als Rohwerte da |
+| Citrix VDA | Version des VDA für Teams | die Stufe des kumulativen Updates ist aus der Versionsnummer nicht sicher ablesbar; 2203 LTSR unter CU3 liegt unter dem Mindeststand von Citrix für die neue VDI-Lösung |
+| Drucken | .NET Framework 4.7.2 für den Client des Zuordnungswerkzeugs | ein Wert außerhalb des Bereichs, den sonst keine Prüfung braucht |
+| Drucken | doppelte Warteschlangen vor 6.4, Standarddrucker, Verhalten beim Wiederverbinden | Hinweise zu Vorfällen; sie stehen im Katalog des geführten Berichts |
+| Drucken | Prozess, Ereignisprotokoll und Einstellung StrictlyMatchingClientNames des Zuordnungswerkzeugs | Ort nicht dokumentiert |
+| Sicherheitsprodukte | Ausschlüsse für Auslagerungsdatei und Ereignisprotokolle | das Dokument von Citrix ließ sich nicht öffnen; ein Abgleich von Pfaden mit freiem Servertext gehört nicht in die erste Fassung |
+| Sicherheitsprodukte | Treiber der NSX Guest Introspection | nur eine Ableitung der Quelle |
+| Sicherheitsprodukte | AllowNetworkProtectionOnWinServer als Bedingung von `security.networkProtection` | der Wert ist nicht in der Werteliste; der Befund nennt ihn |
+| Netz und Dateiserver | Netzwerkeinstellungen von BIS-F (TCP-Offload, UDP FastSend, Endpunktfaktor, ARP-Zeit) | die Dokumente der Hersteller ließen sich nicht öffnen; die Schritte laufen in BIS-F nur unter Bedingungen |
+| Netz und Dateiserver | periodischer Zeitabgleich der VMware Tools, NTP-Werte von VMware, Zeitsprünge im Systemprotokoll | nur über ein Programm lesbar, gilt nicht für Mitglieder einer Domäne mit NT5DS, Anbieter und Kennung nicht belegt |
+| Wartung in der Arbeitszeit | Aufgabe sihclient | die Funktion steht in BIS-F, wirkt dort aber wegen eines Fehlers zweifelhaft |
+| Wartung in der Arbeitszeit | Citrix Optimizer und .NET-Vorkompilierung | Schritte des Versiegelns, am laufenden Server nicht lesbar |
+| Wartung in der Arbeitszeit | Suchdienst für die Outlook-Suche | hängt an Werten der Profilverwaltung, deren Lage nicht dokumentiert ist |
+| Anwendungen | automatische Updates von Office | der Wert der Installation und der Name der Richtlinie sind nicht dokumentiert; die Aufgabe allein belegt nichts |
+| Anwendungen | 64-Bit-Office, Updatekanal von Office LTSC | Wert bzw. Kennung des Kanals nicht dokumentiert |
+| Anwendungen | Größe je Benutzer für Edge | steht als Beleg bei `size.memoryPerSession` |
+| Anwendungen | Erweiterungen, Grafikbeschleunigung, Größe des Caches von Edge | Beschreibungen ohne Empfehlung oder ohne lokal prüfbare Erwartung |
+| Anwendungen | Zeit bis zum Schlafen eines Tabs (SleepingTabsTimeout) | die Seite nennt nur die Vorgabe von 900 Sekunden, keine Schwelle |
+| Anwendungen | Ordner des Datenträgercaches von Edge (DiskCacheDir) | die Seite zu VDI spricht nur vom Ordner der Benutzerdaten |
+| Anwendungen | Ausschlüsse und AppLocker-Regeln für Teams und WebView2 | Regelinhalte werden nicht gelesen; die Seite zu AppLocker gilt für das klassische Teams |
+| Anwendungen | Windows-Build und Updates für Teams | Leseweg nicht dokumentiert; KB5042881 gilt für den Fall von FSLogix |
+| Anwendungen | Ordner des Besprechungs-Add-ins (fehlt oder mehrere Versionen) | beides ist eine Ableitung, keine Aussage von Microsoft (TEAMS-F12, TEAMS-R14) |
+| Anwendungen | MaxFPS der Bildschirmfreigabe als Prüfung | ein Tipp für eine Vorschau, kein Sollwert (TEAMS-R25) |
+| Anwendungen | Schutz vor CPU-Spitzen durch WEM für Teams | nennt Citrix nur für das klassische Teams |
+| alle Bereiche | Empfehlungen, die nur für Provisioning Services, persistente Maschinen oder Einzelplatz-Desktops gelten (etwa Schreibcache, Geister-Netzwerkadapter, FSLogix-Einstellungen wie NumSessionVHDsToKeep, Ablage von Profilen auf Desktops) | der Katalog gilt für nicht persistente Multi-Session-Server aus Machine Creation Services |
 
 ### Auf dem Zielsystem zu bestätigen
 
@@ -1796,3 +2100,21 @@ Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog angepasst
   TimeLimitPolicy eines Listeners sagt, wenn eine Computerrichtlinie die Zeitlimits setzt (bei 0 wären beide
   Prüfungen nicht prüfbar, obwohl das Zeitlimit der Richtlinie gilt); ob die Klasse MSFT_NetOffloadGlobalSetting auf
   dem Server vorhanden ist (sonst ist `network.rssGlobal` nicht vorhanden).
+- **SMBv1** (`network.smb1`): dass eine fehlende Instanz von Win32_SystemDriver heißt, der SMBv1-Client ist nicht
+  installiert. Frei davon ist Windows Server ab 2019 nur nach einer Neuinstallation; ein aktualisierter Server kann ihn
+  haben, und das meldet die Prüfung.
+- **DNS-Server über IPv6** (`network.dnsCount`, `network.dnsPublic`): ob DNSServerSearchOrder auch DNS-Server mit
+  IPv6-Adresse nennt; sonst sehen beide Prüfungen nur IPv4.
+- **Ausschlüsse von Defender Antivirus** (`security.citrixExclusions`, `security.wemExclusions`): ob ein verborgener
+  Ausschluss als Eintrag „N/A“ erscheint (die Regel dafür ist nicht dokumentiert) oder ob die Liste mit
+  HideExclusionsFromLocalAdmins leer bleibt.
+- **Ereignisprotokolle** (`events.logDisabled`, `print.operationalLogOff`): dass ein fehlender Kanal
+  (EventLogNotFoundException oder „NoMatchingLogsFound“) als nicht vorhanden und ein Zugriffsfehler als nicht lesbar
+  gilt; beides ist nicht dokumentiert.
+- **Zeitquelle** (`network.timeSource`): ob der Schlüssel der Richtlinie unter `…\Policies\Microsoft\W32Time\Parameters`
+  auf dem Server Werte trägt (er steht nicht auf der Seite von Microsoft).
+- **Richtlinien von Edge, Office und Teams** (Bereich Anwendungen): Der Katalog nennt die Richtlinien englisch, wie
+  Microsoft sie nennt („Update policy override“, „Enable startup boost“, „Hide option to enable or disable updates“ und
+  andere), und die Administrative Vorlage „Microsoft Office 2016 (Machine)“. Zu bestätigen sind ihre deutschen
+  Anzeigenamen und die Einträge „Microsoft Edge WebView2 Runtime“ und „Teams Machine-Wide Installer“ unter den
+  installierten Programmen.
