@@ -792,9 +792,9 @@ async function checkIncidentStates(browser, dir, scheme) {          // Vorfallsa
     J.guidance.copy.maxChecks = 2; J.guidance.copy.maxRemedies = 1;
   }), scheme);
   await ivOpen(rd.page, rd.D.incidents.find((i) => i.lead === 'cpu').id);
-  ok(await ivSections(rd.page) === ivWith(rd.D.incidents.find((i) => i.lead === 'cpu'), 'iv-what,iv-affected,iv-evidence') && await bareParts(rd.page) === '', 'Anleitung nur mit Titel, ohne Ursache: Diagramm, Betroffene, Belege: ' + await ivSections(rd.page) + ' / ' + await bareParts(rd.page));
+  ok(await ivSections(rd.page) === ivWith(rd.D.incidents.find((i) => i.lead === 'cpu'), 'iv-what,iv-affected,iv-evidence') && await bareParts(rd.page) === '', 'Anleitung nur mit Titel, ohne Ursache: Diagramm, Betroffene, Belege (und Zustandsbild, wo die Daten Pruefungen nennen): ' + await ivSections(rd.page) + ' / ' + await bareParts(rd.page));
   await ivOpen(rd.page, rd.D.incidents.find((i) => i.type === 'ereignis').id);
-  ok(await ivSections(rd.page) === ivWith(rd.D.incidents.find((i) => i.type === 'ereignis'), 'iv-affected,iv-evidence') && await bareParts(rd.page) === '', 'Ereignisvorfall nur mit Titel: Betroffene und Belege: ' + await ivSections(rd.page) + ' / ' + await bareParts(rd.page));
+  ok(await ivSections(rd.page) === ivWith(rd.D.incidents.find((i) => i.type === 'ereignis'), 'iv-affected,iv-evidence') && await bareParts(rd.page) === '', 'Ereignisvorfall nur mit Titel: Betroffene und Belege (und Zustandsbild, wo die Daten Pruefungen nennen): ' + await ivSections(rd.page) + ' / ' + await bareParts(rd.page));
   await ivOpen(rd.page, rd.D.incidents.find((i) => i.lead === 'memory').id);
   ok(await ivSections(rd.page) === ivWith(rd.D.incidents.find((i) => i.lead === 'memory'), 'iv-what,iv-cause,iv-affected,iv-evidence') && await bareParts(rd.page) === '', 'ohne Schritte, Abhilfe und Ansprechpartner kein Abschnitt "Was ist zu tun": ' + await ivSections(rd.page));
   await ivOpen(rd.page, rd.D.incidents.find((i) => i.lead === 'disk').id);
@@ -3724,6 +3724,12 @@ async function checkHealthLinks(browser, dir, scheme) {
   const mem = D.incidents.find((i) => i.lead === 'memory');
   await page.evaluate((id) => window.WP.openIncident(id), mem.id);
   ok(await page.locator('#incident .iv-health').count() === 0, 'passt keine Pruefung, entfaellt der Abschnitt');
+  // (fix round 1, item 3) the buttons of the section differ for a screen reader: each is described by the title of its check
+  const cpuInc = D.incidents.find((i) => i.lead === 'cpu');
+  await page.evaluate((id) => window.WP.openIncident(id), cpuInc.id);
+  const described = await page.locator('#incident .ivh-open').evaluateAll((bs) => bs.map((b) => { const t = document.getElementById(b.getAttribute('aria-describedby') || ''); return t && b.closest('.ivh-item').contains(t) ? t.textContent : null; }));
+  const titles = cpuInc.health.map((id) => D.health.areas.flatMap((a) => a.checks).find((c) => c.id === id).title);
+  ok(described.length === 3 && JSON.stringify(described) === JSON.stringify(titles) && new Set(described).size === 3, 'jeder Knopf des Abschnitts ist durch den Titel seiner Pruefung beschrieben: ' + JSON.stringify(described));
   await showExpert(page);
   ok(await page.locator('#xtabs button[data-tab]').count() === 9, 'neun Reiter');
   await page.click('#xtabs button[data-tab=health]');
@@ -3747,9 +3753,12 @@ async function checkHealthLinks(browser, dir, scheme) {
   const onArea = await page.evaluate(() => document.activeElement.id);
   ok(onGrade === 'hfGrade' && byKey.join() === ['act', all.filter((c) => c.grade === 'act').length].join() && onArea === 'hfArea', 'Tastatur: Tab erreicht die Filter, die Pfeiltasten waehlen: ' + [onGrade, byKey, onArea].join(' | '));
   await page.selectOption('#hfGrade', '');
-  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  const cpu = D.incidents.find((i) => i.lead === 'cpu'), tag = page.locator('#healthNote .whole-tag');
+  const tagBefore = await tag.isVisible();
   await page.evaluate(([a, b]) => window.WP.setZoom(a, b), [cpu.start, cpu.end]);
   ok(await page.locator('#tHealth tbody tr').count() === all.length, 'der Zeitraum wirkt nicht auf das Zustandsbild');
+  // (ZB-R64) while a range is set, the note carries the tag of the tabs that do not follow it, as "Drucken" and "Vor der Messung"
+  ok(!tagBefore && await tag.isVisible() && (await tag.innerText()).includes('unabhängig vom gewählten Zeitraum') && (await page.locator('#healthNote').innerText()).includes(D.health.headline), 'mit gewaehltem Zeitraum: Hinweis unabhaengig vom gewaehlten Zeitraum');
   await page.click('#healthRaw summary');
   ok(await page.locator('#tHealthRaw tbody tr').count() >= D.health.raw.length && (await page.locator('#tHealthRaw').innerText()).includes('Inventarlauf'), 'Rohwerte, auch ohne Pruefung im Katalog');
   const ws = D.health.raw.find((x) => x.id === 'maintenance.searchService');
@@ -3773,6 +3782,12 @@ async function checkHealthLinks(browser, dir, scheme) {
   ok(!/user0\d\d|SIM-VDA01|CONTOSO|ddc0\d|wem01|zeit01|office\$|Inventarlauf|fd00:20::10/.test(await m.page.locator('#xt-health').innerText()), 'maskiert: keine Namen und kein freier Text in den Rohwerten');   // Review Focus 4
   ok(m.page.errors.length === 0, 'Skriptfehler maskiert: ' + m.page.errors.join(' | '));
   await m.page.close();
+  // (fix round 1, item 4) level Personen keeps the names of servers and addresses, but no free text of the server either
+  const mp = await open(browser, path.join(dir, 'report-masked-personen.html'), scheme);
+  await showExpert(mp.page); await mp.page.click('#xtabs button[data-tab=health]'); await mp.page.click('#healthRaw summary');
+  const mpText = await mp.page.locator('#xt-health').innerText();
+  ok(mp.D.meta.mask === 'Personen' && await mp.page.locator('#tHealthRaw tbody tr').count() >= mp.D.health.raw.length && !/Inventarlauf|office\$|prn01|Terminal: |SimDruckerzuweisung/.test(mpText) && mp.page.errors.length === 0, 'maskiert (Stufe Personen): kein freier Text in den Rohwerten');
+  await mp.page.close();
   // not read: the tab holds the text of the report data only, and no incident points into a picture that is not there
   const nr = await open(browser, patched(dir, 'report.html', 'report-health-notread.html', (J) => { J.health = { state: 'notRecorded', title: J.health.title, text: 'Zustandsbild nicht erfasst.' }; }), scheme);
   await nr.page.evaluate((id) => window.WP.openIncident(id), pr.id);

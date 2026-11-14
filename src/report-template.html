@@ -619,7 +619,6 @@ details#healthRaw { margin-top: 16px; }
 details#healthRaw > summary { cursor: pointer; }
 details#healthRaw > summary h3 { display: inline; margin: 0; font-size: 14px; }
 details#healthRaw[open] > summary { margin-bottom: 8px; }
-#healthRaw > .note { margin: 0 0 8px; }
 #tHealthRaw td { vertical-align: top; }
 #tHealthRaw td.wrap { max-width: 280px; }
 #tHealthRaw td.raw { min-width: 220px; max-width: 560px; overflow-wrap: anywhere; }
@@ -964,7 +963,8 @@ const sigMark = (v, th) => { const l = levelOf(v, th); return l ? `<i class="sig
 const sigWord = (v, th) => { const l = levelOf(v, th); return l ? statusHtml(String(l)) + " " : ""; };
 // What does not follow the range of the expert view says so while a range is set (the marks show only then): the figures and
 // tables of a detail that the report data hold for the whole capture only, the statement of a capture without a finding, the
-// tabs of printing and of the quality of the capture; the tab of the days before the capture lies outside every range.
+// tabs of printing and of the quality of the capture; the tab of the days before the capture and the tab of the health
+// picture (read at one moment) lie outside every range.
 const WHOLE_KV = '<span class="whole-tag">Gesamte Messung:</span>', WHOLE_H = ' <span class="whole-tag">· gesamte Messung</span>', RANGE_H = ' <span class="whole-tag">· im gewählten Zeitraum</span>';
 const NO_RANGE_H = ' <span class="whole-tag">· unabhängig vom gewählten Zeitraum</span>';
 // The page scrolls smoothly to what was chosen, except where the reader asked for reduced motion.
@@ -3299,14 +3299,15 @@ function affectedHtml(inc) {
 }
 // "Dazu im Zustandsbild": the checks of the health picture that the report data name for the incident (incident.health, those
 // that can contribute to it and are not in order), under the sentence of the report data that says they can contribute; each
-// with its grade, title and finding and the button that opens it in its area view. Without such a check, or where the health
-// picture was not read, the section is left out.
+// with its grade, title and finding and the button that opens it in its area view (described by the title of its check, so
+// that the buttons differ for a screen reader). Without such a check, or where the health picture was not read, the section is
+// left out.
 function ivHealthHtml(inc) {
   const items = (inc.health || []).map((id) => checkById.get(id)).filter(Boolean);
   if (!items.length) return "";
-  const item = ({ c, area }) => `<li class="ivh-item" data-check="${esc(c.id)}" data-area="${esc(area.id)}" data-grade="${esc(c.grade)}">
-        <p class="ivh-head">${gradeHtml(c.grade)}<span class="ivh-title">${esc(c.title)}</span></p>${plainHtml("p", "ivh-finding", c.finding || c.why)}
-        <button type="button" class="btn ivh-open">Im Zustandsbild öffnen</button></li>`;
+  const item = ({ c, area }, k) => `<li class="ivh-item" data-check="${esc(c.id)}" data-area="${esc(area.id)}" data-grade="${esc(c.grade)}">
+        <p class="ivh-head">${gradeHtml(c.grade)}<span class="ivh-title" id="ivhTitle${k}">${esc(c.title)}</span></p>${plainHtml("p", "ivh-finding", c.finding || c.why)}
+        <button type="button" class="btn ivh-open" aria-describedby="ivhTitle${k}">Im Zustandsbild öffnen</button></li>`;
   return `
     <section class="iv-health card"><h3>Dazu im Zustandsbild</h3>${plainHtml("p", "ivh-note", HEALTH.incidentNote)}
       <ul class="ivh-list">${items.map(item).join("")}</ul></section>`;
@@ -3691,22 +3692,22 @@ avEl.addEventListener("click", (ev) => {
 });
 
 // ---------- expert view: the tab "Zustand" ----------
-// Read, the time it was read (the shared range does not apply: the picture holds one moment), the filters by grade and by area,
-// a row per check (area, check, value, grade, kind, source) in the order of the report data and, folded under it, every value
-// as read (also the values no check uses): area, label with the legend of its keywords, state and content, a list as lines one
-// under the other. Not read, the text of the report data or the hint "nicht gemessen".
+// Read, the time it was read (the shared range does not apply, the picture holds one moment: while a range is set, the tag
+// of the tabs that do not follow it says so), the filters by grade and by area, a row per check (area, check, value, grade,
+// kind, source) in the order of the report data and, folded under it, every value as read (also the values no check uses):
+// area, label with the legend of its keywords, result of the reading and the value, a list as lines one under the other.
+// Not read, the text of the report data or the hint "nicht gemessen".
 {
   const host = document.getElementById("xt-health");
   if (!HEALTH_READ) host.innerHTML = notMeasured("health") || (HEALTH.text ? `<div class="empty">${esc(HEALTH.text)}</div>` : "");
   else {
     const GRADE_ORDER = ["act", "check", "unknown", "ok", "na"], word = (g) => ((HEALTH.grades || {})[g] || {}).word || g;
     const option = (value, text) => `<option value="${esc(value)}">${esc(text)}</option>`;
-    host.innerHTML = `<p class="note" id="healthNote">${esc(HEALTH.headline)}</p>
+    host.innerHTML = `<p class="note" id="healthNote">${esc(HEALTH.headline)}${NO_RANGE_H}</p>
       <div class="toolbar"><label class="inline">Einstufung <select id="hfGrade">${option("", "alle") + GRADE_ORDER.map((g) => option(g, word(g))).join("")}</select></label>
         <label class="inline">Bereich <select id="hfArea">${option("", "alle") + HEALTH_AREAS.map((a) => option(a.id, a.label)).join("")}</select></label></div>
       <div class="tablewrap"><table id="tHealth"></table></div>
-      <details id="healthRaw"><summary><h3>Gelesene Werte</h3></summary>${MASKED ? `
-        <p class="note">Freie Texte des Servers: ${REMOVED}.</p>` : ""}
+      <details id="healthRaw"><summary><h3>Gelesene Werte</h3></summary>
         <div class="tablewrap"><table id="tHealthRaw"></table></div></details>`;
     const rows = HEALTH_AREAS.flatMap((a, ai) => (a.checks || []).map((c) => ({ id: c.id, area: a.id, areaLabel: a.label, ai, title: c.title, value: c.value, grade: c.grade, kind: c.kindLabel, c })));
     const checks = table("tHealth", [
@@ -3726,9 +3727,9 @@ avEl.addEventListener("click", (ev) => {
     const areaIndex = new Map(HEALTH_AREAS.map((a, k) => [a.id, k]));
     table("tHealthRaw", [
       { key: "areaLabel", head: "Bereich", sortVal: (r) => r.ai },
-      { key: "label", head: "Wert", cls: "wrap", fmt: (v, r) => esc(v || r.id) + (LEGENDS[r.id] ? `<span class="note">${esc(LEGENDS[r.id])}</span>` : "") },
-      { key: "stateText", head: "Zustand", cls: "wrap", fmt: (v) => esc(v || "–") },
-      { key: "content", head: "Inhalt", cls: "wrap raw", fmt: (v, r) => content(r), sortVal: (r) => r.items && r.items.length ? both(r.items[0]) : both(r) || null }
+      { key: "label", head: "Bezeichnung", cls: "wrap", fmt: (v, r) => esc(v || r.id) + (LEGENDS[r.id] ? `<span class="note">${esc(LEGENDS[r.id])}</span>` : "") },
+      { key: "stateText", head: "Ergebnis des Lesens", cls: "wrap", fmt: (v) => esc(v || "–") },
+      { key: "content", head: "Wert", cls: "wrap raw", fmt: (v, r) => content(r), sortVal: (r) => r.items && r.items.length ? both(r.items[0]) : both(r) || null }
     ], (HEALTH.raw || []).map((x, k) => Object.assign({}, x, { k, areaLabel: (areaById.get(x.area) || {}).label || x.area, ai: areaIndex.has(x.area) ? areaIndex.get(x.area) : HEALTH_AREAS.length })),
     { sort: null, id: (r) => r.k, text: () => "", rowAttr: (r) => `data-value="${esc(r.id)}" data-state="${esc(r.state)}"` });
   }
