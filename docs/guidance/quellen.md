@@ -1249,26 +1249,29 @@ angepasst.
 
 ## Zustandsbild
 
-Der Katalog `src/health.de.json` bewertet das Zustandsbild des Servers. Jede Prüfung nennt im Feld `source` eine
-Quelle mit Titel, Adresse und Datum und im Feld `kind` ihre Art: „Empfehlung des Herstellers“ (`vendor`), „Empfehlung
-aus der Praxis“ (`practice`) oder „Faustregel“ (`rule`). Dieser Abschnitt weist die Quellen nach. Er enthält bisher
-die Prüfungen der Bereiche Größe und Reserve, Betrieb, Sitzungen, Citrix VDA und Profilverwaltung; die übrigen
-Bereiche folgen. Stand: Katalog `version` 2026-11-13.
+Der Katalog `src/health.de.json` bewertet das Zustandsbild des Servers. Jede Prüfung nennt im Feld `source` eine Quelle
+mit Titel, Adresse und Datum und im Feld `kind` ihre Art: „Empfehlung des Herstellers“ (`vendor`), „Empfehlung aus der
+Praxis“ (`practice`) oder „Faustregel“ (`rule`). Dieser Abschnitt weist die Quellen nach. Er enthält die Prüfungen der
+Bereiche Größe und Reserve, Betrieb, Sitzungen, Citrix VDA, Profilverwaltung, Drucken, Sicherheitsprodukte, Netz und
+Dateiserver, Ereignisbild und Wartung in der Arbeitszeit; der Bereich Anwendungen folgt. Stand: Katalog `version`
+2026-11-14.
 
 Wie die Quellen geprüft wurden:
 
-- Jede Quelle wurde am 13.11.2026 für diesen Katalog geöffnet und die Aussage, auf die sich eine Prüfung stützt, mit
-  dem Text der Seite verglichen. Übernommen ist nur, was die Seite selbst sagt; eine Zahl aus einer Messung steht im
-  Katalog mit den Bedingungen der Messung.
+- Jede Quelle wurde am 13. oder 14.11.2026 für diesen Katalog geöffnet und die Aussage, auf die sich eine Prüfung
+  stützt, mit dem Text der Seite verglichen. Übernommen ist nur, was die Seite selbst sagt; eine Zahl aus einer Messung
+  steht im Katalog mit den Bedingungen der Messung.
 - Das Datum im Katalog ist der Stand, den die Seite selbst nennt (bei Microsoft Learn „Last updated on“, bei
   docs.citrix.com „Last published“, bei techdocs.broadcom.com „Last Updated“, bei einem Blog das Datum des Beitrags).
   Nennt eine Seite keinen Stand, steht das Datum des Abrufs da.
+- Die Seiten von Citrix unter docs.citrix.com stehen mit der Adresse da, die sie am 14.11.2026 haben: Die früheren
+  Adressen mit `/en-us/` leiten heute auf `/us/en/` weiter (derselbe Pfad).
 - Eine Prüfung aus einer Praxisquelle heißt nie „Empfehlung des Herstellers“. Widerspricht eine Praxisquelle dem
-  Hersteller, gilt der Hersteller, und der Katalog nennt den Widerspruch. Die Ausnahmen legt der Auftraggeber fest;
-  sie stehen unten.
-- Der Katalog gilt für nicht persistente Multi-Session-Server, die über Machine Creation Services bereitgestellt
-  werden. Empfehlungen, die nur für andere Bereitstellungsarten, persistente Maschinen oder Einzelplatz-Desktops
-  gelten, sind nicht aufgenommen.
+  Hersteller, gilt der Hersteller, und der Katalog nennt den Widerspruch. Die Ausnahmen legt der Auftraggeber fest; sie
+  stehen unten.
+- Der Katalog gilt für nicht persistente Multi-Session-Server, die über Machine Creation Services bereitgestellt werden.
+  Empfehlungen, die nur für andere Bereitstellungsarten, persistente Maschinen oder Einzelplatz-Desktops gelten, sind
+  nicht aufgenommen.
 
 ### Praxisquellen
 
@@ -1292,20 +1295,24 @@ Die geltende Liste der Praxisquellen. Eine weitere Quelle kommt nur mit Zustimmu
 Kasper Johansen stand ebenfalls auf der Liste des Auftraggebers: Sein Blog ist nicht mehr erreichbar, nicht verwendet.
 
 Alle zwölf Quellen wurden am 13.11.2026 recherchiert, jeder Eintrag mit einer Gegenprüfung an der Seite. Die Art
-`practice` tragen in den fünf Bereichen dieses Abschnitts nur Prüfungen, deren Quelle carlstalhood.com ist; BIS-F
-und sieben weitere Praxisquellen stehen als zweite Quelle im Text einzelner Prüfungen (unten: „auch gestützt
-durch“). Von Trentent Tye, John Billekens und Benny Tritsch stützt sich in diesen fünf Bereichen keine Prüfung.
+`practice` tragen Prüfungen, deren Quelle carlstalhood.com, BIS-F oder Trentent Tye ist. Acht weitere Praxisquellen
+stehen als zweite Quelle im Text einzelner Prüfungen (unten: „auch gestützt durch“). Von Benny Tritsch stützt sich in
+den zehn Bereichen dieses Abschnitts keine Prüfung.
 
 ### Quellen aus der Praxis: BIS-F
 
-Base Image Script Framework (BIS-F), ein Werkzeug zum Versiegeln von Abbildern. Die Quelle ist für Windows Server
-2022 sichtbar älter: Dokumentation „7.1912“ (Dezember 2019 bis Januar 2020), die Liste der Betriebssysteme endet bei
-Windows Server 2019. Der Katalog kennzeichnet sie deshalb als ältere Praxis.
+Base Image Script Framework (BIS-F), ein Werkzeug zum Versiegeln von Abbildern. Die Quelle ist für Windows Server 2022
+sichtbar älter: Dokumentation „7.1912“ (Dezember 2019 bis Januar 2020), die Liste der Betriebssysteme endet bei Windows
+Server 2019. Der Katalog kennzeichnet sie deshalb als ältere Praxis.
 
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
 | 97_PrepBISF_PRE_BaseImage.ps1 (Skript im Quelltext von BIS-F) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1 | letzter Eintrag der Historie im Skript: 22.11.2020 | 2026-11-13 | `operation.powerPlan` (zweite Praxisquelle im Text: BIS-F stellt beim Versiegeln den Plan „High Performance“ ein, ohne Bedingung) |
-| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Text: BIS-F bietet an, den Cache des WEM-Agenten auf den beständigen Datenträger zu legen; für MCS setzt das einen VDA ab 1903 mit MCSIO voraus) |
+| Configure Citrix Workspace Environment Agent (WEM) | https://eucweb.com/docs/bisf-7-1912/gpo-configuration/citrix/configure-citrix-workspace-environment-agent-wem | Dokumentation 7.1912 | 2026-11-13 | `vda.wemCache` (im Vorschlag zum Vorgehen: BIS-F bietet eine eigene Richtlinie an, die den Cache des WEM-Agenten auf den beständigen Datenträger legt; für MCS setzt das einen VDA ab 1903 mit Speicheroptimierung (MCSIO) voraus) |
+| BISF.psm1 (Quelltext von BIS-F, Funktionen Use-BISFMCSConfig und Move-BISFEvtLogs) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Global/BISF.psm1 | Quelltext ohne Datum | 2026-11-14 | `events.sinceBoot` (BIS-F verlegt die Ereignisprotokolle auf das Cache-Laufwerk, für MCS nur mit einem VDA ab 1903 und der Richtlinie „Configure Citrix MCS Device“; dass sie so einen Neustart überstehen, ist eine Folgerung des Katalogs) |
+| BaseImageScriptFramework.adml (Hilfetexte der Richtlinienvorlage, Text `POL_MCSCfg_Help`) | https://raw.githubusercontent.com/EUCweb/BIS-F/master/ADMX/en-US/BaseImageScriptFramework.adml | Quelltext ohne Datum | 2026-11-14 | `events.sinceBoot` („With a configured MCSIO Disk the event logs and spool directory is redirected to the persistent drive“) |
+| System Optimizations | https://eucweb.com/docs/bisf-7-1912/system-optimizations | 2020-01-08 | 2026-11-14 | `maintenance.updateServiceEnabled` („Set Windows Update Service to Disabled“; die Seite nennt keinen Zweck, die Begründung im Text der Prüfung ist die des Katalogs); `network.rss` (der Schritt „Disable Receive Side Scaling (RSS)“: BIS-F widerspricht hier VMware, es gilt der Hersteller) |
+| 7.1912.0 (Versionshinweise) | https://eucweb.com/docs/bis-f-release-notes/7-x-all-version/7-1912-0 | Dokumentation 7.1912 | 2026-11-14 | `network.rss` (die Versionshinweise nennen „Removed the disabling of Receive Side Scaling“; Skript und Seite „System Optimizations“ führen den Schritt weiter) |
 
 ### Quellen aus der Praxis: carlstalhood.com
 
@@ -1314,115 +1321,381 @@ Gruppenrichtlinien ist älter und nennt Windows Server 2022 nur am Rand.
 
 | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|
-| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Sitzungshosts mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr) |
-| Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Sitzungshosts regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
+| Citrix Virtual Delivery Agent (VDA) 2411 | https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/ | 2024-12-04 | 2026-11-13 | `size.workerCpu`, `size.workerCpuMax` (8 vCPU für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016), `size.workerMemory` (24 bis 48 GB; mit einem Schreibcache im Arbeitsspeicher mehr; die Schwelle des Katalogs liegt mit 24000 MB knapp unter 24 GB, siehe „Schwellen“), `security.networkProtection` („Disable Network protection and configure Citrix’s antivirus exclusions“; Stalhood nennt als Quelle den Citrix-Artikel CTX319676, der sich nicht öffnen ließ; der Netzwerkschutz ist eine Schutzfunktion, die Entscheidung liegt beim Sicherheitsteam) |
+| Citrix Health Check | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | 2026-11-13 | `size.commitAboveRam` (Arbeitsspeicher der virtuellen Maschine mindestens so groß wie der zugesagte Speicher), `operation.uptime` (Multi-Session-Server regelmäßig neu starten; die Seite nennt keine Zahl, die Schwelle ist ein Vorschlag des Katalogs), `operation.updateAge` (letzte Installation eines Updates höchstens 60 Tage alt), `operation.powerPlan` („Power management is set to High Performance with no sleep timers“) |
 | Group Policy Computer Settings for VDAs | https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/ | 2023-11-03 | 2026-11-13 | `sessions.disconnectLimit`, `sessions.idleLimit` (Zeitlimits per Gruppenrichtlinie, „3 hours or similar“: eine Größenordnung, keine Schwelle; die Prüfliste „Citrix Health Check“ nennt die Zeitlimits ebenfalls) |
 
-Nicht übernommen aus diesen Seiten, weil die Gegenprüfung es nicht trägt: beim zugesagten Speicher der Höchststand
-seit dem Start und eine Mindestlaufzeit (stehen nicht auf der Seite); bei den Zeitlimits die Aussage, sie gehörten
-nur in die Gruppenrichtlinie von Microsoft (neuere Seiten von Stalhood nennen den Zeitgeber der Citrix-Richtlinie als
-gleichwertigen Weg); beim Energiesparplan die Zeitgeber für Schlaf und Ruhezustand (das Zustandsbild liest sie nicht).
+Nicht übernommen aus diesen Seiten, weil die Gegenprüfung es nicht trägt: beim zugesagten Speicher der Höchststand seit
+dem Start und eine Mindestlaufzeit (stehen nicht auf der Seite); bei den Zeitlimits die Aussage, sie gehörten nur in die
+Gruppenrichtlinie von Microsoft (neuere Seiten von Stalhood nennen die Sitzungs-Timer der Citrix-Richtlinie als
+gleichwertigen Weg); beim Energiesparplan die Zeiten bis zu Standby und Ruhezustand (das Zustandsbild liest sie nicht).
+
+### Quellen aus der Praxis: trentent.github.io
+
+Beiträge von Trentent Tye. Der Beitrag ist von 2019 und zeigt die Auswertung für Drucker, die Citrix anlegt, und für
+direkt verbundene Drucker.
+
+| Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
+|---|---|---|---|---|
+| Printers and their impact on logon duration | https://trentent.github.io/2019/03/05/printers-and-their-impact-on-logon-duration/ | 2019-03-05 | 2026-11-14 | `print.operationalLogOff` (das Betriebsprotokoll des Druckdienstes ist eine der vier Protokollierungen, die seine Auswertung der Anmeldedauer auf dem Server braucht: „additional logging is required on the Citrix server side“; eine Größe des Protokolls und Ereigniskennungen sind nicht übernommen) |
 
 ### Weitere Praxisquellen als zweite Quelle
 
-Der Katalog führt je Prüfung eine Quelle im Feld `source`. Wo eine weitere Praxisquelle dieselbe Prüfung stützt,
-steht ihre Aussage im Text der Prüfung, mit dem Namen der Quelle und, bei einer Messung, mit deren Bedingungen. Die
-Art der Prüfung ändert sich dadurch nicht. Abruf aller Seiten: 2026-11-13.
+Der Katalog führt je Prüfung eine Quelle im Feld `source`. Wo eine weitere Praxisquelle dieselbe Prüfung stützt, steht
+ihre Aussage im Text der Prüfung, mit dem Namen der Quelle und, bei einer Messung, mit deren Bedingungen. Die Art der
+Prüfung ändert sich dadurch nicht. Abruf der Seiten: 2026-11-13, für die Prüfungen der Bereiche Drucken bis Wartung in
+der Arbeitszeit 2026-11-14.
 
-- `size.workerCpu`, `size.workerCpuMax` – auch gestützt durch: GO-EUC, „Impact of sizing RDSH VMs“, https://www.go-euc.com/impact-of-sizing-rdsh-vms/, 2019-02-27. Lasttest von 2019 mit Windows Server 2016 unter ESXi 6.7 U1 auf zwei Xeon E5-2680 v4, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; die genauen Zahlen sind für heutige Prozessoren nicht belegt. Die Empfehlung „höchstens 8 vCPU je Maschine“ und die Regel zur Summe der vCPU eines Hosts sind Rat der Autoren, kein Messwert.
-- `size.pagefilePresent` – auch gestützt durch: GO-EUC, „Page file sizing for virtualized environments“, https://www.go-euc.com/page-file-sizing-for-virtualized-environments/, 2019-12-03. Test von 2019 mit Windows 10 1803 (eine Sitzung je Maschine), 2 vCPU und 4 GB, MCS 1906.1; übernommen ist nur die Beobachtung, dass die Maschinen ohne Auslagerungsdatei unter Speicherdruck abstürzten. Der Rat zur Größe der Datei ist nicht übernommen.
-- `operation.pendingRestart` – auch gestützt durch: Guy Leech, „Reasons for Reboots – Part 1“, https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/, 2014-06-24. Aus der Zeit von Windows 7 und Windows Server 2008 R2; steht nur im Vorschlag zum Vorgehen (im Abbild nach jeder Installation prüfen). Der Mechanismus selbst ist der von Microsoft dokumentierte.
-- `operation.diskFree` – auch gestützt durch: Thomas Kötzing, „Citrix Maschinenerstellungsdienste (MCS) – Skript zum Auslesen des RAM- und Disk-Cache“, https://koetzingit.de/blog/2024/03/18/citrix-maschinenerstellungsdienste-mcs-skript-zum-auslesen-des-ram-und-disk-cache/, 2024-03-18. Gilt nur, wo MCS mit Speicheroptimierung eingerichtet ist; der Text der Prüfung sagt das.
-- `sessions.disconnectLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08 (Richtlinie statt Benutzerobjekt; zwei Stunden als sein Beispiel für einfache Benutzer); James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09 (die Werte am Benutzerobjekt greifen nur, wo nichts anderes gesetzt ist); Guy Leech, „The Taming of the Print Server“, https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/, 2016-02-23 (nur als Beispiel: ein Druckserver, kein Sitzungshost).
-- `sessions.idleLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“, https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08; James Kindon, „Citrix Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09. Das Beispiel von Guy Leech ist hier nicht verwendet: Es handelt von getrennten Sitzungen.
-- `sessions.tempProfiles` – auch gestützt durch: Thomas Kötzing, „Powershell-Skript zum Löschen von temporären Benutzerprofilen“, https://koetzingit.de/blog/2024/09/10/powershell-skript-zum-loeschen-von-temporaeren-benutzerprofilen/, 2024-09-10. Gezeigt mit FSLogix; die Profilliste gehört zu Windows. Das Löschen von Einträgen auf dem laufenden Server ist nicht als Abhilfe übernommen.
-- `vda.wemCache` – auch gestützt durch: Manuel Winkel, „Finding in the Wild | Sometimes Old Citrix Problems Simply Return“, https://www.deyda.net/index.php/en/2026/09/26/finding-in-the-wild-sometimes-old-citrix-problems-simply-return/, 2026-09-26 (eigene Beobachtung mit WEM 2507 CU1 auf nicht persistenten VDAs, keine öffentliche Fehlernummer von Citrix); James Kindon, „The why does it of Citrix WEM Cache“, https://jkindon.com/the-why-does-it-of-citrix-wem-cache/, 2020-10-15 (nur als Vorgeschichte: gilt für Agenten vor Version 2012).
-- `profile.containerFull` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23. Geschrieben für FSLogix; übernommen sind nur die Folge eines vollen Containers und der Rat, die Größe nicht knapper zu begrenzen als nötig. Keine Zahl des Katalogs stammt von dort.
-- `profile.containersPerUser` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23 (zusätzlicher Speicherplatz bei gleichzeitigen Sitzungen; für FSLogix); James Rankin, „QuickPost – getting started with Citrix UPM Containers“, https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/, 2023-09-08 (die Citrix Profilverwaltung schreibt einen Differenzdatenträger und führt ihn bei der Abmeldung zurück).
+- `size.workerCpu`, `size.workerCpuMax` – auch gestützt durch: GO-EUC, „Impact of sizing RDSH VMs“,
+  https://www.go-euc.com/impact-of-sizing-rdsh-vms/, 2019-02-27. Lasttest von 2019 mit Windows Server 2016 unter ESXi
+  6.7 U1 auf zwei Xeon E5-2680 v4, Schutzmaßnahmen gegen Spectre und Meltdown abgeschaltet; die genauen Zahlen sind für
+  heutige Prozessoren nicht belegt. Die Empfehlung „höchstens 8 vCPU je Maschine“ und die Regel zur Summe der vCPU eines
+  Hosts sind Rat der Autoren, kein Messwert.
+- `size.pagefilePresent` – auch gestützt durch: GO-EUC, „Page file sizing for virtualized environments“,
+  https://www.go-euc.com/page-file-sizing-for-virtualized-environments/, 2019-12-03. Test von 2019 mit Windows 10 1803
+  (eine Sitzung je Maschine), 2 vCPU und 4 GB, MCS 1906.1, ein Testprogramm belegte zusätzlich 2 GB; übernommen ist nur
+  die Beobachtung, dass die Maschinen ohne Auslagerungsdatei unter Speicherdruck abstürzten. Der Rat zur Größe der Datei
+  ist nicht übernommen; dass die Größe der Datei in diesem Test keinen messbaren Unterschied machte, steht nur hier,
+  nicht im Text der Prüfung.
+- `operation.pendingRestart` – auch gestützt durch: Guy Leech, „Reasons for Reboots – Part 1“,
+  https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/, 2014-06-24. Aus der Zeit von Windows 7 und
+  Windows Server 2008 R2; steht nur im Vorschlag zum Vorgehen (im Abbild nach jeder Installation prüfen). Der
+  Mechanismus selbst ist der von Microsoft dokumentierte.
+- `operation.diskFree` – auch gestützt durch: Thomas Kötzing, „Citrix Maschinenerstellungsdienste (MCS) – Skript zum
+  Auslesen des RAM- und Disk-Cache“,
+  https://koetzingit.de/blog/2024/03/18/citrix-maschinenerstellungsdienste-mcs-skript-zum-auslesen-des-ram-und-disk-cache/,
+  2024-03-18. Gilt nur, wo MCS mit Speicheroptimierung eingerichtet ist; der Text der Prüfung sagt das.
+- `sessions.disconnectLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“,
+  https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08 (Richtlinie statt
+  Benutzerobjekt; zwei Stunden als sein Beispiel für einfache Benutzer); James Kindon, „Citrix Session Management
+  Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09 (die Werte am Benutzerobjekt greifen
+  nur, wo nichts anderes gesetzt ist); Guy Leech, „The Taming of the Print Server“,
+  https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/, 2016-02-23 (nur als Beispiel und nur hier,
+  nicht im Text der Prüfung: ein Druckserver mit vier Prozessoren, auf dem über Tage getrennte Verwaltungssitzungen den
+  größten Teil der Rechenleistung banden; kein Multi-Session-Server).
+- `sessions.idleLimit` – auch gestützt durch: James Rankin, „Windows session timeouts on Citrix – a brief guide“,
+  https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/, 2023-03-08; James Kindon, „Citrix
+  Session Management Policies“, https://jkindon.com/citrix-session-management-policies/, 2021-08-09. Das Beispiel von
+  Guy Leech ist hier nicht verwendet: Es handelt von getrennten Sitzungen.
+- `sessions.tempProfiles` – auch gestützt durch: Thomas Kötzing, „Powershell-Skript zum Löschen von temporären
+  Benutzerprofilen“,
+  https://koetzingit.de/blog/2024/09/10/powershell-skript-zum-loeschen-von-temporaeren-benutzerprofilen/, 2024-09-10.
+  Gezeigt mit FSLogix; die Profilliste gehört zu Windows. Das Löschen von Einträgen auf dem laufenden Server ist nicht
+  als Abhilfe übernommen.
+- `vda.wemCache` – auch gestützt durch: Manuel Winkel, „Finding in the Wild | Sometimes Old Citrix Problems Simply
+  Return“,
+  https://www.deyda.net/index.php/en/2026/09/26/finding-in-the-wild-sometimes-old-citrix-problems-simply-return/,
+  2026-09-26 (eigene Beobachtung mit WEM 2507 CU1 und eigenen WEM-Servern auf nicht persistenten VDAs: Der Cache wurde
+  beim Start nicht aufgebaut, geholfen hat, ihn neu aufzubauen; keine öffentliche Fehlernummer von Citrix); James
+  Kindon, „The why does it of Citrix WEM Cache“, https://jkindon.com/the-why-does-it-of-citrix-wem-cache/, 2020-10-15
+  (nur als Vorgeschichte und nur hier, nicht im Text der Prüfung: Agenten vor Version 2012 übersprangen beim Start den
+  ersten Abgleich, wenn schon ein Cache da war; aktuelle Agenten verwerfen nach Citrix auf bereitgestellten Maschinen
+  die Cache-Dateien, die aus dem Abbild stammen).
+- `profile.containerFull` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity
+  Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23. Geschrieben für FSLogix;
+  übernommen sind nur die Folge eines vollen Containers und der Rat, die Größe nicht knapper zu begrenzen als nötig.
+  Keine Zahl des Katalogs stammt von dort.
+- `profile.containersPerUser` – auch gestützt durch: Aaron Parker, „A Practical Guide to FSLogix Containers Capacity
+  Planning and Maintenance“, https://stealthpuppy.com/fslogix-containers-capacity/, 2019-04-23 (zusätzlicher
+  Speicherplatz bei gleichzeitigen Sitzungen; für FSLogix); James Rankin, „QuickPost – getting started with Citrix UPM
+  Containers“, https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/, 2023-09-08 (die
+  Citrix Profilverwaltung schreibt einen Differenzdatenträger und führt ihn bei der Abmeldung zurück).
+- `print.driversInSpooler` – auch gestützt durch: Thomas Kötzing, „Die zehn Regeln zum Drucken unter Citrix“,
+  https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/, 2017-02-08 (Treiber von
+  Drittherstellern isoliert betreiben, genannt für den HP Universal Print Driver; die Angabe „mindestens Version 5.x“
+  ist überholt und nicht übernommen); Thomas Kötzing, „Ein echter Kunden-Support-Fall, gelöst mit Hilfe von KI!“,
+  https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/, 2025-05-27 (ein Fall
+  mit wiederholten Abstürzen des Druckdienstes und einem Treiber von Konica Minolta von 2021: empfohlen sind ein neuerer
+  64-Bit-Treiber und die Isolierung per Gruppenrichtlinie; übernommen sind die Empfehlungen, kein Ergebnis, und nicht
+  die Erklärung des Beitrags zu 32-Bit-Treibern).
+- `print.isolationOff` – auch gestützt durch: dieselben zwei Beiträge von Thomas Kötzing,
+  https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/, 2017-02-08, und
+  https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/, 2025-05-27
+  („Aktivierung der Druckerisolierung per GPO, damit der Druckerdienst erst gar nicht abstürzt“). Die Art der Prüfung
+  bleibt `rule`; der Name der Richtlinie „Druckertreiber in isolierten Prozessen ausführen“ stammt aus dem Beitrag von
+  2017.
+- `print.driverCount` – auch gestützt durch: Thomas Kötzing, „Die zehn Regeln zum Drucken unter Citrix“,
+  https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/, 2017-02-08 („Immer erst die nativen
+  Microsoft-Druckertreiber verwenden, die mit dem Betriebssystem kommen“); Thomas Kötzing, „Citrix StressPrinters
+  verstehen und nutzen“, https://koetzingit.de/blog/2007/11/20/citrix-stressprinters-verstehen-und-nutzen/, 2007-11-20
+  (Treiber vor der Übernahme unter Last testen; die Messwerte von 2007 und der Name des Werkzeugs sind nicht
+  übernommen). Keine Zahl des Katalogs stammt von dort.
+- `security.signatureAge` – auch gestützt durch: John Billekens, „Citrix · AV exclusions“,
+  https://ave.j81.nl/vendors/citrix/, ohne Datum, Abruf 2026-11-14 (seine eigene Sicht: das Abbild mindestens einmal im
+  Monat aktualisieren, Signaturen beim Start und in zufälligen Abständen während der Arbeitszeit; der verzögerte Start
+  der Citrix-Dienste, den er ebenfalls nennt, ist nicht übernommen). Citrix selbst nennt im Artikel CTX696648 keinen
+  Abstand („Automating this process is recommended, so is updating the master image regularly with the latest
+  signatures“).
+- `security.citrixExclusions` – auch gestützt durch: James Rankin, „The ultimate guide to Windows logon time
+  optimizations, part #10“,
+  https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/, 2021-11-19 („Quite
+  a marked increase – over 40 seconds for Server 2019“; gemessen 2021 mit Windows Server 2019, einem anderen
+  Schutzprodukt als Defender und dateibasierter Citrix Profilverwaltung; Defender war nicht Teil des Tests; mit
+  Ausschlüssen blieb die Wirkung nach Rankin spürbar, aber deutlich kleiner).
+- `security.wemExclusions` – auch gestützt durch: Carl Stalhood, „Workspace Environment Management (WEM) 2411“,
+  https://www.carlstalhood.com/workspace-environment-management/, 2024-12-07 (der Programmordner des WEM-Agenten oder
+  seine Prozesse „must be excluded from Antivirus scanning“). Die Quelle der Prüfung ist der Citrix-Artikel CTX696648
+  (Stand 2026-05-25, Tabelle „Herstellerquellen“): Wo der Hersteller dasselbe sagt wie die Praxisquelle, trägt die
+  Prüfung die Art `vendor`. Microsoft rät bei Defender Antivirus davon ab, Programmordner installierter Anwendungen
+  auszunehmen (siehe „Weitere Seiten der Hersteller“); der Text der Prüfung nennt beide Sichten.
+- `maintenance.sessionTriggerTasks` – auch gestützt durch: James Rankin, „The ultimate guide to Windows logon time
+  optimizations, part #8“,
+  https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-8/, 2021-09-14 („We've
+  removed 4-5 seconds of logon time in each instance“; gemessen 2021 mit Windows Server 2019 und Windows 10 an sechs
+  Programmen, die bei der Anmeldung starten, überwiegend Autostart-Einträge je Benutzer; als entbehrlich nennt er
+  „OneNote QuickNotes, Adobe Reader and Google Chrome update tasks“; einer der sechs Punkte ist eine geplante Aufgabe).
+  Die Zahl ist keine Schwelle.
 
 ### Ausnahmen: Praxisquelle vor Hersteller
 
 Der Katalog führt die Ausnahmen im Teil `precedence`. Festgelegt ist eine.
 
 **Energiesparplan (`operation.powerPlan`).** Die Prüfung meldet „prüfen“, wenn der aktive Plan nicht „Höchstleistung“
-ist. Begründung des Auftraggebers (13.11.2026): Die Praxisquellen beziehen sich ausdrücklich auf
-Citrix-Terminalserver und Betriebserfahrung, die Herstellerdokumentation nicht.
+ist. Begründung des Auftraggebers (13.11.2026): Die Praxisquellen beziehen sich ausdrücklich auf Citrix-Terminalserver
+und Betriebserfahrung, die Herstellerdokumentation nicht.
 
 - Praxisquellen: Carl Stalhood, „Citrix Health Check“ (oben); BIS-F stellt beim Versiegeln denselben Plan ein (oben).
 - Microsoft, „Overview about power and performance tuning for the Windows Server“,
   https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning
-  (Abruf 2026-11-13): „Balanced (recommended)“ ist die Vorgabe; „High Performance“ nennt die Seite für Anwendungen,
-  die auf Verzögerungen empfindlich reagieren. Der Katalog nennt das im Text der Prüfung.
+  (Stand der Seite 2022-08-29, Abruf 2026-11-13): „Balanced (recommended)“ ist die Vorgabe; „High Performance“ nennt die
+  Seite für Anwendungen, die auf Verzögerungen empfindlich reagieren. Der Katalog nennt das im Text der Prüfung.
 - VMware, „Poor network performance or high network latency on Windows virtual machines“,
-  https://knowledge.broadcom.com/external/article/310350 (Abruf 2026-11-13): „High performance“ für die Zeit, in der
-  Leistungsprobleme untersucht werden. Der Artikel begründet das mit Beobachtungen unter älteren Windows-Versionen.
+  https://knowledge.broadcom.com/external/article/310350 (Stand der Seite 2025-07-21, Abruf 2026-11-13): „High
+  performance“ für die Zeit, in der Leistungsprobleme untersucht werden. Der Artikel begründet das mit einer Beobachtung
+  von Microsoft unter Windows Server 2008 und 2008 R2 und sagt nur, die Umstellung könne die Leistung erhöhen („may
+  increase overall performance“); für neuere Windows-Versionen bestätigt er es nicht eigens. Der Katalog nennt diesen
+  Vorbehalt im Text der Prüfung.
 - Andere Sicht aus der Praxis: GO-EUC, „Beyond Balanced: Benchmarking Windows 11 Power Plans“,
-  https://www.go-euc.com/beyond-balanced-benchmarking-windows-11-power-plans/, 2026-09-15: nur ein geringer
-  Unterschied zwischen „Balanced“ und „High performance“, für Benutzer kein spürbarer. Gemessen mit Windows 11 und
-  einer Sitzung je Maschine auf Azure, Defender abgeschaltet; die Leerlaufzustände der Prozessoren waren nicht Teil
-  der Messung. Der Katalog nennt die Messung mit diesen Bedingungen; sie ändert weder Regel noch Einstufung.
+  https://www.go-euc.com/beyond-balanced-benchmarking-windows-11-power-plans/, 2026-09-15: In diesem Test brachte der
+  Wechsel von „Balanced“ zu „High performance“ nur einen geringen Gewinn an Leistung („a slight increase in
+  performance“) und bei der gemessenen Benutzererfahrung kaum oder keinen Unterschied („minimal to no difference in the
+  UX Score“). Gemessen mit Windows 11 und einer Sitzung je Maschine auf Azure, Defender abgeschaltet; die
+  Leerlaufzustände der Prozessoren waren nicht Teil der Messung. Für Windows Server mit vielen Sitzungen unter vSphere
+  hat GO-EUC in diesem Test nicht gemessen. Der Katalog nennt die Messung mit diesen Bedingungen und zieht daraus keinen
+  Schluss für andere Umgebungen; sie ändert weder Regel noch Einstufung.
 
 ### Herstellerquellen
 
 | Hersteller | Titel | Adresse | Stand der Seite | Abruf | Prüfungen |
 |---|---|---|---|---|---|
 | Microsoft | How to determine the appropriate page file size for 64-bit versions of Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/how-to-determine-the-appropriate-page-file-size-for-64-bit-versions-of-windows | 2026-02-12 | 2026-11-13 | `size.pagefilePresent` (`vendor`); als Beleg der Faustregeln `size.commitHeadroom` (Zusagegrenze = Arbeitsspeicher und alle Auslagerungsdateien) und `operation.diskFree` (eine vom System verwaltete Auslagerungsdatei wächst nur, solange Platz frei ist) |
-| Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens) |
-| Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; keine Zahl) |
-| Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (der Wert `PendingFileRenameOperations`) |
-| VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` |
+| Microsoft | Microsoft Edge for Virtual desktop infrastructure (VDI) | https://learn.microsoft.com/en-us/deployedge/edge-for-virtualized-desktop-infrastructure | 2026-11-03 | 2026-11-13 | als Beleg der Faustregel `size.memoryPerSession` (1 GB Arbeitsspeicher je Benutzer für Microsoft Edge, für große Webanwendungen und Erweiterungen mehr; die Seite sagt „VDI“ und nennt Multi-Session-Server nicht eigens) |
+| Microsoft | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2020-09-14 | 2026-11-13 | `maintenance.sessionTriggerTasks` (`vendor`: „it is useful to focus specifically on the tasks that are configured to run on idle, at user sign-in, or on session connect and disconnect“; die Seite lässt diese Aufgaben ansehen, sie nennt sie nicht fehlerhaft); als Beleg der Faustregel `size.cpuPerSession` (Rechenleistung je Sitzung mal Zahl der Sitzungen plus Reserve; diese Seite nennt keine Zahl) |
+| Microsoft | MoveFileExA function (winbase.h) | https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexa | 2023-06-01 | 2026-11-13 | als Beleg der Faustregel `operation.pendingRestart` (die Seite beschreibt den Wert `PendingFileRenameOperations`; was ein Eintrag auf einem nicht persistenten Server bedeutet, ist die Faustregel des Katalogs und steht nicht auf der Seite) |
+| VMware | VMware Tools Lifecycle Management | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-lifecyle-management.html | 2026-05-08 | 2026-11-13 | `size.vmTools` (Windows Server 2022: ab 10.3.5, für die beste Leistung ab 12.0.0; Windows Server 2025: ab 11.3.0, für die beste Leistung ab 12.5.0; die Seite führt die Angaben unter „VMware Tools support for Guest Operating Systems“, ein Stand unter dem Mindeststand ist danach nicht unterstützt) |
 | VMware | Solutions for Memory Performance Problems | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-monitoring-and-performance/monitoring-inventory-objects/troubleshoot-and-enhance-performance/memory-performance-solutions.html | 2026-10-28 | 2026-11-13 | `size.balloonDriver` |
-| VMware | Poor network performance or high network latency on Windows virtual machines | https://knowledge.broadcom.com/external/article/310350 | 2025-07-21 | 2026-11-13 | `size.netAdapterType` (der Artikel setzt VMXNET3 voraus, bevor weiter gesucht wird; eine allgemeine Pflicht nennt er nicht; die Seite „Citrix Virtual Delivery Agent (VDA) 2411“ von Carl Stalhood nennt für vSphere ebenfalls VMXNET3) |
-| VMware | SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration.html | 2026-10-28 | 2026-11-13 | `size.storageController` (nur ein Hinweis: VMware knüpft den Vorteil an E/A-starke Last) |
-| Citrix | VDA registration | https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/manage-deployment/vda-registration.html | 2026-11-12 | 2026-11-13 | `vda.controllerCount`, `vda.controllerNotFqdn`, `vda.listOfSids` |
+| VMware | Poor network performance or high network latency on Windows virtual machines | https://knowledge.broadcom.com/external/article/310350 | 2025-07-21 | 2026-11-13 | `size.netAdapterType` (der Artikel setzt VMXNET3 voraus, bevor weiter gesucht wird; eine allgemeine Pflicht nennt er nicht; die Seite „Citrix Virtual Delivery Agent (VDA) 2411“ von Carl Stalhood nennt für vSphere ebenfalls VMXNET3), `network.rss` („Ensure that RSS is enabled in the guest operating system“; „Changing the RSS settings should only be done by trained network administrators“) |
+| VMware | SCSI, SATA, and NVMe Storage Controller Conditions, Limitations, and Compatibility | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration.html | 2026-10-28 | 2026-11-13 | `size.storageController` (nur ein Hinweis: VMware knüpft den Vorteil an E/A-starke Last und nennt den Adapter für direkt angeschlossenen Speicher nicht geeignet, siehe unten) |
+| Citrix | VDA registration | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/manage-deployment/vda-registration.html | 2026-11-12 | 2026-11-13 | `vda.controllerCount`, `vda.controllerNotFqdn`, `vda.listOfSids` |
 | Citrix | WEM health check tool | https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/wem-health-check-tool.html | 2026-11-12 | 2026-11-13 | `vda.wemServices` |
-| Citrix | Agent (install and configure) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-13 | `vda.wemCache` (Abschnitt „Prerequisites“), `vda.wemGpTimeout` (Abschnitt „System settings“) |
-| Citrix | Profile Management policy descriptions and defaults | https://docs.citrix.com/en-us/profile-management/current-release/settings/descriptions-and-defaults.html | 2026-10-29 | 2026-11-13 | als Beleg der Faustregel `profile.containerFull` (90 % ist die Vorgabe für die Belegung, ab der ein Container automatisch vergrößert wird; keine Empfehlung im engen Sinn) |
+| Citrix | Agent (install and configure) | https://docs.citrix.com/us/en/workspace-environment-management/current-release/install-and-configure/agent-host.html | 2026-11-12 | 2026-11-13 | `vda.wemCache` (Abschnitt „Prerequisites“: Der Cache des Agenten soll nach Möglichkeit an einem beständigen Ort liegen), `vda.wemGpTimeout` (Abschnitt „System settings“) |
+| Citrix | Profile Management policy descriptions and defaults | https://docs.citrix.com/us/en/profile-management/current-release/settings/descriptions-and-defaults.html | 2026-10-29 | 2026-11-13 | als Beleg der Faustregel `profile.containerFull` (90 % ist die Vorgabe für die Belegung, ab der ein Container automatisch vergrößert wird; keine Empfehlung im engen Sinn) |
+| Microsoft | Printer Driver Isolation | https://learn.microsoft.com/en-us/windows-hardware/drivers/print/printer-driver-isolation | 2025-05-01 | 2026-11-14 | `print.driversInSpooler` (`vendor`: „By isolating the driver, the administrator can prevent a fault in a driver component from halting the print service“); als Beleg der Faustregel `print.isolationOff` (die Seite nennt das Abschalten der Isolierung als Mittel für die Fehlersuche: „To support troubleshooting“) |
+| Citrix | Best practices, security considerations, and default operations | https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/printing/printing-best-practices.html | 2026-11-12 | 2026-11-14 | `print.kernelModeV2` (`vendor`: „Try to avoid using version 2 kernel-mode drivers“); als Beleg der Faustregel `print.driverCount` („Minimize the number of printer drivers installed on Multi-session OS machines“, „Use the Universal printer driver or Windows-native drivers“: gemeint sind der Citrix-Universaltreiber und die eigenen Windows-Treiber der Drucker, nicht die mit Windows gelieferten; die Seite nennt keine Zahl). Die Seite schränkt selbst ein: „Some of these best practices might not apply to your Site“. Ihr Satz zur automatischen Installation mitgelieferter Treiber ist nicht übernommen (ohne Wirkung ab VDA 7.16 unter Windows Server 2012 und neuer) |
+| AKI | Release Notes PrinTaurus 6.4 | https://www.aki-gmbh.com/download/47826/ | 2025-02-16 | 2026-11-14 | `print.mappingClientSupported` (Kapitel 1: „Zum 31. Dezember 2025 kündigen wir alle PrinTaurus Versionen < 6.2. ab.“; als Hinweise im Text: „Alle Software-Komponenten sollten zur gleichen Release-Version gehören!“ steht unter den Hinweisen zum Update auf 6.4; Kapitel 2: lokale IPP-Druckerwarteschlangen sind „in dieser Version nur für Fat Clients verfügbar“ und in Citrix- oder Terminalserver-Umgebungen nicht unterstützt) |
+| Microsoft | Microsoft Defender Antivirus compatibility with other security products | https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-antivirus-compatibility | 2026-08-21 | 2026-11-14 | `security.twoScanners` (auf Windows Server wechselt Defender Antivirus neben dem Schutzprodukt eines anderen Herstellers nicht von selbst in die passive Betriebsart; „set Microsoft Defender Antivirus to passive mode to prevent problems caused by having multiple antivirus products installed on a server“ mit dem Wert ForceDefenderPassiveMode; für einen Server ohne Anbindung an Defender for Endpoint: „disable/uninstall Microsoft Defender Antivirus manually to prevent problems caused by having multiple antivirus products installed on a server“), `security.passiveWithoutMde` („In general, Microsoft Defender Antivirus can be set to passive mode only on endpoints that are onboarded to Defender for Endpoint“; für den Server ohne Anbindung derselbe Satz wie oben) |
+| Citrix | Endpoint Security, Antivirus, and Antimalware Best Practices (CTX696648) | https://support.citrix.com/external/article/CTX696648/endpoint-security-antivirus-and-antimalw.html | 2026-05-25 | 2026-11-14 | `security.citrixExclusions` (Abschnitt „Virtual Delivery Agents“: die Prozesse UserProfileManager.exe, BrokerAgent.exe und CtxSvcHost.exe stehen dort neben weiteren; „Review these recommendations with your vendor and security team“, „confirm they exist before you create an exclusion policy“), `security.wemExclusions` (Abschnitt „Workspace Environment Management“: Citrix nennt den Programmordner des Agenten und seine Prozesse). Der Stand ist das Datum „Updated On“ der Seite (05-25-2026) |
+| Microsoft | Detect, enable, and disable SMBv1, SMBv2, and SMBv3 in Windows | https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3 | 2025-03-11 | 2026-11-14 | `network.smb1` („SMBv1 has significant security vulnerabilities, and we strongly encourage you not to use it“) |
+| Microsoft | Best practices for DNS client settings in Windows Server | https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/best-practices-for-dns-client-settings | 2026-02-12 | 2026-11-14 | `network.dnsCount` (`vendor`, Abschnitt zu Mitgliedsservern: „Configure the primary and secondary DNS client settings to point to local primary and secondary DNS servers“); als Beleg der Faustregel `network.dnsPublic` („Don't configure the client DNS settings to point to your ISP's DNS servers“; dass eine öffentliche Adresse ein solcher Server ist, ist die Annahme des Katalogs). Der Titel ist die Überschrift der Seite; im Browser heißt sie „Recommendations for Domain Name System (DNS) client settings“ |
+| Microsoft | Set-MpPreference | https://learn.microsoft.com/en-us/powershell/module/defender/set-mppreference?view=windowsserver2022-ps | 2024-03-27 | 2026-11-14 | `maintenance.defenderRandomize` („Randomized start times can distribute the impact of scanning“; der zufällige Startzeitpunkt ist die Voreinstellung) |
+| Microsoft | Configure Microsoft Defender Antivirus on a remote desktop or virtual desktop infrastructure environment | https://learn.microsoft.com/en-us/defender-endpoint/deployment-vdi-microsoft-defender-antivirus | 2026-08-20 | 2026-11-14 | als Beleg der Faustregeln `maintenance.defenderFullScan` (die Seite nennt einen täglichen Schnellscan und „Run a weekly scheduled scan (quick or full)“ mit der Art „Not configured“; einen Satz gegen den vollständigen Scan enthält sie nicht, deshalb ist die Prüfung keine Empfehlung des Herstellers) und `security.signatureAge` (Signaturen erscheinen „typically published once every three to four hours“; eine Schwelle nennt Microsoft nicht) |
+| Microsoft | Windows Time Service Tools and Settings | https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings | 2025-09-18 | 2026-11-14 | als Beleg der Faustregel `network.timeSource` („By default, a computer that's joined to a domain synchronizes time through a domain hierarchy“; die Seite beschreibt die Voreinstellung und spricht keine Empfehlung aus) |
+| Microsoft | Eventlog Key | https://learn.microsoft.com/en-us/windows/win32/eventlog/eventlog-key | 2025-08-14 | 2026-11-14 | als Beleg der Faustregel `events.retainFull` („When the log file reaches its maximum size, you must clear the log manually; otherwise, new events are discarded“) |
+| Microsoft | Step 4: Configure Group Policy Settings for Automatic Updates | https://learn.microsoft.com/en-us/windows-server/administration/windows-server-update-services/deploy/4-configure-group-policy-settings-for-automatic-updates | 2025-06-05 | 2026-11-14 | als Beleg der Faustregel `maintenance.updateInstallInWorkHours` (Option 4: „If no schedule is specified, the default schedule for all installations is every day at 3:00 AM“; „Starting with Windows 8, you can set updates to install during automatic maintenance“; ohne Richtlinie lädt und installiert Windows nach dieser Seite automatisch, der Zeitpunkt ist dann aus den gelesenen Werten nicht bekannt) |
 
-Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (Abruf 2026-11-13):
+Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (Abruf 2026-11-13 oder 2026-11-14):
 
 - Citrix, „What's new“ (Workspace Environment Management service),
   https://docs.citrix.com/us/en/workspace-environment-management/service/whats-new.html: Der Agent des WEM-Dienstes
   findet den beständigen Ort für seinen Cache ab Version 2408.1.0.1 selbst (`vda.wemCache`). Die Seiten für eigene
   WEM-Server enthalten diese Aussage nicht.
 - Citrix, „Session limits policy settings“,
-  https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2203-ltsr/policies/reference/ica-policy-settings/session-limits-policy-settings.html:
-  Citrix empfiehlt, die Zeitgeber nur auf einem der beiden Wege zu setzen (`sessions.disconnectLimit`,
-  `sessions.idleLimit`, im Vorschlag zum Vorgehen).
+  https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2203-ltsr/policies/reference/ica-policy-settings/session-limits-policy-settings.html:
+  Citrix empfiehlt, die Zeitlimits nur auf einem der beiden Wege zu setzen (`sessions.disconnectLimit`,
+  `sessions.idleLimit`, im Vorschlag zum Vorgehen). Die Sitzungs-Timer für Multi-Session-Server gibt es nach dieser
+  Seite erst ab VDA 2203 LTSR CU2 („Starting with the 2203 LTSR CU2 release“); der Text der zwei Prüfungen sagt das.
 - Citrix, „Set up profile containers“,
   https://docs.citrix.com/us/en/profile-management/current-release/configure/citrix-profile-management-profile-container.html:
   Mit einem Container für das ganze Profil gilt „Delete locally cached profiles on logoff“ nicht mehr
   (`sessions.unloadedProfiles`, im Vorschlag zum Vorgehen; die Empfehlung der Einstellung für Terminalserver steht auf
   der Seite „Profile Management policy descriptions and defaults“).
-- Citrix, „Agent (install and configure)“ (Tabelle oben), Abschnitt „Recommendations“: Die Dienste des WEM-Agenten
-  nicht per Skript beenden oder neu starten (`vda.wemServices`, im Vorschlag zum Vorgehen). Dieselbe Seite
-  beschreibt, dass der Agent auf bereitgestellten Maschinen die Cache-Dateien aus dem Abbild verwirft (`vda.wemCache`).
-- Microsoft, „Performance Tuning Remote Desktop Session Hosts“ (Tabelle oben): Eine zu kleine Auslagerungsdatei
-  lässt Speicheranforderungen von Programmen und Systemteilen scheitern (`size.commitHeadroom`).
+- Citrix, „Agent (install and configure)“ (Tabelle oben), Abschnitt „Recommendations“: Den Dienst „Citrix WEM Agent Host
+  Service“ nicht per Skript beenden oder neu starten; Citrix sagt das nur für diesen Dienst (`vda.wemServices`, im
+  Vorschlag zum Vorgehen). Abschnitt „System settings“: Antworten die Domänencontroller langsam, kann es länger dauern,
+  bis der Anmeldebildschirm erscheint; die Seite nennt das als möglichen Preis der Wartezeit, nicht als Folge eines zu
+  kleinen Werts (`vda.wemGpTimeout`). Was ein zu kleiner Wert für die Benutzer heißt, sagt die Seite nicht. Sie sagt,
+  wozu der Wert mit zwei weiteren dient: „The previous three keys ensure that the WEM agent service starts before the
+  Windows logon screen appears.“ und „The keys also ensure that the user environment receives the infrastructure server
+  address GPOs before logon.“ (am 2026-11-14 erneut gelesen). Der erste Satz der Bedeutung folgert daraus, dass der
+  WEM-Agent bei zu kurzer Wartezeit womöglich noch nicht bereit ist, und ist als Erläuterung des Katalogs
+  gekennzeichnet. Dieselbe Seite beschreibt, dass der Agent auf bereitgestellten Maschinen die Cache-Dateien aus dem
+  Abbild verwirft (`vda.wemCache`).
+- Citrix, „WEM health check tool“ (Tabelle oben): Die Seite sagt nur, dass der Agent die drei Dienste braucht, um wie
+  erwartet zu arbeiten. Was das für die Benutzer heißt, ist im Text der Prüfung als Erläuterung des Katalogs
+  gekennzeichnet (`vda.wemServices`).
+- Microsoft, „Performance Tuning Remote Desktop Session Hosts“ (Tabelle oben): Eine zu kleine Auslagerungsdatei lässt
+  Speicheranforderungen von Programmen und Systemteilen scheitern (`size.commitHeadroom`).
 - VMware, „VMware Tools Device Drivers“,
-  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-device-drivers.html:
-  Der Treiber zur Speichersteuerung ist für das Ballooning nötig und unter vSphere empfohlen (`size.balloonDriver`);
-  die Treiber für VMXNET3 verbessern die Netzleistung (`size.netAdapterType`).
+  https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/tools/13-0-0/vmware-tools-administration/introduction-to-vmware-tools/vmware-tools-device-drivers.html
+  (Stand der Seite 2026-05-08): Der Treiber zur Speichersteuerung ist für das Ballooning nötig und unter vSphere
+  empfohlen (`size.balloonDriver`); die Treiber für VMXNET3 verbessern die Netzleistung (`size.netAdapterType`).
 - VMware, „Add a Paravirtualized SCSI Adapter“,
   https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-virtual-machine-administration/configuring-virtual-machine-hardware/scsi-controller-configuration/add-a-paravirtualized-scsi-adapter-in-the-nextgen-client.html:
   Der paravirtuelle SCSI-Adapter passt am besten zu E/A-starken Anwendungen, besonders in SAN-Umgebungen
   (`size.storageController`).
 - VMware, „Configuring disks to use VMware Paravirtual SCSI (PVSCSI) controllers“,
   https://knowledge.broadcom.com/external/article/313507: Ein Wechsel des Adapters am Startlaufwerk ohne den Treiber
-  lässt Windows nicht mehr starten (`size.storageController`, im Vorschlag zum Vorgehen).
+  lässt Windows nicht mehr starten (`size.storageController`, im Vorschlag zum Vorgehen). Derselbe Artikel nennt den
+  Adapter für direkt angeschlossenen Speicher nicht geeignet („not suitable for DAS environments“); der Text der Prüfung
+  nennt diesen Vorbehalt.
+- Citrix, „VDA registration“ (Tabelle oben): Stehen ListOfDDCs und FarmGUID beide da, „ListOfDDCs is used“; deshalb
+  wertet `vda.controllerCount` die Liste auch neben der Registrierung über die Organisationseinheit. Nach der ersten
+  Registrierung nimmt der VDA die Liste aus dem Cache der automatischen Aktualisierung („Auto-update is enabled by
+  default“), und für MCS gibt die Bereitstellung die Liste mit. Die Liste kann Controller-Gruppen enthalten, die das
+  Zustandsbild als einen Eintrag zählt (`vda.controllerCount`, `vda.controllerNotFqdn`). Den Wert ListOfSIDs von Hand zu
+  setzen und dann die automatische Aktualisierung abzuschalten, nennt die Seite für besonders gesicherte Umgebungen
+  (`vda.listOfSids`). Was ein von Hand gesetzter Wert für die Benutzer heißt, sagt die Seite nicht. Sie sagt: „The
+  ListofSIDs (Security IDs) identify the trusted Controllers. VDAs attempt to register only with trusted Controllers.“
+  (am 2026-11-14 erneut gelesen). Der erste Satz der Bedeutung folgert daraus, dass mit einem veralteten Wert die
+  Registrierung scheitern kann und der Server dann keine neuen Sitzungen bekommt, und ist als Erläuterung des Katalogs
+  gekennzeichnet.
+- Citrix, „VDA Registration Failure with Event ID 1“ (CTX133769),
+  https://support.citrix.com/external/article/CTX133769/vda-registration-failure-with-event-id-1.html: Der Dienst
+  „Citrix Desktop Service“ registriert den VDA beim Delivery Controller. Dass ein Server ohne ihn keine neuen Sitzungen
+  bekommt, steht dort nicht; der Text von `vda.services` nennt es als Folgerung des Katalogs.
+- Citrix, „Set up profile containers“ (oben): Die Citrix Profilverwaltung lässt in der Voreinstellung mehrere Sitzungen
+  zugleich auf einen Profilcontainer zugreifen, eine davon schreibend („supports concurrent access to the profile
+  container by default“); mehrere Container eines Benutzers sind deshalb mit mehreren Sitzungen normal
+  (`profile.containersPerUser`).
+- Microsoft, „How to determine the appropriate page file size for 64-bit versions of Windows“ (Tabelle oben): Die Seite
+  empfiehlt eine eigene Datei für das Speicherabbild (dedicated dump file), wenn ein Speicherabbild gewünscht ist, aber
+  keine Auslagerungsdatei (`size.pagefilePresent`; das Zustandsbild liest diese Datei nicht). Dass eine vom System
+  verwaltete Auslagerungsdatei wächst, wenn der zugesagte Speicher 90 % der Zusagegrenze überschreitet, nennt die Seite
+  als Beispiel, bis zum Dreifachen des Arbeitsspeichers oder 4 GB und unter der Annahme, dass das Laufwerk Platz hat;
+  die Schwellen von `size.commitHeadroom` sind die des Katalogs. Die Grenze „Größe des Laufwerks geteilt durch 8“ steht
+  in der Tabelle für Windows 10 und Windows 11 und hat eine Ausnahme für das Speicherabbild (`operation.diskFree`; im
+  Text der Prüfung steht nur, dass Microsoft genug freien Platz voraussetzt). Dass eine leere Liste der
+  Auslagerungsdateien „keine Auslagerungsdatei“ heißt, ist die Lesart des Katalogs.
+- Microsoft, „Overview about power and performance tuning for the Windows Server“ (oben, „Ausnahmen“): „If the operating
+  system does not have control over the power management, changing the power plans in Windows will not affect system
+  power and performance“ (`operation.powerPlan`, im Text und im Vorschlag zum Vorgehen).
+- Microsoft, „Win32_QuickFixEngineering class“,
+  https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-quickfixengineering: Die Klasse führt nur Updates,
+  die über die Komponentenwartung (Component Based Servicing) installiert wurden (`operation.updateAge`).
+- Microsoft, „Win32_UserProfile class“,
+  https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ee886409(v=vs.85): Ein temporäres Profil
+  „will be deleted after the user logs off“; `sessions.tempProfiles` zählt deshalb die temporären Profile der laufenden
+  Sitzungen.
+- Microsoft, „Win32_TSSessionSetting class“,
+  https://learn.microsoft.com/en-us/windows/win32/termserv/win32-tssessionsetting: Die Zeitlimits des Listeners gelten
+  für die Benutzer nur, wenn der Listener sie vorgibt; sonst gelten die Einstellungen des Benutzerkontos
+  (`sessions.disconnectLimit`, `sessions.idleLimit`). Das Zustandsbild liest diese Angabe des Listeners noch nicht.
+- Microsoft, „Automatic maintenance“, https://learn.microsoft.com/en-us/windows/win32/taskschd/task-maintenence (Stand
+  der Seite 2020-09-19): Wartungsaufgaben laufen, „when the machine is idle and on AC power“
+  (`maintenance.tasksInWorkHours`). Die Seite spricht von Wartungsaufgaben, nicht von allem im Ordner \Microsoft\: Dass
+  die Prüfung diesen Ordner auslässt, ist eine Festlegung des Katalogs.
+- Microsoft, „Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint“,
+  https://learn.microsoft.com/en-us/defender-endpoint/defender-endpoint-exclusions-common-mistakes (Stand der Seite
+  2026-07-17): Unter den Ordnern, die nicht ausgenommen werden sollen, stehen „Program folders for installed apps“
+  (`security.wemExclusions`).
+- Microsoft, „Onboard non-persistent VDI devices to Microsoft Defender for Endpoint“,
+  https://learn.microsoft.com/en-us/defender-endpoint/configure-endpoints-vdi (Stand der Seite 2026-09-22): „Don't
+  onboard the primary image, internal template virtual machines (VMs), or replica VMs. Cloning an onboarded image can
+  duplicate its senseGuid“; der Weg der Seite ist „add the applicable scripts to the primary image, and configure the
+  scripts to run when each provisioned device starts“, auch über eine Gruppenrichtlinie der Domäne
+  (`security.passiveWithoutMde`, im Vorschlag zum Vorgehen: Das Master-Image wird nicht angebunden, die Skripte laufen
+  beim Start jedes Servers).
+- Microsoft, „Troubleshooting Security Intelligence Updates from Microsoft Update source“,
+  https://learn.microsoft.com/en-us/defender-endpoint/security-intelligence-update-tshoot (Stand der Seite 2025-09-29):
+  „Make sure that the services needed for Windows Update are started. These services include: Windows Update service,
+  Background Intelligence Transfer Service (BITS)“ (`maintenance.updateServiceEnabled` und `security.signatureAge`, im
+  Vorschlag zum Vorgehen und in der Bedeutung der ersten). Die Seite gilt für die Quelle Microsoft Update; für einen
+  WSUS-Server sagt sie es nicht, deshalb lässt der Text diesen Fall mit dem Sicherheitsteam klären. Die möglichen
+  Quellen der Signaturen (Microsoft Update, Windows Server Update Service, Freigabe im Netz) nennt „Manage the sources
+  for Microsoft Defender Antivirus protection updates“,
+  https://learn.microsoft.com/en-us/defender-endpoint/manage-protection-updates-microsoft-defender-antivirus (Stand der
+  Seite 2026-08-13).
+- Die Richtlinie „Override print driver execution compatibility setting reported by print driver“ mit dem Wert
+  PrintDriverIsolationOverrideCompat (`print.driversInSpooler`, im Vorschlag zum Vorgehen) heißt wie im Katalog des
+  geführten Berichts (`src/guidance.de.json`; Belegstellen und Bestätigung auf dem Zielsystem weiter oben in dieser
+  Datei). Von dort stammt auch die Bedingung, die Wirkung zuerst auf einem Testserver zu prüfen, weil bei der Isolierung
+  „keine“ der Hersteller des Treibers die Isolierung nicht zugesagt hat.
+- AKI, „Release Notes 6.2 deutsch“, https://www.aki-gmbh.com/download/45927/, Kapitel 4: Das Installationspaket heißt
+  „PrinTaurus SmartSpread Client x64.msi“ und trägt in Release 6.2 die Version 6.2.1; daraus entsteht der Wert
+  `print.mappingClientVersion`.
+
+### Hinweise zu gelesenen Werten
+
+Was die Quellenprüfung der Recherchen zu einzelnen Werten festhält, auf die sich Prüfungen stützen:
+
+- `size.memTotalMB` liest `Win32_ComputerSystem.TotalPhysicalMemory`, also den Arbeitsspeicher, den Windows nutzen kann.
+  Microsoft nennt für die Größe der eingebauten Module `Win32_PhysicalMemory.Capacity` genauer. Der Katalog bleibt beim
+  nutzbaren Arbeitsspeicher, weil die Prüfungen Sitzungen und zugesagten Speicher damit vergleichen
+  (`size.workerMemory`, `size.memoryPerSession`, `size.commitAboveRam`).
+- `maintenance.tasks`, `maintenance.taskCount`: Die Aufzählung der Aufgaben stützt sich außer auf „TaskService.Connect“
+  und „ITaskFolder::GetTasks“ auf „TASK_ENUM_FLAGS enumeration“
+  (https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_enum_flags: der Wert 1 schließt
+  verborgene Aufgaben ein), „RegisteredTask object“
+  (https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask: Path, Enabled, State, LastRunTime,
+  NextRunTime) und „TaskFolder.GetFolders method“
+  (https://learn.microsoft.com/en-us/windows/win32/taskschd/taskfolder-getfolders).
+- `sessions.userCount`: Die Aufzählung der Sitzungen braucht je Sitzung das Recht, ihre Angaben abzufragen; ohne dieses
+  Recht zählt das Zustandsbild zu wenig. `size.memoryPerSession` und `size.cpuPerSession` teilen durch alle
+  Benutzersitzungen, auch die getrennten.
+- `size.vmware` schließt aus dem Modell, das Windows meldet (beginnt mit „VMware“); `size.otherNetAdapters` und
+  `size.lsiControllers` aus Namen der Adapter und Treiber. Diese Namen stammen von der Installation, nicht aus einem
+  Dokument von Microsoft, und sind beim ersten Lauf zu bestätigen. Die Klasse `Win32_NetworkAdapter` nennt Microsoft
+  veraltet.
+- `operation.pendingRename` zählt Einträge des Werts `PendingFileRenameOperations`; die Zählung von Löschungen wird in
+  einer späteren Fassung berichtigt. `operation.lastUpdate` liest heute nur ein Datumsformat; Windows kann das
+  Installationsdatum nach Microsoft in weiteren Formen liefern, dann zeigt das Zustandsbild einen Strich.
+- `maintenance.scanInWorkHours` vergleicht die eingestellte Zeit des geplanten Scans mit der Arbeitszeit. Ob Defender zu
+  dieser Zeit einen Versatz hinzurechnet, wird noch an der Dokumentation von Microsoft geprüft; der Text von
+  `maintenance.defenderScanInWorkHours` spricht deshalb von der eingestellten Zeit und nennt keinen Beginn.
+- `maintenance.updateInWorkHours` ist ohne Richtlinie „nein“. Nach Microsoft lädt und installiert Windows ohne
+  Richtlinie automatisch; der Text von `maintenance.updateInstallInWorkHours` sagt deshalb, dass der Zeitpunkt der
+  Installation ohne Richtlinie nicht bekannt ist. Die Regel des Werts wird in einer späteren Fassung berichtigt.
+- `network.rssOff` zählt die VMXNET3-Adapter, deren Einstellung für Receive Side Scaling ausgeschaltet ist. VMware prüft
+  an zwei Stellen: am Netzwerkadapter und global in Windows („netsh int tcp show global“). Den globalen Schalter, den
+  BIS-F beim Versiegeln abschaltet, liest das Zustandsbild noch nicht; Befund, Bedeutung und Schritte von `network.rss`
+  sagen das. Das Lesen des globalen Zustands folgt in einer späteren Fassung.
+- `events.coverageGapDays` nimmt von allen Protokollen des Rückblicks den jüngsten „ältesten Eintrag“, auch von
+  Protokollen, die selten etwas aufzeichnen. Der Befund von `events.coverage` behauptet deshalb weder fehlende Tage noch
+  ein zu kleines Protokoll; der erste Schritt unterscheidet beides an der Größe des Protokolls. `events.sinceBootOnly`
+  ist heute auch dann „ja“, wenn der letzte Start vor dem Beginn des Rückblicks liegt; der Befund von `events.sinceBoot`
+  nennt die Folge deshalb nur für einen Start innerhalb des Rückblicks. Die Regel des Werts wird in einer späteren
+  Fassung berichtigt.
+- Befunde nennen, was gelesen wurde. Dafür führen fünf Prüfungen in `values` mehr Werte, als die Tabellen des Plans
+  nennen: `print.queueCount` (Zahl der Warteschlangen und der Sitzungen), `security.twoScanners` (erkannte
+  Schutzprodukte), `network.timeSource` (Art der Zeitsynchronisation), `maintenance.defenderScanInWorkHours` (Tag und
+  Zeit) und `maintenance.updateInstallInWorkHours` (Tag und Stunde). Die Regeln sind unverändert.
+- `print.mappingClientVersion`: Der Hersteller dokumentiert den Namen des Installationspakets, nicht den Eintrag unter
+  den installierten Programmen; ob der Eintrag so heißt, zeigt der erste Lauf.
+
+### Legenden der Kennwörter
+
+Windows und die Produkte liefern manche Werte als Kennwort (Running, Stopped, Auto, Manual, Disabled, Normal, Passive,
+NT5DS). Die Bezeichnung eines Werts im Teil `values` des Katalogs ist ein schlichter Name; was die Kennwörter heißen,
+steht je Wert im Teil `legends`. Ein Befund, der ein Kennwort oder einen Strich zeigt, erklärt beides selbst im Satz.
+Der Satz für „trifft nicht zu“ nennt nur die Bezeichnung.
 
 ### Faustregeln
 
-Eine Faustregel ist eine Prüfung, für die es weder eine Empfehlung des Herstellers noch eine aus der Praxis gibt.
-Ihre Schwellen sind Vorschläge des Katalogs. Wo ein Dokument des Herstellers den Zusammenhang beschreibt, nennt die
-Prüfung dieses Dokument als Beleg (Tabelle „Herstellerquellen“). Die übrigen tragen die Quelle
-„WorkerPerf: Erfahrungswert des Katalogs ohne Herstellerdokument“ (Stand 2026-11-13): `sessions.disconnectedOld`,
-`sessions.unloadedProfiles`, `sessions.tempProfiles`, `vda.services`, `profile.containersPerUser`,
-`profile.serviceStopped`.
+Eine Faustregel ist eine Prüfung, für die es weder eine Empfehlung des Herstellers noch eine aus der Praxis gibt. Ihre
+Schwellen sind Vorschläge des Katalogs, und jede Faustregel sagt in ihrem Text, dass die Prüfung oder ihre Schwelle vom
+Katalog stammt. Wo ein Dokument des Herstellers den Zusammenhang beschreibt, nennt die Prüfung dieses Dokument als Beleg
+(Tabelle „Herstellerquellen“). Die übrigen tragen die Quelle „WorkerPerf: Erfahrungswert des Katalogs ohne
+Herstellerdokument“ (Stand 2026-11-13): `sessions.disconnectedOld`, `sessions.unloadedProfiles`,
+`sessions.tempProfiles`, `vda.services`, `profile.containersPerUser`, `profile.serviceStopped`, `print.spoolerStopped`,
+`print.queueCount`, `network.smbOldDialect`, `events.crashes`, `events.storage`, `events.fileserver`, `events.coverage`,
+`events.logDisabled`, `maintenance.tasksInWorkHours`, `maintenance.defenderScanInWorkHours`.
+
+`maintenance.defenderFullScan` führt der Plan als Empfehlung des Herstellers. Die Seite von Microsoft, die er nennt,
+enthält am 14.11.2026 keinen Satz gegen einen vollständigen Scan; die Prüfung ist deshalb eine Faustregel.
 
 ### Schwellen
 
-Die Schwellen der fünf Bereiche mit ihrer Herkunft. Eine Schwelle lässt sich im Katalog ändern; der Bericht nennt im
+Die Schwellen der zehn Bereiche mit ihrer Herkunft. Eine Schwelle lässt sich im Katalog ändern; der Bericht nennt im
 Kopf jede Abweichung vom ausgelieferten Wert.
 
 | Schwelle | Wert | Verwendet von | Herkunft der Zahl |
@@ -1433,7 +1706,7 @@ Kopf jede Abweichung vom ausgelieferten Wert.
 | `sessionsPerCpu` | 8 Sitzungen | `size.cpuPerSession` | Vorschlag des Katalogs |
 | `workerCpuMin` | 8 Prozessoren | `size.workerCpu` | Carl Stalhood (Praxisquelle) |
 | `workerCpuMax` | 8 Prozessoren | `size.workerCpuMax` | Carl Stalhood, GO-EUC (Praxisquellen) |
-| `workerMemMinMB` | 24576 MB | `size.workerMemory` | Carl Stalhood (Praxisquelle) |
+| `workerMemMinMB` | 24000 MB | `size.workerMemory` | Carl Stalhood (Praxisquelle) nennt 24 GB (24576 MB). Der Katalog setzt die Schwelle knapp darunter: Gelesen wird der Arbeitsspeicher, den Windows meldet, und der kann bei einer virtuellen Maschine etwas kleiner sein, als ihr zugeteilt ist. Ein Server mit genau 24 GB wird so nicht gemeldet. Der Abstand ist eine Festlegung des Katalogs. |
 | `uptimeDays` | 30 Tage | `operation.uptime` | Vorschlag des Katalogs |
 | `updateAgeDays` | 60 Tage | `operation.updateAge` | Carl Stalhood (Praxisquelle) |
 | `diskFreeGB` | 10 GB | `operation.diskFree` | Vorschlag des Katalogs |
@@ -1443,7 +1716,70 @@ Kopf jede Abweichung vom ausgelieferten Wert.
 | `containerUsedPct` | 90 % | `profile.containerFull` | Citrix: Vorgabe für die automatische Vergrößerung |
 | `containerUsedHardPct` | 95 % | `profile.containerFull` | Vorschlag des Katalogs |
 | `containersPerUser` | 3 Container | `profile.containersPerUser` | Vorschlag des Katalogs |
+| `printDrivers` | 20 Treiber | `print.driverCount` | Vorschlag des Katalogs; Citrix nennt keine Zahl |
+| `queuesPerSession` | 10 Warteschlangen | `print.queueCount` | Vorschlag des Katalogs |
+| `signatureAgeDays` | 2 Tage | `security.signatureAge` | Vorschlag des Katalogs |
+| `eventDays` | 3 Tage | `events.crashes`, `events.fileserver` | Vorschlag des Katalogs |
 | `workStartHour`, `workEndHour` | 7 und 18 Uhr | Arbeitszeit (Bereich Wartung in der Arbeitszeit) | Vorschlag des Katalogs |
 
-Feste Zahlen in Regeln, die aus dem Dokument des Herstellers stammen und deshalb keine Schwellen sind: 12
-(Hauptversion der VMware Tools), 30 (Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden).
+Feste Zahlen in Regeln, die aus dem Dokument des Herstellers stammen und deshalb keine Schwellen sind: 12 (Hauptversion
+der VMware Tools), 30 (Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden), 602 (Version 6.2 des PrinTaurus
+SmartSpread Client: Hauptversion mal 100 plus Nebenversion).
+
+### Auf dem Zielsystem zu bestätigen
+
+Der Katalog nennt Stellen und Bezeichnungen der Oberflächen von Windows, Citrix und VMware. Wo die Recherche den Namen
+einer Einstellung nennt, steht er so da wie in der Quelle (englisch). Alle anderen Stellen sind allgemein umschrieben,
+weil ihre deutschen Anzeigenamen hier nicht geprüft werden konnten. Die folgenden Angaben sind beim Test auf dem
+Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog angepasst.
+
+- **Energiesparplan** (`operation.powerPlan`): die Namen der Pläne „Höchstleistung“, „Ausbalanciert“ und
+  „Energiesparmodus“ und die Stelle „Energieoptionen“. Das Zustandsbild liest den Plan als Kennwort (highPerformance,
+  balanced, powerSaver, other); der Teil `legends` erklärt die Kennwörter.
+- **Zustand und Starttyp von Diensten**: Das Zustandsbild zeigt den Zustand eines Dienstes so, wie Windows ihn über die
+  Schnittstelle liefert (Running, Stopped); der Teil `legends` des Katalogs erklärt Running als „läuft“ und Stopped als
+  „beendet“. Zu bestätigen ist, welche Wörter die Dienste-Konsole eines deutschen Windows dafür zeigt (die Liste weiter
+  oben nennt „Wird ausgeführt“), und der Starttyp „Automatisch“. Den Starttyp liefert Windows als Kennwort (Auto,
+  Manual, Disabled, bei Treibern auch Boot und System); der Teil `legends` erklärt sie als „automatisch“, „manuell“ und
+  „deaktiviert“.
+- **Dienste des WEM-Agenten** (`vda.wemServices`): Der Katalog nennt den Dienst von Windows mit seinem Dienstnamen SENS
+  und in Klammern englisch wie die Seite von Citrix („System Event Notification Service“). Zu bestätigen ist, unter
+  welchem Anzeigenamen ein deutsches Windows diesen Dienst zeigt.
+- **Zeitlimits der Sitzungen** (`sessions.disconnectLimit`, `sessions.idleLimit`): Der Katalog nennt die zwei
+  Einstellungen der Gruppenrichtlinie englisch, wie Carl Stalhood sie nennt: „Set time limit for disconnected sessions“
+  und „Set a time limit for active but idle Terminal Services sessions“. Zu bestätigen sind ihre deutschen Anzeigenamen
+  und ihr Ort unter Computerkonfiguration > Administrative Vorlagen, ebenso die Namen der Sitzungs-Timer in den
+  Citrix-Richtlinien (im Katalog: „Timer für getrennte Sitzungen“, „Timer für Sitzungen im Leerlauf“).
+- **Citrix Studio** (`operation.uptime`, `vda.services`, `profile.serviceStopped`): die Stelle und die Bezeichnung des
+  Zeitplans für Neustarts einer Bereitstellungsgruppe und der Wartungsmodus eines Servers; die Wörter „Maschinenkatalog“
+  und „Bereitstellungsgruppe“.
+- **Citrix Profilverwaltung** (`sessions.unloadedProfiles`): Der Katalog nennt die Einstellung englisch wie die Quelle
+  („Delete locally cached profiles on logoff“). Zu bestätigen ist ihr deutscher Anzeigename.
+- **Task-Manager** (`size.commitHeadroom`, `sessions.disconnectedOld`): die Registerkarten „Benutzer“ und „Details“ und
+  der Status „Getrennt“. Den zugesagten Speicher zeigt der Task-Manager unter einer eigenen Bezeichnung (vermutet wird
+  „Zugesichert“); der Katalog nennt sie nicht.
+- **Auslagerungsdatei** (`size.pagefilePresent`): die Stelle „Systemeigenschaften, Einstellungen zum virtuellen
+  Arbeitsspeicher“.
+- **VMware Tools** (`size.balloonDriver`): die Bezeichnung der Komponente zur Speichersteuerung im Installationsprogramm
+  (im Katalog: „Memory Control“).
+- **Arbeitsspeicher eines Servers mit 24 GB** (`size.workerMemory`): wie viel Arbeitsspeicher Windows für eine virtuelle
+  Maschine mit genau 24 GB meldet. Der Katalog nimmt an, dass der Wert knapp unter 24576 MB liegen kann, und setzt die
+  Schwelle deshalb auf 24000 MB.
+- **Outlook** (Bereich Anwendungen, „nicht abgedeckt“): Der Katalog nennt den Modus englisch wie die Quelle („Cached
+  Exchange Mode“).
+- **Drucken** (`print.driversInSpooler`, `print.isolationOff`, `print.spoolerStopped`): die Stelle „Druckverwaltung“,
+  die Bezeichnung der Isolierung je Treiber und der Anzeigename des Dienstes „Druckwarteschlange“. Die Richtlinie nennt
+  der Katalog deutsch, wie Thomas Kötzing sie nennt: „Druckertreiber in isolierten Prozessen ausführen“. Zu bestätigen
+  ist auch, wie die Treiberliste im Bericht (Expertenansicht, Reiter „Drucken“) Isolierung und Typ bezeichnet. Die Namen
+  der Stellen im Bericht folgen dem Katalog des geführten Berichts.
+- **PrinTaurus** (`print.mappingClientSupported`): der Name des Eintrags des Clients unter den installierten Programmen
+  und die Stelle „Landschaftsinformationen“ der PrinTaurus GUI (so nennt sie der Hersteller).
+- **Defender Antivirus** (Bereiche Sicherheitsprodukte und Wartung in der Arbeitszeit): die Namen der Einstellungen in
+  der Richtlinie (Art und Zeit des geplanten Scans, zufälliger Startzeitpunkt, Netzwerkschutz, Ausschlüsse); der Katalog
+  umschreibt sie. Die Betriebsart liefert Defender als Kennwort (Normal, Passive).
+- **Ereignisprotokolle** (`events.coverage`, `events.retainFull`, `events.logDisabled`, `print.operationalLogOff`): die
+  Stelle „Eigenschaften des Protokolls“ in der Ereignisanzeige und die Bezeichnungen für Größe und Überschreiben; die
+  Felder der Rohwerte tragen die englischen Namen der Schnittstelle (Mode, Full, Enabled, Oldest).
+- **Netz** (`network.rss`, `network.timeSource`, `network.dnsCount`): die Bezeichnung der Eigenschaft für Receive Side
+  Scaling in den erweiterten Eigenschaften des Adapters und die Namen der Einstellungen des Windows-Zeitdienstes in der
+  Gruppenrichtlinie.

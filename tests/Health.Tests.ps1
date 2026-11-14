@@ -291,6 +291,48 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $ch = @(Get-WorkerPerfHealthChangedThresholds $c); $ch.Count | Should -Be 1
         $ch[0].id | Should -Be 'diskFreeGB'; $ch[0].value | Should -Be 25; $ch[0].default | Should -Be 10; $ch[0].unit | Should -Be 'GB'; $ch[0].label | Should -Be 'Freier Platz'
     }
+    It 'nimmt den Teil units mit der Einzahl einer Einheit an und liefert ihn auch ohne Angabe' {
+        # units ist freiwillig: Mehrzahl -> Einzahl, nur fuer Einheiten der Werte
+        $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.units = [ordered]@{ Tage = 'Tag'; Stunden = 'Stunde'; Minuten = 'Minute' } })
+        $c.units.Tage | Should -Be 'Tag'; $c.units.Stunden | Should -Be 'Stunde'; @($c.units.PSObject.Properties.Name) | Should -Be @('Tage', 'Stunden', 'Minuten')
+        $none = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
+        ($null -ne $none.units) | Should -BeTrue; @($none.units.PSObject.Properties).Count | Should -Be 0
+        $WorkerPerfHealthOptionalParts | Should -Be @('units', 'legends'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'units'
+    }
+    It 'lehnt einen fehlerhaften Teil units ab' -TestCases @(
+        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte: MB, s, Tage, %, GB, Stunden, Minuten)." }
+        @{ Change = { $c.units = @{ tage = 'Tag' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'tage'*" }                            # Namen gelten nur in genau dieser Schreibweise
+        @{ Change = { $c.units = @{ Prozessoren = 'Prozessor' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'Prozessoren'*" }        # die Einheit einer Schwelle, nicht eines Werts
+        @{ Change = { $c.units = @{ Tage = '' } }; Msg = "Katalog '*': Teil 'units' nennt fuer die Einheit 'Tage' keinen Text." }
+        @{ Change = { $c.units = @{ Tage = 1 } }; Msg = "*Teil 'units' nennt fuer die Einheit 'Tage' keinen Text*" }
+        @{ Change = { $c.units = @('Tag') }; Msg = "Katalog '*': Teil 'units' ist kein Objekt." }
+        @{ Change = { $c.units = 'Tag' }; Msg = "*Teil 'units' ist kein Objekt*" }
+        @{ Change = { $c.unit = @{ Tage = 'Tag' } }; Msg = "*Teil 'unit' ist unbekannt*" }
+    ) { { Read-WorkerPerfHealthCatalogue (New-HealthCatalogue $Change) } | Should -Throw $Msg }
+    It 'nimmt den Teil legends mit der Legende eines Werts an und liefert ihn auch ohne Angabe' {            # Entscheidung ZB-R49
+        # legends ist freiwillig: Kennung eines Werts oder Fakts -> kurze Legende seiner Kennwoerter; die Bezeichnung in values bleibt ein schlichter Name
+        $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.legends = [ordered]@{ 'print.spooler' = 'Running = läuft, Stopped = beendet'; 'print.queuesPerSession' = 'je Sitzung' } })
+        $c.legends.'print.spooler' | Should -Be 'Running = läuft, Stopped = beendet'
+        @($c.legends.PSObject.Properties.Name) | Should -Be @('print.spooler', 'print.queuesPerSession')        # ein gelesener Wert und ein abgeleiteter Fakt
+        $none = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
+        ($null -ne $none.legends) | Should -BeTrue; @($none.legends.PSObject.Properties).Count | Should -Be 0
+        $WorkerPerfHealthOptionalParts | Should -Be @('units', 'legends'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'legends'
+        # der Fakt einer Anwendung ist bekannt, wenn die Anwendungsliste ihn kennt
+        (Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.legends = @{ 'apps.simapp.cacheMode' = '2 = aus' } }) $TestApps).legends.'apps.simapp.cacheMode' | Should -Be '2 = aus'
+    }
+    It 'lehnt einen fehlerhaften Teil legends ab' -TestCases @(
+        @{ Change = { $c.legends = @{ 'print.nichtda' = 'x' } }; Msg = "Katalog '*': Teil 'legends' nennt die unbekannte Kennung 'print.nichtda' (erlaubt sind die Kennungen der Werte und Fakten)." }
+        @{ Change = { $c.legends = @{ 'Print.Spooler' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'Print.Spooler'*" }               # Kennungen gelten nur in genau dieser Schreibweise
+        @{ Change = { $c.legends = @{ 'apps.simapp.cacheMode' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'apps.simapp.cacheMode'*" }  # ohne Anwendungsliste kennt der Katalog den Fakt nicht
+        @{ Change = { $c.legends = @{ 'diskFreeGB' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'diskFreeGB'*" }                      # eine Schwelle ist kein Wert
+        @{ Change = { $c.legends = @{ 'print.spooler' = '' } }; Msg = "Katalog '*': Teil 'legends' nennt fuer 'print.spooler' keinen Text." }
+        @{ Change = { $c.legends = @{ 'print.spooler' = '  ' } }; Msg = "*Teil 'legends' nennt fuer 'print.spooler' keinen Text*" }
+        @{ Change = { $c.legends = @{ 'print.spooler' = 1 } }; Msg = "*Teil 'legends' nennt fuer 'print.spooler' keinen Text*" }
+        @{ Change = { $c.legends = @{ 'print.spooler' = @{ text = 'x' } } }; Msg = "*Teil 'legends' nennt fuer 'print.spooler' keinen Text*" }          # kein Feld unter einer Legende
+        @{ Change = { $c.legends = @('x') }; Msg = "Katalog '*': Teil 'legends' ist kein Objekt." }
+        @{ Change = { $c.legends = 'x' }; Msg = "*Teil 'legends' ist kein Objekt*" }
+        @{ Change = { $c.legend = @{ 'print.spooler' = 'x' } }; Msg = "*Teil 'legend' ist unbekannt*" }
+    ) { { Read-WorkerPerfHealthCatalogue (New-HealthCatalogue $Change) } | Should -Throw $Msg }
 }
 Describe 'Fakten des Zustandsbilds' {
     It 'bildet die abgeleiteten Fakten aus den gelesenen Werten' {
@@ -797,8 +839,55 @@ Describe 'Bewertung: Regeln im Einzelnen' {
             }
             finally { [Threading.Thread]::CurrentThread.CurrentCulture = $old }
         }
-        $out[0] | Should -Be 'Nur 8,5 GB frei (Schwelle 10 GB).|Wert operation.minFreeGB: 8,5 GB|13.01.2026 08:00|1235 MB'
+        # 1234,5 bleibt 1234,5: eine Zahl steht so genau da, wie sie verglichen wird (frueher ab 10 auf ganze Zahlen gerundet: 1235)
+        $out[0] | Should -Be 'Nur 8,5 GB frei (Schwelle 10 GB).|Wert operation.minFreeGB: 8,5 GB|13.01.2026 08:00|1234,5 MB'
         $out[1] | Should -Be $out[0]
+    }
+    It 'zeigt eine Zahl so genau, wie die Regel sie vergleicht' {
+        # ein Fakt ist ganz oder auf eine Nachkommastelle gerundet, eine Schwelle steht, wie der Katalog sie schreibt: nichts wird weiter gerundet
+        foreach ($case in @(@(30.4, '30,4'), @(30, '30'), @(100.4, '100,4'), @(100, '100'), @(24.3, '24,3'), @(9.96, '9,96'), @(1234.5, '1234,5'), @(24576, '24576'), @(0.3, '0,3'),
+                @(0.125, '0,125'), @(8, '8'), @(0, '0'), @(-0.0000001, '0'), @(2.5000001, '2,5'), @(-1.5, '-1,5'))) {
+            Format-WorkerPerfHealthNumber $case[0] | Should -BeExactly $case[1] -Because "$($case[0])"
+        }
+        # 30,4 Tage gegen die Schwelle 30: der Befund nennt 30,4 und widerspricht seiner Regel nicht; genau 30 ist nicht mehr als 30
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+            $c.thresholds.uptimeDays = @{ value = 30; default = 30; unit = 'Tage'; label = 'Laufzeit' }; $c.thresholds.halfDays = @{ value = 0.5; default = 0.5; unit = 'Tage'; label = 'halber Tag' }
+            $c.checks[0].id = 'operation.uptime'; $c.checks[0].values = @('operation.uptimeDays', 'size.commitOfRamPct')
+            $c.checks[0].rules = @{ check = @(@{ value = 'operation.uptimeDays'; op = 'gt'; than = '@uptimeDays' }); act = @(@{ value = 'size.commitOfRamPct'; op = 'gt'; than = 100; hard = $true }) }
+            $c.checks[0].findings = @{ ok = 'Laufzeit in Tagen: {operation.uptimeDays} (Schwelle {@uptimeDays}, halbe Schwelle {@halfDays}).'; check = 'Laufzeit in Tagen: {operation.uptimeDays}, mehr als {@uptimeDays}.'
+                act = 'Zugesagt sind {size.commitOfRamPct} % des Arbeitsspeichers, mehr als 100 %.'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') })
+        $ram = @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 5000 }
+        $x = Get-Check ($ram + @{ 'operation.lastBoot' = $ReadMs - [long](30.4 * 86400000) }) @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Laufzeit in Tagen: 30,4, mehr als 30.'; $x.value | Should -Match 'Wert operation\.uptimeDays: 30,4 Tage'
+        $x = Get-Check ($ram + @{ 'operation.lastBoot' = $ReadMs - 30 * 86400000L }) @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Laufzeit in Tagen: 30 (Schwelle 30, halbe Schwelle 0,5).'
+        # 100,4 % gegen 100: der Befund nennt 100,4; genau 100 % ist nicht mehr als 100 %
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10040; 'operation.lastBoot' = $ReadMs - 86400000L } @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'act'; $x.finding | Should -BeExactly 'Zugesagt sind 100,4 % des Arbeitsspeichers, mehr als 100 %.'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10000; 'operation.lastBoot' = $ReadMs - 86400000L } @{} 'operation.uptime' $cat
+        $x.grade | Should -Be 'ok'; $x.value | Should -Match 'Wert size\.commitOfRamPct: 100 %'
+    }
+    It 'nennt die Einheit eines Werts in der Einzahl, wenn er genau 1 ist' {
+        # ($toUptime, nicht $change: so heisst der Parameter von New-HealthCatalogue)
+        $toUptime = { $c.checks[0].id = 'operation.uptime'; $c.checks[0].values = @('operation.uptimeDays', 'sessions.disconnectedOldestHours', 'sessions.disconnectLimitMin', 'operation.minFreeGB')
+            $c.checks[0].rules = @{ check = @(@{ value = 'operation.uptimeDays'; op = 'gt'; than = 30 }) }
+            $c.checks[0].findings = @{ ok = 'Laufzeit in Tagen: {operation.uptimeDays}.'; check = 'lange'; unknown = '{reason}' }
+            $c.thresholds.Remove('diskFreeGB'); $c.thresholds.Remove('diskFreeHardGB') }
+        $with = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { . $toUptime; $c.units = [ordered]@{ Tage = 'Tag'; Stunden = 'Stunde'; Minuten = 'Minute' } })
+        $one = (Get-Vol 1) + @{ 'operation.lastBoot' = $ReadMs - 86400000L; 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 1; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true })
+            'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 3600000L }) }
+        $x = Get-Check $one @{} 'operation.uptime' $with
+        $x.value | Should -BeExactly 'Wert operation.uptimeDays: 1 Tag; Wert sessions.disconnectedOldestHours: 1 Stunde; Wert sessions.disconnectLimitMin: 1 Minute; Wert operation.minFreeGB: 1 GB'
+        $x.finding | Should -BeExactly 'Laufzeit in Tagen: 1.'                                                            # im Befundsatz steht die Zahl ohne Einheit
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $one) -Catalogue $with -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        ($r.raw | Where-Object id -eq 'operation.uptimeDays').text | Should -BeExactly '1 Tag'; ($r.raw | Where-Object id -eq 'sessions.disconnectLimitMin').text | Should -BeExactly '1 Minute'
+        # jede andere Zahl bleibt in der Mehrzahl, auch 1,5, 0 und 2
+        $more = (Get-Vol 1) + @{ 'operation.lastBoot' = $ReadMs - [long](1.5 * 86400000); 'sessions.list' = @(); 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 2; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true }) }
+        (Get-Check $more @{} 'operation.uptime' $with).value | Should -BeExactly 'Wert operation.uptimeDays: 1,5 Tage; Wert sessions.disconnectedOldestHours: 0 Stunden; Wert sessions.disconnectLimitMin: 2 Minuten; Wert operation.minFreeGB: 1 GB'
+        # ohne den Teil units bleibt die Einheit, wie die Wertetabelle sie nennt
+        $without = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue $toUptime)
+        (Get-Check $one @{} 'operation.uptime' $without).value | Should -BeLike 'Wert operation.uptimeDays: 1 Tage; *'
     }
     It 'setzt eine Zeit und einen Ja/Nein-Wert in den Befund ein' {
         $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
@@ -874,6 +963,8 @@ Describe 'Katalog in src' {
         $script:Real = Read-WorkerPerfHealthCatalogue $CatFile $Apps
         # nur der Abschnitt des Zustandsbilds im Nachweis: bis zur naechsten Ueberschrift derselben Ebene
         $script:Proof = [regex]::Match((Get-Content (Join-Path $PSScriptRoot '../docs/guidance/quellen.md') -Raw), '(?ms)^## Zustandsbild\s*$(.*?)(?=^## |\z)').Groups[1].Value
+        # der Nachweis ist bei 120 Zeichen umbrochen: fuer woertliche Titel, Adressen und Zitate derselbe Text mit einem Leerzeichen statt jedes Umbruchs
+        $script:ProofFlat = $Proof -replace '\s+', ' '
         # die Pruefungen des Plans je Bereich; Task 14b ergaenzt print bis maintenance, Task 14c apps.
         # size.workerCpuMax kommt aus den weiteren Praxisquellen (PXH-01, Entscheidungen ZB-R3, ZB-R8)
         $script:PlanChecks = [ordered]@{
@@ -882,18 +973,27 @@ Describe 'Katalog in src' {
             operation = @('operation.pendingRestart', 'operation.uptime', 'operation.updateAge', 'operation.powerPlan', 'operation.diskFree')
             sessions = @('sessions.disconnectLimit', 'sessions.idleLimit', 'sessions.disconnectedOld', 'sessions.unloadedProfiles', 'sessions.tempProfiles')
             vda = @('vda.services', 'vda.controllerCount', 'vda.controllerNotFqdn', 'vda.listOfSids', 'vda.wemServices', 'vda.wemCache', 'vda.wemGpTimeout')
-            profile = @('profile.containerFull', 'profile.containersPerUser', 'profile.serviceStopped') }
-        # die Art jeder Pruefung des ganzen Plans; was in keiner der zwei Listen steht, ist eine Faustregel
+            profile = @('profile.containerFull', 'profile.containersPerUser', 'profile.serviceStopped')
+            # print.operationalLogOff kommt aus den weiteren Praxisquellen (PXH-02) und steht vor der Pruefung des Zuordnungswerkzeugs
+            print = @('print.driversInSpooler', 'print.isolationOff', 'print.driverCount', 'print.kernelModeV2', 'print.spoolerStopped', 'print.queueCount', 'print.operationalLogOff', 'print.mappingClientSupported')
+            security = @('security.twoScanners', 'security.passiveWithoutMde', 'security.signatureAge', 'security.citrixExclusions', 'security.wemExclusions', 'security.networkProtection')
+            network = @('network.smb1', 'network.smbOldDialect', 'network.dnsCount', 'network.dnsPublic', 'network.timeSource', 'network.rss')
+            events = @('events.crashes', 'events.storage', 'events.fileserver', 'events.sinceBoot', 'events.coverage', 'events.retainFull', 'events.logDisabled')
+            maintenance = @('maintenance.tasksInWorkHours', 'maintenance.sessionTriggerTasks', 'maintenance.defenderScanInWorkHours', 'maintenance.defenderFullScan', 'maintenance.defenderRandomize',
+                'maintenance.updateInstallInWorkHours', 'maintenance.updateServiceEnabled') }
+        # die Art jeder Pruefung des ganzen Plans; was in keiner der zwei Listen steht, ist eine Faustregel.
+        # maintenance.defenderFullScan ist seit Task 14b eine Faustregel: die Seite von Microsoft, die der Plan nennt, spricht sich nicht gegen einen vollstaendigen Scan aus.
+        # security.wemExclusions stuetzt sich seit der Korrekturrunde 1 von Task 14b auf den Artikel von Citrix (Entscheidung ZB-R48)
         $script:Vendor = @('size.pagefilePresent', 'size.vmTools', 'size.balloonDriver', 'size.netAdapterType', 'size.storageController',
             'vda.controllerCount', 'vda.controllerNotFqdn', 'vda.listOfSids', 'vda.wemServices', 'vda.wemCache', 'vda.wemGpTimeout',
             'print.driversInSpooler', 'print.kernelModeV2', 'print.mappingClientSupported',
-            'security.twoScanners', 'security.passiveWithoutMde', 'security.citrixExclusions', 'network.smb1', 'network.dnsCount', 'network.rss',
-            'maintenance.sessionTriggerTasks', 'maintenance.defenderFullScan', 'maintenance.defenderRandomize',
+            'security.twoScanners', 'security.passiveWithoutMde', 'security.citrixExclusions', 'security.wemExclusions', 'network.smb1', 'network.dnsCount', 'network.rss',
+            'maintenance.sessionTriggerTasks', 'maintenance.defenderRandomize',
             'apps.edgeAutoUpdate', 'apps.edgeUpdateCheckOff', 'apps.edgeWebView2Update', 'apps.edgeBackgroundMode', 'apps.edgeSleepingTabs', 'apps.edgeAutoDiscard', 'apps.edgeRoamingProfile',
             'apps.teamsAutoUpdate', 'apps.teamsFallback', 'apps.teamsWebView2')
         # mit den drei Pruefungen aus den weiteren Praxisquellen: size.workerCpuMax (Task 14a), print.operationalLogOff (14b), apps.teamsClassic (14c)
         $script:Practice = @('size.commitAboveRam', 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory', 'operation.uptime', 'operation.updateAge', 'operation.powerPlan', 'sessions.disconnectLimit', 'sessions.idleLimit',
-            'print.operationalLogOff', 'security.wemExclusions', 'security.networkProtection', 'events.sinceBoot', 'maintenance.updateServiceEnabled', 'apps.teamsClassic')
+            'print.operationalLogOff', 'security.networkProtection', 'events.sinceBoot', 'maintenance.updateServiceEnabled', 'apps.teamsClassic')
         $script:K3 = @('events.crashes', 'events.storage', 'events.fileserver', 'events.coverage', 'events.sinceBoot', 'sessions.unloadedProfiles', 'sessions.tempProfiles')
         # zwoelf Praxisquellen (Entscheidung ZB-R7): der Blog von Kasper Johansen ist nicht mehr erreichbar und wird nicht verwendet
         $script:PracticeSources = @('BIS-F', 'Carl Stalhood', 'GO-EUC', 'James Kindon', 'James Rankin', 'Thomas Kötzing', 'Manuel Winkel', 'Aaron Parker', 'Trentent Tye',
@@ -901,20 +1001,21 @@ Describe 'Katalog in src' {
         # die Pruefungen dieser Task mit einer zweiten Quelle aus den weiteren Praxisquellen (Entscheidung ZB-R31) und der Name, der in ihrem Text steht
         $script:SecondSources = [ordered]@{ 'size.pagefilePresent' = 'GO-EUC'; 'operation.pendingRestart' = 'Guy Leech'; 'operation.diskFree' = 'Thomas Kötzing'
             'sessions.disconnectLimit' = 'James Rankin'; 'sessions.idleLimit' = 'James Rankin'; 'sessions.tempProfiles' = 'Thomas Kötzing'; 'vda.wemCache' = 'Manuel Winkel'
-            'profile.containerFull' = 'Aaron Parker'; 'profile.containersPerUser' = 'Aaron Parker' }
+            'profile.containerFull' = 'Aaron Parker'; 'profile.containersPerUser' = 'Aaron Parker'
+            'print.driversInSpooler' = 'Thomas Kötzing'; 'print.isolationOff' = 'Thomas Kötzing'; 'print.driverCount' = 'Thomas Kötzing'; 'security.signatureAge' = 'John Billekens'
+            'security.citrixExclusions' = 'James Rankin'; 'security.wemExclusions' = 'Carl Stalhood'; 'maintenance.sessionTriggerTasks' = 'James Rankin' }
     }
     It 'enthaelt genau die Pruefungen des Plans mit Bereich, Art und Schwellen' {
         @($Real.checks.id) | Should -Be @($PlanChecks.Values | ForEach-Object { $_ })
-        @($Real.checks).Count | Should -Be 32; $Vendor.Count | Should -Be 33; $Practice.Count | Should -Be 15       # Task 14b: 66 Pruefungen, Task 14c: 80
+        @($Real.checks).Count | Should -Be 66; $Vendor.Count | Should -Be 33; $Practice.Count | Should -Be 14       # Task 14c: 80 Pruefungen
         foreach ($c in $Real.checks) {
             $c.id | Should -BeLike ($c.area + '.*')
             $c.kind | Should -Be $(if ($Vendor -contains $c.id) { 'vendor' } elseif ($Practice -contains $c.id) { 'practice' } else { 'rule' }) -Because $c.id
         }
-        $want = [ordered]@{ commitPeakPct = 90; commitNowPct = 98; memPerSessionMB = 1024; sessionsPerCpu = 8; workerCpuMin = 8; workerCpuMax = 8; workerMemMinMB = 24576; uptimeDays = 30; updateAgeDays = 60; diskFreeGB = 10; diskFreeHardGB = 2
+        $want = [ordered]@{ commitPeakPct = 90; commitNowPct = 98; memPerSessionMB = 1024; sessionsPerCpu = 8; workerCpuMin = 8; workerCpuMax = 8; workerMemMinMB = 24000; uptimeDays = 30; updateAgeDays = 60; diskFreeGB = 10; diskFreeHardGB = 2
             disconnectedHours = 24; unloadedProfiles = 20; containerUsedPct = 90; containerUsedHardPct = 95; containersPerUser = 3; printDrivers = 20; queuesPerSession = 10; signatureAgeDays = 2; eventDays = 3; workStartHour = 7; workEndHour = 18 }
         $want.Count | Should -Be 22
-        # Der Lader lehnt eine Schwelle ab, die keine Regel und kein Befundsatz nutzt: diese vier kommen mit ihren Pruefungen in Task 14b (die Zeile entfaellt dort)
-        foreach ($k in 'printDrivers', 'queuesPerSession', 'signatureAgeDays', 'eventDays') { $want.Remove($k) }
+        # workerMemMinMB: Carl Stalhood nennt 24 GB (24576 MB); die Schwelle liegt knapp darunter, damit ein Server mit genau 24 GB, den Windows etwas kleiner meldet, nicht gemeldet wird
         @($Real.thresholds.PSObject.Properties.Name) | Should -Be @($want.Keys)
         foreach ($k in $want.Keys) { $Real.thresholds.$k.value | Should -Be $want[$k] -Because $k; $Real.thresholds.$k.default | Should -Be $want[$k] -Because $k }
         @(Get-WorkerPerfHealthChangedThresholds $Real).Count | Should -Be 0
@@ -930,6 +1031,90 @@ Describe 'Katalog in src' {
         (Get-Check @{ 'operation.powerPlan' = 'highPerformance' } @{} 'operation.powerPlan' $Real).grade | Should -Be 'ok'
         $Proof | Should -Match 'Ausnahmen: Praxisquelle vor Hersteller'
     }
+    It 'nennt bei RSS und beim Ereignisbild, was die Praxisquelle sagt, und beim Zuordnungswerkzeug dessen Hersteller' {
+        $rss = $Real.checks | Where-Object id -eq 'network.rss'; $rss.kind | Should -Be 'vendor'; $rss.meaning | Should -Match 'BIS-F'      # der Hersteller gilt, der Widerspruch ist genannt
+        @($Real.precedence.check) | Should -Not -Contain 'network.rss'
+        $e = $Real.checks | Where-Object id -eq 'events.sinceBoot'; @($e.rules.act).Count | Should -Be 0                                        # nie handeln
+        $e.source.vendor | Should -Be 'BIS-F'; $e.source.url | Should -Match 'BISF\.psm1'; $e.meaning | Should -Match 'MCSIO'                  # die Voraussetzung der Quelle steht dabei
+        $e.meaning | Should -Match 'Folgerung des Katalogs'
+        foreach ($id in $K3) { @($Real.checks.id) | Should -Contain $id }
+        $m = $Real.checks | Where-Object id -eq 'print.mappingClientSupported'; $m.kind | Should -Be 'vendor'; $m.source.vendor | Should -Be 'AKI'; $m.source.url | Should -Match '^https://www\.aki-gmbh\.com/'
+        (Get-Check @{ 'print.mappingClientVersion' = '6.1.4' } @{} 'print.mappingClientSupported' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'print.mappingClientVersion' = '6.4.1' } @{} 'print.mappingClientSupported' $Real).grade | Should -Be 'ok'
+        (Get-Check @{ 'print.mappingClientVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } @{} 'print.mappingClientSupported' $Real).grade | Should -Be 'na'      # Review Focus 3
+        ($Real.areas | Where-Object id -eq 'print').notCovered | Should -Match 'PrinTaurus'
+        ($Real.checks | Where-Object id -eq 'maintenance.updateServiceEnabled').source.vendor | Should -Be 'BIS-F'
+        # der Name des Zuordnungswerkzeugs darf im Katalog stehen, sonst nichts aus der Umgebung des Auftraggebers: die Quelle ist die oeffentliche Seite des Herstellers
+        $Proof | Should -Match '\| AKI \| Release Notes PrinTaurus 6\.4 \| https://www\.aki-gmbh\.com/download/47826/ \|'
+    }
+    It 'schreibt die Pruefungen aus den weiteren Praxisquellen und die Vorbehalte der Recherche in den Text' {                # Zusaetze d, g, j von Task 14b
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        # PXH-02: das Betriebsprotokoll des Druckdienstes; nie handeln, eine Voraussetzung der Fehlersuche, kein Leistungsmangel
+        $log = $check['print.operationalLogOff']; $log.kind | Should -Be 'practice'; $log.source.vendor | Should -Be 'Trentent Tye'; $log.source.url | Should -Match '^https://trentent\.github\.io/'
+        @($log.rules.act).Count | Should -Be 0; $log.meaning | Should -Match 'macht nichts schneller'; $log.meaning | Should -Match 'seit dem letzten Start'
+        (Get-Check @{ 'print.operationalLog' = $false } @{} 'print.operationalLogOff' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'print.operationalLog' = $true } @{} 'print.operationalLogOff' $Real).grade | Should -Be 'ok'
+        (Get-Check @{} @{} 'print.operationalLogOff' $Real).grade | Should -Be 'ok'                                              # ohne das Protokoll: nicht gemeldet
+        # Vorbehalte, die die Recherche zu einer Pruefung festhaelt
+        $check['security.citrixExclusions'].meaning | Should -Match 'Sicherheitsteam'; $check['security.networkProtection'].meaning | Should -Match 'entscheidet das Sicherheitsteam'
+        $check['events.crashes'].meaning | Should -Match 'Häufung, keine Ursache'; $check['network.dnsPublic'].meaning | Should -Match 'kann gewollt sein'
+        $check['maintenance.updateServiceEnabled'].meaning | Should -Match 'nennt dafür keinen Zweck'; $check['maintenance.updateServiceEnabled'].meaning | Should -Match 'Begründung ist die des Katalogs'
+        $mc = $check['print.mappingClientSupported']; $mc.meaning | Should -Match 'Master-Image'; $mc.meaning | Should -Match 'Release-Version'; $mc.meaning | Should -Match 'IPP'
+        $check['security.wemExclusions'].meaning | Should -Match 'Microsoft rät'                                               # zwei Hersteller, zwei Sichten
+        # Zusatz j: was die Quellenpruefung fuer die Wartung verlangt
+        $up = $check['maintenance.updateInstallInWorkHours']; $up.meaning | Should -Match '03:00'; $up.meaning | Should -Match 'automatische Wartung'
+        "$($up.meaning) $($up.findings.ok)" | Should -Match 'Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt'
+        $check['maintenance.defenderScanInWorkHours'].findings.check | Should -Match '^Die eingestellte Zeit des geplanten Scans'
+        $full = $check['maintenance.defenderFullScan']; $full.kind | Should -Be 'rule'; $full.meaning | Should -Match 'schnell oder vollständig'; $full.meaning | Should -Match 'keine Empfehlung von Microsoft'
+        foreach ($id in 'print.driverCount', 'print.kernelModeV2') { $check[$id].meaning | Should -Match 'nicht jede dieser Empfehlungen für jede Umgebung gilt' -Because $id }
+        $Real.values.'maintenance.quickScanTime' | Should -BeExactly 'Startzeit des Schnellscans'; $Real.values.'maintenance.scanCpuLoad' | Should -BeExactly 'Höchster durchschnittlicher CPU-Anteil eines Scans'
+        # die Einstufungen der neuen Bereiche an je einem Fall
+        (Get-Check @{ 'security.defenderMode' = 'Normal'; 'security.defenderNetworkProtection' = 1 } @{} 'security.networkProtection' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'security.defenderMode' = 'Passive'; 'security.defenderNetworkProtection' = 1 } @{} 'security.networkProtection' $Real).grade | Should -Be 'ok'
+        (Get-Check @{ 'network.smb1' = 'Manual' } @{} 'network.smb1' $Real).grade | Should -Be 'check'; (Get-Check @{} @{} 'network.smb1' $Real).grade | Should -Be 'ok'
+        (Get-Check @{ 'maintenance.updateService' = 'Manual' } @{} 'maintenance.updateServiceEnabled' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'maintenance.updateService' = 'Disabled' } @{} 'maintenance.updateServiceEnabled' $Real).grade | Should -Be 'ok'
+        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanType' = 2 } @{} 'maintenance.defenderFullScan' $Real).grade | Should -Be 'check'
+        (Get-Check @{ 'maintenance.scanDay' = 8; 'maintenance.scanType' = 2 } @{} 'maintenance.defenderFullScan' $Real).grade | Should -Be 'ok'
+        $x = Get-Check @{} @{ PrintDrivers = $HpNone; EventsBefore = @((New-Ev 1 'print')) } 'print.driversInSpooler' $Real
+        $x.grade | Should -Be 'act'; $x.finding | Should -Match '^Druckertreiber, die ohne Isolierung im Prozess des Dienstes Druckwarteschlange \(Spooler\) laufen: 1\. Außerdem stehen'
+    }
+    It 'uebernimmt die Berichtigungen der Quellenpruefung an den Pruefungen von Task 14a' {                                     # Entscheidung ZB-R40
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        # die Seiten von Citrix stehen mit der Adresse da, die sie heute haben
+        foreach ($c in $Real.checks) { $c.source.url | Should -Not -Match 'docs\.citrix\.com/en-us/' -Because $c.id }; $Proof | Should -Not -Match 'docs\.citrix\.com/en-us/'
+        # vda.controllerCount: die Liste gilt auch neben der Registrierung ueber die Organisationseinheit
+        @($check['vda.controllerCount'].rules.check | ForEach-Object { $_.value }) | Should -Be @('vda.controllerCount')
+        (Get-Check @{ 'vda.version' = '2402'; 'vda.controllers' = @(@{ Entry = 'ddc1.sim.local'; Kind = 'fqdn'; From = 'policy' }); 'vda.farmGuid' = $true } @{} 'vda.controllerCount' $Real).grade | Should -Be 'check'
+        $check['vda.controllerCount'].meaning | Should -Match 'aus seinem Cache'; $check['vda.controllerCount'].meaning | Should -Not -Match 'Vorrang|takes precedence'
+        foreach ($id in 'vda.controllerCount', 'vda.controllerNotFqdn') { $check[$id].findings.check | Should -Match 'Controller-Gruppe' -Because $id }
+        $check['vda.listOfSids'].meaning | Should -Match 'besonders gesicherte Umgebungen'
+        $check['vda.services'].meaning | Should -Match 'CTX133769'; $check['vda.services'].meaning | Should -Match 'Folgerung des Katalogs'
+        # temporaere Profile: Windows loescht sie bei der Abmeldung, gezaehlt werden die der laufenden Sitzungen
+        $tp = $check['sessions.tempProfiles']; foreach ($f in 'ok', 'check', 'act') { $tp.findings.$f | Should -Match 'in den laufenden Sitzungen' -Because $f; $tp.findings.$f | Should -Not -Match 'Profile? seit dem letzten Start' -Because $f }
+        $tp.findings.check | Should -Match 'löscht ein temporäres Profil bei der Abmeldung'
+        foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
+            $c = $check[$id]; "$($c.findings.check) $(@($c.todo | ForEach-Object { $_.text }) -join ' ')" | Should -Match 'ab VDA 2203 LTSR CU2' -Because $id
+            $c.meaning | Should -Match 'gelten die Einstellungen des Benutzerkontos' -Because $id
+        }
+        $check['size.pagefilePresent'].meaning | Should -Match 'empfiehlt Microsoft eine eigene Datei dafür \(dedicated dump file\)'
+        $check['size.memoryPerSession'].meaning | Should -Match 'aller Benutzersitzungen beim Lesen, auch der getrennten'
+        $check['operation.powerPlan'].meaning | Should -Match 'wo nicht das Betriebssystem die Energieverwaltung steuert'
+        $check['operation.updateAge'].meaning | Should -Match 'über die Komponentenwartung von Windows installiert'
+        $check['operation.pendingRestart'].findings.check | Should -Match '^Ausstehende Umbenennungen oder Löschungen beim Neustart: '; $Real.values.'operation.pendingRename' | Should -BeExactly 'Ausstehende Umbenennungen oder Löschungen beim Neustart'
+        "$($check['operation.pendingRestart'].meaning)" | Should -Not -Match 'Microsoft empfiehlt|Empfehlung von Microsoft'
+        $check['profile.containersPerUser'].meaning | Should -Match 'in der Voreinstellung mehrere Sitzungen zugleich auf einen Profilcontainer zugreifen'
+        $ProofFlat | Should -Match 'TotalPhysicalMemory'; $ProofFlat | Should -Match 'TASK_ENUM_FLAGS'
+        # Zusaetze m, o, p, q
+        (Get-Check @{ 'size.memTotalMB' = 16384 } @{} 'size.workerMemory' $Real).finding | Should -BeExactly 'Der Server hat 16384 MB Arbeitsspeicher, weniger als die Untergrenze von 24000 MB (Praxiswert: 24 GB). Das ist ein Hinweis, kein Fehler.'
+        $x = Get-Check @{ 'size.memTotalMB' = 16384; 'size.commitTotalMB' = 100 } @{} 'size.commitHeadroom' $Real                    # die Zusagegrenze fehlt: nicht pruefbar
+        $x.grade | Should -Be 'unknown'; ([regex]::Matches($x.finding, 'Wert')).Count | Should -Be 1 -Because $x.finding
+        $starts = 'Auto = automatisch, Manual = manuell, Disabled = deaktiviert'
+        foreach ($id in 'vda.services', 'vda.wemServices', 'security.services', 'print.spoolerStartMode', 'maintenance.updateService', 'network.smb1') { $Real.legends.$id | Should -Match ([regex]::Escape($starts)) -Because $id }
+        foreach ($id in 'vda.services', 'vda.wemServices', 'security.services') { $Real.legends.$id | Should -Match 'Running = läuft, Stopped = beendet' -Because $id }
+        $wem = $check['vda.wemServices']; $wem.meaning | Should -Match 'den Dienst SENS \(System Event Notification Service\) von Windows'
+        (@($wem.todo | ForEach-Object { $_.text }) -join ' ') | Should -Match 'Dienstnamen SENS'
+    }
     It 'meldet mehr und weniger Prozessoren als die Praxisquellen nennen, nie als handeln' {
         foreach ($id in 'size.workerCpu', 'size.workerCpuMax') {
             $c = $Real.checks | Where-Object id -eq $id; $c.kind | Should -Be 'practice'; $c.source.vendor | Should -Be 'Carl Stalhood'; @($c.rules.act).Count | Should -Be 0
@@ -939,7 +1124,7 @@ Describe 'Katalog in src' {
             (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpu' $Real).grade | Should -Be $case[1] -Because "$($case[0]) Prozessoren"
             (Get-Check @{ 'size.cpuLogical' = $case[0] } @{} 'size.workerCpuMax' $Real).grade | Should -Be $case[2] -Because "$($case[0]) Prozessoren"
         }
-        (Get-Check @{ 'size.cpuLogical' = 16 } @{} 'size.workerCpuMax' $Real).finding | Should -Match '16 logische Prozessoren'
+        (Get-Check @{ 'size.cpuLogical' = 16 } @{} 'size.workerCpuMax' $Real).finding | Should -BeExactly 'Logische Prozessoren des Servers: 16, mehr als der Praxiswert von 8. Das ist ein Hinweis, kein Fehler.'
     }
     It 'traegt die Texte, auf die sich Bericht und Seite stuetzen, und zu jeder Pruefung einen Vorschlag' {
         $want = [ordered]@{ title = 'Zustand des Servers'; notRecorded = 'Zustandsbild nicht erfasst.'; unreadable = 'Zustandsbild nicht lesbar.'; healthOnlyHead = 'Zustandsbericht ohne Messung'
@@ -984,11 +1169,12 @@ Describe 'Katalog in src' {
         $Proof | Should -Match 'Quellen aus der Praxis: BIS-F'; $Proof | Should -Match 'Quellen aus der Praxis: carlstalhood\.com'
     }
     It 'nennt die zweite Quelle einer Pruefung im Text und fuehrt sie im Nachweis' {                    # Entscheidung ZB-R31
+        $flat = [regex]::Replace($Proof, '\r?\n  (?=\S)', ' ')                 # ein Listenpunkt des Nachweises ist bei 120 Zeichen umbrochen: seine Zeilen wieder verbinden
         foreach ($id in $SecondSources.Keys) {
             $c = $Real.checks | Where-Object id -eq $id
             "$($c.meaning) $(@($c.todo | ForEach-Object { $_.text }) -join ' ')" | Should -Match ([regex]::Escape($SecondSources[$id])) -Because $id
             # im Nachweis: eine Zeile mit der Kennung der Pruefung, "auch gestützt durch:" und einer Adresse
-            $Proof | Should -Match ('(?m)^.*`' + [regex]::Escape($id) + '`.*auch gestützt durch: .*https://\S+.*$') -Because $id
+            $flat | Should -Match ('(?m)^.*`' + [regex]::Escape($id) + '`.*auch gestützt durch: .*https://\S+.*$') -Because $id
         }
     }
     It 'nennt das Master-Image oder die Richtlinie als Ort der Aenderung und den letzten Start als Grenze' {
@@ -1013,8 +1199,8 @@ Describe 'Katalog in src' {
     }
     It 'fuehrt die Quelle jeder Pruefung im Nachweis' {
         foreach ($c in $Real.checks) {
-            $Proof | Should -Match ([regex]::Escape($c.source.title)) -Because $c.id; $c.source.date | Should -Match '^\d{4}-\d\d-\d\d$' -Because $c.id
-            if ($c.source.url) { $Proof | Should -Match ([regex]::Escape($c.source.url)) -Because $c.id }
+            $ProofFlat | Should -Match ([regex]::Escape($c.source.title)) -Because $c.id; $c.source.date | Should -Match '^\d{4}-\d\d-\d\d$' -Because $c.id
+            if ($c.source.url) { $ProofFlat | Should -Match ([regex]::Escape($c.source.url)) -Because $c.id }
         }
     }
     It 'fuellt in jedem Befund jeden Platzhalter und nennt die Einheit im Satz' {                       # Entscheidung ZB-R15
@@ -1029,7 +1215,365 @@ Describe 'Katalog in src' {
         }
         (Get-Check $bad @{} 'operation.diskFree' $Real).grade | Should -Be 'act'
         (Get-Check $bad @{} 'operation.diskFree' $Real).finding | Should -Match '1,5 GB frei .*2 GB'
-        (Get-Check $bad @{} 'operation.updateAge' $Real).finding | Should -Match '90 Tage alt .*60 Tage'
+        (Get-Check $bad @{} 'operation.updateAge' $Real).finding | Should -BeExactly 'Alter des jüngsten Updates im Abbild in Tagen: 90, mehr als die Schwelle von 60.'
         (Get-Check $bad @{} 'size.commitHeadroom' $Real).grade | Should -Be 'act'
+    }
+    It 'zeigt an der Schwelle die Zahl, mit der die Regel vergleicht' {                                  # Korrekturrunde 1, C1
+        # 30,4 Tage gegen 30 und 100,4 % gegen 100: der Befund nennt die Zahl mit ihrer Nachkommastelle, genau auf der Schwelle bleibt die Pruefung in Ordnung
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - [long](30.4 * 86400000) } @{} 'operation.uptime' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 30,4, mehr als die Schwelle von 30.'
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - 30 * 86400000L } @{} 'operation.uptime' $Real
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 30 (Schwelle 30).'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10040 } @{} 'size.commitAboveRam' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Der zugesagte Speicher liegt beim Lesen bei 100,4 % des Arbeitsspeichers, also über dem, was der Server an Arbeitsspeicher hat.'
+        $x = Get-Check @{ 'size.memTotalMB' = 10000; 'size.commitTotalMB' = 10000 } @{} 'size.commitAboveRam' $Real
+        $x.grade | Should -Be 'ok'; $x.finding | Should -BeExactly 'Der zugesagte Speicher liegt beim Lesen bei 100 % des Arbeitsspeichers.'
+        $x = Get-Check @{ 'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - [long](24.3 * 3600000) }) } @{} 'sessions.disconnectedOld' $Real
+        $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Dauer der ältesten getrennten Sitzung in Stunden: 24,3, mehr als die Schwelle von 24.'
+    }
+    It 'nennt Einheiten in der Einzahl und schreibt jeden Befund so, dass er auch fuer 1 stimmt' {        # Korrekturrunde 1, C2
+        @($Real.units.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) | Should -Be @('Tage=Tag', 'Stunden=Stunde', 'Minuten=Minute')
+        $one = @{ 'operation.lastBoot' = $ReadMs - 86400000L; 'operation.lastUpdate' = $ReadMs - 86400000L - 3600000L
+            'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 1; DisconnectedLimitMin = 1; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true })
+            'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 3600000L }) }
+        (Get-Check $one @{} 'operation.uptime' $Real).value | Should -BeExactly 'Laufzeit seit dem letzten Start: 1 Tag'
+        (Get-Check $one @{} 'operation.updateAge' $Real).value | Should -BeExactly 'Alter des jüngsten Updates: 1 Tag'
+        (Get-Check $one @{} 'sessions.disconnectedOld' $Real).value | Should -BeExactly 'Dauer der ältesten getrennten Sitzung: 1 Stunde'
+        (Get-Check $one @{} 'sessions.disconnectLimit' $Real).value | Should -BeExactly 'Zeitlimit für getrennte Sitzungen: 1 Minute'
+        (Get-Check $one @{} 'sessions.idleLimit' $Real).value | Should -BeExactly 'Zeitlimit für Sitzungen im Leerlauf: 1 Minute'
+        (Get-Check $one @{} 'operation.uptime' $Real).finding | Should -BeExactly 'Laufzeit seit dem letzten Start in Tagen: 1 (Schwelle 30).'
+        # kein Befundsatz stellt hinter eine eingesetzte Zahl ein Wort, das nur in der Mehrzahl stimmt (MB, GB und % haben keine Einzahl)
+        $plural = '\}\s+(Tage|Tagen|Stunden|Minuten|Sekunden|Profile|Sitzungen|Benutzersitzungen|Prozessoren|logische|lokale|Dienste|Dateien|Controller\b|Treiber|Druckertreiber|Warteschlangen|Aufgaben|Protokolle|Ereignisse|Verbindungen|Adapter|Prozesse)'
+        foreach ($c in $Real.checks) { foreach ($f in $c.findings.PSObject.Properties) { $f.Value | Should -Not -Match $plural -Because "$($c.id) $($f.Name)" } }
+        # jede Pruefung mit lauter Einsen bewertet: kein Befund sagt "1 Tage" oder "1 Tagen"
+        $ones = @{ 'size.cpuLogical' = 1; 'size.memTotalMB' = 1; 'size.commitTotalMB' = 1; 'size.commitLimitMB' = 1; 'size.commitPeakMB' = 1; 'operation.pendingRename' = 1; 'vda.wemGpNetworkTimeout' = 1 } + $one
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel $ones) -Catalogue $Real -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        foreach ($c in @($r.areas | ForEach-Object { $_.checks })) { $c.finding | Should -Not -Match '(?<![\d,])1 (Tage|Tagen|Stunden|Minuten|Sekunden|Profile|Sitzungen|Benutzersitzungen|Prozessoren|logische|lokale)\b' -Because $c.id }
+    }
+    It 'sagt nicht zutreffend so, dass es nicht wie ein Ergebnis klingt, und nennt jeden Schritt mit Ort und Merkmal' {   # Korrekturrunde 1, B1, B2
+        # ein Server, der keine VMware-VM ist: die Pruefung trifft nicht zu; der Satz sagt nicht "... gibt es auf diesem Server nicht"
+        $x = Get-Check @{ 'size.model' = 'Sim Corp Server 1'; 'size.netAdapters' = @() } @{} 'size.netAdapterType' $Real
+        $x.grade | Should -Be 'na'
+        $x.finding | Should -BeExactly ('Trifft nicht zu: der Wert „Aktive Netzwerkadapter, die nicht VMXNET3 sind“ wird auf diesem Server nicht gelesen, weil das Produkt, zu dem er gehört, nicht installiert ist ' +
+            '(bei Werten zu VMware: weil der Server keine VMware-VM ist).')
+        $Real.copy.reasonNotInstalled | Should -Not -Match 'gibt es'
+        # eine Bezeichnung, die in diesem Satz in Anfuehrungszeichen steht, traegt selbst keine (die Werte der fuenf Bereiche dieser Task)
+        foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '[„“]' -Because $p.Name }
+        $Real.copy.copyStep | Should -BeExactly '{n}. {text} – Wo: {where}. Woran zu erkennen: {sign}'
+        # der Lader verlangt in jedem Schritt Ort und Merkmal: keiner der zwei Teile kann fehlen; kein Teil endet mit einem Punkt, der im Kopiertext doppelt staende
+        foreach ($c in $Real.checks) { foreach ($t in $c.todo) { foreach ($part in $t.text, $t.where, $t.sign) { $part | Should -Not -Match '[.;:]\s*$' -Because $c.id } } }
+    }
+    It 'haelt die Regeln fuer die Texte ein, die die Durchsicht ergeben hat' {                              # Korrekturrunde 1, A und B
+        # A1: die Messung von GO-EUC bleibt in ihrem Test; der Vorbehalt von VMware steht da
+        $pp = ($Real.checks | Where-Object id -eq 'operation.powerPlan').meaning
+        $pp | Should -Not -Match 'verspricht'; foreach ($w in 'In diesem Test', 'nicht Teil der Messung', 'vSphere hat GO-EUC in diesem Test nicht gemessen', 'älteren Windows-Versionen') { $pp | Should -Match $w -Because $w }
+        # A2: unterstuetzt ist ein Stand erst ab dem Mindeststand; ohne VMware Tools sagt der Befund nicht, sie haetten die Hauptversion 0
+        $vt = $Real.checks | Where-Object id -eq 'size.vmTools'
+        $vt.meaning | Should -Match 'ab dem Mindeststand und unter 12\.0\.0'; $vt.meaning | Should -Match 'unter dem Mindeststand ist danach nicht unterstützt'; $vt.meaning | Should -Not -Match 'Ein älterer Stand ist danach unterstützt'
+        $none = Get-Check @{ 'size.model' = 'VMware, Inc. VMware7,1'; 'size.vmtoolsVersion' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } @{} 'size.vmTools' $Real
+        $none.grade | Should -Be 'check'; $none.finding | Should -BeLike 'Hauptversion der VMware Tools: 0 (installierte Version: –).*Eine 0 heißt: Auf dieser VMware-VM wurden keine VMware Tools gefunden.'
+        # A4: eine Faustregel sagt, dass sie vom Katalog stammt
+        foreach ($c in @($Real.checks | Where-Object kind -eq 'rule')) { $c.meaning | Should -Match 'Faustregel des Katalogs|Erfahrungswerte? des Katalogs' -Because $c.id }
+        # B8: der Satz fuer nicht pruefbar wiederholt die Einstufung nicht
+        foreach ($c in $Real.checks) { $c.findings.unknown | Should -BeExactly 'Der Wert konnte nicht gelesen werden: {reason}.' -Because $c.id }
+        # B5, B7: wo ein Ereignis die Pruefung zu Handeln macht, bindet der Befund die Ereignisse nicht an das Gepruefte, und die Bedeutung nennt die Grenze des Rueckblicks
+        $withEvent = @($Real.checks | Where-Object { @($_.rules.act | Where-Object { $null -ne $_.event }).Count -gt 0 })
+        @($withEvent.id) | Should -Be @('sessions.tempProfiles', 'vda.services', 'profile.serviceStopped', 'print.driversInSpooler', 'print.isolationOff', 'network.smbOldDialect')
+        foreach ($c in $withEvent) {
+            $c.findings.act | Should -Match 'Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung .*; ob sie .*, zeigt die Ereignisanzeige\.$' -Because $c.id
+            $c.findings.act | Should -Not -Match 'Dazu stehen' -Because $c.id
+            $c.meaning | Should -Match 'auf einem nicht persistenten Server reichen .*nur bis zum letzten Start zurück' -Because $c.id
+        }
+        # B3: Registrierung heisst die Windows-Registrierung oder die Registrierung des VDA; Anmeldung ist die der Benutzer
+        $all = Get-Content $CatFile -Raw
+        $all | Should -Not -Match '(?<!Windows-)Registrierung(?! des VDA)'; $all | Should -Not -Match 'Anmeldung des VDA|meldet den Server|meldet sich bei einem'
+        # B4: der Befund zum Cache des WEM-Agenten nennt keinen Ort als gefunden
+        ($Real.checks | Where-Object id -eq 'vda.wemCache').findings.check | Should -Match 'Ohne Eintrag liegt er .*; nur der Agent des WEM-Dienstes der Citrix Cloud sucht sich ab Version 2408\.1\.0\.1 selbst einen\.$'
+        # B6: die drei Hinweise zur Groesse sagen, dass sie Hinweise sind und eine bewusst gewaehlte Groesse bleiben kann
+        foreach ($id in 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory') {
+            $c = $Real.checks | Where-Object id -eq $id
+            $c.findings.check | Should -Match '(Praxiswert von \{@\w+\}|Untergrenze von \{@workerMemMinMB\} MB \(Praxiswert: 24 GB\)).*Das ist ein Hinweis, kein Fehler\.$' -Because $id; $c.meaning | Should -Match 'bewusst anders gewählt, ist nichts zu ändern' -Because $id
+            (@($c.todo | ForEach-Object { $_.text }) -join ' ') | Should -Not -Match 'anheben|wenn nichts dagegen spricht|wenn kein Grund dagegen spricht' -Because $id
+        }
+        # ein Server mit genau 24 GB, den Windows mit 24575 MB meldet, wird nicht gemeldet
+        (Get-Check @{ 'size.memTotalMB' = 24575 } @{} 'size.workerMemory' $Real).grade | Should -Be 'ok'; (Get-Check @{ 'size.memTotalMB' = 16384 } @{} 'size.workerMemory' $Real).grade | Should -Be 'check'
+        # B8: die gemessene Maschine heisst Server; Kennwoerter und englische Zustaende stehen mit ihrer Bedeutung da
+        $all | Should -Not -Match 'Sitzungshost|Zeitgeber|nicht persistenten VDAs'
+        $Real.legends.'operation.powerPlan' | Should -Match 'balanced = Ausbalanciert'; (Get-Check @{ 'operation.powerPlan' = 'balanced' } @{} 'operation.powerPlan' $Real).finding | Should -Match 'sondern balanced \(balanced = „Ausbalanciert“'
+        foreach ($id in 'vda.desktopService', 'vda.wemService', 'profile.service') { $Real.legends.$id | Should -Match 'Running = läuft, Stopped = beendet' -Because $id }
+        (Get-Check @{ 'profile.service' = 'Stopped' } @{} 'profile.serviceStopped' $Real).finding | Should -Match 'gelesener Zustand: Stopped; Running = läuft, Stopped = beendet'
+        # B8 und Entscheidung ZB-R44 (Saetze der Bedeutung): eigener Test "schreibt eine Bedeutung in hoechstens drei Saetzen ..." fuer alle Pruefungen
+        # B8: Zahlen, die eine Schwelle wiederholen, stehen nicht in Schritten
+        foreach ($id in 'size.workerCpu', 'size.workerCpuMax', 'size.workerMemory', 'operation.updateAge', 'sessions.disconnectedOld') {
+            (@(($Real.checks | Where-Object id -eq $id).todo | ForEach-Object { "$($_.text) $($_.sign)" }) -join ' ') | Should -Not -Match '\bacht\b|24576|zwei Monate|einem Tag' -Because $id
+        }
+    }
+    It 'fuehrt im Nachweis die Vorbehalte der Hersteller, das Datum der Seite von Microsoft und was auf dem Zielsystem zu bestaetigen ist' {   # Korrekturrunde 1, A4, B8
+        $Proof | Should -Match 'power-performance-tuning\s+\(Stand der Seite 2022-08-29, Abruf 2026-11-13\)'
+        $ProofFlat | Should -Match 'not suitable for DAS environments'; $ProofFlat | Should -Match 'may increase overall performance'
+        $Proof | Should -Match '(?m)^### Auf dem Zielsystem zu bestätigen$'
+        $confirm = ($Proof -split '(?m)^### Auf dem Zielsystem zu bestätigen$', 2)[1]
+        foreach ($w in 'Höchstleistung', 'Running', 'System Event Notification Service', 'Set time limit for disconnected sessions', 'Delete locally cached profiles on logoff', 'Wartungsmodus', '24000 MB') { ($confirm -replace '\s+', ' ') | Should -Match ([regex]::Escape($w)) -Because $w }
+        $Proof | Should -Match ([regex]::Escape('| `workerMemMinMB` | 24000 MB |'))
+    }
+    It 'bricht den Abschnitt des Nachweises bei 120 Zeichen um und fuehrt die Schwellen und Quellen von Task 14b' {       # Zusatz r von Task 14b
+        # Fliesstext und Listenpunkte: hoechstens 120 Zeichen; ein Listenpunkt geht mit zwei Leerzeichen Einzug weiter; Tabellenzeilen sind ausgenommen
+        $n = 0; $inItem = $false
+        foreach ($line in ($Proof -split "`r?`n")) {
+            $n++
+            if ($line -match '^\|') { $inItem = $false; continue }
+            if ($line -notmatch '^\s*(- )?\S+$') { $line.Length | Should -BeLessOrEqual 120 -Because "Zeile $n des Abschnitts: $line" }      # eine Adresse laesst sich nicht umbrechen
+            if ($line -match '^- ') { $inItem = $true } elseif ($line -eq '') { $inItem = $false } elseif ($inItem) { $line | Should -Match '^  \S' -Because "Zeile $n des Abschnitts: $line" }
+        }
+        foreach ($row in '| `printDrivers` | 20 Treiber |', '| `queuesPerSession` | 10 Warteschlangen |', '| `signatureAgeDays` | 2 Tage |', '| `eventDays` | 3 Tage |') { $Proof | Should -Match ([regex]::Escape($row)) -Because $row }
+        foreach ($w in 'CTX696648', 'Trentent Tye', 'BISF.psm1', 'System Optimizations', 'SENS') { $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
+        $Proof | Should -Not -Match 'die übrigen\s+Bereiche folgen'
+    }
+    It 'behaelt die Wortlaute, die die Korrekturrunde von Task 14a berichtigt hat' {                        # Nachpruefung von Task 14a: achtzehn Wortlaute ohne eigene Aussage
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        $steps = { param($id) @($check[$id].todo | ForEach-Object { $_.text }) -join ' ' }
+        # 1, 2: Citrix raet nur beim Dienst des WEM-Agenten vom Neustart per Skript ab; die Folge fuer Benutzer ist als Erlaeuterung des Katalogs gekennzeichnet
+        (& $steps 'vda.wemServices') | Should -Match 'den Dienst „Citrix WEM Agent Host Service“ nicht per Skript beenden oder neu starten \(Citrix rät davon ab\)'
+        $check['vda.wemServices'].meaning | Should -Match 'Erläuterung des Katalogs, nicht von Citrix'
+        # 3: der Vorbehalt von VMware zum direkt angeschlossenen Speicher steht im Text der Pruefung
+        $check['size.storageController'].meaning | Should -Match 'nennt den Adapter für direkt angeschlossenen Speicher \(DAS\) nicht geeignet'
+        # 4: Thomas Koetzing steht hinter dem, was er sagt, nicht hinter dem Zusatz zum Neustart
+        (& $steps 'sessions.tempProfiles') | Should -Match 'in der Profilliste suchen \(Thomas Kötzing, 2024\), solange der Server läuft'
+        # 5 bis 7: die Seite nennt keine Zahl; die Wartezeit hat ihren Preis; die Beobachtung von Manuel Winkel gilt fuer eigene WEM-Server
+        $check['size.cpuPerSession'].meaning | Should -Match 'eine Zahl nennt die Seite nicht'; $check['size.cpuPerSession'].meaning | Should -Not -Match 'nennt Microsoft nicht'
+        $check['vda.wemGpTimeout'].meaning | Should -Match 'Der Preis der Wartezeit ist nach Citrix, dass es länger dauern kann'
+        $check['vda.wemCache'].meaning | Should -Match 'mit WEM 2507 CU1 und eigenen WEM-Servern'
+        # 8: der Satz, der nicht auf der Seite von Microsoft steht, bleibt gestrichen; 14: die Faustregel sagt "meist"
+        $check['operation.pendingRestart'].meaning | Should -Not -Match 'Installationen und Updates nutzen das'
+        $check['operation.pendingRestart'].meaning | Should -Match 'wurde nach der Faustregel des Katalogs meist seit dem letzten Start etwas installiert oder aktualisiert'
+        # 9 bis 11: die drei Saetze fuer in Ordnung, die einen Strich zeigen koennen, sagen, was er heisst, und nennen die Einheit vor der Zahl
+        $check['operation.diskFree'].findings.ok | Should -Match 'in GB: \{operation\.minFreeGB\} \(Schwelle \{@diskFreeGB\}; ein Strich heißt: kein Laufwerk als System- oder Auslagerungslaufwerk erkannt\)'
+        $check['size.memoryPerSession'].findings.ok | Should -Match 'in MB: \{size\.memPerSessionMB\} \(Schwelle \{@memPerSessionMB\}; ein Strich heißt: keine Benutzersitzung\)'
+        $check['profile.containerFull'].findings.ok | Should -Match 'in Prozent: \{profile\.containerMaxUsedPct\} \(Schwelle \{@containerUsedPct\}; ein Strich heißt: kein Container eingebunden\)'
+        # 12, 13: Titel und Befund ohne Wertung
+        $check['size.commitAboveRam'].title | Should -BeExactly 'Zugesagter Speicher im Verhältnis zum Arbeitsspeicher'
+        $check['size.storageController'].findings.check | Should -Match 'Das zählt nur bei E/A-starker Last und ist kein Fehler\.$'
+        # 15: mehrere Container sind ein Beispiel, kein Fehlerbild
+        $check['profile.containersPerUser'].meaning | Should -Match 'entstehen zum Beispiel, wenn'
+        # 16, 17: Texte des Geruests
+        $Real.copy.areaReasonNoReader | Should -BeExactly 'Diese Fassung der Aufzeichnung liest den Bereich nicht.'
+        $Real.values.'apps.probes' | Should -BeExactly 'Gelesene Werte der Anwendungen'
+        # 18: Abbild heisst nur das Master-Image
+        $check['size.pagefilePresent'].meaning | Should -Match 'ein Speicherabbild \(Dump\) zu schreiben'
+    }
+    It 'schreibt eine Bedeutung in hoechstens drei Saetzen, mit der Wirkung fuer die Benutzer zuerst' {       # Entscheidung ZB-R44, Korrekturrunde 1 von Task 14b
+        # vier Bedingungen fuer ALLE 66 Pruefungen: hoechstens drei Saetze; ausserhalb von Klammern und Anfuehrungszeichen kein Semikolon und kein Doppelpunkt
+        # (eine Uhrzeit wie 03:00 ist kein Doppelpunkt des Satzbaus); hoechstens 600 Zeichen; der erste Satz beginnt nicht mit dem Namen einer Quelle.
+        # Die eine Ausnahme ist der Energiesparplan: fuenf Saetze, keine Laengengrenze.
+        $names = @('Microsoft', 'Citrix', 'VMware', 'AKI', 'Broadcom') + $PracticeSources
+        @($Real.checks).Count | Should -Be 66
+        foreach ($c in $Real.checks) {
+            $m = $c.meaning.Trim(); $plain = $m
+            do { $before = $plain; $plain = [regex]::Replace($plain, '\([^()]*\)', '') } while ($plain -ne $before)
+            $plain = [regex]::Replace($plain, '„[^“]*“', '')
+            $sentences = @([regex]::Split($plain, '(?<=[.!?])\s+') | Where-Object { $_ })
+            $power = $c.id -eq 'operation.powerPlan'
+            $sentences.Count | Should -BeLessOrEqual $(if ($power) { 5 } else { 3 }) -Because $c.id
+            $plain | Should -Not -Match ';' -Because $c.id
+            $plain | Should -Not -Match '(?<!\d):|:(?!\d)' -Because $c.id
+            if (-not $power) { $m.Length | Should -BeLessOrEqual 600 -Because $c.id }
+            # die Wirkung zuerst: der erste Satz beginnt mit dem Zustand, nicht mit der Quelle
+            $first = ([regex]::Split($m, '(?<=[.!?])\s+(?=[A-ZÄÖÜ„0-9])'))[0]
+            foreach ($n in $names) { $first | Should -Not -Match ('^(Nach |Der Hersteller |Laut )?' + [regex]::Escape($n) + '\b') -Because "$($c.id): $n" }
+            $first | Should -Not -Match '^Der Wert teilt' -Because $c.id
+            # ... und nicht mit der Erklaerung, was ein Wert ist oder was sich mit ihm einstellen laesst (Nachpruefung der Korrekturrunde 1 von Task 14b)
+            $first | Should -Not -Match '^(Der|Die|Das) (Wert|Eintrag|Schlüssel|Einstellung|Richtlinie) \S+ (legt|teilt|gibt|bestimmt|regelt|steuert|nennt)\b' -Because $c.id
+            $first | Should -Not -Match '^(Über|Mit|Durch) \S+ lässt sich\b' -Because $c.id
+            # was der erste Satz sagt, stammt von einer genannten Quelle, oder er sagt, dass es die Erlaeuterung des Katalogs ist; eine Faustregel sagt es in ihrem Text
+            if ($c.kind -ne 'rule') {
+                $named = @($names | Where-Object { $first -match [regex]::Escape($_) }).Count -gt 0
+                ($named -or $first -match 'des Katalogs') | Should -BeTrue -Because "$($c.id): $first"
+            }
+        }
+        # die zwei Bedeutungen, die mit der Erklaerung des Werts begannen, beginnen mit dem, was der Zustand fuer die Benutzer heisst, als Erlaeuterung des Katalogs;
+        # die Seite von Citrix nennt in beiden Faellen keine Wirkung, der Nachweis sagt, worauf die Erlaeuterung fusst
+        $firstOf = { param($id) ([regex]::Split((($Real.checks | Where-Object id -eq $id).meaning.Trim()), '(?<=[.!?])\s+(?=[A-ZÄÖÜ„0-9])'))[0] }
+        $sids = & $firstOf 'vda.listOfSids'
+        $sids | Should -BeExactly ('Ist ein von Hand gesetzter Wert ListOfSIDs veraltet, kann die Registrierung des VDA scheitern, und der Server bekommt dann keine neuen Sitzungen ' +
+            '(Erläuterung des Katalogs dazu, dass sich der VDA nach Citrix nur bei den Delivery Controllern registriert, die der Wert als vertraut nennt).')
+        $gp = & $firstOf 'vda.wemGpTimeout'
+        $gp | Should -BeExactly ('Wartet die Gruppenrichtlinie bei der Anmeldung zu kurz auf das Netz, ist der WEM-Agent womöglich noch nicht bereit, und die Umgebung des Benutzers wird dann nicht verlässlich eingerichtet ' +
+            '(Erläuterung des Katalogs, nicht von Citrix).')
+        # was die Bedeutungen vorher sagten, sagen sie weiter: der Name des Werts, die Vorgabe und die Empfehlung von Citrix, die Ausnahme, und was die Pruefung nicht liest
+        $gpAll = ($Real.checks | Where-Object id -eq 'vda.wemGpTimeout').meaning
+        $gpAll | Should -Match 'Die Wartezeit steht nach Citrix im Wert GpNetworkStartTimeoutPolicyValue, die Installation des WEM-Agenten legt ihn mit 120 Sekunden an, und Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt\.'
+        $sidsAll = ($Real.checks | Where-Object id -eq 'vda.listOfSids').meaning
+        $sidsAll | Should -Match 'Citrix rät, den Wert ohne besonderen Grund nicht zu ändern, und nennt als Ausnahme besonders gesicherte Umgebungen, in denen dann auch die automatische Aktualisierung der Liste der Delivery Controller abgeschaltet sein muss\.'
+        $sidsAll | Should -Match 'Die Prüfung stellt nur fest, dass der Wert gesetzt ist, und liest seinen Inhalt nicht\.$'
+        $ProofFlat | Should -Match ([regex]::Escape('„The ListofSIDs (Security IDs) identify the trusted Controllers. VDAs attempt to register only with trusted Controllers.“'))
+        $ProofFlat | Should -Match ([regex]::Escape('„The previous three keys ensure that the WEM agent service starts before the Windows logon screen appears.“'))
+        # der eine Satz zu den Zeitlimits je Benutzer steht in beiden Pruefungen der Zeitlimits
+        foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
+            ($Real.checks | Where-Object id -eq $id).meaning | Should -Match 'Wo der Listener von Windows die Zeitlimits je Benutzer gelten lässt, gelten die Einstellungen des Benutzerkontos' -Because $id }
+        # was nicht mehr in die Bedeutung passt, steht im Nachweis
+        foreach ($w in 'Spectre und Meltdown', 'ein Testprogramm belegte zusätzlich 2 GB', 'Differenzdatenträger', 'für große Webanwendungen und Erweiterungen mehr', 'ihn neu aufzubauen', 'Defender war nicht Teil des Tests') {
+            $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
+    }
+    It 'fuehrt die Legenden im Teil legends und laesst die Bezeichnungen schlichte Namen sein' {             # Entscheidung ZB-R49
+        foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '=' -Because $p.Name }
+        @($Real.legends.PSObject.Properties).Count | Should -Be 32
+        $Real.legends.'print.spooler' | Should -BeExactly 'Running = läuft, Stopped = beendet'
+        $Real.legends.'security.defenderMode' | Should -BeExactly 'Normal = aktiv, Passive = passiv'
+        $Real.legends.'maintenance.scanDay' | Should -BeExactly '0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie'
+        $Real.values.'security.defenderMode' | Should -BeExactly 'Betriebsart von Microsoft Defender Antivirus'; $Real.values.'print.spooler' | Should -BeExactly 'Dienst Druckwarteschlange (Spooler)'
+        # der Satz fuer "trifft nicht zu" nennt die Bezeichnung ohne Legende
+        $na = Get-Check @{ 'security.defenderMode' = (New-WorkerPerfHealthValue 'absent' 'notInstalled') } @{} 'security.signatureAge' $Real
+        $na.grade | Should -Be 'na'
+        $na.finding | Should -BeExactly ('Trifft nicht zu: der Wert „Betriebsart von Microsoft Defender Antivirus“ wird auf diesem Server nicht gelesen, weil das Produkt, zu dem er gehört, nicht installiert ist ' +
+            '(bei Werten zu VMware: weil der Server keine VMware-VM ist).')
+        (Get-Check @{ 'print.spooler' = (New-WorkerPerfHealthValue 'unreadable' 'rights') } @{} 'print.spoolerStopped' $Real).finding | Should -Not -Match '='
+        # ein Rohwert, den ein Schritt beim Namen nennt, heisst im Katalog genau so
+        $labels = @($Real.values.PSObject.Properties.Value)
+        foreach ($c in $Real.checks) { foreach ($t in $c.todo) { foreach ($part in $t.text, $t.where, $t.sign) {
+                    foreach ($m in [regex]::Matches($part, 'Rohwerte? („[^“]+“(, | und )?)+')) { foreach ($q in [regex]::Matches($m.Value, '„([^“]+)“')) { $labels | Should -Contain $q.Groups[1].Value -Because $c.id } } } } }
+    }
+    It 'fuehrt mit den Schritten der Sicherheitsprodukte und des Dienstes Windows Update zu dem, was Microsoft sagt' {      # Korrekturrunde 1 von Task 14b, Punkte 1 bis 3, 12
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        $steps = { param($id) @($check[$id].todo | ForEach-Object { "$($_.text) | $($_.where) | $($_.sign)" }) -join ' || ' }
+        # 1: das Master-Image wird nicht angebunden; die Skripte laufen beim Start jedes bereitgestellten Servers
+        $p = & $steps 'security.passiveWithoutMde'
+        $p | Should -Not -Match 'Anbindung im Abbild nachholen'
+        $p | Should -Match 'Onboarding-Skripte liegen im Master-Image und laufen beim Start jedes bereitgestellten Servers; das Master-Image selbst wird nicht angebunden'
+        $p | Should -Match 'vom Sicherheitsteam'; $ProofFlat | Should -Match ([regex]::Escape('https://learn.microsoft.com/en-us/defender-endpoint/configure-endpoints-vdi (Stand der Seite 2026-09-22)'))
+        $ProofFlat | Should -Match ([regex]::Escape('Don''t onboard the primary image'))
+        # 2: beide Pruefungen unterscheiden wie die Seite: mit Anbindung passiv, ohne Anbindung abschalten oder deinstallieren; keine schickt in die andere
+        $t = & $steps 'security.twoScanners'
+        $t | Should -Match 'sind die Server an Microsoft Defender for Endpoint angebunden: Defender Antivirus in die passive Betriebsart setzen \(Microsoft nennt dafür den Wert ForceDefenderPassiveMode\)'
+        $t | Should -Match 'sind die Server nicht angebunden: Defender Antivirus von Hand abschalten oder deinstallieren'
+        $p | Should -Match 'Bleiben die Server ohne Anbindung und schützt ein anderes Produkt: Defender Antivirus von Hand abschalten oder deinstallieren'
+        $p | Should -Match 'Schützt kein anderes Produkt: die erzwungene passive Betriebsart zurücknehmen'
+        $check['security.twoScanners'].title | Should -BeExactly 'Defender Antivirus neben einem weiteren Schutzprodukt'
+        $two = Get-Check @{ 'security.defenderMode' = 'Normal'; 'security.defenderRealTime' = $true; 'security.services' = @(@{ Name = 'WinDefend'; State = 'Running'; StartMode = 'Auto' })
+            'security.filters' = @(@{ Name = 'WdFilter'; Altitude = '328010' }, @{ Name = 'CyProtectDrv64'; Altitude = '388510' }) } @{} 'security.twoScanners' $Real
+        $two.grade | Should -Be 'check'; $two.finding | Should -Match 'Erkannte Schutzprodukte: Microsoft Defender, Arctic Wolf Aurora Endpoint Protection \(ein Strich heißt: nicht gelesen\)\.$'
+        # 3: der Dienst Windows Update wird nur abgeschaltet, wenn die Signaturen auf einem anderen Weg kommen; die Bedeutung nennt die andere Pruefung
+        $u = & $steps 'maintenance.updateServiceEnabled'
+        $u | Should -Match 'woher Defender Antivirus seine Signaturen bezieht: Kommen sie von Microsoft Update, braucht Defender Antivirus dafür nach Microsoft die Dienste Windows Update und BITS'
+        $u | Should -Match 'Nur wenn die Server keine Updates selbst laden sollen und die Signaturen auf einem anderen Weg kommen, den Dienst im Abbild deaktivieren'
+        $check['maintenance.updateServiceEnabled'].meaning | Should -Match 'ohne ihn meldet die Prüfung „Alter der Signaturen von Defender Antivirus“'
+        (& $steps 'security.signatureAge') | Should -Match 'Kommen sie von Microsoft Update, braucht Defender Antivirus dafür nach Microsoft die Dienste Windows Update und BITS'
+        (& $steps 'security.signatureAge') | Should -Match 'das Alter der Signaturen ist größer als die Laufzeit seit dem letzten Start'
+        $ProofFlat | Should -Match ([regex]::Escape('https://learn.microsoft.com/en-us/defender-endpoint/security-intelligence-update-tshoot'))
+        # 12 (ZB-R48): die Ausschluesse des WEM-Agenten stuetzen sich auf den Artikel von Citrix; Carl Stalhood bleibt im Text und steht im Nachweis als zweite Quelle
+        $w = $check['security.wemExclusions']; $w.kind | Should -Be 'vendor'; $w.source.vendor | Should -Be 'Citrix'; $w.source.title | Should -Match 'CTX696648'; $w.meaning | Should -Match 'Carl Stalhood'
+        foreach ($id in 'security.wemExclusions', 'security.citrixExclusions') { $check[$id].source.date | Should -Be '2026-05-25' -Because $id }
+        $Proof | Should -Match '\| Citrix \| Endpoint Security, Antivirus, and Antimalware Best Practices \(CTX696648\) \| \S+ \| 2026-05-25 \|'
+        @($Real.checks | Where-Object kind -eq 'vendor').Count | Should -Be 23; @($Real.checks | Where-Object kind -eq 'practice').Count | Should -Be 13; @($Real.checks | Where-Object kind -eq 'rule').Count | Should -Be 30
+    }
+    It 'sagt im Ereignisbild nur, was die gelesenen Protokolle hergeben' {                                   # Korrekturrunde 1 von Task 14b, Punkte 4, 5, 19
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        $day = 86400000L
+        $logs = { param([double[]]$Days) $names = 'Application', 'System', 'Microsoft-Windows-PrintService/Admin'
+            @(for ($i = 0; $i -lt $Days.Count; $i++) { @{ Log = $names[$i]; Present = $true; Enabled = $true; MaxSizeMB = 20; FileSizeMB = 1; Records = 5; Mode = 'Circular'; Full = $false; Oldest = $ReadMs - [long]($Days[$i] * $day) } }) }
+        # der Server laeuft laenger als der Rueckblick, die Protokolle reichen neun Tage zurueck: der Rueckblick von sieben Tagen ist ganz abgedeckt, und der Befund behauptet nichts anderes
+        $since = $check['events.sinceBoot']; $since.title | Should -BeExactly 'Reichweite der Ereignisprotokolle vor den letzten Start'
+        $x = Get-Check @{ 'operation.lastBoot' = $ReadMs - 10 * $day; 'events.logs' = (& $logs 9, 9, 9) } @{} 'events.sinceBoot' $Real
+        $x.grade | Should -Be 'check'
+        $x.finding | Should -BeExactly ('Kein gelesenes Ereignisprotokoll reicht vor den letzten Start des Servers zurück (05.01.2026 08:00). Liegt dieser Start innerhalb des Rückblicks (eingestellte Länge in Tagen: 7), ' +
+            'zeigen Rückblick und Ereignisbild nur die Zeit seit dem Start. Auf einem nicht persistenten Server ohne beständiges Laufwerk ist das der Normalfall. Das ist ein Hinweis aus der Praxis, kein Fehler.')
+        $since.findings.check | Should -Not -Match 'deshalb nur die Zeit seit diesem Start'; $since.meaning | Should -Not -Match 'Auf diesem Server reichen'
+        $since.meaning | Should -Match '^Reichen die Ereignisprotokolle nur bis zum letzten Start, zeigen Rückblick und Ereignisbild nichts von davor'
+        # der Start liegt im Rueckblick, die Protokolle reichen davor zurueck, ein ruhiges Protokoll hat seinen einzigen Eintrag vor zweieinhalb Tagen:
+        # die Reichweite ist in Ordnung, die Abdeckung meldet, ohne fehlende Tage oder ein zu kleines Protokoll zu behaupten, und die Zaehlungen leugnen die Tage vor dem Start nicht
+        $quiet = @{ 'operation.lastBoot' = $ReadMs - 2 * $day; 'events.logs' = (& $logs 30, 30, 2.5) }
+        $crash = @{ EventsBefore = @((New-Ev 1 'crash'), (New-Ev 3 'crash'), (New-Ev 5 'crash')) }
+        (Get-Check $quiet @{} 'events.sinceBoot' $Real).grade | Should -Be 'ok'
+        $cov = Get-Check $quiet @{} 'events.coverage' $Real; $cov.grade | Should -Be 'check'
+        $cov.finding | Should -BeExactly ('Mindestens ein ausgewertetes Ereignisprotokoll hat keinen Eintrag aus den ersten Tagen des Rückblicks (Tage ohne Eintrag: 5); der letzte Start (13.01.2026 08:00) erklärt das nicht. ' +
+            'Entweder ist das Protokoll zu klein und hat ältere Einträge überschrieben, oder es hat in dieser Zeit nichts aufgezeichnet.')
+        $check['events.coverage'].findings.check | Should -Not -Match 'am Anfang fehlen Tage'
+        $covSteps = @($check['events.coverage'].todo | ForEach-Object { "$($_.text) $($_.sign)" }) -join ' '
+        $covSteps | Should -Match 'Liegt seine Größe \(FileSizeMB\) an der Höchstgröße \(MaxSizeMB\), wurde überschrieben'; $covSteps | Should -Match 'Ein Protokoll, das seine Höchstgröße erreicht hat, vergrößern'
+        $cr = Get-Check $quiet $crash 'events.crashes' $Real; $cr.grade | Should -Be 'check'
+        $cr.finding | Should -BeExactly ('Tage mit Abstürzen im Rückblick: 3, die Schwelle von 3 ist erreicht. Letzter Start des Servers: 13.01.2026 08:00 (ein Strich heißt: nicht gelesen). Reichen die Ereignisprotokolle nicht vor diesen Start zurück ' +
+            '(das zeigt die Prüfung „Reichweite der Ereignisprotokolle vor den letzten Start“), zählt der Rückblick nur die Zeit seither.')
+        foreach ($id in 'events.crashes', 'events.storage', 'events.fileserver') { foreach ($g in 'ok', 'check') {
+                $check[$id].findings.$g | Should -Not -Match 'reicht der Rückblick höchstens bis zum letzten Start zurück' -Because "$id $g"
+                $check[$id].findings.$g | Should -Match 'Reichen die Ereignisprotokolle nicht vor diesen Start zurück \(das zeigt die Prüfung „Reichweite der Ereignisprotokolle vor den letzten Start“\)' -Because "$id $g" } }
+        # 5: die Ereignisse heissen wie im gemessenen Teil des Berichts; "Speicher" bleibt der Arbeitsspeicher
+        $check['events.storage'].title | Should -BeExactly 'Datenträgerfehler im Rückblick'; $Real.values.'events.storageCount' | Should -BeExactly 'Datenträgerfehler im Rückblick'
+        $Texts['companion.system.storage'] | Should -Be 'Datenträgerfehler'; (Get-Content $CatFile -Raw) | Should -Not -Match 'Speicherereignis|Team für den Speicher\b'
+        (Get-Check @{} @{ EventsBefore = @((New-Ev 1 'system' 'storage')) } 'events.storage' $Real).finding | Should -Match '^Datenträgerfehler im Rückblick \(Meldungen von Windows über Fehler oder Verzögerungen beim Zugriff auf ein Laufwerk\): 1\.'
+        # 19 (ZB-R35): die drei dauerhaften Hinweise sagen im Befund, dass sie Hinweise sind
+        foreach ($id in 'maintenance.updateServiceEnabled', 'print.operationalLogOff', 'events.sinceBoot') { $check[$id].findings.check | Should -Match ' Das ist ein Hinweis aus der Praxis, kein Fehler\.$' -Because $id }
+    }
+    It 'laesst zuerst nachsehen und nennt im Befund, was gefunden wurde' {                                    # Korrekturrunde 1 von Task 14b, Punkte 6 bis 9, 15 bis 18, 21, 22
+        $check = @{}; foreach ($c in $Real.checks) { $check[[string]$c.id] = $c }
+        $step = { param($id, $n) $s = @($check[$id].todo)[$n]; "$($s.text) | $($s.where) | $($s.sign)" }
+        # 6: die Richtlinie, die Treiber wirklich isoliert, und erst nach einem Test
+        (& $step 'print.driversInSpooler' 1) | Should -Match 'Override print driver execution compatibility setting reported by print driver.*PrintDriverIsolationOverrideCompat.*vorher auf einem Testserver prüfen'
+        (& $step 'print.driversInSpooler' 1) | Should -Not -Match 'über die Richtlinie zur Treiberisolierung'
+        # 7: welche Treiber gebraucht werden, zeigt die Zuordnung, nicht das Master-Image
+        (& $step 'print.driverCount' 0) | Should -Match 'für welche Druckermodelle den Benutzern noch Drucker zugeordnet werden.*Zuordnungswerkzeugs \(zum Beispiel PrinTaurus SmartSpread\).*Druckserver'
+        (& $step 'print.driverCount' 0) | Should -Not -Match 'Druckverwaltung im Master-Image'; (& $step 'print.driverCount' 1) | Should -Match 'nicht mehr über der Schwelle'
+        (& $step 'print.driverCount' 2) | Should -Match 'auf einem Testserver mit diesem Treiber nacheinander viele Drucker anlegen und wieder löschen'
+        # 8: nachsehen steht vor aendern
+        (& $step 'print.mappingClientSupported' 0) | Should -Match '^Zuerst die Version des Clients mit der Release-Version auf den Druckservern vergleichen'
+        (& $step 'print.mappingClientSupported' 1) | Should -Match '^Den Client im Abbild auf die Release-Version der Druckserver bringen, mindestens 6\.2'
+        @($check['print.operationalLogOff'].todo).Count | Should -Be 2; (& $step 'print.operationalLogOff' 0) | Should -Match '^Nachsehen, ob das Protokoll schon im Abbild ausgeschaltet ist'
+        (& $step 'print.operationalLogOff' 1) | Should -Not -Match 'Einstellung der Windows-Registrierung'
+        (& $step 'operation.powerPlan' 0) | Should -Match '^Zuerst mit dem Hypervisor-Team klären.*das Betriebssystem der Hosts \(der Hypervisor\)'; (& $step 'operation.powerPlan' 1) | Should -Match '^Den Energiesparplan auf „Höchstleistung“ stellen'
+        (& $step 'vda.controllerCount' 0) | Should -Match '^Nachsehen, ob der eine Eintrag eine Controller-Gruppe mit mehreren Controllern ist: Dann ist nichts zu tun'
+        # 9: gelesen wird die Einstellung des Netzwerkadapters, nicht der globale Schalter von Windows
+        $rss = $check['network.rss']
+        foreach ($g in 'ok', 'check') { $rss.findings.$g | Should -Match 'in den Einstellungen des Netzwerkadapters abgeschaltet.* Den globalen Schalter von Windows für RSS liest das Zustandsbild nicht\.$' -Because $g }
+        $rss.meaning | Should -Match 'das Zustandsbild liest nur die Einstellung des Netzwerkadapters'
+        (& $step 'network.rss' 0) | Should -Match 'netsh int tcp show global'; (& $step 'network.rss' 1) | Should -Match 'dafür sorgen, dass das Versiegeln es nicht wieder abschaltet'
+        # 15, 16
+        (& $step 'vda.listOfSids' 0) | Should -Match 'Einstellung „Controller SIDs“ der Citrix-Richtlinie'
+        foreach ($id in 'network.dnsCount', 'network.dnsPublic') { $check[$id].source.title | Should -BeExactly 'Best practices for DNS client settings in Windows Server' -Because $id }
+        $ProofFlat | Should -Not -Match 'früheren Titel'; $ProofFlat | Should -Not -Match 'common-exclusion-mistakes-microsoft-defender-antivirus'
+        $ProofFlat | Should -Match ([regex]::Escape('https://learn.microsoft.com/en-us/defender-endpoint/defender-endpoint-exclusions-common-mistakes'))
+        $check['print.driverCount'].meaning | Should -Match 'den Citrix-Universaltreiber oder die eigenen Windows-Treiber der Drucker zu nutzen \(„Windows-native drivers“\)'
+        $check['maintenance.tasksInWorkHours'].meaning | Should -Match 'Gezählt werden nach einer Festlegung des Katalogs nur Aufgaben außerhalb des Ordners \\Microsoft\\\. Die Wartungsaufgaben von Windows selbst laufen nach Microsoft erst im Leerlauf'
+        $check['maintenance.sessionTriggerTasks'].meaning | Should -Not -Match 'keine geplanten Aufgaben'
+        # 17, 18: der Befund nennt die gelesenen Werte, und jeder Strich und jedes Kennwort hat seine Legende im Befund
+        (Get-Check @{ 'print.queueCount' = 12; 'sessions.list' = @() } @{} 'print.queueCount' $Real).finding |
+            Should -BeExactly 'Druckwarteschlangen beim Lesen: 12, Benutzersitzungen: 0, Warteschlangen je Sitzung: 12, mehr als die Schwelle von 10 (ohne Sitzung steht dort die Zahl aller Warteschlangen, und die Warteschlangen des Servers selbst sind mitgezählt).'
+        (Get-Check @{ 'network.domainMember' = $true; 'network.timeType' = 'NTP' } @{} 'network.timeSource' $Real).finding |
+            Should -BeExactly 'Der Server ist Mitglied einer Domäne, bezieht seine Zeit aber nicht aus der Domäne (eingestellte Art: NTP; NTP = feste Zeitquellen, NoSync = kein Abgleich, ein Strich heißt: keine Art eingetragen).'
+        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30' } @{} 'maintenance.defenderScanInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 0 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag\), eingestellte Zeit 12:30 Uhr\.$'
+        (Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 3; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 3 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag\), eingestellte Stunde 10 Uhr\.$'
+        $check['security.citrixExclusions'].findings.check | Should -Match 'zeigt der Rohwert „Ausgeschlossene Prozesse“\.$'; (& $step 'security.citrixExclusions' 0) | Should -Match 'Rohwert „Ausgeschlossene Prozesse“'
+        (Get-Check @{} @{} 'print.spoolerStopped' $Real).finding | Should -Match 'gelesener Zustand: –; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden'
+        (Get-Check @{} @{} 'maintenance.updateServiceEnabled' $Real).finding | Should -Match 'gelesener Starttyp: –; Auto = automatisch, Manual = manuell, ein Strich heißt: Dienst nicht gefunden'
+        (Get-Check @{ 'maintenance.scanType' = 2 } @{} 'maintenance.defenderFullScan' $Real).finding | Should -Match 'Tag: –; 0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie; ein Strich heißt: nicht eingestellt'
+        (Get-Check @{ 'network.smb1' = 'System' } @{} 'network.smb1' $Real).finding | Should -Match 'gelesener Starttyp: System; Boot und System = beim Start von Windows'
+        (Get-Check @{ 'print.isolationExecution' = 1 } @{} 'print.isolationOff' $Real).finding | Should -Match 'gelesener Wert: 1; 0 = Isolierung aus, 1 = Isolierung eingeschaltet'
+        # 21: Schritte, denen man folgen kann
+        (& $step 'network.smb1' 0) | Should -Match 'keine solche Verbindung beim Lesen heißt nicht, dass kein Gerät SMBv1 braucht'
+        (& $step 'events.sinceBoot' 0) | Should -Match 'Rohwerte „Lokale Laufwerke“ und „Beständiger Datenort der Bereitstellung“'
+        (& $step 'maintenance.updateInstallInWorkHours' 1) | Should -Match 'abschalten oder aus der Arbeitszeit legen'
+        # 22: Stellen im Bericht heissen wie im Bericht
+        foreach ($id in 'print.driversInSpooler', 'print.driverCount', 'print.kernelModeV2') { (& $step $id 0) | Should -Match 'Expertenansicht, Reiter „Drucken“: Treiberliste' -Because $id }
+        (& $step 'print.driversInSpooler' 0) | Should -Match 'Spalte „Isolierung“'
+        foreach ($id in 'events.crashes', 'events.storage', 'events.fileserver') { (& $step $id 0) | Should -Match 'im Bericht der Bereich „Vor der Messung“ \(Rückblick\)' -Because $id }
+        (Get-Content $CatFile -Raw) | Should -Not -Match 'im Bericht die Liste der Druckertreiber|Bericht, Rückblick|Bericht, Verlauf'
+    }
+    It 'nennt eine Sache mit einem Namen' {                                                                   # Korrekturrunde 1 von Task 14b, Punkt 20
+        $all = Get-Content $CatFile -Raw
+        # der Dienst Druckwarteschlange, die Treiber, Schutzprodukte, das Cache-Laufwerk, der Netzwerkadapter, der Server
+        foreach ($w in 'Druckdienst', 'Spooler-Dienst', 'Universal Printing Driver', 'universellen Druckertreiber', 'Virenschutz', 'Schutzsoftware', 'Antivirenprodukt', 'Cache-Datenträger',
+            'Netzwerkschnittstelle', '\bSchnittstelle', 'Adaptertyp', '\bRechner\b', '\bRechners\b') { $all | Should -Not -MatchExactly $w -Because $w }
+        $all | Should -Match 'Dienst Druckwarteschlange \(Spooler\)'; $all | Should -Match 'im Prozess des Dienstes Druckwarteschlange'; $all | Should -Match 'HP Universal Print Driver'; $all | Should -Match 'Citrix-Universaltreiber'
+        # das Produkt heisst nie nur "Defender": Microsoft Defender Antivirus oder Defender Antivirus, und Microsoft Defender for Endpoint
+        $all | Should -Not -MatchExactly '(?<![A-Za-z])Defender(?! Antivirus| for Endpoint|-Portal)'
+        # je Pruefung steht der Name einmal so, wie Microsoft ihn schreibt, und zwar bei der ersten Nennung im Befund oder, wo der Befund das Produkt nicht nennt, im uebrigen Text; danach "Defender Antivirus"
+        foreach ($c in $Real.checks) {
+            $rest = "$($c.meaning) $(@($c.todo | ForEach-Object { "$($_.text) $($_.where) $($_.sign)" }) -join ' ')"
+            foreach ($g in 'ok', 'check', 'act') {
+                if (-not $c.findings.$g) { continue }
+                $text = "$($c.findings.$g) $rest"
+                if ($text -notmatch 'Defender Antivirus') { continue }
+                ([regex]::Matches($text, 'Microsoft Defender Antivirus')).Count | Should -Be 1 -Because "$($c.id) $g"
+                $text.IndexOf('Microsoft Defender Antivirus') | Should -BeLessThan $text.IndexOf('Defender Antivirus') -Because "$($c.id) $g"
+            }
+        }
+        $ProofFlat | Should -Not -Match 'Universal Printing Driver'
     }
 }

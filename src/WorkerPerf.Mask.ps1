@@ -1,8 +1,13 @@
 #Requires -Version 5.1
 # WorkerPerf report masking: collects the names of a whole capture and assigns their replacement names, then replaces
-# them in texts and in the finished report data (definitions only).
-# Requires WorkerPerf.Common.ps1, WorkerPerf.Load.ps1 (Open-WorkerPerfCsvReader), WorkerPerf.EventConfig.ps1 (default
-# lists of accounts and domains that are not persons) and WorkerPerf.Events.ps1 (event and print driver readers, person check).
+# them in texts and in the finished report data (definitions only). The names come from the capture's files in a fixed
+# order (New-WorkerPerfMask), those of the health picture (health.json, by the type suffixes of the value list) last, so
+# that the other names keep their numbers, except where a name already seen arrives from health.json as a person kind
+# (a server name that is also a session's client): it then becomes that kind, as everywhere in the mask
+# (Add-WorkerPerfMaskName), and the numbers of the kinds it leaves and joins move. A client name must be masked at the
+# level that masks persons: privacy wins over stable numbers (ZB-R46).
+# Requires WorkerPerf.Common.ps1 (also the value list WorkerPerfHealthValues), WorkerPerf.Load.ps1
+# (Open-WorkerPerfCsvReader, ConvertFrom-WorkerPerfHealthJsonText), WorkerPerf.EventConfig.ps1 (default lists of accounts and domains that are not persons) and WorkerPerf.Events.ps1 (event and print driver readers, person check).
 # Separate from the masking of the probe script Test-WorkerPerfSources.ps1, which is not used here.
 # Get-WorkerPerfMaskRows, Get-WorkerPerfMaskHolders and Get-WorkerPerfMaskVocabularyHits emit plain pipeline output:
 # wrap calls in @(...).
@@ -42,12 +47,16 @@ $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^
 $script:WorkerPerfMaskSid = New-Object System.Text.RegularExpressions.Regex '^S-1-5-21-\d+-\d+-\d+-\d+$', 'IgnoreCase'
 # folders under <drive>:\Users that belong to no person (wildcards, compared without regard to case): the shared
 # folders, the temporary profile Windows creates when a profile cannot be loaded (TEMP, TEMP.<domain>, TEMP.<domain>.001),
-# the accounts of the setup (defaultuser0 ...) and the folders of IIS application pools
+# the accounts of the setup (defaultuser0 ...), the folders of IIS application pools and the folders of the built-in
+# account Administrator (on nearly every server, in health.json sessions.localProfiles: taken as a name, the word
+# "Administrator" would be replaced in every text of a masked report)
 $script:WorkerPerfMaskProfileFolders = @('Public', 'Default', 'Default User', 'All Users', 'TEMP', 'TEMP.*', 'defaultuser[0-9]*',
-    '*AppPool', '.NET v*')
+    '*AppPool', '.NET v*', 'Administrator', 'Administrator.*')
 # The server of a UNC path: letters, digits, '-', '_' and '.', neither starting nor ending with a full stop (so not the
 # device prefixes \\?\ and \\.\, and not the full stop or bracket that follows it in a sentence).
 $script:WorkerPerfMaskServerText = '(?<server>[\p{L}\p{N}_-](?:[\p{L}\p{N}_.-]*[\p{L}\p{N}_-])?)'
+# The server prefix of a UNC path: \\<server>, a WebDAV suffix @SSL and @<port> after it not part of the server.
+$script:WorkerPerfMaskUncPrefix = '\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?'
 # Fixed patterns in path and instance texts, scanned left to right: an account SID; a UNC path with its server (a WebDAV
 # suffix @SSL and @<port> is not part of it) and, when present, its share (\\server\share); a user folder <drive>:\Users\<name> (any drive, any case), and the user of a
 # Citrix UPM mount path \Users\<user>_UPM_local (also without drive).
@@ -55,7 +64,7 @@ $script:WorkerPerfMaskServerText = '(?<server>[\p{L}\p{N}_-](?:[\p{L}\p{N}_.-]*[
 # space; in a field that holds nothing but a path (process path, volume, event object) it runs to the next backslash, so
 # that a share name with a space (\\fs01\Abteilung Kardiologie) is one name.
 $script:WorkerPerfMaskPathPatternText = '(?<sid>(?<![\p{L}\p{N}-])S-1-5-21-\d+-\d+-\d+-\d+(?![\p{L}\p{N}-]))' +
-    '|(?<unc>\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
+    '|(?<unc>' + $script:WorkerPerfMaskUncPrefix + '\\(?<share>[^\\/\s,;"*:|<>]+)?)' +
     '|(?<drive>(?<![A-Za-z])[A-Za-z]:)?\\Users\\(?<folder>[^\\]+?)(?<upm>_UPM_local)?(?=\\|$)'
 $script:WorkerPerfMaskPathPatterns = New-Object System.Text.RegularExpressions.Regex $script:WorkerPerfMaskPathPatternText, 'IgnoreCase'
 $script:WorkerPerfMaskPathFieldPatterns = New-Object System.Text.RegularExpressions.Regex ($script:WorkerPerfMaskPathPatternText.Replace(
@@ -520,7 +529,7 @@ function Add-WorkerPerfMaskUncName($State, [string]$Kind, [string]$Name) {
     # part of it) when it has one.
     [void](Add-WorkerPerfMaskName $State $Kind $Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return }
-    $m = [regex]::Match($Name.Trim(), '^\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?\\', 'IgnoreCase')
+    $m = [regex]::Match($Name.Trim(), '^' + $script:WorkerPerfMaskUncPrefix + '\\', 'IgnoreCase')
     if ($m.Success) { Add-WorkerPerfMaskHost $State $m.Groups['server'].Value }
 }
 
@@ -593,6 +602,119 @@ function Add-WorkerPerfMaskPatternNames($State, [string]$Text, [System.Text.Regu
     }
 }
 
+function Add-WorkerPerfMaskAddress($State, [string]$Address) {
+    # An IPv6 address as an address: as written, and as further names of the same entry (one replacement) without
+    # brackets and zone index ([fd00::7], fe80::1%12 -> fd00::7, fe80::1) and, of an IPv4-mapped address
+    # (::ffff:10.20.0.99), its IPv4 address; so a text that writes the address in another of these forms is masked too.
+    # Returns $false (and takes nothing) for a text that is no IPv6 address.
+    if ([string]::IsNullOrWhiteSpace($Address)) { return $false }
+    $a = $Address.Trim()
+    $bare = $a
+    if ($bare.StartsWith('[') -and $bare.EndsWith(']')) { $bare = $bare.Substring(1, $bare.Length - 2) }
+    $zone = $bare.IndexOf('%')
+    if ($zone -ge 0) { $bare = $bare.Substring(0, $zone) }
+    $ip = $null
+    if (-not $bare.Contains(':') -or -not [System.Net.IPAddress]::TryParse($bare, [ref]$ip)) { return $false }
+    $rec = Add-WorkerPerfMaskName $State 'address' $a
+    if ($bare -ne $a) { [void](Add-WorkerPerfMaskName $State 'address' $bare $rec) }
+    if ($ip.IsIPv4MappedToIPv6) { [void](Add-WorkerPerfMaskName $State 'address' $ip.MapToIPv4().ToString() $rec) }
+    return $true
+}
+
+function Add-WorkerPerfMaskHealthNames($State, [string]$Path) {
+    # The names of <Path>\health.json (none without the file or when it cannot be read), parsed as the loader parses it
+    # (ConvertFrom-WorkerPerfHealthJsonText: a text stays a text, also one in the form of a time): the read values in the
+    # order of the value list (WorkerPerfHealthValues), of a list each entry and each of its fields in the order of the
+    # fields, by the type suffix: :host a host (an IPv6 address is an address, see Add-WorkerPerfMaskAddress; a trailing
+    # full stop is dropped), :hosts each part between blanks or tabs as a host, :share a share and its server, :path the
+    # fixed path patterns, :user an account with the Domain field of the same entry, :domain and :client a name of that
+    # kind, :address an address (IPv6 as for :host), :protected a name that stays. :free and value are free server text:
+    # nothing is taken from them. A UNC path that names only a server (\\fs01) gives that server.
+    # Rule: what the loader shows, the mask collects; where the two differ on a shape, the mask collects MORE, never less.
+    # So a list written as one record is a list of one (as in Read-WorkerPerfHealthFile), a field of an entry that holds
+    # a list or a record (the loader does not check the fields of an entry) gives each text in it, and neither the case
+    # of ids and area names, nor the Reason, FormatVersion or ReadAt of the file is checked. A number or truth value is
+    # never a name (as a name it would replace that number in every text of the report). A value that is not read, a list
+    # entry that is no record and a field without text give nothing; a value whose names cannot be taken costs that
+    # value, never the rest of the file.
+    $file = Join-Path $Path 'health.json'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return }
+    # only an object is a health picture, checked on the text as in Read-WorkerPerfHealthFile (PowerShell 7 unrolls a
+    # one-element array into its object, Windows PowerShell 5.1 does not)
+    try {
+        $text = [IO.File]::ReadAllText($file, [Text.Encoding]::UTF8)
+        if ($text -notmatch '^\s*\{') { return }
+        $health = ConvertFrom-WorkerPerfHealthJsonText $text
+    }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch { return }
+    $isRecord = { param($x) $x -is [System.Collections.IDictionary] -or $x -is [System.Management.Automation.PSCustomObject] }
+    if (-not (& $isRecord $health)) { return }
+    $areas = Get-WorkerPerfField $health 'Areas'
+    if (-not (& $isRecord $areas)) { return }
+    $serverOnly = New-Object System.Text.RegularExpressions.Regex ('^' + $script:WorkerPerfMaskUncPrefix + '\\?$'), 'IgnoreCase'
+    $addName = {
+        param([string]$Type, [string]$Text, $Entry)
+        if ([string]::IsNullOrWhiteSpace($Text)) { return }
+        $t = $Text.Trim()
+        $hosts = @()
+        switch ($Type) {
+            'text:host' { $hosts = @($t) }
+            'text:hosts' { $hosts = @($t.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)) }
+            'text:share' { $only = $serverOnly.Match($t); if ($only.Success) { $hosts = @($only.Groups['server'].Value) } else { Add-WorkerPerfMaskUncName $State 'share' $t } }
+            'text:path' {
+                $only = $serverOnly.Match($t)
+                if ($only.Success) { $hosts = @($only.Groups['server'].Value) } else { Add-WorkerPerfMaskPatternNames $State $t $script:WorkerPerfMaskPathFieldPatterns }
+            }
+            'text:user' {
+                $domain = Get-WorkerPerfField $Entry 'Domain'
+                if ($domain -isnot [string]) { $domain = '' }
+                Add-WorkerPerfMaskAccount $State $t $domain $false
+            }
+            'text:domain' { [void](Add-WorkerPerfMaskName $State 'domain' $t) }
+            'text:client' { [void](Add-WorkerPerfMaskName $State 'client' $t) }
+            'text:address' { if (-not (Add-WorkerPerfMaskAddress $State $t)) { [void](Add-WorkerPerfMaskName $State 'address' $t) } }
+            'text:protected' { Add-WorkerPerfMaskProtected $State $t }
+        }
+        # Add-WorkerPerfMaskHost knows only IPv4 addresses: an IPv6 address (also with a zone index) would be a server
+        foreach ($h in $hosts) { if (-not (Add-WorkerPerfMaskAddress $State $h)) { Add-WorkerPerfMaskHost $State $h.TrimEnd('.') } }
+    }
+    # the texts of a field: the field itself, or each text at any depth of a list or record in it
+    $addField = {
+        param([string]$Type, $Content, $Entry)
+        if ($Content -is [string]) { & $addName $Type $Content $Entry }
+        elseif ($Content -is [System.Collections.IDictionary]) { foreach ($v in @($Content.Values)) { & $addField $Type $v $Entry } }
+        elseif ($Content -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $Content.PSObject.Properties) { & $addField $Type $p.Value $Entry } }
+        elseif ($Content -is [System.Collections.IList]) { foreach ($v in $Content) { & $addField $Type $v $Entry } }
+    }
+    foreach ($id in $script:WorkerPerfHealthValues.Keys) {
+        $def = $script:WorkerPerfHealthValues[$id]
+        try {
+            $values = Get-WorkerPerfField (Get-WorkerPerfField $areas $def.Area) 'Values'
+            if (-not (& $isRecord $values)) { continue }
+            $entry = Get-WorkerPerfField $values $id
+            if (-not (& $isRecord $entry) -or (Get-WorkerPerfField $entry 'State') -cne 'read') { continue }
+            # not through Get-WorkerPerfField: its return would unroll a list of one entry into that entry
+            $value = $null
+            if ($entry -is [System.Collections.IDictionary]) { if ($entry.Contains('Value')) { $value = $entry['Value'] } }
+            elseif ($null -ne $entry.PSObject.Properties['Value']) { $value = $entry.PSObject.Properties['Value'].Value }
+            if ($def.Type -ne 'list') {
+                if ($value -is [string]) { & $addName $def.Type $value $null }
+                continue
+            }
+            # a list written as one record is a list of one (Read-WorkerPerfHealthFile)
+            if (& $isRecord $value) { $value = [object[]]@(, $value) }
+            if ($value -isnot [System.Collections.IList]) { continue }
+            foreach ($item in $value) {
+                if (-not (& $isRecord $item)) { continue }
+                foreach ($field in $def.Fields.Keys) { & $addField $def.Fields[$field] (Get-WorkerPerfField $item $field) $item }
+            }
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch { continue }
+    }
+}
+
 function Get-WorkerPerfMaskVocabulary([hashtable]$Texts) {
     # The words of the report's own texts (texts.de.json), lower-case: a first label of a host that is one of them is no
     # second server name.
@@ -606,8 +728,8 @@ function Get-WorkerPerfMaskVocabulary([hashtable]$Texts) {
 
 function New-WorkerPerfMask {
     # The names of a whole capture (never a time cut, so every report of one capture uses the same replacements) and their
-    # replacement names. Files are read in a fixed order, each from its first line on; the order of first appearance
-    # decides the numbers. The numbers do not depend on the level: Personen keeps the numbers of Alles.
+    # replacement names. Files are read in a fixed order, each from its first line on, health.json last; the order of
+    # first appearance decides the numbers. The numbers do not depend on the level: Personen keeps the numbers of Alles.
     # Returns @{ Level; Entries = @{ Kind; Name; Replacement }[] of the level, in order of first appearance;
     # Protected = string[] of names that must stay (process, service, application, module, driver and manufacturer names);
     # Designations = string[] of the endpoint designations and role labels; AliasWords = string[] of the words the
@@ -653,7 +775,7 @@ function New-WorkerPerfMask {
     # the backing of a profile container is a share or a whole path on it (\\fs01\fslogix\<SID>_<user>\x.vhdx): its share
     # and server come from the UNC prefix, its user from the path patterns below (step 8)
     foreach ($r in $volumes) {
-        $m = [regex]::Match($r[1].Trim(), '^\\\\' + $script:WorkerPerfMaskServerText + '(?:@SSL)?(?:@\d{1,5})?\\[^\\/]+', 'IgnoreCase')
+        $m = [regex]::Match($r[1].Trim(), '^' + $script:WorkerPerfMaskUncPrefix + '\\[^\\/]+', 'IgnoreCase')
         if ($m.Success) { Add-WorkerPerfMaskUncName $st 'share' $m.Value }
     }
     # (5) probes.csv
@@ -690,6 +812,9 @@ function New-WorkerPerfMask {
     if ($null -ne $errors) { foreach ($p in $errors.PSObject.Properties) { $freeTexts.Add([string](Get-WorkerPerfField $p.Value 'FirstMessage')) } }
     $freeTexts.Add([string](Get-WorkerPerfField $meta 'EndMessage'))
     foreach ($t in $freeTexts) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskTextPatterns }
+    # (9) health.json, after all other files: the names above keep their numbers, except a name that arrives here as a
+    # person kind (see the head comment)
+    Add-WorkerPerfMaskHealthNames $st $Path
 
     # names that stay; of an event's application and module only the file name (the field may hold a whole path, whose
     # user folder is a name)

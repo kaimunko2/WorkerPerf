@@ -17,6 +17,8 @@ $script:WorkerPerfHealthEventKinds = @('crash', 'hang', 'service', 'print', 'pro
 $script:WorkerPerfHealthRequiredThresholds = @('workStartHour', 'workEndHour')
 # the parts of the catalogue, in the order they are checked
 $script:WorkerPerfHealthCatalogueParts = @('version', 'areas', 'grades', 'thresholds', 'values', 'copy', 'precedence', 'checks')
+# the parts a catalogue may leave out
+$script:WorkerPerfHealthOptionalParts = @('units', 'legends')
 
 # The members the loader reads, per object of the catalogue; names are compared exactly and any other name is rejected.
 $script:WorkerPerfHealthCatalogueFields = [ordered]@{
@@ -619,6 +621,35 @@ function Test-WorkerPerfHealthValueLabels([string]$Path, $Labels) {
     }
 }
 
+function Test-WorkerPerfHealthUnits([string]$Path, $Units, $Facts) {
+    # units (optional): the singular of a unit of the fact table, plural -> singular ("Tage" -> "Tag"), shown when a
+    # value is exactly 1. Only units that a fact of the table carries, each with a text.
+    if (-not (Test-WorkerPerfHealthCatalogueObject $Units)) { Stop-WorkerPerfHealthCatalogue $Path 'units' '' '' 'ist kein Objekt' }
+    $known = @()
+    foreach ($id in $Facts.Keys) { $u = [string]$Facts[$id].Unit; if ($u -and $known -cnotcontains $u) { $known += $u } }
+    foreach ($unit in (Get-WorkerPerfHealthCatalogueNames $Units)) {
+        if ($known -cnotcontains $unit) { Stop-WorkerPerfHealthCatalogue $Path 'units' '' '' "nennt die unbekannte Einheit '$unit' (Einheiten der Werte: $($known -join ', '))" }
+        if (-not (Test-WorkerPerfHealthCatalogueText (Get-WorkerPerfHealthCatalogueMember $Units $unit).Value)) {
+            Stop-WorkerPerfHealthCatalogue $Path 'units' '' '' "nennt fuer die Einheit '$unit' keinen Text"
+        }
+    }
+}
+
+function Test-WorkerPerfHealthLegends([string]$Path, $Legends, $Facts) {
+    # legends (optional): the short legend of the keywords a value or fact shows ("Running = laeuft, Stopped =
+    # beendet"), id -> text, so that the label in values stays a plain name. Only ids of the fact table (read values,
+    # derived facts, facts of the applications of the list), each with a text and nothing below it.
+    if (-not (Test-WorkerPerfHealthCatalogueObject $Legends)) { Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' 'ist kein Objekt' }
+    foreach ($id in (Get-WorkerPerfHealthCatalogueNames $Legends)) {
+        $known = $false
+        foreach ($k in $Facts.Keys) { if ([string]$k -ceq $id) { $known = $true; break } }
+        if (-not $known) { Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' "nennt die unbekannte Kennung '$id' (erlaubt sind die Kennungen der Werte und Fakten)" }
+        if (-not (Test-WorkerPerfHealthCatalogueText (Get-WorkerPerfHealthCatalogueMember $Legends $id).Value)) {
+            Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' "nennt fuer '$id' keinen Text"
+        }
+    }
+}
+
 function Test-WorkerPerfHealthCopy([string]$Path, $Copy) {
     # copy: every required text and no other, each with only its placeholders.
     if (-not (Test-WorkerPerfHealthCatalogueObject $Copy)) { Stop-WorkerPerfHealthCatalogue $Path 'copy' '' '' 'ist kein Objekt' }
@@ -680,6 +711,8 @@ function Read-WorkerPerfHealthCatalogue([string]$Path, [object[]]$Apps = @()) {
     #   thresholds   <name>: value, default, unit, label
     #   values       <fact>: label
     #   copy         <key>: text
+    #   units        <unit>: its singular (an empty object when the catalogue has no part units)
+    #   legends      <fact>: the legend of its keywords (an empty object when the catalogue has no part legends)
     #   precedence[] check, winner, reason
     #   checks[]     id, area, title, meaning, kind, values[], relates[],
     #                rules: check[], act[] (a rule the catalogue does not give is an empty list), each condition with
@@ -702,7 +735,7 @@ function Read-WorkerPerfHealthCatalogue([string]$Path, [object[]]$Apps = @()) {
     foreach ($part in $script:WorkerPerfHealthCatalogueParts) {
         if ($partNames -cnotcontains $part) { Stop-WorkerPerfHealthCatalogue $Path $part '' '' 'fehlt' }
     }
-    $unknown = Get-WorkerPerfHealthUnknownName $cat $script:WorkerPerfHealthCatalogueParts
+    $unknown = Get-WorkerPerfHealthUnknownName $cat ([string[]]@(@($script:WorkerPerfHealthCatalogueParts) + @($script:WorkerPerfHealthOptionalParts)))
     if ($null -ne $unknown) { Stop-WorkerPerfHealthCatalogue $Path $unknown '' '' 'ist unbekannt' }
     if (-not (Test-WorkerPerfHealthCatalogueDate (Get-WorkerPerfHealthCatalogueMember $cat 'version').Value)) { Stop-WorkerPerfHealthCatalogue $Path 'version' '' '' 'ist kein Datum der Form JJJJ-MM-TT' }
     Test-WorkerPerfHealthAreas $Path (Get-WorkerPerfHealthCatalogueMember $cat 'areas').Value
@@ -712,6 +745,10 @@ function Read-WorkerPerfHealthCatalogue([string]$Path, [object[]]$Apps = @()) {
     Test-WorkerPerfHealthCopy $Path (Get-WorkerPerfHealthCatalogueMember $cat 'copy').Value
 
     $facts = Get-WorkerPerfHealthFactTable $Apps
+    if ($partNames -ccontains 'units') { Test-WorkerPerfHealthUnits $Path (Get-WorkerPerfHealthCatalogueMember $cat 'units').Value $facts }
+    else { Add-Member -InputObject $cat -MemberType NoteProperty -Name 'units' -Value ([pscustomobject]@{}) }
+    if ($partNames -ccontains 'legends') { Test-WorkerPerfHealthLegends $Path (Get-WorkerPerfHealthCatalogueMember $cat 'legends').Value $facts }
+    else { Add-Member -InputObject $cat -MemberType NoteProperty -Name 'legends' -Value ([pscustomobject]@{}) }
     $factIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($k in $facts.Keys) { $null = $factIds.Add($k) }
     $ctx = @{ Path = $Path; Facts = $facts; FactIds = $factIds; Thresholds = [string[]]$thresholdIds
@@ -1409,8 +1446,7 @@ function Get-WorkerPerfHealthFacts($Model, $Catalogue, $EventConfig, [object[]]$
 # na (its fact is absent with notInstalled or notInUse: the check does not apply) or unknown (the fact is unreadable);
 # in a rule na decides before false (ruling ZB-R30). A check is act, check, ok, unknown ("nicht pruefbar") or na
 # ("trifft nicht zu"). Every text comes from the catalogue (copy, findings) or from the texts of the report
-# (skip.label.<category>). Needs WorkerPerf.Findings.ps1 (Format-WorkerPerfTextNumber) besides the files named at the
-# head.
+# (skip.label.<category>). Numbers are shown through Format-WorkerPerfHealthNumber.
 
 # the order of the checks inside an area
 $script:WorkerPerfHealthCheckOrder = @('act', 'check', 'unknown', 'ok', 'na')
@@ -1446,17 +1482,28 @@ function Format-WorkerPerfHealthTime($Ms, [int]$OffsetMinutes) {
     return [DateTimeOffset]::FromUnixTimeMilliseconds([long]$Ms).UtcDateTime.AddMinutes($OffsetMinutes).ToString('dd.MM.yyyy HH:mm', [Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Format-WorkerPerfHealthNumber([double]$Value) {
+    # A number of the health picture as a German text, as exact as the rules compare it: a fact has the decimals it was
+    # formed with (none, or one where the plan rounds it) and a threshold is a number written in the catalogue, so each
+    # is shown as it is (30,4 stays 30,4 also from 10 upwards, 30 stays 30) and a finding never shows a number that
+    # contradicts its rule. No trailing zeros, at most six decimals (the noise of a binary fraction is cut), decimal
+    # comma, independent of the installed culture.
+    $rounded = [Math]::Round($Value, 6, [MidpointRounding]::AwayFromZero)
+    if ($rounded -eq 0) { $rounded = [double]0 }   # never "-0"
+    return $rounded.ToString('0.######', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+}
+
 function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catalogue, [int]$OffsetMinutes) {
-    # The value of a fact as the report shows it: a number through Format-WorkerPerfTextNumber with its unit, a yes/no
-    # value as copy.yes or copy.no, a time as dd.MM.yyyy HH:mm in the server's local time (0: copy.noValue), the value of
-    # a probe (type value) by the kind of its content, a text as it is, a list as the number of its entries. A fact that
-    # is not read (or read without content): copy.noValue.
+    # The value of a fact as the report shows it: a number through Format-WorkerPerfHealthNumber with its unit (the
+    # singular of units of the catalogue when the value is exactly 1), a yes/no value as copy.yes or copy.no, a time as
+    # dd.MM.yyyy HH:mm in the server's local time (0: copy.noValue), the value of a probe (type value) by the kind of
+    # its content, a text as it is, a list as the number of its entries. A fact that is not read (or read without
+    # content): copy.noValue.
     $noValue = Get-WorkerPerfHealthCopyText $Catalogue 'noValue'
     if ($null -eq $Fact -or [string](Get-WorkerPerfHealthModelMember $Fact 'State') -cne 'read') { return $noValue }
     $value = Get-WorkerPerfHealthModelMember $Fact 'Value'
     if ($null -eq $value) { return $noValue }
-    $unitPart = ''; if ($Unit) { $unitPart = ' ' + $Unit }
-    if ($Type -ceq 'list') { return (Format-WorkerPerfTextNumber @($value).Count) }
+    if ($Type -ceq 'list') { return (Format-WorkerPerfHealthNumber @($value).Count) }
     if ($Type -ceq 'time') {
         if (-not (Test-WorkerPerfHealthWhole $value)) { return [string]$value }
         if ([double]$value -eq 0) { return $noValue }
@@ -1467,7 +1514,15 @@ function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catal
             if ($value) { return (Get-WorkerPerfHealthCopyText $Catalogue 'yes') }
             return (Get-WorkerPerfHealthCopyText $Catalogue 'no')
         }
-        if (Test-WorkerPerfHealthNumber $value) { return (Format-WorkerPerfTextNumber ([double]$value)) + $unitPart }
+        if (Test-WorkerPerfHealthNumber $value) {
+            $unitPart = ''
+            if ($Unit) {
+                $unitPart = ' ' + $Unit
+                $singular = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'units') $Unit
+                if ([double]$value -eq 1 -and -not [string]::IsNullOrEmpty([string]$singular)) { $unitPart = ' ' + [string]$singular }
+            }
+            return (Format-WorkerPerfHealthNumber ([double]$value)) + $unitPart
+        }
     }
     return [string]$value
 }
@@ -1843,7 +1898,7 @@ function Get-WorkerPerfHealthResult($Model, $Catalogue, $EventConfig, [object[]]
     $thresholdTexts = @{}
     foreach ($p in @((Get-WorkerPerfField $Catalogue 'thresholds').PSObject.Properties)) {
         $v = Get-WorkerPerfField $p.Value 'value'
-        if (Test-WorkerPerfHealthNumber $v) { $thresholdTexts['@' + $p.Name] = Format-WorkerPerfTextNumber ([double]$v) }
+        if (Test-WorkerPerfHealthNumber $v) { $thresholdTexts['@' + $p.Name] = Format-WorkerPerfHealthNumber ([double]$v) }
     }
     $appLabels = @{}
     foreach ($a in $apps) { $appLabels[[string](Get-WorkerPerfField $a 'key')] = [string](Get-WorkerPerfField $a 'label') }
