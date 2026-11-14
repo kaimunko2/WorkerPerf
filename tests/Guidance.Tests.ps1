@@ -822,6 +822,38 @@ Describe 'Anleitung zusammenstellen' {
         $g = New-WorkerPerfGuidance -Catalogue $cat8 -Facts @{ Situation = 'cpu'; Conditions = @('skipped.Prozesse', 'incident.unverified'); Values = @{} } -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu' }) -Texts $Texts
         @($g.checks.text) | Should -Be @('Allgemein 1', 'Allgemein 2', 'Luecke Prozesse', 'Luecke unbestaetigt')
     }
+    It 'stellt allgemeine Elemente aus einer Quelle der Praxis hinter die Hinweise auf nicht Gemessenes' {      # ruling P3-R75
+        # the mark of a source from practice in the field source ('<Name> (Empfehlung aus der Praxis): <Titel>'), no name of
+        # a source in the code: a general element with the mark follows the notes on a gap and on a coincidence in time, a
+        # note on a gap with the mark follows those; with a condition that says more an element keeps its place
+        $mark = 'Quelle Sim (Empfehlung aus der Praxis): Titel'
+        $cat9 = Read-WorkerPerfGuidance (New-Catalogue {
+                $c.situations.crash.checks = @(
+                    @{ text = 'Praxis allgemein 1'; where = 'w'; sign = 's'; source = $mark }
+                    @{ text = 'Luecke'; where = 'w'; sign = 's'; when = @('skipped.Prozesse') }
+                    @{ text = 'Allgemein'; where = 'w'; sign = 's' }
+                    @{ text = 'Praxis bedingt'; where = 'w'; sign = 's'; when = @('pattern.oneuser'); source = $mark }
+                    @{ text = 'Zusammentreffen'; where = 'w'; sign = 's'; when = @('pattern.overlap') }
+                    @{ text = 'Hersteller allgemein'; where = 'w'; sign = 's'; source = 'Hersteller: Titel' }
+                    @{ text = 'Praxis Luecke'; where = 'w'; sign = 's'; when = @('pattern.unchecked'); source = $mark }
+                    @{ text = 'Praxis allgemein 2'; where = 'w'; sign = 's'; source = $mark })
+                $c.situations.crash.remedies = @(@{ text = 'Praxis'; precondition = 'p'; source = $mark }, @{ text = 'Luecke'; precondition = 'p'; when = @('skipped.Prozesse') },
+                    @{ text = 'Allgemein'; precondition = 'p' })
+                $c.situations.crash.contacts = @(@{ text = 'Praxis'; source = $mark }, @{ text = 'Allgemein' }) })
+        $all = @('skipped.Prozesse', 'pattern.oneuser', 'pattern.overlap', 'pattern.unchecked')
+        $inc = New-Inc @{ type = 'ereignis'; event = @{ kind = 'crash'; app = 'simapp.exe' } }
+        $g = New-WorkerPerfGuidance -Catalogue $cat9 -Facts @{ Situation = 'crash'; Conditions = $all; Values = @{} } -Incident $inc -Texts $Texts
+        @($g.checks.text) | Should -Be @('Praxis bedingt', 'Allgemein', 'Hersteller allgemein', 'Luecke', 'Zusammentreffen', 'Praxis allgemein 1', 'Praxis allgemein 2', 'Praxis Luecke')
+        @($g.remedies.text) | Should -Be @('Allgemein', 'Luecke', 'Praxis')
+        @($g.contacts.text) | Should -Be @('Allgemein', 'Praxis')
+        # without a gap the general elements from practice still follow the other general ones
+        $g = New-WorkerPerfGuidance -Catalogue $cat9 -Facts @{ Situation = 'crash'; Conditions = @(); Values = @{} } -Incident $inc -Texts $Texts
+        @($g.checks.text) | Should -Be @('Allgemein', 'Hersteller allgemein', 'Praxis allgemein 1', 'Praxis allgemein 2')
+        # the code names no source: the mark is the only word it knows
+        $code = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/WorkerPerf.Guidance.ps1'))
+        $code | Should -Not -MatchExactly '\b(Stalhood|BIS-F|GO-EUC|Kindon|Rankin|Kötzing|Winkel|Parker|Tye|Billekens|Leech|Tritsch)\b'
+        $script:WorkerPerfGuidancePracticeMark | Should -BeExactly '(Empfehlung aus der Praxis)'
+    }
     It 'zaehlt genau die Bedingungen <Name> als Luecke' -TestCases @(                                    # ruling P3-R36
         @{ Name = 'unmeasured.cpu.steal'; Gap = $true }; @{ Name = 'unmeasured.input.session'; Gap = $true }; @{ Name = 'skipped.Drucken'; Gap = $true }
         @{ Name = 'cause.notmeasured'; Gap = $true }; @{ Name = 'pattern.unchecked'; Gap = $true }; @{ Name = 'incident.unverified'; Gap = $true }
