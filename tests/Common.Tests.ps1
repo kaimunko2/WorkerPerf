@@ -511,7 +511,7 @@ webview2Version|registryValue|HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Cli
             foreach ($x in $Apps[$k].probes) { $got += "$($x.id)|$($x.kind)|$($x.path)|$($x.name)|$($x.read)|$($x.names)|$($x.documented)" }
             $got | Should -Be @($want[$k] -split "\r?\n" | Where-Object { $_ }) -Because $k
         }
-        $Apps.edge.probes[6].label | Should -Be 'Startboost'
+        $Apps.edge.probes[6].label | Should -Be 'Startup-Boost'
     }
     It 'liefert den Tests eine Liste mit einer vierten, erfundenen Anwendung' {
         $t = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive)); $t[-1].key | Should -Be 'simapp'; $t[-1].label | Should -Be 'Sim-Fachanwendung'

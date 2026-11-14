@@ -13,7 +13,7 @@
         {"id": "updateStable", "label": "Update-Vorgabe für Edge selbst (0 = aus)", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\EdgeUpdate", "name": "Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", "names": false},
         {"id": "updateWebView2", "label": "Update-Vorgabe für die WebView2-Runtime (0 = aus)", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\EdgeUpdate", "name": "Update{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", "names": false},
         {"id": "updateCheckMinutes", "label": "Prüfabstand des Updaters in Minuten", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\EdgeUpdate", "name": "AutoUpdateCheckPeriodMinutes", "names": false},
-        {"id": "startupBoost", "label": "Startboost", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "StartupBoostEnabled", "names": false},
+        {"id": "startupBoost", "label": "Startup-Boost", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "StartupBoostEnabled", "names": false},
         {"id": "backgroundMode", "label": "Hintergrundmodus", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "BackgroundModeEnabled", "names": false},
         {"id": "sleepingTabs", "label": "Schlafende Tabs", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "SleepingTabsEnabled", "names": false},
         {"id": "autoDiscard", "label": "Verwerfen schlafender Tabs", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "AutoDiscardSleepingTabsEnabled", "names": false},
