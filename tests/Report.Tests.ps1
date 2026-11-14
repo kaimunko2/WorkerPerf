@@ -9,6 +9,7 @@ BeforeAll {
             [Math]::Abs($_.start - $E.StartMs) -le 20000 -and [Math]::Abs($_.end - $E.EndMs) -le 20000 })
     }
     function Get-Hit([string]$Key) { (Find-Incident $D ($Exp | Where-Object Key -eq $Key))[0] }
+    $script:ReportScript = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $script:RoleFile = Join-Path (Split-Path $R.Report) 'roles.sim.json'
 }
 Describe 'Durchlauf Simulation -> Bericht' {
     It 'findet genau die Vorfaelle des Drehbuchs' {
@@ -777,7 +778,12 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         }
         [IO.File]::WriteAllText($plain, ($j | ConvertTo-Json -Depth 10))
         $out = Join-Path $TestDrive 'a-own.html'
-        [void](& $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain 6>$null)
+        # Aussage geaendert (Task 16): das Zustandsbild prueft seinen Katalog gegen dieselbe Liste; ein Katalog ohne die Pruefungen
+        # der Anwendungen passt zu ihr
+        $health = Join-Path $TestDrive 'h-noapps.json'; $h = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json
+        { & $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain 6>$null } | Should -Throw "*Pruefung 'apps.*Anwendung 'edge' steht nicht in der Anwendungsliste*"
+        $h.checks = @($h.checks | Where-Object { $_.area -ne 'apps' }); [IO.File]::WriteAllText($health, ($h | ConvertTo-Json -Depth 12))
+        [void](& $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain -HealthFile $health 6>$null)
         $x = Get-ReportData $out
         @(($x.incidents | Where-Object lead -eq 'cpu').guide.conditions | Where-Object { $_ -like 'app.*' }) | Should -Be @('app.tabellen')
         @($x.appList.apps | ForEach-Object { $_.label }) | Should -Be @('Sim Tabellen')
@@ -797,5 +803,135 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $said = New-Object System.Collections.Generic.List[string]
         try { & (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $R.Run -OutFile (Join-Path $TestDrive 'g.html') -GuidanceFile $bad 6>&1 | ForEach-Object { $said.Add([string]$_) } } catch { }
         ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'g.html') | Should -BeFalse
+    }
+}
+Describe 'Zustandsbild in den Berichtsdaten' {
+    It 'traegt Zustand, Bereiche, Zusammenfassung und Kopfangaben' {
+        $h = $D.health; $h.state | Should -Be 'read'; @($h.areas.id) | Should -Be $WorkerPerfHealthAreas
+        @($h.areas.grade) | Should -Be @('ok', 'check', 'ok', 'ok', 'act', 'act', 'ok', 'ok', 'check', 'check', 'check')
+        $h.summary.text | Should -Be '2 Bereiche zum Handeln, 4 zum Prüfen, 5 in Ordnung'; $h.unknownCount | Should -Be 2; @($h.changed).Count | Should -Be 0; $h.changedText | Should -Be ''
+        # Literal angepasst (ZB-R24): der Titel nennt den Server
+        $h.readAt | Should -BeLessOrEqual $D.meta.start; $h.durationMs | Should -Be 0; $h.title | Should -Be 'Zustand des Servers'; $h.headline | Should -Match '\d\d\.\d\d\.\d{4}'; $h.unknownText | Should -Match '2'
+        $h.environmentText | Should -Match 'nicht persistent'; $h.eventsReachText | Should -Match '\d\d\.\d\d\.\d{4}'; ($h.areas | Where-Object id -eq 'events').intro | Should -Be $h.eventsReachText
+        $apps = $h.areas | Where-Object id -eq 'apps'; @($apps.apps.key | Sort-Object) | Should -Be @('edge', 'office', 'teams'); @($apps.apps.state | Select-Object -Unique) | Should -Be @('installed')
+        # Literal angepasst (Korrekturrunde 1 von Task 14c, ZB-R57): die Updates der WebView2-Runtime werden auch geprueft
+        @($apps.checks | Where-Object grade -eq 'check').id | Should -Be @('apps.edgeWebView2Update', 'apps.edgeBackgroundMode', 'apps.teamsAutoUpdate'); ($apps.checks | Where-Object id -eq 'apps.edgeBackgroundMode').app | Should -Be 'edge'
+        ($h.raw | Where-Object id -eq 'apps.office.updateUrl').free | Should -Be '\\fs01\office$\updates'; ($h.raw | Where-Object id -eq 'apps.edge.backgroundMode').label | Should -BeLike 'Microsoft Edge – *'
+        ($h.raw | Where-Object id -eq 'maintenance.searchService').stateText | Should -BeLike 'nicht zutreffend*'
+        # Literal angepasst (ZB-R54): die Treiberpruefung ist eine Faustregel
+        $c = ($h.areas | Where-Object id -eq 'print').checks[0]; $c.id | Should -Be 'print.driversInSpooler'; $c.grade | Should -Be 'act'; $c.kind | Should -Be 'rule'; $c.source.url | Should -Match '^https://'
+        foreach ($f in 'title', 'finding', 'meaning', 'kindLabel', 'value') { [string]$c.$f | Should -Not -BeNullOrEmpty -Because $f }; @($c.todo).Count | Should -BeGreaterThan 0
+        # Literal angepasst (Task 14s und die Proben aus src/apps.json): 208 Rohwerte
+        $h.grades.act.word | Should -Be 'Handeln'; $h.grades.na.word | Should -Be 'Trifft nicht zu'; @($h.raw).Count | Should -Be 208; $h.offsetMin | Should -Be $D.meta.offsetMin
+        ($h.areas | Where-Object id -eq 'profile').countsText | Should -Be '1 zum Handeln'; ($h.areas | Where-Object id -eq 'size').countsText | Should -Be ''
+        ($h.areas | Where-Object id -eq 'security').statusText | Should -Not -BeNullOrEmpty; ($h.areas | Where-Object id -eq 'size').statusText | Should -Be ''      # Sicherheitsprodukte: teilweise gelesen
+    }
+    It 'gibt die Legenden des Katalogs mit' {                                                         # Zusatz c (ZB-R49)
+        $cat = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json
+        @($D.health.legends.PSObject.Properties.Name) | Should -Be @($cat.legends.PSObject.Properties.Name)
+        $D.health.legends.'operation.powerPlan' | Should -Be $cat.legends.'operation.powerPlan'; $D.health.legends.'operation.powerPlan' | Should -Match 'Höchstleistung'
+        ($D.health.raw | Where-Object id -eq 'operation.powerPlan').label | Should -Not -Match 'Höchstleistung'      # die Bezeichnung bleibt ein schlichter Name
+        (Get-ReportData $R.Masked).health.legends.'operation.powerPlan' | Should -Be $D.health.legends.'operation.powerPlan'
+    }
+    It 'verweist beim Absturz des Druckdienstes auf die Treiberpruefung' {
+        # Literal angepasst (PXH-02, Task 14b): die Situation print nennt auch das ausgeschaltete Betriebsprotokoll zum Drucken
+        $p = $D.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.event.kind -eq 'print' }
+        @($p.health) | Should -Be @('print.driversInSpooler', 'print.operationalLogOff')
+        @(($D.incidents | Where-Object lead -eq 'cpu').health) | Should -Be @('maintenance.tasksInWorkHours', 'apps.edgeBackgroundMode', 'apps.teamsAutoUpdate')
+        @(($D.incidents | Where-Object lead -eq 'memory').health).Count | Should -Be 0                    # passt keine Pruefung, entfaellt der Abschnitt
+        $all = @{}; foreach ($a in $D.health.areas) { foreach ($c in $a.checks) { $all[$c.id] = $c } }
+        $order = @($D.health.areas | ForEach-Object { $_.checks } | ForEach-Object { $_.id })
+        foreach ($i in @($D.incidents) + @($D.before.incidents)) {
+            $i.PSObject.Properties.Name | Should -Contain 'health'
+            foreach ($id in @($i.health)) { $all[$id].grade | Should -BeIn 'check', 'act'; ($all[$id].relates -contains $i.guide.situation -or @($i.event.patterns | ForEach-Object { 'pattern.' + $_.id } | Where-Object { $all[$id].relates -contains $_ }).Count -gt 0) | Should -BeTrue }
+            # jede auffaellige Pruefung mit passendem Bezug, in der Reihenfolge der Bereiche und ihrer Pruefungen
+            $want = @($i.guide.situation) + @($i.event.patterns | ForEach-Object { 'pattern.' + $_.id })
+            $expected = @($order | Where-Object { @('check', 'act') -contains $all[$_].grade -and @($all[$_].relates | Where-Object { $want -contains $_ }).Count -gt 0 })
+            @($i.health) | Should -Be $expected -Because "Vorfall $($i.id)"
+        }
+        @(@($D.incidents) + @($D.before.incidents) | Where-Object { @($_.health).Count -gt 0 }).Count | Should -BeGreaterThan 3
+        $D.health.incidentNote | Should -Match 'beitragen'; $D.health.incidentNote | Should -Not -Match 'Ursache'
+    }
+    It 'liefert Kopiertexte je Pruefung und Bereich, mit und ohne Namen' {
+        $a = $D.health.areas | Where-Object id -eq 'profile'; $c = $a.checks[0]; $c.id | Should -Be 'profile.containerFull'
+        @($c.copy.named -split "`r`n" | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        foreach ($part in $c.title, $c.finding, $c.todo[0].text, $c.source.title, 'Handeln') { ($c.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($part)) }
+        $c.copy.named | Should -Match 'SIM-VDA01'; $c.copy.anonymous | Should -Not -Match 'SIM-VDA01|user0\d\d|fs01'; $c.copy.anonymous | Should -Match 'Handeln'
+        ($a.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($c.title)); $a.copy.anonymous | Should -Not -Match 'SIM-VDA01'
+    }
+    It 'bildet jeden Schritt im Kopiertext vollstaendig und keine Zeile ueber 78 Zeichen' {          # Zusatz e
+        $n = 0; $step = (Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json).copy.copyStep
+        foreach ($a in $D.health.areas) {
+            foreach ($text in @($a.copy.named, $a.copy.anonymous) + @($a.checks | ForEach-Object { $_.copy.named; $_.copy.anonymous })) {
+                @($text -split "`r`n" | Where-Object { $_.Length -gt 78 }) | Should -BeNullOrEmpty -Because $a.id
+            }
+            foreach ($c in $a.checks) {
+                $flat = $c.copy.named -replace "`r`n\s*", ' '
+                for ($k = 0; $k -lt @($c.todo).Count; $k++) {
+                    $s = $c.todo[$k]
+                    foreach ($f in 'text', 'where', 'sign') { [string]$s.$f | Should -Not -BeNullOrEmpty -Because "$($c.id) Schritt $($k + 1) $f" }
+                    $line = $step.Replace('{n}', [string]($k + 1)).Replace('{text}', $s.text).Replace('{where}', $s.where).Replace('{sign}', $s.sign) -replace '\s+', ' '
+                    $flat | Should -Match ([regex]::Escape($line)) -Because "$($c.id) Schritt $($k + 1)"
+                    $n++
+                }
+            }
+        }
+        $n | Should -BeGreaterThan 80; @($D.health.areas.checks).Count | Should -Be 80
+    }
+    It 'nennt im Kopiertext vor dem Befund einer nicht pruefbaren Pruefung den Wert, der nicht vorliegt' {   # Zusatz d
+        $s = $D.health.areas | Where-Object id -eq 'security'; $c = $s.checks | Where-Object id -eq 'security.citrixExclusions'; $c.grade | Should -Be 'unknown'
+        $cat = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json
+        $first = @($cat.checks | Where-Object id -eq $c.id)[0].values | Where-Object { ($D.health.raw | Where-Object id -eq $_).state -ne 'read' } | Select-Object -First 1
+        $label = ($D.health.raw | Where-Object id -eq $first).label; $label | Should -Not -BeNullOrEmpty; $label | Should -Not -Match ' = '
+        $c.finding | Should -Match '^Ein Wert, den die Prüfung braucht, liegt nicht vor'
+        ($c.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape("$label`: $($c.finding)"))
+        ($s.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape("- $($c.title): Nicht prüfbar. $label`: $($c.finding)"))
+        ($D.health.areas | Where-Object id -eq 'profile').copy.named -replace "`r`n\s*", ' ' | Should -Match ([regex]::Escape('Handeln. Ein Profilcontainer'))     # ein gelesener Wert steht nicht davor
+    }
+    It 'maskiert das Zustandsbild und leert freien Servertext' {   # Review Focus 4
+        $m = (Get-ReportData $R.Masked).health; $json = $m | ConvertTo-Json -Depth 12
+        foreach ($n in 'user0\d\d', 'SIM-VDA01', 'CONTOSO', 'fs01', 'ddc0\d', 'wem01', 'zeit01', 'defsig', 'office\$', '10\.20\.0\.\d\d', 'fd00:20::10', 'Inventarlauf', 'inventar\.exe', 'prn01', 'USERNAME') { $json | Should -Not -Match $n -Because $n }
+        ($m.raw | Where-Object id -eq 'apps.office.updateUrl').free | Should -Be ''; ($m.areas | Where-Object id -eq 'apps').apps[0].label | Should -Be ($D.health.areas | Where-Object id -eq 'apps').apps[0].label     # die Bezeichnung einer Anwendung bleibt
+        @($m.areas.grade) | Should -Be @($D.health.areas.grade); $m.areas[0].checks[0].copy.anonymous | Should -BeNullOrEmpty; $m.areas[0].checks[0].copy.named | Should -Not -BeNullOrEmpty
+        ($m.raw | Where-Object id -eq 'maintenance.tasks').items[0].free | Should -Be ''; (($D.health.raw | Where-Object id -eq 'maintenance.tasks').items.free -join ' ') | Should -Match 'Inventarlauf'
+        ($m.raw | Where-Object id -eq 'vda.controllers').items[0].text | Should -Match 'Server \d\d'; ($m.raw | Where-Object id -eq 'network.dnsServers').items[2].text | Should -Match 'Adresse 03'
+        # die Kopiertexte des maskierten Berichts: umbrochen, nachdem die Namen ersetzt sind
+        foreach ($a in $m.areas) { foreach ($t in @($a.copy.named) + @($a.checks | ForEach-Object { $_.copy.named })) { @($t -split "`r`n" | Where-Object { $_.Length -gt 78 }) | Should -BeNullOrEmpty } }
+        (($m.areas | Where-Object id -eq 'profile').checks[0].copy.named -split "`r`n")[0] | Should -Match 'Server 01'
+        @((Get-ReportData $R.Masked).incidents | Where-Object { @($_.health).Count -gt 0 }).Count | Should -Be @($D.incidents | Where-Object { @($_.health).Count -gt 0 }).Count
+    }
+    It 'sagt bei einer Aufzeichnung von vor dem Zustandsbild nicht erfasst' {   # Review Focus 2
+        $old = Copy-SimRun $R.Run (Join-Path $TestDrive 'old') @('health.json'); $f = Join-Path $TestDrive 'old.html'
+        [void](& $ReportScript -Path $old -OutFile $f -RoleFile $RoleFile 6>$null); $o = Get-ReportData $f
+        # Literal angepasst (ZB-R24): der Titel nennt den Server
+        $o.health.state | Should -Be 'notRecorded'; $o.health.text | Should -Be 'Zustandsbild nicht erfasst.'; $o.health.title | Should -Be 'Zustand des Servers'; @($o.health.areas).Count | Should -Be 0
+        @($o.skipped.id) | Should -Not -Contain 'Zustand'; @($o.incidents | Where-Object { @($_.health).Count -gt 0 }).Count | Should -Be 0; @($o.incidents).Count | Should -Be @($D.incidents).Count
+    }
+    It 'nennt eine geaenderte Schwelle und bricht bei einem fehlerhaften Katalog mit Pruefung und Feld ab' {
+        $j = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json; $j.thresholds.containerUsedHardPct.value = 99
+        $alt = Join-Path $TestDrive 'h.json'; [IO.File]::WriteAllText($alt, ($j | ConvertTo-Json -Depth 12)); $f = Join-Path $TestDrive 'alt.html'
+        [void](& $ReportScript -Path $R.Run -OutFile $f -RoleFile $RoleFile -HealthFile $alt 6>$null); $a = (Get-ReportData $f).health
+        @($a.changed.id) | Should -Be @('containerUsedHardPct'); $a.changed[0].value | Should -Be 99; $a.changed[0].default | Should -Be 95; $a.changedText | Should -Match '99'
+        (($a.areas | Where-Object id -eq 'profile').checks | Where-Object id -eq 'profile.containerFull').grade | Should -Be 'check'           # 96 % liegt unter 99 %
+        $j.checks[0].PSObject.Properties.Remove('source'); [IO.File]::WriteAllText($alt, ($j | ConvertTo-Json -Depth 12))
+        { & $ReportScript -Path $R.Run -OutFile $f -RoleFile $RoleFile -HealthFile $alt 6>$null } | Should -Throw "*Pruefung 'size.commitHeadroom'*Feld 'source'*"
+        # vor dem Lesen der Aufzeichnung
+        $said = New-Object System.Collections.Generic.List[string]
+        try { & $ReportScript -Path $R.Run -OutFile (Join-Path $TestDrive 'h2.html') -RoleFile $RoleFile -HealthFile $alt 6>&1 | ForEach-Object { $said.Add([string]$_) } } catch { }
+        ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'h2.html') | Should -BeFalse
+    }
+    It 'liest die Anwendungsliste auch fuer das Zustandsbild und bricht mit der Meldung seines Lesers ab' {
+        # eine Probe, die nur der Leser des Zustandsbilds prueft: die Liste des gefuehrten Berichts ist in Ordnung
+        $j = Get-Content (Join-Path $PSScriptRoot '../src/apps.json') -Raw | ConvertFrom-Json; $j.apps[0].probes[0].kind = 'xyz'
+        $bad = Join-Path $TestDrive 'apps-probe.json'; [IO.File]::WriteAllText($bad, ($j | ConvertTo-Json -Depth 8))
+        { & $ReportScript -Path $R.Run -OutFile (Join-Path $TestDrive 'p.html') -RoleFile $RoleFile -AppsFile $bad 6>$null } |
+            Should -Throw "Anwendungsliste '*apps-probe.json': Anwendung 'edge': Probe '*': Feld 'kind' nennt die unbekannte Leseart 'xyz'*"
+        $said = New-Object System.Collections.Generic.List[string]
+        try { & $ReportScript -Path $R.Run -OutFile (Join-Path $TestDrive 'p.html') -RoleFile $RoleFile -AppsFile $bad 6>&1 | ForEach-Object { $said.Add([string]$_) } } catch { }
+        ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'p.html') | Should -BeFalse
+        # die Kopie apps.json in der Aufzeichnung wird nicht gelesen
+        $run = Copy-SimRun $R.Run (Join-Path $TestDrive 'appscopy'); [IO.File]::WriteAllText((Join-Path $run 'apps.json'), '{ kaputt')
+        $f = Join-Path $TestDrive 'appscopy.html'; [void](& $ReportScript -Path $run -OutFile $f -RoleFile $RoleFile 6>$null)
+        @((Get-ReportData $f).health.areas.grade) | Should -Be @($D.health.areas.grade)
     }
 }

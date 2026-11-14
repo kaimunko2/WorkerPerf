@@ -36,8 +36,14 @@
 
 .PARAMETER AppsFile
     Application list (standard applications and the name patterns of their processes; the guidance catalogue has steps
-    for them under the conditions app.<key>). Default: apps.json next to this script. Like the catalogue it is checked
-    before the capture is read; an error names the application and the field.
+    for them under the conditions app.<key>; the health picture rates the applications with installed and probes by the
+    checks of its area apps). Default: apps.json next to this script. Like the catalogues it is checked before the capture
+    is read; an error names the application and the field. The copy apps.json in the capture is not read.
+
+.PARAMETER HealthFile
+    Catalogue of the health picture (areas, thresholds, checks and texts of the state of the server read at the start of
+    the capture). Default: health.de.json next to this script. It is checked against the application list before the
+    capture is read; an error names the check and the field.
 
 .PARAMETER FocusUser
     User who reported the problem (User or Domain\User, case-insensitive).
@@ -81,6 +87,7 @@ param(
     [string]$RoleFile,
     [string]$GuidanceFile,
     [string]$AppsFile,
+    [string]$HealthFile,
     [string]$FocusUser,
     [datetime]$ReportedTime,
     [ValidateRange(10, 2000)][int]$TopProcesses = 150,
@@ -106,6 +113,7 @@ $nan = [double]::NaN
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Guidance.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.Health.ps1')
 # the masking: a masked run masks the report data; without -Mask the report uses it only for the copy texts without names
 # (one mask of level Alles and its replacing, never Protect-WorkerPerfReportData or Clear-WorkerPerfReportFreeText).
 . (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
@@ -323,6 +331,7 @@ if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
 if (-not $GuidanceFile) { $GuidanceFile = Join-Path $PSScriptRoot 'guidance.de.json' }
 if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
+if (-not $HealthFile) { $HealthFile = Join-Path $PSScriptRoot 'health.de.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
 if (-not (Test-Path -LiteralPath $templateFile)) { throw "Vorlage nicht gefunden: $templateFile" }
 $OutFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutFile)
@@ -359,10 +368,13 @@ if ($Mask -eq 'Alles') {
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
 $roles = @(Read-WorkerPerfRoles $RoleFile)
 $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
-# an error in the application list or in the catalogue stops before the capture is read; the catalogue's conditions
-# app.<key> are the keys of the list
+# an error in the application list or in a catalogue stops before the capture is read; the guidance catalogue's
+# conditions app.<key> are the keys of the list; the health picture reads the same list for its applications (installed
+# and probes), and its catalogue is checked against them
 $appList = Read-WorkerPerfApps $AppsFile
+$healthApps = @(Read-WorkerPerfHealthApps $AppsFile)
 $guidance = Read-WorkerPerfGuidance $GuidanceFile -Apps $appList
+$healthCatalogue = Read-WorkerPerfHealthCatalogue $HealthFile $healthApps
 
 Write-Host 'Lese Aufzeichnung ...'
 $model = Import-WorkerPerfRun -Path $Path -From $From -To $To -Thresholds $thresholds -Roles $roles
@@ -1173,6 +1185,8 @@ $data = [ordered]@{
     # the application list as read (like thresholds): its keys are identifiers, its labels and process patterns are
     # masked with the other data
     appList = (ConvertTo-PlainData $appList)
+    # the health picture: values read once at the start, graded by the catalogue; its texts follow below
+    health = (Get-WorkerPerfHealthResult -Model $model -Catalogue $healthCatalogue -EventConfig $eventConfig -Roles $roles -Texts $texts)
     # the categories -Skip left out, with their reason and the places of the page that depend on them (last field)
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
 }
@@ -1202,6 +1216,11 @@ $guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $even
 foreach ($inc in $allInc) {
     $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
     $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
+    # the checks of the health picture that may contribute to it: by its situation and the patterns of its events
+    $patternIds = [string[]]@(foreach ($pattern in @(Get-WorkerPerfField (Get-WorkerPerfField $inc 'event') 'patterns')) {
+            if ($null -ne $pattern) { [string](Get-WorkerPerfField $pattern 'id') } })
+    $situation = [string](Get-WorkerPerfField $inc['guide'] 'situation')
+    $inc['health'] = [string[]]@(Get-WorkerPerfHealthIncidentChecks -Result $data['health'] -Situation $situation -Patterns $patternIds)
 }
 # rank: 1-based in its own list; the capture's incidents by importance, the lookback's by time
 $order = [int[]]@(Get-WorkerPerfIncidentRanking -Incidents $captureInc)
@@ -1232,6 +1251,7 @@ if ($Mask) {
     # The level is set on the masked result, so that no replacement can touch it.
     for ($n = 0; $n -lt $allInc.Count; $n++) { $allInc[$n]['copy'] = [ordered]@{ named = $copyParagraphs[$n]; anonymous = $null } }
     $data['copyAll'] = [ordered]@{ named = $summaryParagraphs; anonymous = $null }
+    Add-WorkerPerfHealthReportTexts -Result $data['health'] -Catalogue $healthCatalogue -Server ([string]$meta['computer']) -Unwrapped
     $maskObj = New-ReportMask $Mask
     # a reported user typed by the caller that is no name of the capture is removed (P2-R11); one the capture names (a
     # session in the cut or anywhere in the capture) is replaced like every name
@@ -1258,6 +1278,9 @@ if ($Mask) {
         $inc['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($inc['copy']['named']))
     }
     $data['copyAll']['named'] = Format-WorkerPerfCopyLines ([string[]]@($data['copyAll']['named']))
+    foreach ($area in @(Get-WorkerPerfField $data['health'] 'areas')) {
+        foreach ($record in @($area) + @($area['checks'])) { $record['copy']['named'] = Format-WorkerPerfCopyLines ([string[]]@($record['copy']['named'])) }
+    }
     $data['meta']['mask'] = $Mask
     # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
     # replacement, never by the real name. The report's words are those of texts.de.json and every text of the catalogue
@@ -1296,6 +1319,7 @@ else {
     }
     $data['copyAll'] = [ordered]@{ named = Format-WorkerPerfCopyLines $summaryParagraphs
         anonymous = Format-WorkerPerfCopyLines ([string[]]@($anonymousSummary | ForEach-Object { ConvertTo-WorkerPerfAnonymousText $_ $anonymousMask })) }
+    Add-WorkerPerfHealthReportTexts -Result $data['health'] -Catalogue $healthCatalogue -Server ([string]$meta['computer']) -AnonymousMask $anonymousMask
 }
 
 Write-Host 'Schreibe Bericht ...'

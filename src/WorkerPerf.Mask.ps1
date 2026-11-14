@@ -29,18 +29,21 @@ $script:WorkerPerfMaskLevelKinds = @{
 $script:WorkerPerfMaskFreeTextFields = @(
     'meta.endMessage', 'quality.sourceErrors[].firstMessage', 'quality.sources[].detail?unavailable', 'sollIst[].detail?unavailable',
     'procs[].cmd', 'events[].text', 'incidents[].events[].text', 'incidents[].event.patterns[].detail.events[].text',
-    'before.near[].text', 'before.incidents[].events[].text', 'before.incidents[].event.patterns[].detail.events[].text')
+    'before.near[].text', 'before.incidents[].events[].text', 'before.incidents[].event.patterns[].detail.events[].text',
+    'health.areas[].error', 'health.raw[].free', 'health.raw[].items[].free')
 # (2) Dictionaries whose keys come from the recorded data (a map keyed by user, client, server ...): only their keys are
 # masked (P2-R10: the report's own field names are not names). The report data has none today: every key is a field
 # name of the code (contributors is keyed by resource).
 $script:WorkerPerfMaskKeyedMaps = @()
 # (3) Fields whose value is always an identifier, unit or link the code or the configuration files give, never a name or
-# a server text: their values stay (unit and url hold only values of thresholds.json, P2-R12).
+# a server text: their values stay (unit and url hold only values of thresholds.json and of the health catalogue, P2-R12).
 $script:WorkerPerfMaskKeywordFields = @(
     'type', 'kind', 'group', 'log', 'lead', 'resource', 'resources', 'measure', 'scope', 'status', 'direction', 'isolation',
     'endReason', 'metric', 'signalId', 'id', 'day', 'capped', 'worker', 'snapKind', 'unit', 'url',
     'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places', 'unchecked.category',
-    'situation', 'conditions', 'lagebild.state', 'print.involvedFrom', 'apps.key')
+    'situation', 'conditions', 'lagebild.state', 'print.involvedFrom', 'apps.key',
+    'health.state', 'health.catalogueVersion', 'grade', 'apps.state', 'checks.app', 'source.date', 'checks.relates', 'raw.area',
+    'raw.state', 'raw.reason', 'incidents.health')
 
 $script:WorkerPerfMaskIpv4Text = '(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)'
 $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^' + $script:WorkerPerfMaskIpv4Text + '$')

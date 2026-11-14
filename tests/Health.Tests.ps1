@@ -2130,3 +2130,56 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         { Read-WorkerPerfHealthCatalogue $file $Apps } | Should -Not -Throw
     }
 }
+Describe 'Texte und Verweise fuer den Bericht' {
+    It 'waehlt je Vorfall die auffaelligen Pruefungen mit passendem Bezug' {
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5) @{ PrintDrivers = $HpNone }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Get-WorkerPerfHealthIncidentChecks -Result $r -Situation 'disk' -Patterns @() | Should -Be @('operation.diskFree')
+        Get-WorkerPerfHealthIncidentChecks -Result $r -Situation 'crash' -Patterns @('printdriver') | Should -Be @('operation.diskFree', 'print.driversInSpooler')
+        @(Get-WorkerPerfHealthIncidentChecks -Result $r -Situation 'cpu' -Patterns @('overlap')).Count | Should -Be 0
+        $ok = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 38)) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        @(Get-WorkerPerfHealthIncidentChecks -Result $ok -Situation 'disk' -Patterns @()).Count | Should -Be 0             # in Ordnung und nicht pruefbar verweisen nicht
+        $none = Get-WorkerPerfHealthResult -Model (New-HealthModel @{} @{ Health = $null; HealthState = 'notRecorded' }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        @(Get-WorkerPerfHealthIncidentChecks -Result $none -Situation 'disk' -Patterns @()).Count | Should -Be 0
+    }
+    It 'bildet Kopf- und Kopiertexte' {
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.copy.copyHead = 'WorkerPerf {server}, Zustandsbild vom {date}'; $c.copy.readAt = 'Gelesen am {date} um {time} ({seconds} s)'
+            $c.copy.unknownMany = '{n} Prüfungen nicht prüfbar'; $c.copy.copyStep = '{n}. {text} – {where}; erkennbar an {sign}'; $c.copy.changed = 'Geändert: {list}'; $c.copy.changedItem = '{label} {value} {unit} (ausgeliefert {default} {unit})'; $c.thresholds.diskFreeGB.value = 25 })
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5) @{ Skip = [string[]]@('Drucken') }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $r -Catalogue $cat -Server 'T1'
+        $r.headline | Should -Be 'Gelesen am 15.01.2026 um 08:00:00 (0,0 s)'; $r.changedText | Should -Be 'Geändert: Freier Platz 25 GB (ausgeliefert 10 GB)'; $r.unknownText | Should -Be 'Text unknownOne'
+        $c = ($r.areas | Where-Object id -eq 'operation').checks[0]; $lines = $c.copy.named -split "`r`n"
+        $lines[0] | Should -Be 'WorkerPerf T1, Zustandsbild vom 15.01.2026'; $lines[1] | Should -Be 'Bereich operation – Freier Platz: Handeln'; $c.copy.named | Should -Match '1\. t – w; erkennbar an s'
+        $c.copy.anonymous | Should -BeNullOrEmpty; @($lines | Where-Object { $_.Length -gt 78 }).Count | Should -Be 0
+        ($r.areas | Where-Object id -eq 'operation').copy.named | Should -Match '- Freier Platz: Handeln\. Nur 1,5 GB frei\.'
+    }
+    It 'nennt im Kopiertext vor dem Befund einer nicht pruefbaren Pruefung den Wert, der nicht vorliegt' {   # Zusatz d (aus Task 14c)
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5) @{ Skip = [string[]]@('Drucken') }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $r -Catalogue $Cat -Server 'T1'
+        $flat = { param([string]$t) $t -replace "`r`n\s*", ' ' }
+        $p = ($r.areas | Where-Object id -eq 'print').checks[0]; $p.grade | Should -Be 'unknown'; $p.finding | Should -Be 'Drucken nicht erfasst'
+        ($r.raw | Where-Object id -eq 'print.driversInSpooler').state | Should -Not -Be 'read'
+        & $flat $p.copy.named | Should -Match ([regex]::Escape('Bereich print – Treiber im Spooler-Prozess: Nicht prüfbar Wert print.driversInSpooler: Drucken nicht erfasst'))
+        & $flat ($r.areas | Where-Object id -eq 'print').copy.named | Should -Match ([regex]::Escape('- Treiber im Spooler-Prozess: Nicht prüfbar. Wert print.driversInSpooler: Drucken nicht erfasst'))
+        $p.finding | Should -Be 'Drucken nicht erfasst'                                                   # der Befund selbst bleibt, wie er ist
+        $d = ($r.areas | Where-Object id -eq 'operation').checks[0]; & $flat $d.copy.named | Should -Match 'Freier Platz: Handeln Nur 1,5 GB frei\.'   # ein gelesener Wert steht nicht davor
+    }
+    It 'nennt nur den Titel, wenn das Zustandsbild nicht gelesen ist' {
+        $none = Get-WorkerPerfHealthResult -Model (New-HealthModel @{} @{ Health = $null; HealthState = 'notRecorded' }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $none -Catalogue $Cat -Server 'T1'
+        $none.title | Should -Be 'Text title'; $none.text | Should -Be 'Text notRecorded'; @($none.Keys) | Should -Be @('state', 'text', 'areas', 'raw', 'title')
+    }
+    It 'zeigt eine geaenderte Schwelle von 1 mit der Einheit in der Einzahl und den ausgelieferten Wert in der Mehrzahl' {   # Zusatz e (aus Task 14a)
+        $apps = @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))
+        $j = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json; $j.thresholds.uptimeDays.value = 1
+        $file = Join-Path $TestDrive 'health.one.json'; [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 12)); $one = Read-WorkerPerfHealthCatalogue $file $apps
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $one -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $r -Catalogue $one -Server 'T1'
+        $r.changedText | Should -Be 'Geänderte Schwellen: Laufzeit seit dem letzten Start 1 Tag (ausgeliefert 30 Tage)'
+    }
+    It 'gibt dem Ergebnis die Legenden des Katalogs mit' {                                           # Zusatz c (ZB-R49)
+        $withLegends = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c['legends'] = [ordered]@{ 'operation.powerPlan' = 'a = b'; 'print.spooler' = 'c = d' } })
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $withLegends -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $r.legends | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]; @($r.legends.Keys) | Should -Be @('operation.powerPlan', 'print.spooler'); $r.legends['print.spooler'] | Should -Be 'c = d'
+        @((Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts).legends.Keys).Count | Should -Be 0
+    }
+}

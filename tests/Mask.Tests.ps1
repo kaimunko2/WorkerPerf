@@ -804,7 +804,52 @@ Describe 'Simulierte Stunde, maskiert' {
             $m = [regex]::Replace($m, '"cpu\.steal": \{[^{}]*\}', '"cpu.steal": { "Available": false, "Detail": "Grund CANARYSRC" }')
             [IO.File]::WriteAllText($meta, $m)
             foreach ($t in 'EndReason": "error', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { if (-not $m.Contains($t)) { throw "Kanarienvogel nicht gesetzt: $t" } }
+            # health.json (Task 16): a token of its own in every value and list field of the value list that can carry free server
+            # text or a server name (in a list in the first entry; a value that is not read and an empty list become a read value
+            # with one entry whose other fields are empty; apps.probes in the first row with Names: only the value of a probe
+            # with names: true reaches the report), and in the first empty Error of an area
+            $hf = Join-Path $dir 'health.json'; $h = ConvertFrom-WorkerPerfHealthJsonText ([IO.File]::ReadAllText($hf))
+            $free = New-Object System.Collections.Generic.List[string]; $names = New-Object System.Collections.Generic.List[string]
+            $marker = { param([string]$Type)
+                $k = '{0:00}' -f ($free.Count + $names.Count + 1)                          # one count over all tokens
+                switch ($Type) {
+                    'text:free' { $t = "CANARYH$k"; $free.Add($t) }
+                    'text:path' { $t = "\\kanari$k\frei\ordner"; $names.Add($t) }
+                    'text:share' { $t = "\\kanari$k\frei"; $names.Add($t) }
+                    default { $t = "kanari$k.sim.local"; $names.Add($t) }
+                }
+                $t }
+            $marked = @('text:free', 'text:host', 'text:hosts', 'text:share', 'text:path')
+            foreach ($id in $WorkerPerfHealthValues.Keys) {
+                $def = $WorkerPerfHealthValues[$id]; $values = $h['Areas'][$def.Area]['Values']
+                if ($def.Type -eq 'list') {
+                    $fields = @($def.Fields.Keys | Where-Object { $marked -contains $def.Fields[$_] }); if ($fields.Count -eq 0) { continue }
+                    $v = $values[$id]; $rows = @(); if ($null -ne $v -and $v['State'] -eq 'read') { $rows = @($v['Value']) }
+                    if ($id -eq 'apps.probes') {
+                        $row = @($rows | Where-Object { -not [string]::IsNullOrEmpty([string]$_['Names']) })[0]
+                        if ($null -eq $row) { throw 'Kanarienvogel nicht gesetzt: apps.probes ohne Names' }
+                    }
+                    elseif ($rows.Count -eq 0) {
+                        $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
+                        $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($row) }
+                    }
+                    else { $row = $rows[0] }
+                    foreach ($f in $fields) { $row[$f] = & $marker $def.Fields[$f] }
+                }
+                elseif ($marked -contains $def.Type) { $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = (& $marker $def.Type) } }
+            }
+            $areaWithoutError = @($h['Areas'].Values | Where-Object { [string]$_['Error'] -eq '' })[0]; $areaWithoutError['Error'] = 'Fehler CANARYHER'
+            $text = ConvertTo-Json -InputObject $h -Depth 20; [IO.File]::WriteAllText($hf, $text)
+            foreach ($t in @($free) + @($names) + 'Fehler CANARYHER') { if (-not $text.Contains((ConvertTo-Json $t).Trim('"'))) { throw "Kanarienvogel nicht gesetzt: $t" } }
+            $script:CanaryHealth = @{ Free = [string[]]$free.ToArray(); Names = [string[]]$names.ToArray() }
             $dir
+        }
+        function Get-AllStrings($Value, $List) {
+            # every string of report data as read (custom objects, lists)
+            if ($null -eq $Value -or $Value -is [ValueType]) { return }
+            if ($Value -is [string]) { $List.Add($Value); return }
+            if ($Value -is [System.Collections.IEnumerable]) { foreach ($x in $Value) { Get-AllStrings $x $List }; return }
+            foreach ($q in $Value.PSObject.Properties) { Get-AllStrings $q.Value $List }
         }
     }
     Describe 'Maskierte Berichtsdaten der simulierten Stunde' {
@@ -825,10 +870,13 @@ Describe 'Simulierte Stunde, maskiert' {
                 $maskSimPlain = Get-MaskSimJson $data
                 Clear-WorkerPerfReportFreeText $data
                 $maskSimCleared = Get-MaskSimJson $data
+                # the same without the health picture, whose raw values and steps are called text too (composed, no message text)
+                $maskSimNoHealth = [ordered]@{}; foreach ($k in $data.Keys) { if ($k -ne 'health') { $maskSimNoHealth[$k] = $data[$k] } }
+                $maskSimClearedNoHealth = Get-MaskSimJson $maskSimNoHealth
                 $maskSimMasked = Protect-WorkerPerfReportData $data $maskSimMask
                 $maskSimPersonen = New-WorkerPerfMask -Path $SimRun -Level 'Personen' -Texts $Texts -RoleLabels @(@(Read-WorkerPerfRoles $maskSimRoles) | ForEach-Object { [string]$_.label })
                 $maskSimMaskedP = Protect-WorkerPerfReportData $data $maskSimPersonen
-                @{ Data = $data; Masked = $maskSimMasked; Mask = $maskSimMask; Plain = $maskSimPlain; Cleared = $maskSimCleared; ClearedAfter = (Get-MaskSimJson $data)
+                @{ Data = $data; Masked = $maskSimMasked; Mask = $maskSimMask; Plain = $maskSimPlain; Cleared = $maskSimCleared; ClearedAfter = (Get-MaskSimJson $data); ClearedNoHealth = $maskSimClearedNoHealth
                     MaskedJson = (Get-MaskSimJson $maskSimMasked); MaskP = $maskSimPersonen; MaskedP = $maskSimMaskedP; MaskedJsonP = (Get-MaskSimJson $maskSimMaskedP) }
             }
             function Get-LeftNames($Masked, $Mask) {
@@ -890,7 +938,8 @@ Describe 'Simulierte Stunde, maskiert' {
             }
         }
         It 'leert die Meldungstexte und laesst die Zahlen gleich' {
-            $Sim.Plain | Should -Match '"text":"[^"]+'; $Sim.Cleared | Should -Not -Match '"text":"(?!")[^"]*Session'
+            # Aussage geaendert (Task 16): ohne das Zustandsbild, dessen Rohwerte und Schritte auch text heissen und Session nennen
+            $Sim.Plain | Should -Match '"text":"[^"]+'; $Sim.ClearedNoHealth | Should -Not -Match '"text":"(?!")[^"]*Session'; $Sim.Cleared | Should -Match '"health":'
             @($Sim.Data.events | Where-Object { $_.text -ne '' }).Count | Should -Be 0
             foreach ($inc in @($Sim.Data.incidents) + @($Sim.Data.before.incidents)) { @($inc.events | Where-Object { $_.text -ne '' }).Count | Should -Be 0 }
             @($Sim.Data.before.near).Count | Should -BeGreaterThan 0; @($Sim.Data.before.near | Where-Object { $_.text -ne '' }).Count | Should -Be 0
@@ -997,9 +1046,10 @@ Describe 'Simulierte Stunde, maskiert' {
             $marks = @{}; foreach ($p in $census.PSObject.Properties) { $marks[$p.Name] = [string]$p.Value }
             @($marks.Values | Where-Object { @('name', 'keyword', 'composed', 'copied') -notcontains $_ }) | Should -BeNullOrEmpty
             # the catalogue in the data (guidance) is one entry: a catalogue edited by the customer has other keys (P3-R10)
-            @($file.subtrees) | Should -Be @('guidance'); $marks['guidance'] | Should -Be 'composed'
+            # Aussage geaendert (Task 16): die Legenden des Zustandsbilds sind ein Teil seines Katalogs, wie gelesen (Zusatz c)
+            @($file.subtrees) | Should -Be @('guidance', 'health.legends'); $marks['guidance'] | Should -Be 'composed'; $marks['health.legends'] | Should -Be 'composed'
             $values = Get-StringPaths $Sim.Data ([string[]]@($file.subtrees))
-            $values['guidance'] | Should -Be 1
+            $values['guidance'] | Should -Be 1; $values['health.legends'] | Should -Be 1
             $values.Count | Should -BeGreaterThan 150
             @($values.Keys | Where-Object { -not $marks.ContainsKey($_) } | ForEach-Object { "neues Textfeld $_ : in tests/MaskCensus.json einordnen" }) | Should -BeNullOrEmpty
             foreach ($path in $values.Keys) {
@@ -1028,8 +1078,10 @@ Describe 'Simulierte Stunde, maskiert' {
             $script:Plain = Get-ReportData $R.Report
             function New-Masked([string]$Name, [hashtable]$Extra = @{}, [string]$Run = $R.Run) { $out = Join-Path $TestDrive "$Name.html"; [void](& $Report -Path $Run -OutFile $out -RoleFile $Roles @Extra 6>$null); $out }
             function Get-Words([string]$Html) { [IO.File]::ReadAllText($Html) }
-            $script:Persons = @(2..26 | ForEach-Object { 'user{0:d3}' -f ($_ - 1) }) + @('WS-\d{4}')
-            $script:Others = @('SIM-VDA01', 'CONTOSO', 'fs01', 'ora01\.sim\.local', 'proxy\.sim\.local', 'PRN-EG-01', 'PRN-OG-02')
+            # Task 16: dazu die Namen und freien Texte aus health.json
+            $script:Persons = @(2..27 | ForEach-Object { 'user{0:d3}' -f ($_ - 1) }) + @('WS-\d{4}')
+            $script:Others = @('SIM-VDA01', 'CONTOSO', 'fs01', 'ora01\.sim\.local', 'proxy\.sim\.local', 'PRN-EG-01', 'PRN-OG-02',
+                'ddc0\d', 'wem01', 'zeit01', 'defsig', 'office\$', '10\.20\.0\.\d\d', 'fd00:20::10', 'Inventarlauf', 'prn01')
             function Get-Leaves($o) {                        # Zahlen und Wahrheitswerte in Reihenfolge; Texte zaehlen nur als Platzhalter
                 if ($null -eq $o) { 'null' } elseif ($o -is [string]) { 's' } elseif ($o -is [ValueType]) { [string]$o }
                 elseif ($o -is [System.Collections.IEnumerable]) { 'a'; foreach ($x in $o) { Get-Leaves $x } }
@@ -1200,9 +1252,16 @@ Describe 'Simulierte Stunde, maskiert' {
             @($pd.lagebild.hints) -join ' ' | Should -Match 'CANARYEND'; $pd.copyAll.named | Should -Match 'CANARYEND'
             # the versions without names never quote free text of the server (P3-R44)
             foreach ($c in @($pd.copyAll.anonymous) + @(@($pd.incidents) + @($pd.before.incidents) | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY' }
+            # the tokens of health.json (Task 16): every one reaches the unmasked report; the copy texts without names name none
+            $strings = New-Object System.Collections.Generic.List[string]; Get-AllStrings $pd $strings; $all = $strings -join "`n"
+            $CanaryHealth.Free.Count | Should -BeGreaterThan 6; $CanaryHealth.Names.Count | Should -BeGreaterThan 10
+            foreach ($t in @($CanaryHealth.Free) + @($CanaryHealth.Names) + 'CANARYHER') { $all.Contains($t) | Should -BeTrue -Because $t }
+            $pd.health.state | Should -Be 'read'
+            foreach ($a in $pd.health.areas) { foreach ($c in @($a.copy.anonymous) + @($a.checks | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY|kanari' } }
             foreach ($level in 'Personen', 'Alles') {
                 $file = New-Masked "canary-$level" @{ Mask = $level; ReportedTime = $at; FocusUser = 'user003' } -Run $canary
                 [IO.File]::ReadAllText($file) | Should -Not -Match 'CANARY' -Because $level
+                if ($level -eq 'Alles') { [IO.File]::ReadAllText($file) | Should -Not -Match 'kanari' }            # servers, shares and paths: only this level replaces them
                 $md = Get-ReportData $file
                 @($md.procs | Where-Object { $_.cmd -ne '' }).Count | Should -Be 0
                 # the free texts were cleared before the summary was built: the hint without a message (P3-R9)
@@ -1254,7 +1313,8 @@ Describe 'Simulierte Stunde, maskiert' {
             & $norm $a | Should -BeExactly (& $norm $b); (Get-ReportData $a).meta.PSObject.Properties.Name | Should -Not -Contain 'mask'
             # the fields without names are there (16 incidents and the summary) and differ from the named version only by the mask
             $da = Get-ReportData $a; $db = Get-ReportData $b
-            @([regex]::Matches([IO.File]::ReadAllText($a), '"anonymous":"').Count) | Should -Be 17
+            # Aussage geaendert (Task 16): dazu die 80 Pruefungen und 11 Bereiche des Zustandsbilds
+            @([regex]::Matches([IO.File]::ReadAllText($a), '"anonymous":"').Count) | Should -Be 108
             $db.copyAll.anonymous | Should -BeExactly $db.copyAll.named; $da.copyAll.anonymous | Should -Not -BeExactly $da.copyAll.named
         }
         It 'maskiert die simulierte Stunde, ohne die Laufzeit zu verdoppeln' {                        # Review Focus 5

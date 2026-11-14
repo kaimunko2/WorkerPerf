@@ -1,13 +1,15 @@
 #Requires -Version 5.1
 # Catalogue of the health picture (health.de.json): the facts it can rate (the read values, the derived facts and the
 # facts of the applications), loading and checking the catalogue, the thresholds that differ from their default,
-# forming the facts of a capture (Get-WorkerPerfHealthFacts) and rating them with the checks (Get-WorkerPerfHealthResult).
+# forming the facts of a capture (Get-WorkerPerfHealthFacts), rating them with the checks (Get-WorkerPerfHealthResult) and
+# the texts and incident references of the report data (Add-WorkerPerfHealthReportTexts, Get-WorkerPerfHealthIncidentChecks).
 # Dot-source this file; it only defines variables and functions and runs nothing. It needs WorkerPerf.Common.ps1
 # ($script:WorkerPerfHealthAreas, $script:WorkerPerfHealthValues, $script:WorkerPerfHealthWemServices,
 # $script:WorkerPerfCategories, Get-WorkerPerfAppFactType, ConvertFrom-WorkerPerfJsonFile, Get-WorkerPerfField),
-# WorkerPerf.EventConfig.ps1 (Test-WorkerPerfNamePattern), WorkerPerf.Guidance.ps1 ($script:WorkerPerfSituations) and
-# WorkerPerf.Events.ps1 ($script:WorkerPerfPatternOrder, Get-WorkerPerfEventIncidentKind, Get-WorkerPerfEventOffset,
-# Get-WorkerPerfLeafName).
+# WorkerPerf.EventConfig.ps1 (Test-WorkerPerfNamePattern), WorkerPerf.Guidance.ps1 ($script:WorkerPerfSituations,
+# Format-WorkerPerfCopyLines, ConvertTo-WorkerPerfAnonymousText) and WorkerPerf.Events.ps1 ($script:WorkerPerfPatternOrder,
+# Get-WorkerPerfEventIncidentKind, Get-WorkerPerfEventOffset, Get-WorkerPerfLeafName); the copy texts without names
+# also WorkerPerf.Mask.ps1.
 
 # the four grades of a check; 'na' ("does not apply") is a result, not a grade
 $script:WorkerPerfHealthGrades = @('ok', 'check', 'act', 'unknown')
@@ -1633,6 +1635,14 @@ function Format-WorkerPerfHealthNumber([double]$Value) {
     return $rounded.ToString('0.######', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
 }
 
+function Get-WorkerPerfHealthUnitText($Catalogue, [string]$Unit, $Number) {
+    # The unit as it follows a number: its singular of units of the catalogue when the number is exactly 1 (ruling
+    # ZB-R37: "1 Tag"), else the unit as it is.
+    $singular = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'units') $Unit
+    if ((Test-WorkerPerfHealthNumber $Number) -and [double]$Number -eq 1 -and -not [string]::IsNullOrEmpty([string]$singular)) { return [string]$singular }
+    return $Unit
+}
+
 function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catalogue, [int]$OffsetMinutes) {
     # The value of a fact as the report shows it: a number through Format-WorkerPerfHealthNumber with its unit (the
     # singular of units of the catalogue when the value is exactly 1), a yes/no value as copy.yes or copy.no, a time as
@@ -1656,11 +1666,7 @@ function Format-WorkerPerfHealthFact($Fact, [string]$Type, [string]$Unit, $Catal
         }
         if (Test-WorkerPerfHealthNumber $value) {
             $unitPart = ''
-            if ($Unit) {
-                $unitPart = ' ' + $Unit
-                $singular = Get-WorkerPerfField (Get-WorkerPerfField $Catalogue 'units') $Unit
-                if ([double]$value -eq 1 -and -not [string]::IsNullOrEmpty([string]$singular)) { $unitPart = ' ' + [string]$singular }
-            }
+            if ($Unit) { $unitPart = ' ' + (Get-WorkerPerfHealthUnitText $Catalogue $Unit $value) }
             return (Format-WorkerPerfHealthNumber ([double]$value)) + $unitPart
         }
     }
@@ -2017,8 +2023,8 @@ function Get-WorkerPerfHealthResult($Model, $Catalogue, $EventConfig, [object[]]
     # The result of the health picture for the report data. Without a read health picture only state, text (copy.
     # notRecorded, notRecordedFailed when SourceErrors names health, copy.unreadable; '' when skipped) and empty areas
     # and raw. With one: state, readAt, offsetMin, durationMs, catalogueVersion, grades, areas, summary, changed,
-    # unknownCount, raw, environmentText, eventsReachText. Everything taken from the catalogue is copied into ordered
-    # dictionaries and arrays (never a pscustomobject: the JSON writer of the report would write it as one text).
+    # unknownCount, raw, environmentText, eventsReachText, legends. Everything taken from the catalogue is copied into
+    # ordered dictionaries and arrays (never a pscustomobject: the JSON writer of the report would write it as one text).
     $state = [string](Get-WorkerPerfHealthModelMember $Model 'HealthState')
     if ($state -cne 'read') {
         $text = ''
@@ -2072,11 +2078,190 @@ function Get-WorkerPerfHealthResult($Model, $Catalogue, $EventConfig, [object[]]
         $grades[$g] = [ordered]@{ word = [string](Get-WorkerPerfField $def 'word'); symbol = [string](Get-WorkerPerfField $def 'symbol') }
     }
     $raw = @(foreach ($id in $table.Keys) { Get-WorkerPerfHealthRawEntry $id $facts[$id] $ctx })
+    # the legends of the keywords a value shows (ruling ZB-R49): id -> text, for the table of the raw values
+    $legends = [ordered]@{}
+    $catalogueLegends = Get-WorkerPerfField $Catalogue 'legends'
+    if ($null -ne $catalogueLegends) { foreach ($p in @($catalogueLegends.PSObject.Properties)) { $legends[$p.Name] = [string]$p.Value } }
 
     return [ordered]@{
         state = $state; readAt = (Get-WorkerPerfField $health 'ReadAtMs'); offsetMin = $offset; durationMs = (Get-WorkerPerfField $health 'DurationMs')
         catalogueVersion = [string]$Catalogue.version; grades = $grades; areas = [object[]]$areas; summary = $summary
         changed = [object[]]@(Get-WorkerPerfHealthChangedThresholds $Catalogue); unknownCount = $unknownCount; raw = [object[]]$raw
-        environmentText = (Get-WorkerPerfHealthCopyText $Catalogue 'environment'); eventsReachText = $ctx.EventsReachText
+        environmentText = (Get-WorkerPerfHealthCopyText $Catalogue 'environment'); eventsReachText = $ctx.EventsReachText; legends = $legends
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The health picture in the report data: the checks an incident refers to, and the texts of the report (its head and the
+# copy texts of every check and area). Every sentence part comes from copy of the catalogue; the copy texts are wrapped
+# like those of the guided report (Format-WorkerPerfCopyLines), the version without names through the replacements of a
+# mask of level Alles (ConvertTo-WorkerPerfAnonymousText).
+
+function Get-WorkerPerfHealthIncidentChecks {
+    # The ids of the checks graded check or act whose relates names the situation of an incident or pattern.<id> of one of
+    # its patterns, in the fixed order of the areas and within an area in the order of its checks (act before check).
+    # Nothing when the health picture is not read. Plain pipeline output (the caller writes @(...)).
+    param($Result, [string]$Situation, [string[]]$Patterns = @())
+    if ([string](Get-WorkerPerfField $Result 'state') -cne 'read') { return }
+    $wanted = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    if ($Situation) { $null = $wanted.Add($Situation) }
+    foreach ($p in @($Patterns)) { if ($p) { $null = $wanted.Add('pattern.' + $p) } }
+    foreach ($area in @(Get-WorkerPerfField $Result 'areas')) {
+        foreach ($check in @(Get-WorkerPerfField $area 'checks')) {
+            if (@('act', 'check') -cnotcontains [string](Get-WorkerPerfField $check 'grade')) { continue }
+            foreach ($relate in @(Get-WorkerPerfField $check 'relates')) {
+                if ($wanted.Contains([string]$relate)) { [string](Get-WorkerPerfField $check 'id'); break }
+            }
+        }
+    }
+}
+
+function Format-WorkerPerfHealthChangedItem($Catalogue, $Changed) {
+    # One changed threshold in copy.changedItem: label, value and default as German numbers; each {unit} agrees with the
+    # number before it in the text (the singular of units after a 1: "1 Tag (ausgeliefert 30 Tage)"), a {unit} before
+    # any number with the value.
+    $template = Get-WorkerPerfHealthCopyText $Catalogue 'changedItem'
+    $unit = [string](Get-WorkerPerfField $Changed 'unit')
+    $numbers = @{ value = (Get-WorkerPerfField $Changed 'value'); default = (Get-WorkerPerfField $Changed 'default') }
+    $last = $numbers.value
+    $out = New-Object System.Text.StringBuilder
+    $at = 0
+    foreach ($m in [regex]::Matches($template, '\{([^{}]*)\}')) {
+        $null = $out.Append($template.Substring($at, $m.Index - $at))
+        $name = $m.Groups[1].Value
+        if ($name -ceq 'label') { $null = $out.Append([string](Get-WorkerPerfField $Changed 'label')) }
+        elseif ($numbers.ContainsKey($name)) {
+            $last = $numbers[$name]
+            if (Test-WorkerPerfHealthNumber $last) { $null = $out.Append((Format-WorkerPerfHealthNumber ([double]$last))) } else { $null = $out.Append([string]$last) }
+        }
+        elseif ($name -ceq 'unit') { $null = $out.Append((Get-WorkerPerfHealthUnitText $Catalogue $unit $last)) }
+        else { $null = $out.Append($m.Value) }
+        $at = $m.Index + $m.Length
+    }
+    $null = $out.Append($template.Substring($at))
+    return $out.ToString()
+}
+
+function Format-WorkerPerfHealthSourceDate([string]$Date) {
+    # The date of a source (YYYY-MM-DD in the catalogue) as dd.MM.yyyy, like every date of the report.
+    $m = [regex]::Match($Date, '^(\d{4})-(\d{2})-(\d{2})\z')
+    if (-not $m.Success) { return $Date }
+    return ($m.Groups[3].Value + '.' + $m.Groups[2].Value + '.' + $m.Groups[1].Value)
+}
+
+function Get-WorkerPerfHealthCopyFinding($Check, $CatalogueChecks, $Raw) {
+    # The finding as a copy text quotes it. The frame of a missing value names no value, and a copied line stands alone:
+    # a finding of grade unknown follows the label of the first value of the check that is not read ("<label>: <finding>";
+    # the plain label, without legend).
+    $finding = [string](Get-WorkerPerfField $Check 'finding')
+    if ([string](Get-WorkerPerfField $Check 'grade') -cne 'unknown') { return $finding }
+    $definition = $CatalogueChecks[[string](Get-WorkerPerfField $Check 'id')]
+    foreach ($id in @(Get-WorkerPerfField $definition 'values')) {
+        $entry = $Raw[[string]$id]
+        if ($null -ne $entry -and [string](Get-WorkerPerfField $entry 'state') -cne 'read') { return ([string](Get-WorkerPerfField $entry 'label') + ': ' + $finding) }
+    }
+    return $finding
+}
+
+function New-WorkerPerfHealthCopy([string[]]$Paragraphs, $AnonymousMask, [bool]$Unwrapped) {
+    # [ordered]@{ named; anonymous } of the paragraphs of one copy text (see Add-WorkerPerfHealthReportTexts).
+    if ($Unwrapped) { return [ordered]@{ named = $Paragraphs; anonymous = $null } }
+    $anonymous = $null
+    if ($null -ne $AnonymousMask) {
+        $anonymous = Format-WorkerPerfCopyLines ([string[]]@(foreach ($p in $Paragraphs) { ConvertTo-WorkerPerfAnonymousText $p $AnonymousMask }))
+    }
+    return [ordered]@{ named = (Format-WorkerPerfCopyLines $Paragraphs); anonymous = $anonymous }
+}
+
+function Add-WorkerPerfHealthReportTexts {
+    # Adds the texts of the report to a result of Get-WorkerPerfHealthResult, in place. In every state title (copy.title);
+    # with a read health picture also:
+    #   headline      copy.readAt: date (dd.MM.yyyy) and time (HH:mm:ss) of the reading in the server's local time (readAt
+    #                 and offsetMin of the result), its duration in seconds with one decimal and a decimal comma
+    #   unknownText   copy.unknownOne or copy.unknownMany with the number of checks not checkable; '' without one
+    #   changedText   copy.changed with one copy.changedItem per changed threshold, joined by ', '; '' without one
+    #   incidentNote  copy.incidentNote
+    #   copy          per area and per check: [ordered]@{ named; anonymous }, the text to copy with the server's name
+    #                 (Server) wrapped to 78 characters, and the same text without names: its paragraphs through
+    #                 ConvertTo-WorkerPerfAnonymousText with AnonymousMask (a mask of level Alles), $null without one.
+    # A check: copy.copyHead (server, date of the reading), copy.copyCheckTitle (label of the area, title, word of the
+    # grade), the finding (Get-WorkerPerfHealthCopyFinding) and its note, copy.copyMeaning with the meaning, copy.copyTodo
+    # with the steps (copy.copyStep, numbered), copy.copySource. An area: copy.copyHead, copy.copyAreaTitle (label, word
+    # of its grade), one copy.copyAreaItem per check graded act, check or unknown (a check that does not apply is left
+    # out), copy.copyOk with the number of checks in order, notCovered; each block after an empty paragraph.
+    # -Unwrapped (the masked report): named holds the paragraphs before wrapping, for the caller to wrap them after the
+    # names were replaced (a replacement has another length, and a name the wrapper split would not be found).
+    param($Result, $Catalogue, [string]$Server, $AnonymousMask = $null, [switch]$Unwrapped)
+    $Result['title'] = Get-WorkerPerfHealthCopyText $Catalogue 'title'
+    if ([string](Get-WorkerPerfField $Result 'state') -cne 'read') { return }
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $noValue = Get-WorkerPerfHealthCopyText $Catalogue 'noValue'
+
+    $date = $noValue; $time = $noValue; $seconds = $noValue
+    $readAt = Get-WorkerPerfField $Result 'readAt'
+    $offset = Get-WorkerPerfField $Result 'offsetMin'
+    if ((Test-WorkerPerfHealthWhole $readAt) -and (Test-WorkerPerfHealthNumber $offset)) {
+        $local = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$readAt).UtcDateTime.AddMinutes([double]$offset)
+        $date = $local.ToString('dd.MM.yyyy', $inv); $time = $local.ToString('HH:mm:ss', $inv)
+    }
+    $duration = Get-WorkerPerfField $Result 'durationMs'
+    if (Test-WorkerPerfHealthNumber $duration) {
+        $seconds = [Math]::Round([double]$duration / 1000.0, 1, [MidpointRounding]::AwayFromZero).ToString('0.0', $inv).Replace('.', ',')
+    }
+    $Result['headline'] = Get-WorkerPerfHealthCopy $Catalogue 'readAt' @{ date = $date; time = $time; seconds = $seconds }
+
+    $unknown = [int](Get-WorkerPerfField $Result 'unknownCount')
+    $Result['unknownText'] = ''
+    if ($unknown -eq 1) { $Result['unknownText'] = Get-WorkerPerfHealthCopyText $Catalogue 'unknownOne' }
+    elseif ($unknown -gt 1) { $Result['unknownText'] = Get-WorkerPerfHealthCopy $Catalogue 'unknownMany' @{ n = [string]$unknown } }
+
+    $items = @(foreach ($t in @(Get-WorkerPerfField $Result 'changed')) { if ($null -ne $t) { Format-WorkerPerfHealthChangedItem $Catalogue $t } })
+    $Result['changedText'] = ''
+    if ($items.Count -gt 0) { $Result['changedText'] = Get-WorkerPerfHealthCopy $Catalogue 'changed' @{ list = ($items -join ', ') } }
+    $Result['incidentNote'] = Get-WorkerPerfHealthCopyText $Catalogue 'incidentNote'
+
+    $grades = Get-WorkerPerfField $Result 'grades'
+    $words = @{}
+    foreach ($g in @($script:WorkerPerfHealthGrades) + 'na') { $words[$g] = [string](Get-WorkerPerfField (Get-WorkerPerfField $grades $g) 'word') }
+    $definitions = @{}
+    foreach ($c in @(Get-WorkerPerfField $Catalogue 'checks')) { $definitions[[string]$c.id] = $c }
+    $raw = @{}
+    foreach ($e in @(Get-WorkerPerfField $Result 'raw')) { $raw[[string](Get-WorkerPerfField $e 'id')] = $e }
+    $head = Get-WorkerPerfHealthCopy $Catalogue 'copyHead' @{ server = $Server; date = $date }
+
+    foreach ($area in @(Get-WorkerPerfField $Result 'areas')) {
+        $areaLabel = [string]$area['label']
+        $areaItems = New-Object System.Collections.Generic.List[string]
+        foreach ($check in @($area['checks'])) {
+            $grade = [string]$check['grade']; $finding = Get-WorkerPerfHealthCopyFinding $check $definitions $raw
+            $p = New-Object System.Collections.Generic.List[string]
+            $p.Add($head)
+            $p.Add((Get-WorkerPerfHealthCopy $Catalogue 'copyCheckTitle' @{ area = $areaLabel; title = [string]$check['title']; grade = $words[$grade] }))
+            $p.Add($finding)
+            if ([string]$check['note']) { $p.Add([string]$check['note']) }
+            $p.Add(''); $p.Add((Get-WorkerPerfHealthCopyText $Catalogue 'copyMeaning')); $p.Add([string]$check['meaning'])
+            $p.Add(''); $p.Add((Get-WorkerPerfHealthCopyText $Catalogue 'copyTodo'))
+            $n = 0
+            foreach ($step in @($check['todo'])) {
+                $n++
+                $p.Add((Get-WorkerPerfHealthCopy $Catalogue 'copyStep' @{ n = [string]$n; text = [string]$step['text']; where = [string]$step['where']
+                            sign = [string]$step['sign'] }))
+            }
+            $source = $check['source']
+            $p.Add('')
+            $p.Add((Get-WorkerPerfHealthCopy $Catalogue 'copySource' @{ kind = [string]$check['kindLabel']; vendor = [string]$source['vendor']; title = [string]$source['title']
+                        date = (Format-WorkerPerfHealthSourceDate ([string]$source['date'])) }))
+            $check['copy'] = New-WorkerPerfHealthCopy $p.ToArray() $AnonymousMask $Unwrapped.IsPresent
+            if (@('act', 'check', 'unknown') -ccontains $grade) {
+                $areaItems.Add((Get-WorkerPerfHealthCopy $Catalogue 'copyAreaItem' @{ title = [string]$check['title']; grade = $words[$grade]; finding = $finding }))
+            }
+        }
+        $p = New-Object System.Collections.Generic.List[string]
+        $p.Add($head); $p.Add((Get-WorkerPerfHealthCopy $Catalogue 'copyAreaTitle' @{ area = $areaLabel; grade = $words[[string]$area['grade']] }))
+        $p.Add('')
+        foreach ($item in $areaItems) { $p.Add($item) }
+        $p.Add((Get-WorkerPerfHealthCopy $Catalogue 'copyOk' @{ n = [string]$area['counts']['ok'] }))
+        $p.Add(''); $p.Add([string]$area['notCovered'])
+        $area['copy'] = New-WorkerPerfHealthCopy $p.ToArray() $AnonymousMask $Unwrapped.IsPresent
     }
 }
