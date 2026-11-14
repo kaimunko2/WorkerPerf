@@ -447,9 +447,9 @@ details.fold[open] > summary { margin-bottom: 12px; }
 #incident p { overflow-wrap: anywhere; }
 /* the button row stands above the head but follows the title in the page: the first Tab from the title (which takes the focus
    when the view opens) reaches "Zurück" */
-.iv-nav { order: -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
-.iv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.iv-actions label.inline { color: var(--text); }
+.iv-nav, .av-nav { order: -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.iv-actions, .av-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.iv-actions label.inline, .av-actions label.inline { color: var(--text); }
 .iv-head { border-left: 6px solid var(--border); padding: 16px 24px; }
 .iv-head.sev1 { border-left-color: var(--warn); } .iv-head.sev2 { border-left-color: var(--crit); }
 #guided .iv-title { font-size: 24px; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
@@ -538,6 +538,67 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 #copyFallback p { margin: 0 0 12px; color: var(--text2); font-size: 14px; }
 #copyFallback textarea { display: block; width: 100%; height: min(420px, 50vh); font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; overflow: auto; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--text); }
 #copyFallback .dlg-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
+/* the health picture: in the head bar when it was read, in the guided view the row "Zustand des Servers" with a tile per area
+   (six to a row from 900 px, three and two below, one column on a phone); a tile opens the area view, which replaces the
+   content of the guided view like the incident view. The colour of a grade follows the status marks: act as kritisch, check as
+   auffällig, ok as normal, unknown and na as nicht gemessen; symbol and word always stand beside it. */
+#healthInfo { margin-top: 2px; overflow-wrap: anywhere; }
+#healthRow .cardhead { margin-bottom: 2px; }
+#healthSummary { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+#healthEnv { margin: 0 0 12px; font-size: 13px; }
+#healthRow .hr-text { margin: 0; overflow-wrap: anywhere; }
+.htiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.htile { --edge: var(--border); display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; font: inherit; text-align: left; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-left: 4px solid var(--edge); border-radius: 8px; padding: 7px 8px 8px 9px; cursor: pointer; transition: background-color .12s ease; }
+.htile:hover { background: var(--hover); }
+.htile[data-grade="act"], .av-head[data-grade="act"], .hcheck[data-grade="act"] { --edge: var(--crit); }
+.htile[data-grade="check"], .av-head[data-grade="check"], .hcheck[data-grade="check"] { --edge: var(--warn); }
+.htile[data-grade="ok"], .av-head[data-grade="ok"], .hcheck[data-grade="ok"] { --edge: var(--good); }
+.htile[data-grade="unknown"], .av-head[data-grade="unknown"], .hcheck[data-grade="unknown"] { --edge: var(--muted); }
+.ht-label { font-size: 14px; font-weight: 600; line-height: 1.25; overflow-wrap: break-word; hyphens: auto; max-width: 100%; }
+.htile .status { margin: 0; font-size: 13px; }
+.ht-counts { color: var(--text2); font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; max-width: 100%; }
+#guided.in-area > :not(#area) { display: none; }
+#area { display: flex; flex-direction: column; gap: 16px; }
+#area p { overflow-wrap: anywhere; }
+.av-head { --edge: var(--border); border-left: 6px solid var(--edge); padding: 16px 24px; }
+#guided .av-title { font-size: 24px; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.av-title:focus { outline: none; }
+.av-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin: 8px 0 0; }
+.av-meta .status { margin: 0; font-size: 14px; }
+.av-meta .ht-counts { font-size: 14px; }
+.av-head .av-status { margin: 12px 0 0; }
+.av-about p { margin: 0; max-width: 100ch; }
+.av-about p + ul { margin-top: 10px; }
+ul.av-apps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.av-app { border: 1px solid var(--border); border-radius: 10px; padding: 1px 10px; font-size: 13px; overflow-wrap: anywhere; max-width: 100%; }
+.av-app[data-state="notInstalled"] { border-style: dashed; color: var(--text2); }
+.hcheck { --edge: var(--border); border-left: 4px solid var(--edge); scroll-margin-top: calc(var(--headh, 0px) + 12px); }
+.hcheck > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 8px; }
+.hcheck > summary::-webkit-details-marker { display: none; }
+.hcheck > summary::before { content: "▸"; grid-row: 1 / span 3; color: var(--muted); line-height: 1.6; }
+.hcheck[open] > summary::before { content: "▾"; }
+.hcheck > summary > * { grid-column: 2; }
+.hc-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0; }
+#guided .hc-title { font-size: 16px; }
+.hc-name { min-width: 0; overflow-wrap: anywhere; }
+.hc-title .status { margin: 0; font-size: 13px; }
+.hc-finding, .hc-note { display: block; overflow-wrap: anywhere; }
+.hc-finding { margin-top: 2px; }
+.hc-note { color: var(--text2); font-size: 14px; margin-top: 2px; }
+.hc-body { margin: 12px 0 0 22px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.hc-body h4 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+.hc-body h4:first-child { margin-top: 0; }
+.hc-body p { margin: 0; max-width: 100ch; }
+.hc-todo .step { font-weight: 600; }
+.hc-source a { color: var(--link); }
+.hc-body .hc-source { margin-top: 14px; }
+.hc-body .hc-actions { margin-top: 12px; }
+.area-notcovered p { margin: 0; max-width: 100ch; color: var(--text2); }
+#guided .area-notcovered h3 { font-size: 15px; margin: 0 0 6px; }
+@media (max-width: 899px) { .htiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .av-head { padding: 16px; } }
+@media (max-width: 599px) { .htiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hc-body { margin-left: 0; } }
+@media (max-width: 420px) { .htiles { grid-template-columns: minmax(0, 1fr); } }
 @media (min-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* a usual screen (below about 1500 px): the tiles stand closer and are smaller, so that they need one row less and more of
    the charts is in the first screen */
@@ -616,7 +677,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 }
 /* printing prints the view on screen (the script opens its folded areas); controls stay off the paper */
 @media print {
-  #xtabs, .toolbar, #rangeBar .btn, #rangeBar .note, #incToggle, .inc-guided, #viewSwitch, .iv-nav, .iv-actions, .term-pop, #copyFallback { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
+  #xtabs, .toolbar, #rangeBar .btn, #rangeBar .note, #incToggle, .inc-guided, #viewSwitch, .iv-nav, .iv-actions, .av-nav, .hc-actions, .term-pop, #copyFallback { display: none; } header, .topbar { position: static; } section[hidden] { display: block; } .tablewrap { max-height: none; }
   #guided > section[hidden] { display: none; }
   /* the expert view on paper: one column, the whole incident list, every tab under its name; the range in full */
   #rangeBar { flex-wrap: wrap; height: auto; }
@@ -630,6 +691,11 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
   #sollist td.wrap, #sollist td.src, #sollist td:first-child { min-width: 0; }
   /* a chart with its title, a step and a proposal stay on one page */
   .chartbox, .iv-chart, .sigcharts > .card, .grid2 > .card, ol.checks > li, .remedies li, .contact li { break-inside: avoid; page-break-inside: avoid; }
+  /* a tile and the head of a check stay whole; the marker of a check (open or folded) is no use on paper */
+  .htile, .hcheck > summary { break-inside: avoid; page-break-inside: avoid; }
+  .hcheck > summary::before { content: none; }
+  .hcheck > summary > * { grid-column: 1 / -1; }
+  .hc-body { margin-left: 0; }
 }
 </style>
 </head>
@@ -653,6 +719,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
     <div class="band-actions" id="bandActions"></div>
   </section>
   <div id="hints" hidden></div>
+  <section class="card" id="healthRow" aria-labelledby="healthHead" hidden></section>
   <section class="card" id="tlCard"><div class="cardhead"><h3>Zeitleiste der Messung</h3></div><div id="timeline" class="timeline"></div><div class="tl-legend" id="tlLegend"></div></section>
   <section class="card" id="aroundReported" hidden></section>
   <h2 id="cardsHead" hidden>Vorfälle</h2>
@@ -662,6 +729,7 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
   <details class="card fold" id="measured"><summary><h2>Was wurde gemessen, was nicht</h2></summary><div class="nofinding" id="measuredBody"></div></details>
   <details class="card fold" id="qualityG"><summary><h2>Messqualität</h2></summary><div class="quality" id="qualityGBody"></div></details>
   <article id="incident" aria-labelledby="ivTitle" hidden></article>
+  <article id="area" aria-labelledby="avTitle" hidden></article>
 </div>
 
 <div id="expert" hidden>
@@ -783,6 +851,14 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 // The static message above stays visible where this script cannot run (a browser without current JavaScript).
 document.getElementById("oldBrowser").remove();
 const D = JSON.parse(document.getElementById('wp-data').textContent);
+// The report of a quick run (meta.healthOnly) holds the health picture without a measurement. Until it gets a page of its own,
+// the fields of the measurement it lacks stand empty, so the page opens with them (as the report of a capture without data).
+if (D.meta && D.meta.healthOnly) {
+  const empty = { thresholds: [], tickT: [], snapT: [], snapKind: "", host: {}, volumes: [], shares: [], probes: [], mainApp: null, events: [], sessions: [], apps: [], pairs: [], procs: [],
+    citrix: [], sollIst: [], incidents: [], unmeasured: { input: false, worker: [] }, noFinding: false, eventsOutsideCut: 0, appList: null, unrecorded: [], guidance: null, lagebild: null,
+    order: [], cards: [], more: [], copyAll: null };
+  for (const k of Object.keys(empty)) if (D[k] == null) D[k] = empty[k];
+}
 const M = D.meta, Q = D.quality;
 // a masked report has its message texts removed: an empty one there says so (an unmasked report shows the text as it is)
 const MASKED = M.mask != null && M.mask !== "", REMOVED = "Meldung entfernt (maskiert)";
@@ -910,7 +986,7 @@ window.WP = {
   // scroll position)
   showView(name) {
     if (!VIEWS.includes(name) || name === this.view) return;
-    histWrite(true, stepFor(name, this.incident, ivFrom && ivFrom.view));
+    histWrite(true, stepFor(name, this.incident, ivFrom && ivFrom.view, this.area));
     setView(name);
   },
   zoom: null,
@@ -1526,6 +1602,21 @@ if (SKIPPED.length) {
   sym.className = "sym"; sym.setAttribute("aria-hidden", "true"); sym.textContent = "○";
   info.append(sym, document.createTextNode("Nicht gemessen (-Skip): " + SKIPPED.map((s) => s.label).join(", ")));
   document.getElementById("subtitle").after(info);
+}
+// The health picture (health of the report data: state, title, headline, texts, grades, areas with their checks; every sentence
+// comes from the report data). A report without it (older report data) counts as not recorded, without a text. Read, the head
+// bar names when it was read and how long it took, changed thresholds and the checks that could not be checked; not recorded or
+// unreadable, its text; left out with -Skip, nothing (#skipInfo names the category).
+const HEALTH = D.health || { state: "notRecorded", title: "", text: "" }, HEALTH_READ = HEALTH.state === "read";
+const HEALTH_AREAS = HEALTH_READ ? HEALTH.areas || [] : [], areaById = new Map(HEALTH_AREAS.map((a) => [a.id, a]));
+{
+  const text = HEALTH_READ ? [HEALTH.headline, HEALTH.changedText, HEALTH.unknownText].filter(Boolean).join(" · ") : HEALTH.state === "skipped" ? "" : HEALTH.text || "";
+  if (text) {
+    const info = document.createElement("div");
+    info.id = "healthInfo"; info.className = "sub";
+    info.textContent = (HEALTH_READ ? "Zustandsbild: " : "") + text;
+    (document.getElementById("maskInfo") || document.getElementById("skipInfo") || document.getElementById("subtitle")).after(info);
+  }
 }
 // without process data the counts of processes and the share of WorkerPerf itself are 0 only because nothing was measured
 document.getElementById("footer").innerHTML = `${fmt(M.ticks, 0)} Takte, ` +
@@ -3034,12 +3125,12 @@ const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start
 
 // ---------- copying ----------
 // The texts come complete from the report data (copy.named and copy.anonymous of an incident, copyAll of the capture) and are
-// handed over unchanged. A masked report has one version; elsewhere the switch "ohne Namen" (in the band and in the incident
-// view, both show the same choice) takes the version without names.
+// handed over unchanged. A masked report has one version; elsewhere the switch "ohne Namen" (in the band, in the incident view
+// and in the area view of the health picture, all show the same choice) takes the version without names.
 const anonChosen = () => { const b = document.getElementById("anonSwitch"); return !!b && b.checked; };
 const copyVersion = (c) => !c ? "" : (anonChosen() && c.anonymous != null ? c.anonymous : c.named) || "";
 document.getElementById("guided").addEventListener("change", (ev) => {
-  if (ev.target.matches("#anonSwitch, #ivAnon")) for (const b of document.querySelectorAll("#anonSwitch, #ivAnon")) b.checked = ev.target.checked;
+  if (ev.target.matches("#anonSwitch, #ivAnon, #avAnon")) for (const b of document.querySelectorAll("#anonSwitch, #ivAnon, #avAnon")) b.checked = ev.target.checked;
 });
 // the button says "Kopiert" for about 1.5 s and keeps its width
 function confirmCopy(button) {
@@ -3245,24 +3336,29 @@ ivEl.addEventListener("click", (ev) => {
 // situation summary or the expert view), its scroll position and the button that opened it.
 // ---------- the address and the history of the page ----------
 // Every change of the screen is a step of the browser's history and stands in the address (the part after #):
-// v=guided|expert, i=<incident> (guided: the incident view; expert: the incident chosen in the incident column), t0 and t1
-// (the range, ms). The state of a step tells the incident view where it was opened from and which incident view lies behind
-// the expert view: null (situation summary), { wpIncident[, wpFrom: "expert"] } (incident view), { wpView: "expert"[,
-// wpIncident] } (expert view). A step is written when the view changes, an incident view opens or closes and a range has been
-// set; back and forward show the step again and put the focus on the element that opened the step they leave (else on the
-// heading of the view). A bookmark opens its place; an unknown incident or a range that cannot be read gives the situation
-// summary or the whole capture. The address holds numbers only, also in a masked report.
+// v=guided|expert, i=<incident> (guided: the incident view; expert: the incident chosen in the incident column), a=<area> (guided:
+// the area view of the health picture; i and a exclude each other, an address with both opens the incident), t0 and t1 (the
+// range, ms). The state of a step tells the incident view where it was opened from and which incident view or area view lies
+// behind the expert view: null (situation summary), { wpIncident[, wpFrom: "expert"] } (incident view), { wpArea } (area
+// view), { wpView: "expert"[, wpIncident | wpArea] } (expert view). A step is written when the view changes, an incident view
+// or an area view opens or closes and a range has been set; back and forward show the step again and put the focus on the
+// element that opened the step they leave (else on the heading of the view). A bookmark opens its place; an unknown incident or
+// area or a range that cannot be read gives the situation summary or the whole capture. The address holds numbers and the
+// fixed keys of the areas only, also in a masked report.
 let ivFrom = null;
 const histState = () => { try { return history.state; } catch (e) { return null; } };
 // the step that shows a view with an incident (guided: its incident view, opened from "from"; expert: the incident view behind it)
-function stepFor(view, incident, from) {
-  if (view === "expert") return incident != null ? { wpIncident: incident, wpView: "expert" } : { wpView: "expert" };
-  return incident == null ? null : from === "expert" ? { wpIncident: incident, wpFrom: "expert" } : { wpIncident: incident };
+// or with an area of the health picture (guided: its area view; expert: the area view behind it)
+function stepFor(view, incident, from, area) {
+  if (view === "expert") return incident != null ? { wpIncident: incident, wpView: "expert" } : area != null ? { wpArea: area, wpView: "expert" } : { wpView: "expert" };
+  if (incident == null) return area != null ? { wpArea: area } : null;
+  return from === "expert" ? { wpIncident: incident, wpFrom: "expert" } : { wpIncident: incident };
 }
 // the address of a step with the range and the chosen incident as they are now
 function addressOf(st) {
   const expert = !!st && st.wpView === "expert", id = expert ? selInc : st ? st.wpIncident : null, z = window.WP.zoom, p = ["v=" + (expert ? "expert" : "guided")];
   if (id != null) p.push("i=" + id);
+  else if (!expert && st && st.wpArea != null) p.push("a=" + encodeURIComponent(st.wpArea));
   if (z) p.push("t0=" + z.t0, "t1=" + z.t1);
   return "#" + p.join("&");
 }
@@ -3286,12 +3382,15 @@ function settle(step) {
   trail = [{ key: stepKey(step, address), el: null }]; at = 0;
 }
 // the step of the screen as it is now (the incident view keeps the origin of its step)
-function screenStep() { return stepFor(window.WP.view, window.WP.incident, ivFrom && ivFrom.view); }
+function screenStep() { return stepFor(window.WP.view, window.WP.incident, ivFrom && ivFrom.view, window.WP.area); }
 function rangeStep() { if (!applying) histWrite(!fresh, screenStep()); }
 // step: shown by this step of the history (forward, reload); it names the view the incident view was opened from
 function showIncidentView(id, step) {
   const guided = window.WP.view === "guided", from = !step ? window.WP.view : step.wpFrom === "expert" ? "expert" : "guided";
-  if (!guided || window.WP.incident == null) ivFrom = { view: from, y: guided ? window.scrollY : viewScroll.guided, el: document.activeElement };
+  // an area view of the health picture gives way: the incident view returns to the place the area view would have returned to
+  const area = window.WP.area != null ? avFrom || { y: 0, el: null } : null;
+  if (area) { dropAreaView(); ivFrom = { view: from, y: area.y, el: guided ? area.el : document.activeElement }; }
+  else if (!guided || window.WP.incident == null) ivFrom = { view: from, y: guided ? window.scrollY : viewScroll.guided, el: document.activeElement };
   else if (step) ivFrom.view = from;
   setView("guided");
   window.WP.incident = id;
@@ -3301,12 +3400,16 @@ function showIncidentView(id, step) {
   window.scrollTo(0, 0);
   document.getElementById("ivTitle").focus({ preventScroll: true });
 }
-function hideIncidentView() {
-  if (window.WP.incident == null) return;
-  const id = window.WP.incident, from = ivFrom || { view: "guided", y: 0, el: null }, shown = window.WP.view === "guided";
+// the incident view gone, without returning anywhere (another view takes its place)
+function dropIncidentView() {
   window.WP.incident = null; ivFrom = null;
   ivEl.hidden = true; ivEl.innerHTML = ""; delete ivEl.dataset.id; guidedEl.classList.remove("in-incident");
   hideTerm();
+}
+function hideIncidentView() {
+  if (window.WP.incident == null) return;
+  const id = window.WP.incident, from = ivFrom || { view: "guided", y: 0, el: null }, shown = window.WP.view === "guided";
+  dropIncidentView();
   // closed behind the expert view: the guided view shows its place when it is seen again
   if (!shown) { viewScroll.guided = from.y; return; }
   if (from.view === "guided") { drawTimeline(false); refreshCharts(); window.scrollTo(0, from.y); }
@@ -3336,10 +3439,11 @@ window.WP.closeIncident = function () {
 };
 // the page as a step of its history describes it
 function applyHistory(st) {
-  const expert = !!st && st.wpView === "expert", id = st ? st.wpIncident : null;
-  if (id == null || !incById.has(id)) { hideIncidentView(); setView(expert ? "expert" : "guided"); }
+  const expert = !!st && st.wpView === "expert", id = st && incById.has(st.wpIncident) ? st.wpIncident : null, area = st && areaById.has(st.wpArea) ? st.wpArea : null;
+  if (id == null && area == null) { hideIncidentView(); hideAreaView(); setView(expert ? "expert" : "guided"); }
   else if (expert) setView("expert");
-  else if (window.WP.incident !== id) showIncidentView(id, st);
+  else if (id != null) { if (window.WP.incident !== id) showIncidentView(id, st); else setView("guided"); }
+  else if (window.WP.area !== area) showAreaView(area);
   else setView("guided");
 }
 // The address as the page reads it: view, incident (one of this report), range (two whole numbers that overlap the capture);
@@ -3348,15 +3452,15 @@ function readAddress() {
   let p; try { p = new URLSearchParams(location.hash.replace(/^#/, "")); } catch (e) { p = new URLSearchParams(""); }
   const int = (k) => { const v = p.get(k); return v != null && /^-?\d{1,15}$/.test(v) ? Number(v) : null; };
   const view = VIEWS.includes(p.get("v")) ? p.get("v") : null, id = int("i"), t0 = int("t0"), t1 = int("t1");
-  return { any: [...p.keys()].length > 0, view, id: id != null && incById.has(id) ? id : null,
+  return { any: [...p.keys()].length > 0, view, id: id != null && incById.has(id) ? id : null, area: areaById.has(p.get("a")) ? p.get("a") : null,
     range: t0 != null && t1 != null && t1 > t0 && t1 > FULL.t0 && t0 < FULL.t1 ? { t0, t1 } : null };
 }
 // the step an address stands for; a state of the history that says the same keeps what only it knows (origin, the incident view
 // behind the expert view)
 function stepOfAddress(a, st) {
-  const view = a.view || (a.id != null ? "guided" : rememberedView() || "guided");
+  const view = a.view || (a.id != null || a.area != null ? "guided" : rememberedView() || "guided");
   if (view === "expert") return st && st.wpView === "expert" ? st : { wpView: "expert" };
-  if (a.id == null) return null;
+  if (a.id == null) return a.area != null ? { wpArea: a.area } : null;
   return st && st.wpView !== "expert" && st.wpIncident === a.id ? st : { wpIncident: a.id };
 }
 // shows a step: views and incident view, then the incident chosen in the expert view and the range
@@ -3373,7 +3477,7 @@ function applyStep(st, a) {
 }
 // the heading of what is on screen: it takes the focus where no element that opened a step can
 function viewHeading() {
-  return document.getElementById(window.WP.view === "expert" ? "incHead" : window.WP.incident != null ? "ivTitle" : "bandSentence");
+  return document.getElementById(window.WP.view === "expert" ? "incHead" : window.WP.incident != null ? "ivTitle" : window.WP.area != null ? "avTitle" : "bandSentence");
 }
 // An element that can keep the focus: on screen and not disabled (a button that went away with its view, or "Gesamte Messung",
 // which is disabled once the whole capture shows, cannot).
@@ -3387,7 +3491,7 @@ function landFocus(el, id) {
   if (canFocus(el)) { el.focus({ preventScroll: true }); return; }
   const pick = (sel) => { const e = sel && document.querySelector(sel); return canFocus(e) ? e : null; };
   const to = window.WP.view === "expert" ? pick("#incList .inc.selected .inc-main") || viewHeading()
-    : window.WP.incident != null ? viewHeading() : pick(id != null && `#cards .card.inc[data-id="${id}"] .card-open`) || viewHeading();
+    : window.WP.incident != null || window.WP.area != null ? viewHeading() : pick(id != null && `#cards .card.inc[data-id="${id}"] .card-open`) || viewHeading();
   if (to && to.focus) to.focus();
 }
 window.addEventListener("popstate", (ev) => {
@@ -3401,12 +3505,125 @@ window.addEventListener("popstate", (ev) => {
   const el = left && left.el, target = el && el !== document.body && el.isConnected && isShown(el) ? el : viewHeading();
   if (target && target.focus) target.focus({ preventScroll: true });
 });
-// Esc closes what is open on top: the explanation of a term, then the incident view (the copy dialog closes itself)
+// Esc closes what is open on top: the explanation of a term, then the incident view or the area view (the copy dialog closes
+// itself)
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape") return;
   if (copyDialog.hasAttribute("open")) { if (!copyDialog.showModal) closeCopyFallback(); return; }
   if (!termPop.hidden) { hideTerm(); return; }
   if (window.WP.view === "guided" && window.WP.incident != null) window.WP.closeIncident();
+  else if (window.WP.view === "guided" && window.WP.area != null) window.WP.closeArea();
+});
+
+// ---------- health picture: the row "Zustand des Servers" and the area view ----------
+// Every text comes from the report data (health) and is inserted as text; the page adds the labels of its sections and buttons.
+// A grade stands as symbol and word of health.grades in the colour of the status marks.
+const GRADE_CLASS = { act: "crit", check: "warn", ok: "good", unknown: "na", na: "na" };
+const gradeHtml = (g) => {
+  const w = (HEALTH.grades || {})[g] || { symbol: "", word: g };
+  return `<span class="status st-${GRADE_CLASS[g] || "na"}"><i class="sym" aria-hidden="true">${esc(w.symbol)}</i> ${esc(w.word)}</span>`;
+};
+const countsHtml = (a) => a.countsText ? `<span class="ht-counts">${esc(a.countsText)}</span>` : "";
+// The row between the hints and the timeline: read, the summary, the assumed target environment and a tile per area (a button
+// that opens its area view); not recorded or unreadable, the text only; left out with -Skip, the hint "nicht gemessen". Without
+// a title and a text (older report data) the row is left out.
+{
+  const row = document.getElementById("healthRow");
+  const body = HEALTH_READ ? `<p id="healthEnv" class="note">${esc(HEALTH.environmentText)}</p>
+      <div class="htiles">${HEALTH_AREAS.map((a) => `<button type="button" class="htile" data-area="${esc(a.id)}" data-grade="${esc(a.grade)}"><span class="ht-label">${esc(a.label)}</span>${gradeHtml(a.grade)}${countsHtml(a)}</button>`).join("")}</div>`
+    : HEALTH.state === "skipped" ? notMeasured("health") : HEALTH.text ? `<p class="hr-text">${esc(HEALTH.text)}</p>` : "";
+  row.innerHTML = `<div class="cardhead"><h3 id="healthHead">${esc(HEALTH.title)}</h3>${HEALTH_READ ? `<p id="healthSummary">${esc((HEALTH.summary || {}).text)}</p>` : ""}</div>${body}`;
+  row.hidden = !HEALTH.title && !body;
+  row.addEventListener("click", (ev) => { const t = ev.target.closest(".htile"); if (t) window.WP.openArea(t.dataset.area); });
+}
+// The area view replaces the content of the guided view like the incident view: head with the area, its grade and, where the
+// area was not read whole, the sentence of the report data; the sentence and the applications the area names; a block per check
+// in the order of the report data (open where it needs attention, folded where it is fine or does not apply), each with
+// finding, meaning, steps, source and its copy button; at the end what the area does not cover. Leaving it returns to the place
+// the reader came from.
+const avEl = document.getElementById("area");
+let avFrom = null;
+function checkHtml(c) {
+  const s = c.source || {}, date = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s.date || ""), finding = c.finding || c.why;
+  const title = !s.title ? "" : isWebUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title);
+  const origin = [esc(c.kindLabel), [esc(s.vendor), title].filter(Boolean).join(", ")].filter(Boolean).join(" – ");
+  const when = date ? ` (Stand ${date[3]}.${date[2]}.${date[1]})` : s.date ? ` (Stand ${esc(s.date)})` : "";
+  const how = (label, text) => text ? `<div><dt>${label}</dt><dd>${esc(text)}</dd></div>` : "";
+  const steps = (c.todo || []).map((t) => `<li><p class="step">${esc(t.text)}</p>${t.where || t.sign ? `<dl class="how">${how("Wo:", t.where)}${how("Woran erkennbar:", t.sign)}</dl>` : ""}</li>`).join("");
+  return `<details class="hcheck card" data-check="${esc(c.id)}" data-grade="${esc(c.grade)}"${c.grade === "ok" || c.grade === "na" ? "" : " open"}>
+      <summary><h3 class="hc-title"><span class="hc-name">${esc(c.title)}</span>${gradeHtml(c.grade)}</h3>${finding ? `<span class="hc-finding">${esc(finding)}</span>` : ""}${c.note ? `<span class="hc-note">${esc(c.note)}</span>` : ""}</summary>
+      <div class="hc-body">${c.meaning ? `<h4>Was bedeutet das?</h4><p class="hc-meaning">${esc(c.meaning)}</p>` : ""}${steps ? `<h4>Was tun?</h4><ol class="checks hc-todo">${steps}</ol>` : ""}${origin ? `
+        <p class="src hc-source">Quelle: ${origin}${when}</p>` : ""}
+        <p class="hc-actions"><button type="button" class="btn hc-copy">Kopieren</button></p></div>
+    </details>`;
+}
+function renderArea(id) {
+  const a = areaById.get(id), apps = a.apps || [];
+  avEl.dataset.area = id;
+  avEl.innerHTML = `<div class="av-head card" data-grade="${esc(a.grade)}">
+      <h2 class="av-title" id="avTitle" tabindex="-1">${esc(a.label)}</h2>
+      <p class="av-meta">${gradeHtml(a.grade)}${countsHtml(a)}</p>${a.statusText ? `
+      <p class="hint av-status" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(a.statusText)}${a.error ? " " + esc(a.error) : ""}</p>` : ""}
+    </div>
+    <div class="av-nav"><button type="button" class="btn" id="areaBack"><span aria-hidden="true">←</span> Zurück zum Lagebild</button>
+      <div class="av-actions"><button type="button" class="btn primary" id="areaCopy">Bereich kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="avAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}</div></div>${a.intro || apps.length ? `
+    <section class="av-about card">${a.intro ? `<p class="av-intro">${esc(a.intro)}</p>` : ""}${apps.length ? `
+      <ul class="av-apps">${apps.map((x) => `<li class="av-app" data-app="${esc(x.key)}" data-state="${esc(x.state)}">${esc(x.text)}</li>`).join("")}</ul>` : ""}</section>` : ""}
+    ${(a.checks || []).map(checkHtml).join("")}${a.notCovered ? `
+    <section class="area-notcovered card"><h3>Nicht abgedeckt</h3><p>${esc(a.notCovered)}</p></section>` : ""}`;
+}
+// the area view gone, without returning anywhere (another view takes its place)
+function dropAreaView() {
+  window.WP.area = null; avFrom = null;
+  avEl.hidden = true; avEl.innerHTML = ""; delete avEl.dataset.area; guidedEl.classList.remove("in-area");
+}
+// checkId: a check of the area that is brought into view (opened)
+function showAreaView(id, checkId) {
+  const guided = window.WP.view === "guided";
+  if (window.WP.area == null) {
+    // opened from an incident view (Task 19): leaving the area view returns where the incident view would have returned to
+    const back = window.WP.incident != null ? ivFrom || { view: "guided", y: 0, el: null } : null;
+    avFrom = back ? { y: back.view === "guided" ? back.y : viewScroll.guided, el: back.view === "guided" ? back.el : null } : { y: guided ? window.scrollY : viewScroll.guided, el: guided ? document.activeElement : null };
+  }
+  if (window.WP.incident != null) dropIncidentView();
+  setView("guided");
+  window.WP.area = id;
+  guidedEl.classList.add("in-area"); avEl.hidden = false;
+  hideTerm();
+  renderArea(id);
+  window.scrollTo(0, 0);
+  document.getElementById("avTitle").focus({ preventScroll: true });
+  const check = checkId != null && [...avEl.querySelectorAll(".hcheck")].find((d) => d.dataset.check === String(checkId));
+  if (check) { check.open = true; check.scrollIntoView({ block: "start" }); }
+}
+function hideAreaView() {
+  if (window.WP.area == null) return;
+  const id = window.WP.area, from = avFrom || { y: 0, el: null }, shown = window.WP.view === "guided";
+  dropAreaView();
+  if (!shown) { viewScroll.guided = from.y; return; }
+  drawTimeline(false); refreshCharts(); window.scrollTo(0, from.y);
+  // the focus: on the element that opened the view, else on the tile of the area
+  const tile = [...document.querySelectorAll("#healthRow .htile")].find((t) => t.dataset.area === id);
+  landFocus(canFocus(from.el) ? from.el : tile);
+}
+window.WP.area = null;
+// Opening an area view is a step of the history (like an incident view); an unknown area does nothing.
+window.WP.openArea = function (id, checkId) {
+  if (!areaById.has(id)) return;
+  histWrite(true, stepFor("guided", null, null, id));
+  showAreaView(id, checkId);
+};
+// Closing it ("Zurück zum Lagebild", Esc) returns to the situation summary as a new step: the back button shows it again.
+window.WP.closeArea = function () {
+  if (this.area == null) return;
+  histWrite(true, this.view === "expert" ? stepFor("expert", null) : null);
+  hideAreaView();
+};
+avEl.addEventListener("click", (ev) => {
+  const b = ev.target.closest("button"), a = areaById.get(window.WP.area); if (!b || !a) return;
+  if (b.id === "areaBack") window.WP.closeArea();
+  else if (b.id === "areaCopy") copyText(copyVersion(a.copy), b);
+  else if (b.classList.contains("hc-copy")) copyText(copyVersion(((a.checks || []).find((c) => c.id === b.closest(".hcheck").dataset.check) || {}).copy), b);
 });
 
 // ---------- printing ----------

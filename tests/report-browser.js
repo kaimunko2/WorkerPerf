@@ -3571,10 +3571,121 @@ async function checkFinalFixB(browser, dir, scheme) {
   await n.page.close();
 }
 
+// ---------- health picture (plan Zustandsbild, Task 18): the row "Zustand des Servers", the area view, the head ----------
+async function checkHealth(browser, dir, scheme) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
+  await ctx.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+  const page = await ctx.newPage(); page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  await page.goto('file://' + path.join(dir, 'report.html'));
+  const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent)), H = D.health;
+  ok(await page.evaluate(() => { const r = document.querySelector('#healthRow'), h = document.querySelector('#hints'), t = document.querySelector('#timeline');
+    return !!r && (!h || !!(h.compareDocumentPosition(r) & 4)) && !!(r.compareDocumentPosition(t) & 4); }), 'Zeile Zustand des Servers zwischen Hinweisen und Zeitleiste');
+  ok(H.title === 'Zustand des Servers' && (await page.locator('#healthRow').innerText()).includes(H.title) && (await page.locator('#healthSummary').innerText()) === H.summary.text, 'Ueberschrift "Zustand des Servers" und Zusammenfassung');
+  const tiles = page.locator('#healthRow .htile');
+  ok(await tiles.count() === 11 && JSON.stringify(await tiles.evaluateAll((e) => e.map((x) => x.dataset.area))) === JSON.stringify(H.areas.map((a) => a.id)), 'elf Kacheln in fester Reihenfolge');
+  ok((await page.locator('#healthEnv').innerText()) === H.environmentText, 'die Zeile nennt die angenommene Zielumgebung');
+  for (const a of H.areas) {
+    const t = page.locator(`#healthRow .htile[data-area="${a.id}"]`), g = H.grades[a.grade];
+    ok(await t.getAttribute('data-grade') === a.grade && (await t.locator('.status').innerText()).includes(g.symbol) && (await t.locator('.status').innerText()).includes(g.word) && (await t.innerText()).includes(a.label) && (await t.innerText()).includes(a.countsText), 'Kachel ' + a.id + ' mit Symbol, Wort und der Zeile der Zahlen');
+  }
+  const info = await page.locator('#healthInfo').innerText();
+  ok(info.includes(H.headline) && info.includes(H.unknownText), 'Kopf nennt Lesezeitpunkt, Dauer und die nicht pruefbaren Pruefungen');
+  const prof = H.areas.find((a) => a.id === 'profile'), c0 = prof.checks[0], av = page.locator('#area');
+  // (additions 5) the keyboard as with the cards: Tab reaches the tiles after the buttons of the band, Enter opens the area
+  // view (the focus on its title), Esc closes it and the focus returns to the tile
+  await page.focus('#anonSwitch'); await page.keyboard.press('Tab');
+  const firstTile = await page.evaluate(() => document.activeElement.dataset.area || document.activeElement.id);
+  await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  const second = H.areas[1].id, opened = [await av.isVisible(), await av.getAttribute('data-area'), await page.evaluate(() => document.activeElement.id)].join();
+  await page.keyboard.press('Escape');
+  const back = await page.evaluate(() => document.activeElement.dataset.area || document.activeElement.id);
+  ok(firstTile === H.areas[0].id && opened === ['true', second, 'avTitle'].join() && !(await av.isVisible()) && back === second, 'Tastatur: Tab erreicht die Kacheln, Eingabetaste oeffnet, Esc schliesst, der Fokus kehrt zur Kachel zurueck: ' + [firstTile, opened, back].join(' | '));
+  await page.click('#healthRow .htile[data-area="profile"]');
+  ok(await av.isVisible() && await av.getAttribute('data-area') === 'profile' && !(await page.locator('#band').isVisible()) && !(await page.locator('#healthRow').isVisible()), 'Bereichsansicht ersetzt die Startseite');
+  ok(JSON.stringify(await av.locator('.hcheck').evaluateAll((e) => e.map((x) => x.dataset.check))) === JSON.stringify(prof.checks.map((c) => c.id)), 'Pruefungen des Bereichs, auffaellige zuerst');
+  const el = av.locator(`.hcheck[data-check="${c0.id}"]`);
+  ok(await el.getAttribute('data-grade') === 'act' && (await el.locator('.hc-title .status').innerText()).includes(H.grades.act.word), 'Einstufung als Symbol und Wort');
+  ok((await el.locator('.hc-finding').innerText()).includes(c0.finding) && (await el.locator('.hc-meaning').innerText()).includes(c0.meaning), 'Befund und Bedeutung');
+  const src = await el.locator('.hc-source').innerText();
+  ok(await el.locator('.hc-todo li').count() === c0.todo.length && src.includes(c0.source.title) && src.includes(c0.kindLabel) && src.includes(c0.source.vendor), 'Vorgehen und Quelle mit Art');
+  ok((await page.evaluate(() => location.hash)).includes('a=profile'), 'Adresse haelt den Bereich');
+  await el.locator('.hc-copy').click();
+  ok(await page.evaluate(() => window.__copied.at(-1)) === c0.copy.named, 'Pruefung kopieren');
+  // print: the area view on paper with every check open and without its buttons; folded again afterwards
+  const media = async (m) => { await page.emulateMedia({ media: m }); await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))); };
+  const openChecks = () => av.locator('details.hcheck').evaluateAll((d) => d.filter((x) => x.open).length);
+  const onScreen = await openChecks();
+  await media('print');
+  ok(await av.isVisible() && await openChecks() === prof.checks.length && await page.locator('#areaBack').isHidden() && await page.locator('#areaCopy').isHidden() && await av.locator('.hc-copy:visible').count() === 0 && await page.locator('#band').isHidden(), 'Druck: die Bereichsansicht mit allen Pruefungen offen, ohne Knoepfe');
+  await media('screen');
+  ok(onScreen < prof.checks.length && await openChecks() === onScreen, 'Druck: danach wieder eingeklappt: ' + onScreen);
+  await page.keyboard.press('Escape');
+  ok(!(await av.isVisible()) && await page.locator('#band').isVisible(), 'Esc schliesst die Bereichsansicht');
+  await media('print');
+  ok(await page.locator('#healthRow .htile').first().isVisible() && await page.locator('#healthSummary').isVisible(), 'Druck: das Lagebild druckt die Zeile mit den Kacheln');
+  await media('screen');
+  await page.check('#anonSwitch'); await page.click('#healthRow .htile[data-area="profile"]'); await page.click('#areaCopy');
+  ok(await page.evaluate(() => window.__copied.at(-1)) === prof.copy.anonymous, 'Bereich kopieren ohne Namen');
+  await page.goBack();
+  ok(!(await av.isVisible()), 'Zurueck schliesst die Bereichsansicht');
+  await page.click('#healthRow .htile[data-area="security"]');
+  const sec = H.areas.find((a) => a.id === 'security'), unk = sec.checks.find((c) => c.grade === 'unknown');
+  ok((await av.locator(`.hcheck[data-check="${unk.id}"] .hc-finding`).innerText()).includes(unk.why) && (await av.locator(`.hcheck[data-check="${unk.id}"] .status`).first().innerText()).includes(H.grades.unknown.word), 'nicht pruefbar nennt den Grund');   // Review Focus 1
+  ok((await av.locator('.area-notcovered').innerText()).includes(sec.notCovered), 'der Bereich sagt, was er nicht abdeckt');
+  ok(sec.statusText.length > 0 && (await av.locator('.av-status').innerText()).includes(sec.statusText), 'ein teilweise gelesener Bereich sagt es mit dem Satz aus den Daten');
+  await page.keyboard.press('Escape'); await page.click('#healthRow .htile[data-area="apps"]');
+  const apps = H.areas.find((a) => a.id === 'apps');
+  ok(JSON.stringify(await av.locator('.av-apps .av-app').evaluateAll((e) => e.map((x) => x.dataset.app + ':' + x.dataset.state))) === JSON.stringify(apps.apps.map((x) => x.key + ':' + x.state)) && (await av.locator('.av-apps').innerText()).includes(apps.apps[0].text), 'Bereich Anwendungen nennt jede Anwendung mit ihrem Zustand');
+  await page.keyboard.press('Escape'); await page.click('#healthRow .htile[data-area="events"]');
+  ok((await av.locator('.av-intro').innerText()).includes(H.eventsReachText) && await page.locator('#area .av-apps').count() === 0, 'Ereignisbild sagt, ab wann die Protokolle reichen');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await ctx.close();
+  const b = await browser.newPage({ colorScheme: scheme }); b.errors = []; b.on('pageerror', (e) => b.errors.push(e.message));
+  await b.goto('file://' + path.join(dir, 'report.html') + '#v=guided&a=print');
+  ok(await b.locator('#area').getAttribute('data-area') === 'print', 'Lesezeichen oeffnet den Bereich');
+  await b.goto('file://' + path.join(dir, 'report.html') + '#v=guided&a=wetter'); await b.reload();
+  ok(await b.locator('#band').isVisible() && !(await b.locator('#area').isVisible()) && b.errors.length === 0, 'unbekannter Bereich im Lesezeichen');
+  await b.close();
+  const old = await open(browser, patched(dir, 'report.html', 'report-nohealth.html', (J) => { J.health = { state: 'notRecorded', title: J.health.title, text: 'Zustandsbild nicht erfasst.' }; for (const i of J.incidents) i.health = []; }), scheme);   // Review Focus 2
+  ok((await old.page.locator('#healthRow').innerText()).includes('Zustandsbild nicht erfasst.') && await old.page.locator('#healthRow .htile').count() === 0, 'alte Aufzeichnung: nicht erfasst, keine Kacheln');
+  ok(await old.page.locator('.notmeasured[data-place="health"]').count() === 0 && (await old.page.locator('#healthInfo').innerText()).includes('Zustandsbild nicht erfasst.') && old.page.errors.length === 0, 'alte Aufzeichnung: nicht als weggelassen gemeldet');
+  await old.page.close();
+  const none = await open(browser, patched(dir, 'report.html', 'report-healthless.html', (J) => { delete J.health; for (const i of J.incidents) delete i.health; }), scheme);
+  ok(await none.page.locator('#healthRow .htile').count() === 0 && none.page.errors.length === 0, 'Berichtsdaten ohne das Feld: kein Skriptfehler');
+  await none.page.close();
+  const na = await open(browser, patched(dir, 'report.html', 'report-health-na.html', (J) => { const a = J.health.areas.find((x) => x.id === 'apps'), c = a.checks[a.checks.length - 1];
+    c.grade = 'na'; c.why = 'Sim-Fachanwendung ist nicht installiert'; c.finding = 'Trifft nicht zu: Sim-Fachanwendung ist nicht installiert.';
+    a.apps.push({ key: 'simapp', label: 'Sim-Fachanwendung', state: 'notInstalled', text: 'Sim-Fachanwendung: nicht installiert' }); }), scheme);   // Review Focus 3
+  const naArea = na.D.health.areas.find((x) => x.id === 'apps'), naTile = na.page.locator('#healthRow .htile[data-area="apps"]');
+  ok(await naTile.getAttribute('data-grade') === naArea.grade && (await naTile.innerText()).includes(naArea.countsText) && !(await naTile.innerText()).includes(na.D.health.grades.na.word), 'trifft nicht zu: aendert weder Einstufung noch Zahlen der Kachel');
+  await naTile.click();
+  const last = na.page.locator('#area .hcheck').last();
+  ok(await last.getAttribute('data-grade') === 'na' && (await last.locator('.status').first().innerText()).includes(na.D.health.grades.na.word) && (await last.innerText()).includes('Sim-Fachanwendung ist nicht installiert'), 'trifft nicht zu: unter den eingestuften Pruefungen, mit Wort und Grund');
+  ok((await na.page.locator('#area .av-app[data-app="simapp"]').innerText()).includes('nicht installiert') && await na.page.locator('#area .av-app[data-app="simapp"]').getAttribute('data-state') === 'notInstalled' && na.page.errors.length === 0, 'eine nicht installierte Anwendung steht im Bereich');
+  await na.page.close();
+  const ch = await open(browser, patched(dir, 'report.html', 'report-health-changed.html', (J) => { J.health.changedText = 'Schwellen weichen vom ausgelieferten Stand ab: Freier Platz 25 GB (ausgeliefert 10 GB)'; }), scheme);
+  ok((await ch.page.locator('#healthInfo').innerText()).includes('Schwellen weichen vom ausgelieferten Stand ab'), 'Kopf vermerkt geaenderte Schwellen');
+  await ch.page.close();
+  const m = await open(browser, path.join(dir, 'report-masked.html'), scheme);
+  await m.page.click('#healthRow .htile[data-area="profile"]');
+  ok(!/user0\d\d|SIM-VDA01|CONTOSO|fs01/.test(await m.page.locator('#area').innerText()) && await m.page.locator('#anonSwitch').count() === 0 && await m.page.locator('#area .hc-copy').count() > 0, 'maskiert: keine Namen in der Bereichsansicht');   // Review Focus 4
+  await m.page.close();
+  // (additions 4) the report of a quick run (no measurement: no incidents, no unrecorded) opens without a script error; its
+  // own page comes with Task 20
+  const q = await open(browser, path.join(dir, 'report-health.html'), scheme);
+  ok(q.D.meta.healthOnly === true && q.D.incidents === undefined && q.page.errors.length === 0 && await q.page.locator('#healthRow .htile').count() === 11, 'Zustandsbericht aus dem Schnelllauf: kein Skriptfehler: ' + q.page.errors.join(' | '));
+  await q.page.close();
+  for (const hash of ['', '#v=guided&a=security']) {
+    const n = await browser.newPage({ viewport: { width: 400, height: 800 }, colorScheme: scheme }); await n.goto('file://' + path.join(dir, 'report.html') + hash);
+    ok(await n.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'schmale Breite ohne seitliches Scrollen: Zustandsbild ' + hash);
+    await n.close();
+  }
+}
+
 // every check function with the colour scheme of the system, then those that need one scheme only
 // (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
 // the incident view, of copying, of printing and of the points carried from the review run once)
-const PER_SCHEME = [checkNavigation, checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
+const PER_SCHEME = [checkNavigation, checkGuided, checkHealth, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
 const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording, checkFocusFix, checkFinalFixB];
 // the colour functions serve other scripts too (require): the checks run only when this file is called
