@@ -657,7 +657,7 @@ Describe 'Namen aus health.json: Typzusaetze und Grenzfaelle' {                 
             'security.filters' = New-Read @([ordered]@{ Name = 'HEdgeFilter'; Altitude = '1'; Instances = 1; Legacy = $false })   # :protected
             'network.smbConnections' = New-Read @([ordered]@{ Share = '\\hfs3\daten' }, [ordered]@{ Share = '\\hfs4' }, [ordered]@{ Share = '\\hfs5\' })   # :share, also with only a server
             'network.dnsServers' = New-Read @([ordered]@{ Interface = 4; Address = '10.30.0.10' }, [ordered]@{ Interface = 4; Address = 'fe80::2%3' })   # :address
-            'network.timeServers' = New-Read "  hzeit.edge.test   10.30.0.20`t fe80::3`t"                                   # :hosts with several blanks and tabs
+            'network.timeServers' = New-Read "  hzeit.edge.test   10.30.0.20`tfe80::3`t"                                    # :hosts with several blanks, a tab alone between two names, a tab at the end
             'maintenance.tasks' = New-Read @([ordered]@{ Path = '\hfree4'; Action = '\\hfree5\a.exe' })                     # :free
             'apps.probes' = New-Read @([ordered]@{ App = 'office'; Id = 'x'; Kind = 'registryValue'; Value = '\\hfree6\v'; Names = '\\hfree7\n' })   # value, :free
             # malformed values: a list given as a text, a value that is no record, a text given as a list
