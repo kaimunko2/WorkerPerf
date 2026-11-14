@@ -59,7 +59,7 @@
         {"id": "version", "label": "Version des neuen Teams", "kind": "file", "path": "C:\\Program Files\\WindowsApps\\MSTeams_*_x64__8wekyb3d8bbwe\\ms-teams.exe"},
         {"id": "disableAutoUpdate", "label": "Automatische Aktualisierung abgeschaltet", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Teams", "name": "disableAutoUpdate", "names": false},
         {"id": "disableFallback", "label": "Rückfallmodus (0 oder nicht gesetzt = an, 1 = aus, 2 = nur Audio)", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Teams", "name": "DisableFallback", "names": false},
-        {"id": "maxFps", "label": "Bildrate der Bildschirmfreigabe vom Worker", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Teams\\VMSS", "name": "MaxFPS", "names": false},
+        {"id": "maxFps", "label": "Bildrate der Bildschirmfreigabe vom Server", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Teams\\VMSS", "name": "MaxFPS", "names": false},
         {"id": "meetingAddin", "label": "Besprechungs-Add-in maschinenweit vorhanden", "kind": "file", "path": "C:\\Program Files (x86)\\Microsoft\\TeamsMeetingAdd-in", "read": "exists"},
         {"id": "classicTeams", "label": "Klassisches Teams noch vorhanden", "kind": "file", "path": "C:\\Program Files (x86)\\Microsoft\\Teams\\current\\Teams.exe", "read": "exists"},
         {"id": "webview2Version", "label": "Version der WebView2-Runtime", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", "name": "pv", "names": false}
