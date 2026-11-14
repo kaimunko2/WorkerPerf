@@ -183,19 +183,45 @@ function ConvertTo-WorkerPerfHealthJsonValue($Value) {
         $items = @(foreach ($item in $Value) { , (ConvertTo-WorkerPerfHealthJsonValue $item) })
         return , ([object[]]$items)
     }
-    return $Value
+    return (ConvertTo-WorkerPerfHealthJsonNumber $Value)
+}
+
+function ConvertTo-WorkerPerfHealthJsonNumber($Value) {
+    # A number of health.json the same on both shells (Windows PowerShell 5.1 parses Int32 and Decimal where PowerShell 7
+    # parses Int64, Double and BigInteger): an integral number as [long], every other number as [double]; an integral
+    # number outside the range of [long] or a number that is not finite becomes NaN (its value is then unreadable, a
+    # field of a list entry $null). Anything that is no number is returned as it is. Never throws.
+    $typeName = $Value.GetType().FullName
+    $integral = @('System.Byte', 'System.SByte', 'System.Int16', 'System.UInt16', 'System.Int32', 'System.UInt32', 'System.Int64', 'System.UInt64', 'System.Numerics.BigInteger')
+    $floating = @('System.Single', 'System.Double', 'System.Decimal')
+    try {
+        if ($integral -contains $typeName) { return [long]$Value }
+        if ($floating -notcontains $typeName) { return $Value }
+        if ($typeName -eq 'System.Decimal') {
+            if ([Math]::Floor([decimal]$Value) -ne [decimal]$Value) { return [double]$Value }
+            return [long]$Value
+        }
+        $number = [double]$Value
+        if ([double]::IsNaN($number) -or [double]::IsInfinity($number)) { return [double]::NaN }
+        if ([Math]::Floor($number) -ne $number) { return $number }
+        # 2^63 is the smallest double above the range of [long]
+        if ($number -ge 9223372036854775808.0 -or $number -lt -9223372036854775808.0) { return [double]::NaN }
+        return [long]$number
+    }
+    catch [System.Management.Automation.PipelineStoppedException] { throw }
+    catch { return [double]::NaN }
 }
 
 function Test-WorkerPerfHealthContent([string]$Type, $Value) {
-    # $true when the content of a value of health.json fits the type of the value list (ZB-R27): number, bool, time (a
-    # whole number), text*, list (an array of records, or one record). $null fits every type here (a read list without
-    # content is caught by Complete-WorkerPerfHealthArea).
+    # $true when the content of a value of health.json, as ConvertFrom-WorkerPerfHealthJsonText returns it (numbers as
+    # [long] or [double]), fits the type of the value list (ZB-R27): number, bool, time (a [long]: a finite number without
+    # fraction within the range of [long]), text*, list (an array of records, or one record). $null fits every type here
+    # (a read list without content is caught by Complete-WorkerPerfHealthArea). Never throws.
     if ($null -eq $Value) { return $true }
-    $isNumber = ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal] -or $Value -is [single] -or
-        $Value -is [int16] -or $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [uint16] -or $Value -is [uint32] -or $Value -is [uint64])
+    $isNumber = ($Value -is [long] -or $Value -is [double])
     if ($Type -eq 'number') { return $isNumber }
     if ($Type -eq 'bool') { return ($Value -is [bool]) }
-    if ($Type -eq 'time') { return ($isNumber -and [Math]::Floor([decimal]$Value) -eq [decimal]$Value) }
+    if ($Type -eq 'time') { return ($Value -is [long]) }
     if ($Type -eq 'list') {
         if ($Value -is [System.Collections.IDictionary]) { return $true }
         if ($Value -isnot [object[]]) { return $false }
@@ -216,6 +242,9 @@ function Read-WorkerPerfHealthFile([string]$File) {
     $unreadable = { param([string]$Message) @{ State = 'unreadable'; Health = $null; Message = $Message } }
     try { $text = [IO.File]::ReadAllText($File, [Text.Encoding]::UTF8) }
     catch { return (& $unreadable $_.Exception.Message) }
+    # only an object is a health picture; checked on the text, because PowerShell 7 unrolls a one-element array into its
+    # object and Windows PowerShell 5.1 does not
+    if ($text -notmatch '^\s*\{') { return (& $unreadable 'kein gueltiges JSON') }
     try { $root = ConvertFrom-WorkerPerfHealthJsonText $text }
     catch { return (& $unreadable 'kein gueltiges JSON') }
     if ($root -isnot [System.Collections.IDictionary]) { return (& $unreadable 'kein gueltiges JSON') }
@@ -224,6 +253,9 @@ function Read-WorkerPerfHealthFile([string]$File) {
         return (& $unreadable (('Format ' + [string]$version + ' unbekannt') -replace '  ', ' '))
     }
     if (-not $root.Contains('Areas') -or $root['Areas'] -isnot [System.Collections.IDictionary]) { return (& $unreadable 'Areas fehlt') }
+    # without the read time the ages of the health picture cannot be formed
+    $readAt = Get-WorkerPerfJsonTimeText $text 'ReadAt'
+    if ($null -eq $readAt) { return (& $unreadable 'ReadAt fehlt') }
     $fileAreas = $root['Areas']
     # ids and area names compared with case, like Complete-WorkerPerfHealthArea (the tables of the parsed text are not)
     $knownIds = @($script:WorkerPerfHealthValues.Keys)
@@ -233,34 +265,37 @@ function Read-WorkerPerfHealthFile([string]$File) {
         foreach ($key in @($fileAreas.Keys)) { if ($key -ceq $area) { $given = $fileAreas[$key] } }
         if ($given -isnot [System.Collections.IDictionary]) { $areas[$area] = Complete-WorkerPerfHealthArea $area @{} 0 'notInFile'; continue }
         $duration = 0.0
-        if ($given.Contains('DurationMs') -and (Test-WorkerPerfHealthContent 'number' $given['DurationMs']) -and $null -ne $given['DurationMs']) { $duration = [double]$given['DurationMs'] }
+        if ($given.Contains('DurationMs') -and (Test-WorkerPerfHealthContent 'number' $given['DurationMs']) -and $null -ne $given['DurationMs'] -and -not [double]::IsNaN([double]$given['DurationMs'])) { $duration = [double]$given['DurationMs'] }
         $errorText = ''; if ($given.Contains('Error') -and $given['Error'] -is [string]) { $errorText = $given['Error'] }
         $values = @{}
         if ($given.Contains('Values') -and $given['Values'] -is [System.Collections.IDictionary]) {
             $fileValues = $given['Values']
             foreach ($id in @($fileValues.Keys)) {
-                if ($knownIds -cnotcontains $id -or $script:WorkerPerfHealthValues[$id].Area -cne $area) { continue }
-                $entry = $fileValues[$id]
-                if ($entry -isnot [System.Collections.IDictionary]) { continue }
-                $state = $null; if ($entry.Contains('State')) { $state = $entry['State'] }
-                $reason = ''; if ($entry.Contains('Reason')) { $reason = $entry['Reason'] }
-                if ($state -isnot [string] -or @('read', 'absent', 'unreadable') -cnotcontains $state) { continue }
-                if ($reason -isnot [string] -or @('', 'rights', 'notInstalled', 'timeout', 'error') -cnotcontains $reason) { continue }
-                $content = $null; if ($entry.Contains('Value')) { $content = $entry['Value'] }
-                $type = $script:WorkerPerfHealthValues[$id].Type
-                if (-not (Test-WorkerPerfHealthContent $type $content)) { continue }
-                # a list read as one record is a list of one
-                if ($type -eq 'list' -and $content -is [System.Collections.IDictionary]) { $content = [object[]]@(, $content) }
-                $values[$id] = [ordered]@{ State = $state; Reason = $reason; Value = $content }
+                # a value that cannot be taken over costs that value (it is then unreadable with error), never the file
+                try {
+                    if ($knownIds -cnotcontains $id -or $script:WorkerPerfHealthValues[$id].Area -cne $area) { continue }
+                    $entry = $fileValues[$id]
+                    if ($entry -isnot [System.Collections.IDictionary]) { continue }
+                    $state = $null; if ($entry.Contains('State')) { $state = $entry['State'] }
+                    $reason = ''; if ($entry.Contains('Reason')) { $reason = $entry['Reason'] }
+                    if ($state -isnot [string] -or @('read', 'absent', 'unreadable') -cnotcontains $state) { continue }
+                    if ($reason -isnot [string] -or @('', 'rights', 'notInstalled', 'timeout', 'error') -cnotcontains $reason) { continue }
+                    $content = $null; if ($entry.Contains('Value')) { $content = $entry['Value'] }
+                    $type = $script:WorkerPerfHealthValues[$id].Type
+                    if (-not (Test-WorkerPerfHealthContent $type $content)) { continue }
+                    # a list read as one record is a list of one
+                    if ($type -eq 'list' -and $content -is [System.Collections.IDictionary]) { $content = [object[]]@(, $content) }
+                    $values[$id] = [ordered]@{ State = $state; Reason = $reason; Value = $content }
+                }
+                catch [System.Management.Automation.PipelineStoppedException] { throw }
+                catch { $values.Remove($id) }
             }
         }
         $areas[$area] = Complete-WorkerPerfHealthArea $area $values $duration $errorText
     }
-    $readAtMs = $null; $offset = $null
-    $readAt = Get-WorkerPerfJsonTimeText $text 'ReadAt'
-    if ($null -ne $readAt) { $readAtMs = $readAt.ToUnixTimeMilliseconds(); $offset = $readAt.Offset.TotalMinutes }
+    $readAtMs = $readAt.ToUnixTimeMilliseconds(); $offset = $readAt.Offset.TotalMinutes
     $duration = 0.0
-    if ($root.Contains('DurationMs') -and $null -ne $root['DurationMs'] -and (Test-WorkerPerfHealthContent 'number' $root['DurationMs'])) { $duration = [double]$root['DurationMs'] }
+    if ($root.Contains('DurationMs') -and $null -ne $root['DurationMs'] -and (Test-WorkerPerfHealthContent 'number' $root['DurationMs']) -and -not [double]::IsNaN([double]$root['DurationMs'])) { $duration = [double]$root['DurationMs'] }
     return @{ State = 'read'; Message = ''
         Health = @{ FormatVersion = $script:WorkerPerfHealthFormatVersion; ReadAtMs = $readAtMs; OffsetMinutes = $offset; DurationMs = $duration; Areas = $areas } }
 }
@@ -366,7 +401,9 @@ function Import-WorkerPerfRun {
     }
     # whether the lookback and the driver list are in the capture (and not left out by Skip)
     $recorded = @{ EventsBefore = (Test-WorkerPerfRunFile (Join-Path $Path 'events_before.csv')); PrintDrivers = (Test-WorkerPerfRunFile (Join-Path $Path 'printdrivers.csv')) }
-    $meta['HealthOnly'] = ($true -eq (Get-WorkerPerfField $metaJson 'HealthOnly'))
+    # a quick run only when the field is the boolean true (a text such as "false" or a number is not)
+    $healthOnly = Get-WorkerPerfField $metaJson 'HealthOnly'
+    $meta['HealthOnly'] = ($healthOnly -is [bool] -and $healthOnly)
 
     # time range: clock time of the measured server. A tick is in the range when its own clock time (timestamp with
     # its own offset) is; the limits as epoch milliseconds for the other files follow from the ticks in the range.

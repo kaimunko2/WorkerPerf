@@ -309,6 +309,11 @@ Describe 'Import-WorkerPerfRun: Zustandsbild' {
         $ev = @("$(Get-Ts 3),Sim,1,crash,a", "$(Get-Ts 13),Sim,1,crash,b")
         $m = Import-TestRun 'hcut' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = $ev } @{ From = $Base.AddSeconds(9).DateTime }
         @($m.Events).Count | Should -Be 1; @($m.EventsAll).Count | Should -Be 2; $m.EventsOutsideCut | Should -Be 1
+        # Fix-Runde 1, Punkt 6: nach Zeit geordnet, auch wenn die Datei sie anders ordnet
+        $ev = @("$(Get-Ts 15),Sim,1,crash,c", "$(Get-Ts 3),Sim,1,crash,a", "$(Get-Ts 13),Sim,1,crash,b")
+        $m = Import-TestRun 'hsort' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'events.csv' = $ev } @{ From = $Base.AddSeconds(9).DateTime }
+        $times = @($m.EventsAll | ForEach-Object { $_.TimeMs })
+        $times.Count | Should -Be 3; $times | Should -Be @($times | Sort-Object); $times[0] | Should -Be $Base.AddSeconds(3).ToUnixTimeMilliseconds()
     }
     It 'verwirft einen Wert, der nicht zu seinem Typ passt, und behaelt den Rest der Datei' {   # ZB-R27
         $values = @{
@@ -358,12 +363,82 @@ Describe 'Import-WorkerPerfRun: Zustandsbild' {
         $t | Should -BeOfType [DateTimeOffset]; $t.Offset.TotalMinutes | Should -Be -420; $t.ToUnixTimeMilliseconds() | Should -Be ([DateTimeOffset]'2026-01-15T15:00:01Z').ToUnixTimeMilliseconds()
         Get-WorkerPerfJsonTimeText $text 'StartTime' | Should -BeNullOrEmpty
         Get-WorkerPerfJsonTimeText '{"ReadAt":"keine Zeit"}' 'ReadAt' | Should -BeNullOrEmpty
-        $f = Read-WorkerPerfHealthFile (Join-Path (Write-QuickRun 'hnoat' '{"FormatVersion":1,"Areas":{}}') 'health.json')
-        $f.State | Should -Be 'read'; $f.Health.ReadAtMs | Should -BeNullOrEmpty; $f.Health.OffsetMinutes | Should -BeNullOrEmpty
-        foreach ($case in @(@('[1,2]', 'kein gueltiges JSON'), @('{"FormatVersion":1}', 'Areas fehlt'), @('{"FormatVersion":1,"Areas":[]}', 'Areas fehlt'), @('{"FormatVersion":"1","Areas":{}}', 'Format 1 unbekannt'))) {
+        foreach ($case in @(@('[1,2]', 'kein gueltiges JSON'), @('{"FormatVersion":1}', 'Areas fehlt'), @('{"FormatVersion":1,"Areas":[]}', 'Areas fehlt'), @('{"FormatVersion":"1","Areas":{}}', 'Format 1 unbekannt'),
+                # Fix-Runde 1, Punkt 3: oberste Ebene kein Objekt, unter beiden Shells (PowerShell 7 wickelt ein Array mit einem Element aus)
+                @('[{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}]', 'kein gueltiges JSON'), @(' "{\"FormatVersion\":1}"', 'kein gueltiges JSON'), @('5', 'kein gueltiges JSON'),
+                # Fix-Runde 1, Punkt 5: ohne lesbare Lesezeit kein Zustandsbild
+                @('{"FormatVersion":1,"Areas":{}}', 'ReadAt fehlt'), @('{"FormatVersion":1,"ReadAt":"keine Zeit","Areas":{}}', 'ReadAt fehlt'), @('{"FormatVersion":1,"ReadAt":null,"Areas":{}}', 'ReadAt fehlt'))) {
             $f = Read-WorkerPerfHealthFile (Join-Path (Write-QuickRun 'hbad' $case[0]) 'health.json')
             $f.State | Should -Be 'unreadable' -Because $case[0]; $f.Message | Should -Be $case[1] -Because $case[0]
         }
+    }
+    It 'verwirft eine Zeit <Text>, ohne die Datei aufzugeben' -TestCases @(@{ Text = '1e30' }, @{ Text = '-1e30' }, @{ Text = '1.5' }, @{ Text = '"gestern"' }) {   # Fix-Runde 1, Punkt 1 (ZB-R27)
+        $dir = Write-QuickRun ('htime' + [Math]::Abs($Text.GetHashCode())) ('{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{"operation":{"Status":"read","DurationMs":5,"Error":"","Values":{' +
+            '"operation.lastBoot":{"State":"read","Reason":"","Value":' + $Text + '},"operation.lastUpdate":{"State":"read","Reason":"","Value":1768460390000}}}}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.HealthState | Should -Be 'read'
+        $o = $m.Health.Areas['operation'].Values
+        $o['operation.lastBoot'].State | Should -Be 'unreadable'; $o['operation.lastBoot'].Reason | Should -Be 'error'; $o['operation.lastBoot'].Value | Should -BeNullOrEmpty
+        $o['operation.lastUpdate'].State | Should -Be 'read'; $o['operation.lastUpdate'].Value | Should -Be 1768460390000
+    }
+    It 'liest jede Zahl unter beiden Shells als [long] oder [double]' {   # Fix-Runde 1, Punkt 2
+        $dir = Write-QuickRun 'hnum' ('{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{"size":{"Status":"read","DurationMs":5,"Error":"","Values":{' +
+            '"size.cpuLogical":{"State":"read","Reason":"","Value":4},"size.cpuSockets":{"State":"read","Reason":"","Value":2.0},"size.memTotalMB":{"State":"read","Reason":"","Value":16384.5},' +
+            '"size.commitTotalMB":{"State":"read","Reason":"","Value":1e30},"size.commitLimitMB":{"State":"read","Reason":"","Value":99999999999999999999},' +
+            '"size.commitPeakMB":{"State":"read","Reason":"","Value":-9223372036854775808}}},' +
+            '"operation":{"Status":"read","DurationMs":5,"Error":"","Values":{"operation.lastBoot":{"State":"read","Reason":"","Value":1768460390000},' +
+            '"operation.volumes":{"State":"read","Reason":"","Value":[{"Drive":"C:","SizeGB":100,"FreeGB":8.5,"UsedGB":1e30,"Files":99999999999999999999,"FileSystem":"NTFS","System":true,"PageFile":false}]}}}}}')
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $s = $m.Health.Areas['size'].Values
+        $s['size.cpuLogical'].Value -is [long] | Should -BeTrue; $s['size.cpuLogical'].Value | Should -Be 4
+        $s['size.cpuSockets'].Value -is [long] | Should -BeTrue; $s['size.cpuSockets'].Value | Should -Be 2         # ganzzahlig, auch mit ".0"
+        $s['size.memTotalMB'].Value -is [double] | Should -BeTrue; $s['size.memTotalMB'].Value | Should -Be 16384.5
+        $s['size.commitPeakMB'].Value -is [long] | Should -BeTrue; $s['size.commitPeakMB'].Value | Should -Be ([long]::MinValue)
+        foreach ($id in 'size.commitTotalMB', 'size.commitLimitMB') {   # ganzzahlig ausserhalb von [long]
+            $s[$id].State | Should -Be 'unreadable' -Because $id; $s[$id].Reason | Should -Be 'error' -Because $id; $s[$id].Value | Should -BeNullOrEmpty -Because $id
+        }
+        $o = $m.Health.Areas['operation'].Values
+        $o['operation.lastBoot'].Value -is [long] | Should -BeTrue
+        $vol = $o['operation.volumes'].Value[0]
+        $vol['SizeGB'] -is [long] | Should -BeTrue; $vol['FreeGB'] -is [double] | Should -BeTrue; $vol['System'] -is [bool] | Should -BeTrue
+        $vol['UsedGB'] | Should -BeNullOrEmpty; $vol['Files'] | Should -BeNullOrEmpty; $vol.Contains('UsedGB') | Should -BeTrue    # ein Feld eines Eintrags wird $null
+        $m.Health.DurationMs | Should -Be 900
+    }
+    It 'nennt eine nicht lesbare health.json mit dem ganzen Text der Warnung' {   # Fix-Runde 1, Punkt 5 und 6
+        $dir = Write-QuickRun 'hwarn' '{"FormatVersion":1,"DurationMs":900,"Areas":{}}'
+        $w = @(Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+        $w.Count | Should -Be 1; $w[0].Message | Should -BeExactly 'health.json ist nicht lesbar (ReadAt fehlt); der Bericht zeigt kein Zustandsbild.'
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles 3>$null).HealthState | Should -Be 'unreadable'
+    }
+    It 'nimmt HealthOnly nur als Wahrheitswert true als Schnelllauf' {   # Fix-Runde 1, Punkt 4
+        foreach ($given in '"false"', '"true"', '1', '0', 'null', '{}') {
+            $dir = Write-TestRun ('hof' + [Math]::Abs($given.GetHashCode())) @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $meta = Join-Path $dir 'meta.json'
+            [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"Simulated":false,', '"Simulated":false,"HealthOnly":' + $given + ','))
+            $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+            $m.Meta.HealthOnly | Should -BeFalse -Because $given; $m.Tick.N | Should -Be 8 -Because $given
+        }
+        $dir = Write-QuickRun 'hoftext' '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}'; $meta = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"HealthOnly":true,', '"HealthOnly":"true",'))
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles } | Should -Throw '*keine Messung*'
+    }
+    It 'lehnt -To allein fuer einen Schnelllauf ab' {   # Fix-Runde 1, Punkt 6
+        $dir = Write-QuickRun 'hto' '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}'
+        { Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles -To ([datetime]'2026-01-15T09:00:00') } | Should -Throw 'Die Aufzeichnung ist ein Schnelllauf ohne Messung; -From und -To gelten nicht.'
+    }
+    It 'liest einen Schnelllauf ohne lesbare Startzeit' {   # Fix-Runde 1, Punkt 6
+        $dir = Write-QuickRun 'hnostart' '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}'; $meta = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"StartTime":"2026-01-15T08:00:00.0000000+02:00"', '"StartTime":"keine Zeit"'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Meta.HealthOnly | Should -BeTrue; $m.CaptureStartMs | Should -BeNullOrEmpty; $m.CaptureEndMs | Should -BeNullOrEmpty; $m.Meta.OffsetMinutes | Should -Be 0
+        $m.HealthState | Should -Be 'read'
+    }
+    It 'fuehrt Rueckblick und Treiberliste, die Skip weglaesst, als nicht aufgezeichnet' {   # Fix-Runde 1, Punkt 6
+        $dir = Write-QuickRun 'hskiprec' '{"FormatVersion":1,"ReadAt":"2026-01-15T08:00:01.0000000+02:00","DurationMs":900,"Areas":{}}'; $meta = Join-Path $dir 'meta.json'
+        (Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles).Recorded.EventsBefore | Should -BeTrue
+        [IO.File]::WriteAllText($meta, [IO.File]::ReadAllText($meta).Replace('"Skip":[]', '"Skip":["Rueckblick","Drucken"]'))
+        Test-Path (Join-Path $dir 'events_before.csv') | Should -BeTrue; Test-Path (Join-Path $dir 'printdrivers.csv') | Should -BeTrue
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Recorded.EventsBefore | Should -BeFalse; $m.Recorded.PrintDrivers | Should -BeFalse
     }
     It 'fuehrt einen Schnelllauf ohne Zustandsbild als nicht erfasst und liest keine Zwischendatei' {   # Ergaenzung e
         $dir = Write-QuickRun 'hnone' '' '"EndMessage":"Das Lesen des Zustandsbilds ist gescheitert (RuntimeException).","SourceErrors":{"health":{"Count":1,"FirstTime":"2026-01-15T08:00:01.0000000+02:00","FirstMessage":"Testfehler"}},'
