@@ -9,7 +9,8 @@ und nennt die Empfehlungen, die gefunden, aber nicht aufgenommen wurden, mit dem
 Seit dem 13.11.2026 tragen auch Elemente anderer Situationen eine Quelle: die Schritte zu den Standardanwendungen aus
 `src/apps.json` (Bedingung `app.<Anwendung>`: Microsoft Edge, Microsoft Edge WebView2, Microsoft Office, Microsoft
 Teams, PrinTaurus SmartSpread Client, Microsoft Outlook), die Schritte zu Citrix Workspace Environment Management und
-die Empfehlungen aus zwei Quellen der Praxis (Carl Stalhood, BIS-F). Ein Element aus einer Quelle der Praxis nennt in
+die Empfehlungen aus zwölf Quellen der Praxis (Abschnitt „Quellen aus der Praxis“: Carl Stalhood und BIS-F, seit der
+Entscheidung des Auftraggebers vom 13.11.2026 zehn weitere). Ein Element aus einer Quelle der Praxis nennt in
 `source` die Quelle mit dem Zusatz „Empfehlung aus der Praxis“ und ist nie als Empfehlung eines Herstellers formuliert.
 Die Abschnitte dazu stehen nach den Druckerherstellern; der Abschnitt „Ausnahmen: Praxisquelle vor Hersteller“ nennt, wo
 nach Entscheidung des Auftraggebers eine Quelle der Praxis vor dem Hersteller gilt.
@@ -57,7 +58,7 @@ Der Abschnitt „Zielumgebung“, der Abschnitt „Auf dem Zielsystem zu bestät
 ein Element nicht mit seiner Stelle, sondern mit der Liste, seinen ersten Worten in Anführungszeichen und der Situation
 (Abhilfe „…“ der Situation `print`): Diese Angabe stimmt auch dann noch, wenn Elemente hinzukommen. In den Tabellen und
 in solchen Anfangsworten steht für einen Platzhalter des Katalogs sein Name in einfachen Winkeln:
-‹Anwendung› für `{app}`, ‹Benutzer› für `{user}`, ‹Treiber› für `{driver}`.
+‹Anwendung› für `{app}`, ‹Benutzer› für `{user}`, ‹Treiber› für `{driver}`, ‹Gegenstelle› für `{endpoint}`.
 
 ## Wie die Quellen geprüft wurden
 
@@ -72,6 +73,20 @@ in solchen Anfangsworten steht für einen Platzhalter des Katalogs sein Name in 
   Quellen nicht erreichbar waren.
 - Ein Hersteller, für den sich zu einer Frage nichts fand, hat dazu kein Element; der Katalog füllt solche Lücken
   nicht aus eigenem Wissen.
+- Die zehn weiteren Quellen aus der Praxis wurden am 13.11.2026 recherchiert. Zu jedem Eintrag der Recherche gibt es
+  eine Quellenprüfung: Die Seite wurde ein zweites Mal geöffnet, und der Eintrag gilt als gestützt, als teilweise
+  gestützt (dann nur mit der genannten Korrektur) oder als nicht gestützt (dann nicht verwendet). Aus den Einträgen
+  entstand eine Auswahl, die Kandidat für Kandidat angefochten wurde; die Kennungen der Auswahl (PXG-…) stehen in der
+  Spalte „Hinweis“.
+- Eine Aussage einer dieser Quellen, die ein vorhandenes Element nur stützt oder verfeinert, ist kein neues Element.
+  Sie steht als ein Satz mit dem Namen der Quelle im Element („nach …“); das Element behält seine Quelle. Der
+  Abschnitt der Praxisquelle führt das Element unter „Stützt bestehende Elemente“ mit der Zeile „auch gestützt
+  durch“, Titel, Adresse und Datum des Dokuments.
+- Eine Zahl aus einer Quelle der Praxis steht im Katalog nur mit ihren Bedingungen und ihrem Jahr. Sie ist ein
+  Messwert der Quelle unter deren Bedingungen und nie ein Sollwert für die Server der Zielumgebung.
+- Ein Element aus der Praxis steht in seiner Situation hinter den Elementen der Hersteller und den eigenen Schritten
+  derselben Bedingung. In keinem Vorfall der simulierten Stunde verdrängt es einen Schritt aus den ersten fünf
+  Prüfschritten oder den ersten drei Vorschlägen; ein Test hält das fest.
 
 Die Empfehlungen sind Vorschläge. Der Bericht zeigt ein Element nur, wenn die Messung seine Bedingung stützt
 (etwa: ein Treiber dieses Herstellers war beteiligt, die Druckwarteschlange ist ausgefallen); ob die Voraussetzung
@@ -84,11 +99,38 @@ deutschen Bezeichnungen der Oberflächen sind nicht aus einer Quelle belegt.
 
 Wer ein Element des Katalogs ändert, verschiebt oder ergänzt, passt diese Datei an: Der Test
 `tests/GuidanceCatalogue.Tests.ps1` prüft, dass jedes Element mit Quelle hier an seiner Stelle unter seinem Dokument
-steht und dass hier keine Stelle steht, die der Katalog nicht hat. In den Abschnitten ab „AKI“ bis „BIS-F“ steht bei
+steht und dass hier keine Stelle steht, die der Katalog nicht hat. In den Abschnitten ab „AKI“ bis zur letzten Quelle
+aus der Praxis steht bei
 jeder Stelle der Anfang des Elementtexts: bis zum ersten Doppelpunkt, Semikolon oder zur ersten öffnenden Klammer
 nach dem zwanzigsten Zeichen, höchstens 110 Zeichen (ein längerer Anfang endet nach 107 Zeichen mit „…“); steht ein
 Schritt für jedes Office-Programm ein zweites Mal für Outlook im Katalog, folgt „(für Outlook)“. Der Test vergleicht
 auch das mit dem Katalog.
+
+## Quellen aus der Praxis
+
+Zwölf Quellen aus der Praxis dürfen Elemente des Katalogs tragen oder stützen (Entscheidungen des Auftraggebers vom
+13.11.2026). Keine von ihnen ist die Dokumentation eines Herstellers. Widerspricht eine von ihnen dem Hersteller, gilt
+der Hersteller; die einzige Ausnahme nennt der Abschnitt „Ausnahmen: Praxisquelle vor Hersteller“. Jede Quelle hat
+weiter unten einen eigenen Abschnitt mit ihren Dokumenten, den Belegstellen und dem, was sie begrenzt.
+
+- **Carl Stalhood**: Anleitungen zu Citrix, <https://www.carlstalhood.com/>
+- **BIS-F**: Base Image Script Framework, Skripte zum Versiegeln eines Master-Image, <https://github.com/EUCweb/BIS-F>
+- **GO-EUC**: gemessene Vergleiche von Einstellungen und Versionen in Laborumgebungen, <https://www.go-euc.com/>
+- **James Kindon**: Blog zu Workspace Environment Management und Citrix Profilverwaltung, <https://jkindon.com/>
+- **James Rankin**: Blog mit Messreihen zur Dauer der Anmeldung, <https://james-rankin.com/>
+- **Thomas Kötzing**: Blog zu Drucken, Anmeldung und Profilen unter Citrix, <https://koetzingit.de/>
+- **Manuel Winkel**: Blog deyda.net, für einzelne Themen (Teams, WEM, Beobachtungen aus Projekten),
+  <https://www.deyda.net/>
+- **Aaron Parker**: Blog stealthpuppy.com, für einzelne Themen (Größe und Inhalt von Profilcontainern),
+  <https://stealthpuppy.com/>
+- **Trentent Tye**: Blog mit Messungen zu langsamen Anmeldungen, nur unter seiner eigenen Adresse
+  <https://trentent.github.io/>
+- **John Billekens**: Sammlung der Scan-Ausschlüsse der Hersteller, für einzelne Themen, <https://ave.j81.nl/>
+- **Guy Leech**: Blog und Skripte zur Fehlersuche, für einzelne Themen, <https://guyrleech.wordpress.com/>
+- **Benny Tritsch**: Methodik zur Messung der Benutzererfahrung (EUC Score), für einzelne Themen,
+  <https://drtritsch.com/>
+- **Kasper Johansen**: ebenfalls übernommen, aber nicht mehr erreichbar, nicht verwendet (Recherche vom 13.11.2026:
+  unter der früheren Adresse steht kein Blog mehr); der Katalog enthält nichts aus dieser Quelle
 
 ## Microsoft
 
@@ -98,7 +140,7 @@ Microsoft dokumentiert nichts Eigenes zum Citrix-Universaltreiber, zum Citrix Un
 |---|---|---|---|---|
 | Policy CSP - ADMX_Printing | <https://learn.microsoft.com/windows/client-management/mdm/policy-csp-admx-printing> | 2026-11-13 | `crash.checks[3]` Richtlinie zur Isolierung der Treiber von Anwendungen<br>`print.checks[9]` Wirkung der Isolierung bei isoliertem Treiber<br>`print.checks[10]` Richtlinie zur Treiberisolierung nicht abgeschaltet<br>`print.remedies[2]` Isolierung per Richtlinie für alle Treiber erzwingen | Die Seite nennt als Betriebssysteme Windows 10 und 11, nicht Windows Server 2022; jedes der vier Elemente sagt das (die Abhilfe in ihrer Voraussetzung). Die Richtlinien zur Treiberisolierung gelten laut Seite nur für Treiber, die die Druckwarteschlange lädt; „Isolate print drivers from applications“ wirkt nur bei Anwendungen, die die Isolierung unterstützen, und erst nach deren Neustart. Datenwerte der Registrierung nennt die Seite nicht. Die Prozessnamen PrintIsolationHost.exe und spoolsv.exe im Prüfschritt „Einordnen, was abgestürzt ist …“ der Situation `print` stammen aus der Auswertung (Liste der Druckprozesse), nicht von der Seite; die Voraussetzung „auf einem Testserver geprüft“ der Abhilfe „Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren …“ der Situation `print` stammt nicht von Microsoft. |
 | Printer driver isolation | <https://learn.microsoft.com/windows-hardware/drivers/print/printer-driver-isolation> | 2026-11-13 | `print.checks[8]` Isolierung des beteiligten Treibers ansehen<br>`print.remedies[0]` fehlerhaften Treiber isoliert betreiben | Dokumentation für Treiberentwickler. Sie sagt, dass sich der Modus in der Druckverwaltung je Treiber einstellen lässt, nennt die Stelle dort aber nicht genauer (siehe „Auf dem Zielsystem zu bestätigen“) und spricht nicht von Typ 3 oder Typ 4. Die Voraussetzung der Abhilfe „Treiber ‹Treiber› in einem eigenen Prozess laufen lassen …“ der Situation `print` folgt dem Satz der Seite: Der Treiber ist in einem eigenen Prozess lauffähig, verursacht häufig Fehler oder verliert Arbeitsspeicher und stört damit andere Treiber im selben Prozess. „Zuerst auf einem Testserver geprüft“ stammt nicht von Microsoft. |
-| Troubleshooting scenarios for printing | <https://learn.microsoft.com/troubleshoot/windows-server/printing/troubleshoot-printing-scenarios> | 2026-11-13 | `print.checks[2]` Treiber oder Warteschlange als Auslöser feststellen<br>`print.checks[15]` Spool-Ordner und Dienstabhängigkeit nach Absturz<br>`print.checks[19]` hängende Aufträge auf Treiber oder Warteschlange eingrenzen<br>`print.remedies[12]` Treiber aktualisieren oder generischen Treiber verwenden | Microsoft beschreibt die Schritte zu fehlgeschlagenen Aufträgen „auf dem Clientcomputer“. Zur Abhängigkeit des Dienstes nennt die Seite als Standard nur RpcSs. Ob ein Windows Server 2022 ohne Druckproblem weitere Einträge hat, ist hier nicht geprüft; der Prüfschritt „Spool-Ordner und Abhängigkeiten des Dienstes „Druckwarteschlange“ prüfen …“ der Situation `print` verlangt deshalb den Vergleich mit einem solchen Server (siehe „Auf dem Zielsystem zu bestätigen“). |
+| Troubleshooting scenarios for printing | <https://learn.microsoft.com/troubleshoot/windows-server/printing/troubleshoot-printing-scenarios> | 2026-11-13 | `print.checks[2]` Treiber oder Warteschlange als Auslöser feststellen<br>`print.checks[15]` Spool-Ordner und Dienstabhängigkeit nach Absturz<br>`print.checks[20]` hängende Aufträge auf Treiber oder Warteschlange eingrenzen<br>`print.remedies[12]` Treiber aktualisieren oder generischen Treiber verwenden | Microsoft beschreibt die Schritte zu fehlgeschlagenen Aufträgen „auf dem Clientcomputer“. Zur Abhängigkeit des Dienstes nennt die Seite als Standard nur RpcSs. Ob ein Windows Server 2022 ohne Druckproblem weitere Einträge hat, ist hier nicht geprüft; der Prüfschritt „Spool-Ordner und Abhängigkeiten des Dienstes „Druckwarteschlange“ prüfen …“ der Situation `print` verlangt deshalb den Vergleich mit einem solchen Server (siehe „Auf dem Zielsystem zu bestätigen“). |
 | Troubleshoot printing issues caused by Print Spooler service not running | <https://learn.microsoft.com/troubleshoot/windows-server/printing/print-spooler-service-not-running> | 2026-11-13 | `print.checks[11]` Treiber und Druckkomponenten aktuell<br>`print.remedies[11]` Spool-Ordner vom Scan ausnehmen | Die Seite sagt „Create exclusions for the spool folder“; Dateiendungen nennt sie dabei nicht. Als Anlass nennt sie Schutzsoftware, die Dateien blockiert, die der Dienst braucht; die Abhilfe „Spool-Ordner in der Schutzsoftware vom Scan ausnehmen …“ der Situation `print` verlangt deshalb eine Meldung der Schutzsoftware. Die Zustimmung der Verantwortlichen für die Sicherheit stammt nicht von Microsoft. |
 
 ### Belegstellen
@@ -144,7 +186,7 @@ Die erreichbare Produktdokumentation von Citrix sagt nichts zur Treiberisolierun
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
 | Best practices | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting/best-practices.html> | 2026-11-13 | `crash.remedies[3]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[3]` Universaltreiber als Regel, ungenutzte Treiber entfernen<br>`print.remedies[5]` Treiber sauber erneuern statt überinstallieren<br>`print.remedies[13]` alte und hängende Aufträge regelmäßig löschen | Aktuelle Fassung der Produktdokumentation. Den Neustart nennt Citrix; das Wartungsfenster dafür in der Voraussetzung der Abhilfe „Treiber ‹Treiber› nicht über die vorhandene Version aktualisieren, sondern sauber erneuern …“ der Situation `crash` und der Abhilfe „Treiber ‹Treiber› nicht über die vorhandene Version aktualisieren, sondern sauber erneuern …“ der Situation `print` stammt nicht von Citrix, ebenso wenig das Wartungsfenster für das Entfernen nicht mehr benötigter Treiber in der Abhilfe „Citrix-Universaltreiber als Regel verwenden und nicht mehr benötigte Druckertreiber deinstallieren …“ der Situation `print`. |
-| Troubleshooting | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting.html> | 2026-11-13 | `print.checks[0]` Dienst läuft wieder, sonst starten<br>`print.checks[1]` fehlerhaftes Modul dem Treiber zuordnen<br>`print.checks[24]` Citrix Print Manager Service läuft<br>`print.remedies[1]` Treiber entfernen, mit Universaltreiber oder Microsoft-Treiber testen<br>`print.remedies[10]` Spool-Ordner von Hand leeren | Die Zuordnung des fehlerhaften Moduls zu einem Treiber stammt aus der Messung; die Seite sagt nur, dass das Modul festzustellen ist. Den Neustart des Dienstes nennt die Seite als Schritt vor dem Leeren von Hand („If restarting fails …“); wo der Zustand des Dienstes steht, ist ein eigener Hinweis. Das Leeren von Hand nennt sie nur für Abstürze der Druckwarteschlange. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Citrix, ebenso wenig die Voraussetzungen „Benutzer informiert“ (Abhilfe „Spool-Ordner von Hand leeren …“ der Situation `print`) und „Wartungsfenster“ (Abhilfe „Treiber ‹Treiber› entfernen …“ der Situation `print`). |
+| Troubleshooting | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/printing/troubleshooting.html> | 2026-11-13 | `print.checks[0]` Dienst läuft wieder, sonst starten<br>`print.checks[1]` fehlerhaftes Modul dem Treiber zuordnen<br>`print.checks[26]` Citrix Print Manager Service läuft<br>`print.remedies[1]` Treiber entfernen, mit Universaltreiber oder Microsoft-Treiber testen<br>`print.remedies[10]` Spool-Ordner von Hand leeren | Die Zuordnung des fehlerhaften Moduls zu einem Treiber stammt aus der Messung; die Seite sagt nur, dass das Modul festzustellen ist. Den Neustart des Dienstes nennt die Seite als Schritt vor dem Leeren von Hand („If restarting fails …“); wo der Zustand des Dienstes steht, ist ein eigener Hinweis. Das Leeren von Hand nennt sie nur für Abstürze der Druckwarteschlange. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Citrix, ebenso wenig die Voraussetzungen „Benutzer informiert“ (Abhilfe „Spool-Ordner von Hand leeren …“ der Situation `print`) und „Wartungsfenster“ (Abhilfe „Treiber ‹Treiber› entfernen …“ der Situation `print`). |
 | Maintain the printing environment | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-maintain-environment.html> | 2026-11-13 | `crash.remedies[2]` Treiber über die Treiberzuordnung ersetzen oder sperren<br>`print.remedies[4]` Treiber über die Treiberzuordnung ersetzen oder sperren | Seite der Version 2503. |
 | Best practices, security considerations, and default operations | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/2503/printing/printing-best-practices.html> | 2026-11-13 | `crash.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen<br>`print.contacts[0]` Hersteller nach der Zertifizierung für Terminalserver fragen | Seite der Version 2503; sie verwendet noch die Bezeichnung „Terminal Services“. |
 | Drivers policy settings | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/policies/reference/ica-policy-settings/printing-policy-settings/drivers-policy-settings.html> | 2026-11-13 | `print.checks[17]` Richtlinie zur Verwendung des Universaltreibers | Aktuelle Fassung der Produktdokumentation. Das Element beginnt mit „Wenn die Drucker über Citrix-Richtlinien zugeordnet werden“: In der Zielumgebung ordnet ein Zuordnungswerkzeug die Drucker zu. |
@@ -196,8 +238,8 @@ HP sagt in seinen aktuellen Dokumenten nichts zur Treiberisolierung unter Window
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments | <https://kaas.hpcloud.hp.com/pdf-public/pdf_6290906_en-US-1.pdf> | 2026-11-13 | `print.remedies[7]` hostbasierte HP-Treiber nicht auf dem Server<br>`print.remedies[15]` HP Universal Print Driver im Traditional Mode | Technical white paper, Rev. 39, Juni 2023; enthält viel Altbestand (XenApp, 32-Bit-Pfade). Dass die Clientdrucker über den Citrix-Universaltreiber bedient werden können, nennt HP als Möglichkeit („might function“, „An alternative is“); die Abhilfe „Hostbasierte HP-Treiber nicht auf dem Server betreiben …“ der Situation `print` sagt es ebenso. Das Wartungsfenster in dessen Voraussetzung stammt nicht von HP. |
-| System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK) | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8951296_en-US-1.pdf> | 2026-11-13 | `print.checks[20]` SNMP-Einstellungen und WSD-Anschluss beim HP Universal Print Driver<br>`print.checks[22]` Eingrenzung nach HP (zugeordneter Treiber, außerhalb der Sitzung, sauberes Testsystem)<br>`print.remedies[6]` Treiberwahl nach Endgerät (Citrix-Universaltreiber oder HP Universal Print Driver)<br>`print.remedies[8]` Reihenfolge beim Entfernen des HP Universal Print Driver<br>`print.remedies[9]` Dienst neu starten, wenn Windows den Treiber als in Gebrauch meldet<br>`print.contacts[1]` Angaben für den Support von HP | Edition 11, Mai 2026. Die Aussagen zum Status „Offline“ bei falschen SNMP-Einstellungen und zum WSD-Anschluss macht HP für den HP Universal Print Driver; der Prüfschritt „Bei Druckwarteschlangen mit dem HP Universal Print Driver und dem Status „Offline“ den Anschluss prüfen …“ der Situation `print` beschränkt sich darauf. Die Reihenfolge beim Entfernen beschreibt HP für den HP Universal Print Driver. Das Wartungsfenster (Abhilfe „HP Universal Print Driver in der Reihenfolge von HP entfernen …“ der Situation `print`, Abhilfe „Dienst „Druckwarteschlange“ anhalten und wieder starten …“ der Situation `print`) und der Hinweis, dass beim Neustart des Dienstes alle Benutzer kurz nicht drucken können und laufende Aufträge verloren gehen können, stammen nicht von HP. |
+| HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments | <https://kaas.hpcloud.hp.com/pdf-public/pdf_6290906_en-US-1.pdf> | 2026-11-13 | `print.remedies[7]` hostbasierte HP-Treiber nicht auf dem Server<br>`print.remedies[16]` HP Universal Print Driver im Traditional Mode | Technical white paper, Rev. 39, Juni 2023; enthält viel Altbestand (XenApp, 32-Bit-Pfade). Dass die Clientdrucker über den Citrix-Universaltreiber bedient werden können, nennt HP als Möglichkeit („might function“, „An alternative is“); die Abhilfe „Hostbasierte HP-Treiber nicht auf dem Server betreiben …“ der Situation `print` sagt es ebenso. Das Wartungsfenster in dessen Voraussetzung stammt nicht von HP. |
+| System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK) | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8951296_en-US-1.pdf> | 2026-11-13 | `print.checks[21]` SNMP-Einstellungen und WSD-Anschluss beim HP Universal Print Driver<br>`print.checks[24]` Eingrenzung nach HP (zugeordneter Treiber, außerhalb der Sitzung, sauberes Testsystem)<br>`print.remedies[6]` Treiberwahl nach Endgerät (Citrix-Universaltreiber oder HP Universal Print Driver)<br>`print.remedies[8]` Reihenfolge beim Entfernen des HP Universal Print Driver<br>`print.remedies[9]` Dienst neu starten, wenn Windows den Treiber als in Gebrauch meldet<br>`print.contacts[1]` Angaben für den Support von HP | Edition 11, Mai 2026. Die Aussagen zum Status „Offline“ bei falschen SNMP-Einstellungen und zum WSD-Anschluss macht HP für den HP Universal Print Driver; der Prüfschritt „Bei Druckwarteschlangen mit dem HP Universal Print Driver und dem Status „Offline“ den Anschluss prüfen …“ der Situation `print` beschränkt sich darauf. Die Reihenfolge beim Entfernen beschreibt HP für den HP Universal Print Driver. Das Wartungsfenster (Abhilfe „HP Universal Print Driver in der Reihenfolge von HP entfernen …“ der Situation `print`, Abhilfe „Dienst „Druckwarteschlange“ anhalten und wieder starten …“ der Situation `print`) und der Hinweis, dass beim Neustart des Dienstes alle Benutzer kurz nicht drucken können und laufende Aufträge verloren gehen können, stammen nicht von HP. |
 | HP Universal Print Driver Release Notes | <https://kaas.hpcloud.hp.com/pdf-public/pdf_8592592_en-US-1.pdf> | 2026-11-13 | `crash.checks[4]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen<br>`print.checks[12]` Version des HP Universal Print Driver mit den Versionshinweisen vergleichen | Edition 19, Juni 2026 (HP UPD 8.2.0). |
 
 ### Belegstellen
@@ -245,9 +287,9 @@ Kyocera veröffentlicht keine Aussage zu einer Citrix-Zertifizierung, zur Treibe
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KX_Driver_Read_Me_pdf.download.pdf> | 2026-11-13 | `crash.remedies[4]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.checks[13]` vollständiger KX-Treiber auf dem Server<br>`print.remedies[16]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.remedies[17]` KX-Treiber erst deinstallieren, dann neu installieren<br>`print.contacts[2]` Support von Kyocera (Help Desk) bei Einsatz des KX-Treibers | Das Dokument trägt kein Datum. Das Wartungsfenster in der Voraussetzung der Abhilfe „KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren …“ der Situation `print` stammt nicht von Kyocera. |
-| Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KYOCERA_V4_KX_Driver_Datasheet_pdf.download.pdf> | 2026-11-13 | `print.remedies[19]` Funktionsumfang vergleichen, bevor von Typ 3 auf Typ 4 gewechselt wird<br>`print.remedies[20]` Funktionsumfang vergleichen, bevor von Typ 4 auf Typ 3 gewechselt wird | Datenblatt von 2019. Es vergleicht den Funktionsumfang; mit einem Druckfehler hat das nichts zu tun. Beide Elemente stehen deshalb als Abhilfe unter der Voraussetzung, dass ein Wechsel der Bauart erwogen wird. |
-| Release Notes April 29, 2025 (DVD Contents) | <https://dam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/document/manual/product_086/Readme_EN_202505.pdf> | 2026-11-13 | `print.remedies[18]` Kyocera-Treiber mit KmUninstall.exe entfernen | Die Seite nennt den Weg zum Deinstallationsprogramm, aber keinen weiteren Weg, verbliebene Treiber zu entfernen. Das Wartungsfenster in der Voraussetzung stammt nicht von Kyocera. |
+| KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KX_Driver_Read_Me_pdf.download.pdf> | 2026-11-13 | `crash.remedies[4]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.checks[13]` vollständiger KX-Treiber auf dem Server<br>`print.remedies[17]` KPDL- oder PCL-Uni-Treiber statt KX-Treiber<br>`print.remedies[18]` KX-Treiber erst deinstallieren, dann neu installieren<br>`print.contacts[2]` Support von Kyocera (Help Desk) bei Einsatz des KX-Treibers | Das Dokument trägt kein Datum. Das Wartungsfenster in der Voraussetzung der Abhilfe „KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren …“ der Situation `print` stammt nicht von Kyocera. |
+| Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet) | <https://www.kyoceradocumentsolutions.us/content/dam/download-center-americas-cf/us/drivers/drivers/KYOCERA_V4_KX_Driver_Datasheet_pdf.download.pdf> | 2026-11-13 | `print.remedies[20]` Funktionsumfang vergleichen, bevor von Typ 3 auf Typ 4 gewechselt wird<br>`print.remedies[21]` Funktionsumfang vergleichen, bevor von Typ 4 auf Typ 3 gewechselt wird | Datenblatt von 2019. Es vergleicht den Funktionsumfang; mit einem Druckfehler hat das nichts zu tun. Beide Elemente stehen deshalb als Abhilfe unter der Voraussetzung, dass ein Wechsel der Bauart erwogen wird. |
+| Release Notes April 29, 2025 (DVD Contents) | <https://dam.kyoceradocumentsolutions.com/content/dam/gdam_dc/dc_global/document/manual/product_086/Readme_EN_202505.pdf> | 2026-11-13 | `print.remedies[19]` Kyocera-Treiber mit KmUninstall.exe entfernen | Die Seite nennt den Weg zum Deinstallationsprogramm, aber keinen weiteren Weg, verbliebene Treiber zu entfernen. Das Wartungsfenster in der Voraussetzung stammt nicht von Kyocera. |
 
 ### Belegstellen
 
@@ -290,9 +332,9 @@ Brother dokumentiert wenig, das sich auf Citrix oder Terminalserver bezieht, und
 |---|---|---|---|---|
 | Citrix® Compatible Device List | <https://support.brother.com/g/b/oscontents.aspx?c=us_ot&lang=en&ossid=40> | 2026-11-13 | `crash.checks[5]` Modell in der Citrix-Liste von Brother nachschlagen<br>`print.checks[14]` Modell in der Citrix-Liste von Brother nachschlagen | Die Liste nennt Modelle mit dem Status „Available“, aber weder ein Citrix-Produkt noch eine Version. Dass zu einem Modell, das fehlt, keine Aussage von Brother zu Citrix vorliegt, ist eine Feststellung des Katalogs, kein Satz von Brother. |
 | "User Intervention Required" when attempting to print | <https://help.brother-usa.com/app/answers/detail/a_id/145904/~/user-intervention-required-when-attempting-to-print> | 2026-11-13 | `print.checks[16]` Dienst auf „Automatisch“ und startbar | Die Seite nennt Windows XP bis Windows 10, nicht Windows Server; das Element sagt das. |
-| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[21]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. Der Zusatz zum Neustart nicht persistenter Server stammt ebenfalls nicht von Brother (siehe „Zielumgebung“). |
-| Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[21]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
-| Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[22]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. Das Wartungsfenster in der Voraussetzung stammt nicht von Brother. |
+| I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors "Error - Sent to Printer", "Sent to Printer" or "Deleting - Printing" appear in the PC Print Queue. | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=mfc6490cw_all&faqid=faq00002440_000> | 2026-11-13 | `print.checks[22]` stehende Aufträge an Brother-Geräten<br>`print.remedies[14]` Dienst „Druckwarteschlange“ nach Brother zurücksetzen | Seite vom 14.02.2023; sie gilt für Windows Vista bis 10 und Geräte mit Netzwerkanschluss; beide Elemente sagen das. Der Hinweis, dass die Aufträge aller Benutzer des Servers verloren gehen, stammt nicht von Brother, ebenso wenig die Voraussetzungen, dass sich die Aufträge nicht einzeln löschen lassen und die Benutzer informiert sind. Der Zusatz zum Neustart nicht persistenter Server stammt ebenfalls nicht von Brother (siehe „Zielumgebung“). |
+| Use the Universal Printer Driver for BR-Script. (PostScript language emulation) | <https://support.brother.com/g/b/faqend.aspx?c=ca&lang=en&prod=hl4570cdw_all&faqid=faq00002993_000> | 2026-11-13 | `print.remedies[22]` Brother Universal Printer Driver als gemeinsamer Treiber | Seite vom 29.03.2017. Die Liste der Betriebssysteme (help.brother-usa.com, Antwort 67181) endet bei Windows Server 2016; zu Terminalservern oder Citrix sagt die Seite nichts. |
+| Uninstall the Brother Software and Drivers (Windows) | <https://support.brother.com/g/b/faqend.aspx?c=us_ot&lang=en&prod=hll2370dw_us&faqid=faq00000071_010> | 2026-11-13 | `print.remedies[23]` Brother-Treiber vollständig entfernen | Seite vom 02.04.2026; sie nennt Windows 7 bis 11. Das „Uninstall Tool“ gibt es laut Seite nicht für jedes Betriebssystem. Das Wartungsfenster in der Voraussetzung stammt nicht von Brother. |
 
 ### Belegstellen
 
@@ -329,8 +371,8 @@ Die AKI GmbH ist der Hersteller der Drucklösung PrinTaurus. Dass die Zielumgebu
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Release Notes 6.2 deutsch | <https://www.aki-gmbh.com/download/45927/> | 2026-11-13 | `crash.checks[30]` Version des .NET Framework prüfen<br>`print.checks[28]` Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach einem Wechsel des En … | Release Notes PrinTaurus 6.2, Version 11 vom 28.03.2022. Kapitel 2 nennt .NET Framework 4.7.2 für die SmartSpread Clients; den Registrierungswert Release und die Zahl 461808 nennt Microsoft („How to determine which .NET Framework versions are installed“). Kapitel 3 nennt den behobenen Fehler beim erzwungenen Standarddrucker, die bekannte Einschränkung (doppelte Anzeige) und als Änderung, dass die Zuordnungen bei einem Wechsel des Endgeräts ohne Neuanmeldung passend gesetzt werden; ob ältere Versionen das nicht taten, sagt AKI nicht, und der Prüfschritt „Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern …“ der Situation `print` sagt es auch nicht. |
-| Release Notes PrinTaurus 6.4 | <https://www.aki-gmbh.com/download/47826/> | 2026-11-13 | `crash.checks[31]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`crash.remedies[12]` PrinTaurus auf eine Version bringen, die AKI noch unterstützt<br>`crash.contacts[3]` Support von AKI: mit Version des SmartSpread Client, Uhrzeit, fehlerhaftem Modul und Fehlercode aus den Bel …<br>`hang.checks[18]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`print.remedies[23]` PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, b …<br>`print.remedies[24]` Lokale IPP-Druckerwarteschlangen von PrinTaurus SmartSpread den Benutzern dieses Servers nicht zuweisen | Release Notes PrinTaurus 6.4, Version 3 vom 16.02.2025. Die Regel „alle Komponenten im selben Release“ steht unter den Hinweisen zum Update auf 6.4; die Elemente beschränken sie darauf. Dass die Version unter „Programme und Features“ dieser Release-Stand ist, sagt AKI nicht. Die Release Notes nennen support@aki-gmbh.com; welche Angaben der Support braucht, ist ein eigener Hinweis. Der Zusatz zum Master-Image stammt nicht von AKI. |
+| Release Notes 6.2 deutsch | <https://www.aki-gmbh.com/download/45927/> | 2026-11-13 | `crash.checks[31]` Version des .NET Framework prüfen<br>`print.checks[30]` Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach einem Wechsel des En … | Release Notes PrinTaurus 6.2, Version 11 vom 28.03.2022. Kapitel 2 nennt .NET Framework 4.7.2 für die SmartSpread Clients; den Registrierungswert Release und die Zahl 461808 nennt Microsoft („How to determine which .NET Framework versions are installed“). Kapitel 3 nennt den behobenen Fehler beim erzwungenen Standarddrucker, die bekannte Einschränkung (doppelte Anzeige) und als Änderung, dass die Zuordnungen bei einem Wechsel des Endgeräts ohne Neuanmeldung passend gesetzt werden; ob ältere Versionen das nicht taten, sagt AKI nicht, und der Prüfschritt „Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern …“ der Situation `print` sagt es auch nicht. |
+| Release Notes PrinTaurus 6.4 | <https://www.aki-gmbh.com/download/47826/> | 2026-11-13 | `crash.checks[32]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`crash.remedies[12]` PrinTaurus auf eine Version bringen, die AKI noch unterstützt<br>`crash.contacts[3]` Support von AKI: mit Version des SmartSpread Client, Uhrzeit, fehlerhaftem Modul und Fehlercode aus den Bel …<br>`hang.checks[19]` Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen<br>`print.remedies[24]` PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, b …<br>`print.remedies[25]` Lokale IPP-Druckerwarteschlangen von PrinTaurus SmartSpread den Benutzern dieses Servers nicht zuweisen | Release Notes PrinTaurus 6.4, Version 3 vom 16.02.2025. Die Regel „alle Komponenten im selben Release“ steht unter den Hinweisen zum Update auf 6.4; die Elemente beschränken sie darauf. Dass die Version unter „Programme und Features“ dieser Release-Stand ist, sagt AKI nicht. Die Release Notes nennen support@aki-gmbh.com; welche Angaben der Support braucht, ist ein eigener Hinweis. Der Zusatz zum Master-Image stammt nicht von AKI. |
 
 ### Belegstellen
 
@@ -363,7 +405,7 @@ In der Zielumgebung richtet Citrix Workspace Environment Management (WEM) die Be
 |---|---|---|---|---|
 | CPU Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/cpu-management.html> | 2026-11-13 | `cpu.remedies[2]` CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen | Citrix sagt, der Schutz sei nicht dafür gedacht, die Gesamtlast zu senken, und rät, die Messzeit so zu wählen, dass andere Benutzer desselben Servers nicht leiden. Eine Regel, wann ein Prozess auszunehmen ist, nennt die Seite nicht. Die Einstellung liegt in der WEM-Konsole, nicht auf dem Server; ein Zusatz zum Master-Image entfällt deshalb. |
 | Memory Management (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/user-interface-description/system-optimization/memory-management.html> | 2026-11-13 | `memory.remedies[5]` Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen | Standard der Leerlaufgrenze laut Seite 1 %. Dass Anwendungen nach einer Pause träge reagieren, steht nicht auf der Seite: Es ist die Voraussetzung, unter der der Katalog den Schritt vorschlägt. |
-| Agent event logs (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/agent-event-logs.html> | 2026-11-13 | `cpu.checks[13]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob der CPU-Spitzenschutz von Citrix Workspace Environment M …<br>`memory.checks[11]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob die Speicheroptimierung von Citrix Workspace Environment … | Die Seite nennt die Ereignisse 7001 und 7002 (CPU-Spitzenschutz) und 8001 bis 8003 (Speicheroptimierung). Die Bezeichnung des Protokolls „WEM Agent Service“ stammt von den Seiten „CPU Management“ und „System optimization“; den genauen Namen des Protokolls dokumentiert Citrix nicht (siehe „Auf dem Zielsystem zu bestätigen“). Was die Speicheroptimierung mit dem Arbeitsspeicher untätiger Prozesse tut, steht auf der Seite „Memory Management“. |
+| Agent event logs (WEM current release) | <https://docs.citrix.com/us/en/workspace-environment-management/current-release/reference/agent-event-logs.html> | 2026-11-13 | `cpu.checks[13]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob der CPU-Spitzenschutz von Citrix Workspace Environment M …<br>`memory.checks[12]` Im Ereignisprotokoll des WEM-Agenten nachsehen, ob die Speicheroptimierung von Citrix Workspace Environment … | Die Seite nennt die Ereignisse 7001 und 7002 (CPU-Spitzenschutz) und 8001 bis 8003 (Speicheroptimierung). Die Bezeichnung des Protokolls „WEM Agent Service“ stammt von den Seiten „CPU Management“ und „System optimization“; den genauen Namen des Protokolls dokumentiert Citrix nicht (siehe „Auf dem Zielsystem zu bestätigen“). Was die Speicheroptimierung mit dem Arbeitsspeicher untätiger Prozesse tut, steht auf der Seite „Memory Management“. |
 
 ### Belegstellen
 
@@ -399,7 +441,7 @@ Microsoft Edge ist in der Zielumgebung der einzige Browser; die WebView2-Runtime
 | Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled) | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/autodiscardsleepingtabsenabled> | 2026-11-13 | `memory.remedies[2]` Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten | Ab Microsoft Edge 120; ohne Richtlinie ist das Verwerfen eingeschaltet. |
 | Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb) | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/totalmemorylimitmb> | 2026-11-13 | `memory.remedies[3]` Speichergrenze je Instanz von Microsoft Edge setzen | Ab Microsoft Edge 80. Microsoft beschreibt die Richtlinie, empfiehlt sie aber nicht; Werte unter 1024 werden auf 1024 aufgerundet. |
 | Microsoft Edge - Update policies | <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-update-policies> | 2026-11-13 | `crash.checks[21]` Version der WebView2-Runtime feststellen<br>`crash.remedies[8]` WebView2-Runtime auf den aktuellen Stand bringen | Abschnitt „Update (WebView)“, Microsoft Edge Update ab 1.3.127.1. Für nicht persistente Maschinen nennt Microsoft auf der Seite zu Edge für VDI als bewährtes Vorgehen, automatische Updates abzuschalten und über das Master-Image zu aktualisieren: Der Stand der Runtime ist dann der des Master-Image, und beide Elemente sagen das. |
-| WebView2 end-user FAQ | <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/end-user-faq> | 2026-11-13 | `cpu.checks[6]` Feststellen, welche Anwendung ‹Anwendung› nutzt<br>`memory.checks[5]` Feststellen, welche Anwendung ‹Anwendung› nutzt | Seite von 2023. Teams und Outlook nennt Microsoft als Beispiele für Anwendungen, die WebView2 nutzen; „in den meisten Fällen“ bezieht sich auf die Art der Nutzung von WebView2. |
+| WebView2 end-user FAQ | <https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/end-user-faq> | 2026-11-13 | `cpu.checks[6]` Feststellen, welche Anwendung ‹Anwendung› nutzt<br>`memory.checks[6]` Feststellen, welche Anwendung ‹Anwendung› nutzt | Seite von 2023. Teams und Outlook nennt Microsoft als Beispiele für Anwendungen, die WebView2 nutzen; „in den meisten Fällen“ bezieht sich auf die Art der Nutzung von WebView2. |
 | Enterprise management of WebView2 | <https://learn.microsoft.com/en-us/deployedge/webview2-enterprise> | 2026-11-13 | `cpu.checks[7]` Einordnen, welche Einstellungen auf ‹Anwendung› wirken | Abschnitt „Browser policies vs. WebView2 policies“. |
 | Prevent security tools from blocking WebView2 apps | <https://learn.microsoft.com/en-us/deployedge/webview2-security-tools> | 2026-11-13 | `cpu.remedies[7]` Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen<br>`crash.checks[22]` Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt<br>`crash.checks[23]` Prüfen, ob Software Module in die Prozesse von WebView2 lädt<br>`hang.checks[13]` Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt | Den Herausgeber, für den eine Regel gelten soll, nennt die Seite nicht. Die Zustimmung der Verantwortlichen für die Sicherheit und der Ort der Änderung stammen nicht von Microsoft. |
 
@@ -448,8 +490,8 @@ Microsoft Edge ist in der Zielumgebung der einzige Browser; die WebView2-Runtime
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
 | Browser content redirection (CVAD 2402 LTSR) | <https://docs.citrix.com/en-us/citrix-virtual-apps-desktops/2402-ltsr/multimedia/browser-content-redirection.html> | 2026-11-13 | `cpu.remedies[6]` Browser Content Redirection von Citrix für die betroffenen Seiten prüfen | Seite der Version 2402 LTSR. Laut Citrix muss die HTML5-Videoumleitung abgeschaltet sein, wenn die Umleitung genutzt wird. |
-| Optimization for Microsoft Teams (New) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams-new.html> | 2026-11-13 | `cpu.checks[10]` Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung lief<br>`memory.checks[8]` Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung lief | Abschnitt „Interoperability and roaming“. Wo Teams den Stand der Optimierung anzeigt, nennt diese Seite nicht (siehe „Auf dem Zielsystem zu bestätigen“). |
-| Optimization for Microsoft Teams (Classic) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams.html> | 2026-11-13 | `memory.checks[10]` Größe des Servers für Teams einordnen<br>`disk.checks[4]` Bedarf von Teams an Datenträgerzugriffen einordnen | Messung von Citrix mit dem klassischen Teams unter Windows Server 2019 (Version 2106), ohne Medien; beide Elemente sagen, dass es eine Messung mit dem klassischen Teams ist. Die Angabe „512 bis 1024 MB je Benutzer“ der Seite meint Speicherplatz, nicht Arbeitsspeicher, und ist nicht übernommen. |
+| Optimization for Microsoft Teams (New) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams-new.html> | 2026-11-13 | `cpu.checks[10]` Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung lief<br>`memory.checks[9]` Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung lief | Abschnitt „Interoperability and roaming“. Wo Teams den Stand der Optimierung anzeigt, nennt diese Seite nicht (siehe „Auf dem Zielsystem zu bestätigen“). |
+| Optimization for Microsoft Teams (Classic) | <https://docs.citrix.com/us/en/citrix-virtual-apps-desktops/current-release/multimedia/opt-ms-teams.html> | 2026-11-13 | `memory.checks[11]` Größe des Servers für Teams einordnen<br>`disk.checks[4]` Bedarf von Teams an Datenträgerzugriffen einordnen | Messung von Citrix mit dem klassischen Teams unter Windows Server 2019 (Version 2106), ohne Medien; beide Elemente sagen, dass es eine Messung mit dem klassischen Teams ist. Die Angabe „512 bis 1024 MB je Benutzer“ der Seite meint Speicherplatz, nicht Arbeitsspeicher, und ist nicht übernommen. |
 | Enable roaming for the new Microsoft Teams (Profile Management) | <https://docs.citrix.com/us/en/profile-management/current-release/how-to/enable-new-teams-roaming.html> | 2026-11-13 | `profile.checks[4]` Ausschlussliste des Profilcontainers auf Ordner von Teams prüfen | Abschnitt „Required settings for the container-based profile solution“. Microsoft nennt für nicht persistente Umgebungen eine eigene Ausschlussliste; für den Profilcontainer von Citrix gilt die Aussage von Citrix. |
 
 ### Belegstellen
@@ -471,13 +513,13 @@ In der Zielumgebung ist Office LTSC 2024 installiert. Die Elemente hängen an zw
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Performance recommendations for Microsoft 365 Apps on Windows 10 | <https://learn.microsoft.com/en-us/microsoft-365-apps/best-practices/performance-recommendations> | 2026-11-13 | `cpu.checks[8]` Add-ins von ‹Anwendung› prüfen<br>`cpu.checks[9]` Add-ins von ‹Anwendung› prüfen (für Outlook)<br>`cpu.remedies[8]` Add-ins von ‹Anwendung›, die nicht gebraucht werden, entfernen und die übrigen aktuell halten<br>`cpu.remedies[9]` Add-ins von ‹Anwendung›, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (für Outlook)<br>`memory.checks[6]` Add-ins von ‹Anwendung› prüfen<br>`memory.checks[7]` Add-ins von ‹Anwendung› prüfen (für Outlook)<br>`crash.checks[24]` Add-ins von ‹Anwendung› als Ursache prüfen<br>`crash.checks[26]` Add-ins von ‹Anwendung› als Ursache prüfen (für Outlook) | Die Seite gilt für Microsoft 365 Apps unter Windows 10; zu Office LTSC 2024 sagt Microsoft nur, dass Add-ins früherer Versionen voraussichtlich funktionieren. Die Prüfschritte sagen, wofür Microsoft den Test beschreibt. Die Rücksprache mit den Benutzern und der Ort der Änderung stammen nicht von Microsoft. |
+| Performance recommendations for Microsoft 365 Apps on Windows 10 | <https://learn.microsoft.com/en-us/microsoft-365-apps/best-practices/performance-recommendations> | 2026-11-13 | `cpu.checks[8]` Add-ins von ‹Anwendung› prüfen<br>`cpu.checks[9]` Add-ins von ‹Anwendung› prüfen (für Outlook)<br>`cpu.remedies[8]` Add-ins von ‹Anwendung›, die nicht gebraucht werden, entfernen und die übrigen aktuell halten<br>`cpu.remedies[9]` Add-ins von ‹Anwendung›, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (für Outlook)<br>`memory.checks[7]` Add-ins von ‹Anwendung› prüfen<br>`memory.checks[8]` Add-ins von ‹Anwendung› prüfen (für Outlook)<br>`crash.checks[24]` Add-ins von ‹Anwendung› als Ursache prüfen<br>`crash.checks[27]` Add-ins von ‹Anwendung› als Ursache prüfen (für Outlook) | Die Seite gilt für Microsoft 365 Apps unter Windows 10; zu Office LTSC 2024 sagt Microsoft nur, dass Add-ins früherer Versionen voraussichtlich funktionieren. Die Prüfschritte sagen, wofür Microsoft den Test beschreibt. Die Rücksprache mit den Benutzern und der Ort der Änderung stammen nicht von Microsoft. |
 | Add-ins are user re-enabled after being disabled by Office programs | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/add-ins-are-user-re-enabled-after-being-disabled> | 2026-11-13 | `hang.checks[14]` Nachsehen, ob Office ein Add-in von Outlook wegen langsamer Ausführung abgeschaltet hat und wie lange die A … | Die Seite nennt die Ereignisse 45 und 59 im Protokoll „Anwendung“. |
 | You may experience application pauses if you have a large Outlook data file | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/application-pauses-if-you-have-large-data-file> | 2026-11-13 | `profile.checks[3]` Größe der OST-Datei von Outlook und Zahl der Elemente je Ordner prüfen<br>`profile.remedies[1]` Lokale Postfachdaten von Outlook verkleinern<br>`hang.checks[15]` Größe der OST-Datei von Outlook bei den betroffenen Benutzern prüfen | Die Zahlen zu Elementen je Ordner stehen auf der Seite „Outlook performance issues in a Cached Exchange Mode .ost or .pst file“. Die Werte der Richtlinie für den Zeitraum des Cache-Modus sind auf keiner gelesenen Seite belegt; der Katalog nennt deshalb keinen Wert. |
 | Limits to using personal folders files over LAN and WAN links | <https://learn.microsoft.com/en-us/troubleshoot/outlook/data-files/limits-using-pst-files-over-lan-wan> | 2026-11-13 | `share.checks[2]` Prüfen, ob PST- oder OST-Dateien von Outlook direkt auf einer Freigabe liegen | Microsoft nennt als Bedingungen eine Verbindung mit hoher Bandbreite und geringer Latenz und ein Outlook je Datei. |
 | Outlook not responding error or Outlook freezes when you open a file or send mail | <https://learn.microsoft.com/en-us/troubleshoot/outlook/performance/outlook-not-responding-error-or-outlook-freezes> | 2026-11-13 | `hang.checks[16]` Prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist und ob die Schutzsoftware ein Add-in oder ei … | Die Seite nennt beide Ursachen getrennt; das Element fasst sie zusammen. |
 | Plan and configure Cached Exchange Mode in Outlook 2016 for Windows | <https://learn.microsoft.com/en-us/microsoft-365-apps/outlook/configuration/cached-exchange-mode> | 2026-11-13 | `disk.checks[3]` Einordnen, ob die Last vom Cache-Modus von Outlook kommt | Für Outlook 2016 geschrieben; ob die Aussage für Outlook LTSC 2024 gilt, sagt die Seite nicht. Das Element sagt das. |
-| Overview of Office LTSC 2024 | <https://learn.microsoft.com/en-us/office/ltsc/2024/overview> | 2026-11-13 | `crash.checks[25]` Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist<br>`crash.checks[27]` Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist (für Outlook) | Dass die 64-Bit-Version mehr Arbeitsspeicher nutzen kann, steht nicht auf der Seite und ist nicht übernommen. |
+| Overview of Office LTSC 2024 | <https://learn.microsoft.com/en-us/office/ltsc/2024/overview> | 2026-11-13 | `crash.checks[25]` Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist<br>`crash.checks[28]` Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist (für Outlook) | Dass die 64-Bit-Version mehr Arbeitsspeicher nutzen kann, steht nicht auf der Seite und ist nicht übernommen. |
 | Update Office LTSC 2024 | <https://learn.microsoft.com/en-us/office/ltsc/2024/update> | 2026-11-13 | `crash.remedies[9]` Office auf den aktuellen Stand bringen<br>`crash.remedies[10]` Office auf den aktuellen Stand bringen (für Outlook) | Wie alt eine Version sein darf, sagt Microsoft nicht. Der Zusatz zum Master-Image stammt nicht von Microsoft. |
 
 ### Belegstellen
@@ -515,9 +557,9 @@ In der Zielumgebung läuft der neue Teams-Client mit Medienoptimierung: Audio, V
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Install Teams for Virtualized Desktop Infrastructure (VDI) | <https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy> | 2026-11-13 | `cpu.checks[5]` Prüfen, ob der Benutzer Microsoft Teams im Browser statt im Teams-Client nutzte<br>`cpu.remedies[10]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`memory.remedies[4]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`crash.checks[29]` Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen | Stand 2026-08-25. DisableFallback gilt ab Teams 24257; ob der Rückfall abgeschaltet wird, überlässt Microsoft dem Betreiber. Dieselbe Seite nennt Oktober 2026 als Ende der Unterstützung auf Windows Server 2022 und führt Windows Server 2022 in der Tabelle der Anforderungen weiter; der Prüfschritt „Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen …“ der Situation `crash` nennt beides. Der Zusatz zum Master-Image stammt nicht von Microsoft. |
-| New VDI solution for Teams | <https://learn.microsoft.com/en-us/microsoftteams/vdi-2> | 2026-11-13 | `cpu.checks[11]` Klären, ob der Benutzer an einer Großveranstaltung<br>`cpu.checks[12]` Klären, ob der Benutzer seinen Bildschirm geteilt hat<br>`cpu.remedies[11]` Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen<br>`memory.checks[9]` Klären, ob der Benutzer an einer Großveranstaltung | Stand 2026-11-12. Die Messwerte von Microsoft zur Bildschirmfreigabe stammen von einer virtuellen Maschine mit einem Benutzer und vier Prozessoren; der Katalog nennt deshalb keine Zahl. Die vom Server kodierte Bildschirmfreigabe ist für Windows-Endgeräte laut Seite in der Vorschau. |
-| Include or exclude Teams from antivirus or DLP applications | <https://learn.microsoft.com/en-us/troubleshoot/microsoftteams/teams-administration/include-exclude-teams-from-antivirus-dlp> | 2026-11-13 | `crash.checks[28]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift<br>`crash.remedies[11]` Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt<br>`hang.checks[17]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift | Stand 2026-11-09. Microsoft spricht von Schutzsoftware anderer Hersteller; die Elemente sagen das. Die Zustimmung der Verantwortlichen für die Sicherheit stammt nicht von Microsoft. |
+| Install Teams for Virtualized Desktop Infrastructure (VDI) | <https://learn.microsoft.com/en-us/microsoftteams/teams-client-vdi-requirements-deploy> | 2026-11-13 | `cpu.checks[5]` Prüfen, ob der Benutzer Microsoft Teams im Browser statt im Teams-Client nutzte<br>`cpu.remedies[10]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`memory.remedies[4]` Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen<br>`crash.checks[30]` Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen | Stand 2026-08-25. DisableFallback gilt ab Teams 24257; ob der Rückfall abgeschaltet wird, überlässt Microsoft dem Betreiber. Dieselbe Seite nennt Oktober 2026 als Ende der Unterstützung auf Windows Server 2022 und führt Windows Server 2022 in der Tabelle der Anforderungen weiter; der Prüfschritt „Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen …“ der Situation `crash` nennt beides. Der Zusatz zum Master-Image stammt nicht von Microsoft. |
+| New VDI solution for Teams | <https://learn.microsoft.com/en-us/microsoftteams/vdi-2> | 2026-11-13 | `cpu.checks[11]` Klären, ob der Benutzer an einer Großveranstaltung<br>`cpu.checks[12]` Klären, ob der Benutzer seinen Bildschirm geteilt hat<br>`cpu.remedies[11]` Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen<br>`memory.checks[10]` Klären, ob der Benutzer an einer Großveranstaltung | Stand 2026-11-12. Die Messwerte von Microsoft zur Bildschirmfreigabe stammen von einer virtuellen Maschine mit einem Benutzer und vier Prozessoren; der Katalog nennt deshalb keine Zahl. Die vom Server kodierte Bildschirmfreigabe ist für Windows-Endgeräte laut Seite in der Vorschau. |
+| Include or exclude Teams from antivirus or DLP applications | <https://learn.microsoft.com/en-us/troubleshoot/microsoftteams/teams-administration/include-exclude-teams-from-antivirus-dlp> | 2026-11-13 | `crash.checks[29]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift<br>`crash.remedies[11]` Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt<br>`hang.checks[18]` Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift | Stand 2026-11-09. Microsoft spricht von Schutzsoftware anderer Hersteller; die Elemente sagen das. Die Zustimmung der Verantwortlichen für die Sicherheit stammt nicht von Microsoft. |
 
 ### Belegstellen
 
@@ -547,9 +589,9 @@ Die Anleitungen von Carl Stalhood (carlstalhood.com) sind eine Quelle aus der Pr
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| Citrix Virtual Delivery Agent (VDA) 2411 | <https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/> | 2026-11-13 | `cpu.checks[20]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen<br>`cpu.checks[25]` Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`memory.checks[16]` Arbeitsspeicher der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`disk.checks[9]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen | Stand der Seite 4.12.2024. Die Größe (8 vCPU, 24 bis 48 GB) nennt die Seite für Windows Server 2016 bis 2022 als Server mit mehreren Sitzungen. Die Liste der Ausschlüsse gibt die Seite als Inhalt eines Beitrags von Citrix wieder, der nicht mehr erreichbar war; sie steht deshalb hier und nicht unter Citrix. Den Ausschluss des WEM-Agenten nennt die Seite „Workspace Environment Management (WEM) 2411“ derselben Quelle. |
-| Citrix Health Check | <https://www.carlstalhood.com/citrix-health-check/> | 2026-11-13 | `cpu.checks[26]` Energiesparplan des Servers feststellen<br>`memory.remedies[7]` Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher<br>`delay.many.checks[11]` Energiesparplan des Servers feststellen<br>`delay.single.checks[9]` Energiesparplan des Servers feststellen | Stand der Seite 28.2.2024 (Prüfliste). Zum Energiesparplan siehe „Ausnahmen: Praxisquelle vor Hersteller“. Die Aussage zum zugesagten Speicher ist ein Punkt der Prüfliste ohne Zahl. |
-| Citrix Profile Management 2411 | <https://www.carlstalhood.com/citrix-profile-management/> | 2026-11-13 | `share.remedies[1]` Active Write Back der Citrix Profilverwaltung abschalten<br>`profile.checks[12]` Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung aus der Praxis vergleichen<br>`profile.remedies[5]` Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen | Stand der Seite 8.2.2025. Die Empfehlung zu Streaming und Profilcontainer schreibt die Seite Citrix zu (CTX463658); der Artikel war nicht lesbar, deshalb steht sie hier und nicht unter Citrix. Die Prüfung der Ausschlüsse bei der Anmeldung („Logon Exclusion Check“) nennt die Seite nur als Möglichkeit und ist nicht übernommen; die Ausschlüsse für das klassische Teams ebenfalls nicht. |
+| Citrix Virtual Delivery Agent (VDA) 2411 | <https://www.carlstalhood.com/virtual-delivery-agent-vda-cr/> | 2026-11-13 | `cpu.checks[25]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen<br>`cpu.checks[30]` Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`memory.checks[17]` Arbeitsspeicher der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen<br>`disk.checks[9]` Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen | Stand der Seite 4.12.2024. Die Größe (8 vCPU, 24 bis 48 GB) nennt die Seite für Windows Server 2016 bis 2022 als Server mit mehreren Sitzungen. Die Liste der Ausschlüsse gibt die Seite als Inhalt eines Beitrags von Citrix wieder, der nicht mehr erreichbar war; sie steht deshalb hier und nicht unter Citrix. Den Ausschluss des WEM-Agenten nennt die Seite „Workspace Environment Management (WEM) 2411“ derselben Quelle. |
+| Citrix Health Check | <https://www.carlstalhood.com/citrix-health-check/> | 2026-11-13 | `cpu.checks[31]` Energiesparplan des Servers feststellen<br>`memory.remedies[7]` Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher<br>`delay.many.checks[12]` Energiesparplan des Servers feststellen<br>`delay.single.checks[10]` Energiesparplan des Servers feststellen | Stand der Seite 28.2.2024 (Prüfliste). Zum Energiesparplan siehe „Ausnahmen: Praxisquelle vor Hersteller“. Die Aussage zum zugesagten Speicher ist ein Punkt der Prüfliste ohne Zahl. |
+| Citrix Profile Management 2411 | <https://www.carlstalhood.com/citrix-profile-management/> | 2026-11-13 | `share.remedies[1]` Active Write Back der Citrix Profilverwaltung abschalten<br>`profile.checks[13]` Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung aus der Praxis vergleichen<br>`profile.remedies[6]` Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen | Stand der Seite 8.2.2025. Die Empfehlung zu Streaming und Profilcontainer schreibt die Seite Citrix zu (CTX463658); der Artikel war nicht lesbar, deshalb steht sie hier und nicht unter Citrix. Die Prüfung der Ausschlüsse bei der Anmeldung („Logon Exclusion Check“) nennt die Seite nur als Möglichkeit und ist nicht übernommen; die Ausschlüsse für das klassische Teams ebenfalls nicht. |
 | Group Policy Computer Settings for VDAs | <https://www.carlstalhood.com/group-policy-objects-vda-computer-settings/> | 2026-11-13 | `memory.remedies[8]` Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen | Stand der Seite 3.11.2023. „3 hours or similar“ ist eine Größenordnung. Dass die Zeitlimits nur an einer der beiden Stellen (Microsoft-Richtlinie oder Citrix-Richtlinie) gesetzt sein sollen, sagt auch Citrix („Session limits policy settings“); der Katalog nennt beide Stellen als Möglichkeit. |
 
 ### Belegstellen
@@ -573,7 +615,7 @@ Die Anleitungen von Carl Stalhood (carlstalhood.com) sind eine Quelle aus der Pr
 |---|---|
 | Virtuelle Hardware unter vSphere, Updates und Neustarts, Lizenzierung der Remotedesktopdienste, Zeitgrenzen des VDA, WEM-Agent auf den lastverteilten Namen, Protokoll der Profilverwaltung, maschinenweite Installation von Teams und OneDrive, Selbstaktualisierer abschalten | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild) |
 | Schreibcache und Auslagerungsdatei bei Citrix Provisioning, Ereignisprotokolle auf beständigem Laufwerk bei Provisioning | gilt nur für Citrix Provisioning; die Server der Zielumgebung werden über Machine Creation Services bereitgestellt |
-| AppData nicht auf eine Freigabe umleiten | der Hersteller sagt es für Outlook selbst (Microsoft, aufgenommen unter Office); für andere Anwendungen stützt die Messung es nicht |
+| AppData nicht auf eine Freigabe umleiten | der Hersteller sagt es für Outlook selbst (Microsoft, aufgenommen unter Office); für andere Anwendungen steht es seit dem 13.11.2026 bei einem Engpass an der Freigabe mit benanntem Verursacher, aus der Quelle James Kindon |
 | Netzwerkschutz von Microsoft Defender abschalten | setzt eine Änderung voraus, die die Messung nicht stützt (Schutzfunktion; die Messung erfasst keine unterbrochenen Sitzungen) |
 | Drucken: keine direkten Verbindungen zu Druckservern, Citrix Universal Print Server | setzt eine Änderung voraus, die die Messung nicht stützt (in der Zielumgebung ordnet PrinTaurus SmartSpread die Drucker zu) |
 | Anmeldeverzögerungen aus Windows-Richtlinien, hängende Sitzungen veröffentlichter Anwendungen, lokale Profile löschen | setzt eine Änderung voraus, die die Messung nicht stützt (der Bericht hat keine Situation für die Dauer der Anmeldung) |
@@ -584,7 +626,7 @@ Das Base Image Script Framework (BIS-F) ist eine Sammlung von Skripten, die ein 
 
 | Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
 |---|---|---|---|---|
-| 97_PrepBISF_PRE_BaseImage.ps1 | <https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1> | 2026-11-13 | `cpu.remedies[16]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.many.remedies[1]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.single.remedies[2]` Energiesparplan „Höchstleistung“ einstellen | Skript des Zweigs „master“; BIS-F stellt den Plan beim Versiegeln ohne Bedingung ein. Der Vorschlag steht nur unter der Ausnahme des Auftraggebers (siehe „Ausnahmen: Praxisquelle vor Hersteller“); das Element nennt die Sicht von Microsoft und VMware. |
+| 97_PrepBISF_PRE_BaseImage.ps1 | <https://raw.githubusercontent.com/EUCweb/BIS-F/master/Framework/SubCall/Preparation/97_PrepBISF_PRE_BaseImage.ps1> | 2026-11-13 | `cpu.remedies[18]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.many.remedies[2]` Energiesparplan „Höchstleistung“ einstellen<br>`delay.single.remedies[3]` Energiesparplan „Höchstleistung“ einstellen | Skript des Zweigs „master“; BIS-F stellt den Plan beim Versiegeln ohne Bedingung ein. Der Vorschlag steht nur unter der Ausnahme des Auftraggebers (siehe „Ausnahmen: Praxisquelle vor Hersteller“); das Element nennt die Sicht von Microsoft und VMware. |
 
 ### Belegstellen
 
@@ -599,6 +641,499 @@ Das Base Image Script Framework (BIS-F) ist eine Sammlung von Skripten, die ein 
 | Ereignisprotokolle und Spool-Ordner auf einen beständigen Cache-Datenträger legen | beschreibt einen Zustand des Servers, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; setzt einen beständigen Datenträger voraus, den die Zielumgebung nicht hat) |
 | Windows-Update-Dienst im Abbild abschalten, Netzwerkeinstellungen (Task-Offload, UDP, ARP), Auslagerungsdatei fest einstellen, Leistungsindikatoren neu aufbauen, .NET vorkompilieren, Citrix Optimizer, Reihenfolge der Dienste beim Start | beschreibt einen Zustand des Master-Image, keinen Schritt zu einem Vorfall (gehört zum Zustandsbild; die Quelle ist für Windows Server 2022 sichtbar älter) |
 | Einstellungen für Citrix Provisioning (Schreibcache) | gilt nur für Citrix Provisioning |
+
+## GO-EUC (Empfehlung aus der Praxis)
+
+GO-EUC (go-euc.com) ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: eine Stiftung, die Einstellungen und Versionen im Labor unter gleicher Last vergleicht und zu jedem Artikel Last, Hardware, Versionen und Zahl der Läufe nennt. Grenzen der Quelle: Die Zahlen gelten für die Testbedingungen des jeweiligen Artikels und sein Jahr (2019 bis 2026). In den meisten Tests war die Schutzsoftware abgeschaltet; viele Tests liefen auf Windows 10 oder 11 mit einer Sitzung je Maschine, auf anderer Virtualisierung als vSphere oder ohne Citrix. Die Stiftung wird von Sponsoren getragen, darunter der Hersteller ihres Lastwerkzeugs. Der Katalog nennt ihre Zahlen deshalb nur mit Bedingungen und Jahr und nie als Sollwert.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling | <https://www.go-euc.com/vmware-vsphere-cpu-topology-effects-on-vdi-performance-numa-vnuma-and-cpu-scheduling/> | 2026-11-13 | `delay.many.checks[16]` Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat | Stand 20.3.2026 (PXG-01, PXG-58). Labortest: Windows 11 mit einer Sitzung, 4 vCPU, ESXi 8.0.3, Schutzsoftware abgeschaltet. Die Stufen des Artikels für CPU-Latenz und Co-Stop sind seine eigene Einteilung und stehen nicht im Katalog; für die CPU-Bereitschaft verweist der Artikel selbst auf VMware. |
+| Impact of sizing RDSH VMs | <https://www.go-euc.com/impact-of-sizing-rdsh-vms/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 27.2.2019 (PXG-04). Test: Windows Server 2016, ESXi 6.7 U1, zwei Prozessoren mit je 14 Kernen, Schutz gegen Prozessorlücken abgeschaltet. Die Untergrenze von 4 vCPU stammt nicht aus dem Artikel und ist nicht übernommen. |
+| Citrix Policy Templates | <https://www.go-euc.com/citrix-policy-templates/> | 2026-11-13 | `cpu.checks[17]` ‹Anwendung› gehört zu den Citrix-Komponenten des Servers | Stand 20.8.2019 (PXG-06). Test: Windows 10 1809, VDA 1811. Die gemessenen Werte gelten für eine Vorlage mit Videocodec für den ganzen Bildschirm und stehen nicht im Katalog; „alles auf der Voreinstellung lassen“ ist der Rat der Quelle, nicht von Citrix. |
+| The real impact of Citrix MCSIO | <https://www.go-euc.com/the-real-impact-of-citrix-mcsio/> | 2026-11-13 | `memory.checks[20]` Wenn der Maschinenkatalog MCS I/O nutzt<br>`chronic.resource.checks[8]` Wenn der Maschinenkatalog MCS I/O nutzt | Stand 31.3.2020 (PXG-22, PXG-26). Test: Windows 10 in einer einzelnen Maschine, VDA 1906.2. Dass der Cache Teil des Arbeitsspeichers der Maschine ist, schreibt auch Citrix („Create machine catalogs“). „Cache verkleinern“ ist nicht übernommen. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Prüfschritt „Prüfen, ob der VMware-Host dem Server Rechenzeit entzogen hat …“ der Situation `cpu` – auch gestützt durch: „VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling“, <https://www.go-euc.com/vmware-vsphere-cpu-topology-effects-on-vdi-performance-numa-vnuma-and-cpu-scheduling/>, 2026-03-20 (PXG-01)
+- Prüfschritt „Kein einzelner Verursacher: Auslegung des Servers für den Prozessor prüfen …“ der Situation `chronic.resource` – auch gestützt durch: „VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling“, <https://www.go-euc.com/vmware-vsphere-cpu-topology-effects-on-vdi-performance-numa-vnuma-and-cpu-scheduling/>, 2026-03-20 (PXG-58)
+- Abhilfe „Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren …“ der Situation `cpu` – auch gestützt durch: „Impact of sizing RDSH VMs“, <https://www.go-euc.com/impact-of-sizing-rdsh-vms/>, 2019-02-27 (PXG-04)
+- Abhilfe „Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren …“ der Situation `chronic.resource` – auch gestützt durch: „Impact of sizing RDSH VMs“, <https://www.go-euc.com/impact-of-sizing-rdsh-vms/>, 2019-02-27 (PXG-04)
+- Prüfschritt „Wenn der Maschinenkatalog MCS I/O nutzt …“ der Situation `disk` – auch gestützt durch: „The real impact of Citrix MCSIO“, <https://www.go-euc.com/the-real-impact-of-citrix-mcsio/>, 2020-03-31 (PXG-26)
+
+### Belegstellen
+
+- **VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling**
+  - „Based on this study, maintaining CPU Ready below ~5% per VM corresponds to a stable EUX score of ~7.5, aligning with VMware best practices for predictable end-user experience in higher-density VDI environments.“
+  - „Adjusting CPU topology in small desktops did not produce measurable differences in EUX scores under typical workloads.“
+- **Impact of sizing RDSH VMs**
+  - „With other hardware specifications, the advice is to start with half the number of cores of the physical CPU per VM with a maximum of 8 vCPUs per VM. The total number of vCPUs should be equal to the total of number of hyperthreaded cores.“
+- **Citrix Policy Templates**
+  - „As per best practice, if you don't need to delivery 3D of CAD workloads, keep everything at default if you use a VDA 7.18 or later and let the system decide.“
+- **The real impact of Citrix MCSIO**
+  - „This memory is claimed by the MCSIO driver and will not be available for the operating system.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Aufgaben „Office Feature Updates“ prüfen und im Master-Image abschalten, wenn SDXHelper.exe viel schreibt (PXG-24, PXG-25) | braucht eine Bedingung, die der Katalog nicht hat (SDXHelper.exe steht nicht in der Anwendungsliste; Microsoft rät für Microsoft 365 Apps außerdem vom Abschalten ab) |
+| Sicherheitsvorgaben, nach denen sich der VDA nicht registriert oder zweimal nach dem Kennwort fragt | beschreibt keinen Vorfall, den der Bericht erfasst |
+| Bildrate von HDX auf 30 Bilder je Sekunde begrenzen | beschreibt keinen Vorfall, den der Bericht erfasst (eine feste Einstellung erklärt keine zeitlich begrenzte Verzögerung) |
+| Werbeblocker im Browser gegen Prozessorlast (PXG-14) | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht (Chrome, 2019; die Messung zeigt nicht, dass Werbung die Ursache ist) |
+| Stufen für CPU-Latenz und Co-Stop als Erkennungszeichen; Untergrenze von 4 vCPU; Cache von MCS I/O verkleinern | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht |
+
+## James Kindon (Empfehlung aus der Praxis)
+
+Der Blog von James Kindon (jkindon.com) ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Erfahrung aus Projekten mit Workspace Environment Management und der Citrix Profilverwaltung. Grenzen der Quelle: Die jüngsten Beiträge mit eigenem Inhalt stammen von 2023; Beiträge von 2017 bis 2021 hat der Autor zum Teil selbst überholt, sie stehen hier nur mit ihrem Datum. Der Autor arbeitet seit etwa 2022 für einen Hersteller von Virtualisierung und testet meist auf dessen Plattform oder in Azure, nicht auf vSphere mit Machine Creation Services. Zahlen nennt er fast nur in einem einzelnen Kundenfall von 2022 (Windows Server 2016, FSLogix); der Katalog nennt daraus keine Zahl.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| The not-so-hidden tax of granular group based application presentation with Citrix WEM | <https://jkindon.com/not-so-hidden-tax-citrix-wem/> | 2026-11-13 | `cpu.checks[18]` ‹Anwendung› gehört zu den Citrix-Komponenten des Servers<br>`cpu.remedies[12]` Zuweisungen von WEM an einzelne Gruppen verringern | Stand 30.10.2022 (PXG-07, PXG-08). Ein Kundenfall: Windows Server 2016, CVAD 1912 LTSR, FSLogix, zwei Domänen. Die Zeiten des Falls stehen nicht im Katalog; die Spitze von 100 % auf 70 % galt dem Hypervisor, nicht einem Server. |
+| WEM Advanced Guidance 2023 | <https://jkindon.com/wem-advanced-guidance-2023/> | 2026-11-13 | `memory.remedies[9]` Optimierung für getrennte Sitzungen von Citrix Workspace Environment Management einschalten | Stand 30.5.2023 (PXG-11, PXG-18, PXG-19). Zur Speicheroptimierung nennt das Element beide Sichten der Praxis (Kindon, Winkel); die Grenze von Citrix (höchstens 5 %) bleibt die Regel. |
+| Citrix Session Management Policies | <https://jkindon.com/citrix-session-management-policies/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 9.8.2021 (PXG-20). Die Aussage des Beitrags, die Zeitgeber von Citrix gälten nicht für Server mit mehreren Sitzungen, ist nicht übernommen. |
+| Stop Redirecting AppData. It's no longer the 80's | <https://jkindon.com/stop-redirecting-appdata/> | 2026-11-13 | `share.remedies[2]` AppData und Startmenü aus der Ordnerumleitung nehmen und im Profilcontainer lassen, wie die Praxisquelle | Stand 5.10.2023 (PXG-30, PXG-31). Die Einstufung einzelner Ordner als Pflicht oder Empfehlung ist nicht übernommen. |
+| The Evolution of Citrix Profile Management | <https://jkindon.com/the-evolution-of-citrix-profile-management/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 12.4.2025 (PXG-32, PXG-33). Der Beitrag gibt großteils Versionshinweise von Citrix wieder; übernommen ist nur die eigene Einschätzung zu Active Write Back. |
+| WEM Advanced Guidance Part 2 - User Interaction | <https://jkindon.com/wem-advanced-guidance-part-2-user-interaction/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 4.1.2018 (PXG-70), geschrieben für WEM 4.x. |
+| Citrix UPM and FSLogix Containers | <https://jkindon.com/citrix-upm-and-fslogix-containers/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 16.9.2021 mit Vorwort von 2023 (PXG-76). Die Zahl „99 %“ gilt FSLogix und ist nicht übernommen. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine …“ der Situation `cpu` – auch gestützt durch: „WEM Advanced Guidance 2023“, <https://jkindon.com/wem-advanced-guidance-2023/>, 2023-05-30 (PXG-11)
+- Abhilfe „Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen …“ der Situation `memory` – auch gestützt durch: „WEM Advanced Guidance 2023“, <https://jkindon.com/wem-advanced-guidance-2023/>, 2023-05-30 (PXG-19)
+- Abhilfe „Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen …“ der Situation `memory` – auch gestützt durch: „Citrix Session Management Policies“, <https://jkindon.com/citrix-session-management-policies/>, 2021-08-09 (PXG-20)
+- Prüfschritt „Klären, welche Dateien ‹Anwendung› in der Sitzung von ‹Benutzer› ab …“ der Situation `share` – auch gestützt durch: „Stop Redirecting AppData. It's no longer the 80's“, <https://jkindon.com/stop-redirecting-appdata/>, 2023-10-05 (PXG-30)
+- Abhilfe „Active Write Back der Citrix Profilverwaltung abschalten …“ der Situation `share` – auch gestützt durch: „The Evolution of Citrix Profile Management“, <https://jkindon.com/the-evolution-of-citrix-profile-management/>, 2025-04-12 (PXG-32/33)
+- Prüfschritt „Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach …“ der Situation `print` – auch gestützt durch: „WEM Advanced Guidance Part 2 - User Interaction“, <https://jkindon.com/wem-advanced-guidance-part-2-user-interaction/>, 2018-01-04 (PXG-70)
+- Kontakt „Betreuung des Dateiservers mit dem Profilspeicher, wenn der Speicher zur Zeit des Fehlers …“ der Situation `profileerror` – auch gestützt durch: „Citrix UPM and FSLogix Containers“, <https://jkindon.com/citrix-upm-and-fslogix-containers/>, 2021-09-16 (PXG-76)
+
+### Belegstellen
+
+- **The not-so-hidden tax of granular group based application presentation with Citrix WEM**
+  - „25-30 users per session host, all hitting hundreds of group assignments would flatline the server almost full time (logons + background WEM refreshing)“
+- **WEM Advanced Guidance 2023**
+  - „Luckily, this is now automatic, and you should be allowing WEM to dynamically figure this out using the Auto Prevent CPU Spikes setting.“
+  - „Multi-Session Optimization is quite a handy addition to the stack, allowing you to apply optimizations only when sessions are in a disconnected state.“
+  - „At its core, Memory Management is forcing the paging of idle memory to disk. This is aggressive and can be extremely punishing on your disk configurations. In 99% of deployments I have done in the field, I do not enable Memory Management.“
+- **Stop Redirecting AppData. It's no longer the 80's**
+  - „In this day and age, AppData redirection is significantly frowned upon and is a key component of badly performing environments.“
+- **The Evolution of Citrix Profile Management**
+  - „Active write back is a silent killer in many environments, it can very quickly knock file servers off their perch and into a pitt of doom.“
+- **WEM Advanced Guidance Part 2 - User Interaction**
+  - „choose an assignment process for Printers and stick with it. Mixing assignment tools will only result in frustration and unexpected results.“
+- **Citrix UPM and FSLogix Containers**
+  - „User sessions will completely die, and recovery can become a nightmare with the loss of file services hosting containers“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Ereignis 2 der Windows-Suche (Search-ProfileNotify) | gilt nur für ein anderes Produkt oder eine ältere Version; die Quelle sagt nicht, was sich überträgt (Windows Server 2019) |
+| Ordnerumleitung per Benutzerrichtlinie erzwingt synchrone Verarbeitung | braucht eine Bedingung, die der Katalog nicht hat (der Bericht hat keine Situation für die Dauer der Anmeldung) |
+| Zwischenspeicher des WEM-Agenten und „Offline Mode“ bei ausgefallenem Dienst (PXG-66) | braucht eine Bedingung, die der Katalog nicht hat (kein Dienstname als Bedingung; die Quelle stellt den Bezug zum Ausfall nicht her) |
+| Prüfschritt zum WEM-Agenten auch beim Dauerzustand; AppData-Umleitung auch beim Profilcontainer und bei einer langsamen Gegenstelle | steht nur dort, wo die Messung den Schritt stützt (Engpass am Prozessor oder an der Freigabe mit benanntem Verursacher) |
+| Zeitgeber von Citrix gälten nicht für Server mit mehreren Sitzungen (2021) | widerspricht dem Hersteller; hier gilt der Hersteller |
+
+## James Rankin (Empfehlung aus der Praxis)
+
+Der Blog von James Rankin (james-rankin.com) ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Messreihen zur Dauer der Anmeldung, die je einen Einfluss einzeln verändern. Grenzen der Quelle: Jede Messung stammt aus dem Labor des Autors mit Windows Server 2019 oder Windows 10, meist mit FSLogix oder dateibasierten Profilen, einem Benutzer und wenigen Anmeldungen je Test; die Schutzsoftware war in den Ausgangsmessungen abgeschaltet, Microsoft Defender wurde nie getestet. Nichts davon ist auf Windows Server 2022 oder mit Profilcontainern der Citrix Profilverwaltung unter Last gemessen. Die Reihe zur Anmeldung nennt einen Sponsor, dessen Werkzeug die Zahlen liefert. Der letzte hier verwendete Beitrag ist von 2023.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| The ultimate guide to Windows logon time optimizations, part #10 | <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 19.11.2021 (PXG-17). Test: Windows Server 2019, dateibasierte Profile, andere Schutzsoftware als Microsoft Defender. Die Aussage zu Containern ist nicht übernommen. |
+| Windows session timeouts on Citrix – a brief guide | <https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 8.3.2023 (PXG-20). Die Beispielwerte (je 2 Stunden) sind Beispiele und stehen nicht im Katalog. |
+| The ultimate guide to Windows logon time optimizations, part #5 | <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-optimizations-part-5/> | 2026-11-13 | `share.remedies[7]` Drosselung der Bandbreite des SMB-Clients abschalten erwägen<br>`chronic.resource.remedies[3]` Drosselung der Bandbreite des SMB-Clients abschalten erwägen<br>`chronic.resource.remedies[4]` Drosselung der Bandbreite des SMB-Clients abschalten erwägen | Stand 24.6.2021 (PXG-36). Ein Labor, ein Dateiserver, FSLogix; die 12 statt 17 Sekunden entstanden zusammen mit Änderungen am Dateiserver, im selben Satz stieg das Laden des Profils von 0,12 auf 0,8 Sekunden. Microsoft nennt den Wert in „Optimizing Windows configuration for VDI desktops“ für Windows 10 und 11 („Consider setting this value to 1“), nicht für Windows Server 2022. |
+| QuickPost – Citrix UPM VHD compaction feature | <https://james-rankin.com/articles/quickpost-citrix-upm-vhd-compaction-feature/> | 2026-11-13 | `profile.remedies[7]` Verkleinern der Profilcontainer bei der Abmeldung einschalten<br>`chronic.resource.remedies[5]` Verkleinern der Profilcontainer bei der Abmeldung einschalten | Stand 29.3.2023 (PXG-37, PXG-38), Profilverwaltung ab 2303. „Gigabytes an Leerraum“ und der Starttyp des Dienstes sind nicht übernommen. |
+| The ultimate guide to Windows logon time optimizations – part #4 | <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-optimizations-part-4/> | 2026-11-13 | `delay.many.checks[13]` Wenn die Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung warteten<br>`delay.single.checks[12]` Wenn der Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung wartete | Stand 17.1.2021 (PXG-47). Test: Windows 10, Laufwerkszuordnungen über Group Policy Preferences, sechs nicht erreichbare Ziele. |
+| (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops | <https://james-rankin.com/articles/reasons-not-to-be-using-network-drives-on-citrix-virtual-apps-and-desktops/> | 2026-11-13 | `share.remedies[3]` Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist<br>`delay.many.remedies[3]` Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist<br>`delay.single.remedies[4]` Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist | Stand 16.10.2020 (PXG-48). Der Rat, ganz auf Laufwerksbuchstaben zu verzichten, ist im Element als Meinung der Quelle bezeichnet. |
+| Citrix XenApp, XenDesktop and Folder Redirection – the last word | <https://james-rankin.com/articles/citrix-xenapp-xendesktop-and-folder-redirection-the-last-word/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 22.11.2018 (PXG-31): die andere Sicht dazu, was umgeleitet bleiben darf. |
+| QuickPost – getting started with Citrix UPM Containers | <https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 8.9.2023 (PXG-37). |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `cpu` – auch gestützt durch: „The ultimate guide to Windows logon time optimizations, part #10“, <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/>, 2021-11-19 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `disk` – auch gestützt durch: „The ultimate guide to Windows logon time optimizations, part #10“, <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/>, 2021-11-19 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `share` – auch gestützt durch: „The ultimate guide to Windows logon time optimizations, part #10“, <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/>, 2021-11-19 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `profile` – auch gestützt durch: „The ultimate guide to Windows logon time optimizations, part #10“, <https://james-rankin.com/features/the-ultimate-guide-to-windows-logon-time-optimizations-part-10/>, 2021-11-19 (PXG-17)
+- Abhilfe „Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen …“ der Situation `memory` – auch gestützt durch: „Windows session timeouts on Citrix – a brief guide“, <https://james-rankin.com/articles/windows-session-timeouts-on-citrix-a-brief-guide/>, 2023-03-08 (PXG-20)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `profile` – auch gestützt durch: „QuickPost – Citrix UPM VHD compaction feature“, <https://james-rankin.com/articles/quickpost-citrix-upm-vhd-compaction-feature/>, 2023-03-29 (PXG-37)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `share` – auch gestützt durch: „QuickPost – Citrix UPM VHD compaction feature“, <https://james-rankin.com/articles/quickpost-citrix-upm-vhd-compaction-feature/>, 2023-03-29 (PXG-37)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `disk` – auch gestützt durch: „QuickPost – Citrix UPM VHD compaction feature“, <https://james-rankin.com/articles/quickpost-citrix-upm-vhd-compaction-feature/>, 2023-03-29 (PXG-37)
+- Abhilfe „AppData und Startmenü aus der Ordnerumleitung nehmen und im Profilcontainer lassen, wie …“ der Situation `share` – auch gestützt durch: „Citrix XenApp, XenDesktop and Folder Redirection – the last word“, <https://james-rankin.com/articles/citrix-xenapp-xendesktop-and-folder-redirection-the-last-word/>, 2018-11-22 (PXG-31)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `profile` – auch gestützt durch: „QuickPost – getting started with Citrix UPM Containers“, <https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/>, 2023-09-08 (PXG-37)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `share` – auch gestützt durch: „QuickPost – getting started with Citrix UPM Containers“, <https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/>, 2023-09-08 (PXG-37)
+- Prüfschritt „‹Anwendung› gehört zur Citrix Profilverwaltung …“ der Situation `disk` – auch gestützt durch: „QuickPost – getting started with Citrix UPM Containers“, <https://james-rankin.com/articles/quickpost-getting-started-with-citrix-upm-containers/>, 2023-09-08 (PXG-37)
+
+### Belegstellen
+
+- **The ultimate guide to Windows logon time optimizations, part #10**
+  - „Quite a marked increase – over 40 seconds for Server 2019, and nearly 32 seconds more for Windows 10.“
+- **Windows session timeouts on Citrix – a brief guide**
+  - „Do yourself a favour and don't use the settings on the AD user objects, stick to policy.“
+- **The ultimate guide to Windows logon time optimizations, part #5**
+  - „average logon time is down from 17 seconds to 12 seconds“
+- **QuickPost – Citrix UPM VHD compaction feature**
+  - „if you wish to use the defragmentation feature, then the Windows service "Optimize drives" (also known as "defragsvc" ) needs to be running. Some optimization tools turn it off.“
+- **The ultimate guide to Windows logon time optimizations – part #4**
+  - „At 200.34 seconds for 6 inaccessible mappings, that's a timeout of about 33 seconds per mapping“
+- **Citrix XenApp, XenDesktop and Folder Redirection – the last word**
+  - „Avoid the performance impact of redirection on folders like Desktop, Start Menu and AppData“
+- **QuickPost – getting started with Citrix UPM Containers**
+  - „UPM by default uses a diff disk and then merges it back into the base VHDX at logoff.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Werte am Dateiserver für SMB | liegen außerhalb des gemessenen Servers; Sache der Betreuung des Dateiservers |
+| Laufwerksbuchstaben ganz durch Ordnerumleitung oder Verknüpfungen ersetzen | Meinung der Quelle; im Element nur als solche genannt |
+| Beispielwerte für Zeitlimits (je 2 Stunden) als Vorgabe; „Gigabytes an Leerraum“ im Container | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht |
+
+## Thomas Kötzing (Empfehlung aus der Praxis)
+
+Der Blog von Thomas Kötzing (koetzingit.de) ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Erfahrung aus Kundenprojekten, am stärksten zum Drucken und zu Anmeldung und Profilen unter Citrix. Grenzen der Quelle: Die meisten Beiträge enthalten keine Messung. Die Regeln zum Drucken stammen im Kern von 2011 (Ausgabe 2017) und wurden für XenApp auf Windows Server 2008 R2 geschrieben; übertragbar sind die Richtlinien von Microsoft, nicht die Regeln für Clientdrucker. Mehrere Beiträge von 2025 und 2026 sind Meinungsbeiträge an Citrix; wo einer der Voreinstellung von Citrix widerspricht (EDT abschalten), gilt Citrix, und das Element nennt die andere Sicht nur als solche.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Hören Sie auf die Serverleistung zu optimieren! Optimieren Sie die Benutzersitzungen | <https://koetzingit.de/blog/2018/03/06/hoeren-sie-auf-server-zu-optimieren-optimieren-sie-die-benutzer-sitzungen/> | 2026-11-13 | `memory.checks[19]` Programme ansehen, die in jeder Sitzung von selbst starten | Stand 6.3.2018 (PXG-21). Die Zahlen stammen aus einer einzelnen Durchsicht von 2018 und sind kein Sollwert. |
+| Citrix Maschinenerstellungsdienste (MCS) -Skript zum Auslesen des RAM- und Disk-Cache | <https://koetzingit.de/blog/2024/03/18/citrix-maschinenerstellungsdienste-mcs-skript-zum-auslesen-des-ram-und-disk-cache/> | 2026-11-13 | `disk.checks[20]` Wenn der Maschinenkatalog MCS I/O nutzt | Stand 18.3.2024 (PXG-26, mit PXG-27). Der Beitrag nennt auch den geänderten Namen der Leistungsindikatoren („Citrix MCS“). |
+| Citrix: Wir brauchen einen Infrastruktur-Monitor – für Speichersysteme Plus! | <https://koetzingit.de/blog/2025/09/08/citrix-wir-brauchen-einen-infrastruktur-monitor-fuer-speichersysteme-plus/> | 2026-11-13 | `share.contacts[2]` Betreuung des Speichersystems unter dem Dateiserver, wenn auf dem Server keine Ursache zu finden ist | Stand 8.9.2025 (PXG-35). Ein Kundenfall, ohne Messung. |
+| Häufige Anmeldeprobleme und deren Lösung! | <https://koetzingit.de/blog/2020/11/30/haeufige-anmeldeprobleme-und-deren-loesung/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 30.11.2020 (PXG-47). |
+| Einfache Fehleranalyse der Dauer von Gruppenrichtlinien während der Anmeldung | <https://koetzingit.de/blog/2017/04/24/einfache-fehleranalyse-der-dauer-von-gruppenrichtlinien-waehrend-der-anmeldung/> | 2026-11-13 | `delay.many.checks[14]` Wenn die Verzögerung in Anmeldungen oder eine Aktualisierung der Gruppenrichtlinien fiel | Stand 24.4.2017 (PXG-49). Die Faustwerte stammen aus der Zeit von Windows Server 2012 R2 und 2016; „über 1000 ms“ nennt der Beitrag als Anlass, näher hinzusehen, nicht als Grenze. Dass mit WEM weniger Benutzerrichtlinien anfallen, ist eine Anmerkung des Katalogs und steht nicht im Element. |
+| Die zehn Regeln zum Drucken unter Citrix | <https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/> | 2026-11-13 | `print.checks[19]` Prüfen, ob das Treiberpaket von ‹Treiber› einen eigenen Druckmonitor installiert hat | Stand 8.2.2017 (PXG-68, PXG-69). „Druckaufträge immer auf dem Server aufbereiten“ aus demselben Beitrag ist nicht übernommen. |
+| Citrix, es ist an der Zeit, drei HDX-Dinge zu beheben! | <https://koetzingit.de/blog/2025/08/04/citrix-es-ist-an-der-zeit-drei-hdx-dinge-zu-beheben/> | 2026-11-13 | `chronic.network.checks[5]` Feststellen, über welchen Transport die Sitzung des Benutzers läuft | Stand 4.8.2025 (PXG-57). Meinungsbeitrag ohne Messung; er widerspricht der Voreinstellung von Citrix. Das Element ist ein Schritt zum Nachsehen und kein Vorschlag, EDT abzuschalten. |
+| Ein echter Kunden-Support-Fall, gelöst mit Hilfe von KI! | <https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 27.5.2025 (PXG-67). Ein Kundenfall; die Auswertung mit einem KI-Werkzeug ist nicht Teil des Hinweises. |
+| Citrix UPM wie FSLogix nutzen – nur besser! | <https://koetzingit.de/blog/2026/02/24/citrix-upm-wie-fslogix-nutzen-nur-besser/> | 2026-11-13 | `profileerror.remedies[1]` „Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten<br>`profileerror.remedies[3]` Zurückschreiben aus mehreren Sitzungen für Profilcontainer in der Citrix Profilverwaltung einschalten und d … | Stand 24.2.2026 (PXG-77, PXG-78). Der Vergleich mit FSLogix ist Meinung und nicht übernommen. Die Namen der Einstellungen nennt auch Citrix in den Richtlinien der Profilverwaltung. |
+| Powershell-Skript zum Löschen von temporären Benutzerprofilen | <https://koetzingit.de/blog/2024/09/10/powershell-skript-zum-loeschen-von-temporaeren-benutzerprofilen/> | 2026-11-13 | `profileerror.remedies[4]` Server in den Wartungsmodus setzen und neu starten, sobald er leer ist, damit er mit einer sauberen Profill … | Stand 10.9.2024 (PXG-79). Das Löschen des Eintrags am Server ist durch den Neustart und das Master-Image ersetzt (Regel der Zielumgebung). |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Prüfschritt „Wenn die Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung …“ der Situation `delay.many` – auch gestützt durch: „Häufige Anmeldeprobleme und deren Lösung!“, <https://koetzingit.de/blog/2020/11/30/haeufige-anmeldeprobleme-und-deren-loesung/>, 2020-11-30 (PXG-47)
+- Prüfschritt „Wenn der Benutzer im Explorer, in einem Dateidialog oder bei der Anmeldung …“ der Situation `delay.single` – auch gestützt durch: „Häufige Anmeldeprobleme und deren Lösung!“, <https://koetzingit.de/blog/2020/11/30/haeufige-anmeldeprobleme-und-deren-loesung/>, 2020-11-30 (PXG-47)
+- Prüfschritt „Gruppenrichtlinie zur Treiberisolierung …“ der Situation `print` – auch gestützt durch: „Die zehn Regeln zum Drucken unter Citrix“, <https://koetzingit.de/blog/2017/02/08/die-zehn-regeln-zum-drucken-unter-citrix/>, 2017-02-08 (PXG-68)
+- Prüfschritt „Kein Muster erkannt: feststellen, welcher Treiber oder welche Druckwarteschlange das …“ der Situation `print` – auch gestützt durch: „Ein echter Kunden-Support-Fall, gelöst mit Hilfe von KI!“, <https://koetzingit.de/blog/2025/05/27/ein-echter-kunden-support-fall-geloest-mit-hilfe-von-ki/>, 2025-05-27 (PXG-67)
+
+### Belegstellen
+
+- **Hören Sie auf die Serverleistung zu optimieren! Optimieren Sie die Benutzersitzungen**
+  - „Oft müssen nur die RUN Keys (32/64bit) bereinigt werden.“
+- **Citrix Maschinenerstellungsdienste (MCS) -Skript zum Auslesen des RAM- und Disk-Cache**
+  - „Da die Cache-Disk (mcsdif.vhdx) eine dynamische Disk ist, schrumpft (compact) diese aber nicht von allein auf null, sondern behält immer den max. Wert.“
+- **Citrix: Wir brauchen einen Infrastruktur-Monitor – für Speichersysteme Plus!**
+  - „Bei einem Kunden von mir traten nach der Einführung einer neuen Antiviren-Software auf Speicherebene erhebliche Sitzungsprobleme auf. Tausende von Sitzungen waren davon betroffen.“
+- **Häufige Anmeldeprobleme und deren Lösung!**
+  - „Wer Netzwerkfreigaben oder Netzwerkdrucker via Gruppenrichtlinie verbindet kann Verzögerungen von 30 Sekunden bei der Anmeldung bekommen. Dies passiert immer dann, wenn die Netzwerkressource nicht mehr verfügbar ist.“
+- **Einfache Fehleranalyse der Dauer von Gruppenrichtlinien während der Anmeldung**
+  - „Das bedeutet alles was mehr als 1.000ms Zeit benötigt könnte interessant sein weiter zu untersuchen.“
+  - „Maximum GPO Satz sollte nicht mehr sein als ca. 7-9 Sekunden“
+- **Die zehn Regeln zum Drucken unter Citrix**
+  - „Verwenden Sie keine Dritthersteller-Druckertreiber mit Druckermonitoren. Suchen Sie nach Treibern ohne Monitore oder deaktivieren bzw. entfernen Sie diese.“
+  - „Aktivierung der Druckerisolierung per GPO, damit der Druckerdienst erst gar nicht abstürzt.“
+- **Citrix, es ist an der Zeit, drei HDX-Dinge zu beheben!**
+  - „Setzen Sie HDX Adaptive Transport auf ‚Off‘.“
+- **Ein echter Kunden-Support-Fall, gelöst mit Hilfe von KI!**
+  - „Das Eventlog lieferte kaum Hinweise, lediglich dass splwow64.exe eine Ausnahme ausgelöst hatte.“
+- **Citrix UPM wie FSLogix nutzen – nur besser!**
+  - „Mit der Funktion ‚Automatically reattach VHDX disks‘ überwacht der UPM-Dienst aktiv den Container-Status.“
+  - „In Non-Persistent-Umgebungen dauert die Anmeldung ein paar Sekunden länger (Cache Hydration).“
+  - „UPM trackt diese Änderungen aktiv und synchronisiert sie zurück in das Hauptprofil, sobald der Lock freigegeben wird oder die Sitzung endet.“
+- **Powershell-Skript zum Löschen von temporären Benutzerprofilen**
+  - „Ursache sind BAK Einträge für den Benutzer in der ProfileList in der Registrierung des Servers.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Windows-Suche hält Dateien, sodass der Container nicht getrennt werden kann | gilt nur für ein anderes Produkt oder eine ältere Version; die Quelle sagt nicht, was sich überträgt (FSLogix 2021, Profilverwaltung 7.18) |
+| Druckserver am selben Standort wie die Server, weil Office Drucker über das Netz abfragt (PXG-54) | braucht eine Bedingung, die der Katalog nicht hat (bei einer Verzögerung kennt der Bericht die Anwendung nicht als Bedingung) |
+| Druckaufträge immer auf dem Server aufbereiten | Wirkung auf Druckwarteschlangen eines Druckservers, die ein Zuordnungswerkzeug zuordnet, ist nicht beschrieben |
+| HDX Adaptive Transport auf „Off“ stellen | widerspricht dem Hersteller; hier gilt der Hersteller; das Element nennt die Sicht der Quelle, schlägt sie aber nicht vor |
+| Programme aus den Run-Schlüsseln auch beim Prozessor; Druckmonitor auch beim Absturz einer Anwendung | steht nur in der Situation, zu der die Quelle Zahlen oder einen Fall nennt |
+
+## Manuel Winkel (Empfehlung aus der Praxis)
+
+Der Blog deyda.net von Manuel Winkel ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: der Blog eines Beratungsunternehmens für Citrix. Der Auftraggeber hat ihn für einzelne Themen übernommen. Grenzen der Quelle: Der Blog veröffentlicht keine Messungen und keine Testbedingungen. Die Reihe „Finding in the Wild“ (2026) besteht aus kurzen Beiträgen, oft aus einem einzelnen Kundenfall, die Fehlerkennungen von Citrix ohne Verweis nennen; die Seiten von Citrix dazu waren von hier nicht zu öffnen. Der Katalog schreibt deshalb „nach der Praxisquelle behoben“ und lässt die Version in den Versionshinweisen von Citrix gegenlesen. Die Beiträge zu WEM sind von 2022 (Stand WEM 2206). Im Titel der Reihe steht im Original ein senkrechter Strich; hier steht dafür ein Gedankenstrich.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA | <https://www.deyda.net/index.php/en/2026/10/24/finding-in-the-wild-when-citrix-suddenly-sends-every-user-to-the-same-vda/> | 2026-11-13 | `cpu.checks[32]` Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während di …<br>`memory.checks[18]` Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während di …<br>`chronic.resource.checks[4]` Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während di …<br>`chronic.resource.checks[5]` Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während di … | Stand 24.10.2026, geändert 11.11.2026 (PXG-03). Ein einzelner Kundenfall. Die Fehlerkennung und die Version nennt der Beitrag ohne Verweis auf Citrix. |
+| Finding in the Wild – When Citrix Director Itself Becomes a Performance Problem | <https://www.deyda.net/index.php/en/2026/10/19/finding-in-the-wild-when-citrix-director-itself-becomes-a-performance-problem/> | 2026-11-13 | `cpu.checks[16]` ‹Anwendung› gehört zu den Citrix-Komponenten des Servers | Stand 19.10.2026, geändert 11.11.2026 (PXG-05). Der Beitrag nennt den Prozess nicht; die Bedingung (Verursacher der Rolle Citrix) ist vorläufig und wird nach der ersten echten Messung überprüft. |
+| WEM Administration Console – Part 2 (System Optimization, Policies & Profiles and Security) | <https://www.deyda.net/index.php/en/2022/08/29/wem-administration-console-part-2-system-optimization-policies-profiles-and-security-2/> | 2026-11-13 | `cpu.checks[20]` In Workspace Environment Management prüfen, ob einem Prozess, vor allem ‹Anwendung›, die Priorität „Realtim … | Stand 29.8.2022, geändert 18.8.2026, Text zu WEM 2206 (PXG-10, PXG-19). Die Formel zur CPU-Begrenzung aus demselben Beitrag ist nicht übernommen. |
+| Finding in the Wild – Microsoft Teams SlimCore – Where Are the Error Codes? | <https://www.deyda.net/index.php/en/2026/10/21/finding-in-the-wild-microsoft-teams-slimcore-where-are-the-error-codes/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 21.10.2026, geändert 11.11.2026 (PXG-13). Die Fehlercodes stammen von Microsoft („Troubleshooting the VDI 2.0 solution for Teams“); dass nicht optimierte Medien den Prozessor des Servers belasten, sagt der Beitrag nicht. |
+| Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications | <https://www.deyda.net/index.php/en/2026/11/03/finding-in-the-wild-citrix-wem-when-one-user-blocks-other-users-applications/> | 2026-11-13 | `delay.many.remedies[1]` „Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle<br>`delay.single.remedies[1]` „Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle | Stand 3.11.2026, geändert 11.11.2026 (PXG-45, PXG-46). |
+| Finding in the Wild – MCSIO Cache Disk Exists, but Stays Empty | <https://www.deyda.net/index.php/en/2026/09/22/finding-in-the-wild-mcsio-cache-disk-exists-but-stays-empty/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 22.9.2026, geändert 11.11.2026 (PXG-27 in PXG-26). |
+| Optimization of VMs by NUMA | <https://www.deyda.net/index.php/en/2018/11/07/optimization-of-vms-by-numa/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 7.11.2018, geändert 18.8.2026 (PXG-58). Die Zahl zur Überbuchung beruht auf nicht veröffentlichten Tests und ist nicht übernommen. |
+| Finding in the Wild – Citrix CVAD 2603 – Check the MCSIO Driver | <https://www.deyda.net/index.php/en/2026/08/27/finding-in-the-wild-citrix-cvad-2603-check-the-mcsio-driver/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 27.8.2026, geändert 12.11.2026 (PXG-27 in PXG-26). |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen …“ der Situation `memory` – auch gestützt durch: „WEM Administration Console – Part 2 (System Optimization, Policies & Profiles and Security)“, <https://www.deyda.net/index.php/en/2022/08/29/wem-administration-console-part-2-system-optimization-policies-profiles-and-security-2/>, 2022-08-29 (PXG-19)
+- Prüfschritt „Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung …“ der Situation `cpu` – auch gestützt durch: „Finding in the Wild – Microsoft Teams SlimCore – Where Are the Error Codes?“, <https://www.deyda.net/index.php/en/2026/10/21/finding-in-the-wild-microsoft-teams-slimcore-where-are-the-error-codes/>, 2026-10-21 (PXG-13)
+- Prüfschritt „Prüfen, ob Teams in der Sitzung von ‹Benutzer› mit Medienoptimierung …“ der Situation `memory` – auch gestützt durch: „Finding in the Wild – Microsoft Teams SlimCore – Where Are the Error Codes?“, <https://www.deyda.net/index.php/en/2026/10/21/finding-in-the-wild-microsoft-teams-slimcore-where-are-the-error-codes/>, 2026-10-21 (PXG-13)
+- Prüfschritt „Im Zeitraum hat AppLocker eine Ausführung …“ der Situation `delay.many` – auch gestützt durch: „Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications“, <https://www.deyda.net/index.php/en/2026/11/03/finding-in-the-wild-citrix-wem-when-one-user-blocks-other-users-applications/>, 2026-11-03 (PXG-45)
+- Prüfschritt „Im Zeitraum hat AppLocker eine Ausführung …“ der Situation `delay.single` – auch gestützt durch: „Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications“, <https://www.deyda.net/index.php/en/2026/11/03/finding-in-the-wild-citrix-wem-when-one-user-blocks-other-users-applications/>, 2026-11-03 (PXG-45)
+- Prüfschritt „Wenn der Maschinenkatalog MCS I/O nutzt …“ der Situation `disk` – auch gestützt durch: „Finding in the Wild – MCSIO Cache Disk Exists, but Stays Empty“, <https://www.deyda.net/index.php/en/2026/09/22/finding-in-the-wild-mcsio-cache-disk-exists-but-stays-empty/>, 2026-09-22 (PXG-26)
+- Prüfschritt „Kein einzelner Verursacher: Auslegung des Servers für den Prozessor prüfen …“ der Situation `chronic.resource` – auch gestützt durch: „Optimization of VMs by NUMA“, <https://www.deyda.net/index.php/en/2018/11/07/optimization-of-vms-by-numa/>, 2018-11-07 (PXG-58)
+- Prüfschritt „Wenn der Maschinenkatalog MCS I/O nutzt …“ der Situation `disk` – auch gestützt durch: „Finding in the Wild – Citrix CVAD 2603 – Check the MCSIO Driver“, <https://www.deyda.net/index.php/en/2026/08/27/finding-in-the-wild-citrix-cvad-2603-check-the-mcsio-driver/>, 2026-08-27 (PXG-26)
+
+### Belegstellen
+
+- **Finding in the Wild – When Citrix Suddenly Sends Every User to the Same VDA**
+  - „During initialization of the Citrix Group Policy Client-Side Extension (CseEngine), determining the VDA's FQDN may fail. This can prevent load indexes from being reported correctly. Citrix resolved the issue in CVAD 2507 LTSR CU2.“
+- **Finding in the Wild – When Citrix Director Itself Becomes a Performance Problem**
+  - „In certain Citrix Virtual Apps and Desktops environments, CPU utilization on the VDA can rise considerably when the Session Performance view in Citrix Director is opened and left open.“
+- **WEM Administration Console – Part 2 (System Optimization, Policies & Profiles and Security)**
+  - „Realtime should not be defined. This can lead to malfunctions in the system.“
+  - „The default value is 1% (recommendation is 3%)“
+- **Finding in the Wild – Microsoft Teams SlimCore – Where Are the Error Codes?**
+  - „2003 / 16026: Citrix Virtual Channel Allow List blocks MSTEAMS, MSTEAM1 or MSTEAM2.“
+- **Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications**
+  - „If enforcement mode Overwrite is enabled in WEM, another user's logon can replace the existing AppLocker policy.“
+  - „In WEM Application Security, change Rule Enforcement Mode from Overwrite to Merge.“
+- **Optimization of VMs by NUMA**
+  - „Newer hardware has fewer NUMA nodes per socket, so the sweet spot (4-8 vCPU) has moved up“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Teams Meeting Add-in in 32 oder 64 Bit; bereitgestelltes, aber nicht registriertes Teams | beschreibt keinen Vorfall, den der Bericht erfasst |
+| „In CVAD 2507 LTSR CU1 oder CU2 behoben“ als Tatsache | die Seite von Citrix mit den behobenen Fehlern war nicht zu öffnen; das Element schreibt „nach der Praxisquelle“ |
+| Überbuchung der Prozessoren mit dem Faktor 2,0; Formel zur CPU-Begrenzung in WEM | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht (nicht veröffentlichte Tests) |
+
+## Aaron Parker (Empfehlung aus der Praxis)
+
+Der Blog stealthpuppy.com von Aaron Parker ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Erfahrung dazu, was Profilcontainer wachsen lässt, und eine gepflegte Liste von Ausschlüssen. Der Auftraggeber hat ihn für einzelne Themen übernommen. Grenzen der Quelle: Alles ist für FSLogix geschrieben; übertragbar auf die Profilcontainer der Citrix Profilverwaltung sind die Pfade und die Gründe, nicht die Mechanismen. Die Kernbeiträge sind von 2019 (Windows Server 2016 und 2019), der Test zur Ordnerumleitung von 2014 (Windows 7 und Windows Server 2008 R2); es gibt keine kontrollierten Messungen, die Zahlen sind Einzelbeobachtungen und stehen nicht im Katalog. Der Autor arbeitet für einen Hersteller von Verwaltungssoftware für Azure Virtual Desktop.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Support Frontline Workers on Shared Virtual Desktops | <https://stealthpuppy.com/m365apps-frontline-workers/> | 2026-11-13 | `memory.checks[5]` Prüfen, ob der Schnellstart von Microsoft Edge eingeschaltet ist | Stand 9.4.2023 (PXG-23). Belegstelle: „If you’re concerned about CPU and RAM consumption, this may be a trade-off for an improved user experience.“ Der Autor schaltet den Schnellstart für seinen Zweck ein; das Element nennt deshalb eine Abwägung, keinen Rat zum Abschalten. |
+| Profile Cleanup - FSLogix docs | <https://stealthpuppy.com/fslogix/profilecleanup/> | 2026-11-13 | `disk.checks[12]` Prüfen, ob bei der Anmeldung ein Skript das Benutzerprofil aufräumt | Seite ohne Datum (PXG-28). Für FSLogix geschrieben; das Skript wirkt auf das eingebundene Profil, das gilt ebenso für die Citrix Profilverwaltung. |
+| A Practical Guide to FSLogix Containers Capacity Planning and Maintenance | <https://stealthpuppy.com/fslogix-containers-capacity/> | 2026-11-13 | `disk.remedies[5]` Aufräumen des Benutzerprofils von der Anmeldung auf die Abmeldung oder in eine zeitlich gestaffelte Aufgabe …<br>`profile.remedies[2]` Cache-Ordner von Microsoft Edge vom Profilcontainer ausnehmen<br>`profileerror.checks[11]` Wenn der Profilcontainer voll oder fast voll ist | Stand 23.4.2019 (PXG-29, PXG-40, PXG-41 bis PXG-44, PXG-59, PXG-81). Für FSLogix geschrieben; die Anfangsgröße und die Voreinstellung von 30 GB gelten FSLogix und sind nicht übernommen. |
+| Visualizing the Impact of Folder Redirection - Logon and Application Launch | <https://stealthpuppy.com/visualizing-impact-folder-redirection-logon/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 6.11.2014 (PXG-30). Die Zeiten des Tests (Windows 7, Windows Server 2008 R2) sind nicht übernommen, nur die Richtung. |
+| Redirections.csv (ConvertTo-RedirectionsXml) | <https://raw.githubusercontent.com/aaronparker/FSLogix/main/Redirections/Redirections.csv> | 2026-11-13 | `profile.checks[6]` Prüfen, ob der Cache-Ordner von Microsoft Edge vom Profilcontainer ausgenommen ist | Liste ohne Datum (PXG-39). Für FSLogix gepflegt und ausdrücklich nicht abschließend; übernommen ist nur die Zeile zum Cache von Edge. Die Zeilen mit Warnung (Code Cache und ähnliche) sind nicht übernommen. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „Lokale Postfachdaten von Outlook verkleinern …“ der Situation `profile` – auch gestützt durch: „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, <https://stealthpuppy.com/fslogix-containers-capacity/>, 2019-04-23 (PXG-41/42)
+- Prüfschritt „Größe der Daten von ‹Anwendung› im betroffenen Profilcontainer prüfen …“ der Situation `profile` – auch gestützt durch: „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, <https://stealthpuppy.com/fslogix-containers-capacity/>, 2019-04-23 (PXG-43)
+- Abhilfe „Datenmenge von ‹Anwendung› im Profil verkleinern, zum Beispiel den Zwischenspeicher begrenzen …“ der Situation `profile` – auch gestützt durch: „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, <https://stealthpuppy.com/fslogix-containers-capacity/>, 2019-04-23 (PXG-44)
+- Prüfschritt „Größe dieses Profilcontainers prüfen und seine Antwortzeit mit der anderer Profilcontainer …“ der Situation `chronic.resource` – auch gestützt durch: „A Practical Guide to FSLogix Containers Capacity Planning and Maintenance“, <https://stealthpuppy.com/fslogix-containers-capacity/>, 2019-04-23 (PXG-59)
+- Prüfschritt „Klären, welche Dateien ‹Anwendung› in der Sitzung von ‹Benutzer› ab …“ der Situation `share` – auch gestützt durch: „Visualizing the Impact of Folder Redirection - Logon and Application Launch“, <https://stealthpuppy.com/visualizing-impact-folder-redirection-logon/>, 2014-11-06 (PXG-30)
+
+### Belegstellen
+
+- **Profile Cleanup - FSLogix docs**
+  - „A logon script - the script can be run to prune the user profile during login; however, consider potential login storms and impacts on IO and CPU“
+- **A Practical Guide to FSLogix Containers Capacity Planning and Maintenance**
+  - „To prune the profile, run the script as a logoff action. A word of caution - this script is unsupported“
+  - „Adding redirections after identifying profile locations that consume large amounts of capacity won't remove those locations from existing Profile Containers.“
+  - „Start with lowest amount possible and work up depending on user requirements. 3-months is common; however, some users live in Outlook and may need a larger cache.“
+  - „The number of applications built on Electron or other platforms that install into the user profile is increasing.“
+  - „The container will then grow as it is used, but it does not actively reduce in size unless the disk is compacted.“
+  - „If the container fills, applications will not handle the lack of available space gracefully.“
+- **Visualizing the Impact of Folder Redirection - Logon and Application Launch**
+  - „In this scenario, we've traded slower performance over the session for improved logon speed.“
+- **Redirections.csv (ConvertTo-RedirectionsXml)**
+  - „Exclude,0,AppData\Local\Microsoft\Edge\User Data\Default\Cache,Microsoft Edge cache,…“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Eigener Pfad des Containers je Betriebssystem | in der Zielumgebung gibt es nur ein Betriebssystem der Server |
+| Ordner des neuen Teams vom Container ausnehmen (PXG-55) | widerspricht dem Hersteller; hier gilt der Hersteller (Citrix: „Enable roaming for the new Microsoft Teams“, schon im Katalog) |
+| Aufgaben „Office Feature Updates“, Zeilen mit Warnung in der Liste der Ausschlüsse (Code Cache und ähnliche) | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht |
+| Schnellstart von Edge auch beim Prozessor; Ort der Installation als eigener Schritt | als Satz im vorhandenen Element oder nur in der Situation mit der stärkeren Stütze aufgenommen |
+
+## Trentent Tye (Empfehlung aus der Praxis)
+
+Der Blog von Trentent Tye ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: eigene Messungen eines Citrix-Administrators dazu, warum Anmeldungen und Sitzungen langsam werden. Der Auftraggeber hat ihn für einzelne Themen übernommen; verwendet wird nur seine eigene Seite trentent.github.io. Grenzen der Quelle: Jede Messung stammt von XenApp 6.5 oder 7.x auf Windows Server 2008 R2 (eine auf 2016), der letzte hier verwendete Beitrag ist von 2019. Übertragbar ist der Mechanismus, nicht die Zahl; die Zahlen stehen im Katalog nur mit Jahr und Umgebung. Viele Beiträge werben für ein Überwachungswerkzeug, für dessen Hersteller der Autor später arbeitete; ob die Schutzsoftware bei den Tests lief, sagt kein Beitrag.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact) | <https://trentent.github.io/2016/09/07/controlup-dissecting-logon-times-a-step-further-invalid-home-directory-impact/> | 2026-11-13 | `share.checks[5]` Prüfen, ob ‹Gegenstelle› das Basisverzeichnis von Benutzern trägt | Stand 8.9.2016 (PXG-34, PXG-48). Labor mit Windows Server 2008 R2; die gemessenen Sekunden stehen nicht im Katalog. Die Aussage, dafür gebe es keine Abhilfe per Richtlinie, ist nicht übernommen. |
+| Group Policy - Monolithic vs Functional Design and Performance Evaluation | <https://trentent.github.io/2018/04/09/group-policy-monolithic-vs-functional-design-and-performance-evaluation/> | 2026-11-13 | `delay.many.contacts[3]` Betreuung der Gruppenrichtlinien, wenn deren Verarbeitung lange dauerte | Stand 9.4.2018 (PXG-49, PXG-50). Labor mit Netzsimulator, nur Richtlinien der Registrierung; die Laborwerte stehen nicht im Katalog. |
+| Help! My Citrix application is running slow (Meditech, Citrix, Imprivata) | <https://trentent.github.io/2015/12/19/help-my-citrix-application-is-running-slow-meditech-citrix-imprivata/> | 2026-11-13 | `delay.single.checks[11]` Prüfen, ob die Anwendung, in der der Benutzer wartete, über längere Zeit etwa einen ganzen Prozessor belegte | Stand 19.12.2015 (PXG-53). Ein Fall unter XenApp 6.5 auf einer Maschine mit vier Kernen; die Werte des Falls stehen nicht im Katalog. Die Bedingung der Auswahl (benannter Verursacher) kann bei einer Verzögerung nie zutreffen; das Element steht deshalb ohne Bedingung und nennt die Anwendung nicht mit Namen. |
+| ControlUp - Dissecting Logon Times a step further (Printer loading) | <https://trentent.github.io/2016/08/31/controlup-dissecting-logon-times-a-step-further-printer-loading/> | 2026-11-13 | `print.checks[23]` Prüfen, ob die Druckwarteschlangen der Druckserver, die das Zuordnungswerkzeug den Benutzern zuordnet, noch …<br>`print.remedies[15]` Druckwarteschlangen, deren Druckserver es nicht mehr gibt oder der umgezogen ist, aus den Regeln des Zuordn … | Stand 31.8.2016 (PXG-71, PXG-72). XenApp 6.5 auf Windows Server 2008 R2. Dass Windows Server 2022 oder das Zuordnungswerkzeug Drucker nacheinander zuordnen, sagt das Element nicht. |
+| Printers and their impact on logon duration | <https://trentent.github.io/2019/03/05/printers-and-their-impact-on-logon-duration/> | 2026-11-13 | `print.remedies[26]` Protokoll „Microsoft-Windows-PrintService/Operational“ einschalten und so groß wählen, dass es die Zeit zwi … | Stand 5.3.2019 (PXG-74). Der Beitrag schaltet das Protokoll ein, um Anmeldezeit Druckern zuzuordnen; ob das Protokoll in der Zielumgebung schon läuft, sieht die Messung nicht. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist …“ der Situation `share` – auch gestützt durch: „ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact)“, <https://trentent.github.io/2016/09/07/controlup-dissecting-logon-times-a-step-further-invalid-home-directory-impact/>, 2016-09-08 (PXG-48)
+- Abhilfe „Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist …“ der Situation `delay.many` – auch gestützt durch: „ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact)“, <https://trentent.github.io/2016/09/07/controlup-dissecting-logon-times-a-step-further-invalid-home-directory-impact/>, 2016-09-08 (PXG-48)
+- Abhilfe „Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist …“ der Situation `delay.single` – auch gestützt durch: „ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact)“, <https://trentent.github.io/2016/09/07/controlup-dissecting-logon-times-a-step-further-invalid-home-directory-impact/>, 2016-09-08 (PXG-48)
+- Prüfschritt „Wenn die Verzögerung in Anmeldungen oder eine Aktualisierung der Gruppenrichtlinien …“ der Situation `delay.many` – auch gestützt durch: „Group Policy - Monolithic vs Functional Design and Performance Evaluation“, <https://trentent.github.io/2018/04/09/group-policy-monolithic-vs-functional-design-and-performance-evaluation/>, 2018-04-09 (PXG-49)
+
+### Belegstellen
+
+- **ControlUp - Dissecting Logon Times a step further (invalid Home Directory impact)**
+  - „Since our user has a home directory the preference is to 'always wait for the network to be initialized before logging the user on'.“
+- **Group Policy - Monolithic vs Functional Design and Performance Evaluation**
+  - „Going from 0ms to 10ms increased the length of time to process a functional design by 15 times! The monolithic design, on the other hand, was barely impacted.“
+  - „The goal should be to minimize them to as few as possible.“
+- **Help! My Citrix application is running slow (Meditech, Citrix, Imprivata)**
+  - „This is a 4 core box, so ~25% equals one full core for a single threaded application.“
+- **ControlUp - Dissecting Logon Times a step further (Printer loading)**
+  - „All my printers were local except for the 'Generic / Text Only' which was a network printer where I powered off the server. It hung the longest at 5.9 seconds, but I've seen 'non-existant' network mapped printers hang for 150 seconds or so“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Dauer je Drucker aus den Ereignissen 306 und 300 des Druckprotokolls ablesen (PXG-73) | gilt nur für ein anderes Produkt oder eine ältere Version; die Quelle sagt nicht, was sich überträgt (das Skript von 2016 misst von Citrix angelegte Sitzungsdrucker, nicht Druckwarteschlangen eines Druckservers) |
+| Zeitüberschreitung im Netz verkürzen (InitialRto, MinRto) | setzt eine Änderung voraus, die die Messung nicht stützt |
+| Auslastung im Server zeigt die Last des Hosts nicht (Test von 2018 zu Prozessorlücken) | gilt nur für ein anderes Produkt oder eine ältere Version; die Quelle sagt nicht, was sich überträgt; die Aussage ruht auf VMware |
+| Gastbeitrag des Autors auf der Seite von Citrix (2020) | verwendet wird nur die eigene Seite des Autors |
+
+## John Billekens (Empfehlung aus der Praxis)
+
+Die Sammlung ave.j81.nl von John Billekens ist eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Sie trägt die Listen der Scan-Ausschlüsse der Hersteller zusammen, je Zeile mit Verweis auf das Dokument des Herstellers. Der Auftraggeber hat sie für einzelne Themen übernommen. Grenzen der Quelle: Fast nichts darin ist eine eigene Aussage, und sie enthält keine Messung. Sie hat mindestens einen Fehler gegen ihre eigene Quelle und führt einen veralteten Eintrag als aktuell (Stand der Seiten: geprüft am 28.10.2026); jeder Eintrag ist deshalb gegen das Dokument des Herstellers zu lesen. Sie unterscheidet nicht zwischen Microsoft Defender und anderer Schutzsoftware.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| Citrix Workspace Environment Management Infrastructure Service Agent · AV exclusions | <https://ave.j81.nl/items/citrix-workspace-environment-management-infrastructure-service-agent/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Seite geprüft am 28.10.2026 (PXG-09). Die Liste der Prozesse stammt von Citrix („Endpoint Security, Antivirus, and Antimalware Best Practices“); eigen ist der Hinweis auf den Installationsordner. |
+| Citrix · AV exclusions | <https://ave.j81.nl/vendors/citrix/> | 2026-11-13 | `cpu.remedies[14]` Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine …<br>`disk.remedies[2]` Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine … | Seite ohne Datum (PXG-16). „Mindestens monatlich“ ist die Angabe der Sammlung; Citrix nennt im genannten Leitfaden das regelmäßige Aktualisieren des Master-Image ohne Abstand. |
+| Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions | <https://ave.j81.nl/items/citrix-virtual-apps-and-desktops-vda-multi-session/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Seite geprüft am 28.10.2026 (PXG-17). Die Zeile zu picaSvc2.exe gilt nach Citrix nur für Maschinen mit einer Sitzung und ist nicht übernommen. |
+| Microsoft Office Outlook · AV exclusions | <https://ave.j81.nl/items/microsoft-office-outlook/> | 2026-11-13 | `crash.checks[26]` Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen …<br>`hang.checks[17]` Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen … | Seite geprüft am 28.10.2026 (PXG-64). Den Grund nennt Microsoft („Plan an Outlook deployment“, Abschnitt zur Schutzsoftware): beschädigte Daten. |
+| Microsoft Teams v2 · AV exclusions | <https://ave.j81.nl/items/microsoft-teams-v2/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Seite geprüft am 28.10.2026 (PXG-65). Die Liste der Prozesse stammt von Microsoft; ms-teams_modulehost.exe steht dort nicht und ist nicht übernommen. |
+| Microsoft Windows Server Print Server · AV exclusions | <https://ave.j81.nl/items/microsoft-windows-server-print-server/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Seite geprüft am 28.10.2026 (PXG-75). Die enge Liste stammt von Microsoft („Microsoft Defender Antivirus exclusions on Windows Server“, Rolle Druckserver); die Zeile der Sammlung zum ganzen Ordner System32\spool ist nicht übernommen. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Prüfschritt „Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis …“ der Situation `cpu` – auch gestützt durch: „Citrix Workspace Environment Management Infrastructure Service Agent · AV exclusions“, <https://ave.j81.nl/items/citrix-workspace-environment-management-infrastructure-service-agent/>, geprüft 2026-10-28 (PXG-09)
+- Prüfschritt „Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis …“ der Situation `disk` – auch gestützt durch: „Citrix Workspace Environment Management Infrastructure Service Agent · AV exclusions“, <https://ave.j81.nl/items/citrix-workspace-environment-management-infrastructure-service-agent/>, geprüft 2026-10-28 (PXG-09)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `cpu` – auch gestützt durch: „Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions“, <https://ave.j81.nl/items/citrix-virtual-apps-and-desktops-vda-multi-session/>, geprüft 2026-10-28 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `disk` – auch gestützt durch: „Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions“, <https://ave.j81.nl/items/citrix-virtual-apps-and-desktops-vda-multi-session/>, geprüft 2026-10-28 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `share` – auch gestützt durch: „Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions“, <https://ave.j81.nl/items/citrix-virtual-apps-and-desktops-vda-multi-session/>, geprüft 2026-10-28 (PXG-17)
+- Abhilfe „Scan-Ausschlüsse ergänzen, die für Terminalserver üblich sind und die die Hersteller der …“ der Situation `profile` – auch gestützt durch: „Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions“, <https://ave.j81.nl/items/citrix-virtual-apps-and-desktops-vda-multi-session/>, geprüft 2026-10-28 (PXG-17)
+- Abhilfe „Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt …“ der Situation `crash` – auch gestützt durch: „Microsoft Teams v2 · AV exclusions“, <https://ave.j81.nl/items/microsoft-teams-v2/>, geprüft 2026-10-28 (PXG-65)
+- Abhilfe „Spool-Ordner in der Schutzsoftware vom Scan ausnehmen …“ der Situation `print` – auch gestützt durch: „Microsoft Windows Server Print Server · AV exclusions“, <https://ave.j81.nl/items/microsoft-windows-server-print-server/>, geprüft 2026-10-28 (PXG-75)
+
+### Belegstellen
+
+- **Citrix Workspace Environment Management Infrastructure Service Agent · AV exclusions**
+  - „Make sure to check the installation directory before configuring antivirus exclusions.“
+- **Citrix · AV exclusions**
+  - „update a master image or vDisk at least once a month“
+- **Citrix Virtual Apps and Desktops VDA (Multi Session) · AV exclusions**
+  - „%ProgramFiles%\Citrix\HDX\bin\CtxSvcHost.exe [...] CVAD 2112+“
+- **Microsoft Office Outlook · AV exclusions**
+  - „*.ost [...] If not configured, corruption can occur.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Windows den Standarddrucker verwalten lassen | steht nicht in der Sammlung der Scan-Ausschlüsse, für die die Quelle übernommen ist, und ist für Windows 10 geschrieben |
+| Ausschluss von picaSvc2.exe auf Servern mit mehreren Sitzungen; ganzer Ordner System32\spool; ms-teams_modulehost.exe; upmjit.sys | widerspricht dem Hersteller; hier gilt der Hersteller oder der Hersteller nennt den Eintrag nicht |
+| Liste der Prozesse und Dateien des VDA als eigenes Element | die Liste stammt von Citrix; die Sammlung steht als Verweis im vorhandenen Vorschlag zu den Scan-Ausschlüssen |
+
+## Guy Leech (Empfehlung aus der Praxis)
+
+Blog und Skripte von Guy Leech sind eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: das Arbeitstagebuch eines Beraters zur Fehlersuche. Der Auftraggeber hat sie für einzelne Themen übernommen. Grenzen der Quelle: Die Beiträge stammen meist von 2014 bis 2019 und beschreiben XenApp 6.5 und 7.x auf Windows Server 2008 R2 und 2012 R2; nichts ist auf Windows Server 2022, mit Machine Creation Services oder mit WEM gemessen. Zahlen gibt es nur als Einzelwerte aus einem Fall. Der Wert der Quelle liegt in der Methode (wo man nachsieht); Ereignisnummern und Registrierungswerte aus seinen Skripten sind auf einem deutschen Windows Server 2022 zu bestätigen.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| The Taming of the Print Server | <https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/> | 2026-11-13 | `cpu.checks[21]` Prüfen, ob die Sitzung von ‹Benutzer› im Zeitraum getrennt war | Stand 23.2.2016 (PXG-10, PXG-11, PXG-12). Der Fall ist ein Druckserver mit vier vCPU und über 600 Druckern; „oder High“ bei der Priorität und „getrennte Sitzungen zeigen fast keine CPU“ sind nicht übernommen. |
+| Memory Control Script – Capping Leaky Processes | <https://guyrleech.wordpress.com/2018/04/16/memory-control-script-capping-leaky-processes/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 16.4.2018 (PXG-19). Dass harte Grenzen im Task-Manager nicht sichtbar sind, gilt allgemein für Working-Set-Grenzen und ist nicht auf WEM übertragen. |
+| The Curious Case of the Slowly Populating Start Menu | <https://guyrleech.wordpress.com/2016/02/10/the-curious-case-of-the-slowly-populating-start-menu/> | 2026-11-13 | `delay.many.checks[15]` Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten<br>`delay.single.checks[13]` Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten | Stand 10.2.2016 (PXG-51). Ein protokollierter Fall unter XenApp 7.7. Das Abschalten per WEM oder Gruppenrichtlinie ist die Umsetzung des Katalogs; der Autor nutzte ein Anmeldeskript. |
+| Finding Zombie Processes | <https://guyrleech.wordpress.com/2018/11/02/finding-zombie-processes/> | 2026-11-13 | `chronic.resource.checks[9]` Nach Prozessen suchen, die in Sitzungen zurückgeblieben sind, die es nicht mehr gibt | Stand 2.11.2018 (PXG-60). |
+| Find loaded modules.ps1 | <https://raw.githubusercontent.com/guyrleech/Microsoft/master/Find%20loaded%20modules.ps1> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Skript vom 24.10.2019 (PXG-62). Process Explorer als Werkzeug ist die Wahl des Katalogs. |
+| Reasons for Reboots – Part 1 | <https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 24.6.2014 (PXG-63). Was ein ausstehender Neustart in einem versiegelten Master-Image bewirkt, ist eine Folgerung des Katalogs und steht nicht im Element. |
+| Showing Current & Historical User Sessions | <https://guyrleech.wordpress.com/2018/05/17/showing-current-historical-user-sessions/> | 2026-11-13 | `profileerror.checks[10]` Im Protokoll des Benutzerprofildiensts die Anmeldungen und Abmeldungen des Benutzers nachlesen | Stand 17.5.2018 (PXG-80). Die Lesart „Ereignis 1 ohne Ereignis 4“ folgt aus der Paarung im Skript; dass eine solche Sitzung das Profil noch halten kann, ist die Lesart des Katalogs und so bezeichnet. |
+| Get files modified since boot.ps1 | <https://raw.githubusercontent.com/guyrleech/Microsoft/master/Get%20files%20modified%20since%20boot.ps1> | 2026-11-13 | `system.checks[6]` Wenn das Laufwerk aus einem Datenträger- oder Dateisystemfehler das Systemlaufwerk oder der Cache-Datenträg … | Skript ohne Datum (PXG-82). Für einen anderen Bereitstellungsweg geschrieben; die Übertragung auf Machine Creation Services ist die des Katalogs, keine Aussage von Citrix. |
+| Guide to my GitHub Scripts | <https://guyrleech.wordpress.com/2018/10/15/guide-to-my-github-scripts/> | 2026-11-13 | – (stützt nur vorhandene Elemente, siehe unten) | Stand 15.10.2018 (PXG-83). Die Ereignisanzeige als Werkzeug ist die Wahl des Katalogs; die Quelle nutzt ihr Skript. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Abhilfe „CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine …“ der Situation `cpu` – auch gestützt durch: „The Taming of the Print Server“, <https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/>, 2016-02-23 (PXG-11)
+- Prüfschritt „In Workspace Environment Management prüfen, ob einem Prozess, vor allem ‹Anwendung›, die …“ der Situation `cpu` – auch gestützt durch: „The Taming of the Print Server“, <https://guyrleech.wordpress.com/2016/02/23/the-taming-of-the-print-server/>, 2016-02-23 (PXG-10)
+- Abhilfe „Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen …“ der Situation `memory` – auch gestützt durch: „Memory Control Script – Capping Leaky Processes“, <https://guyrleech.wordpress.com/2018/04/16/memory-control-script-capping-leaky-processes/>, 2018-04-16 (PXG-19)
+- Prüfschritt „Dasselbe Modul war bei mehreren Anwendungen die Absturzstelle …“ der Situation `crash` – auch gestützt durch: „Find loaded modules.ps1“, <https://raw.githubusercontent.com/guyrleech/Microsoft/master/Find%20loaded%20modules.ps1>, 2019-10-24 (PXG-62)
+- Prüfschritt „Mehrere Benutzer sind betroffen …“ der Situation `crash` – auch gestützt durch: „Reasons for Reboots – Part 1“, <https://guyrleech.wordpress.com/2014/06/24/reasons-for-reboots-part-1/>, 2014-06-24 (PXG-63)
+- Prüfschritt „Zeitraum des Vorfalls in der Expertenansicht …“ der Situation `fallback` – auch gestützt durch: „Guide to my GitHub Scripts“, <https://guyrleech.wordpress.com/2018/10/15/guide-to-my-github-scripts/>, 2018-10-15 (PXG-83)
+
+### Belegstellen
+
+- **The Taming of the Print Server**
+  - „I would strongly recommend that you never use the "RealTime" priority as that could cause severe resource shortages if the process granted it is CPU hungry.“
+  - „it was mostly being consumed by four explorer processes for four different users who were actually disconnected (in some cases, for many days).“
+  - „we shouldn't mess with operating system processes as it can cause deadlocks and similar catastrophic issues.“
+- **Memory Control Script – Capping Leaky Processes**
+  - „Once implemented, check that hard page fault rates are not impacting performance because the limit you have imposed is too low.“
+- **The Curious Case of the Slowly Populating Start Menu**
+  - „turned out to be caused by "Automatically Detect Settings" in Internet Properties being ticked“
+- **Finding Zombie Processes**
+  - „I have had some success in looking for processes whose session id is for a session that no longer exists or which have no threads or open handles“
+- **Find loaded modules.ps1**
+  - „Designed to help spot processes hooked by 3rd party software like Citrix, Ivanti, Lakeside, etc. Shows module versions so can also be used to play spot the difference between processes.“
+- **Reasons for Reboots – Part 1**
+  - „I always check PendingFileRenameOperations after an installation even if the installer hasn't requested a reboot.“
+- **Showing Current & Historical User Sessions**
+  - „The results are obtained from the User Profile Service operational event log“
+- **Get files modified since boot.ps1**
+  - „a direct correlation between cache used and sizes of files written cannot be calculated by this script since the write cache works at the file system block level“
+- **Guide to my GitHub Scripts**
+  - „event aggregator.ps1 – retrieve all events from the 300+ event logs on one or more computers and show in sortable/filterable gridview and/or write to csv.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Überwachung von Prozessstart und Prozessende einschalten | die Abstürze kommen schon aus Ereignissen, die den Prozess nennen; die Änderung ist eine Sicherheitsrichtlinie |
+| Wiederkehr zur selben Minute der Stunde deutet auf eine geplante Aufgabe (PXG-15) | braucht eine Bedingung, die der Katalog nicht hat; der Rat ist die Lesart der Recherche, kein Zitat |
+| Zurückgebliebene Prozesse auch beim einzelnen Speichermangel; Ansicht des Kerns mit einem Debugger | steht nur beim Dauerzustand des Arbeitsspeichers; der Debugger ist kein Schritt für den Bericht |
+
+## Benny Tritsch (Empfehlung aus der Praxis)
+
+Die Beiträge von Benny Tritsch (drtritsch.com, EUC Score) sind eine Quelle aus der Praxis, keine Dokumentation eines Herstellers: Methodik dazu, wie man die Erfahrung der Benutzer misst und Erscheinungen im Bild einordnet. Der Auftraggeber hat sie für einzelne Themen übernommen. Grenzen der Quelle: Sie nennt für keinen Messwert eine Schwelle und gibt keine Einstellung für einen Citrix-Server vor; sie sagt, worauf man sieht, nie ab wann ein Wert schlecht ist. Fast alle Messungen (2023 bis 2026) liefen in Azure auf Windows 11 mit einer Sitzung je Maschine; der einzige Test mit HDX (2025) nennt die Art der Sitzung nicht. EUC Score ist das eigene Produkt des Autors.
+
+| Titel | Adresse | Abruf | Übernommene Elemente | Hinweis |
+|---|---|---|---|---|
+| DEX4DaaS - DEX Quality Criteria for DaaS Environments | <https://drtritsch.com/2024/05/25/DEX4DaaS.html> | 2026-11-13 | `delay.many.checks[6]` In Citrix Director die Laufzeit im Netz der betroffenen Sitzungen im Zeitraum nachsehen<br>`delay.single.checks[6]` In Citrix Director die Laufzeit im Netz der betroffenen Sitzung im Zeitraum nachsehen | Stand 25.5.2024 (PXG-52, PXG-61). Methodik ohne Zahlen. Dass der Zähler von Windows nur den Anteil des Servers misst, ist nicht die Aussage der Quelle. |
+| A Guide to Common VDI Screen Artifacts and What They Mean | <https://drtritsch.com/2026/03/31/Common-VDI-Screen-Artifacts.html> | 2026-11-13 | `chronic.network.checks[4]` Den Benutzer fragen, wie die Störung aussah | Stand 31.3.2026 (PXG-56). Der Satz zum Test von 2025 stammt aus „Citrix CVAD Performance on Azure [2025]“ (<https://eucscore.com/results/2025-citrix-azure-hdxvsrdp.html>, Test vom 19. und 20.11.2025: VDA 2507 LTSR, Workspace-App 2508, Windows 11 Enterprise, Art der Sitzung nicht genannt); er gilt für diesen Test, nicht für HDX allgemein. |
+
+### Stützt bestehende Elemente
+
+Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle („nach …“ oder mit ihrem Namen).
+
+- Prüfschritt „In Citrix Director die Netzwerklatenz der betroffenen Sitzung mit dem ICA Round Trip …“ der Situation `chronic.network` – auch gestützt durch: „DEX4DaaS - DEX Quality Criteria for DaaS Environments“, <https://drtritsch.com/2024/05/25/DEX4DaaS.html>, 2024-05-25 (PXG-52)
+- Prüfschritt „Prüfen, was ‹Anwendung› in der Sitzung von ‹Benutzer› dauerhaft …“ der Situation `chronic.resource` – auch gestützt durch: „DEX4DaaS - DEX Quality Criteria for DaaS Environments“, <https://drtritsch.com/2024/05/25/DEX4DaaS.html>, 2024-05-25 (PXG-61)
+
+### Belegstellen
+
+- **DEX4DaaS - DEX Quality Criteria for DaaS Environments**
+  - „In case of a remote desktop connection, the network's round-trip time (RTT) may play a significant role for the user input delay.“
+  - „Endurance: An endurance test simulates the behavior of a system under a sustained load from several hours to several days. This helps bring to light memory leaks and buffer overflows.“
+- **A Guide to Common VDI Screen Artifacts and What They Mean**
+  - „Frame Freezing: [...] Network latency or jitter causes new frames to arrive late or out of order.“
+
+### Nicht aufgenommen
+
+| Empfehlung | Grund |
+|---|---|
+| Laute Nachbarn auf demselben Host als Bedeutung des Engpasses (PXG-02) | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht (Azure Virtual Desktop mit Windows 11, zum Teil unter Verschwiegenheit; keine Aussage zur Dichte zulässig) |
+| Grenzwerte für Latenz („gut unter …“) | die Quelle nennt keine Schwelle |
+| Frage nach dem Aussehen der Störung auch bei einer Verzögerung auf dem Server | die Eingabeverzögerung auf dem Server ist keine Erscheinung im Bild |
 
 ## Ausnahmen: Praxisquelle vor Hersteller
 
@@ -619,7 +1154,7 @@ und keines nennt einen Hersteller.
 
 | Titel | Übernommene Elemente | Hinweis |
 |---|---|---|
-| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[23]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[25]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[26]` Muster nicht geprüft: von Hand eingrenzen<br>`print.checks[27]` Zuordnung der Drucker durch ein Zuordnungswerkzeug bei Anmeldung und Wiederverbindung<br>`print.checks[29]` Vorfall vor der Messung: Reichweite des Rückblicks auf nicht persistenten Servern | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. Der Schritt zur Zuordnung der Drucker nennt kein Produkt: Wie PrinTaurus SmartSpread zuordnet, dokumentiert sein Hersteller nicht öffentlich (siehe Abschnitt AKI). |
+| Hinweis zur Auswertung | `print.checks[3]` Muster „Speichermangel“: Speichermangel als Ursache prüfen<br>`print.checks[4]` Muster „Modul der Schutzsoftware“: deren Meldungen ansehen<br>`print.checks[5]` Muster „ein Benutzer“: Drucker und Profil dieses Benutzers prüfen<br>`print.checks[6]` Muster „zeitgleich mit einem Leistungsvorfall“: auch dessen Anleitung ansehen<br>`print.checks[7]` Muster „zeitnahes Ereignis“: das Ereignis prüfen<br>`print.checks[25]` Druckproblem vor der Messung: Wiederkehr prüfen<br>`print.checks[27]` Drucken nicht gemessen: von Hand prüfen, nächste Messung mit Drucken<br>`print.checks[28]` Muster nicht geprüft: von Hand eingrenzen<br>`print.checks[29]` Zuordnung der Drucker durch ein Zuordnungswerkzeug bei Anmeldung und Wiederverbindung<br>`print.checks[31]` Vorfall vor der Messung: Reichweite des Rückblicks auf nicht persistenten Servern | Dieselben Hinweise stehen in den anderen Situationen aus Ereignissen ohne Quelle; dort verlangt der Katalog keine. Der Schritt zur Zuordnung der Drucker nennt kein Produkt: Wie PrinTaurus SmartSpread zuordnet, dokumentiert sein Hersteller nicht öffentlich (siehe Abschnitt AKI). |
 
 ## Auf dem Zielsystem zu bestätigen
 

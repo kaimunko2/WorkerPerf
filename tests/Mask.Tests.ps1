@@ -913,8 +913,8 @@ Describe 'Simulierte Stunde, maskiert' {
             $map = Get-Content (Join-Path $TestDrive 'm1.maskmap.json') -Raw | ConvertFrom-Json
             $map.level | Should -Be 'Alles'; @($map.entries | Where-Object kind -eq 'user').Count | Should -Be 25; @($map.entries | Where-Object kind -eq 'printer').replacement | Should -Be @('Drucker 01', 'Drucker 02')
             { New-Masked 'x' @{ MaskMapFile = (Join-Path $TestDrive 'y.maskmap.json') } } | Should -Throw '*setzt -Mask voraus*'
-            { New-Masked 'SIM-VDA01-bericht' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
-            { New-Masked 'sim-vda01' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Worker*'
+            { New-Masked 'SIM-VDA01-bericht' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Server*'
+            { New-Masked 'sim-vda01' @{ Mask = 'Alles' } } | Should -Throw '*nennt den Server*'
             Test-Path (Join-Path $TestDrive 'SIM-VDA01-bericht.html') | Should -BeFalse
         }
         It 'schreibt bei Personen nur die Arten in die Zuordnung, die diese Stufe ersetzt' {
