@@ -1272,7 +1272,10 @@ Describe 'Nachweis der Druckempfehlungen' {
         $script:Real = Read-WorkerPerfGuidance $script:CatalogueFile -Apps $script:AppList
         $script:Sourced = @(Get-Elements $script:Real | Where-Object { $_.Source })
         $script:Rows = @(Get-SourceRows $script:SourcesFile)
-        $script:Doc = [IO.File]::ReadAllText($script:SourcesFile, [Text.Encoding]::UTF8)
+        # the record's part of the guided report: the section of the health picture at its end has its own lists of
+        # sources and its own tests (tests/Health.Tests.ps1)
+        $all = [IO.File]::ReadAllText($script:SourcesFile, [Text.Encoding]::UTF8); $cut = $all.IndexOf("`n## Zustandsbild")
+        $script:Doc = $(if ($cut -ge 0) { $all.Substring(0, $cut + 1) } else { $all })
         function Get-NamedElements([string]$Text) {
             # the elements a text of the record names by list, first words in quotation marks and situation (Abhilfe „… …“
             # der Situation `print`): the words as written, and the positions of the elements of that list whose text
@@ -1438,10 +1441,7 @@ Describe 'Nachweis der Druckempfehlungen' {
         $lines = @($Doc -split "`n")
         $firstTable = [array]::IndexOf($lines, '## Microsoft'); $firstTable | Should -BeGreaterThan 50
         $last = [array]::IndexOf($lines, '## Auf dem Zielsystem zu bestätigen'); $last | Should -BeGreaterThan $firstTable
-        # the list ends where the section of the health picture begins (its own tables and lists; tests/Health.Tests.ps1)
-        $health = [array]::IndexOf($lines, '## Zustandsbild'); $health | Should -BeGreaterThan $last
-        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) {
-                if (($n -lt $firstTable -or ($n -gt $last -and $n -lt $health)) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
+        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) { if (($n -lt $firstTable -or $n -gt $last) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
         $long | Should -Be @()
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
