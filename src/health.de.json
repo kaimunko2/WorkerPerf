@@ -2772,8 +2772,8 @@
         "check": [{"value": "apps.edgeUpdatesOff", "op": "eq", "than": false}]
       },
       "findings": {
-        "ok": "Die automatischen Updates von Microsoft Edge sind per Richtlinie abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle). Die Richtlinien wirken nach Microsoft nur auf einem Server, der Mitglied einer Active-Directory-Domäne ist.",
-        "check": "Die automatischen Updates von Microsoft Edge sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle).",
+        "ok": "Die automatischen Updates von Microsoft Edge sind per Richtlinie abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle). Die Richtlinien wirken nach Microsoft nur auf einem Server, der Mitglied einer Active-Directory-Domäne ist.",
+        "check": "Die automatischen Updates von Microsoft Edge sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Aktualisiert sich Microsoft Edge auf jedem Server selbst, können im Pool verschiedene Versionen laufen, und Microsoft nennt es für nicht persistente Maschinen bewährte Praxis, die automatischen Updates abzuschalten und Edge über das Master-Image zu aktualisieren. Die Richtlinien für Updates wirken nach Microsoft nur in einer Active-Directory-Domäne, die Vorgabe für Edge selbst geht der Vorgabe für alle Kanäle vor, und diese gilt auch für die WebView2-Runtime. Allgemein nennt Microsoft das Erlauben der Updates als empfohlene Vorgabe, für nicht persistente Maschinen gilt die Seite zu VDI.",
@@ -2781,7 +2781,7 @@
         {
           "text": "Nachsehen, welche der zwei Richtlinien für Updates von Microsoft Edge gesetzt ist",
           "where": "Gruppenrichtlinie für die Server, Administrative Vorlage für Microsoft Edge Update, Richtlinien „Update policy override default“ und „Update policy override“ (für Microsoft Edge Stable)",
-          "sign": "die Richtlinie für Microsoft Edge Stable steht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht darauf"
+          "sign": "die Richtlinie für Microsoft Edge Stable steht nicht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht nicht darauf"
         },
         {
           "text": "Die automatischen Updates von Microsoft Edge per Richtlinie abschalten und Edge mit dem Master-Image aktualisieren. Soll sich die WebView2-Runtime weiter selbst aktualisieren, nur die Richtlinie für Microsoft Edge Stable abschalten und nicht die Vorgabe für alle Kanäle, denn diese gilt nach Microsoft auch für die WebView2-Runtime",
@@ -2842,8 +2842,8 @@
         "check": [{"value": "apps.webView2UpdatesOff", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle).",
-        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle). Dann muss das Master-Image die aktuelle Runtime tragen.",
+        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle).",
+        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle). Dann muss das Master-Image die aktuelle Runtime tragen.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Abgeschaltete Updates der WebView2-Runtime können nach Microsoft Anwendungen stören, die auf diese Komponente angewiesen sind, und Microsoft rät, nicht auf einer älteren Version der Runtime zu bleiben. Lädt ein nicht persistenter Server ein Update selbst, ist es nach dem Neustart wieder weg, deshalb muss bei abgeschalteten Updates das Master-Image die aktuelle Runtime enthalten (Folgerung des Katalogs). Die Runtime nutzen nach Microsoft unter anderem Teams und Outlook, und ohne eigene Vorgabe für die Runtime gilt für sie nach Microsoft die Update-Vorgabe für alle Kanäle von Microsoft Edge.",
@@ -3238,10 +3238,10 @@
       },
       "findings": {
         "ok": "Ein maschinenweit installiertes klassisches Teams wurde nicht gefunden. Eine Installation je Benutzer im Profil sieht die Prüfung nicht.",
-        "check": "Das klassische Teams ist neben dem neuen Teams noch maschinenweit installiert (gefunden: C:\\Program Files (x86)\\Microsoft\\Teams\\current\\Teams.exe). Microsoft lässt es deinstallieren, sobald das neue Teams maschinenweit bereitgestellt ist.",
+        "check": "Das klassische Teams ist neben dem neuen Teams noch maschinenweit installiert (gefunden: C:\\Program Files (x86)\\Microsoft\\Teams\\current\\Teams.exe). Microsoft lässt dafür den Teams Machine-Wide Installer deinstallieren, sobald das neue Teams maschinenweit bereitgestellt ist.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ist das klassische Teams im Master-Image noch maschinenweit installiert, steht es den Benutzern nach jedem Neustart wieder neben dem neuen Teams bereit, auch wenn Microsoft es selbst zu entfernen versucht (Erläuterung des Katalogs). Microsoft lässt die Administratoren den Teams Machine-Wide Installer mit ihren Werkzeugen der Softwareverteilung deinstallieren, und nach Manuel Winkel (2026) muss eine alte Installation von Teams vor dem neuen Teams deinstalliert werden. Die Prüfung sieht nur eine maschinenweite Installation an dem Ort, den Citrix nennt, keine je Benutzer im Profil.",
+      "meaning": "Ist das klassische Teams im Master-Image noch maschinenweit installiert, steht es den Benutzern nach jedem Neustart wieder neben dem neuen Teams bereit, obwohl Microsoft es zu entfernen versucht (Erläuterung des Katalogs). Microsoft lässt nach dem maschinenweiten Bereitstellen des neuen Teams den Teams Machine-Wide Installer mit der Softwareverteilung deinstallieren, worauf das klassische Teams bei der Anmeldung jedes Benutzers entfernt wird, und auch Manuel Winkel (2026) lässt das alte Teams deinstallieren. Die Prüfung sieht nur eine maschinenweite Installation am Ort, den Citrix nennt.",
       "todo": [
         {
           "text": "Nachsehen, ob das klassische Teams im Master-Image noch installiert ist",
@@ -3249,7 +3249,7 @@
           "sign": "das klassische Teams steht dort"
         },
         {
-          "text": "Nachdem das neue Teams im Master-Image maschinenweit bereitgestellt ist, dort den Teams Machine-Wide Installer und das klassische Teams mit den Werkzeugen der Softwareverteilung deinstallieren, wie Microsoft es beschreibt, dann das Master-Image versiegeln",
+          "text": "Nachdem das neue Teams im Master-Image maschinenweit bereitgestellt ist, dort den Teams Machine-Wide Installer mit den Werkzeugen der Softwareverteilung deinstallieren, wie Microsoft es beschreibt (das klassische Teams wird dann bei der Anmeldung jedes Benutzers entfernt), dann das Master-Image versiegeln",
           "where": "im Master-Image, danach die Server neu bereitstellen; nicht auf dem einzelnen Server",
           "sign": "Zustandsbild meldet kein maschinenweit installiertes klassisches Teams mehr"
         }

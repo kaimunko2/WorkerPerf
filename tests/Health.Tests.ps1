@@ -2079,4 +2079,54 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         # 9
         foreach ($w in 'Quellenprüfung VM-14, partly', 'Quellenprüfung VM-19, partly', 'Quellenprüfung VM-01, partly') { $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
     }
+    It 'laesst bei den Updates von Edge nach dem gefundenen Zustand sehen und gibt jedem Strich und Wert seine Worte' {   # Korrekturrunde 1, Nachpruefung, Punkte 1, 2, 4
+        # 1: apps.edgeAutoUpdate zeigt seine Schritte, wenn die Updates NICHT abgeschaltet sind; das Merkmal des ersten Schritts nennt diesen Zustand,
+        # nicht den Zustand "In Ordnung". apps.edgeWebView2Update zeigt seine Schritte, wenn sie abgeschaltet sind, und nennt den abgeschalteten Zustand.
+        $Chk['apps.edgeAutoUpdate'].todo[0].sign | Should -BeExactly 'die Richtlinie für Microsoft Edge Stable steht nicht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht nicht darauf'
+        $Chk['apps.edgeWebView2Update'].todo[0].sign | Should -Match '^die Richtlinie für die WebView2-Runtime steht auf „Updates disabled“, oder sie ist nicht konfiguriert und die Vorgabe für alle Kanäle steht darauf'
+        # 2: ein nicht gelesener Wert, der die Entscheidung nicht aendern kann, aendert nichts; einer, der sie aendern koennte, macht die Pruefung nicht pruefbar
+        foreach ($case in @(
+                @('apps.edgeAutoUpdate', @{ 'edge.updateStable' = 0 }, @{ 'edge.updateDefault' = 'rights' }, 'ok'),          # Kanal 0 entscheidet: abgeschaltet
+                @('apps.edgeAutoUpdate', @{}, @{ 'edge.updateDefault' = 'rights' }, 'unknown'),                             # Kanal nicht gesetzt: die Vorgabe entscheidet
+                @('apps.edgeAutoUpdate', @{ 'edge.updateDefault' = 0 }, @{ 'edge.updateStable' = 'timeout' }, 'unknown'),     # Kanal nicht gelesen
+                @('apps.edgeWebView2Update', @{ 'edge.updateWebView2' = 0 }, @{ 'edge.updateDefault' = 'rights' }, 'check'),
+                @('apps.edgeWebView2Update', @{ 'edge.updateWebView2' = 1 }, @{ 'edge.updateDefault' = 'rights' }, 'ok'),
+                @('apps.edgeWebView2Update', @{}, @{ 'edge.updateDefault' = 'rights' }, 'unknown'),
+                @('apps.edgeWebView2Update', @{ 'edge.updateDefault' = 1 }, @{ 'edge.updateWebView2' = 'timeout' }, 'unknown'))) {
+            $because = "$($case[0]) $(@($case[1].Keys) -join ',') nicht gelesen: $(@($case[2].Keys) -join ',')"
+            $x = Get-AppCheck $case[0] $case[1] @() $case[2]; $x.grade | Should -Be $case[3] -Because $because
+            if ($case[3] -ne 'unknown') { $x.finding | Should -Match 'alle Kanäle: –' -Because $because; $x.finding | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen' -Because $because }
+        }
+        foreach ($id in 'apps.edgeAutoUpdate', 'apps.edgeWebView2Update') { foreach ($g in 'ok', 'check') { $Chk[$id].findings.$g | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen;' -Because "$id $g" } }
+        # 4: 2 und 3 nennt Microsoft fuer die Runtime nicht; die Pruefung zaehlt sie als nicht abgeschaltet und sagt es
+        foreach ($v in 2, 3) {
+            $x = Get-AppCheck 'apps.edgeWebView2Update' @{ 'edge.updateWebView2' = $v }; $x.grade | Should -Be 'ok'
+            $x.finding | Should -Match "WebView2-Runtime: $v;"; $x.finding | Should -Match 'für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet'
+        }
+    }
+    It 'gibt beim klassischen Teams die eine Reihenfolge von Microsoft' {                                    # Korrekturrunde 1, Nachpruefung, Punkt 3
+        $tc = $Chk['apps.teamsClassic']
+        $tc.meaning | Should -Match 'nach dem maschinenweiten Bereitstellen des neuen Teams den Teams Machine-Wide Installer'
+        $tc.meaning | Should -Match 'worauf das klassische Teams bei der Anmeldung jedes Benutzers entfernt wird'
+        $tc.meaning | Should -Not -Match 'vor dem neuen Teams|zuerst'
+        $tc.findings.check | Should -Match 'Microsoft lässt dafür den Teams Machine-Wide Installer deinstallieren, sobald das neue Teams maschinenweit bereitgestellt ist'
+        # Microsoft beschreibt nur die Deinstallation des Installers; das klassische Teams entfernt sie dann bei der Anmeldung
+        $all = "$($tc.meaning) $(@($tc.todo | ForEach-Object { $_.text }) -join ' ') $(@($tc.findings.PSObject.Properties.Value) -join ' ')"
+        $all | Should -Not -Match 'Installer und das klassische Teams|lässt es deinstallieren'
+        $ProofFlat | Should -Match ([regex]::Escape('This action triggers the uninstallation of classic Teams for each user as they sign in.'))
+        $ProofFlat | Should -Match 'Reihenfolge des Beitrags .*widerspricht der Reihenfolge von Microsoft'
+    }
+    It 'laesst eine Pruefung der Anwendungen nur einen abgeleiteten Fakt ihrer eigenen Anwendung nennen' {   # Korrekturrunde 1, Nachpruefung, Punkt 5
+        $t = Get-WorkerPerfHealthFactTable $Apps; $t['apps.edgeUpdatesOff'].App | Should -BeExactly 'edge'; $t['apps.webView2UpdatesOff'].App | Should -BeExactly 'edge'
+        $j = Get-Content $CatFile -Raw | ConvertFrom-Json
+        $j.checks += [pscustomobject]@{ id = 'apps.x'; area = 'apps'; title = 'X'; values = @('apps.teams.classicTeams', 'apps.edgeUpdatesOff')
+            rules = @{ check = @(@{ value = 'apps.edgeUpdatesOff'; op = 'eq'; than = $true }) }
+            findings = @{ ok = 'a'; check = 'b'; unknown = 'c {reason}' }; meaning = 'Erfundene Prüfung.'; todo = @(@{ text = 't'; where = 'im Master-Image'; sign = 's' })
+            source = @{ vendor = 'Test'; title = 'Test'; url = ''; date = '2026-11-13' }; kind = 'rule'; relates = @('disk') }
+        $file = Join-Path $TestDrive 'cat-otherapp.json'; [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 12))
+        { Read-WorkerPerfHealthCatalogue $file $Apps } | Should -Throw "*Pruefung 'apps.x'*'apps.edgeUpdatesOff'*Anwendung 'edge'*Anwendung 'teams'*"
+        # dieselbe Pruefung mit einem Wert von Edge an erster Stelle laedt
+        $j.checks[-1].values = @('apps.edge.updateDefault', 'apps.edgeUpdatesOff'); [IO.File]::WriteAllText($file, ($j | ConvertTo-Json -Depth 12))
+        { Read-WorkerPerfHealthCatalogue $file $Apps } | Should -Not -Throw
+    }
 }

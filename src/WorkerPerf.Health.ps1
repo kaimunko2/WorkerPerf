@@ -106,6 +106,10 @@ $script:WorkerPerfHealthDerived = & {
     $list
 }
 
+# The application each derived fact of the area apps belongs to: a check may name it only beside the values of that
+# application.
+$script:WorkerPerfHealthDerivedApps = @{ 'apps.edgeUpdatesOff' = 'edge'; 'apps.webView2UpdatesOff' = 'edge' }
+
 # The texts of copy (all required) -> the placeholders each may hold.
 $script:WorkerPerfHealthCopyKeys = [ordered]@{
     title = @(); healthOnlyHead = @(); notRecorded = @(); notRecordedFailed = @(); unreadable = @()
@@ -126,16 +130,17 @@ $script:WorkerPerfHealthCopyKeys = [ordered]@{
 function Get-WorkerPerfHealthFactTable([object[]]$Apps = @()) {
     # Every fact the catalogue can name: the read values, then the derived facts, then per application of $Apps
     # (Read-WorkerPerfHealthApps) that names installed, in the order of the list, apps.<key>.installed and one fact per
-    # probe. id -> @{ Area; Type; Unit; Fields; Derived; Documented; Label }; Label is empty for the fixed facts (their
-    # label is in values of the catalogue).
+    # probe. id -> @{ Area; Type; Unit; Fields; Derived; Documented; Label; App }; Label is empty for the fixed facts (their
+    # label is in values of the catalogue); App is the key of the application a fact belongs to, empty outside the area apps.
     $table = [ordered]@{}
     foreach ($id in $script:WorkerPerfHealthValues.Keys) {
         $v = $script:WorkerPerfHealthValues[$id]
-        $table[$id] = @{ Area = $v.Area; Type = $v.Type; Unit = $v.Unit; Fields = $v.Fields; Derived = $false; Documented = [bool]$v.Documented; Label = '' }
+        $table[$id] = @{ Area = $v.Area; Type = $v.Type; Unit = $v.Unit; Fields = $v.Fields; Derived = $false; Documented = [bool]$v.Documented; Label = ''; App = '' }
     }
     foreach ($id in $script:WorkerPerfHealthDerived.Keys) {
         $v = $script:WorkerPerfHealthDerived[$id]
-        $table[$id] = @{ Area = $v.Area; Type = $v.Type; Unit = $v.Unit; Fields = $v.Fields; Derived = $true; Documented = $true; Label = '' }
+        $appKey = ''; if ($script:WorkerPerfHealthDerivedApps.ContainsKey($id)) { $appKey = $script:WorkerPerfHealthDerivedApps[$id] }
+        $table[$id] = @{ Area = $v.Area; Type = $v.Type; Unit = $v.Unit; Fields = $v.Fields; Derived = $true; Documented = $true; Label = ''; App = $appKey }
     }
     $dash = ' ' + [string][char]0x2013 + ' '
     foreach ($app in @($Apps)) {
@@ -143,12 +148,12 @@ function Get-WorkerPerfHealthFactTable([object[]]$Apps = @()) {
         if ($null -eq $installed) { continue }
         $key = [string](Get-WorkerPerfField $app 'key'); $label = [string](Get-WorkerPerfField $app 'label')
         $table["apps.$key.installed"] = @{ Area = 'apps'; Type = 'bool'; Unit = ''; Fields = $null; Derived = $false
-            Documented = [bool](Get-WorkerPerfField $installed 'documented'); Label = $label }
+            Documented = [bool](Get-WorkerPerfField $installed 'documented'); Label = $label; App = $key }
         foreach ($probe in @(Get-WorkerPerfField $app 'probes')) {
             if ($null -eq $probe) { continue }
             $table["apps.$key." + [string](Get-WorkerPerfField $probe 'id')] = @{ Area = 'apps'; Type = (Get-WorkerPerfAppFactType $probe); Unit = ''
                 Fields = $null; Derived = $false; Documented = [bool](Get-WorkerPerfField $probe 'documented')
-                Label = $label + $dash + [string](Get-WorkerPerfField $probe 'label') }
+                Label = $label + $dash + [string](Get-WorkerPerfField $probe 'label'); App = $key }
         }
     }
     return $table
@@ -335,8 +340,9 @@ function Test-WorkerPerfHealthCondition {
 
 function Test-WorkerPerfHealthCheckValues($Ctx, [string]$Id, [string]$Area, $Check) {
     # values of a check: known facts with a documented source, each once. In the area apps only facts of one application
-    # of the list (the application is checked before the fact) and derived facts of the area apps, the first value a fact
-    # of the application (it names the application of the check); in any other area no fact of the area apps.
+    # of the list (the application is checked before the fact) and derived facts of the area apps that belong to that
+    # application, the first value a fact of the application (it names the application of the check); in any other area
+    # no fact of the area apps.
     $path = $Ctx.Path
     $m = Get-WorkerPerfHealthCatalogueMember $Check 'values'
     if ($null -eq $m) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' 'fehlt' }
@@ -349,7 +355,11 @@ function Test-WorkerPerfHealthCheckValues($Ctx, [string]$Id, [string]$Area, $Che
         if (-not $seen.Add($fact)) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt '$fact' mehr als einmal" }
         $isAppFact = $fact.StartsWith('apps.', [StringComparison]::Ordinal)
         $parts = $fact.Split('.')
-        if ($Area -ceq 'apps' -and $isAppFact -and $parts.Count -eq 2 -and $seen.Count -gt 1 -and $Ctx.FactIds.Contains($fact) -and $Ctx.Facts[$fact].Derived) { continue }
+        if ($Area -ceq 'apps' -and $isAppFact -and $parts.Count -eq 2 -and $seen.Count -gt 1 -and $Ctx.FactIds.Contains($fact) -and $Ctx.Facts[$fact].Derived) {
+            $factApp = [string]$Ctx.Facts[$fact].App
+            if ($factApp -cne $appOfCheck) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt den abgeleiteten Wert '$fact' der Anwendung '$factApp', die Pruefung gehoert aber zur Anwendung '$appOfCheck'" }
+            continue
+        }
         if ($Area -ceq 'apps') {
             if (-not $isAppFact -or $parts.Count -ne 3) {
                 if ($seen.Count -eq 1) { Stop-WorkerPerfHealthCatalogue $path '' $Id 'values' "nennt als ersten Wert '$fact', der erste Wert ist aber kein Wert einer Anwendung" }
