@@ -225,6 +225,8 @@ td .sig { margin-right: 4px; }
 :is(#tSessions, #tApps, #tProcs) tbody tr.selected td:first-child { background: var(--sel); }
 :is(#tSessions, #tApps, #tProcs) tbody tr.collector td:first-child { box-shadow: inset 3px 0 var(--s7), 1px 0 0 var(--border); }
 :is(#tSessions, #tApps, #tProcs) td .cellbar { margin-right: 4px; }
+/* the one cell of an empty table (its sentence) is no cell of the close grid: it keeps its room and does not stick */
+:is(#tSessions, #tApps, #tProcs) td.empty { padding: 30px; position: static; white-space: normal; background: none; box-shadow: none; }
 #tProcs td .svc { max-width: 150px; }
 /* a long name of a printer driver wraps, so the columns behind it stay in the picture */
 #tPrintDrivers td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 160px; }
@@ -1174,15 +1176,17 @@ function drawChart(host) {
 
   // The time of the incident: a tinted span behind the lines. The areas of a stacked chart are opaque: there the span is
   // drawn above them, with a veil and its two edges. A span narrower than BAND_MIN px (an incident without duration: a crash,
-  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own above the measured marks, a line
-  // with a cap over the plot. None of them catches the pointer.
+  // a hang, a print error) would be a hairline of the tint: it is drawn as a mark of its own, a line with a cap over the
+  // plot. Like the span it lies behind the lines (the curve stays whole at the very moment of the incident) and above the
+  // areas of a stacked chart. None of them catches the pointer.
   const band = chartBand(opt, z);
   let bandUnder = "", bandOver = "";
   if (band) {
     const a = X(Math.max(z.t0, band.t0)), b = X(Math.min(z.t1, band.t1));
     if (b - a < BAND_MIN) {
       const x = f1(Math.max(m.l + 1, Math.min(m.l + pw - 1, (a + b) / 2))), line = `M${x} ${m.t}V${m.t + ph}`;
-      bandOver = `<path class="inchalo" d="${line}"/><path class="incband incmark" d="${line}M${x} ${m.t - 1}l-5 -7h10z"/>`;
+      const mark = `<path class="inchalo" d="${line}"/><path class="incband incmark" d="${line}M${x} ${m.t - 1}l-5 -7h10z"/>`;
+      if (stacked) bandOver = mark; else bandUnder = mark;
     } else {
       const rect = (cls) => `<rect class="${cls}" x="${f1(a)}" y="${m.t}" width="${f1(b - a)}" height="${ph}"/>`;
       if (stacked) bandOver = rect("incveil") + rect("incband") + `<path class="incedge" d="M${f1(a)} ${m.t}V${m.t + ph}M${f1(b)} ${m.t}V${m.t + ph}"/>`;
@@ -1529,8 +1533,13 @@ chart("chSess", { axis: "snap", series: [{ name: "aktiv", color: "--s3", values:
 
 // ---------- sessions ----------
 const anyRtt = D.sessions.some((s) => s.rttAvg != null);
-// the 95th percentile of the CPU load is taken over the snapshots, the means over time (see snapUse)
-const P95_TITLE = "95. Perzentil der Schnappschüsse (während eines Vorfalls folgen sie dichter aufeinander)";
+// the 95th percentile of the CPU load is taken over the snapshots, the means of CPU and working set over time (see snapUse).
+// A mean the report data hold no series for (processes or instances at a time, the working set of one application in one
+// session) and the mean of the ICA round trip are plain means of the snapshots: every column and key figure with a "Ø" says
+// in its title which of the two it is.
+const SNAPS_DENSER = " (während eines Vorfalls folgen sie dichter aufeinander)";
+const P95_TITLE = "95. Perzentil der Schnappschüsse" + SNAPS_DENSER, SNAP_MEAN = "Mittelwert der Schnappschüsse" + SNAPS_DENSER;
+const PER_INST_TITLE = "Working Set aller Instanzen durch die Zahl gleichzeitiger Instanzen, beides als " + SNAP_MEAN;
 const sessCols = [
   { key: "user", head: "Benutzer", fmt: (v, r) => esc(sessLabel(r)), sortVal: (r) => sessLabel(r) },
   { key: "client", head: "Client", fmt: (v) => esc(v || "–") },
@@ -1545,12 +1554,12 @@ const sessCols = [
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("privMax", "Commit Max", 0, "Private Bytes (zugesicherter Speicher)", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0, "gelesene + geschriebene Daten aller Prozesse (Datei, Netzwerk, Geräte)"),
-  cNum("procsAvg", "Prozesse Ø", 0),
+  cNum("procsAvg", "Prozesse Ø", 0, SNAP_MEAN),
   cSig("inP95", "Eingabe P95 ms", "input.session", 0, "Eingabeverzögerung, 95. Perzentil über Takte mit Verzögerung"),
   cSig("inMax", "Eingabe Max ms", "input.session", 0, "höchste Eingabeverzögerung"),
   cNum("inWarnPct", "Eingabe ab auffällig %", 1, "Anteil der Takte der Sitzung mit Eingabeverzögerung ab 'auffällig'")
 ];
-if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
+if (anyRtt) sessCols.push(cNum("rttAvg", "ICA RTT Ø ms", 0, SNAP_MEAN), cSig("rttMax", "ICA RTT Max ms", "ica.rtt", 0));
 // the resources of a session are sums over its processes: without process data their 0 is no measured value
 const SESS_RES = ["cpuShare", "cpuSec", "cpuAvg", "cpuP95", "cpuMax", "wsAvg", "wsMax", "privMax", "ioMB", "procsAvg"];
 if (notMeasured("sessions.resources")) {
@@ -1562,7 +1571,7 @@ if (notMeasured("sessions.resources")) {
 const pairCols = (first) => [first,
   cNum("inst", "Instanzen", 0),
   cNum("cpuSec", "CPU-Zeit s", 1, "", { bar: true }),
-  cNum("wsAvg", "RAM Ø", 0, "", { fmt: fmtMB, bar: true }),
+  cNum("wsAvg", "RAM Ø", 0, SNAP_MEAN, { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max", 0, "", { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 1)];
 const procName = (v, r) => esc(v) + (r.isCollector ? ' <span class="tag">(WorkerPerf selbst)</span>' : "") +
@@ -1654,7 +1663,7 @@ function showApp(i) {
   const a = appByIdx.get(i), host = document.getElementById("dApps"), u = ++uid;
   const noSeries = "Kein Verlauf gespeichert: Anwendung mit weniger als 0,1 % CPU-Anteil und unter 50 MB Working Set.";
   host.innerHTML = `<div class="cardhead"><h2>${esc(a.name)}</h2></div>
-    <div class="kv">${WHOLE_KV}${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span>gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span>RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
+    <div class="kv">${WHOLE_KV}${a.role ? `<span>Rolle <b>${esc(a.role)}${a.roleLabel ? " · " + esc(a.roleLabel) : ""}</b></span>` : ""}<span>Instanzen gesamt <b>${a.inst}</b></span><span title="${SNAP_MEAN}">gleichzeitig Ø <b>${fmt(a.instAvg, 1)}</b> / Max <b>${a.instMax}</b></span><span>Sitzungen <b>${a.sess}</b></span><span>CPU-Anteil <b>${fmt(a.cpuShare, 1)} %</b></span><span title="${PER_INST_TITLE}">RAM je Instanz Ø <b>${fmtMB(a.wsPerInst)}</b></span></div>
     <div class="pathline">${esc(a.path || "–")}</div>
     <div class="grid2">${chartBox("CPU aller Instanzen (% des Servers)", "chart-cpu")}${chartBox("Working Set aller Instanzen (MB)", "chart-ws")}</div>
     <h2>Sitzungen mit dieser Anwendung${WHOLE_H}</h2><div class="tablewrap" style="max-height:340px"><table id="as${u}"></table></div>`;
@@ -1668,7 +1677,7 @@ const appTable = table("tApps", [
   roleCol,
   cNum("sess", "Sitzungen", 0, "Anzahl Sitzungen, in denen die Anwendung lief"),
   cNum("inst", "Instanzen", 0, "Anzahl beobachteter Prozessinstanzen"),
-  cNum("instAvg", "gleichzeitig Ø", 1),
+  cNum("instAvg", "gleichzeitig Ø", 1, SNAP_MEAN),
   cNum("cpuShare", "CPU-Anteil %", 1, "Anteil an der gesamten verbrauchten CPU-Zeit", { bar: true }),
   cNum("cpuSec", "CPU-Zeit s", 0),
   cNum("cpuAvg", "CPU Ø %", 2, "alle Instanzen zusammen, Mittelwert über die Zeit, % der Server-Kapazität"),
@@ -1676,7 +1685,7 @@ const appTable = table("tApps", [
   cNum("cpuMax", "CPU Max %", 1),
   cNum("wsAvg", "RAM Ø gesamt", 0, "Summe Working Set aller Instanzen, Mittelwert über die Zeit", { fmt: fmtMB, bar: true }),
   cNum("wsMax", "RAM Max gesamt", 0, "", { fmt: fmtMB }),
-  cNum("wsPerInst", "RAM Ø je Instanz", 0, "", { fmt: fmtMB }),
+  cNum("wsPerInst", "RAM Ø je Instanz", 0, PER_INST_TITLE, { fmt: fmtMB }),
   cNum("ioMB", "I/O MB", 0)
 ], D.apps, { sort: "cpuShare", id: (r) => r.i, text: (r) => [r.name, r.role, r.roleLabel].join(" "), filterInput: "fApps", roleSelect: "fRoleApps", onSelect: showApp, empty: NONE_ACTIVE, barW: 32 });
 // a tab whose list comes from a category left out with -Skip: the hint instead of the filters and the empty table

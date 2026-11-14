@@ -2475,6 +2475,9 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
   await showTab(page, 'apps');
   const appsNote = await page.locator('#appsRange').innerText();
   ok((await page.locator('#tApps tbody').innerText()).trim() === NO_SNAP && (await page.locator('#xtab-apps .cnt').innerText()) === '' && (await page.locator('#xtab-procs .cnt').innerText()) === '', 'ohne Schnappschuss: die Tabelle der Anwendungen sagt es, die Reiter zaehlen nicht');
+  const emptyCell = await page.locator('#tApps td.empty').evaluate((td) => { const cs = getComputedStyle(td), r = td.getBoundingClientRect(), w = td.closest('.tablewrap').getBoundingClientRect();
+    return { pad: [cs.paddingTop, cs.paddingLeft].map(parseFloat), pos: cs.position, wrap: cs.whiteSpace, height: Math.round(r.height), inside: r.left >= w.left - 1 && r.right <= w.right + 1 }; });
+  ok(Math.min(...emptyCell.pad) >= 24 && emptyCell.pos === 'static' && emptyCell.wrap === 'normal' && emptyCell.height >= 70 && emptyCell.inside, 'ohne Schnappschuss: der Satz der leeren Tabelle hat seinen Raum (kein enges, festes Feld der Namensspalte): ' + JSON.stringify(emptyCell));
   ok(appsNote.includes('im Zeitraum liegt kein Schnappschuss, Anwendungen sind für ihn nicht auswertbar.') && !/\d+ von \d+/.test(appsNote) && !appsNote.includes('mit Last'), 'ohne Schnappschuss: Hinweis ueber den Anwendungen ohne "0 von n mit Last": ' + appsNote);
   await showTab(page, 'procs');
   const procsNote = await page.locator('#procsRange').innerText();
@@ -2628,9 +2631,11 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
     const cs = getComputedStyle(m), c = svg.querySelector('clipPath rect'), grid = svg.querySelector('line[stroke="var(--grid)"]');
     return { stroke: cs.stroke, width: parseFloat(cs.strokeWidth), solid: cs.strokeDasharray === 'none', op: parseFloat(cs.strokeOpacity) * parseFloat(cs.opacity) * parseFloat(cs.fillOpacity), ground: getComputedStyle(svg.closest('.card')).backgroundColor,
       grid: getComputedStyle(grid).stroke, tall: m.getBBox().height - Number(c.getAttribute('height')), wide: m.getBBox().width, halo: !!svg.querySelector('.inchalo'), over: !!(svg.querySelector('g[clip-path]').compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING),
+      stack: !!svg.closest('#chCpuStack, #chMemStack'), lines: svg.querySelectorAll('g[clip-path] path[fill="none"]').length,
       free: cs.pointerEvents === 'none', n: svg.querySelectorAll('.incband').length }; }));
-  const weak = marks.filter((m) => !(m && m.n === 1 && m.op === 1 && m.width >= 2 && m.solid && contrast(m.stroke, m.ground) >= 3 && m.stroke !== m.grid && m.tall >= 4 && m.wide >= 8 && m.halo && m.over && m.free));
-  ok(crash.end === crash.start && marks.length === 14 && !weak.length, 'Vorfall ohne Dauer: in jedem Diagramm eine eigene Marke (Linie mit Kappe ueber dem Diagramm, deckend, Kontrast mindestens 3:1 zum Grund, ueber den Messlinien, ohne den Zeiger zu fangen): ' +
+  const weak = marks.filter((m) => !(m && m.n === 1 && m.op === 1 && m.width >= 2 && m.solid && contrast(m.stroke, m.ground) >= 3 && m.stroke !== m.grid && m.tall >= 4 && m.wide >= 8 && m.halo && m.over === m.stack && (m.stack || m.lines >= 1) && m.free));
+  // (follow-up: above the lines the mark and its halo cut a gap into every curve at the very moment of the incident)
+  ok(crash.end === crash.start && marks.length === 14 && marks.filter((m) => m && m.stack).length === 2 && !weak.length, 'Vorfall ohne Dauer: in jedem Diagramm eine eigene Marke (Linie mit Kappe ueber dem Diagramm, deckend, Kontrast mindestens 3:1 zum Grund, hinter den Messlinien und ueber den Flaechen eines gestapelten Diagramms, ohne den Zeiger zu fangen): ' +
     JSON.stringify(weak[0] || null) + ' ' + (marks[0] ? contrast(marks[0].stroke, marks[0].ground).toFixed(2) : ''));
   let info = await page.locator('#rangeInfo').innerText();
   ok(info.endsWith(`· Vorfall ${crash.id}: Anwendungsabsturz`) && !info.includes('Vorfall aus Ereignissen'), 'Zeitraumleiste nennt einen Vorfall aus Ereignissen bei seiner Art, ohne das Wort doppelt: ' + info);
@@ -2752,6 +2757,30 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   const um = await openExpert(browser, path.join(dir, 'report.html'), scheme), us = D.sessions.find((x) => x.user && x.client && x.domain);
   await showTab(um.page, 'sessions'); await um.page.click(`#tSessions tbody tr[data-id="${us.i}"]`);
   ok(oneLine(await um.page.locator('#dSessions .kv').innerText()).includes(`Domäne ${us.domain} Client ${us.client} Anmeldung`), 'unmaskiert: die Beschriftungen stehen vor ihren Werten');
+  // -- item 1 (follow-up): every mean ("Ø") of the tabs of sessions, applications and processes says in its title which mean
+  // it is. CPU and working set of the three tables are means over time (from the series). What the report data hold no series
+  // for is the plain mean of the snapshots as delivered, and says so: processes and instances at a time, the working set per
+  // instance, the working set of one application in one session (the pair tables of the details), the ICA round trip.
+  // (an application whose working set over time differs from the delivered plain mean by more than a twentieth)
+  const ma = D.apps.filter((a) => a.ws && a.wsPerInst != null && a.instAvg > 1.2 && Math.abs(timeMeans(D, a, 0, D.snapT.length).wsAvg - a.wsAvg) > 0.05 * a.wsAvg).sort((a, b) => b.sess - a.sess)[0];
+  await showTab(um.page, 'apps'); await um.page.click(`#tApps tbody tr[data-id="${ma.i}"]`);
+  await um.page.locator('#dApps table tbody tr').first().waitFor();
+  const means = await um.page.evaluate(() => [...document.querySelectorAll('#xt-sessions th, #xt-apps th, #xt-procs th, #dApps .kv span')].filter((e) => e.textContent.includes('Ø'))
+    .map((e) => [e.closest('table') ? e.closest('table').id.replace(/\d+$/, '') : 'kv', (e.closest('table') ? e.textContent : e.childNodes[0].textContent).trim(), e.title || '']));
+  const OVER_TIME = /^(|.*, )Mittelwert über die (Zeit|Laufzeit)( |,|$)/, OF_SNAPS = /Mittelwert (der|über die) Schnappschüsse/;
+  const timeMean = ['tSessions|CPU Ø %', 'tSessions|RAM Ø', 'tApps|CPU Ø %', 'tApps|RAM Ø gesamt', 'tProcs|CPU Ø %', 'tProcs|RAM Ø', 'sp|CPU Ø %', 'sp|RAM Ø'];
+  const snapMean = ['tSessions|Prozesse Ø', 'sa|RAM Ø', 'tApps|gleichzeitig Ø', 'tApps|RAM Ø je Instanz', 'as|RAM Ø', 'kv|gleichzeitig Ø', 'kv|RAM je Instanz Ø'].concat(D.sessions.some((x) => x.rttAvg != null) ? ['tSessions|ICA RTT Ø ms'] : []);
+  const said = new Map(means.map(([t, h, title]) => [t + '|' + h, title]));
+  const untold = means.filter(([, , title]) => OVER_TIME.test(title) === OF_SNAPS.test(title)).map(([t, h, title]) => `${t}|${h}: "${title}"`)
+    .concat(timeMean.filter((k) => !OVER_TIME.test(said.get(k) || '')).map((k) => k + ' nicht ueber die Zeit'), snapMean.filter((k) => !OF_SNAPS.test(said.get(k) || '')).map((k) => k + ' nicht als Mittel der Schnappschuesse'));
+  ok(means.length >= timeMean.length + snapMean.length && !untold.length, 'jeder Mittelwert der Reiter Sitzungen, Anwendungen und Prozesse sagt im Titel, ob er ueber die Zeit oder ueber die Schnappschuesse gebildet ist: ' + untold.slice(0, 4).join(' | '));
+  // the titles are true: a mean of the snapshots is the delivered value; the mean over time beside it is not the delivered plain mean
+  const maRow = await um.page.evaluate((i) => { const t = document.getElementById('tApps'), col = (k) => [...t.querySelectorAll('thead th')].findIndex((x) => x.dataset.k === k), r = t.querySelector(`tbody tr[data-id="${i}"]`), a = D.apps.find((x) => x.i === i);
+    const pt = document.querySelector('#dApps table'), pc = [...pt.querySelectorAll('thead th')].findIndex((x) => x.dataset.k === 'wsAvg'), pair = D.pairs.filter((x) => x.a === i).sort((x, y) => y.cpuSec - x.cpuSec)[0];
+    return { perInst: r.cells[col('wsPerInst')].textContent, perInstData: fmtMB(a.wsPerInst), inst: r.cells[col('instAvg')].textContent, instData: fmt(a.instAvg, 1), ws: r.cells[col('wsAvg')].textContent, wsData: fmtMB(a.wsAvg), wsTime: fmtMB(snapUse(a, 0, GRID.snap.length).wsAvg),
+      pair: pt.querySelector(`tbody tr[data-id="${pair.s}"]`).cells[pc].textContent, pairData: fmtMB(pair.wsAvg), kv: document.querySelector('#dApps .kv').textContent }; }, ma.i);
+  ok(maRow.perInst === maRow.perInstData && maRow.inst === maRow.instData && maRow.pair === maRow.pairData && maRow.kv.includes('RAM je Instanz Ø ' + maRow.perInstData) && maRow.ws === maRow.wsTime && maRow.ws !== maRow.wsData,
+    `die Titel stimmen: "RAM Ø je Instanz", "gleichzeitig Ø" und "RAM Ø" je Sitzung sind die gelieferten Mittel der Schnappschuesse, "RAM Ø gesamt" ist das Mittel ueber die Zeit (${ma.name}: ${JSON.stringify(maRow).substring(0, 260)})`);
   await um.page.close();
 
   // -- items 2, 20: 1920 x 1080: the three wide tables fit their box; every row of charts holds plots of one height
