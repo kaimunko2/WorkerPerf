@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Builds a self-contained, offline HTML report from a WorkerPerf capture folder (format 2).

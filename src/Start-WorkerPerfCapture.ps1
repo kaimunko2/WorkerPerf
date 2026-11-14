@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Records performance and resource usage of a Citrix multi-session VDA (terminal server worker)

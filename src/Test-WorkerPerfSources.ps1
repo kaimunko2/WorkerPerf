@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Probes which data sources WorkerPerf can use on a Citrix multi-session VDA.

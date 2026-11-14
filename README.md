@@ -21,9 +21,9 @@
 > - Auswertung, Befund-Logik und Bericht sind fertig und mit der Simulation getestet; mit ihr lässt sich die ganze
 >   Kette [ohne VDA ausprobieren](#ohne-vda-ausprobieren).
 > - **Geführter Bericht:** Der Bericht öffnet mit einem Lagebild und Vorfallskarten; jeder Vorfall hat Prüfschritte,
->   Vorschläge zur Abhilfe mit Quelle und einen Text zum Kopieren. Die Expertenansicht zeigt alle Messwerte für einen
->   gemeinsamen Zeitraum (siehe [Der Bericht](#der-bericht)). Fertig und mit der Simulation getestet; die Texte der
->   Anleitung sind erst an echten Aufzeichnungen zu bewerten.
+>   Vorschläge zur Abhilfe, die meisten mit Quelle, und einen Text zum Kopieren. Die Expertenansicht zeigt alle
+>   Messwerte für einen gemeinsamen Zeitraum (siehe [Der Bericht](#der-bericht)). Fertig und mit der Simulation
+>   getestet; die Texte der Anleitung sind erst an echten Aufzeichnungen zu bewerten.
 > - **Ereignisse, Abstürze und Drucken:** Auswertung und Bericht sind fertig und mit der Simulation getestet
 >   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Die Windows-Datenquelle liest alle Protokolle aus
 >   `events.json`, den Rückblick, die Treiberliste und die Zähler der Druckwarteschlangen. **Auf einem echten Server
@@ -165,7 +165,7 @@ nicht. Der Standard bleibt deshalb der vollständige Lauf.
 | `Rueckblick` | Ereignisse der Tage vor der Messung | einmalig beim Start | der Abschnitt „Vor der Messung" |
 | `Drucken` | Treiberliste, Zähler der Warteschlangen | die Treiberliste einmalig beim Start, die Zähler der Warteschlangen je regulärem Schnappschuss | Druckzustand, Treiberbezug bei Druckvorfällen |
 | `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | ein Verbindungsaufbau je Ziel und regulärem Schnappschuss | Erreichbarkeit und Antwortzeit der Ziele |
-| `Zustand` | das Zustandsbild (geplant) | einmalig beim Start | der Bereich „Zustand des Servers" |
+| `Zustand` | das Zustandsbild des Servers (`health.json`) | einmalig beim Start | `health.json`; der Bericht zeigt das Zustandsbild noch nicht an |
 
 Regeln:
 
@@ -179,8 +179,9 @@ Regeln:
 - **Werte:** Groß- und Kleinschreibung ist egal, doppelte Werte zählen einmal. Ein unbekannter Wert bricht den Start
   mit einer Meldung ab, die die gültigen Werte nennt; ebenso ein Kategoriename als `-OutputPath`, den ein Leerzeichen
   statt eines Kommas dorthin bringt (`-Skip Prozesse Rueckblick`; ein Ordner dieses Namens geht als `.\Rueckblick`).
-- **`Zustand`** wird schon angenommen, wirkt aber erst, wenn das Zustandsbild gebaut ist; bis dahin steht er weder in
-  `meta.json` noch im Bericht.
+- **`Zustand`** lässt das Zustandsbild weg, das der Collector beim Start einmal liest (`health.json`). Der Bericht
+  zeigt das Zustandsbild noch nicht an. Fehlt es wegen `-Skip`, nennt der Bericht es wie jede weggelassene Kategorie
+  unter „Nicht gemessen (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`.
 - **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
   („Gemessen: Basis, …" und „Nicht gemessen (-Skip): …").
 - **Kombinationen:** Der Collector lehnt keine ab; der Bericht benennt, was fehlt. `Rueckblick` und `Ereignisse` sind
@@ -653,7 +654,7 @@ belegen kann, nennt der Bericht als Vermutung („vermutlich", „wahrscheinlich
 
 | Knopf | Text |
 |---|---|
-| „Zusammenfassung kopieren" im Band | Kopf mit Server und Zeitraum, das Lagebild in einem Satz, alle Vorfälle der Messung in Kurzform, danach die Vorfälle vor der Messung |
+| „Zusammenfassung kopieren" im Band | Kopf mit Server und Zeitraum, das Lagebild in einem Satz, die Hinweise des Lagebilds als je ein Absatz, alle Vorfälle der Messung in Kurzform, danach die Vorfälle vor der Messung |
 | „Kopieren" auf einer Karte, „Zusammenfassung kopieren" in der Vorfallsansicht | Kopfzeile mit Server und Datum; Zeit, Dauer und Titel; Einordnung in Benutzersicht; Wirkung; höchster Messwert mit Soll; Ursache; betroffene Sitzungen; die ersten fünf Prüfschritte und drei Vorschläge, dann „Weitere … stehen im Bericht."; an wen wenden |
 
 Die Texte sind reiner Text mit höchstens 78 Zeichen je Zeile und stimmen mit der Vorfallsansicht überein. Wie viele
@@ -714,8 +715,8 @@ sagen das. Alle Tabellen sind sortier- und filterbar.
   `t1` in Millisekunden). Ein Lesezeichen oder ein Link öffnet dieselbe Stelle. Eine unbekannte Nummer oder ein
   ungültiger Zeitraum öffnet das Lagebild oder die gesamte Messung, ohne Fehler.
 - **Zurück-Taste:** Sie führt innerhalb des Berichts zurück: Wechsel der Ansicht, Öffnen und Schließen einer
-  Vorfallsansicht und ein gesetzter Zeitraum sind je ein Schritt. Der Fokus kehrt zu dem Element zurück, das den
-  Schritt ausgelöst hat.
+  Vorfallsansicht, „Nächster Vorfall" und ein gesetzter Zeitraum sind je ein Schritt. Der Fokus kehrt zu dem Element
+  zurück, das den Schritt ausgelöst hat.
 - **Tastatur:** Alles ist mit der Tastatur erreichbar, der Fokus ist sichtbar. Esc schließt zuerst die Erklärung eines
   Fachbegriffs, dann die Vorfallsansicht. In der Vorfallsspalte wechseln ↑, ↓, Pos1 und Ende zwischen den Einträgen,
   Enter setzt den Zeitraum, Umschalt+Enter öffnet die Vorfallsansicht. Die Reiter wechseln mit ← und →, Pos1 und Ende.
@@ -748,34 +749,37 @@ nennt. Die verwendete Fassung steht in den Daten des Berichts.
   (aus `src/apps.json`), `unmeasured.<Signal>`, `skipped.<Kategorie>`, `pattern.<Muster>`, `driver.v3`,
   `driver.vendor.<Hersteller>`, `spooler.crash` oder `before` (Vorfall vor der Messung).
 - **Reihenfolge:** Elemente mit zutreffender Bedingung stehen vor den allgemeinen, sonst gilt die Reihenfolge der
-  Datei. Hinweise auf nicht Gemessenes stehen nach den allgemeinen Schritten.
+  Datei. Hinweise auf nicht Gemessenes und auf ein zeitliches Zusammentreffen mit einem anderen Vorfall stehen nach
+  den allgemeinen Schritten. Allgemeine Elemente aus der Praxis stehen nach diesen Hinweisen.
 - **Platzhalter** wie `{user}`, `{app}`, `{value}`, `{target}`, `{from}`, `{duration}`, `{endpoint}` füllt die
   Auswertung aus dem Vorfall. Fehlt ein Wert, entfällt das ganze Element; der Bericht zeigt keinen Text mit Lücke.
 - **`impactVariants`** (freiwillig): andere Fassungen der Wirkung mit Bedingungen. Die erste, deren Bedingungen alle
   zutreffen, ersetzt `impact`; so behauptet der Satz keine Verzögerung, die nicht gemessen wurde.
 
-**Herkunft der Empfehlungen.** Jedes Element der Situation `print`, jedes Element aus einer Quelle der Praxis und
-die Schritte zu den Standardanwendungen und zu Workspace Environment Management nennen in `source` ihre Quelle; der
-Bericht zeigt sie beim Element. Die Druckempfehlungen stammen aus der Dokumentation von
-Microsoft, Citrix, HP, Kyocera und Brother. Der Nachweis [docs/guidance/quellen.md](docs/guidance/quellen.md) nennt
-je Hersteller und Quelle die Dokumente mit Adresse und Abrufdatum, welches Element sie stützen und was nicht
-aufgenommen wurde. Eine Empfehlung ohne belegbare Quelle steht nicht im Katalog. Vorschläge, die eine Einstellung
-ändern, nennen das Master-Image oder die Richtlinie als Ort der Änderung, weil die Zielumgebung aus nicht
-persistenten Servern besteht.
+**Herkunft der Empfehlungen.** Jedes Element der Situation `print`, jedes Element aus einer Quelle der Praxis und die
+Schritte zu den Standardanwendungen und zu Workspace Environment Management nennen in `source` ihre Quelle; der
+Bericht zeigt sie beim Element. Die Druckempfehlungen stammen aus der Dokumentation von Microsoft, Citrix, HP,
+Kyocera und Brother, die zu PrinTaurus aus den Versionshinweisen von AKI. Dazu kommen Elemente aus der Praxis (Thomas
+Kötzing, Trentent Tye) und eigene Hinweise von WorkerPerf zur Auswertung. Der Nachweis
+[docs/guidance/quellen.md](docs/guidance/quellen.md) nennt je Hersteller und Quelle die Dokumente mit Adresse und
+Abrufdatum, welches Element sie stützen und was nicht aufgenommen wurde. Eine Empfehlung ohne belegbare Quelle steht
+nicht im Katalog. Vorschläge, die eine Einstellung ändern, nennen das Master-Image oder die Richtlinie als Ort der
+Änderung, weil die Zielumgebung aus nicht persistenten Servern besteht.
 
 Zwölf Quellen aus der Praxis ergänzen die Hersteller. Ihre Elemente nennen in `source` den Zusatz „Empfehlung aus der
 Praxis" und sind nie als Empfehlung eines Herstellers formuliert. Widerspricht eine Quelle aus der Praxis dem
 Hersteller, gilt der Hersteller; die eine Ausnahme ist der Energiesparplan „Höchstleistung". Ein Element aus der
-Praxis steht hinter den Elementen der Hersteller derselben Bedingung. Es verdrängt keinen früheren Schritt aus den
-ersten fünf Prüfschritten und drei Vorschlägen eines Vorfalls; ein Test prüft das an jedem Vorfall der
-Testberichte. Eine Aussage, die ein vorhandenes Element nur stützt, steht als Satz mit dem Namen der Quelle darin.
+Praxis steht hinter den Elementen der Hersteller derselben Bedingung. Ein Element der zehn später aufgenommenen
+Quellen verdrängt keinen Schritt, der vorher unter den ersten fünf Prüfschritten oder drei Vorschlägen eines Vorfalls
+stand; ein Test prüft das an jedem Vorfall der Testberichte. Eine Aussage, die ein vorhandenes Element nur stützt,
+steht als Satz mit dem Namen der Quelle darin.
 
 | Quelle aus der Praxis | Thema | Grenze |
 |---|---|---|
 | Carl Stalhood | Anleitungen zu Citrix | Citrix-Versionen bis 2411 |
 | BIS-F | Skripte zum Versiegeln des Master-Image | dokumentiert bis Windows Server 2019 |
-| GO-EUC | Laborvergleiche von Einstellungen | Zahlen nur unter den Testbedingungen, meist ohne Schutzsoftware und mit einer Sitzung je Maschine |
-| James Kindon | Workspace Environment Management, Profilverwaltung | keine Zahlen; jüngste Beiträge von 2023 |
+| GO-EUC | Laborvergleiche von Einstellungen | Zahlen nur unter den Testbedingungen und in ihrem Jahr; meist ohne Schutzsoftware, viele Tests mit einer Sitzung je Maschine |
+| James Kindon | Workspace Environment Management, Profilverwaltung | Zahlen nur aus einem Kundenfall, keine im Katalog; jüngste Beiträge mit eigenem Inhalt von 2023 |
 | James Rankin | Messreihen zur Dauer der Anmeldung | Labor mit Windows Server 2019 oder Windows 10, nicht unter Last |
 | Thomas Kötzing | Drucken, Anmeldung, Profile | meist ohne Messung; Druckregeln aus der Zeit von Windows Server 2008 R2 |
 | Manuel Winkel | einzelne Themen: Teams, WEM, Beobachtungen aus Projekten | keine Messungen, oft ein einzelner Kundenfall |
@@ -1025,7 +1029,7 @@ Je Lauf ein Ordner mit (Format 3):
 
 | Datei | Zeilen | Inhalt |
 |---|---|---|
-| `meta.json` | – | Formatversion, Host, Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig; dazu die mit `-Skip` weggelassenen Kategorien (`Skip`, eine Liste von Kategorienamen, ohne `-Skip` leer; fehlt das Feld, gilt die Aufzeichnung als vollständig gemessen) |
+| `meta.json` | – | Formatversion, Name des Servers (`Computer`), Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig; dazu die mit `-Skip` weggelassenen Kategorien (`Skip`, eine Liste von Kategorienamen, ohne `-Skip` leer; fehlt das Feld, gilt die Aufzeichnung als vollständig gemessen) |
 | `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
 | `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
 | `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
@@ -1099,13 +1103,13 @@ Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schn
 
 **Ereignisquellen.** Die Liste der Protokolle, Quellen und Kennungen steht in `src/events.json`: je Eintrag
 Protokoll, Quelle, Kennungen, Gruppe, Art und welche Datenfelder des Ereignisses zu lesen sind. Neue Kennungen und
-Quellen einer **vorhandenen Art** lassen sich ergänzen, ohne Code zu ändern. Eine **neue Art** braucht Code: ihren Namen
-in der Liste der Arten (`src/WorkerPerf.EventConfig.ps1`), ihr Wort in der Worttabelle der Seite
-(`src/report-template.html`) und, wenn sie Vorfälle bilden soll, die Regeln der Auswertung (`src/WorkerPerf.Events.ps1`).
-Die Windows-Datenquelle, die Auswertung und die Simulation lesen die Liste. Ein Datenfeld
-ist ein Name, eine Position (`#0` für das erste Datenfeld) oder `binary:utf16`, oder eine Liste davon: der erste
-Eintrag mit einem Wert gilt. So liest `Application Error` 1000 die benannten Felder, wo Windows sie benennt, und
-sonst die klassischen Positionen. Statt Kennungen kann ein Eintrag `"ids": "*"` mit `"levels"` (`critical`,
+Quellen einer **vorhandenen Art** lassen sich ergänzen, ohne Code zu ändern. Eine **neue Art** braucht Code: ihren
+Namen in der Liste der Arten (`src/WorkerPerf.EventConfig.ps1`), ihr Wort in der Worttabelle der Seite
+(`src/report-template.html`) und, wenn sie Vorfälle bilden soll, die Regeln der Auswertung
+(`src/WorkerPerf.Events.ps1`). Die Windows-Datenquelle, die Auswertung und die Simulation lesen die Liste. Ein
+Datenfeld ist ein Name, eine Position (`#0` für das erste Datenfeld) oder `binary:utf16`, oder eine Liste davon: der
+erste Eintrag mit einem Wert gilt. So liest `Application Error` 1000 die benannten Felder, wo Windows sie benennt,
+und sonst die klassischen Positionen. Statt Kennungen kann ein Eintrag `"ids": "*"` mit `"levels"` (`critical`,
 `error`, `warning`, `information`) nennen: dann gilt jedes Ereignis der Quelle auf diesen Ebenen; ein Eintrag mit
 Kennungen geht vor, und mehrere solche Einträge einer Quelle dürfen sich in den Ebenen nicht überschneiden. Auch ein
 Eintrag mit Kennungen kann `"levels"` nennen; die Abfrage liest dann nur diese Ebenen. So nehmen die Einträge für
@@ -1129,10 +1133,9 @@ Speichermangel sagt. Der Dienstname von `Service Control Manager` kommt aus dem 
 Die Profilverwaltung von Citrix (`Citrix Profile Management`) liest der Collector nach Ebene: kritische Meldungen und
 Fehler als Profilproblem, Warnungen als „Warnung der Profilverwaltung" ohne Vorfall (siehe Offene Punkte). Für die
 Citrix-Druckverwaltung steht keine Quelle in `events.json`; ihr Dienst `cpsvc` zählt zu den wichtigen und zu den
-Druckdiensten. Vom
-Druckdienst liest er die fehlgeschlagene Treiberinstallation (215) als Druckfehler und die fehlgeschlagenen
-Treiberimporte (600, 601) als eigene Art ohne Vorfall, beide mit dem Treibernamen; Wechsel des Standarddruckers und
-Meldungen ohne bekannte Felder bleiben draußen.
+Druckdiensten. Vom Druckdienst liest er die fehlgeschlagene Treiberinstallation (215) als Druckfehler und die
+fehlgeschlagenen Treiberimporte (600, 601) als eigene Art ohne Vorfall, beide mit dem Treibernamen; Wechsel des
+Standarddruckers und Meldungen ohne bekannte Felder bleiben draußen.
 
 Auf dem geprüften VDA fehlte keine der Quellen. Fehlt eine Kategorie, Klasse oder ein Protokoll auf einem
 anderen Server, meldet der Collector das Signal beim Start als nicht verfügbar (`meta.json`, `Sources`); es

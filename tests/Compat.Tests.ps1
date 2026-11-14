@@ -1,4 +1,8 @@
-BeforeDiscovery { $script:Sources = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.ps1) }
+BeforeDiscovery {
+    $script:Sources = @(Get-ChildItem (Join-Path $PSScriptRoot '../src') -Filter *.ps1)
+    # the scripts with comment-based help (a .SYNOPSIS line of their own)
+    $script:HelpScripts = @($script:Sources | Where-Object { [IO.File]::ReadAllText($_.FullName) -match '(?m)^\s*\.SYNOPSIS\s*$' })
+}
 
 BeforeAll {
     function Get-CompatViolations([string]$Path) {
@@ -88,6 +92,17 @@ Describe 'Pruefregeln fuer Windows PowerShell 5.1' {
 
 Describe 'Quelltext' {
     It '<_.Name> haelt die Regeln ein' -ForEach $Sources { Get-CompatViolations $_.FullName | Should -BeNullOrEmpty }
+}
+
+Describe 'Hilfe' {                                                                   # Task 12 Fix 1 O2
+    It 'findet die Skripte mit Hilfe' { @($HelpScripts).Count | Should -BeGreaterThan 0 }
+    It 'Get-Help <_.Name> zeigt die Kurzbeschreibung' -ForEach $HelpScripts {
+        # #Requires directly before the help block hides the help: Get-Help then shows only the syntax.
+        $text = [IO.File]::ReadAllText($_.FullName)
+        $synopsis = [regex]::Match($text, '(?m)^\s*\.SYNOPSIS\s*\r?\n\s*(\S.*?)\s*$').Groups[1].Value
+        $synopsis | Should -Not -BeNullOrEmpty
+        ([string](Get-Help $_.FullName).Synopsis).Trim() | Should -BeLike "$([WildcardPattern]::Escape($synopsis))*"
+    }
 }
 
 Describe 'Funktionsnamen' {

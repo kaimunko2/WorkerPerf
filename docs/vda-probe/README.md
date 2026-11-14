@@ -1,18 +1,18 @@
 # Quellen-Prüfskript für den VDA
 
-`Test-WorkerPerfSources.ps1` prüft auf einem Citrix-Worker, welche Datenquellen WorkerPerf dort nutzen kann: Leistungsindikatoren, Sitzungen, Prozesse, Dienste, Profilcontainer, Ereignisprotokolle, Druckertreiber und Druckwarteschlangen und die Erreichbarkeit von Gegenstellen.
+`Test-WorkerPerfSources.ps1` prüft auf einem Citrix-Server, welche Datenquellen WorkerPerf dort nutzen kann: Leistungsindikatoren, Sitzungen, Prozesse, Dienste, Profilcontainer, Ereignisprotokolle, Druckertreiber und Druckwarteschlangen und die Erreichbarkeit von Gegenstellen.
 Das Ergebnis entscheidet, welche Zählernamen und Berechnungen die Aufzeichnung verwendet; das Skript liest nur und ändert nichts am System.
 
 ## Aufruf
 
-1. `Test-WorkerPerfSources.ps1` als einzelne Datei auf den Worker kopieren, z. B. nach `C:\Temp`.
+1. `Test-WorkerPerfSources.ps1` als einzelne Datei auf den Server kopieren, z. B. nach `C:\Temp`.
 2. Eine PowerShell-Konsole **mit erhöhten Rechten** („Als Administrator ausführen“) öffnen und ausführen:
 
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Test-WorkerPerfSources.ps1 -OutFile C:\Temp
    ```
 
-3. **Während das Skript läuft**, etwa 40 Sekunden lang in einer Benutzersitzung auf dem Worker tippen oder Fenster bewegen. Nur so liefert die Messung der Eingabeverzögerung aussagekräftige Werte. Das Skript meldet sich mit „Bitte jetzt in einer Benutzersitzung tippen …“, sobald dieser Teil beginnt.
+3. **Während das Skript läuft**, etwa 40 Sekunden lang in einer Benutzersitzung auf dem Server tippen oder Fenster bewegen. Nur so liefert die Messung der Eingabeverzögerung aussagekräftige Werte. Das Skript meldet sich mit „Bitte jetzt in einer Benutzersitzung tippen …“, sobald dieser Teil beginnt.
 
 Der gesamte Lauf dauert einige Minuten; geschätzt sind zwei bis sechs Minuten. Auf einem Windows-Server gemessen ist der Lauf mit den Prüfungen der Ereignisse und des Druckens noch nicht. 40 Sekunden entfallen auf die Eingabeverzögerung, je eine Sekunde auf zwölf Zählergruppen, dazu kommen drei Prozessabfragen, die Liste der Leistungsklassen, die Druckertreiber und die Ereignisprotokolle. Aus jedem Ereignisprotokoll werden von den Ereignissen der letzten sieben Tage höchstens 1.000 gelesen, ohne Meldungstexte; das Muster `Citrix*` wird einmal je Lauf aufgelöst. Die Protokolle brauchen trotzdem die meiste Zeit nach der Eingabeverzögerung: Eine Abfrage mit wenigen Treffern durchsucht das ganze Protokoll, und das Anwendungs- und das Systemprotokoll werden, wenn viele Citrix-Quellen hineinschreiben, in mehreren Abfragen gelesen. Auf einem großen Protokoll ist mit bis zu etwa einer Minute je Protokoll zu rechnen. Während des Lesens zeigt die Konsole je Protokoll eine Zeile mit seinem Namen und der Zahl der bisher gelesenen Ereignisse; solange sie weiterzählt oder neue Zeilen erscheinen, bitte nicht abbrechen. Jede CIM-Abfrage endet spätestens nach 30 Sekunden; für das Lesen der Leistungsindikatoren, der Ereignisprotokolle, der Registrierung und der Sitzungen gibt es kein Zeitlimit.
 
@@ -58,14 +58,14 @@ Ohne `-EndpointFile` steht die Prüfung der Gegenstellen in der Tabelle mit dem 
 
 ## Ergebnis zurückgeben
 
-In der JSON-Datei sind Namen maskiert, auch der des Workers (er steht weder im Dateinamen noch im Inhalt; mehrere Worker lassen sich am Zeitstempel der Datei unterscheiden). In allen Texten werden ersetzt:
+In der JSON-Datei sind Namen maskiert, auch der des Servers (er steht weder im Dateinamen noch im Inhalt; mehrere Server lassen sich am Zeitstempel der Datei unterscheiden). In allen Texten werden ersetzt:
 
 | Name | Ersatz | Woran das Skript ihn erkennt |
 |---|---|---|
 | Benutzernamen | `<user>` | Sitzungen (WTS), Ordner der Benutzerprofile, angemeldeter Benutzer; außerdem ohne Liste der Name neben einer Konten-SID (`<sid>_name`, `name_<sid>`) und in Containerdateien (`Profile_name.vhdx`, `ODFC_name.vhdx`) |
 | Domänennamen | `<domain>` | Domäne jeder Sitzung, `USERDOMAIN`, `USERDNSDOMAIN`, Zusatz an Profilordnern, mehrteiliger DNS-Anteil eines Servernamens; neben einem Benutzernamen auch unbekannte (`<user>.<domain>`, `<domain>\<user>`, `<user>@<domain>`) |
 | Clientnamen | `<client>` | Clientname jeder Sitzung |
-| Name des Workers | `<server>` | Computername und Hostname |
+| Name des Servers | `<server>` | Computername und Hostname |
 | Servernamen | `<server>` | jeder Pfad der Form `\\server\…`, `\\?\UNC\server\…`, `\??\UNC\server\…`, `\Device\Mup\server\…` oder `\Device\LanmanRedirector\…\server\…`; die so gefundenen Server, die Server der SMB-Freigaben und die Hosts der Datei für `-EndpointFile` werden auch in freiem Text ersetzt |
 | Konten-SIDs | `<sid>` | Muster `S-1-5-21-…` (Domänenkonten) und `S-1-12-1-…` (Entra-ID-Konten); bekannte SIDs wie `S-1-5-18` bleiben stehen |
 
