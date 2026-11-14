@@ -297,7 +297,7 @@ Describe 'Katalog in src' {
             Should -BeExactly 'Handlungsbedarf: 1-mal Engpass auf dem Server, 1-mal Verzögerung, 1-mal Absturz oder Fehler; 2 min mit spürbarer Störung. Nicht gemessen: Citrix.'
         $all = @($script:WorkerPerfCategories.Keys | Where-Object { $script:WorkerPerfCategories[$_].Active })
         & $say @($delay) $all |
-            Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung; 2 min mit spürbarer Störung. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rückblick, Drucken, Gegenstellen.'
+            Should -BeExactly 'Auffälligkeiten ohne erkannten Engpass auf dem Server: 1-mal Verzögerung; 2 min mit spürbarer Störung. Nicht gemessen: Prozesse, Laufwerke, Citrix, Ereignisse, Rückblick, Drucken, Gegenstellen, Zustandsbild.'
         # a zero stands only for what was measured: without events none for crashes, without Citrix none for chronic states
         foreach ($list in @($delay), @((New-Engpass 'cpu'), $delay)) {
             & $say $list @('Ereignisse') | Should -Not -Match '(?<!\d)0-mal Absturz'; & $say $list @('Ereignisse') | Should -Match '(?<!\d)0-mal Dauerzustand'
@@ -1332,7 +1332,10 @@ Describe 'Nachweis der Druckempfehlungen' {
         $lines = @($Doc -split "`n")
         $firstTable = [array]::IndexOf($lines, '## Microsoft'); $firstTable | Should -BeGreaterThan 50
         $last = [array]::IndexOf($lines, '## Auf dem Zielsystem zu bestätigen'); $last | Should -BeGreaterThan $firstTable
-        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) { if (($n -lt $firstTable -or $n -gt $last) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
+        # the list ends where the section of the health picture begins (its own tables and lists; tests/Health.Tests.ps1)
+        $health = [array]::IndexOf($lines, '## Zustandsbild'); $health | Should -BeGreaterThan $last
+        $long = @(for ($n = 0; $n -lt $lines.Count; $n++) {
+                if (($n -lt $firstTable -or ($n -gt $last -and $n -lt $health)) -and $lines[$n].Length -gt 120) { "Zeile $($n + 1): $($lines[$n].Length) Zeichen" } })
         $long | Should -Be @()
     }
     It 'fuehrt die veralteten Empfehlungen unter Nicht aufgenommen statt im Katalog' {                                            # ruling P3-R38
