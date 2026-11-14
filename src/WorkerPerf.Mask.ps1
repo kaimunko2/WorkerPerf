@@ -7,7 +7,7 @@
 # (Add-WorkerPerfMaskName), and the numbers of the kinds it leaves and joins move. A client name must be masked at the
 # level that masks persons: privacy wins over stable numbers (ZB-R46).
 # Requires WorkerPerf.Common.ps1 (also the value list WorkerPerfHealthValues), WorkerPerf.Load.ps1
-# (Open-WorkerPerfCsvReader), WorkerPerf.EventConfig.ps1 (default lists of accounts and domains that are not persons) and WorkerPerf.Events.ps1 (event and print driver readers, person check).
+# (Open-WorkerPerfCsvReader, ConvertFrom-WorkerPerfHealthJsonText), WorkerPerf.EventConfig.ps1 (default lists of accounts and domains that are not persons) and WorkerPerf.Events.ps1 (event and print driver readers, person check).
 # Separate from the masking of the probe script Test-WorkerPerfSources.ps1, which is not used here.
 # Get-WorkerPerfMaskRows, Get-WorkerPerfMaskHolders and Get-WorkerPerfMaskVocabularyHits emit plain pipeline output:
 # wrap calls in @(...).
