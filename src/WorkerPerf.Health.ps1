@@ -18,7 +18,7 @@ $script:WorkerPerfHealthRequiredThresholds = @('workStartHour', 'workEndHour')
 # the parts of the catalogue, in the order they are checked
 $script:WorkerPerfHealthCatalogueParts = @('version', 'areas', 'grades', 'thresholds', 'values', 'copy', 'precedence', 'checks')
 # the parts a catalogue may leave out
-$script:WorkerPerfHealthOptionalParts = @('units')
+$script:WorkerPerfHealthOptionalParts = @('units', 'legends')
 
 # The members the loader reads, per object of the catalogue; names are compared exactly and any other name is rejected.
 $script:WorkerPerfHealthCatalogueFields = [ordered]@{
@@ -635,6 +635,21 @@ function Test-WorkerPerfHealthUnits([string]$Path, $Units, $Facts) {
     }
 }
 
+function Test-WorkerPerfHealthLegends([string]$Path, $Legends, $Facts) {
+    # legends (optional): the short legend of the keywords a value or fact shows ("Running = laeuft, Stopped =
+    # beendet"), id -> text, so that the label in values stays a plain name. Only ids of the fact table (read values,
+    # derived facts, facts of the applications of the list), each with a text and nothing below it.
+    if (-not (Test-WorkerPerfHealthCatalogueObject $Legends)) { Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' 'ist kein Objekt' }
+    foreach ($id in (Get-WorkerPerfHealthCatalogueNames $Legends)) {
+        $known = $false
+        foreach ($k in $Facts.Keys) { if ([string]$k -ceq $id) { $known = $true; break } }
+        if (-not $known) { Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' "nennt die unbekannte Kennung '$id' (erlaubt sind die Kennungen der Werte und Fakten)" }
+        if (-not (Test-WorkerPerfHealthCatalogueText (Get-WorkerPerfHealthCatalogueMember $Legends $id).Value)) {
+            Stop-WorkerPerfHealthCatalogue $Path 'legends' '' '' "nennt fuer '$id' keinen Text"
+        }
+    }
+}
+
 function Test-WorkerPerfHealthCopy([string]$Path, $Copy) {
     # copy: every required text and no other, each with only its placeholders.
     if (-not (Test-WorkerPerfHealthCatalogueObject $Copy)) { Stop-WorkerPerfHealthCatalogue $Path 'copy' '' '' 'ist kein Objekt' }
@@ -697,6 +712,7 @@ function Read-WorkerPerfHealthCatalogue([string]$Path, [object[]]$Apps = @()) {
     #   values       <fact>: label
     #   copy         <key>: text
     #   units        <unit>: its singular (an empty object when the catalogue has no part units)
+    #   legends      <fact>: the legend of its keywords (an empty object when the catalogue has no part legends)
     #   precedence[] check, winner, reason
     #   checks[]     id, area, title, meaning, kind, values[], relates[],
     #                rules: check[], act[] (a rule the catalogue does not give is an empty list), each condition with
@@ -731,6 +747,8 @@ function Read-WorkerPerfHealthCatalogue([string]$Path, [object[]]$Apps = @()) {
     $facts = Get-WorkerPerfHealthFactTable $Apps
     if ($partNames -ccontains 'units') { Test-WorkerPerfHealthUnits $Path (Get-WorkerPerfHealthCatalogueMember $cat 'units').Value $facts }
     else { Add-Member -InputObject $cat -MemberType NoteProperty -Name 'units' -Value ([pscustomobject]@{}) }
+    if ($partNames -ccontains 'legends') { Test-WorkerPerfHealthLegends $Path (Get-WorkerPerfHealthCatalogueMember $cat 'legends').Value $facts }
+    else { Add-Member -InputObject $cat -MemberType NoteProperty -Name 'legends' -Value ([pscustomobject]@{}) }
     $factIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($k in $facts.Keys) { $null = $factIds.Add($k) }
     $ctx = @{ Path = $Path; Facts = $facts; FactIds = $factIds; Thresholds = [string[]]$thresholdIds
