@@ -18,15 +18,16 @@
           queues (printqueues.csv, a row only when a value changes)
 
     At the start the events of the last -EventLookbackDays days go to events_before.csv and the
-    installed print drivers to printdrivers.csv. Before the first tick the health picture of the
-    server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).
+    installed print drivers to printdrivers.csv. With -Health the health picture of the server is read once
+    before the first tick (health.json: facts about the machine, no rating). In this version the health picture is
+    off by default: without -Health it is left out as with -Skip Zustand, and the report does not show it yet.
 
     While a trigger signal of thresholds.json is over its threshold (and -BurstHoldSeconds
     afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
     is a keyframe that lists every process; the others only list active processes.
 
     The run folder also holds a copy of thresholds.json, a copy of the application list (apps.json,
-    without -Skip Zustand) and meta.json (host facts, settings, end reason); in the simulation
+    with -Health) and meta.json (host facts, settings, end reason); in the simulation
     additionally expected.json (the expected analysis result).
 
     Stop the capture with Ctrl+C, by -DurationMinutes, by -MaxSizeMB, or by creating a file
@@ -76,7 +77,8 @@
     this file no probes are made (see endpoints.example.json).
 
 .PARAMETER AppsFile
-    Application list for the health picture (area Anwendungen). Default: apps.json next to this script.
+    Application list for the health picture (area Anwendungen), read with -Health or -HealthOnly. Default: apps.json
+    next to this script.
 
 .PARAMETER IncludeCommandLine
     Also store process command lines (may contain sensitive data such as file names or URLs). Without Prozesse
@@ -103,9 +105,15 @@
       Rueckblick    events before the start (events_before.csv)
       Drucken       print drivers and print queues (printdrivers.csv, printqueues.csv)
       Gegenstellen  endpoint probes (probes.csv)
-      Zustand       the health picture of the server, read once at the start (health.json)
+      Zustand       the health picture of the server, read once at the start (health.json); off by default in
+                    this version, -Health turns it on
     The base is always measured: host signals, input delay per session, snapshots and sessions
     (ticks.csv, inputdelay.csv, snapshots.csv, sessions.csv, meta.json, thresholds.json).
+
+.PARAMETER Health
+    Reads the health picture of the server once at the start (health.json, category Zustand). In this version the health
+    picture is off by default; meta.json then lists Zustand under Skip. The report does not show the health picture yet.
+    Not together with -Skip Zustand. -HealthOnly reads the health picture without it.
 
 .PARAMETER HealthOnly
     Reads only the health picture, the lookback and the print driver list and ends; no measurement. With it apply
@@ -124,6 +132,9 @@
 
 .EXAMPLE
     .\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPath .\demo
+
+.EXAMPLE
+    .\Start-WorkerPerfCapture.ps1 -OutputPath D:\WorkerPerf -DurationMinutes 240 -Health
 
 .EXAMPLE
     .\Start-WorkerPerfCapture.ps1 -HealthOnly -OutputPath D:\WorkerPerf
@@ -146,7 +157,8 @@ param(
     [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [string[]]$Skip = @(),
     [switch]$Simulate,
-    [switch]$HealthOnly
+    [switch]$HealthOnly,
+    [switch]$Health
 )
 
 # Where AppLocker or WDAC puts the console into ConstrainedLanguage, .NET types and Add-Type fail with errors that
@@ -165,6 +177,10 @@ $ErrorActionPreference = 'Stop'
 # the categories left out (resolved from -Skip, -NoCitrix and -EventLookbackDays), before anything is read or
 # created (an unknown value stops the start here)
 $leftOut = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
+# Interim version: the health picture is read only on request (-Health) or in the quick run; otherwise Zustand is left
+# out as with -Skip Zustand (meta.json lists it under Skip).
+if ($Health -and $leftOut -contains 'Zustand') { throw '-Health und -Skip Zustand schliessen sich aus: -Health liest das Zustandsbild, -Skip Zustand laesst es weg.' }
+if (-not $Health -and -not $HealthOnly) { $leftOut = @(Resolve-WorkerPerfSkip (@($Skip) + 'Zustand') ([bool]$NoCitrix) $EventLookbackDays) }
 # The quick run consists of the health picture and takes none of the settings of the measurement: refused here, before
 # anything is created.
 if ($HealthOnly) {
@@ -407,12 +423,13 @@ try {
     if ($leftOut -notcontains 'Zustand') {
         $healthStep = 'read'
         try {
-            $health = Get-WorkerPerfHealth
-            if ($null -ne $health) {
+            # not $health: PowerShell does not tell it from the switch -Health
+            $picture = Get-WorkerPerfHealth
+            if ($null -ne $picture) {
                 $healthStep = 'write'
-                Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $health
+                Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $picture
                 $healthStep = 'line'
-                Write-Host (Format-WorkerPerfHealthLine $health)
+                Write-Host (Format-WorkerPerfHealthLine $picture)
             }
             else { $noHealth = 'Die Datenquelle hat kein Zustandsbild geliefert.' }
         }

@@ -74,11 +74,12 @@ Describe 'Aufzeichnung mit -Skip' {
         @($noLb.LookbackReadCounts.PSObject.Properties).Count | Should -Be 0; $noLb.EventReadCounts.application.Skipped | Should -Be 1
     }
     It 'ergibt mit den alten Schaltern, doppelt, in anderer Schreibweise und als eine Zeichenkette dieselbe Aufzeichnung' {   # Review Focus 4 und 5
-        $a = @(& $Capture -Simulate -DurationMinutes 60 -NoCitrix -OutputPath (Join-Path $TestDrive 'a') 6>&1)
+        # Aussage angepasst (Zwischenstand auf main): das Zustandsbild ist standardmaessig aus, die Laeufe geben -Health mit wie New-SkipRuns
+        $a = @(& $Capture -Simulate -DurationMinutes 60 -NoCitrix -Health -OutputPath (Join-Path $TestDrive 'a') 6>&1)
         ($a | Out-String) | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Ereignisse, Rueckblick, Drucken, Gegenstellen, Zustand\s+Nicht gemessen \(-Skip\): Citrix'
         Get-Shape ([string]$a[-1]) | Should -BeExactly (Get-Shape $Runs.Citrix)
         # Aussage angepasst (Zustandsbild, Task 8): Zustand ist aktiv, der Lauf laesst den Wert 'Zustand' und die Aussagen dazu weg
-        $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK' -OutputPath (Join-Path $TestDrive 'b') 6>&1)
+        $b = @(& $Capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Skip 'rueckblick,RUECKBLICK' -Health -OutputPath (Join-Path $TestDrive 'b') 6>&1)
         Get-Shape ([string]$b[-1]) | Should -BeExactly (Get-Shape $Runs.Rueckblick)
         $console = $b | Out-String
         $console | Should -Match 'Nicht gemessen \(-Skip\): Rueckblick\r?\n'
@@ -134,6 +135,33 @@ Describe 'Zustandsbild in der Aufzeichnung' {
         $m = Get-Meta $Runs.Voll; $m.Sources.health.Available | Should -BeTrue; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
         $m.Ticks | Should -Be 1800                                                          # das Lesen kostet keinen Takt
     }
+    It 'liest das Zustandsbild ohne -Health nicht und fuehrt Zustand als weggelassen' {     # Zwischenstand auf main (P3-R80)
+        $con = Join-Path $TestDrive 'default.console.txt'
+        $run = Invoke-SimCapture (Join-Path $TestDrive 'default') @{ Health = $false } $con
+        foreach ($f in 'health.json', 'apps.json') { Test-Path (Join-Path $run $f) | Should -BeFalse -Because $f }
+        $m = Get-Meta $run; @($m.Skip) | Should -Be @('Zustand'); $m.Sources.health.Available | Should -BeFalse; $m.Sources.health.Detail | Should -Be 'abgeschaltet (-Skip Zustand)'
+        $m.EndReason | Should -Be 'duration'; $m.Ticks | Should -Be 1800; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
+        (Get-Content $con -Raw) | Should -Match 'Gemessen: Basis, Prozesse, Laufwerke, Citrix, Ereignisse, Rueckblick, Drucken, Gegenstellen\r?\nNicht gemessen \(-Skip\): Zustand\r?\n'
+        (Get-Content $con -Raw) | Should -Not -Match 'Zustandsbild: '
+        # dieselbe Aufzeichnung wie mit -Skip Zustand, und der Bericht nennt das Zustandsbild unter den weggelassenen Kategorien
+        Get-Shape $run | Should -BeExactly (Get-Shape $Runs.Zustand)
+        $file = Join-Path $TestDrive 'default.html'; [void](& $Report -Path $run -OutFile $file -RoleFile (Join-Path $TestDrive 'rep/roles.sim.json') 6>$null)
+        $d = Get-ReportData $file; @($d.skipped.id) | Should -Be @('Zustand'); $d.skipped[0].label | Should -Be 'Zustandsbild'
+        $d.skipped[0].text | Should -Be 'Das Zustandsbild des Servers wurde bei dieser Messung nicht gelesen.'
+    }
+    It 'liest das Zustandsbild mit -Health und schreibt health.json' {                       # Zwischenstand auf main (P3-R80)
+        $run = (& $Capture -Simulate -DurationMinutes 60 -Health -OutputPath (Join-Path $TestDrive 'health') 6>$null) | Select-Object -Last 1
+        (Get-Content (Join-Path $run 'health.json') -Raw | ConvertFrom-Json).FormatVersion | Should -Be 1; Test-Path (Join-Path $run 'apps.json') | Should -BeTrue
+        $m = Get-Meta $run; @($m.Skip).Count | Should -Be 0; $m.Sources.health.Available | Should -BeTrue
+        Get-Shape $run | Should -BeExactly (Get-Shape $Runs.Voll)
+    }
+    It 'lehnt -Health zusammen mit -Skip Zustand ab, bevor etwas angelegt wird' {           # Zwischenstand auf main (P3-R80)
+        $dir = Join-Path $TestDrive 'healthskip'
+        $refused = '-Health und -Skip Zustand schliessen sich aus: -Health liest das Zustandsbild, -Skip Zustand laesst es weg.'
+        { & $Capture -Simulate -DurationMinutes 60 -Health -Skip Zustand -OutputPath $dir 6>$null } | Should -Throw $refused
+        { & $Capture -Simulate -DurationMinutes 60 -Health -Skip 'prozesse,zustand' -OutputPath $dir 6>$null } | Should -Throw $refused
+        Test-Path $dir | Should -BeFalse
+    }
     It 'legt mit -Skip Zustand keine health.json an' {
         Test-Path (Join-Path $Runs.Zustand 'health.json') | Should -BeFalse; (Get-Meta $Runs.Zustand).Sources.health.Detail | Should -Be 'abgeschaltet (-Skip Zustand)'
         @($D.Zustand.skipped.id) | Should -Be @('Zustand'); $D.Zustand.skipped[0].text | Should -Be 'Das Zustandsbild des Servers wurde bei dieser Messung nicht gelesen.'
@@ -145,13 +173,14 @@ Describe 'Zustandsbild in der Aufzeichnung' {
         @(($rows | Where-Object Id -eq 'installed').App | Sort-Object) | Should -Be @('edge', 'office', 'teams'); @($rows | Where-Object { $_.Id -eq 'installed' -and -not $_.Value }).Count | Should -Be 0
         $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'; $dir = Join-Path $TestDrive 'badapps'; $bad = Join-Path $TestDrive 'apps.bad.json'
         [IO.File]::WriteAllText($bad, (Get-Content $shipped -Raw).Replace('HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge"', 'HKCU\\SOFTWARE\\Policies\\Microsoft\\Edge"'))
-        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile $bad 6>$null } | Should -Throw "*Anwendung 'edge': Probe '*':*HKLM*"
-        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw "Anwendungsliste '*keine.json' fehlt."
+        # Aussage angepasst (Zwischenstand auf main): die Anwendungsliste gehoert zum Zustandsbild, das nur mit -Health gelesen wird
+        { & $capture -Simulate -DurationMinutes 60 -Health -OutputPath $dir -AppsFile $bad 6>$null } | Should -Throw "*Anwendung 'edge': Probe '*':*HKLM*"
+        { & $capture -Simulate -DurationMinutes 60 -Health -OutputPath $dir -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw "Anwendungsliste '*keine.json' fehlt."
         Test-Path $dir | Should -BeFalse
     }
     It 'zeichnet weiter auf, wenn das Lesen als Ganzes scheitert' {   # Review Focus 1
         $src = New-PatchedSource (Join-Path $TestDrive 'srchealth') "function Get-WorkerPerfHealth { throw 'Testfehler Zustandsbild' }"
-        $out = @(& $src -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'failhealth') 6>$null 3>&1)
+        $out = @(& $src -Simulate -DurationMinutes 60 -Health -OutputPath (Join-Path $TestDrive 'failhealth') 6>$null 3>&1)   # -Health: Zwischenstand auf main
         $run = [string]$out[-1]; $m = Get-Meta $run
         $m.EndReason | Should -Be 'duration'; $m.Ticks | Should -Be 1800; $m.SourceErrors.health.Count | Should -Be 1; $m.SourceErrors.health.FirstMessage | Should -Be 'Testfehler Zustandsbild'
         Test-Path (Join-Path $run 'health.json') | Should -BeFalse

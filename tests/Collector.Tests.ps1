@@ -74,7 +74,8 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
 function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
     @{ Events = @([pscustomobject]@{ Time = $Until.AddMinutes(-5); Log = 'system'; Source = 'Sim'; EventId = 7031; Kind = 'service'; Text = 'vorher' }); Capped = @() } }
 '@
-        $run = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
+        # -Health: das Zustandsbild ist im Zwischenstand auf main standardmaessig aus (Skip nennt sonst auch Zustand)
+        $run = (& $capture -Simulate -DurationMinutes 60 -EventLookbackDays 0 -Health -OutputPath (Join-Path $TestDrive 'nolb') 6>$null) | Select-Object -Last 1
         # Aussage geaendert (Messkategorien, Task 1): -EventLookbackDays 0 ist -Skip Rueckblick, die Datei einer weggelassenen
         # Kategorie wird nicht angelegt
         Test-Path (Join-Path $run 'events_before.csv') | Should -BeFalse

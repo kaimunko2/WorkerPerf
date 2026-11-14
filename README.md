@@ -140,6 +140,7 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 | `-ThresholdFile` | Schwellwerte und Auslöser-Signale, Standard `thresholds.json` neben dem Skript |
 | `-EndpointFile` | Gegenstellen für die Proben, Standard `endpoints.json` neben dem Skript; fehlt sie, gibt es keine Proben |
 | `-IncludeCommandLine` | Befehlszeilen der Prozesse mitschreiben (können sensible Daten enthalten) |
+| `-Health` | beim Start einmalig das Zustandsbild des Servers lesen (`health.json`); in dieser Version ist es ohne den Schalter aus. Nicht zusammen mit `-Skip Zustand` |
 | `-Skip` | Messkategorien weglassen, etwa `-Skip Prozesse,Rueckblick` (siehe [Kategorien weglassen](#kategorien-weglassen--skip)) |
 | `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen; dasselbe wie `-Skip Citrix` |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
@@ -148,9 +149,10 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 
 #### Kategorien weglassen (`-Skip`)
 
-Im Standard misst der Collector alles. Wer den Messaufwand oder die Startzeit verringern will, lässt einzelne
-Kategorien bewusst weg. Was der Collector nicht liest, belastet den Server nicht; nachholen lässt es sich aber auch
-nicht. Der Standard bleibt deshalb der vollständige Lauf.
+Im Standard misst der Collector alles außer dem Zustandsbild, das in dieser Version nur `-Health` einschaltet. Wer
+den Messaufwand oder die Startzeit verringern will, lässt einzelne Kategorien bewusst weg. Was der Collector nicht
+liest, belastet den Server nicht; nachholen lässt es sich aber auch nicht. Der Standard bleibt deshalb der
+vollständige Lauf.
 
 ```powershell
 .\src\Start-WorkerPerfCapture.ps1 -DurationMinutes 10 -Skip Prozesse,Rueckblick
@@ -179,13 +181,16 @@ Regeln:
 - **Werte:** Groß- und Kleinschreibung ist egal, doppelte Werte zählen einmal. Ein unbekannter Wert bricht den Start
   mit einer Meldung ab, die die gültigen Werte nennt; ebenso ein Kategoriename als `-OutputPath`, den ein Leerzeichen
   statt eines Kommas dorthin bringt (`-Skip Prozesse Rueckblick`; ein Ordner dieses Namens geht als `.\Rueckblick`).
-- **`Zustand`** lässt das Zustandsbild weg, das der Collector beim Start einmal liest (`health.json`). Der Bericht
-  zeigt das Zustandsbild noch nicht an. Fehlt es wegen `-Skip`, nennt der Bericht es wie jede weggelassene Kategorie
-  unter „Nicht gemessen (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`.
+- **`Zustand`** lässt das Zustandsbild weg, das der Collector beim Start einmal liest (`health.json`). In dieser
+  Version ist das Zustandsbild im Standard aus: Ohne `-Health` liest der Collector es nicht, als wäre `-Skip Zustand`
+  angegeben; `-Health` schaltet es für eine Messung ein, `-HealthOnly` liest es ohnehin. `-Skip Zustand` bleibt gültig,
+  zusammen mit `-Health` lehnt der Collector es ab. Der Bericht zeigt das Zustandsbild noch nicht an. Fehlt es, nennt
+  der Bericht es wie jede weggelassene Kategorie unter „Nicht gemessen (-Skip): Zustandsbild", und `meta.json` führt
+  `Zustand` unter `Skip`.
 - **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
   („Gemessen: Basis, …" und „Nicht gemessen (-Skip): …").
-- **Kombinationen:** Der Collector lehnt keine ab; der Bericht benennt, was fehlt. `Rueckblick` und `Ereignisse` sind
-  unabhängig voneinander. Ohne `Ereignisse` gibt es während der Messung keine Sitzungsereignisse (Anmelden, Trennen);
+- **Kombinationen:** Der Collector lehnt keine ab außer `-Health` mit `-Skip Zustand`; der Bericht benennt, was
+  fehlt. `Rueckblick` und `Ereignisse` sind unabhängig voneinander. Ohne `Ereignisse` gibt es während der Messung keine Sitzungsereignisse (Anmelden, Trennen);
   die Sitzungsliste der Basis bleibt. Ohne `Drucken` bleiben Druckereignisse sichtbar, der Bezug zu Treibern fehlt.
 - **Ohne `Prozesse`** lässt sich die Sitzung eines abgestürzten Prozesses nicht ermitteln. Schon ein einzelner Absturz
   oder Hänger bildet dann einen Vorfall, auch von Hintergrunddiensten. Abstürze derselben Anwendung, zwischen denen

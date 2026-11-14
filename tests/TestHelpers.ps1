@@ -1,8 +1,11 @@
 # tests/TestHelpers.ps1
 function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}, [string]$ConsoleFile = '') {
     # 60 Minuten Simulation unter deutscher Kultur; $Extra geht an den Collector (etwa @{ Skip = @('Prozesse') }); mit
-    # $ConsoleFile landet die Konsolenausgabe (Write-Host) in dieser Datei; liefert den Aufzeichnungsordner
+    # $ConsoleFile landet die Konsolenausgabe (Write-Host) in dieser Datei; liefert den Aufzeichnungsordner.
+    # Zwischenstand auf main: das Zustandsbild ist im Collector standardmaessig aus; diese Funktion gibt -Health mit, ausser
+    # $Extra nennt Health selbst (etwa @{ Skip = @('Zustand'); Health = $false }).
     [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
+    if (-not $Extra.ContainsKey('Health')) { $Extra = $Extra.Clone(); $Extra['Health'] = $true }
     $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
     if (-not $ConsoleFile) { (& $capture -Simulate -DurationMinutes 60 -OutputPath $OutDir @Extra 6>$null) | Select-Object -Last 1 }
     else {
@@ -23,7 +26,7 @@ function New-SkipRuns([string]$OutDir) {
         if ($n -eq 'Prozesse') { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n); IncludeCommandLine = $true } (Join-Path $OutDir 'Prozesse.console.txt') }
         else { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
     }
-    $runs['Zustand'] = Invoke-SimCapture (Join-Path $OutDir 'Zustand') @{ Skip = @('Zustand') }
+    $runs['Zustand'] = Invoke-SimCapture (Join-Path $OutDir 'Zustand') @{ Skip = @('Zustand'); Health = $false }
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs
 }

@@ -960,7 +960,8 @@ Describe 'Collector mit der Windows-Datenquelle und nachgestellten Windows-Aufru
             "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'WindowsStandIns.ps1')) + "`nReset-WinStandIns`n")
         [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
         $out = Join-Path $TestDrive 'out'
-        $script:Run = (& (Join-Path $dir 'Start-WorkerPerfCapture.ps1') -OutputPath $out -DurationMinutes 0.12 -FastIntervalSeconds 1 -IntervalSeconds 5 3>$null 6>$null) |
+        # -Health: das Zustandsbild ist im Zwischenstand auf main standardmaessig aus; der volle Lauf liest es weiter mit
+        $script:Run = (& (Join-Path $dir 'Start-WorkerPerfCapture.ps1') -Health -OutputPath $out -DurationMinutes 0.12 -FastIntervalSeconds 1 -IntervalSeconds 5 3>$null 6>$null) |
             Select-Object -Last 1
         $script:Meta = Get-Content (Join-Path $Run 'meta.json') -Raw | ConvertFrom-Json
     }
