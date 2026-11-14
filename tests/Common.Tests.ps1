@@ -453,7 +453,7 @@ Describe 'Anwendungsliste in src' {
         $p['edge.updateStable'].name | Should -Be 'Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}'; $p['edge.forcedExtensions'].read | Should -Be 'valueCount'; $p['edge.updateService'].read | Should -Be 'startMode'
         $p['office.updateTask'].path | Should -Be '\Microsoft\Office\Office Automatic Updates 2.0'; $p['office.outlookAddins'].read | Should -Be 'subKeyCount'
         $p['teams.disableAutoUpdate'].path | Should -Be 'HKLM\SOFTWARE\Microsoft\Teams'; $p['teams.meetingAddin'].read | Should -Be 'exists'
-        @($p.Keys | Where-Object { $p[$_].names } | Sort-Object) | Should -Be @('edge.diskCacheDir', 'edge.userDataDir', 'office.policyUpdatePath', 'office.updateUrl')
+        @($p.Keys | Where-Object { $p[$_].names } | Sort-Object) | Should -Be @('edge.diskCacheDir', 'edge.userDataDir', 'office.policyUpdatePath', 'office.updateChannel', 'office.updateUrl')
         @($p.Keys | Where-Object { -not $p[$_].documented } | Sort-Object) | Should -Be @('edge.updateService', 'office.platform', 'office.updatesEnabled', 'office.version')
         foreach ($k in $p.Keys) { $p[$k].label | Should -Not -Be $p[$k].id -Because $k }                         # jede Probe hat eine Bezeichnung
         foreach ($k in 'edge', 'office', 'teams') { @($Apps[$k].processes).Count | Should -BeGreaterThan 0 -Because $k }
@@ -484,7 +484,7 @@ updateService|service||edgeupdate|startMode|False|False
 '@
         $want['office'] = @'
 installed|registryKey|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|||||
-updateChannel|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdateChannel|value|False|True
+updateChannel|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdateChannel|value|True|True
 updateUrl|registryValue|HKLM\SOFTWARE\Microsoft\Office\ClickToRun\Configuration|UpdateUrl|value|True|True
 policyUpdatePath|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|UpdatePath|value|True|True
 policyUpdateBranch|registryValue|HKLM\SOFTWARE\Policies\Microsoft\office\16.0\Common\officeupdate|UpdateBranch|value|False|True
@@ -515,6 +515,19 @@ webview2Version|registryValue|HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Cli
             $got | Should -Be @($want[$k] -split "\r?\n" | Where-Object { $_ }) -Because $k
         }
         $Apps.edge.probes[6].label | Should -Be 'Startup-Boost'
+    }
+    It 'schreibt den wirksamen Updatekanal von Office als freien Servertext, auch eine Freigabe und eine interne Adresse' {
+        # Task 16, fix round 1 (follow-up): the value follows the update source an administrator types (a share, an internal
+        # address), so it goes to Names (free server text, emptied in a masked report), never to Value
+        $office = @(@(Read-WorkerPerfHealthApps $AppFile) | Where-Object key -eq 'office')
+        Get-WorkerPerfAppFactType ($office[0].probes | Where-Object id -eq 'updateChannel') | Should -Be 'text:free'
+        foreach ($given in '\\kanfs01\KanQuelle\Monthly', 'http://kanapps.kanfirma.local/office') {
+            $read = @{ registryValue = { param($Path, $Name) if ($Name -eq 'UpdateChannel') { @{ Value = $given } } }.GetNewClosure()
+                registryKey = { param($Path) @{ ValueCount = 0; SubKeyCount = 0 } }; service = { param($Name, $DisplayName) $null }
+                scheduledTask = { param($Path) $null }; file = { param($Path) $null } }
+            $row = @(Get-WorkerPerfAppRows -Apps $office -Read $read) | Where-Object Id -eq 'updateChannel'
+            $row.State | Should -Be 'read'; $row.Names | Should -Be $given; $row.Value | Should -BeNullOrEmpty
+        }
     }
     It 'liefert den Tests eine Liste mit einer vierten, erfundenen Anwendung' {
         $t = @(Read-WorkerPerfHealthApps (New-TestAppFile $TestDrive)); $t[-1].key | Should -Be 'simapp'; $t[-1].label | Should -Be 'Sim-Fachanwendung'

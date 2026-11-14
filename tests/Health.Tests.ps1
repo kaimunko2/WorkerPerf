@@ -747,6 +747,23 @@ Describe 'Bewertung' {
         (& $raw 'size.cpuLogical').stateText | Should -Be 'Text stateAbsent'; (& $raw 'size.memTotalMB').stateText | Should -Be 'Text stateRead'
         @($r.raw).Count | Should -Be 170
     }
+    It 'nennt in der Liste aller Dienste nur die Dienste der Sicherheitsprodukte, die anderen als freien Servertext' {   # ZB-R61
+        $services = @(@{ Name = 'WinDefend'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'MSSQL$KANINSTANZ'; State = 'Running'; StartMode = 'Auto' },
+            @{ Name = 'cylancesvc'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'KanFirmaAgent'; State = 'Stopped'; StartMode = 'Manual' })
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'security.services' = $services; 'security.filters' = @(@{ Name = 'WdFilter'; Altitude = '328010' })
+                'vda.services' = @(@{ Name = 'BrokerAgent'; State = 'Running'; StartMode = 'Auto' }) }) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        $items = @(($r.raw | Where-Object id -eq 'security.services').items)
+        $items[0].text | Should -Be 'Name: WinDefend; State: Running; StartMode: Auto'; $items[0].free | Should -Be ''
+        $items[1].text | Should -Be 'State: Running; StartMode: Auto'; $items[1].free | Should -Be 'Name: MSSQL$KANINSTANZ'
+        $items[2].text | Should -Be 'Name: cylancesvc; State: Running; StartMode: Auto'                   # Dienstnamen ohne Ruecksicht auf Gross- und Kleinschreibung
+        $items[3].text | Should -Be 'State: Stopped; StartMode: Manual'; $items[3].free | Should -Be 'Name: KanFirmaAgent'
+        # die Fakten sehen weiter alle Dienste; die Dienste unter Citrix behalten ihre Namen
+        ($r.raw | Where-Object id -eq 'security.products').text | Should -Be 'Microsoft Defender, Arctic Wolf Aurora Endpoint Protection'
+        ($r.raw | Where-Object id -eq 'vda.services').items[0].text | Should -Be 'Name: BrokerAgent; State: Running; StartMode: Auto'
+        # ohne Rollenliste kennt das Zustandsbild kein Sicherheitsprodukt: kein Dienst behaelt seinen Namen
+        $none = Get-WorkerPerfHealthResult -Model (New-HealthModel @{ 'security.services' = $services }) -Catalogue $Cat -EventConfig $Cfg -Roles @() -Texts $Texts
+        @(($none.raw | Where-Object id -eq 'security.services').items | Where-Object { $_.text -match 'Name' }).Count | Should -Be 0
+    }
     It 'macht eine Pruefung, deren Bewertung scheitert, nicht pruefbar und bewertet die anderen' {   # ZB-R27, Zusatz b
         $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
         $cat.checks[0].rules.check[0].op = 'kaputt'                                                       # ein Fehler nach dem Laden

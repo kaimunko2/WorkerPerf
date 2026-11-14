@@ -1285,6 +1285,15 @@ function Add-WorkerPerfHealthPrintFacts($F, $Ctx) {
         else { New-WorkerPerfHealthFact 'unreadable' 'error' } }
 }
 
+function Get-WorkerPerfHealthSecurityServiceNames([object[]]$Roles) {
+    # The service names of the security products of the role list (role Sicherheit): the services that security.products
+    # looks for in security.services. Plain pipeline output.
+    foreach ($role in @($Roles)) {
+        if ([string](Get-WorkerPerfField $role 'role') -ne 'Sicherheit') { continue }
+        foreach ($s in @(Get-WorkerPerfField $role 'services')) { if ($null -ne $s) { [string]$s } }
+    }
+}
+
 function Add-WorkerPerfHealthSecurityFacts($F, $Ctx) {
     $security = @(@($Ctx.Roles) | Where-Object { [string](Get-WorkerPerfField $_ 'role') -eq 'Sicherheit' })
     $hasFilter = { param($Role) foreach ($flt in @($F['security.filters'].Value)) {
@@ -2047,13 +2056,22 @@ function Get-WorkerPerfHealthRawEntry([string]$Id, $Fact, $Ctx) {
         if ($state -cne 'read') { return $entry }
         if ($t.Type -ceq 'list') {
             $list = Get-WorkerPerfHealthModelMember $Fact 'Value'   # an array (assigned first: @() around the call would nest it)
+            # security.services holds every service of the server, and an administrator chooses service names (an SQL
+            # instance MSSQL$<instance>, an in-house service): only the services of the security products the role list
+            # names (the services the facts use) keep their name; every other entry shows its name as free server text
+            # (ruling ZB-R61)
+            $knownServices = $null
+            if ($Id -ceq 'security.services') { $knownServices = @(Get-WorkerPerfHealthSecurityServiceNames $Ctx.Roles) }
             $entry.items = [object[]]@(foreach ($item in @($list)) {
                     $fields = $t.Fields
                     if ($null -eq $fields) { $fields = [ordered]@{}; foreach ($n in @(Get-WorkerPerfHealthItemNames $item)) { $fields[$n] = 'text' } }
                     $text = @(); $free = @()
                     foreach ($name in $fields.Keys) {
-                        $shown = Format-WorkerPerfHealthFact @{ State = 'read'; Value = (Get-WorkerPerfHealthModelMember $item $name) } $fields[$name] '' $cat $Ctx.Offset
-                        if ($fields[$name] -ceq 'text:free') { $free += "${name}: $shown" } else { $text += "${name}: $shown" }
+                        $content = Get-WorkerPerfHealthModelMember $item $name
+                        $type = $fields[$name]
+                        if ($null -ne $knownServices -and $name -ceq 'Name' -and $knownServices -notcontains [string]$content) { $type = 'text:free' }
+                        $shown = Format-WorkerPerfHealthFact @{ State = 'read'; Value = $content } $type '' $cat $Ctx.Offset
+                        if ($type -ceq 'text:free') { $free += "${name}: $shown" } else { $text += "${name}: $shown" }
                     }
                     [ordered]@{ text = ($text -join '; '); free = ($free -join '; ') }
                 })
@@ -2108,7 +2126,7 @@ function Get-WorkerPerfHealthResult($Model, $Catalogue, $EventConfig, [object[]]
     $appLabels = @{}
     foreach ($a in $apps) { $appLabels[[string](Get-WorkerPerfField $a 'key')] = [string](Get-WorkerPerfField $a 'label') }
     $ctx = @{ Model = $Model; Catalogue = $Catalogue; EventConfig = $EventConfig; Texts = $Texts; Table = $table; Offset = $offset
-        Health = $health; Apps = $apps; AppLabels = $appLabels; ThresholdTexts = $thresholdTexts }
+        Health = $health; Apps = $apps; AppLabels = $appLabels; ThresholdTexts = $thresholdTexts; Roles = @($Roles) }
     $reach = @{}
     foreach ($pair in @(@('from', 'events.reachFrom'), @('boot', 'operation.lastBoot'))) {
         try { $reach[$pair[0]] = Format-WorkerPerfHealthFact $facts[$pair[1]] 'time' '' $Catalogue $offset }

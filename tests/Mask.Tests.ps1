@@ -804,17 +804,21 @@ Describe 'Simulierte Stunde, maskiert' {
             $m = [regex]::Replace($m, '"cpu\.steal": \{[^{}]*\}', '"cpu.steal": { "Available": false, "Detail": "Grund CANARYSRC" }')
             [IO.File]::WriteAllText($meta, $m)
             foreach ($t in 'EndReason": "error', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { if (-not $m.Contains($t)) { throw "Kanarienvogel nicht gesetzt: $t" } }
-            # health.json (Task 16): a token of its own in every value and list field of the value list that can carry free server
-            # text or a name of a server, person, client, domain or address (in a list in the first entry; a value that is not
-            # read and an empty list become a read value with one entry whose other fields are empty; apps.probes in the first
-            # row with Names: only the value of a probe with names: true reaches the report), and in the first empty Error of
-            # an area. The fields an administrator types (the key and value names of the policy lists, the excluded file name
-            # extensions, the names of the listeners: fix round 1 of Task 16) get a token of free server text whatever their
-            # type in the value list.
+            # health.json (Task 16): a token of its own in every text field of the value list (a single value, or in a list the
+            # field of the first entry; a value that is not read and an empty list become a read value with one entry whose
+            # other fields are empty), in the value of every probe of the application list that reads a text or a registry
+            # value (as the collector writes it: in Names where the probe carries names, else in Value; the row is made read),
+            # in the fields App, Id, Kind, Read, State and Reason of one more probe row, and in the first empty Error of an area. A field that
+            # can carry free server text or a name of a server, person, client, domain or address gets a token of its kind
+            # (Free, Names); every other text field a plain token (Plain: place -> token, the place being the id, id.Field or
+            # apps.probes[app.probe].Field), which the masking keeps by design: the test compares the places whose token is
+            # left at level Alles with its list of the fields that cannot hold a name of the customer's environment, so that a
+            # new text field fails the test until it is classified (fix round 1 of Task 16, follow-up). Two services an
+            # administrator named (ruling ZB-R61) are added to the list of all services.
             $hf = Join-Path $dir 'health.json'; $h = ConvertFrom-WorkerPerfHealthJsonText ([IO.File]::ReadAllText($hf))
-            $free = New-Object System.Collections.Generic.List[string]; $names = New-Object System.Collections.Generic.List[string]
-            $marker = { param([string]$Type)
-                $k = '{0:00}' -f ($free.Count + $names.Count + 1)                          # one count over all tokens
+            $free = New-Object System.Collections.Generic.List[string]; $names = New-Object System.Collections.Generic.List[string]; $plain = [ordered]@{}
+            $marker = { param([string]$Type, [string]$Place)
+                $k = '{0:000}' -f ($free.Count + $names.Count + $plain.Count + 1)          # one count over all tokens, of one width
                 switch ($Type) {
                     'text:free' { $t = "CANARYH$k"; $free.Add($t) }
                     'text:path' { $t = "\\kanari$k\frei\ordner"; $names.Add($t) }
@@ -823,35 +827,52 @@ Describe 'Simulierte Stunde, maskiert' {
                     'text:domain' { $t = "KANARI$k"; $names.Add($t) }
                     'text:client' { $t = "KANARI-WS$k"; $names.Add($t) }
                     'text:address' { $t = '10.77.0.' + [int]$k; $names.Add($t) }
-                    default { $t = "kanari$k.sim.local"; $names.Add($t) }
+                    'text:host' { $t = "kanari$k.sim.local"; $names.Add($t) }
+                    'text:hosts' { $t = "kanari$k.sim.local"; $names.Add($t) }
+                    default { $t = "KANPLAIN$k"; $plain[$Place] = $t }
                 }
                 $t }
-            $marked = @('text:free', 'text:host', 'text:hosts', 'text:share', 'text:path', 'text:user', 'text:domain', 'text:client', 'text:address')
-            $adminText = @{ 'vda.policyRaw' = @('Key', 'Name', 'Value'); 'profile.policyGpo' = @('Key', 'Name', 'Value'); 'profile.policyStudio' = @('Key', 'Name', 'Value')
-                'security.defenderExclusionExtensions' = @('Extension'); 'sessions.limits' = @('Terminal') }
+            $isText = { param([string]$Type) $Type -eq 'value' -or $Type.StartsWith('text') }
+            $appTypes = @{}
+            foreach ($a in @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))) {
+                foreach ($p in @($a.probes)) { $appTypes['{0}.{1}' -f $a.key, $p.id] = Get-WorkerPerfAppFactType $p }
+            }
             foreach ($id in $WorkerPerfHealthValues.Keys) {
                 $def = $WorkerPerfHealthValues[$id]; $values = $h['Areas'][$def.Area]['Values']
-                if ($def.Type -eq 'list') {
-                    $typeOf = @{}; foreach ($f in $def.Fields.Keys) { $typeOf[$f] = $def.Fields[$f]; if ($adminText.ContainsKey($id) -and $adminText[$id] -contains $f) { $typeOf[$f] = 'text:free' } }
-                    $fields = @($def.Fields.Keys | Where-Object { $marked -contains $typeOf[$_] }); if ($fields.Count -eq 0) { continue }
-                    $v = $values[$id]; $rows = @(); if ($null -ne $v -and $v['State'] -eq 'read') { $rows = @($v['Value']) }
-                    if ($id -eq 'apps.probes') {
-                        $row = @($rows | Where-Object { -not [string]::IsNullOrEmpty([string]$_['Names']) })[0]
-                        if ($null -eq $row) { throw 'Kanarienvogel nicht gesetzt: apps.probes ohne Names' }
-                    }
-                    elseif ($rows.Count -eq 0) {
-                        $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
-                        $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($row) }
-                    }
-                    else { $row = $rows[0] }
-                    foreach ($f in $fields) { $row[$f] = & $marker $typeOf[$f] }
+                if ($def.Type -ne 'list') {
+                    if (& $isText $def.Type) { $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = (& $marker $def.Type $id) } }
+                    continue
                 }
-                elseif ($marked -contains $def.Type) { $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = (& $marker $def.Type) } }
+                $v = $values[$id]; $rows = @(); if ($null -ne $v -and $v['State'] -eq 'read') { $rows = @($v['Value']) }
+                if ($id -eq 'apps.probes') {
+                    foreach ($row in $rows) {
+                        $probe = '{0}.{1}' -f $row['App'], $row['Id']; $type = $appTypes[$probe]
+                        if (@('value', 'text', 'text:free') -notcontains $type) { continue }
+                        $row['State'] = 'read'; $row['Reason'] = ''; $row['Value'] = $null; $row['Names'] = $null
+                        if ($type -eq 'text:free') { $row['Names'] = & $marker $type "apps.probes[$probe].Names" } else { $row['Value'] = & $marker $type "apps.probes[$probe].Value" }
+                    }
+                    $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
+                    foreach ($f in 'App', 'Id', 'Kind', 'Read', 'State', 'Reason') { $row[$f] = & $marker $def.Fields[$f] "apps.probes.$f" }
+                    $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($rows) + @($row) }
+                    continue
+                }
+                if ($rows.Count -eq 0) {
+                    $row = [ordered]@{}; foreach ($f in $def.Fields.Keys) { $row[$f] = $null }
+                    $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($row) }
+                }
+                else { $row = $rows[0] }
+                foreach ($f in $def.Fields.Keys) { if (& $isText $def.Fields[$f]) { $row[$f] = & $marker $def.Fields[$f] "$id.$f" } }
+                if ($id -eq 'security.services') {
+                    $values[$id]['Value'] = @($values[$id]['Value']) + @([ordered]@{ Name = 'MSSQL$KANINSTANZ'; State = 'Running'; StartMode = 'Auto' },
+                        [ordered]@{ Name = 'KanFirmaAgent'; State = 'Running'; StartMode = 'Auto' })
+                }
             }
             $areaWithoutError = @($h['Areas'].Values | Where-Object { [string]$_['Error'] -eq '' })[0]; $areaWithoutError['Error'] = 'Fehler CANARYHER'
             $text = ConvertTo-Json -InputObject $h -Depth 20; [IO.File]::WriteAllText($hf, $text)
-            foreach ($t in @($free) + @($names) + 'Fehler CANARYHER') { if (-not $text.Contains((ConvertTo-Json $t).Trim('"'))) { throw "Kanarienvogel nicht gesetzt: $t" } }
-            $script:CanaryHealth = @{ Free = [string[]]$free.ToArray(); Names = [string[]]$names.ToArray() }
+            foreach ($t in @($free) + @($names) + @($plain.Values) + 'Fehler CANARYHER' + 'MSSQL$KANINSTANZ') {
+                if (-not $text.Contains((ConvertTo-Json $t).Trim('"'))) { throw "Kanarienvogel nicht gesetzt: $t" }
+            }
+            $script:CanaryHealth = @{ Free = [string[]]$free.ToArray(); Names = [string[]]$names.ToArray(); Plain = $plain }
             $dir
         }
         function Get-AllStrings($Value, $List) {
@@ -1264,8 +1285,39 @@ Describe 'Simulierte Stunde, maskiert' {
             foreach ($c in @($pd.copyAll.anonymous) + @(@($pd.incidents) + @($pd.before.incidents) | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY' }
             # the tokens of health.json (Task 16): every one reaches the unmasked report; the copy texts without names name none
             $strings = New-Object System.Collections.Generic.List[string]; Get-AllStrings $pd $strings; $all = $strings -join "`n"
-            $CanaryHealth.Free.Count | Should -Be 16; $CanaryHealth.Names.Count | Should -Be 17
-            foreach ($t in @($CanaryHealth.Free) + @($CanaryHealth.Names) + 'CANARYHER') { $all.Contains($t) | Should -BeTrue -Because $t }
+            foreach ($t in @($CanaryHealth.Free) + @($CanaryHealth.Names) + @($CanaryHealth.Plain.Values) + 'CANARYHER') { $all.Contains($t) | Should -BeTrue -Because $t }
+            $all | Should -Match ([regex]::Escape('Name: MSSQL$KANINSTANZ')); $all | Should -Match 'Name: KanFirmaAgent'
+            # The plain text fields that keep their token at level Alles, by id and field (apps.probes: the value of each probe):
+            # what the collector writes there cannot be a name of the customer's environment (re-review of fix round 1 of
+            # Task 16): keywords of Windows and of the collector (states, start modes, modes, kinds, the fixed WEM service
+            # names), versions, numbers and times, device and driver texts of the vendor, the services under a Citrix folder,
+            # names from the event catalogue and the application list. Every other plain text field must lose its token: the
+            # names of the other services (ruling ZB-R61) and the value of a probe with names, and a new text field until it
+            # is classified here.
+            $keep = @(
+                'size.model', 'size.vmtoolsService', 'size.vmtoolsVersion', 'size.netAdapters.Name', 'size.netAdapters.Service', 'size.storageControllers.Name',
+                'size.storageControllers.Driver', 'size.balloonDriver',
+                'operation.lastUpdateId', 'operation.powerPlan', 'operation.volumes.Drive', 'operation.volumes.FileSystem',
+                'sessions.list.State',
+                'vda.version', 'vda.services.Name', 'vda.services.State', 'vda.services.StartMode', 'vda.desktopService', 'vda.controllers.Kind', 'vda.controllers.From',
+                'vda.wemService', 'vda.wemServices.Name', 'vda.wemServices.State', 'vda.wemServices.StartMode', 'vda.wemVersion', 'vda.teamsService', 'vda.webSocketService',
+                'profile.service', 'profile.version',
+                'print.spooler', 'print.spoolerStartMode', 'print.citrixPrintService', 'print.mappingClientVersion',
+                'security.services.State', 'security.services.StartMode', 'security.defenderService', 'security.defenderMode', 'security.defenderVersion',
+                'security.mdeService', 'security.filters.Name', 'security.filters.Altitude', 'security.applockerService', 'security.applockerCollections.Collection',
+                'network.smb1', 'network.smbConnections.Dialect', 'network.rss.Description', 'network.rssGlobal', 'network.timeType', 'network.timeService',
+                'events.logs.Log', 'events.logs.Mode',
+                'maintenance.tasks.State', 'maintenance.tasks.Triggers', 'maintenance.scanTime', 'maintenance.quickScanTime', 'maintenance.searchService',
+                'maintenance.updateService',
+                'apps.probes.App', 'apps.probes.Id', 'apps.probes.Kind', 'apps.probes.Read', 'apps.probes.State', 'apps.probes.Reason',
+                'apps.probes[edge.version].Value', 'apps.probes[edge.webview2Version].Value', 'apps.probes[edge.updateDefault].Value', 'apps.probes[edge.updateStable].Value',
+                'apps.probes[edge.updateWebView2].Value', 'apps.probes[edge.updateCheckMinutes].Value', 'apps.probes[edge.startupBoost].Value',
+                'apps.probes[edge.backgroundMode].Value', 'apps.probes[edge.sleepingTabs].Value', 'apps.probes[edge.autoDiscard].Value',
+                'apps.probes[edge.roamingProfile].Value', 'apps.probes[edge.updateService].Value',
+                'apps.probes[office.policyUpdateBranch].Value', 'apps.probes[office.hideUpdateNotifications].Value', 'apps.probes[office.hideEnableDisableUpdates].Value',
+                'apps.probes[office.perUserCatalog].Value', 'apps.probes[office.version].Value', 'apps.probes[office.platform].Value', 'apps.probes[office.updatesEnabled].Value',
+                'apps.probes[teams.version].Value', 'apps.probes[teams.disableAutoUpdate].Value', 'apps.probes[teams.disableFallback].Value', 'apps.probes[teams.maxFps].Value',
+                'apps.probes[teams.webview2Version].Value')
             $pd.health.state | Should -Be 'read'
             foreach ($a in $pd.health.areas) { foreach ($c in @($a.copy.anonymous) + @($a.checks | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY|kanari' } }
             foreach ($level in 'Personen', 'Alles') {
@@ -1276,11 +1328,18 @@ Describe 'Simulierte Stunde, maskiert' {
                 if ($level -eq 'Alles') {                                                                          # every name token, also the address
                     $ms = New-Object System.Collections.Generic.List[string]; Get-AllStrings $md $ms; $mall = $ms -join "`n"
                     foreach ($t in $CanaryHealth.Names) { $mall.Contains($t) | Should -BeFalse -Because $t }
+                    $left = @(foreach ($p in $CanaryHealth.Plain.Keys) { if ($mall.Contains($CanaryHealth.Plain[$p])) { $p } })
+                    @($left | Where-Object { $keep -notcontains $_ }) -join ', ' | Should -Be '' -Because 'nicht eingeordnete Textfelder bleiben stehen'
+                    @($keep | Where-Object { $left -notcontains $_ }) -join ', ' | Should -Be '' -Because 'die Liste nennt nur Felder, die stehen bleiben'
+                    $mall | Should -Match 'Name: WinDefend; State: Running'                                       # ein Dienst eines Sicherheitsprodukts (ZB-R61)
                 }
+                [IO.File]::ReadAllText($file) | Should -Not -Match 'KANINSTANZ|KanFirmaAgent' -Because $level
                 @($md.procs | Where-Object { $_.cmd -ne '' }).Count | Should -Be 0
                 # the free texts were cleared before the summary was built: the hint without a message (P3-R9)
                 @($md.lagebild.hints) | Should -Contain $md.guidance.hints.errorNoMessage -Because $level
             }
+            # the number of tokens, last: a field that changes its kind fails above with its name
+            $CanaryHealth.Free.Count | Should -Be 20; $CanaryHealth.Names.Count | Should -Be 17; $CanaryHealth.Plain.Count | Should -Be 88
         }
         It 'nennt auf der Konsole die Ersatznamen der Namen, die Woertern des Berichts gleichen' {                   # P2-R12
             $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'vocab')

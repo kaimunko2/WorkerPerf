@@ -35,7 +35,7 @@
       "processes": ["WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE", "ONENOTE.EXE", "MSACCESS.EXE"],
       "installed": {"kind": "registryKey", "path": "HKLM\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration"},
       "probes": [
-        {"id": "updateChannel", "label": "Wirksamer Updatekanal (Adresse des Kanals)", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration", "name": "UpdateChannel", "names": false},
+        {"id": "updateChannel", "label": "Wirksamer Updatekanal (Adresse des Kanals)", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration", "name": "UpdateChannel", "names": true},
         {"id": "updateUrl", "label": "Updatequelle aus der Installation", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration", "name": "UpdateUrl", "names": true},
         {"id": "policyUpdatePath", "label": "Updatequelle aus der Richtlinie", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\office\\16.0\\Common\\officeupdate", "name": "UpdatePath", "names": true},
         {"id": "policyUpdateBranch", "label": "Updatekanal aus der Richtlinie", "kind": "registryValue", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\office\\16.0\\Common\\officeupdate", "name": "UpdateBranch", "names": false},
