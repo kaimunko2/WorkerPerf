@@ -1489,8 +1489,13 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   Service“ nicht per Skript beenden oder neu starten; Citrix sagt das nur für diesen Dienst (`vda.wemServices`, im
   Vorschlag zum Vorgehen). Abschnitt „System settings“: Antworten die Domänencontroller langsam, kann es länger dauern,
   bis der Anmeldebildschirm erscheint; die Seite nennt das als möglichen Preis der Wartezeit, nicht als Folge eines zu
-  kleinen Werts (`vda.wemGpTimeout`). Dieselbe Seite beschreibt, dass der Agent auf bereitgestellten Maschinen die
-  Cache-Dateien aus dem Abbild verwirft (`vda.wemCache`).
+  kleinen Werts (`vda.wemGpTimeout`). Was ein zu kleiner Wert für die Benutzer heißt, sagt die Seite nicht. Sie sagt,
+  wozu der Wert mit zwei weiteren dient: „The previous three keys ensure that the WEM agent service starts before the
+  Windows logon screen appears.“ und „The keys also ensure that the user environment receives the infrastructure server
+  address GPOs before logon.“ (am 2026-11-14 erneut gelesen). Der erste Satz der Bedeutung folgert daraus, dass der
+  WEM-Agent bei zu kurzer Wartezeit womöglich noch nicht bereit ist, und ist als Erläuterung des Katalogs
+  gekennzeichnet. Dieselbe Seite beschreibt, dass der Agent auf bereitgestellten Maschinen die Cache-Dateien aus dem
+  Abbild verwirft (`vda.wemCache`).
 - Citrix, „WEM health check tool“ (Tabelle oben): Die Seite sagt nur, dass der Agent die drei Dienste braucht, um wie
   erwartet zu arbeiten. Was das für die Benutzer heißt, ist im Text der Prüfung als Erläuterung des Katalogs
   gekennzeichnet (`vda.wemServices`).
@@ -1515,7 +1520,11 @@ Weitere Seiten der Hersteller, auf die sich einzelne Sätze der Texte stützen (
   default“), und für MCS gibt die Bereitstellung die Liste mit. Die Liste kann Controller-Gruppen enthalten, die das
   Zustandsbild als einen Eintrag zählt (`vda.controllerCount`, `vda.controllerNotFqdn`). Den Wert ListOfSIDs von Hand zu
   setzen und dann die automatische Aktualisierung abzuschalten, nennt die Seite für besonders gesicherte Umgebungen
-  (`vda.listOfSids`).
+  (`vda.listOfSids`). Was ein von Hand gesetzter Wert für die Benutzer heißt, sagt die Seite nicht. Sie sagt: „The
+  ListofSIDs (Security IDs) identify the trusted Controllers. VDAs attempt to register only with trusted Controllers.“
+  (am 2026-11-14 erneut gelesen). Der erste Satz der Bedeutung folgert daraus, dass mit einem veralteten Wert die
+  Registrierung scheitern kann und der Server dann keine neuen Sitzungen bekommt, und ist als Erläuterung des Katalogs
+  gekennzeichnet.
 - Citrix, „VDA Registration Failure with Event ID 1“ (CTX133769),
   https://support.citrix.com/external/article/CTX133769/vda-registration-failure-with-event-id-1.html: Der Dienst
   „Citrix Desktop Service“ registriert den VDA beim Delivery Controller. Dass ein Server ohne ihn keine neuen Sitzungen

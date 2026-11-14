@@ -1381,12 +1381,32 @@ Describe 'Katalog in src' {
             $first = ([regex]::Split($m, '(?<=[.!?])\s+(?=[A-ZÄÖÜ„0-9])'))[0]
             foreach ($n in $names) { $first | Should -Not -Match ('^(Nach |Der Hersteller |Laut )?' + [regex]::Escape($n) + '\b') -Because "$($c.id): $n" }
             $first | Should -Not -Match '^Der Wert teilt' -Because $c.id
+            # ... und nicht mit der Erklaerung, was ein Wert ist oder was sich mit ihm einstellen laesst (Nachpruefung der Korrekturrunde 1 von Task 14b)
+            $first | Should -Not -Match '^(Der|Die|Das) (Wert|Eintrag|Schlüssel|Einstellung|Richtlinie) \S+ (legt|teilt|gibt|bestimmt|regelt|steuert|nennt)\b' -Because $c.id
+            $first | Should -Not -Match '^(Über|Mit|Durch) \S+ lässt sich\b' -Because $c.id
             # was der erste Satz sagt, stammt von einer genannten Quelle, oder er sagt, dass es die Erlaeuterung des Katalogs ist; eine Faustregel sagt es in ihrem Text
             if ($c.kind -ne 'rule') {
                 $named = @($names | Where-Object { $first -match [regex]::Escape($_) }).Count -gt 0
                 ($named -or $first -match 'des Katalogs') | Should -BeTrue -Because "$($c.id): $first"
             }
         }
+        # die zwei Bedeutungen, die mit der Erklaerung des Werts begannen, beginnen mit dem, was der Zustand fuer die Benutzer heisst, als Erlaeuterung des Katalogs;
+        # die Seite von Citrix nennt in beiden Faellen keine Wirkung, der Nachweis sagt, worauf die Erlaeuterung fusst
+        $firstOf = { param($id) ([regex]::Split((($Real.checks | Where-Object id -eq $id).meaning.Trim()), '(?<=[.!?])\s+(?=[A-ZÄÖÜ„0-9])'))[0] }
+        $sids = & $firstOf 'vda.listOfSids'
+        $sids | Should -BeExactly ('Ist ein von Hand gesetzter Wert ListOfSIDs veraltet, kann die Registrierung des VDA scheitern, und der Server bekommt dann keine neuen Sitzungen ' +
+            '(Erläuterung des Katalogs dazu, dass sich der VDA nach Citrix nur bei den Delivery Controllern registriert, die der Wert als vertraut nennt).')
+        $gp = & $firstOf 'vda.wemGpTimeout'
+        $gp | Should -BeExactly ('Wartet die Gruppenrichtlinie bei der Anmeldung zu kurz auf das Netz, ist der WEM-Agent womöglich noch nicht bereit, und die Umgebung des Benutzers wird dann nicht verlässlich eingerichtet ' +
+            '(Erläuterung des Katalogs, nicht von Citrix).')
+        # was die Bedeutungen vorher sagten, sagen sie weiter: der Name des Werts, die Vorgabe und die Empfehlung von Citrix, die Ausnahme, und was die Pruefung nicht liest
+        $gpAll = ($Real.checks | Where-Object id -eq 'vda.wemGpTimeout').meaning
+        $gpAll | Should -Match 'Die Wartezeit steht nach Citrix im Wert GpNetworkStartTimeoutPolicyValue, die Installation des WEM-Agenten legt ihn mit 120 Sekunden an, und Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt\.'
+        $sidsAll = ($Real.checks | Where-Object id -eq 'vda.listOfSids').meaning
+        $sidsAll | Should -Match 'Citrix rät, den Wert ohne besonderen Grund nicht zu ändern, und nennt als Ausnahme besonders gesicherte Umgebungen, in denen dann auch die automatische Aktualisierung der Liste der Delivery Controller abgeschaltet sein muss\.'
+        $sidsAll | Should -Match 'Die Prüfung stellt nur fest, dass der Wert gesetzt ist, und liest seinen Inhalt nicht\.$'
+        $ProofFlat | Should -Match ([regex]::Escape('„The ListofSIDs (Security IDs) identify the trusted Controllers. VDAs attempt to register only with trusted Controllers.“'))
+        $ProofFlat | Should -Match ([regex]::Escape('„The previous three keys ensure that the WEM agent service starts before the Windows logon screen appears.“'))
         # der eine Satz zu den Zeitlimits je Benutzer steht in beiden Pruefungen der Zeitlimits
         foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
             ($Real.checks | Where-Object id -eq $id).meaning | Should -Match 'Wo der Listener von Windows die Zeitlimits je Benutzer gelten lässt, gelten die Einstellungen des Benutzerkontos' -Because $id }

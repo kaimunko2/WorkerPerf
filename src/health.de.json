@@ -1261,7 +1261,7 @@
         "check": "Der Wert ListOfSIDs ist in Richtlinie oder Windows-Registrierung gesetzt.",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Über ListOfSIDs lässt sich von Hand festlegen, welchen Delivery Controllern der VDA vertraut, und Citrix rät, den Wert ohne besonderen Grund nicht zu ändern. Als Ausnahme nennt Citrix besonders gesicherte Umgebungen, in denen dann auch die automatische Aktualisierung der Liste der Delivery Controller abgeschaltet sein muss. Die Prüfung stellt nur fest, dass der Wert gesetzt ist, und liest seinen Inhalt nicht.",
+      "meaning": "Ist ein von Hand gesetzter Wert ListOfSIDs veraltet, kann die Registrierung des VDA scheitern, und der Server bekommt dann keine neuen Sitzungen (Erläuterung des Katalogs dazu, dass sich der VDA nach Citrix nur bei den Delivery Controllern registriert, die der Wert als vertraut nennt). Citrix rät, den Wert ohne besonderen Grund nicht zu ändern, und nennt als Ausnahme besonders gesicherte Umgebungen, in denen dann auch die automatische Aktualisierung der Liste der Delivery Controller abgeschaltet sein muss. Die Prüfung stellt nur fest, dass der Wert gesetzt ist, und liest seinen Inhalt nicht.",
       "todo": [
         {
           "text": "Klären, ob es einen Grund für den von Hand gesetzten Wert gibt, und ihn sonst entfernen; wer die vertrauten Controller aus Sicherheitsgründen vorgeben will und den VDA über Richtlinien registriert, nutzt nach Citrix dafür die Einstellung „Controller SIDs“ der Citrix-Richtlinie",
@@ -1366,7 +1366,7 @@
         "check": "Wartezeit der Gruppenrichtlinie auf das Netz in Sekunden: {vda.wemGpNetworkTimeout}. Citrix empfiehlt mindestens 30 Sekunden.",
         "unknown": "Der Wert konnte nicht gelesen werden: {reason}."
       },
-      "meaning": "Der Wert GpNetworkStartTimeoutPolicyValue legt nach Citrix fest, wie lange die Gruppenrichtlinie bei der Anmeldung auf das Netz wartet. Die Installation des WEM-Agenten legt ihn mit 120 Sekunden an, und Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt. Der Preis der Wartezeit ist nach Citrix, dass es länger dauern kann, bis der Anmeldebildschirm erscheint, wenn die Domänencontroller langsam antworten.",
+      "meaning": "Wartet die Gruppenrichtlinie bei der Anmeldung zu kurz auf das Netz, ist der WEM-Agent womöglich noch nicht bereit, und die Umgebung des Benutzers wird dann nicht verlässlich eingerichtet (Erläuterung des Katalogs, nicht von Citrix). Die Wartezeit steht nach Citrix im Wert GpNetworkStartTimeoutPolicyValue, die Installation des WEM-Agenten legt ihn mit 120 Sekunden an, und Citrix empfiehlt mindestens 30 Sekunden, damit er wirkt. Der Preis der Wartezeit ist nach Citrix, dass es länger dauern kann, bis der Anmeldebildschirm erscheint, wenn die Domänencontroller langsam antworten.",
       "todo": [
         {
           "text": "Den Wert auf mindestens 30 Sekunden setzen",
