@@ -2,7 +2,8 @@
 
 <#
 .SYNOPSIS
-    Builds a self-contained, offline HTML report from a WorkerPerf capture folder (format 2).
+    Builds a self-contained, offline HTML report from a WorkerPerf capture folder (format 3, as
+    Start-WorkerPerfCapture.ps1 writes it; captures of the older format are read as well).
 
 .DESCRIPTION
     Reads the capture with Import-WorkerPerfRun, rates every measurement series against the
@@ -1189,6 +1190,14 @@ $printOut = [ordered]@{ drivers = $driversOut.ToArray(); queues = $queuesOut.ToA
 #region ---------- write report -----------------------------------------------------------
 
 $snapKindText = [string]::Join('', [string[]]@($snap.Kind))
+function Get-UnrecordedOut {
+    # The event logs count as not recorded when the capture's sources name none of them and Ereignisse was not left out:
+    # the page and the situation summary then never show a measured 0 for crashes and errors.
+    if (@($model.Skip) -contains 'Ereignisse') { return }
+    if (@($model.Sources.Keys | Where-Object { ([string]$_).StartsWith('events.') }).Count -gt 0) { return }
+    [ordered]@{ id = 'Ereignisse'; label = [string]$texts['skip.label.Ereignisse']; text = [string]$texts['unrecorded.text.Ereignisse']
+        places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) }
+}
 $data = [ordered]@{
     meta = $meta; quality = $quality; thresholds = $thresholdsOut.ToArray()
     tickT = (New-JsonIntegers $tick.TimeMs); snapT = (New-JsonIntegers $snap.TimeMs); snapKind = $snapKindText
@@ -1204,6 +1213,9 @@ $data = [ordered]@{
     appList = (ConvertTo-PlainData $appList)
     # the categories -Skip left out, with their reason and the places of the page that depend on them (last field)
     skipped = @(Get-WorkerPerfSkippedOut -Skip $model.Skip -Texts $texts)
+    # the categories the capture never recorded, in the form of skipped without a switch (id, label, reason, places): the
+    # event logs of a capture from before their recording (its sources name no log events.<id>), unless -Skip left them out
+    unrecorded = @(Get-UnrecordedOut)
 }
 
 function New-ReportMask([string]$Level) {
@@ -1228,9 +1240,14 @@ $captureInc = @($data['incidents'])
 $beforeInc = @($data['before']['incidents'])
 $allInc = @($captureInc + $beforeInc)
 $guideContext = @{ Data = $data; Thresholds = $thresholds; OffsetMinutes = $eventOffset; Texts = $texts; Apps = $appList }
+# the facts of each incident, computed once: for its guidance, its copy text and its line in the summary (keyed by the
+# incident's record); who was affected, once for the incident view and the copy text
+$factsOf = New-Object 'System.Collections.Generic.Dictionary[object,object]'
 foreach ($inc in $allInc) {
     $facts = Get-WorkerPerfGuidanceFacts -Incident $inc -Context $guideContext -Catalogue $guidance
+    $factsOf.Add($inc, $facts)
     $inc['guide'] = New-WorkerPerfGuidance -Catalogue $guidance -Facts $facts -Incident $inc -Texts $texts
+    $inc['concerned'] = Get-WorkerPerfConcerned $inc $data $texts
 }
 # rank: 1-based in its own list; the capture's incidents by importance, the lookback's by time
 $order = [int[]]@(Get-WorkerPerfIncidentRanking -Incidents $captureInc)
@@ -1245,9 +1262,9 @@ $more = @(Get-WorkerPerfIncidentGroups -Incidents $captureInc -Order $order -Car
 # the copy texts as unwrapped paragraphs, one list per incident of allInc
 $copyParagraphs = New-Object System.Collections.Generic.List[object]
 foreach ($inc in $allInc) {
-    $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $data -Catalogue $guidance -Texts $texts))
+    $copyParagraphs.Add([string[]]@(Get-WorkerPerfCopyParagraphs -Incident $inc -Guide $inc['guide'] -Data $data -Catalogue $guidance -Texts $texts -Facts $factsOf))
 }
-$summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+$summaryParagraphs = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $lagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc -Facts $factsOf)
 # the catalogue as read (like thresholds): set below, masked as one composed text in a masked run (ruling P3-R10)
 $data['guidance'] = $null
 $data['lagebild'] = $lagebild
@@ -1319,7 +1336,7 @@ else {
         $data['meta']['endMessage'] = $null
         try {
             $anonymousLagebild = Get-WorkerPerfLagebild -Incidents $captureInc -Data $data -Catalogue $guidance -Texts $texts
-            $anonymousSummary = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $anonymousLagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc)
+            $anonymousSummary = [string[]]@(Get-WorkerPerfCopySummaryParagraphs -Incidents $captureInc -Order $order -Lagebild $anonymousLagebild -Data $data -Catalogue $guidance -Texts $texts -Before $beforeInc -Facts $factsOf)
         }
         finally { $data['meta']['endMessage'] = $keptEndMessage }
     }

@@ -884,3 +884,92 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         ($said -join "`n") | Should -Not -Match 'Lese Aufzeichnung'; Test-Path (Join-Path $TestDrive 'g.html') | Should -BeFalse
     }
 }
+Describe 'Abschlussrunde Teil B' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1')
+        $script:ReportScript = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $script:Roles = Join-Path $TestDrive 'r/roles.sim.json'
+        $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
+        function Set-MetaText([string]$Run, [scriptblock]$Change) { $f = Join-Path $Run 'meta.json'; [IO.File]::WriteAllText($f, (& $Change ([IO.File]::ReadAllText($f)))) }
+    }
+    It 'zaehlt in einer Aufzeichnung ohne Ereignisprotokolle keine Abstuerze als 0' {                 # final review I2
+        # a capture from before the events were recorded: no events files, no source events.<log>
+        $old = Copy-SimRun $R.Run (Join-Path $TestDrive 'old') @('events.csv', 'events_before.csv')
+        Set-MetaText $old { param($t) $t -replace '"events\.[^"]+"\s*:\s*\{[^{}]*\}\s*,?\s*', '' -replace ',(\s*\})', '$1' }
+        $file = Join-Path $TestDrive 'report-old.html'
+        [void](& $ReportScript -Path $old -OutFile $file -RoleFile $Roles 6>$null)
+        $O = Get-ReportData $file
+        @($O.unrecorded).Count | Should -Be 1; $O.unrecorded[0].id | Should -Be 'Ereignisse'; $O.unrecorded[0].text | Should -Be $Texts['unrecorded.text.Ereignisse']
+        @($O.unrecorded[0].places) | Should -Be @('events', 'sessions.events', 'incidents.events'); @($O.skipped).Count | Should -Be 0
+        $O.lagebild.kpis.events | Should -Be 0
+        $O.lagebild.sentence | Should -Not -Match 'Absturz'; $O.lagebild.sentence | Should -Match 'Nicht gemessen: Ereignisse\.$'
+        @($O.lagebild.hints | Where-Object { $_ -match 'Skip' }).Count | Should -Be 0
+        ($O.copyAll.named -replace "`r`n", ' ') | Should -Match 'Nicht gemessen: Ereignisse\.'
+        # the capture with its logs: a measured count, nothing unrecorded
+        @($D.unrecorded).Count | Should -Be 0; $D.lagebild.sentence | Should -Match '4-mal Absturz oder Fehler'
+    }
+    It 'nennt unter dem Lagebild ein Ereignisprotokoll, das nicht gelesen werden konnte oder Ereignisse verlor' {   # final review I2
+        $run = Copy-SimRun $R.Run (Join-Path $TestDrive 'failedlog')
+        Set-MetaText $run { param($t) ($t -replace '("events\.system"\s*:\s*\{)', '$1 "ReadFailed": true,') -replace '"EventReadCounts"\s*:\s*\{\s*\}', '"EventReadCounts": { "application": { "SkippedRecords": 0, "UnformattedMessages": 0, "DroppedEvents": 40 } }' }
+        $file = Join-Path $TestDrive 'report-failedlog.html'
+        [void](& $ReportScript -Path $run -OutFile $file -RoleFile $Roles 6>$null)
+        $F = Get-ReportData $file
+        $want = [string]::Format($Texts['hint.eventsIncomplete'], ($Texts['source.events.system'] + ', ' + $Texts['source.events.application']))
+        @($F.lagebild.hints) | Should -Contain $want
+        ($F.copyAll.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($want))
+        @($D.lagebild.hints).Count | Should -Be 0
+    }
+    It 'berechnet die Fakten je Vorfall einmal und nennt bei einer Messung ueber Mitternacht beide Tage' {   # final review M3, M7
+        # the capture as one that starts at 23:30 server time: every time stamp the same instant in another offset
+        $night = Copy-SimRun $R.Run (Join-Path $TestDrive 'night')
+        $first = [DateTimeOffset]::Parse((Get-Content (Join-Path $night 'ticks.csv') -TotalCount 2)[1].Split(',')[1], [cultureinfo]::InvariantCulture)
+        $minutes = ((23 * 60 + 30) - ($first.UtcDateTime.Hour * 60 + $first.UtcDateTime.Minute) + 2880) % 1440; if ($minutes -ge 720) { $minutes -= 1440 }
+        $offset = [TimeSpan]::FromMinutes($minutes)
+        $stamp = New-Object System.Text.RegularExpressions.Regex '\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?([+-]\d\d:\d\d|Z)'
+        foreach ($f in Get-ChildItem -LiteralPath $night -File) {
+            $text = [IO.File]::ReadAllText($f.FullName)
+            $text = $stamp.Replace($text, { param($m) [DateTimeOffset]::Parse($m.Value, [cultureinfo]::InvariantCulture).ToOffset($offset).ToString('yyyy-MM-ddTHH:mm:ss.fffffffzzz', [cultureinfo]::InvariantCulture) })
+            [IO.File]::WriteAllText($f.FullName, $text)
+        }
+        $file = Join-Path $TestDrive 'report-night.html'
+        $global:WpFactsCalls = 0
+        $bp = Set-PSBreakpoint -Command 'Get-WorkerPerfGuidanceFacts' -Action { $global:WpFactsCalls++ }
+        try { [void](& $ReportScript -Path $night -OutFile $file -RoleFile $Roles 6>$null) } finally { Remove-PSBreakpoint -Breakpoint $bp }
+        $N = Get-ReportData $file
+        # once per incident of the capture and of the days before it
+        $global:WpFactsCalls | Should -Be (@($N.incidents).Count + @($N.before.incidents).Count)
+        $N.meta.offsetMin | Should -Be $minutes
+        $day1 = Format-WorkerPerfEventDate ([long]$N.meta.start) $minutes; $day2 = Format-WorkerPerfEventDate ([long]$N.meta.end) $minutes
+        $day1 | Should -Not -Be $day2
+        $lines = @($N.copyAll.named -split "`r`n")
+        ($lines[0..1] -join ' ') | Should -Match ("am {0}, 23:30 bis {1} 00:30 Uhr" -f [regex]::Escape($day1), [regex]::Escape($day2))
+        # the incidents after midnight with their date, those before it without
+        $after = @($N.incidents | Where-Object { -not $_.chronic -and (Format-WorkerPerfEventDate ([long]$_.start) $minutes) -eq $day2 })
+        $before = @($N.incidents | Where-Object { -not $_.chronic -and (Format-WorkerPerfEventDate ([long]$_.start) $minutes) -eq $day1 })
+        $after.Count | Should -BeGreaterThan 0; $before.Count | Should -BeGreaterThan 0
+        $joined = $N.copyAll.named -replace "`r`n +", ' '
+        foreach ($i in $after) { $joined | Should -Match ("(?m)^- {0} {1}" -f [regex]::Escape($day2), (Format-WorkerPerfClock ([long]$i.start) $minutes).Substring(0, 5)) -Because "Vorfall $($i.id)" }
+        foreach ($i in $before) { $joined | Should -Match ("(?m)^- {0}" -f (Format-WorkerPerfClock ([long]$i.start) $minutes).Substring(0, 5)) -Because "Vorfall $($i.id)" }
+        # the copy texts of the incidents are those of the capture as it is, apart from times and dates
+        @($N.incidents).Count | Should -Be @($D.incidents).Count
+    }
+    It 'beschreibt die Skripte ohne alte Bezeichnungen' {                                              # parked: English synopses
+        foreach ($s in 'Start-WorkerPerfCapture.ps1', 'New-WorkerPerfReport.ps1') {
+            $help = Get-Help (Join-Path $PSScriptRoot "../src/$s")
+            ([string]$help.Synopsis) | Should -Not -Match 'terminal server worker|format 2' -Because $s
+        }
+        ([string](Get-Help (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1')).Synopsis) | Should -Match "format $script:WorkerPerfFormatVersion\b"
+    }
+    It 'nennt im README die Kosten der Fassung ohne Namen und die Grenze eines Zeitraums bei Laufwerken und Freigaben' {   # P3-R81, P3-R73
+        $readme = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../README.md')) -replace '\s+', ' '
+        $readme | Should -Match 'liest die Auswertung die Namen der ganzen Aufzeichnung ein zweites Mal'
+        $readme | Should -Match 'etwa eine Sekunde je Stunde Aufzeichnung'
+        $readme | Should -Match 'Bekannte Grenze: Bei Laufwerken und Freigaben zählt ein gewählter Zeitraum auch Messpunkte mit'
+    }
+    It 'enthaelt in der Seite keine Konstante und keine Funktion, die nirgends benutzt wird' {           # final review M8
+        $page = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/report-template.html'))
+        $script = $page.Substring($page.IndexOf('<script>'))
+        $names = @([regex]::Matches($script, '(?m)^(?:const|let|function)\s+([A-Za-z_$][\w$]*)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $names.Count | Should -BeGreaterThan 100
+        @($names | Where-Object { [regex]::Matches($script, '(?<![\w$]|(?<!\.\.)\.)' + [regex]::Escape($_) + '(?![\w$])').Count -lt 2 }) | Should -BeNullOrEmpty
+    }
+}

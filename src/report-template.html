@@ -837,14 +837,16 @@ const TH = new Map(D.thresholds.map((t) => [t.id, t]));
 // Status: 0 normal, 1 auffaellig, 2 kritisch, na nicht gemessen. Always symbol plus word.
 const STATUS = { "0": ["●", "normal", "good"], "1": ["▲", "auffällig", "warn"], "2": ["◆", "kritisch", "crit"], "na": ["○", "nicht gemessen", "na"] };
 const statusHtml = (st, extra) => `<span class="status st-${STATUS[st][2]}"><i class="sym" aria-hidden="true">${STATUS[st][0]}</i> ${STATUS[st][1]}${extra ? ` <span class="pct">${extra}</span>` : ""}</span>`;
-// Categories left out with -Skip (skipped[] { id, label, text, places }): the hint for a place of the page that depends on one,
-// as HTML, or "" where the place was measured. Where the hint stands, the empty table, chart or "keine" is left out.
+// Categories left out with -Skip (skipped[] { id, label, text, places }) and categories the capture never recorded (unrecorded[],
+// the same fields: the event logs of a capture from before their recording): the hint for a place of the page that depends on
+// one, as HTML, or "" where the place was measured; the switch is named for a category left out with it. Where the hint
+// stands, the empty table, chart or "keine" is left out.
 const SKIPPED = D.skipped || [];
-const SKIP_AT = new Map(SKIPPED.flatMap((s) => s.places.map((p) => [p, s])));
+const SKIP_AT = new Map(SKIPPED.concat(D.unrecorded || []).flatMap((s) => s.places.map((p) => [p, s])));
 function notMeasured(place, inline) {
   const s = SKIP_AT.get(place); if (!s) return "";
   const tag = inline ? "span" : "div";
-  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)} <span class="opt">(-Skip ${esc(s.id)})</span></${tag}>`;
+  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)}${SKIPPED.includes(s) ? ` <span class="opt">(-Skip ${esc(s.id)})</span>` : ""}</${tag}>`;
 }
 const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
 // Small inline marker for table cells whose value reached a target band.
@@ -1867,7 +1869,6 @@ const UNM = D.unmeasured || { input: false, worker: [] };
 const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 const pct = (v) => v == null ? "–" : (Number.isInteger(v) ? fmt(v, 0) : fmt(v, 1)) + " %";
 const sevKey = (sev) => sev >= 2 ? "2" : "1";
-const sevHtml = (sev) => { const s = STATUS[sevKey(sev)]; return `<i class="sym" aria-hidden="true">${s[0]}</i> ${s[1]}`; };
 // an input delay that could not be checked for every bottleneck (unverified: without Laufwerke) is "ohne erkannten Engpass",
 // in the same words as its sentence
 const UNVERIFIED_WORD = "Verzögerung ohne erkannten Engpass";
@@ -2370,11 +2371,6 @@ function renderEventDetail(inc, host) {
     { key: "text", head: "Text", cls: "wrap", fmt: (v) => esc(v) }
   ], list, { sort: null, id: (r) => r.k, text: () => "" });
 }
-// why no session is listed as affected
-const noneAffected = (inc) => UNM.input ? "Eingabeverzögerung nicht gemessen; betroffene Sitzungen sind nicht bestimmbar."
-  : inc.type === "umfeld" ? "Keine Eingabeverzögerung über dem Soll in den Sitzungen dieses Befunds."
-  : inc.chronic ? "Keine Sitzung mit Eingabeverzögerung über dem Soll außerhalb der kurzen Vorfälle im selben Zeitraum."
-  : "Keine Sitzung mit Eingabeverzögerung über dem Soll.";
 // what the capture did not measure, at the end of the evidence of an incident
 const notMeasuredBlock = () => { const items = notMeasuredItems(); return items ? `<div class="iv-notm"><h4>Nicht gemessen</h4><ul>${items}</ul></div>` : ""; };
 // options of the chart of one signal kind of an incident in the window win
@@ -2482,7 +2478,8 @@ function openInExpert(id) {
     if (rest) { rest.hidden = false; document.getElementById("beforeMore")?.remove(); }
     entry.classList.add("selected");
     entry.scrollIntoView({ behavior: scrollMode(), block: "center" });
-    landFocus(document.activeElement);
+    // the button that led here went with the incident view: the focus moves to the marked entry
+    if (!canFocus(document.activeElement)) { entry.tabIndex = -1; entry.focus({ preventScroll: true }); }
     return;
   }
   selectIncident(id);
@@ -2863,8 +2860,9 @@ function rangeRows(kind, t0, t1, use) {
 // table, the tables of sessions, applications and processes with their notes, the event list, the chosen incident.
 function refreshRange() {
   const z = window.WP.zoom, r = z || FULL;
-  // a range set otherwise that leaves the chosen incident behind takes the choice away
-  if (selInc != null && !selecting) { const i = incById.get(selInc); if (!z || z.t1 < i.start || z.t0 > i.end) selInc = null; }
+  // a range set otherwise that leaves the chosen incident behind takes the choice away; the whole capture keeps an incident whose
+  // window is the whole capture (a chronic state over the capture: choosing it sets no range)
+  if (selInc != null && !selecting) { const i = incById.get(selInc), w = incWindow(i); if (z ? z.t1 < i.start || z.t0 > i.end : w.t0 > FULL.t0 || w.t1 < FULL.t1) selInc = null; }
   const sel = selInc == null ? null : incById.get(selInc), snaps = snapsIn(r.t0, r.t1), when = z ? "Zeitraum " + rangeText(z, z.t1 - z.t0 < 3600000) : "";
   document.getElementById("expert").classList.toggle("ranged", !!z);
   // the chosen incident by its kind; an incident from events by the kind of its events ("Vorfall 10: Anwendungsabsturz")
@@ -2919,8 +2917,14 @@ refreshRange();
 // State, sentence, key figures and hints of the situation summary, the ranking and the guidance of each incident come from the
 // report data; the page shows them as delivered and adds only the labels of its own elements. Every value is escaped. Parts
 // of the data that are missing leave their place empty.
-// Clock time and duration of an incident; an incident of the days before the capture with its date.
-const cardWhen = (inc) => incWhen(inc, !(inc.event && inc.event.before));
+// Clock time and duration of an incident; an incident of the days before the capture with its date, one of the capture with
+// its date where it starts on another day than the capture (a capture over midnight).
+const FIRST_DAY = fmtDate(FULL.t0);
+function cardWhen(inc) {
+  if (inc.event && inc.event.before) return incWhen(inc, false);
+  const day = inc.type === "ereignis" ? evDate(inc.start, inc.events[0].offsetMin) : fmtDate(inc.start);
+  return (day === FIRST_DAY ? "" : day + " ") + incWhen(inc, true);
+}
 // The place of the page whose category decides whether the cause of a performance incident could be determined.
 function causePlace(inc) { return inc.type === "engpass" ? "incidents.contributors" : inc.type === "ohne-engpass" ? "incidents.delayProcs" : ""; }
 // A text without the sentence that ends with the reason of a category left out with -Skip.
@@ -3001,7 +3005,13 @@ const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start
     const b = ev.target.closest("button"); if (!b || b.closest("#incident")) return;
     const of = () => Number(b.closest("[data-id]").dataset.id);
     if (b.id === "beforeMoreG") { b.parentNode.previousElementSibling.hidden = false; b.parentNode.remove(); }
-    else if (b.id === "openTop") window.WP.openIncident(LB.top);
+    else if (b.id === "openTop") {
+      // one click to the first step of the most important incident: where the head of its view leaves the step below the
+      // window, the view scrolls just so far that the step shows whole
+      window.WP.openIncident(LB.top);
+      const below = (ivEl.querySelector("ol.checks > li") || { getBoundingClientRect: () => ({ bottom: 0 }) }).getBoundingClientRect().bottom + 12 - window.innerHeight;
+      if (below > 0) window.scrollBy(0, below);
+    }
     else if (b.id === "copyAll") copyText(copyVersion(D.copyAll), b);
     else if (b.matches(".card-open, .row-open")) window.WP.openIncident(of());
     else if (b.matches(".card-copy")) copyText(copyVersion((incById.get(of()) || {}).copy), b);
@@ -3124,36 +3134,31 @@ function sourceHtml(src) {
   const text = !src ? "" : typeof src === "string" ? src : [src.title, src.url].filter(Boolean).join(" – ");
   return text ? `<p class="src">Quelle: ${esc(text)}</p>` : "";
 }
-// Who was affected: the sessions with user, client and highest input delay; for an incident of the surroundings the sessions
-// whose own measured value is over its target, as the cause names them; for an incident from events the sessions and users
-// its events name. Where nobody can be listed, a sentence says why. The reported user is marked.
+// Who was affected: the list the report data give (concerned: sessions, users of an event no session names, the sentence where
+// nobody can be listed), the same the copy text counts. A session shows user and client and, for a performance incident, its
+// highest input delay; for an incident of the surroundings its own measured values over their target and its input delay; for
+// an incident from events nothing more. The reported user is marked.
 const REPORTED = new Set(FOCUS.found ? FOCUS.sessions : []), REPORTED_TAG = ' <span class="flag">gemeldeter Benutzer</span>';
 function affectedHtml(inc) {
+  const who = inc.concerned || { sessions: [], users: [], note: "", notChecked: false };
   const list = (head, rows) => `<div class="aff-head" aria-hidden="true">${head.map((h) => `<span>${h}</span>`).join("")}</div><ul class="aff">${rows.join("")}</ul>`;
   const session = (s, last) => `<li${REPORTED.has(s) ? ' class="rep-user"' : ""}><span>${lnkS(s)}${REPORTED.has(s) ? REPORTED_TAG : ""}</span><span>${esc((sessByIdx.get(s) || {}).client || "–")}</span>${last}</li>`;
   const delay = (ms) => `${sigWord(ms, TH.get("input.session"))}${fmt(ms, 0)} ms`;
+  const peak = new Map(inc.affected.map((a) => [a.s, a.peakMs])), sessions = who.sessions;
+  const note = !who.note ? "" : who.notChecked ? `<p class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(who.note)}</p>` : `<p class="note">${esc(who.note)}</p>`;
+  let rows = "";
   if (inc.type === "umfeld") {
-    const own = new Map(), peak = new Map(inc.affected.map((a) => [a.s, a.peakMs]));
-    for (const sg of inc.signals) if (sg.s != null && sg.s >= 0 && sessByIdx.has(sg.s)) { if (!own.has(sg.s)) own.set(sg.s, []); own.get(sg.s).push(sg); }
     const value = (sg) => `${statusHtml(sevKey(sg.severity))} ${esc((TH.get(sg.id) || {}).label || sg.id)} ${fmtVal(sg.peak, sg.unit)}${sg.ideal ? ` <span class="note">(Soll ${esc(sg.ideal)})</span>` : ""}`;
-    const rows = [...own].map(([s, sigs]) => session(s, `<span class="num">${sigs.map(value).concat(peak.has(s) ? ["Eingabeverzögerung " + delay(peak.get(s))] : []).join("<br>")}</span>`));
-    // the input delay is measured on the server: a note under the list says what it showed for these sessions
-    const note = !rows.length ? "Der Vorfall betrifft eine Gegenstelle, keine einzelne Sitzung; welche Sitzungen sie in dieser Zeit genutzt haben, zeigt die Messung nicht."
-      : UNM.input ? "Eingabeverzögerung nicht gemessen; ob Eingaben in diesen Sitzungen verzögert ankamen, ist nicht bestimmbar."
-      : inc.affected.length ? "" : "Die auf dem Server gemessene Eingabeverzögerung lag in den Sitzungen dieses Vorfalls nicht über dem Soll.";
-    return (rows.length ? list(["Benutzer (Sitzung)", "Client", "Messwert über dem Soll"], rows) : "") + (note ? `<p class="note">${note}</p>` : "");
+    rows = sessions.length ? list(["Benutzer (Sitzung)", "Client", "Messwert über dem Soll"], sessions.map((s) => session(s, `<span class="num">${inc.signals.filter((sg) => sg.s === s).map(value)
+      .concat(peak.has(s) ? ["Eingabeverzögerung " + delay(peak.get(s))] : []).join("<br>")}</span>`))) : "";
+  } else if (inc.type !== "ereignis") {
+    rows = sessions.length ? list(["Benutzer (Sitzung)", "Client", "Höchste Verzögerung"], sessions.map((s) => session(s, `<span class="num">${peak.has(s) ? delay(peak.get(s)) : "–"}</span>`))) : "";
+  } else {
+    const users = who.users.map((n) => inc.event.users[n]).filter((u) => u != null);
+    const out = sessions.map((s) => session(s, "")).concat(users.map((u) => `<li${u === FOCUS.user ? ' class="rep-user"' : ""}><span>${esc(u)}${u === FOCUS.user ? REPORTED_TAG : ""}</span></li>`));
+    rows = out.length ? list(sessions.length ? ["Benutzer (Sitzung)", "Client"] : ["Benutzer"], out) : "";
   }
-  if (inc.type !== "ereignis") {
-    return inc.affected.length ? list(["Benutzer (Sitzung)", "Client", "Höchste Verzögerung"], inc.affected.map((a) => session(a.s, `<span class="num">${delay(a.peakMs)}</span>`)))
-      : `<p class="note">${noneAffected(inc)}</p>`;
-  }
-  const ev = inc.event, known = ev.sessions.filter((s) => sessByIdx.has(s)), named = new Set(known.map((s) => sessByIdx.get(s).user));
-  const rows = known.map((s) => session(s, "")).concat(ev.users.filter((u) => !named.has(u)).map((u) => `<li${u === FOCUS.user ? ' class="rep-user"' : ""}><span>${esc(u)}${u === FOCUS.user ? REPORTED_TAG : ""}</span></li>`));
-  if (rows.length) return list(known.length ? ["Benutzer (Sitzung)", "Client"] : ["Benutzer"], rows);
-  // the assignment to users and sessions not checked (without processes): no statement about the session
-  const unchecked = (ev.unchecked || []).find((x) => x.id === "users");
-  return unchecked ? `<p class="unchecked"><i class="sym" aria-hidden="true">○</i> nicht geprüft: ${esc(unchecked.text)}</p>`
-    : `<p class="note">${ev.sessionUnknown ? "Sitzung nicht ermittelt." : ev.noUserSession ? "Ohne Benutzersitzung." : "Die Ereignisse nennen keinen Benutzer."}</p>`;
+  return rows + note;
 }
 // the incident after this one in its ranking (the capture and the days before it are ranked apart), or null
 function nextIncident(id) {
