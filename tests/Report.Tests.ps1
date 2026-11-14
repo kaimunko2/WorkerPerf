@@ -780,8 +780,14 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         $out = Join-Path $TestDrive 'a-own.html'
         # Aussage geaendert (Task 16): das Zustandsbild prueft seinen Katalog gegen dieselbe Liste; ein Katalog ohne die Pruefungen
         # der Anwendungen passt zu ihr
+        # Korrekturrunde 1 (ZB-R60): die Meldung sagt, was zu tun ist; die Legenden der Proben stehen seitdem im Katalog
         $health = Join-Path $TestDrive 'h-noapps.json'; $h = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json
-        { & $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain 6>$null } | Should -Throw "*Pruefung 'apps.*Anwendung 'edge' steht nicht in der Anwendungsliste*"
+        { & $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain 6>$null } |
+            Should -Throw "*Legende 'apps.edge.updateDefault' der Anwendung 'edge', die nicht in der Anwendungsliste steht. Eine Anwendung, die auf dem Server fehlt, bleibt in der Anwendungsliste*"
+        foreach ($k in @($h.legends.PSObject.Properties.Name | Where-Object { $_ -like 'apps.*' })) { $h.legends.PSObject.Properties.Remove($k) }
+        [IO.File]::WriteAllText($health, ($h | ConvertTo-Json -Depth 12))
+        { & $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain -HealthFile $health 6>$null } |
+            Should -Throw "*Pruefung 'apps.*Anwendung 'edge' steht nicht in der Anwendungsliste*erscheint dann im Zustandsbild als nicht installiert; sonst ihre Pruefungen und Legenden aus dem Katalog nehmen."
         $h.checks = @($h.checks | Where-Object { $_.area -ne 'apps' }); [IO.File]::WriteAllText($health, ($h | ConvertTo-Json -Depth 12))
         [void](& $report -Path $R.Run -OutFile $out -RoleFile $roles -AppsFile $own -GuidanceFile $plain -HealthFile $health 6>$null)
         $x = Get-ReportData $out
@@ -834,9 +840,10 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         (Get-ReportData $R.Masked).health.legends.'operation.powerPlan' | Should -Be $D.health.legends.'operation.powerPlan'
     }
     It 'verweist beim Absturz des Druckdienstes auf die Treiberpruefung' {
-        # Literal angepasst (PXH-02, Task 14b): die Situation print nennt auch das ausgeschaltete Betriebsprotokoll zum Drucken
+        # Korrekturrunde 1 (ZB-R59): das ausgeschaltete Betriebsprotokoll zum Drucken traegt zu keinem Vorfall bei und wird nicht genannt
         $p = $D.incidents | Where-Object { $_.type -eq 'ereignis' -and $_.event.kind -eq 'print' }
-        @($p.health) | Should -Be @('print.driversInSpooler', 'print.operationalLogOff')
+        @($p.health) | Should -Be @('print.driversInSpooler')
+        (@($D.health.areas.checks) | Where-Object id -eq 'print.operationalLogOff').grade | Should -Be 'check'
         @(($D.incidents | Where-Object lead -eq 'cpu').health) | Should -Be @('maintenance.tasksInWorkHours', 'apps.edgeBackgroundMode', 'apps.teamsAutoUpdate')
         @(($D.incidents | Where-Object lead -eq 'memory').health).Count | Should -Be 0                    # passt keine Pruefung, entfaellt der Abschnitt
         $all = @{}; foreach ($a in $D.health.areas) { foreach ($c in $a.checks) { $all[$c.id] = $c } }
@@ -858,6 +865,13 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         foreach ($part in $c.title, $c.finding, $c.todo[0].text, $c.source.title, 'Handeln') { ($c.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($part)) }
         $c.copy.named | Should -Match 'SIM-VDA01'; $c.copy.anonymous | Should -Not -Match 'SIM-VDA01|user0\d\d|fs01'; $c.copy.anonymous | Should -Match 'Handeln'
         ($a.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($c.title)); $a.copy.anonymous | Should -Not -Match 'SIM-VDA01'
+        # Korrekturrunde 1: eine Faustregel ist die des Katalogs, die Quelle ihr Beleg (M7); ein teilweise gelesener Bereich sagt es (M3);
+        # ohne aufgezaehlte Pruefung heissen alle in Ordnung (M4)
+        $ruleCheck = ($D.health.areas | Where-Object id -eq 'print').checks[0]; $ruleCheck.kind | Should -Be 'rule'
+        ($ruleCheck.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape("Faustregel des Katalogs; Beleg: $($ruleCheck.source.vendor), $($ruleCheck.source.title) (Stand "))
+        $sec = $D.health.areas | Where-Object id -eq 'security'; ($sec.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape($sec.statusText))
+        ($sec.copy.named -replace "`r`n\s*", ' ') | Should -Match ('Nicht prüfbare Prüfungen: ' + $sec.counts.unknown)
+        $size = $D.health.areas | Where-Object id -eq 'size'; ($size.copy.named -replace "`r`n\s*", ' ') | Should -Match ('Alle zutreffenden Prüfungen in Ordnung: ' + $size.counts.ok)
     }
     It 'bildet jeden Schritt im Kopiertext vollstaendig und keine Zeile ueber 78 Zeichen' {          # Zusatz e
         $n = 0; $step = (Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json).copy.copyStep
@@ -880,9 +894,10 @@ Describe 'Zustandsbild in den Berichtsdaten' {
     }
     It 'nennt im Kopiertext vor dem Befund einer nicht pruefbaren Pruefung den Wert, der nicht vorliegt' {   # Zusatz d
         $s = $D.health.areas | Where-Object id -eq 'security'; $c = $s.checks | Where-Object id -eq 'security.citrixExclusions'; $c.grade | Should -Be 'unknown'
-        $cat = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json
-        $first = @($cat.checks | Where-Object id -eq $c.id)[0].values | Where-Object { ($D.health.raw | Where-Object id -eq $_).state -ne 'read' } | Select-Object -First 1
-        $label = ($D.health.raw | Where-Object id -eq $first).label; $label | Should -Not -BeNullOrEmpty; $label | Should -Not -Match ' = '
+        # Korrekturrunde 1: genannt wird der Wert, der nicht gelesen ist (die Ausnahmen fuer Prozesse), nicht der abgeleitete Fakt
+        $c.cause | Should -Be 'security.defenderExclusionProcesses'; ($D.health.raw | Where-Object id -eq $c.cause).state | Should -Not -Be 'read'
+        $label = ($D.health.raw | Where-Object id -eq $c.cause).label; $label | Should -Not -BeNullOrEmpty; $label | Should -Not -Match ' = '
+        $label | Should -Not -Be ($D.health.raw | Where-Object id -eq 'security.citrixExclusionsMissing').label
         $c.finding | Should -Match '^Ein Wert, den die Prüfung braucht, liegt nicht vor'
         ($c.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape("$label`: $($c.finding)"))
         ($s.copy.named -replace "`r`n\s*", ' ') | Should -Match ([regex]::Escape("- $($c.title): Nicht prüfbar. $label`: $($c.finding)"))

@@ -201,6 +201,9 @@ Describe 'Zustandsbild: Format und Werteliste' {
         @($WorkerPerfHealthValues['operation.volumes'].Fields.Keys) | Should -Be @('Drive', 'SizeGB', 'FreeGB', 'FileSystem', 'System', 'PageFile')
         @($WorkerPerfHealthValues['apps.probes'].Fields.Keys) | Should -Be @('App', 'Id', 'Kind', 'Read', 'State', 'Reason', 'Value', 'Names')
         $WorkerPerfHealthValues['apps.probes'].Fields['Value'] | Should -Be 'value'; $WorkerPerfHealthValues['apps.probes'].Fields['Names'] | Should -Be 'text:free'
+        # Task 16, Korrekturrunde 1: Schluessel- und Wertnamen der Richtlinienlisten, die ausgeschlossenen Dateiendungen und die Namen der Listener sind freier Servertext
+        foreach ($id in 'vda.policyRaw', 'profile.policyGpo', 'profile.policyStudio') { foreach ($f in 'Key', 'Name', 'Value') { $WorkerPerfHealthValues[$id].Fields[$f] | Should -Be 'text:free' -Because "$id.$f" } }
+        $WorkerPerfHealthValues['security.defenderExclusionExtensions'].Fields['Extension'] | Should -Be 'text:free'; $WorkerPerfHealthValues['sessions.limits'].Fields['Terminal'] | Should -Be 'text:free'
         $WorkerPerfHealthValues['operation.lastBoot'].Type | Should -Be 'time'; $WorkerPerfHealthValues['print.mappingClientVersion'].Type | Should -Be 'text'; $WorkerPerfHealthValues['size.memTotalMB'].Unit | Should -Be 'MB'
         @($WorkerPerfHealthValues.Keys | Where-Object { -not $WorkerPerfHealthValues[$_].Documented }) | Should -Be @('size.vmtoolsPresent', 'size.vmtoolsService',
             'operation.pendingServicing', 'operation.pendingUpdate', 'vda.policyRaw', 'profile.policyGpo', 'profile.policyStudio', 'security.applockerCollections')

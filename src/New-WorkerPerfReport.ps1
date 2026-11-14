@@ -1283,12 +1283,14 @@ if ($Mask) {
     }
     $data['meta']['mask'] = $Mask
     # names equal to a word of the report garble its sentences and can be guessed from them (P2-R12): named by their
-    # replacement, never by the real name. The report's words are those of texts.de.json and every text of the catalogue
-    # as read, with the keys of its terms (they are masked too).
+    # replacement, never by the real name. The report's words are those of texts.de.json, every text of the guidance
+    # catalogue as read, with the keys of its terms (they are masked too), and every text of the health catalogue as read
+    # (findings, meanings, steps, labels, copy texts, legends; with the labels of the application list it carries).
     $vocabulary = @{}
     foreach ($k in $texts.Keys) { $vocabulary[$k] = $texts[$k] }
     $catalogueWords = New-Object System.Collections.Generic.List[string]
     foreach ($t in @(Get-PlainDataStrings $guidance)) { $catalogueWords.Add([string]$t) }
+    foreach ($t in @(Get-PlainDataStrings $healthCatalogue)) { $catalogueWords.Add([string]$t) }
     $catalogueTerms = Get-WorkerPerfField $guidance 'terms'
     if ($catalogueTerms -is [System.Management.Automation.PSCustomObject]) { foreach ($p in $catalogueTerms.PSObject.Properties) { $catalogueWords.Add([string]$p.Name) } }
     elseif ($catalogueTerms -is [System.Collections.IDictionary]) { foreach ($k in $catalogueTerms.Keys) { $catalogueWords.Add([string]$k) } }

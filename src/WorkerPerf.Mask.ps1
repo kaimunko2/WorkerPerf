@@ -43,7 +43,7 @@ $script:WorkerPerfMaskKeywordFields = @(
     'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places', 'unchecked.category',
     'situation', 'conditions', 'lagebild.state', 'print.involvedFrom', 'apps.key',
     'health.state', 'health.catalogueVersion', 'grade', 'apps.state', 'checks.app', 'source.date', 'checks.relates', 'raw.area',
-    'raw.state', 'raw.reason', 'incidents.health')
+    'raw.state', 'raw.reason', 'incidents.health', 'checks.cause')
 
 $script:WorkerPerfMaskIpv4Text = '(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)'
 $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^' + $script:WorkerPerfMaskIpv4Text + '$')

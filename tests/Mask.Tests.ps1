@@ -805,9 +805,12 @@ Describe 'Simulierte Stunde, maskiert' {
             [IO.File]::WriteAllText($meta, $m)
             foreach ($t in 'EndReason": "error', 'CANARYEND', 'CANARYERR', 'CANARYSRC') { if (-not $m.Contains($t)) { throw "Kanarienvogel nicht gesetzt: $t" } }
             # health.json (Task 16): a token of its own in every value and list field of the value list that can carry free server
-            # text or a server name (in a list in the first entry; a value that is not read and an empty list become a read value
-            # with one entry whose other fields are empty; apps.probes in the first row with Names: only the value of a probe
-            # with names: true reaches the report), and in the first empty Error of an area
+            # text or a name of a server, person, client, domain or address (in a list in the first entry; a value that is not
+            # read and an empty list become a read value with one entry whose other fields are empty; apps.probes in the first
+            # row with Names: only the value of a probe with names: true reaches the report), and in the first empty Error of
+            # an area. The fields an administrator types (the key and value names of the policy lists, the excluded file name
+            # extensions, the names of the listeners: fix round 1 of Task 16) get a token of free server text whatever their
+            # type in the value list.
             $hf = Join-Path $dir 'health.json'; $h = ConvertFrom-WorkerPerfHealthJsonText ([IO.File]::ReadAllText($hf))
             $free = New-Object System.Collections.Generic.List[string]; $names = New-Object System.Collections.Generic.List[string]
             $marker = { param([string]$Type)
@@ -816,14 +819,21 @@ Describe 'Simulierte Stunde, maskiert' {
                     'text:free' { $t = "CANARYH$k"; $free.Add($t) }
                     'text:path' { $t = "\\kanari$k\frei\ordner"; $names.Add($t) }
                     'text:share' { $t = "\\kanari$k\frei"; $names.Add($t) }
+                    'text:user' { $t = "kanari$k"; $names.Add($t) }
+                    'text:domain' { $t = "KANARI$k"; $names.Add($t) }
+                    'text:client' { $t = "KANARI-WS$k"; $names.Add($t) }
+                    'text:address' { $t = '10.77.0.' + [int]$k; $names.Add($t) }
                     default { $t = "kanari$k.sim.local"; $names.Add($t) }
                 }
                 $t }
-            $marked = @('text:free', 'text:host', 'text:hosts', 'text:share', 'text:path')
+            $marked = @('text:free', 'text:host', 'text:hosts', 'text:share', 'text:path', 'text:user', 'text:domain', 'text:client', 'text:address')
+            $adminText = @{ 'vda.policyRaw' = @('Key', 'Name', 'Value'); 'profile.policyGpo' = @('Key', 'Name', 'Value'); 'profile.policyStudio' = @('Key', 'Name', 'Value')
+                'security.defenderExclusionExtensions' = @('Extension'); 'sessions.limits' = @('Terminal') }
             foreach ($id in $WorkerPerfHealthValues.Keys) {
                 $def = $WorkerPerfHealthValues[$id]; $values = $h['Areas'][$def.Area]['Values']
                 if ($def.Type -eq 'list') {
-                    $fields = @($def.Fields.Keys | Where-Object { $marked -contains $def.Fields[$_] }); if ($fields.Count -eq 0) { continue }
+                    $typeOf = @{}; foreach ($f in $def.Fields.Keys) { $typeOf[$f] = $def.Fields[$f]; if ($adminText.ContainsKey($id) -and $adminText[$id] -contains $f) { $typeOf[$f] = 'text:free' } }
+                    $fields = @($def.Fields.Keys | Where-Object { $marked -contains $typeOf[$_] }); if ($fields.Count -eq 0) { continue }
                     $v = $values[$id]; $rows = @(); if ($null -ne $v -and $v['State'] -eq 'read') { $rows = @($v['Value']) }
                     if ($id -eq 'apps.probes') {
                         $row = @($rows | Where-Object { -not [string]::IsNullOrEmpty([string]$_['Names']) })[0]
@@ -834,7 +844,7 @@ Describe 'Simulierte Stunde, maskiert' {
                         $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = @($row) }
                     }
                     else { $row = $rows[0] }
-                    foreach ($f in $fields) { $row[$f] = & $marker $def.Fields[$f] }
+                    foreach ($f in $fields) { $row[$f] = & $marker $typeOf[$f] }
                 }
                 elseif ($marked -contains $def.Type) { $values[$id] = [ordered]@{ State = 'read'; Reason = ''; Value = (& $marker $def.Type) } }
             }
@@ -1254,7 +1264,7 @@ Describe 'Simulierte Stunde, maskiert' {
             foreach ($c in @($pd.copyAll.anonymous) + @(@($pd.incidents) + @($pd.before.incidents) | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY' }
             # the tokens of health.json (Task 16): every one reaches the unmasked report; the copy texts without names name none
             $strings = New-Object System.Collections.Generic.List[string]; Get-AllStrings $pd $strings; $all = $strings -join "`n"
-            $CanaryHealth.Free.Count | Should -BeGreaterThan 6; $CanaryHealth.Names.Count | Should -BeGreaterThan 10
+            $CanaryHealth.Free.Count | Should -Be 16; $CanaryHealth.Names.Count | Should -Be 17
             foreach ($t in @($CanaryHealth.Free) + @($CanaryHealth.Names) + 'CANARYHER') { $all.Contains($t) | Should -BeTrue -Because $t }
             $pd.health.state | Should -Be 'read'
             foreach ($a in $pd.health.areas) { foreach ($c in @($a.copy.anonymous) + @($a.checks | ForEach-Object { $_.copy.anonymous })) { $c | Should -Not -Match 'CANARY|kanari' } }
@@ -1263,6 +1273,10 @@ Describe 'Simulierte Stunde, maskiert' {
                 [IO.File]::ReadAllText($file) | Should -Not -Match 'CANARY' -Because $level
                 if ($level -eq 'Alles') { [IO.File]::ReadAllText($file) | Should -Not -Match 'kanari' }            # servers, shares and paths: only this level replaces them
                 $md = Get-ReportData $file
+                if ($level -eq 'Alles') {                                                                          # every name token, also the address
+                    $ms = New-Object System.Collections.Generic.List[string]; Get-AllStrings $md $ms; $mall = $ms -join "`n"
+                    foreach ($t in $CanaryHealth.Names) { $mall.Contains($t) | Should -BeFalse -Because $t }
+                }
                 @($md.procs | Where-Object { $_.cmd -ne '' }).Count | Should -Be 0
                 # the free texts were cleared before the summary was built: the hint without a message (P3-R9)
                 @($md.lagebild.hints) | Should -Contain $md.guidance.hints.errorNoMessage -Because $level
@@ -1274,6 +1288,16 @@ Describe 'Simulierte Stunde, maskiert' {
             $text = & { & $Report -Path $copy -OutFile (Join-Path $TestDrive 'vocab.html') -Mask Personen } *>&1 | Out-String
             $text | Should -Match 'Hinweis: 1 Name gleicht einem Wort des Berichts \(Benutzer 02\); Saetze mit diesem Wort'
             $text | Should -Not -Match '(?i)\bsoll\b'
+        }
+        It 'nennt auch die Namen, die einem Wort des Katalogs des Zustandsbilds gleichen' {                         # P2-R12, Task 16 Korrekturrunde 1
+            # Zusagegrenze steht nur im Katalog des Zustandsbilds, nicht in texts.de.json und nicht im Katalog des gefuehrten Berichts
+            foreach ($f in 'texts.de.json', 'guidance.de.json') { [IO.File]::ReadAllText((Join-Path $PSScriptRoot "../src/$f")) | Should -Not -Match 'Zusagegrenze' -Because $f }
+            [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/health.de.json')) | Should -Match 'Zusagegrenze'
+            $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'vocabh')
+            $file = Join-Path $copy 'sessions.csv'; [IO.File]::WriteAllText($file, ([IO.File]::ReadAllText($file) -replace ',user002,', ',Zusagegrenze,'))
+            $text = & { & $Report -Path $copy -OutFile (Join-Path $TestDrive 'vocabh.html') -Mask Personen } *>&1 | Out-String
+            $text | Should -Match 'Hinweis: 1 Name gleicht einem Wort des Berichts \(Benutzer 02\); Saetze mit diesem Wort'
+            $text | Should -Not -Match 'Zusagegrenze'
         }
         It 'nennt die Meldung einer mit Fehler beendeten Aufzeichnung nur in der Fassung mit Namen' {                 # P3-R44
             $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'endmsg')

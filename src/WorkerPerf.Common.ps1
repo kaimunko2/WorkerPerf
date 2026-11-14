@@ -66,7 +66,9 @@ $script:WorkerPerfHealthWemServices = @(@('Citrix WEM Agent Host Service', 'Nors
 # Each row: id, type, unit, fields ('Name=type, ...'), 'undocumented' where the source is not documented.
 $script:WorkerPerfHealthValues = & {
     $services = 'Name=text:protected, State=text, StartMode=text'
-    $policy = 'Key=text, Name=text, Value=text:free'
+    # the registry key and value names of a policy list are free server text like its values: an administrator types
+    # them (AD groups, folders); so are a file name extension Defender excludes and the name of a listener
+    $policy = 'Key=text:free, Name=text:free, Value=text:free'
     $rows = @(
         @('size.cpuLogical', 'number'), @('size.cpuSockets', 'number'), @('size.memTotalMB', 'number', 'MB'),
         @('size.commitTotalMB', 'number', 'MB'), @('size.commitLimitMB', 'number', 'MB'), @('size.commitPeakMB', 'number', 'MB'),
@@ -84,7 +86,7 @@ $script:WorkerPerfHealthValues = & {
 
         @('sessions.list', 'list', '', ('Id=number, State=text, WinStation=text:path, User=text:user, Domain=text:domain, Client=text:client, ' +
             'LogonTime=time, ConnectTime=time, DisconnectTime=time, IdleMinutes=number')),
-        @('sessions.limits', 'list', '', ('Terminal=text, IdleLimitMin=number, DisconnectedLimitMin=number, ActiveLimitMin=number, BrokenAction=number, FromPolicy=bool, ' +
+        @('sessions.limits', 'list', '', ('Terminal=text:free, IdleLimitMin=number, DisconnectedLimitMin=number, ActiveLimitMin=number, BrokenAction=number, FromPolicy=bool, ' +
             'TimeLimitPolicy=number')),
         @('sessions.localProfiles', 'list', '', 'Path=text:path, Loaded=bool, Special=bool, LastUse=time, Temporary=bool'),
 
@@ -108,7 +110,7 @@ $script:WorkerPerfHealthValues = & {
         @('security.defenderRealTime', 'bool'), @('security.defenderTamper', 'bool'), @('security.defenderSignatureAgeDays', 'number', 'Tage'),
         @('security.defenderSignaturesOutOfDate', 'bool'), @('security.defenderVersion', 'text'),
         @('security.defenderExclusionPaths', 'list', '', 'Path=text:free'), @('security.defenderExclusionProcesses', 'list', '', 'Path=text:free'),
-        @('security.defenderExclusionExtensions', 'list', '', 'Extension=text'), @('security.defenderSharedSignatures', 'text:path'),
+        @('security.defenderExclusionExtensions', 'list', '', 'Extension=text:free'), @('security.defenderSharedSignatures', 'text:path'),
         @('security.defenderNetworkProtection', 'number'), @('security.defenderForcePassive', 'number'), @('security.mdeOnboarding', 'number'),
         @('security.mdeService', 'text'), @('security.filters', 'list', '', 'Name=text:protected, Altitude=text, Instances=number, Legacy=bool'),
         @('security.applockerService', 'text'),

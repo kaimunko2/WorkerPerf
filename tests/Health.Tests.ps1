@@ -35,6 +35,7 @@ BeforeAll {
         $c.copy.summary = '{act} zum Handeln, {check} zum Prüfen, {ok} in Ordnung'; $c.copy.areaOne = '1 Bereich'; $c.copy.areaMany = '{n} Bereiche'
         $c.copy.countsAct = '{n} zum Handeln'; $c.copy.countsCheck = '{n} zum Prüfen'; $c.copy.countsUnknown = '{n} nicht prüfbar'
         $c.copy.copyCheckTitle = '{area} – {title}: {grade}'; $c.copy.copyAreaTitle = '{area}: {grade}'; $c.copy.copyAreaItem = '- {title}: {grade}. {finding}'
+        $c.copy.copyUnknownFinding = '{label}: {finding}'
         . $Change
         $file = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + '.json'); [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $c -Depth 12)); $file
     }
@@ -302,7 +303,8 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $WorkerPerfHealthOptionalParts | Should -Be @('units', 'legends'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'units'
     }
     It 'lehnt einen fehlerhaften Teil units ab' -TestCases @(
-        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte: MB, s, Tage, Minuten, %, GB, Stunden)." }
+        # Aussage geaendert (Task 16, Korrekturrunde 1): auch die Einheiten der Schwellen (der kleine Katalog: GB, Uhr) haben eine Einzahl
+        @{ Change = { $c.units = @{ Wochen = 'Woche' } }; Msg = "Katalog '*': Teil 'units' nennt die unbekannte Einheit 'Wochen' (Einheiten der Werte und Schwellen: MB, s, Tage, Minuten, %, GB, Stunden, Uhr)." }
         @{ Change = { $c.units = @{ tage = 'Tag' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'tage'*" }                            # Namen gelten nur in genau dieser Schreibweise
         @{ Change = { $c.units = @{ Prozessoren = 'Prozessor' } }; Msg = "*Teil 'units' nennt die unbekannte Einheit 'Prozessoren'*" }        # die Einheit einer Schwelle, nicht eines Werts
         @{ Change = { $c.units = @{ Tage = '' } }; Msg = "Katalog '*': Teil 'units' nennt fuer die Einheit 'Tage' keinen Text." }
@@ -321,11 +323,14 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $WorkerPerfHealthOptionalParts | Should -Be @('units', 'legends'); $WorkerPerfHealthCatalogueParts | Should -Not -Contain 'legends'
         # der Fakt einer Anwendung ist bekannt, wenn die Anwendungsliste ihn kennt
         (Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.legends = @{ 'apps.simapp.cacheMode' = '2 = aus' } }) $TestApps).legends.'apps.simapp.cacheMode' | Should -Be '2 = aus'
+        # eine unbekannte Probe einer Anwendung der Liste bleibt eine unbekannte Kennung (Task 16, Korrekturrunde 1)
+        { Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.legends = @{ 'apps.simapp.gibtEsNicht' = 'x' } }) $TestApps } | Should -Throw "*Teil 'legends' nennt die unbekannte Kennung 'apps.simapp.gibtEsNicht'*"
     }
     It 'lehnt einen fehlerhaften Teil legends ab' -TestCases @(
         @{ Change = { $c.legends = @{ 'print.nichtda' = 'x' } }; Msg = "Katalog '*': Teil 'legends' nennt die unbekannte Kennung 'print.nichtda' (erlaubt sind die Kennungen der Werte und Fakten)." }
         @{ Change = { $c.legends = @{ 'Print.Spooler' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'Print.Spooler'*" }               # Kennungen gelten nur in genau dieser Schreibweise
-        @{ Change = { $c.legends = @{ 'apps.simapp.cacheMode' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'apps.simapp.cacheMode'*" }  # ohne Anwendungsliste kennt der Katalog den Fakt nicht
+        # Aussage geaendert (Task 16, Korrekturrunde 1, ZB-R60): ohne Anwendungsliste kennt der Katalog den Fakt nicht; die Meldung sagt, was zu tun ist
+        @{ Change = { $c.legends = @{ 'apps.simapp.cacheMode' = 'x' } }; Msg = "*Teil 'legends' nennt die Legende 'apps.simapp.cacheMode' der Anwendung 'simapp', die nicht in der Anwendungsliste steht. Eine Anwendung*" }
         @{ Change = { $c.legends = @{ 'diskFreeGB' = 'x' } }; Msg = "*Teil 'legends' nennt die unbekannte Kennung 'diskFreeGB'*" }                      # eine Schwelle ist kein Wert
         @{ Change = { $c.legends = @{ 'print.spooler' = '' } }; Msg = "Katalog '*': Teil 'legends' nennt fuer 'print.spooler' keinen Text." }
         @{ Change = { $c.legends = @{ 'print.spooler' = '  ' } }; Msg = "*Teil 'legends' nennt fuer 'print.spooler' keinen Text*" }
@@ -1240,7 +1245,9 @@ Describe 'Katalog in src' {
         $x.grade | Should -Be 'check'; $x.finding | Should -BeExactly 'Dauer der ältesten getrennten Sitzung in Stunden: 24,3, mehr als die Schwelle von 24.'
     }
     It 'nennt Einheiten in der Einzahl und schreibt jeden Befund so, dass er auch fuer 1 stimmt' {        # Korrekturrunde 1, C2
-        @($Real.units.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) | Should -Be @('Tage=Tag', 'Stunden=Stunde', 'Minuten=Minute')
+        # Aussage geaendert (Task 16, Korrekturrunde 1): die Einzahl jeder Einheit einer Schwelle
+        @($Real.units.PSObject.Properties | ForEach-Object { $_.Name + '=' + $_.Value }) | Should -Be @('Tage=Tag', 'Stunden=Stunde', 'Minuten=Minute', 'Prozessoren=Prozessor', 'Sitzungen=Sitzung',
+            'Profile=Profil', 'Container=Container', 'Treiber=Treiber', 'Warteschlangen=Warteschlange')
         $one = @{ 'operation.lastBoot' = $ReadMs - 86400000L; 'operation.lastUpdate' = $ReadMs - 86400000L - 3600000L
             'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 1; DisconnectedLimitMin = 1; ActiveLimitMin = 0; BrokenAction = 0; FromPolicy = $true })
             'sessions.list' = @(@{ Id = 3; State = 'Disconnected'; User = 'gast'; DisconnectTime = $ReadMs - 3600000L }) }
@@ -1428,7 +1435,7 @@ Describe 'Katalog in src' {
     }
     It 'fuehrt die Legenden im Teil legends und laesst die Bezeichnungen schlichte Namen sein' {             # Entscheidung ZB-R49
         foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '=' -Because $p.Name }
-        @($Real.legends.PSObject.Properties).Count | Should -Be 34
+        @($Real.legends.PSObject.Properties).Count | Should -Be 38                                          # Aussage geaendert (Task 16, Korrekturrunde 1): vier Legenden der Proben
         $Real.legends.'print.spooler' | Should -BeExactly 'Running = läuft, Stopped = beendet'
         $Real.legends.'security.defenderMode' | Should -BeExactly 'Normal = aktiv, Passive = passiv'
         $Real.legends.'maintenance.scanDay' | Should -BeExactly '0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie'
@@ -2181,5 +2188,139 @@ Describe 'Texte und Verweise fuer den Bericht' {
         $r = Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $withLegends -EventConfig $Cfg -Roles $Roles -Texts $Texts
         $r.legends | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]; @($r.legends.Keys) | Should -Be @('operation.powerPlan', 'print.spooler'); $r.legends['print.spooler'] | Should -Be 'c = d'
         @((Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $Cat -EventConfig $Cfg -Roles $Roles -Texts $Texts).legends.Keys).Count | Should -Be 0
+    }
+}
+Describe 'Kopiertexte, Bezuege und Katalogteile (Task 16, Korrekturrunde 1)' {
+    BeforeAll {
+        $script:FixApps = @(Read-WorkerPerfHealthApps (Join-Path $PSScriptRoot '../src/apps.json'))
+        $script:FixReal = Read-WorkerPerfHealthCatalogue (Join-Path $PSScriptRoot '../src/health.de.json') $FixApps
+        $script:Flat = { param([string]$t) $t -replace "`r`n\s*", ' ' }
+        # der kleine Katalog mit eigenen Texten und fuenf weiteren Pruefungen: zwei in Ordnung und eine, die nicht zutrifft, im
+        # Bereich security; zwei in Ordnung im Bereich print, neben der Treiberpruefung
+        $script:CopyCat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+                $c.copy.copyOk = 'Weitere in Ordnung: {n}'; $c.copy.copyOkAll = 'Alle in Ordnung: {n}'; $c.copy.copyAreaUnknown = 'Unklar: {n}'; $c.copy.copyUnknownFinding = '{label} => {finding}'
+                $c.copy.copySource = 'Quelle {kind}: {vendor}, {title} <{url}>'; $c.copy.copySourceRule = 'Regel; Beleg: {vendor}, {title}'
+                $c.areas[6].notCovered = ''                                                                                   # security
+                $new = { param($Id, $Title, $Value, $Op, $Than) [ordered]@{ id = $Id; area = $Id.Split('.')[0]; title = $Title; values = @($Value)
+                        rules = @{ check = @(@{ value = $Value; op = $Op; than = $Than }) }; findings = @{ ok = "$Title gut."; check = "$Title auffaellig."; unknown = '{reason}' }
+                        meaning = 'm'; todo = @(@{ text = 't'; where = 'w'; sign = 's' }); source = @{ vendor = 'Microsoft'; title = 'Seite'; url = ''; date = '2026-11-13' }; kind = 'rule'; relates = @('system') } }
+                $c.checks = @($c.checks) + @((& $new 'security.signatureAge' 'Signaturalter' 'security.defenderSignatureAgeDays' 'gt' 2),
+                    (& $new 'security.networkProtection' 'Netzwerkschutz' 'security.defenderNetworkProtection' 'eq' 1),
+                    (& $new 'security.passiveWithoutMde' 'Passiv' 'security.defenderForcePassive' 'eq' 1),
+                    (& $new 'print.isolationOff' 'Isolierung' 'print.isolationExecution' 'eq' 0),
+                    (& $new 'print.spoolerStopped' 'Spooler' 'print.spooler' 'eq' 'Stopped')) })
+        $values = @{ 'security.defenderSignatureAgeDays' = (New-WorkerPerfHealthValue 'absent' 'notInstalled'); 'security.defenderNetworkProtection' = 0; 'security.defenderForcePassive' = 0
+            'security.defenderVersion' = (New-WorkerPerfHealthValue 'unreadable' 'rights'); 'print.isolationExecution' = 1; 'print.spooler' = 'Running' }
+        $script:CopyRes = Get-WorkerPerfHealthResult -Model (New-HealthModel $values (@{ PrintDrivers = $HpNone } + $NoLookback)) -Catalogue $CopyCat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $CopyRes -Catalogue $CopyCat -Server 'T1'
+        function Get-CopyArea([string]$Id) { $CopyRes.areas | Where-Object id -eq $Id }
+        function Get-CopyCheck([string]$Id) { $CopyRes.areas | ForEach-Object { $_.checks } | Where-Object id -eq $Id }
+    }
+    It 'laesst eine Pruefung, die nicht zutrifft, aus dem Kopiertext des Bereichs und zaehlt die Pruefungen in Ordnung' {   # Q1 (M1, M2)
+        (Get-CopyCheck 'security.signatureAge').grade | Should -Be 'na'
+        $s = Get-CopyArea 'security'; $s.counts.ok | Should -Be 2; $s.counts.check | Should -Be 0
+        $s.copy.named | Should -Not -Match 'Signaturalter'
+        $p = Get-CopyArea 'print'; $p.counts.ok | Should -Be 2; $p.counts.check | Should -Be 1
+        & $Flat $p.copy.named | Should -Match ([regex]::Escape('- Treiber im Spooler-Prozess: Prüfen. 1 Treiber im Spooler. Weitere in Ordnung: 2'))
+    }
+    It 'behaelt den Hinweis einer Pruefung im Kopiertext' {                                                   # Q1 (M3)
+        $c = Get-CopyCheck 'print.driversInSpooler'; $c.grade | Should -Be 'check'; $c.note | Should -Be 'Text eventsUnchecked'
+        & $Flat $c.copy.named | Should -Match ([regex]::Escape('Prüfen 1 Treiber im Spooler. Text eventsUnchecked Text copyMeaning'))
+    }
+    It 'nennt den teilweise gelesenen Bereich und die Zahl der nicht pruefbaren Pruefungen' {                # M3 der Datenschutzpruefung
+        $s = Get-CopyArea 'security'; $s.statusText | Should -Be 'Text areaPartial'
+        @($s.copy.named -split "`r`n")[1..2] | Should -Be @('Bereich security: In Ordnung', 'Text areaPartial')
+        $o = Get-CopyArea 'operation'; $o.counts.unknown | Should -Be 1; $o.statusText | Should -Be ''
+        @($o.copy.named -split "`r`n")[1..3] | Should -Be @('Bereich operation: In Ordnung', 'Unklar: 1', '')
+        (Get-CopyArea 'print').copy.named | Should -Not -Match 'Unklar'
+    }
+    It 'sagt, dass alle Pruefungen in Ordnung sind, wenn keine darueber steht, und endet ohne leeren Absatz' {   # M4, Q7
+        $lines = @((Get-CopyArea 'security').copy.named -split "`r`n")
+        $lines[-1] | Should -Be 'Alle in Ordnung: 2'; ((Get-CopyArea 'security').copy.named) | Should -Not -Match 'Weitere'
+        $lines = @((Get-CopyArea 'print').copy.named -split "`r`n"); $lines[-1] | Should -Be 'Nicht abgedeckt in print'; $lines[-2] | Should -Be ''
+    }
+    It 'nennt vor dem Befund einer nicht pruefbaren Pruefung den Wert, der fehlt, ueber den Text des Katalogs' {   # Q2, Q3, M5
+        # die Ursache ist der abgeleitete Fakt operation.minFreeGB; genannt wird der gelesene Wert, aus dem er stammt
+        $disk = Get-CopyCheck 'operation.diskFree'; $disk.grade | Should -Be 'unknown'; $disk.cause | Should -Be 'operation.volumes'
+        & $Flat $disk.copy.named | Should -Match ([regex]::Escape("Wert operation.volumes => $($disk.finding)"))
+        & $Flat (Get-CopyArea 'operation').copy.named | Should -Match ([regex]::Escape("- Freier Platz: Nicht prüfbar. Wert operation.volumes => $($disk.finding)"))
+        @(Get-CopyCheck 'security.networkProtection').cause | Should -Be ''                                  # nur bei nicht pruefbar
+        # ein frueherer Wert ist nicht gesetzt und entschieden, ein spaeterer nicht lesbar: genannt wird der spaetere
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue {
+                $c.checks[1].id = 'print.testCause'; $c.checks[1].values = @('print.isolationOverride', 'operation.pendingRename')
+                $c.checks[1].rules = @{ check = @(@{ value = 'print.isolationOverride'; op = 'ne'; than = 1 }, @{ value = 'operation.pendingRename'; op = 'gt'; than = 0 }) }
+                $c.checks[1].findings = @{ ok = 'gut'; check = 'schlecht'; unknown = '{reason}' } })
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel ((Get-Vol 38) + @{ 'operation.pendingRename' = (New-WorkerPerfHealthValue 'unreadable' 'rights') })) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        Add-WorkerPerfHealthReportTexts -Result $r -Catalogue $cat -Server 'T1'
+        $t = ($r.areas | Where-Object id -eq 'print').checks | Where-Object id -eq 'print.testCause'
+        $t.grade | Should -Be 'unknown'; $t.cause | Should -Be 'operation.pendingRename'
+        & $Flat $t.copy.named | Should -Match ([regex]::Escape('Wert operation.pendingRename: Text reasonRights'))
+    }
+    It 'nennt die Quelle mit Adresse und eine Faustregel als Regel des Katalogs mit ihrem Beleg' {          # Q5, M7
+        $v = Get-CopyCheck 'print.driversInSpooler'; $v.kind | Should -Be 'vendor'
+        & $Flat $v.copy.named | Should -Match ([regex]::Escape('Quelle Text kindVendor: Microsoft, Printer Driver Isolation <https://learn.microsoft.com/x>'))
+        $r = Get-CopyCheck 'print.isolationOff'; $r.kind | Should -Be 'rule'
+        @($r.copy.named -split "`r`n")[-1] | Should -Be 'Regel; Beleg: Microsoft, Seite'
+        # der Katalog in src: die Faustregel ist die des Katalogs, die Quelle ihr Beleg
+        $FixReal.copy.copySourceRule | Should -Match '^Faustregel des Katalogs; Beleg: \{vendor\}'; $FixReal.copy.copySource | Should -Not -Match 'Faustregel'
+    }
+    It 'fuellt alle Platzhalter mit einem Abtaster, die Einheit einer geaenderten Schwelle mit der Zahl davor' {   # Q6
+        $agree = @{ Name = 'unit'; Numbers = [ordered]@{ a = 1; b = 30 }; First = 30; Unit = 'Tage'; Catalogue = $FixReal }
+        Format-WorkerPerfHealthPlaceholders '{unit} {a} {unit}, {b} {unit} {x}' ([ordered]@{ a = '1'; b = '30' }) $agree | Should -Be 'Tage 1 Tag, 30 Tage {x}'
+        Format-WorkerPerfHealthPlaceholders '{a} {unit}' ([ordered]@{ a = '1' }) | Should -Be '1 {unit}'
+        # Format-WorkerPerfHealthChangedItem hat keinen eigenen Abtaster mehr
+        $ast = (Get-Command Format-WorkerPerfHealthChangedItem).ScriptBlock.Ast
+        @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -like '*{*}*' }, $true)).Count | Should -Be 0
+        $ast.Extent.Text | Should -Match 'Format-WorkerPerfHealthPlaceholders'
+    }
+    It 'zeigt jede Schwelle mit dem Wert 1 mit ihrer Einheit in der Einzahl' {                            # S3
+        $singular = @{ 'Tage' = 'Tag'; 'Stunden' = 'Stunde'; 'Minuten' = 'Minute'; 'Prozessoren' = 'Prozessor'; 'Sitzungen' = 'Sitzung'; 'Profile' = 'Profil'
+            'Warteschlangen' = 'Warteschlange'; 'Container' = 'Container'; 'Treiber' = 'Treiber'; '%' = '%'; 'MB' = 'MB'; 'GB' = 'GB'; 'Uhr' = 'Uhr' }
+        $n = 0
+        foreach ($p in $FixReal.thresholds.PSObject.Properties) {
+            $unit = [string]$p.Value.unit; $singular.ContainsKey($unit) | Should -BeTrue -Because "Einheit '$unit' der Schwelle $($p.Name)"
+            $text = Format-WorkerPerfHealthChangedItem $FixReal ([ordered]@{ id = $p.Name; label = [string]$p.Value.label; value = 1; default = $p.Value.default; unit = $unit })
+            $text | Should -BeLike ("* 1 " + $singular[$unit] + " (ausgeliefert *") -Because $p.Name
+            if ($unit -cne $singular[$unit]) { $FixReal.units.$unit | Should -Be $singular[$unit] -Because $unit }
+            $n++
+        }
+        $n | Should -BeGreaterThan 20
+        Format-WorkerPerfHealthChangedItem $FixReal ([ordered]@{ label = 'Prozessoren'; value = 1; default = 8; unit = 'Prozessoren' }) | Should -Be 'Prozessoren 1 Prozessor (ausgeliefert 8 Prozessoren)'
+    }
+    It 'nennt bei einer Anwendung, die nicht in der Liste steht, was zu tun ist' {                         # ZB-R60
+        $without = @($FixApps | Where-Object { $_.key -ne 'teams' })
+        $hint = 'Eine Anwendung, die auf dem Server fehlt, bleibt in der Anwendungsliste und erscheint dann im Zustandsbild als nicht installiert; sonst ihre Pruefungen und Legenden aus dem Katalog nehmen.'
+        # die Legende einer Probe von Teams (die Legenden prueft der Lader vor den Pruefungen)
+        { Read-WorkerPerfHealthCatalogue (Join-Path $PSScriptRoot '../src/health.de.json') $without } |
+            Should -Throw ("*Teil 'legends' nennt die Legende 'apps.teams.disableFallback' der Anwendung 'teams', die nicht in der Anwendungsliste steht. " + $hint)
+        # eine Pruefung von Teams
+        $j = Get-Content (Join-Path $PSScriptRoot '../src/health.de.json') -Raw | ConvertFrom-Json; $j.legends.PSObject.Properties.Remove('apps.teams.disableFallback')
+        $f = Join-Path $TestDrive 'h-noteams.json'; [IO.File]::WriteAllText($f, ($j | ConvertTo-Json -Depth 12))
+        { Read-WorkerPerfHealthCatalogue $f $without } | Should -Throw ("*Pruefung 'apps.teams*Anwendung 'teams' steht nicht in der Anwendungsliste ('apps.teams.*'). " + $hint)
+        # ohne beides passt der Katalog zur Liste
+        $j.checks = @($j.checks | Where-Object { $_.id -notlike 'apps.teams*' }); [IO.File]::WriteAllText($f, ($j | ConvertTo-Json -Depth 12))
+        { Read-WorkerPerfHealthCatalogue $f $without } | Should -Not -Throw
+    }
+    It 'verweist nicht auf den Gegenstand eines Vorfalls und nicht auf Pruefungen, die nicht zu ihm beitragen' {   # M6, ZB-R59
+        $rel = @{}; foreach ($c in $FixReal.checks) { $rel[$c.id] = @($c.relates) }
+        foreach ($id in 'events.crashes', 'print.operationalLogOff', 'events.sinceBoot', 'events.coverage', 'events.retainFull', 'events.logDisabled', 'security.signatureAge',
+            'security.passiveWithoutMde', 'apps.officeUpdateUi') { $rel[$id].Count | Should -Be 0 -Because $id }
+        $rel['events.storage'] | Should -Be @('disk')
+        # eine Pruefung ohne Bezug wird geladen und von keinem Vorfall genannt
+        $cat = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue { $c.checks[0].relates = @() })
+        @($cat.checks[0].relates).Count | Should -Be 0
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel (Get-Vol 1.5)) -Catalogue $cat -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        ($r.areas | Where-Object id -eq 'operation').checks[0].grade | Should -Be 'act'
+        foreach ($s in $WorkerPerfSituations) { @(Get-WorkerPerfHealthIncidentChecks -Result $r -Situation $s -Patterns @()) | Should -Not -Contain 'operation.diskFree' }
+    }
+    It 'fuehrt die Legenden der Proben im Katalog, die Bezeichnungen der Anwendungsliste bleiben schlichte Namen' {   # S2, ZB-R49
+        $list = Get-Content (Join-Path $PSScriptRoot '../src/apps.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $n = 0
+        foreach ($a in $list.apps) { foreach ($p in @(Get-WorkerPerfField $a 'probes')) { if ($null -ne $p) { [string]$p.label | Should -Not -Match '=' -Because "$($a.key).$($p.id)"; $n++ } } }
+        $n | Should -BeGreaterThan 30
+        foreach ($id in 'apps.edge.updateDefault', 'apps.edge.updateStable', 'apps.edge.updateWebView2') { $FixReal.legends.$id | Should -Be '0 = aus' -Because $id }
+        $FixReal.legends.'apps.teams.disableFallback' | Should -Be '0 oder nicht gesetzt = an, 1 = aus, 2 = nur Audio'
+        $r = Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $FixReal -EventConfig $Cfg -Roles $Roles -Texts $Texts
+        ($r.raw | Where-Object id -eq 'apps.edge.updateDefault').label | Should -Be 'Microsoft Edge – Update-Vorgabe für alle Kanäle'
+        $r.legends['apps.teams.disableFallback'] | Should -Be '0 oder nicht gesetzt = an, 1 = aus, 2 = nur Audio'
     }
 }
