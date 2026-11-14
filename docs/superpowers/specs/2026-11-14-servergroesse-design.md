@@ -115,6 +115,9 @@ erste echte Lauf zeigt, ob sie im Gast mehr als 100 % oder einen festen Wert lie
 „gedrosselte Kerne“ entfällt. An ihre Stelle tritt ein Hinweis in der Klasse „Leistung je Kern“: Energiesparplan
 (Zustandsbild) und Energierichtlinie des Hosts prüfen (SZ-03, SZ-24, SZ-25).
 
+Die Kern-Schwelle für `cpu.coreBusy` wird beim Aufzeichnen angewandt. Ihr Wert steht deshalb in `meta.json` der
+Aufzeichnung.
+
 Die neuen Signale gehören zur Grundmessung, es gibt also keine neue Kategorie für `-Skip`. Eine ältere Aufzeichnung ohne
 sie wird weiter gelesen. Die Einordnung sagt dann, welche Unterscheidung ohne diese Werte nicht möglich ist.
 
@@ -145,6 +148,15 @@ Neubereitstellung gleich; das ist für die Größe derselbe Server. Ein abweiche
 
 ### 5.1 Klassen
 
+**Welche Vorfälle eine Klasse bekommen** (Entscheidung des Entwurfs):
+
+- Vorfälle mit einem CPU- oder Arbeitsspeicher-Befund als Auslöser.
+- Vorfälle mit Eingabeverzögerung ohne Engpass (`ohne-engpass`). Hier kann nur „Leistung je Kern“ oder „Host“ greifen;
+  sonst bleibt der Vorfall ohne Klasse.
+
+Begründung: Ein voller Kern auf 8 vCPU sind nur etwa 12,5 % Gesamt-CPU und lösen keinen CPU-Vorfall aus. Er zeigt sich
+als Verzögerung ohne Engpass. Die Bildung der Vorfälle bleibt unverändert; es gibt keinen neuen Auslöser.
+
 Die Schwellen der Klassen stehen im Katalog. Die Klassen in der Reihenfolge ihres Vorrangs:
 
 1. **Host**
@@ -163,8 +175,11 @@ Die Schwellen der Klassen stehen im Katalog. Die Klassen in der Reihenfolge ihre
      Anwendung fragen. Mehr vCPUs helfen dieser Anwendung nicht.
    - Grundlage: SZ-13, SZ-14, SZ-15, SZ-16, SZ-03, SZ-24.
 3. **Anwendung**
-   - Erkennbar an: Ein Prozess oder eine Anwendung trägt den Großteil der Last (Anteil im Katalog, Vorschlag ≥ 50 % der
-     Server-CPU im Vorfall), ohne das Muster „Leistung je Kern“.
+   - Erkennbar an: Ein einzelner Prozess, also eine Anwendung in **einer** Sitzung oder ein Systemprozess, trägt den
+     Großteil der Last, ohne das Muster „Leistung je Kern“. Der Anteil steht im Katalog; Vorschlag: ≥ 50 % der im Vorfall
+     **genutzten** CPU.
+   - Nicht gemeint: Dieselbe Anwendung verteilt über viele Sitzungen, z. B. die Hauptanwendung der Rollenliste, die alle
+     Benutzer nutzen. Das ist normale Last und zählt als „Kapazität“.
    - Was hilft (Richtung): Anwendung, Aufgabe oder Benutzer klären; keine Größenänderung.
    - Grundlage: Faustregel des Katalogs.
 4. **Einmalig**
@@ -173,28 +188,35 @@ Die Schwellen der Klassen stehen im Katalog. Die Klassen in der Reihenfolge ihre
    - Was hilft (Richtung): Zeitplan ändern; keine Größenänderung.
    - Grundlage: Faustregel des Katalogs.
 5. **Kapazität**
-   - Erkennbar an:
-     - Die Last ist breit über viele Prozesse und Sitzungen verteilt.
-     - Die Warteschlange je CPU liegt bei mindestens 2, bei CPU ≥ 90 %.
-     - Der Host entzieht keine Rechenzeit.
+   - Erkennbar an: Ein CPU-Vorfall, der keine der Klassen 1 bis 4 trägt. Die Last ist also breit über Prozesse und
+     Sitzungen verteilt, und der Host entzieht keine Rechenzeit.
+   - Stufe „deutlich“: Die Warteschlange je CPU liegt bei mindestens 2, bei CPU ≥ 90 % (SZ-18). Sonst gilt die Stufe
+     „knapp“: Die Last liegt über dem Ziel, aber der Server arbeitet noch alles ab.
    - Was hilft (Richtung): mehr vCPU oder mehr Server (Hochrechnung im Größenbericht).
    - Grundlage: SZ-18, SZ-47, VM-08.
 6. **Arbeitsspeicher: Kapazität**
-   - Erkennbar an:
-     - Zugesichert nahe der Commit-Grenze (`mem.commit` über „kritisch“), oder zugesichert über RAM **und** anhaltend
-       ausgelagerte Seiten (`mem.pagesout`).
-     - Die Last ist breit verteilt.
+   - Erkennbar an: Zugesichert über RAM **und** anhaltend ausgelagerte Seiten (`mem.pagesout`), bei breit verteilter
+     Last.
    - Was hilft (Richtung): mehr RAM oder weniger Sitzungen je Server.
-   - Grundlage: SZ-35, SZ-36, SZ-38, SZ-39.
-7. **Arbeitsspeicher: Anwendung**
-   - Erkennbar an: Ein Prozess wächst über die Aufzeichnung stetig oder trägt den Großteil.
+   - Grundlage: SZ-35, SZ-38, SZ-39.
+7. **Arbeitsspeicher: Commit-Grenze**
+   - Erkennbar an: Zugesichert nahe der Commit-Grenze (`mem.commit` über „kritisch“), **ohne** anhaltendes Auslagern.
+   - Was hilft (Richtung): Auslagerungsdatei vergrößern oder vom System verwalten lassen; mehr RAM ist dafür nicht nötig.
+   - Grundlage: SZ-36.
+8. **Arbeitsspeicher: Anwendung**
+   - Erkennbar an: Ein einzelner Prozess wächst über die Aufzeichnung stetig oder trägt den Großteil.
    - Was hilft (Richtung): Anwendung klären, Verdacht auf Speicherleck.
    - Grundlage: Faustregel des Katalogs.
-8. **Nicht entscheidbar**
+9. **Arbeitsspeicher: genutzt, kein Mangel**
+   - Erkennbar an: Ein Arbeitsspeicher-Vorfall (`mem.used` hoch), der keine der Klassen 6 bis 8 trägt.
+   - Was hilft (Richtung): nichts nötig. Windows nutzt freien Speicher; ein Mangel zeigt sich erst am Auslagern.
+   - Grundlage: SZ-35.
+10. **Nicht entscheidbar**
    - Erkennbar an: Werte fehlen (ältere Aufzeichnung, `-Skip`) oder widersprechen sich.
    - Was hilft: Der Bericht sagt, welche Messung fehlt.
 
-Ein Vorfall kann mehrere Klassen tragen, z. B. Host **und** Kapazität. Sie stehen in dieser Reihenfolge, Host zuerst,
+Ein Vorfall kann mehrere Klassen tragen, z. B. Host **und** Kapazität, und zählt im Größenbericht für jede davon.
+Sie stehen in dieser Reihenfolge, Host zuerst,
 weil er jede andere Empfehlung entwertet (SZ-21, SZ-47: erst den Host ausschließen, dann prüfen, ob die Last mehr vCPUs
 nutzen kann).
 
@@ -239,7 +261,7 @@ Vorfalls), und die neuen Signale aus 4.1.
 [-MaskMapFile] [-SizingFile] [-ThresholdFile] [-GuidanceFile] [-AppsFile] [-RoleFile]`
 
 - Mindestens eine Aufzeichnung ist nötig; sinnvoll sind mehrere Arbeitstage.
-- Unter der Mindestmesszeit des Katalogs (Vorschlag: drei Aufzeichnungen und zusammen zwölf Stunden Arbeitszeit) entsteht
+- Unter der Mindestmesszeit des Katalogs (Vorschlag: drei Aufzeichnungen und zusammen zwölf Stunden Hauptzeit (6.3)) entsteht
   der Bericht trotzdem. Jede Empfehlung trägt dann den Hinweis „wenig Messzeit“.
 - Alle Aufzeichnungen müssen denselben Computernamen haben. Sonst bricht das Skript ab und nennt die abweichende
   Aufzeichnung. Es weist darauf hin, dass der Vergleich verschiedener Server ein späterer Baustein ist.
@@ -261,7 +283,7 @@ Vorfalls), und die neuen Signale aus 4.1.
    - Hochrechnung mit Kennzeichnung,
    - Annahmen,
    - Quellen,
-   - Belastbarkeit: Messzeit, abgedeckte Arbeitszeit, Zahl der Aufzeichnungen.
+   - Belastbarkeit: Messzeit, Dauer der Hauptzeit, Zahl der Aufzeichnungen.
 4. **Verlauf über die Aufzeichnungen:**
    - je Aufzeichnung Spitze und P95 von CPU, Warteschlange je CPU und zugesichertem Speicher, dazu die höchste
      Sitzungszahl;
@@ -277,8 +299,10 @@ Vorfalls), und die neuen Signale aus 4.1.
 
 **CPU**
 
-- **Maßgebliche Last L:** P95 von `cpu.host` über die Arbeitszeit aller Aufzeichnungen (Arbeitszeit wie im
-  geführten Bericht). Die Spitze steht daneben.
+- **Hauptzeit** (Entscheidung des Entwurfs): Takte, in denen mindestens halb so viele Sitzungen angemeldet sind wie
+  in der Spitze derselben Aufzeichnung. Dieser Zeitraum braucht keinen Kalender. Er passt zu Tagbetrieb wie zu
+  Schichtbetrieb rund um die Uhr.
+- **Maßgebliche Last L:** P95 von `cpu.host` über die Hauptzeit aller Aufzeichnungen. Die Spitze steht daneben.
 - **Ziel T:** Schwelle „auffällig“ von `cpu.host` in `thresholds.json`, heute 75 %. Das liegt unter VMwares Obergrenze
   von 80 % anhaltend (VM-08, SZ-45) und lässt Raum für Anmeldespitzen (SZ-44).
 - **Nicht linear:** Doppelt so viele Kerne tragen das 1,5- bis 1,9-Fache (SZ-42). Mit dem Exponenten k = log₂(f) ist die
@@ -288,9 +312,17 @@ Vorfalls), und die neuen Signale aus 4.1.
 
   Das ergibt eine Spanne, gerundet auf ganze vCPU, nach oben auf eine gerade Zahl (VM-10). Beispiel: 8 vCPU, L = 92 %,
   T = 75 % → etwa 10 bis 12 vCPU.
-- **Wann keine vCPU-Zahl steht:** wenn Host oder Leistung je Kern die Ursache der wiederkehrenden Engpässe sind. Dort
-  steht stattdessen, warum mehr vCPU nicht hilft. Ebenso, wenn L unter T liegt; dann steht dort „Größe reicht für die
-  gemessene Last“.
+- **Wann eine vCPU-Spanne steht** (Entscheidung des Entwurfs), in dieser Reihenfolge geprüft:
+  1. „Host“ ist wiederkehrend → **keine** Spanne. Es steht: „Erst den Host klären; mehr vCPU verschärfen das“
+     (SZ-21, SZ-47).
+  2. L liegt unter T → keine Spanne; „Größe reicht für die gemessene Last“.
+  3. „Kapazität“ ist wiederkehrend → **Spanne**. Ist zusätzlich „Leistung je Kern“ wiederkehrend, steht beides da: die
+     Spanne für die breite Last und der Hinweis, dass sie der einen Anwendung nicht hilft.
+  4. Sonst (L über T, aber die wiederkehrende Ursache ist Anwendung, Einmalig oder Leistung je Kern, oder es gibt keine
+     wiederkehrende Ursache) → keine Spanne. Es steht: „Last über dem Ziel, aber nicht aus breiter Last; erst <Ursache>
+     klären“.
+
+  Ein einzelner Host-Vorfall, der nicht wiederkehrt, steht als Hinweis bei der Spanne.
 - **Obergrenze je VM:** Microsoft empfiehlt für Mehrbenutzer-VMs 4 bis 24 vCPU; ab etwa 16 Kernen bringt jeder weitere
   Kern wenig (SZ-43). Der Server darf nicht mehr vCPUs haben als der Host physische Kerne, und er soll in einen NUMA-Knoten
   passen (SZ-22). Die Kernzahl des Hosts ist im Gast nicht sichtbar; der Bericht nennt die Bedingung zum Prüfen.
@@ -301,11 +333,14 @@ Vorfalls), und die neuen Signale aus 4.1.
 
 **Arbeitsspeicher**
 
-- **Bedarf:** höchster zugesicherter Speicher der Arbeitszeit, verglichen mit RAM und Commit-Grenze.
-- **Mehr RAM empfehlen:** nur, wenn Seiten anhaltend ausgelagert werden oder der zugesicherte Speicher die Commit-Grenze
-  erreicht (SZ-35, SZ-36).
-- **Hochrechnung:** zugesicherter Spitzenwert plus Reserve, so dass `mem.commit` unter „auffällig“ bleibt (80 %); gerundet
-  auf volle 4 GB.
+- **Bedarf:** höchster zugesicherter Speicher C der Hauptzeit, verglichen mit dem RAM.
+- **Mehr RAM empfehlen:** nur bei wiederkehrender Klasse „Arbeitsspeicher: Kapazität“, also mit anhaltendem Auslagern
+  (SZ-35).
+- **Hochrechnung** (Entscheidung des Entwurfs): RAM so groß, dass C höchstens 80 % des RAM ist, also C ÷ 0,8; gerundet
+  nach oben auf volle 4 GB. Die Auslagerungsdatei zählt nicht mit. Ihre Größe hängt von der Einstellung ab, und
+  Speicher, der ausgelagert werden muss, ist genau der Mangel.
+- **Commit-Grenze ohne Auslagern:** Die Empfehlung heißt „Auslagerungsdatei vergrößern oder vom System verwalten
+  lassen“, nicht „mehr RAM“ (SZ-36).
 - **Hinweise:** Der Speicher je Sitzung muss mit der Sitzungszahl wachsen (SZ-39). ST-02 (Stalhood) steht als Praxisregel
   daneben.
 
@@ -327,7 +362,7 @@ Dazu kommt der Satz: „Vor einem Umbau mit einem Pilot oder Lasttest bestätige
 - Keine externen Anfragen; mit Druckansicht.
 - Diagramme:
   - Verlauf je Aufzeichnung: Balken je Tag für Spitze und P95.
-  - Sitzungen gegen CPU: Punktwolke aus den Takten der Arbeitszeit, mit der Linie des Ziels T.
+  - Sitzungen gegen CPU: Punktwolke aus den Takten der Hauptzeit, mit der Linie des Ziels T.
 - Maskierung wie im normalen Bericht.
 
 ### 6.5 Vorbereitung auf Phase 2
@@ -374,7 +409,7 @@ Dazu kommt der Satz: „Vor einem Umbau mit einem Pilot oder Lasttest bestätige
 - Die Hochrechnung rechnet mit der Spanne von Microsoft (1,5- bis 1,9-fach). Reale Last kann davon abweichen, etwa durch
   Speicherbandbreite oder Grenzen der Anwendung.
 - Der Host ist nur über die entzogene CPU-Zeit sichtbar. Co-Stop, Host-Auslastung und Ballooning sind es nicht.
-- Eine Aufzeichnung außerhalb der Arbeitszeit sagt wenig über die Spitzenlast.
+- Eine Aufzeichnung mit wenigen Sitzungen sagt wenig über die Spitzenlast.
 - Die Erkennung „Leistung je Kern“ stützt sich auf Prozess-Schnappschüsse (alle 6–15 s), nicht auf Threads, und auf
   `cpu.coreMax`. Ein Prozess, der zwischen Kernen wandert, hält trotzdem etwa einen vollen Kern.
 - Für Citrix gibt es keine geöffnete Herstellerseite mit Benutzern je Kern oder vCPU je VM (SZ-31). Die Grenzen stützen
