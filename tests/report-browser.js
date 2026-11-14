@@ -13,6 +13,90 @@ let checks = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); checks++; };
 const hhmm = (ms, offMin) => new Date(ms + offMin * 60000).toISOString().substr(11, 5);
 
+// ---------- colours ----------
+// A colour as the browser computes it ("rgb(r, g, b)"), as "#rrggbb" or as [r, g, b] (0-255): its three channels.
+const rgbOf = (c) => Array.isArray(c) ? c.slice(0, 3) : c.trim().startsWith('#') ? [1, 3, 5].map((i) => parseInt(c.trim().substr(i, 2), 16)) : c.match(/[\d.]+/g).slice(0, 3).map(Number);
+const toLinear = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const fromLinear = (v) => { v = Math.min(1, Math.max(0, v)); return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055); };
+// contrast of two colours after WCAG 2 (relative luminance)
+const luminance = (c) => { const [r, g, b] = rgbOf(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+// CIELAB (D65) of an sRGB colour
+function labOf(c) {
+  const [r, g, b] = rgbOf(c).map(toLinear), f = (t) => t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116;
+  const x = f((0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047), y = f(0.2126729 * r + 0.7151522 * g + 0.0721750 * b), z = f((0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+// colour difference CIEDE2000 of two CIELAB colours [L, a, b] (Sharma, Wu, Dalal 2005; kL = kC = kH = 1)
+function deltaE2000([L1, a1, b1], [L2, a2, b2]) {
+  const rad = Math.PI / 180, pow7 = (v) => v ** 7, C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cm = (C1 + C2) / 2;
+  const G = 0.5 * (1 - Math.sqrt(pow7(Cm) / (pow7(Cm) + pow7(25)))), a1p = (1 + G) * a1, a2p = (1 + G) * a2, C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2);
+  const hue = (a, b) => { if (a === 0 && b === 0) return 0; const h = Math.atan2(b, a) / rad; return h < 0 ? h + 360 : h; }, h1p = hue(a1p, b1), h2p = hue(a2p, b2), both = C1p * C2p !== 0;
+  let dh = 0; if (both) { dh = h2p - h1p; if (dh > 180) dh -= 360; else if (dh < -180) dh += 360; }
+  const dL = L2 - L1, dC = C2p - C1p, dH = 2 * Math.sqrt(C1p * C2p) * Math.sin(dh / 2 * rad), Lm = (L1 + L2) / 2, Cmp = (C1p + C2p) / 2;
+  let hm = h1p + h2p; if (both) hm = Math.abs(h1p - h2p) <= 180 ? hm / 2 : (hm < 360 ? hm + 360 : hm - 360) / 2;
+  const T = 1 - 0.17 * Math.cos((hm - 30) * rad) + 0.24 * Math.cos(2 * hm * rad) + 0.32 * Math.cos((3 * hm + 6) * rad) - 0.20 * Math.cos((4 * hm - 63) * rad);
+  const dTheta = 30 * Math.exp(-(((hm - 275) / 25) ** 2)), RC = 2 * Math.sqrt(pow7(Cmp) / (pow7(Cmp) + pow7(25)));
+  const SL = 1 + 0.015 * (Lm - 50) ** 2 / Math.sqrt(20 + (Lm - 50) ** 2), SC = 1 + 0.045 * Cmp, SH = 1 + 0.015 * Cmp * T, RT = -Math.sin(2 * dTheta * rad) * RC;
+  return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
+}
+const colourDiff = (c1, c2) => deltaE2000(labOf(c1), labOf(c2));
+// Colour vision deficiencies after Machado, Oliveira, Fernandes 2009, severity 1.0: matrices on linear RGB
+const CVD = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]]
+};
+const cvdLinear = (type, lin) => CVD[type].map((row) => row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2]);
+// the colour as a person with that deficiency sees it, as [r, g, b] (0-255, clamped to the sRGB gamut)
+const simulateCvd = (type, c) => cvdLinear(type, rgbOf(c).map(toLinear)).map(fromLinear);
+// The series colours of a chart can be told apart (Task 11): every pair differs by at least 12 (CIEDE2000) for normal
+// vision and by at least 6 after a simulated protanopia, deuteranopia and tritanopia; every colour has a contrast of at least
+// 3:1 to the chart ground. Returns the smallest values and whether they hold.
+function paletteCheck(cols, bg) {
+  const out = { normal: Infinity, protan: Infinity, deutan: Infinity, tritan: Infinity, contrast: Infinity, worst: {} };
+  const seen = { normal: cols, protan: cols.map((c) => simulateCvd('protan', c)), deutan: cols.map((c) => simulateCvd('deutan', c)), tritan: cols.map((c) => simulateCvd('tritan', c)) };
+  for (const k of Object.keys(seen)) for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) {
+    const d = colourDiff(seen[k][i], seen[k][j]); if (d < out[k]) { out[k] = d; out.worst[k] = `--s${i + 1}/--s${j + 1}`; }
+  }
+  for (const c of cols) out.contrast = Math.min(out.contrast, contrast(c, bg));
+  out.ok = cols.length === 8 && cols.every((c) => /^#[0-9a-f]{6}$|^rgb/i.test(c)) && out.normal >= 12 && out.protan >= 6 && out.deutan >= 6 && out.tritan >= 6 && out.contrast >= 3;
+  return out;
+}
+const paletteOk = (cols, bg) => paletteCheck(cols, bg).ok;
+// The colour functions against published values before they judge the page: the 34 test pairs of Sharma, Wu, Dalal (2005,
+// table 1: L, a, b of both colours and their CIEDE2000), the first row of Machado's matrix for protanopia, severity 1.0
+// (0.152286, 1.052583, -0.204868), and the WCAG contrast of black on white (21:1) and of #767676 on white (4.54:1).
+const SHARMA = [
+  [50, 2.6772, -79.7751, 50, 0, -82.7485, 2.0425], [50, 3.1571, -77.2803, 50, 0, -82.7485, 2.8615], [50, 2.8361, -74.02, 50, 0, -82.7485, 3.4412],
+  [50, -1.3802, -84.2814, 50, 0, -82.7485, 1], [50, -1.1848, -84.8006, 50, 0, -82.7485, 1], [50, -0.9009, -85.5211, 50, 0, -82.7485, 1],
+  [50, 0, 0, 50, -1, 2, 2.3669], [50, -1, 2, 50, 0, 0, 2.3669], [50, 2.49, -0.001, 50, -2.49, 0.0009, 7.1792], [50, 2.49, -0.001, 50, -2.49, 0.001, 7.1792],
+  [50, 2.49, -0.001, 50, -2.49, 0.0011, 7.2195], [50, 2.49, -0.001, 50, -2.49, 0.0012, 7.2195], [50, -0.001, 2.49, 50, 0.0009, -2.49, 4.8045],
+  [50, -0.001, 2.49, 50, 0.001, -2.49, 4.8045], [50, -0.001, 2.49, 50, 0.0011, -2.49, 4.7461], [50, 2.5, 0, 50, 0, -2.5, 4.3065],
+  [50, 2.5, 0, 73, 25, -18, 27.1492], [50, 2.5, 0, 61, -5, 29, 22.8977], [50, 2.5, 0, 56, -27, -3, 31.903], [50, 2.5, 0, 58, 24, 15, 19.4535],
+  [50, 2.5, 0, 50, 3.1736, 0.5854, 1], [50, 2.5, 0, 50, 3.2972, 0, 1], [50, 2.5, 0, 50, 1.8634, 0.5757, 1], [50, 2.5, 0, 50, 3.2592, 0.335, 1],
+  [60.2574, -34.0099, 36.2677, 60.4626, -34.1751, 39.4387, 1.2644], [63.0109, -31.0961, -5.8663, 62.8187, -29.7946, -4.0864, 1.263],
+  [61.2901, 3.7196, -5.3901, 61.4292, 2.248, -4.962, 1.8731], [35.0831, -44.1164, 3.7933, 35.0232, -40.0716, 1.5901, 1.8645],
+  [22.7233, 20.0904, -46.694, 23.0331, 14.973, -42.5619, 2.0373], [36.4612, 47.858, 18.3852, 36.2715, 50.5065, 21.2231, 1.4146],
+  [90.8027, -2.0831, 1.441, 91.1528, -1.6435, 0.0447, 1.4441], [90.9257, -0.5406, -0.9208, 88.6381, -0.8985, -0.7239, 1.5381],
+  [6.7747, -0.2908, -2.4247, 5.8714, -0.0985, -2.2286, 0.6377], [2.0776, 0.0795, -1.135, 0.9033, -0.0636, -0.5514, 0.9082]];
+async function checkColourMath() {                                     // Farbabstand, Farbfehlsichtigkeit und Kontrast gegen veroeffentlichte Werte
+  const off = SHARMA.map((p, k) => [k + 1, deltaE2000(p.slice(0, 3), p.slice(3, 6)), deltaE2000(p.slice(3, 6), p.slice(0, 3)), p[6]]).filter(([, d, r, want]) => Math.abs(d - want) > 5e-5 || Math.abs(r - want) > 5e-5);
+  ok(off.length === 0, 'CIEDE2000: die 34 Testpaare von Sharma, Wu, Dalal (2005) auf vier Stellen, in beiden Richtungen: ' + off.map((o) => o.map((v) => +(+v).toFixed(4)).join('/')).join(' | '));
+  // the matrix applied to the three primaries in linear RGB gives its columns: their first entries are the first row
+  const row = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((p) => cvdLinear('protan', p)[0]), want = [0.152286, 1.052583, -0.204868];
+  ok(row.every((v, k) => Math.abs(v - want[k]) < 1e-6), 'Machado 2009, Protanopie, Schwere 1,0: erste Zeile der Matrix: ' + row.join(', '));
+  // a grey stays a grey in all three (each row of the matrices sums to 1); red and green, which a protanope and a deuteranope
+  // confuse, come closer; blue and green, which a tritanope confuses, come closer for him
+  const grey = ['protan', 'deutan', 'tritan'].map((t) => simulateCvd(t, '#808080').map((v) => Math.round(v)).join(','));
+  ok(grey.every((g) => g === '128,128,128'), 'Grau bleibt Grau bei jeder Farbfehlsichtigkeit: ' + grey.join(' | '));
+  const near = (t, a, b) => colourDiff(simulateCvd(t, a), simulateCvd(t, b)) < colourDiff(a, b) / 2;
+  ok(near('protan', '#d62728', '#2ca02c') && near('deutan', '#d62728', '#2ca02c') && near('tritan', '#1f77b4', '#2ca02c') && !near('tritan', '#d62728', '#2ca02c'), 'die Simulation verwechselt, was die jeweilige Farbfehlsichtigkeit verwechselt');
+  ok(Math.abs(contrast('#000000', '#ffffff') - 21) < 1e-9 && Math.abs(contrast('rgb(118, 118, 118)', '#ffffff') - 4.54) < 0.01, 'WCAG-Kontrast: Schwarz auf Weiss 21:1, #767676 auf Weiss 4,54:1');
+  ok(paletteOk(['#000000', '#0000ff', '#00ff00', '#ff0000', '#ffff00', '#ff00ff', '#00ffff', '#888888'], '#ffffff') === false && paletteCheck(['#2a78d6', '#2a78d7'], '#ffffff').normal < 1, 'die Pruefung der Palette lehnt ab, was die Schwellen verfehlt');
+}
+const paletteText = (p) => `ΔE2000 normal ${p.normal.toFixed(1)} (${p.worst.normal}), Protanopie ${p.protan.toFixed(1)} (${p.worst.protan}), Deuteranopie ${p.deutan.toFixed(1)} (${p.worst.deutan}), Tritanopie ${p.tritan.toFixed(1)} (${p.worst.tritan}), Kontrast ${p.contrast.toFixed(2)}:1`;
+
 async function open(browser, file, scheme) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
   page.errors = [];
@@ -860,6 +944,7 @@ async function checkCopy(browser, dir, scheme) {                    // Kopieren:
   ok(db.x >= 0 && db.y >= 0 && db.x + db.width <= 1400 && db.y + db.height <= 900, 'Ausweichfeld ganz im Bild: ' + JSON.stringify(db));
   await page.keyboard.press('Escape');
   ok(await dlg.isHidden() && await iv.isVisible(), 'Esc schliesst das Ausweichfeld, nicht die Vorfallsansicht');
+  ok(await page.evaluate(() => document.activeElement.id) === 'ivCopy', 'nach Esc kehrt der Fokus zum Knopf zurueck (Task 11): ' + await page.evaluate(() => document.activeElement.id || document.activeElement.tagName));
   await page.click('#ivCopy'); await dlg.locator('textarea').waitFor(); await dlg.locator('button').click();
   ok(await dlg.isHidden() && await page.evaluate(() => document.activeElement.id) === 'ivCopy', '"Schliessen" schliesst das Ausweichfeld, der Fokus kehrt zum Knopf zurueck');
   ok(page.requests.length === 1 && page.errors.length === 0, 'Kopieren ohne Abruf und ohne Skriptfehler: ' + page.errors.join(' | '));
@@ -948,8 +1033,11 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   await page.click('#ivBack');
   await page.waitForFunction(() => window.WP.incident === null && history.state !== null && history.state.wpIncident == null);
   ok(await inExpert() === 'expert,true,true,,260' && await state() === JSON.stringify({ wpView: 'expert' }), 'und fuehrt dorthin: ' + await inExpert());
-  await page.goForward();
+  // (Task 11) closing the incident view is a step of its own: the back button of the browser shows the incident view again
+  // (before: closing went back in the history, and the forward button showed it again)
+  await page.goBack();
   await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id) && (await backLabel()).includes('Zurück zur Expertenansicht'), 'nach dem Schliessen zeigt die Zurueck-Taste die Vorfallsansicht wieder, mit ihrer Herkunft');
   await page.reload();
   ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id) && (await backLabel()).includes('Zurück zur Expertenansicht'), 'nach dem Neuladen ebenso: ' + await backLabel());
   await page.keyboard.press('Escape');
@@ -970,21 +1058,28 @@ async function checkIncidentNav(browser, dir, scheme) {             // Oeffnen u
   ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator('#band').isVisible() && await page.evaluate(() => history.state) === null, 'und die Zurueck-Taste fuehrt zum Lagebild, der Schritt davor nennt wieder die gefuehrte Ansicht');
   // A step of the history is true to the screen: after the way into the expert view and back with the switch of the head bar,
   // "Naechster Vorfall" writes the step of the incident view alone, so a reload shows that incident (it showed the expert view)
+  // (Task 11: the switch of the head bar is a step of its own; before, the step stayed the one of the expert view)
   await page.click(opener); await ivExpert(page); await showGuided(page);
-  ok(await iv.isVisible() && await state() === JSON.stringify({ wpIncident: id, wpView: 'expert' }), 'zurueck ueber die Kopfleiste: der Schritt ist noch der der Expertenansicht');
+  ok(await iv.isVisible() && await state() === JSON.stringify({ wpIncident: id }) && (await page.evaluate(() => location.hash)) === '#v=guided&i=' + id + await page.evaluate(() => window.WP.zoom ? `&t0=${window.WP.zoom.t0}&t1=${window.WP.zoom.t1}` : ''), 'zurueck ueber die Kopfleiste: ein Schritt der Vorfallsansicht: ' + await state());
   await page.click('#ivNext');
   const nextId = Number(await iv.getAttribute('data-id'));
   ok(nextId !== id && await state() === JSON.stringify({ wpIncident: nextId }), '"Naechster Vorfall" schreibt den Schritt der Vorfallsansicht allein: ' + await state());
   await page.reload();
   ok(await page.evaluate(() => window.WP.view) === 'guided' && await iv.isVisible() && await iv.getAttribute('data-id') === String(nextId) && await page.locator('#expert').isHidden(), 'Neuladen zeigt die Vorfallsansicht des naechsten Vorfalls');
+  // (Task 11: one step back is the expert view the reader came back from with the head bar, the second the incident before)
   await page.goBack();
-  await page.waitForFunction((i) => window.WP.incident === i, id);
-  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'ein Schritt zurueck: der Vorfall davor');
+  await page.waitForFunction(() => window.WP.view === 'expert');
+  ok(await page.locator('#expert').isVisible() && (await page.evaluate(() => location.hash)).startsWith('#v=expert'), 'ein Schritt zurueck: die Expertenansicht, aus der die Kopfleiste zurueckfuehrte');
+  await page.goBack();
+  await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', id);
+  ok(await iv.isVisible() && await iv.getAttribute('data-id') === String(id), 'noch ein Schritt zurueck: der Vorfall davor');
+  await page.goForward(); await page.waitForFunction(() => window.WP.view === 'expert');
   await page.goForward();
-  await page.waitForFunction((i) => window.WP.incident === i, nextId);
-  // "Zurueck zum Lagebild" leaves every step of the incident view behind
+  await page.waitForFunction((i) => window.WP.incident === i && window.WP.view === 'guided', nextId);
+  // "Zurueck zum Lagebild" leads to the situation summary (Task 11: as a step of its own, before: back over every step of the
+  // incident view)
   await page.click('#ivBack'); await ivClosed(page);
-  ok(await iv.isHidden() && await page.locator('#band').isVisible() && await page.evaluate(() => history.state) === null, '"Zurueck zum Lagebild" fuehrt ueber alle Schritte der Vorfallsansicht zum Lagebild');
+  ok(await iv.isHidden() && await page.locator('#band').isVisible() && await page.evaluate(() => history.state) === null && (await page.evaluate(() => location.hash)).startsWith('#v=guided') && !(await page.evaluate(() => location.hash)).includes('i='), '"Zurueck zum Lagebild" fuehrt zum Lagebild, die Adresse nennt keinen Vorfall');
   // the way into the expert view twice is one step
   await page.click(opener); await ivExpert(page); await showGuided(page); await ivExpert(page);
   await page.goBack();
@@ -2331,9 +2426,6 @@ const timeMeans = (D, it, lo, hi) => {
   for (let i = Math.max(lo, o); i < hi; i++) { const c = it.cpu ? it.cpu[i - o] : null, w = it.ws ? it.ws[i - o] : null; if (c != null) { cs += c * sec(i); cc += sec(i); } if (w != null) { ws += w * sec(i); wc += sec(i); } }
   return { cpuAvg: cc ? cs / cc : null, wsAvg: wc ? ws / wc : null, cpuCov: cc };
 };
-// contrast of two colours as the browser computes them ("rgb(r, g, b)"), after WCAG
-const luminance = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => { v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 // pairs of target-line labels of the charts under a selector that touch each other, and labels that leave their chart: a
 // label stands in the plot or (fix round 1 of Task 10: where no place on its line is free) wholly in the right margin
 // beside the plot, inside the picture
@@ -2648,7 +2740,8 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   const marks = await page.locator('#charts .card svg').evaluateAll((svgs) => svgs.map((svg) => { const m = svg.querySelector('.incband'); if (!m || !m.classList.contains('incmark')) return null;
     const cs = getComputedStyle(m), c = svg.querySelector('clipPath rect'), grid = svg.querySelector('line[stroke="var(--grid)"]');
     // (fix round 2, item 2) the mark is a dashed line (the stem, .incmark) and a cap of its own above the plot (.inccap) with a halo
-    const cap = svg.querySelector('.inccap'), halo = svg.querySelector('.inchalo'), cc = cap ? getComputedStyle(cap) : null, box = m.getBBox(), cb = cap ? cap.getBBox() : null, plot = { y: Number(c.getAttribute('y')) + 2, h: Number(c.getAttribute('height')) - 4 };
+    // (Task 11, N1) the plot is its clip rectangle: a stacked total at 100 % or a line at the top of the axis is drawn up to its edge
+    const cap = svg.querySelector('.inccap'), halo = svg.querySelector('.inchalo'), cc = cap ? getComputedStyle(cap) : null, box = m.getBBox(), cb = cap ? cap.getBBox() : null, plot = { y: Number(c.getAttribute('y')), h: Number(c.getAttribute('height')) };
     const ground = getComputedStyle(svg.closest('.card')).backgroundColor, g = svg.querySelector('g[clip-path]'), lineStrokes = [...g.querySelectorAll('path[fill="none"]')].map((e) => getComputedStyle(e).stroke);
     // what is drawn in the surface colour after the measured lines or areas and reaches into the plot at the time of the mark
     const cover = [...svg.querySelectorAll('path, rect, line, circle, polygon')].filter((e) => !g.contains(e) && !e.closest('defs') && (g.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)).filter((e) => { const s = getComputedStyle(e);
@@ -2890,12 +2983,17 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   // also says "Host" and "des Hosts" for the hypervisor in a sentence about VMware, before or after the word: "ob die Summe
   // der vCPU zum Host passt, beurteilt die Betreuung von VMware", "… Co-Stop des Hosts" after "der VMware-Host" more than
   // 150 characters before. "Host" or "Hosts" as a word of its own in a sentence, or a part of one after a semicolon, that names
-  // VMware is the hypervisor.)
+  // VMware is the hypervisor. (Task 11: the catalogue after round 5's fix round puts a semicolon part between them: "…: die
+  // CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware …; die Praxisquelle GO-EUC (2026) wertet dazu auch
+  // CPU-Latenz und Co-Stop des Hosts aus" in a sentence that starts with "ob der VMware-Host dem Server Rechenzeit entzogen hat".
+  // "Hosts" after the "VMware-Host" in a whole sentence, semicolons included, is the hypervisor too.)
+  const sentenceBefore = (text, i) => text.substring(Math.max(...['. ', '! ', '? ', '\n'].map((x) => text.lastIndexOf(x, i))) + 1, i);
   const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
   const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
-    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
+    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))) && !(m[0] === 'Hosts' && /VMware-Host/.test(sentenceBefore(text, m.index))))
     .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
-  ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2,
+  ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2 &&
+    hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts. ' + 'Text. '.repeat(30) + 'Last des Hosts; Wert des Hosts').length === 2,
     'Eingabe: die Suche nach "Host" findet das Wort und laesst die Ausnahmen aus');
   const ownHost = hostWords(own);
   ok(own.includes('% des Servers') && own.includes('Server-Kapazität') && ownHost.length === 0, 'die Texte der Seite nennen die gemessene Maschine nie "Host": ' + ownHost.join(' | '));
@@ -2920,13 +3018,225 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   await page.close();
 }
 
+// ---------- Task 11: address, keyboard, motion, narrow width, colours ----------
+// the background a chart is drawn on: the card of the split CPU chart in the colours of the view on screen
+const chartGround = (page) => page.evaluate(() => getComputedStyle(document.querySelector('#chCpuStack').closest('.card')).backgroundColor);
+const seriesColours = (page) => page.evaluate(() => [1, 2, 3, 4, 5, 6, 7, 8].map((k) => getComputedStyle(document.body).getPropertyValue('--s' + k).trim()));
+async function checkNavigation(browser, dir, scheme) {
+  const file = path.join(dir, 'report.html');
+  const { page, D } = await open(browser, file, scheme);
+  const cpu = D.incidents.find((i) => i.lead === 'cpu');
+  await page.click(`#cards .card.inc[data-id="${cpu.id}"] .card-open`);
+  ok((await page.evaluate(() => location.hash)).includes('i=' + cpu.id), 'Adresse haelt den Vorfall');
+  await ivExpert(page);                                             // P3-R55: the helper instead of page.click('#ivExpert')
+  const h = await page.evaluate(() => location.hash);
+  ok(h.includes('v=expert') && h.includes('t0=') && h.includes('t1='), 'Adresse haelt Ansicht und Zeitraum');
+  await page.goBack(); await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await page.evaluate(() => window.WP.view) === 'guided' && await page.locator('#incident').isVisible(), 'Zurueck-Taste fuehrt innerhalb des Berichts zurueck');
+  await page.keyboard.press('Escape'); await page.waitForFunction(() => window.WP.incident === null);
+  ok(!(await page.locator('#incident').isVisible()), 'Esc schliesst die Vorfallsansicht');
+  const b = await browser.newPage({ colorScheme: scheme }); b.errors = []; b.on('pageerror', (e) => b.errors.push(e.message));
+  await b.goto('file://' + file + h);
+  ok(await b.evaluate(() => window.WP.view) === 'expert' && await b.evaluate(() => window.WP.zoom !== null), 'Lesezeichen oeffnet dieselbe Stelle');
+  // (added) the same place: the same range to the millisecond and the same incident chosen in the incident column
+  const at = new URLSearchParams(h.slice(1));
+  ok(await b.evaluate(() => JSON.stringify(window.WP.zoom)) === JSON.stringify({ t0: Number(at.get('t0')), t1: Number(at.get('t1')) }) && await b.locator(`#incList .inc[data-id="${cpu.id}"].selected`).isVisible(), 'Lesezeichen: derselbe Zeitraum, derselbe gewaehlte Vorfall: ' + await b.evaluate(() => JSON.stringify(window.WP.zoom)));
+  await b.goto('file://' + file + '#v=guided&i=99999&t0=abc'); await b.reload();
+  ok(await b.locator('#band').isVisible() && !(await b.locator('#incident').isVisible()) && b.errors.length === 0, 'unbekannter Vorfall im Lesezeichen');          // Review Focus 2
+  // (added) an unreadable or reversed range, a range outside the capture: the whole capture; an unknown view counts as
+  // missing: the view shown last
+  for (const [hash, want] of [['#v=expert&t0=12&t1=abc', 'null'], ['#v=expert&t0=&t1=', 'null'], ['#v=nichts&i=x', 'remembered'], ['#v=expert&i=abc&t0=1e400&t1=-1', 'null'], [`#v=expert&t0=${D.meta.end + 3600000}&t1=${D.meta.end + 7200000}`, 'null']]) {
+    await b.goto('file://' + file + hash); await b.reload();
+    const z = await b.evaluate(() => window.WP.zoom), v = await b.evaluate(() => window.WP.view);
+    const fine = want === 'remembered' ? v === 'expert' && z === null && await b.evaluate(() => localStorage.getItem('wp-view:' + location.pathname)) === 'expert' && await b.locator('#incident').isHidden() : z === null && v === 'expert';
+    ok(fine && b.errors.length === 0, 'Lesezeichen ' + hash + ': ganze Messung bzw. Lagebild, ohne Skriptfehler: ' + v + ' ' + JSON.stringify(z) + ' ' + b.errors.join(' | '));
+  }
+  await b.close();
+  await page.evaluate(() => { location.hash = ''; }); await page.reload();
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+  ok(await page.evaluate(() => document.activeElement && getComputedStyle(document.activeElement).outlineStyle !== 'none'), 'sichtbarer Fokus');
+  const durs = await page.evaluate(() => [...document.querySelectorAll('*')].flatMap((e) => getComputedStyle(e).transitionDuration.split(',').map(parseFloat)));
+  ok(Math.max(...durs) <= 0.25, 'Bewegungen unter 250 ms');
+  await page.close();
+  const rm = await browser.newPage({ reducedMotion: 'reduce' }); await rm.goto('file://' + file);
+  ok(await rm.evaluate(() => [...document.querySelectorAll('*')].every((e) => getComputedStyle(e).transitionDuration.split(',').every((d) => parseFloat(d) === 0))), 'keine Bewegung bei reduzierter Bewegung');
+  await rm.close();
+  const ls = await browser.newPage(); ls.errors = []; ls.on('pageerror', (e) => ls.errors.push(e.message));          // Review Focus 3
+  await ls.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('gesperrt'); } }); });
+  await ls.goto('file://' + file);
+  ok(await ls.locator('#guided').isVisible() && ls.errors.length === 0, 'ohne Speicher in der gefuehrten Ansicht');
+  await ls.click('#viewSwitch button[data-view=expert]'); ok(await ls.locator('#expert').isVisible() && ls.errors.length === 0, 'Umschalten ohne Speicher');
+  await ls.close();
+  for (const view of ['guided', 'expert']) {
+    const n = await browser.newPage({ viewport: { width: 400, height: 800 } }); await n.goto('file://' + file + '#v=' + view);
+    ok(await n.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'schmale Breite ohne seitliches Scrollen: ' + view);
+    await n.close();
+  }
+  const c = await browser.newPage({ colorScheme: scheme }); await c.goto('file://' + file);
+  for (const view of ['guided', 'expert']) {
+    await c.evaluate((v) => window.WP.showView(v), view);
+    // (adapted) the chart ground is the card of a split chart in the colours of the view; the brief's
+    // querySelector('.chart, .card') takes the first card of the page, which would be transparent if a .chart came first
+    const cols = await seriesColours(c), bg = await chartGround(c), p = paletteCheck(cols, bg);
+    ok(p.ok && paletteOk(cols, bg), 'Reihenfarben unterscheidbar, auch bei Farbfehlsichtigkeit: ' + view + ' (' + cols.join(' ') + ' auf ' + bg + '): ' + paletteText(p));
+  }
+  await c.close();
+}
+
+// The address in detail (Task 11, additions c-f): every way of changing the screen is a step of the history, back and forward
+// restore view, incident and range and put the focus where the reader was, the remembered view, the keyboard in the
+// incident column, the copy dialog, motion, the crosshair, narrow widths.
+const addr = (page) => page.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))));
+const focusName = (page) => page.evaluate(() => { const a = document.activeElement; return !a || a === document.body ? 'body' : a.id || a.className || a.tagName; });
+async function checkAddress(browser, dir, scheme) {
+  const file = path.join(dir, 'report.html');
+  const { page, D } = await open(browser, file, scheme);
+  const cpu = D.incidents.find((i) => i.lead === 'cpu'), disk = D.incidents.find((i) => i.lead === 'disk'), len = () => page.evaluate(() => history.length);
+  // the switch of the head bar is a step; back gives the focus to the switch that opened the expert view, forward to the
+  // heading of the view it shows
+  let n = await len();
+  await showExpert(page);
+  ok(await len() === n + 1 && (await addr(page)).v === 'expert', 'Umschalter: ein Schritt, die Adresse nennt die Expertenansicht: ' + JSON.stringify(await addr(page)));
+  await page.goBack(); await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await page.evaluate(() => document.activeElement === document.querySelector('#viewSwitch button[data-view=expert]')), 'Zurueck: der Fokus steht auf dem Umschalter, der die Expertenansicht geoeffnet hat: ' + await focusName(page));
+  await page.goForward(); await page.waitForFunction(() => window.WP.view === 'expert');
+  ok(await focusName(page) !== 'body' && await page.evaluate(() => document.getElementById('expert').contains(document.activeElement) || document.activeElement.closest('header') !== null), 'Vorwaerts: der Fokus steht in der Expertenansicht, nie auf <body>: ' + await focusName(page));
+  // a click on an incident entry: one step with range and incident; a second click lets go (one more step)
+  n = await len();
+  await page.click(`#incList .inc[data-id="${cpu.id}"] .inc-main`);
+  let a = await addr(page); const a0 = a;
+  ok(await len() === n + 1 && a.v === 'expert' && a.i === String(cpu.id) && Number(a.t1) - Number(a.t0) > 0 && Number(a.t0) === (await page.evaluate(() => window.WP.zoom)).t0, 'Klick auf einen Vorfall: ein Schritt, die Adresse haelt Vorfall und Zeitraum: ' + JSON.stringify(a));
+  // dragging over a chart writes one step when it ends, not one per movement of the mouse
+  n = await len();
+  const box = await page.locator('#chCpu svg .hit').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2); await page.mouse.down();
+  for (let k = 1; k <= 8; k++) await page.mouse.move(box.x + box.width * (0.2 + k * 0.05), box.y + box.height / 2);
+  await page.mouse.up();
+  const dragged = await page.evaluate(() => window.WP.zoom), chosen = await page.evaluate(() => { const e = document.querySelector('#incList .inc.selected'); return e ? e.dataset.id : undefined; });
+  a = await addr(page);
+  // (a range that still reaches into the chosen incident keeps the choice, Task 10: the address names it as long as it is chosen)
+  ok(await len() === n + 1 && Number(a.t0) === dragged.t0 && Number(a.t1) === dragged.t1 && a.i === chosen, 'Ziehen im Diagramm: ein Schritt am Ende, die Adresse haelt den neuen Zeitraum und den gewaehlten Vorfall: ' + (await len() - n) + ' ' + JSON.stringify(a) + ' ' + chosen);
+  await page.goBack(); await page.waitForFunction((t) => window.WP.zoom && window.WP.zoom.t0 !== t, dragged.t0);
+  ok(await page.locator(`#incList .inc[data-id="${cpu.id}"].selected`).isVisible() && (await addr(page)).i === String(cpu.id) && JSON.stringify(await page.evaluate(() => window.WP.zoom)) === JSON.stringify({ t0: Number(a0.t0), t1: Number(a0.t1) }), 'Zurueck: der Zeitraum des Vorfalls und seine Wahl sind wieder da');
+  ok(await page.evaluate((id) => document.activeElement === document.querySelector(`#incList .inc[data-id="${id}"] .inc-main`) || document.activeElement.closest('#charts') !== null || document.activeElement.id === 'incHead', cpu.id), 'Zurueck: der Fokus steht beim Diagramm oder beim Eintrag, nie auf <body>: ' + await focusName(page));
+  await page.goBack(); await page.waitForFunction(() => window.WP.zoom === null);
+  ok((await addr(page)).t0 === undefined && await page.locator('#incList .inc.selected').count() === 0, 'noch ein Schritt zurueck: die ganze Messung');
+  ok(await page.evaluate((id) => document.activeElement === document.querySelector(`#incList .inc[data-id="${id}"] .inc-main`), cpu.id), 'Zurueck: der Fokus steht auf dem Eintrag, der den Zeitraum gesetzt hatte: ' + await focusName(page));
+  // "Gesamte Messung" is a step too
+  await page.click(`#incList .inc[data-id="${disk.id}"] .inc-main`);
+  n = await len(); await page.click('#rangeAll');
+  ok(await len() === n + 1 && (await addr(page)).t0 === undefined && await page.evaluate(() => window.WP.zoom) === null, '"Gesamte Messung": ein Schritt, die Adresse ohne Zeitraum');
+  // keyboard in the incident column: arrows move between the entries, Enter sets the range, Shift+Enter opens the guided view
+  const entries = await page.locator('#incList .inc[data-id] button.inc-main').evaluateAll((els) => els.map((e) => Number(e.closest('.inc').dataset.id)));
+  await page.focus(`#incList .inc[data-id="${entries[0]}"] .inc-main`);
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
+  const onEntry = () => page.evaluate(() => { const e = document.activeElement.closest('.inc[data-id]'); return e ? Number(e.dataset.id) : null; });
+  ok(await onEntry() === entries[2], 'Pfeil nach unten: zum naechsten Eintrag: ' + await onEntry());
+  await page.keyboard.press('ArrowUp');
+  ok(await onEntry() === entries[1], 'Pfeil nach oben: zum vorigen Eintrag');
+  await page.keyboard.press('End'); const last = await onEntry(); await page.keyboard.press('Home');
+  ok(last === entries[entries.length - 1] && await onEntry() === entries[0], 'Pos1 und Ende: erster und letzter Eintrag');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  ok(await page.locator(`#incList .inc[data-id="${entries[1]}"].selected`).isVisible() && await page.evaluate(() => window.WP.zoom !== null) && (await addr(page)).i === String(entries[1]), 'Eingabetaste: der Zeitraum des Eintrags');
+  ok(await page.locator(`#incList .inc[data-id="${entries[1]}"] .inc-main`).getAttribute('aria-keyshortcuts') === 'Shift+Enter', 'der Eintrag nennt seine zweite Taste (aria-keyshortcuts)');
+  await page.keyboard.press('Shift+Enter'); await page.waitForFunction(() => window.WP.view === 'guided');
+  ok(await page.locator(`#incident[data-id="${entries[1]}"]`).isVisible() && (await addr(page)).v === 'guided' && (await addr(page)).i === String(entries[1]), 'Umschalt+Eingabetaste: die gefuehrte Vorfallsansicht des Eintrags');
+  await page.goBack(); await page.waitForFunction(() => window.WP.view === 'expert');
+  ok(await onEntry() === entries[1], 'Zurueck aus der Vorfallsansicht: der Fokus steht wieder auf dem Eintrag: ' + await focusName(page));
+  // into the guided view with the switch, back: the expert view at its place
+  await page.evaluate(() => window.WP.closeIncident());
+  // every element can be reached with Tab and shows its focus: the switch, a card button, a tab, a term
+  for (const sel of ['#viewSwitch button[data-view=guided]', '#xtabs button[aria-selected=true]', `#incList .inc[data-id="${entries[0]}"] .inc-main`, `#incList .inc[data-id="${entries[0]}"] .inc-guided`, '#rangeAll:not([disabled]), #viewSwitch button[data-view=expert]']) {
+    const el = page.locator(sel).first();
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    let hit = false;
+    for (let k = 0; k < 80 && !hit; k++) { await page.keyboard.press('Tab'); hit = await el.evaluate((e) => e === document.activeElement); }
+    const ring = hit ? await el.evaluate((e) => { const s = getComputedStyle(e); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2; }) : false;
+    ok(hit && ring, 'mit Tab erreichbar und mit sichtbarem Fokus: ' + sel);
+  }
+  ok(page.errors.length === 0, 'Skriptfehler Adresse: ' + page.errors.join(' | '));
+  await page.close();
+
+  // the remembered view: the expert view chosen once opens again; the address goes before it
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme }), r = await ctx.newPage();
+  await r.goto('file://' + file); await showExpert(r);
+  const key = await r.evaluate(() => 'wp-view:' + location.pathname);
+  ok(await r.evaluate((k) => localStorage.getItem(k), key) === 'expert', 'gemerkte Ansicht unter ' + key);
+  await r.goto('file://' + file + '?neu');                                   // another load of the page without an address
+  ok(await r.evaluate(() => window.WP.view) === 'expert' && await r.locator('#expert').isVisible(), 'ohne Adresse oeffnet die gemerkte Ansicht');
+  await r.goto('file://' + file + '?neu2#v=guided');
+  ok(await r.evaluate(() => window.WP.view) === 'guided', 'die Adresse gilt vor der gemerkten Ansicht');
+  // the incident view by address at 400 px: no sideways scrolling
+  await r.setViewportSize({ width: 400, height: 800 });
+  for (const id of [cpu.id, D.incidents.find((i) => i.type === 'ereignis' && i.event.kind === 'print').id]) {
+    await r.goto(`file://${file}?n${id}#v=guided&i=${id}`);
+    await r.evaluate(() => { document.querySelector('#incident details.iv-evidence').open = true; });
+    ok(await r.locator(`#incident[data-id="${id}"]`).isVisible() && await r.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Vorfallsansicht aus der Adresse, 400 px ohne seitliches Scrollen: ' + id);
+  }
+  // the search field of the sessions shows its whole placeholder (400 and 1400 px)
+  for (const w of [400, 1400]) {
+    await r.setViewportSize({ width: w, height: 800 });
+    await r.goto(`file://${file}?w${w}#v=expert`); await showTab(r, 'sessions');
+    const fit = await r.evaluate(() => { const f = document.getElementById('fSessions'), s = getComputedStyle(f), c = document.createElement('canvas').getContext('2d'); c.font = `${s.fontSize} ${s.fontFamily}`;
+      return [Math.ceil(c.measureText(f.placeholder).width), f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight), f.getBoundingClientRect().right <= window.innerWidth]; });
+    ok(fit[0] <= fit[1] && fit[2], `Suchfeld der Sitzungen zeigt seinen ganzen Platzhalter (${w} px): ${fit.join(' ')}`);
+  }
+  await ctx.close();
+
+  // a masked report: the address holds ids and times, no name
+  const m = await open(browser, path.join(dir, 'report-masked.html'), scheme), mc = m.D.incidents.find((i) => i.lead === 'cpu');
+  await m.page.click(`#cards .card.inc[data-id="${mc.id}"] .card-open`); await ivExpert(m.page);
+  const mh = await m.page.evaluate(() => location.hash);
+  ok(/^#v=expert&i=\d+&t0=\d+&t1=\d+$/.test(mh), 'maskierter Bericht: die Adresse haelt nur Ansicht, Nummer und Zeiten: ' + mh);
+  await m.page.close();
+
+  // motion: the switch of the views and of the incident view fade in, at most 0,24 s; every transition and animation of the
+  // page at most 0,24 s; nothing moves when the reader asked for reduced motion
+  for (const motion of ['no-preference', 'reduce']) {
+    const mc2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme, reducedMotion: motion }), p = await mc2.newPage();
+    p.errors = []; p.on('pageerror', (e) => p.errors.push(e.message));
+    await p.goto('file://' + file);
+    const times = () => p.evaluate(() => [...document.querySelectorAll('*')].flatMap((e) => { if (e.id === 'oldBrowser') return []; const s = getComputedStyle(e); return [s.transitionDuration, s.animationName === 'none' ? '0s' : s.animationDuration].join(',').split(',').map(parseFloat); }));
+    const fadeOf = (sel) => p.evaluate((s) => { const e = document.querySelector(s); const st = getComputedStyle(e); return [st.animationName, parseFloat(st.animationDuration)]; }, sel);
+    let all = await times();
+    await p.click('#viewSwitch button[data-view=expert]'); const fx = await fadeOf('#expert'); all = all.concat(await times());
+    await p.click('#viewSwitch button[data-view=guided]'); const fg = await fadeOf('#guided');
+    await p.click(`#cards .card.inc[data-id="${cpu.id}"] .card-open`); const fi = await fadeOf('#incident'); all = all.concat(await times());
+    if (motion === 'reduce') ok(all.every((v) => v === 0) && fx[1] === 0 && fi[1] === 0, 'reduzierte Bewegung: keine Uebergaenge und Animationen, auch beim Wechsel der Ebenen: ' + Math.max(...all) + ' ' + fx + ' ' + fi);
+    else ok(Math.max(...all) <= 0.24 && [fx, fg, fi].every((f) => f[0] !== 'none' && f[1] > 0 && f[1] <= 0.24), 'Ueberblenden beim Wechsel der Ebenen, jede Bewegung hoechstens 0,24 s: ' + Math.max(...all) + ' ' + [fx, fg, fi].join(' | '));
+    ok(p.errors.length === 0, 'Skriptfehler Bewegung (' + motion + '): ' + p.errors.join(' | '));
+    await mc2.close();
+  }
+
+  // crosshair with time, value and status; mutual highlight of an incident entry and its time window
+  const x = await open(browser, file, scheme);
+  await showExpert(x.page);
+  // the whole capture as the page computes it: first and last point of both time grids, the start and end of the capture
+  const fr = { t0: Math.min(x.D.tickT[0], x.D.snapT[0], x.D.meta.start), t1: Math.max(x.D.tickT.at(-1), x.D.snapT.at(-1), x.D.meta.end) };
+  const hb = await x.page.locator('#chCpu svg .hit').boundingBox(), frac = (cpu.start + cpu.end) / 2;
+  await x.page.mouse.move(hb.x + hb.width * (frac - fr.t0) / (fr.t1 - fr.t0), hb.y + hb.height / 2);
+  const tip = oneLine(await x.page.locator('#chCpu .tip').innerText());
+  ok(/\d\d:\d\d:\d\d/.test(tip) && /\d+,\d %/.test(tip) && /(◆ kritisch|▲ auffällig|● normal)/.test(tip), 'Fadenkreuz: Uhrzeit, Wert und Status mit Symbol und Wort: ' + tip);
+  ok(await x.page.locator(`#incList .inc[data-id="${cpu.id}"].hl`).count() === 1, 'Ueberfahren des Diagramms im Vorfall hebt seinen Eintrag hervor');
+  await x.page.mouse.move(0, 0);
+  ok(await x.page.locator('#incList .inc.hl').count() === 0, 'und nimmt die Hervorhebung wieder weg');
+  await x.page.hover(`#incList .inc[data-id="${disk.id}"] .inc-main`);
+  const hov = await x.page.evaluate(() => [...document.querySelectorAll('#charts svg')].filter((s) => s.querySelector('.hoverband')).length);
+  ok(hov >= 10, 'Ueberfahren eines Eintrags zeigt sein Zeitfenster in den Diagrammen: ' + hov);
+  await x.page.mouse.move(0, 0);
+  ok(await x.page.locator('#charts .hoverband').count() === 0 && x.page.errors.length === 0, 'und nimmt es wieder weg');
+  await x.page.close();
+}
+
 // every check function with the colour scheme of the system, then those that need one scheme only
 // (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
 // the incident view, of copying, of printing and of the points carried from the review run once)
-const PER_SCHEME = [checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
+const PER_SCHEME = [checkNavigation, checkGuided, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
-const ONCE = [checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording];
-(async () => {
+const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording];
+// the colour functions serve other scripts too (require): the checks run only when this file is called
+module.exports = { deltaE2000, simulateCvd, contrast, labOf, colourDiff, paletteCheck };
+if (require.main === module) (async () => {
   const args = process.argv.slice(2), option = (name) => { const k = args.indexOf(name); return k < 0 ? null : args.splice(k, 2)[1]; };
   const only = option('--only'), oneScheme = option('--scheme'), dir = path.resolve(args[0]);
   const names = only ? only.split(',') : null, known = PER_SCHEME.concat(ONCE).map((f) => f.name);

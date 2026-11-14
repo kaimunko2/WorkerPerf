@@ -52,8 +52,8 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
     }
     It 'beginnt einen Zeitausschnitt am vorhergehenden Stuetzpunkt' {
         $m = Import-TestRun 'cut' $Files @{ From = $Base.AddSeconds(11).DateTime }
-        $a = $m.Sessions | Where-Object User -eq 'alice'
-        $m.Snap.N | Should -Be 2; $a.Ws | Should -Be @(153600, 266240); $a.CpuMs | Should -Be @(0, 140); $m.Proc[0].CpuMs | Should -Be 100
+        $cutAlice = $m.Sessions | Where-Object User -eq 'alice'
+        $m.Snap.N | Should -Be 2; $cutAlice.Ws | Should -Be @(153600, 266240); $cutAlice.CpuMs | Should -Be @(0, 140); $m.Proc[0].CpuMs | Should -Be 100
     }
     It 'gibt den vor dem Zeitausschnitt fortgefuehrten Stand je Prozess weiter' {              # Abschlussrunde I5
         $m = Import-TestRun 'carry' $Files @{ From = $Base.AddSeconds(11).DateTime }
@@ -83,15 +83,17 @@ Describe 'Import-WorkerPerfRun: Prozesse' {
         $m.Proc[0].WsAvgKB | Should -Be ((102400 * 10 + 204800 * 6) / 16)
         $m.Proc[0].WsAvgKB | Should -Be 140800
         # chrome in der Sitzung von alice: K1 und K2 mit je 50 MB in den ersten beiden Schnappschuessen (6 s), danach K2 allein (10 s)
-        $a = $m.Sessions | Where-Object User -eq 'alice'; $chrome = $m.Apps | Where-Object Name -eq 'chrome.exe'; $notepad = $m.Apps | Where-Object Name -eq 'notepad.exe'
-        $pair = $m.Pairs["$($a.Index)|$($chrome.Index)"]
+        # (names of this model's own: PowerShell names ignore case, a local $a would hide the script's $A used below)
+        $wAlice = $m.Sessions | Where-Object User -eq 'alice'; $wChrome = $m.Apps | Where-Object Name -eq 'chrome.exe'; $wNotepad = $m.Apps | Where-Object Name -eq 'notepad.exe'
+        $pair = $m.Pairs["$($wAlice.Index)|$($wChrome.Index)"]
         $pair.WsAvgKB | Should -Be 70400                                                # (102400 * 6 + 51200 * 10) / 16
         $pair.WsSumKB | Should -Be 307200; $pair.Snaps | Should -Be 4                   # Summe und Zahl der Schnappschuesse bleiben, was sie sind (Mittel 76800)
-        $m.Pairs["$($a.Index)|$($notepad.Index)"].WsAvgKB | Should -Be 10240            # K4 nur im letzten Schnappschuss
+        $m.Pairs["$($wAlice.Index)|$($wNotepad.Index)"].WsAvgKB | Should -Be 10240            # K4 nur im letzten Schnappschuss
         # ein Zeitausschnitt: sein erster Schnappschuss steht fuer ein regulaeres Intervall
         (Import-TestRun 'weightcut' $f @{ From = $Base.AddSeconds(5).DateTime }).Snap.WeightSec | Should -Be @(4, 4, 6)
         # gleichmaessige Schnappschuesse: das Mittel ueber die Zeit ist das Mittel der Schnappschuesse
-        $script:M.Snap.WeightSec | Should -Be @(4, 4, 4, 4); $script:M.Pairs["$($A.Index)|$($chrome.Index)"].WsAvgKB | Should -Be 76800
+        $chrome = $script:M.Apps | Where-Object Name -eq 'chrome.exe'
+        $script:M.Snap.WeightSec | Should -Be @(4, 4, 4, 4); $script:M.Pairs["$($script:A.Index)|$($chrome.Index)"].WsAvgKB | Should -Be 76800
     }
     It 'uebergeht Zeilen jenseits des letzten vollstaendigen Schnappschusses' {        # Review Focus 3
         $f = $Files.Clone(); $f['processes.csv'] = @($Files['processes.csv']) + '4,0,999,1,1,0,0,0,1,1' + '4,0,12'; $f['procend.csv'] = @('2,1', '9,77')
