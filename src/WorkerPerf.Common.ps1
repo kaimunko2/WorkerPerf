@@ -43,7 +43,7 @@ $script:WorkerPerfCategories = [ordered]@{
     'Drucken'      = @{ Files = @('printdrivers.csv', 'printqueues.csv'); Sources = @('print.drivers', 'print.queues')
         Places = @('print.drivers', 'print.queues'); Active = $true }
     'Gegenstellen' = @{ Files = @('probes.csv'); Sources = @('probe.connect'); Places = @('probes', 'incidents.endpoints'); Active = $true }
-    'Zustand'      = @{ Files = @('health.json'); Sources = @('health'); Places = @(); Active = $true }
+    'Zustand'      = @{ Files = @('health.json'); Sources = @('health'); Places = @('health'); Active = $true }
 }
 # The note in Sources of a source that -Skip left out
 $script:WorkerPerfSkipDetailPattern = '^abgeschaltet \(-Skip [A-Za-z]+(,[A-Za-z]+)*\)$'

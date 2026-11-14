@@ -161,6 +161,7 @@ Describe 'Messkategorien' {
         @($WorkerPerfCategories.Keys) | Should -Be @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
         @($WorkerPerfCategories.Keys | Where-Object { -not $WorkerPerfCategories[$_].Active }) | Should -BeNullOrEmpty   # Aussage angepasst (Zustandsbild, Task 8)
         $WorkerPerfCategories.Zustand.Files | Should -Be @('health.json'); $WorkerPerfCategories.Zustand.Sources | Should -Be @('health')
+        $WorkerPerfCategories.Zustand.Places | Should -Be @('health')   # Task 20: die Seite nennt die Stelle health
         $WorkerPerfCategories.Prozesse.Places | Should -Be @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes')
         @($WorkerPerfCategories.Ereignisse.Sources).Count | Should -Be 0; $WorkerPerfCategories.Rueckblick.Files | Should -Be @('events_before.csv')
         # jede Datei gehoert hoechstens einer Kategorie; die Basis bleibt uebrig

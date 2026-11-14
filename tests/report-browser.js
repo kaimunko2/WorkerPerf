@@ -362,7 +362,8 @@ async function checkGuidedStates(browser, dir, scheme) {            // gefuehrte
   await ne.page.close();
   const na = await open(browser, path.join(dir, 'report-skip-none-alle.html'), scheme);
   const items = await na.page.locator('#measured .notm li').evaluateAll((l) => l.map((x) => x.dataset.skip || ''));
-  ok(items.slice(0, 7).join() === na.D.skipped.map((x) => x.id).join() && items.length === 7 + na.D.sollIst.filter((x) => !x.measured).length && items.slice(7).every((x) => x === ''), 'ohne alle: die Kategorien vor den nicht gemessenen Werten: ' + items.join());
+  // Aussage angepasst (Task 20): der Lauf Alle laesst auch Zustand weg, acht Kategorien statt sieben
+  ok(items.slice(0, 8).join() === na.D.skipped.map((x) => x.id).join() && items.length === 8 + na.D.sollIst.filter((x) => !x.measured).length && items.slice(8).every((x) => x === ''), 'ohne alle: die Kategorien vor den nicht gemessenen Werten: ' + items.join());
   ok(!(await na.page.locator('#measured').innerText()).includes('alle Messwerte wurden erfasst'), 'ohne alle: nie "alle Messwerte wurden erfasst"');
   await na.page.close();
   // values of the report data are text, never markup
@@ -2172,14 +2173,16 @@ const SKIP_LOCATIONS = (() => {
     'incidents.events': [['incident', inc('incidents.events')]],
     events: [['guided', `#guided #timeline .tl-row[data-group="skipped"] ${at('events')}`], ['guided', `#kpis .kpi[data-kpi="events"] ${at('events')}`], ['guided', `#qualityG ${at('events')}`],
       ['quality', `#quality ${at('events')}`], ['events', `#xt-events ${at('events')}`]],
-    before: [['before', `#before ${at('before')}`], ['guided', `#beforeG ${at('before')}`]]
+    before: [['before', `#before ${at('before')}`], ['guided', `#beforeG ${at('before')}`]],
+    // Task 20: the row of the health picture and its tab of the expert view
+    health: [['guided', `#healthRow > ${at('health')}`], ['health', `#xt-health > ${at('health')}`]]
   };
 })();
 async function checkSkip(browser, dir, scheme) {   // Messkategorien
   const full = await openExpert(browser, path.join(dir, 'report.html'), scheme);
   ok(await full.page.locator('#skipInfo').count() === 0 && await full.page.locator('.notmeasured').count() === 0, 'ohne -Skip kein Hinweis und keine Stelle "nicht gemessen"');
   await full.page.close();
-  for (const n of ['prozesse', 'laufwerke', 'citrix', 'ereignisse', 'rueckblick', 'drucken', 'gegenstellen', 'alle', 'alle-masked']) {   // Review Focus 1
+  for (const n of ['prozesse', 'laufwerke', 'citrix', 'ereignisse', 'rueckblick', 'drucken', 'gegenstellen', 'zustand', 'alle', 'alle-masked']) {   // Review Focus 1
     const { page, D } = await open(browser, path.join(dir, `report-skip-${n}.html`), scheme);
     ok(await page.locator('header #skipInfo').isVisible(), n + ': Kopf nennt die Kategorien auch in der gefuehrten Ansicht');
     await page.evaluate(() => { for (const d of document.querySelectorAll('#guided details')) d.open = true; });
@@ -2294,8 +2297,9 @@ async function checkFixWave(browser, dir, scheme) {   // Messkategorien, Abschlu
   const na = await openExpert(browser, path.join(dir, 'report-skip-none-alle.html'), scheme);
   nf = await txt(na.page, '#noFinding');
   const listed = await na.page.locator('#noFinding li[data-skip]').evaluateAll((l) => l.map((x) => x.dataset.skip));
-  ok(na.D.noFinding && listed.join(',') === na.D.skipped.map((x) => x.id).join(',') && listed.length === 7, 'ohne Befund ohne alle: jede Kategorie genannt: ' + listed.join(','));
-  ok(na.D.skipped.every((x) => nf.includes(x.label + ' – ' + x.text + ' (-Skip ' + x.id + ')')) && nf.includes('Nicht gemessen (' + (7 + na.D.sollIst.filter((r) => !r.measured).length) + ')') && !nf.includes('alle Messwerte wurden erfasst'), 'ohne alle: Liste: ' + nf);
+  // Aussage angepasst (Task 20, auch in der Zeile danach): der Lauf Alle laesst auch Zustand weg, acht Kategorien statt sieben
+  ok(na.D.noFinding && listed.join(',') === na.D.skipped.map((x) => x.id).join(',') && listed.length === 8, 'ohne Befund ohne alle: jede Kategorie genannt: ' + listed.join(','));
+  ok(na.D.skipped.every((x) => nf.includes(x.label + ' – ' + x.text + ' (-Skip ' + x.id + ')')) && nf.includes('Nicht gemessen (' + (8 + na.D.sollIst.filter((r) => !r.measured).length) + ')') && !nf.includes('alle Messwerte wurden erfasst'), 'ohne alle: Liste: ' + nf);
   ok((await txt(na.page, '#findHead')).startsWith('Keine Vorfälle aus den gemessenen Werten;'), 'Kopf ohne alle');
   ok(na.page.errors.length === 0, 'Skriptfehler none-alle: ' + na.page.errors.join(' | '));
   await na.page.close();
@@ -3064,6 +3068,16 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   ok(seen.includes('% des Servers') && seen.includes('Server-Kapazität') && seenHost.length === 0 && !/Ausschnitt/.test(seen), 'was die Seite zeigt, nennt die gemessene Maschine nie "Host" und den Zeitraum nie "Ausschnitt": ' + seenHost.slice(0, 5).join(' | '));
   ok(page.errors.length === 0, 'Skriptfehler Wortwahl: ' + page.errors.join(' | '));
   await page.close();
+  // (Task 20, additions 4) the health report of a quick run: what it shows in both views, an area view and its report data
+  const h = await open(browser, path.join(dir, 'report-health.html'), scheme);
+  const hShown = () => h.page.evaluate(() => document.body.innerText + '\n' + [...document.querySelectorAll('[title], [aria-label]')].map((e) => (e.getAttribute('title') || '') + ' ' + (e.getAttribute('aria-label') || '')).join('\n'));
+  let hSeen = await hShown();
+  await h.page.click('#healthRow .htile[data-area="vda"]'); hSeen += '\n' + await hShown(); await h.page.keyboard.press('Escape');
+  await showExpert(h.page);
+  for (const t of ['print', 'before', 'health']) { await showTab(h.page, t); if (t === 'health') await h.page.click('#healthRaw summary'); hSeen += '\n' + await hShown(); }
+  const hHost = hostWords(hSeen).concat(strings(h.D, []).flatMap(hostWords)), hWorker = hSeen.match(/.{0,30}(?<![A-Za-zÄÖÜäöüß])Worker(?!Perf)[A-Za-zÄÖÜäöüß-]*.{0,20}/g) || [];
+  ok(h.D.meta.healthOnly && hSeen.includes('Server') && hWorker.length === 0 && hHost.length === 0 && h.page.errors.length === 0, 'Zustandsbericht: was die Seite zeigt, nennt die gemessene Maschine "Server", nie "Worker" oder "Host": ' + hWorker.concat(hHost).slice(0, 5).join(' | '));
+  await h.page.close();
 }
 
 // ---------- Task 11: address, keyboard, motion, narrow width, colours ----------
@@ -3806,10 +3820,89 @@ async function checkHealthLinks(browser, dir, scheme) {
   await hx.page.close();
 }
 
+// Task 20: the report of a quick run (-HealthOnly) is a health report without a measurement (body[data-mode="health"]): the
+// head says so, the guided view holds the row, the area views and the lookback, the expert view the tabs of printing, of the
+// lookback and of the health picture; the lookback speaks of the reading, never of a measurement, and nothing says "no
+// incidents". The measurement parts of both views (additions 2: the ids of the finished page) are not shown.
+const MEASURE_GUIDED = ['#band', '#kpis', '#bandActions', '#hints', '#tlCard', '#timeline', '#aroundReported', '#cardsHead', '#cards', '#more', '#measured', '#qualityG'];
+const MEASURE_EXPERT = ['#rangeBar', '#incCol', '#incList', '#noFinding', '#xtiles', '#tiles', '#charts', '#chCpu', '#tSessions'];
+async function checkHealthOnly(browser, dir, scheme) {
+  // sichtbarer Text der Seite ohne die Schritte der Anleitung eines Vorfalls (.iv-todo): sie kommen aus den Daten des gefuehrten Berichts, geprueft werden die Saetze der Seite
+  // (Task 20, concern 1: ebenso die Sicht des Benutzers auf einer Karte des Rueckblicks, .card-view: userView.before des Katalogs
+  // "Vor der Messung aufgetreten (Zahl der Ereignisse: …)", ein Text der Berichtsdaten wie die Schritte, ZB-R5)
+  const text = (p) => p.evaluate(() => { const steps = [...document.querySelectorAll('.iv-todo, .card-view')], was = steps.map((e) => e.style.display); steps.forEach((e) => { e.style.display = 'none'; });
+    const t = document.body.innerText; steps.forEach((e, i) => { e.style.display = was[i]; }); return t; });
+  const { page, D } = await open(browser, path.join(dir, 'report-health.html'), scheme);
+  ok(await page.evaluate(() => document.body.dataset.mode) === 'health' && (await page.locator('#reportKind').innerText()) === 'Zustandsbericht ohne Messung', 'Kopf: Zustandsbericht ohne Messung');
+  ok(await page.locator('#healthRow .htile').count() === 11 && (await page.locator('#healthSummary').innerText()) === D.health.summary.text && await page.locator('#beforeG').isVisible(), 'Zeile und Rueckblick');
+  ok((await page.locator('#beforeG .before-reach').innerText()).includes(D.health.eventsReachText), 'der Rueckblick sagt, ab wann die Protokolle reichen');
+  // (additions 2) the brief's ids, all of the finished page, and the other measurement parts of the guided view
+  for (const sel of ['#band', '#timeline', '#cards', '#more', '#measured', '#incList', '#tiles', '#rangeBar', '#chCpu', '#tSessions'].concat(MEASURE_GUIDED)) ok(!(await page.locator(sel).first().isVisible()), 'Zustandsbericht ohne ' + sel);
+  ok(!/keine Vorf|Kein Vorfall|Keine Störung/i.test(await text(page)), 'nirgends keine Vorfaelle');   // Review Focus 5
+  ok(!/vor der Messung|während der Messung/i.test(await text(page)) && /vor dem Lesen/i.test(await page.locator('#beforeG').innerText()), 'der Rueckblick spricht vom Lesen, nicht von einer Messung');
+  // the head names the moment of the reading and the end of the quick run, and no part of a measurement
+  const sub = await page.locator('#subtitle').innerText(), foot = await page.locator('footer').innerText();
+  ok(sub.includes('Schnelllauf ohne Messung') && !/Takt|Schnappschuss| bis /.test(sub) && !/Takte|Schnappschüsse|Messaufwand/.test(foot), 'Kopf und Fuss ohne Messung: ' + sub + ' | ' + foot);
+  await page.click('#healthRow .htile[data-area="profile"]');
+  ok(await page.locator('#area .hcheck').count() === D.health.areas.find((a) => a.id === 'profile').checks.length, 'Bereichsansicht im Zustandsbericht');
+  await page.keyboard.press('Escape');
+  // the incident of the days before the reading in its incident view: its note on the patterns speaks of the reading
+  const lb = D.before.incidents[0];
+  await page.locator(`#beforeG .card.inc[data-id="${lb.id}"] .card-open`).click();
+  const ivText = await page.locator('#incident').innerText();
+  ok(await page.locator('#incident').isVisible() && !/vor der Messung|während der Messung/.test(await page.locator('#incident .iv-evidence').evaluate((d) => { d.open = true; return d.innerText; })), 'Vorfall vor dem Lesen: die Belege sprechen nicht von einer Messung');
+  ok(ivText.length > 0 && page.errors.length === 0, 'Vorfall vor dem Lesen ohne Skriptfehler: ' + page.errors.join(' | '));
+  await page.keyboard.press('Escape');
+  await showExpert(page);
+  ok(JSON.stringify(await page.locator('#xtabs button[data-tab]').evaluateAll((e) => e.filter((x) => x.offsetParent !== null).map((x) => x.dataset.tab))) === JSON.stringify(['print', 'before', 'health']), 'Expertenansicht nur mit Drucken, Rueckblick und Zustand');
+  ok(await page.locator('#tHealth tbody tr').count() === D.health.areas.flatMap((a) => a.checks).length, 'Tabelle der Pruefungen im Zustandsbericht');
+  for (const sel of MEASURE_EXPERT) ok(!(await page.locator(sel).first().isVisible()), 'Expertenansicht des Zustandsberichts ohne ' + sel);
+  for (const tab of ['print', 'before']) {
+    await page.click(`#xtabs button[data-tab=${tab}]`);
+    ok(!/keine Vorf|Kein Vorfall|Keine Störung|vor der Messung|während der Messung/i.test(await text(page)), 'Expertenansicht, Reiter ' + tab + ': weder keine Vorfaelle noch Messung');
+  }
+  // printing: only the drivers (no queues and no processes of a measurement); the driver column says what it draws on
+  await page.click('#xtabs button[data-tab=print]');
+  const pr = await page.locator('#print').innerText(), cells = (await page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  ok(!/Druckwarteschlangen|Prozesse der Rolle Drucken/.test(pr) && pr.includes('„An einem Vorfall beteiligt“: aus den Vorfällen vor dem Lesen.') && cells.length === D.print.drivers.length &&
+    cells.every((t, k) => t === (D.print.drivers[k].involved ? 'beteiligt' : D.print.drivers[k].possiblyInvolved ? t : 'nein (vor dem Lesen)')), 'Drucken im Zustandsbericht: Treiber, Beteiligung aus den Vorfaellen vor dem Lesen: ' + cells.join(' / '));
+  // the keyboard moves between the three tabs only
+  await page.focus('#xtab-health'); await page.keyboard.press('ArrowRight');
+  ok(await page.evaluate(() => document.activeElement.id) === 'xtab-print', 'Pfeiltaste: vom letzten zum ersten der drei Reiter');
+  ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
+  await page.close();
+  // ein Rueckblick ohne Ereignisse: sein Satz steht da, aber weder "keine Vorfaelle" noch "vor der Messung"
+  const empty = await open(browser, patched(dir, 'report-health.html', 'report-health-empty.html', (J) => { J.before.incidents = []; J.before.near = []; J.before.perDay = []; J.before.eventCount = 0; J.before.incidentEventCount = 0; }), scheme);
+  ok(await empty.page.locator('#beforeG').isVisible() && !/keine Vorf|Kein Vorfall|Keine Störung|vor der Messung/i.test(await text(empty.page)) && empty.page.errors.length === 0, 'leerer Rueckblick im Zustandsbericht');   // Review Focus 5
+  await showExpert(empty.page); await empty.page.click('#xtabs button[data-tab=before]');
+  ok(!/keine Vorf|Kein Vorfall|Keine Störung|vor der Messung/i.test(await text(empty.page)) && /vor dem Lesen/i.test(await text(empty.page)), 'leerer Rueckblick in der Expertenansicht');
+  await empty.page.close();
+  // events read but no incident among them: the heading of the incidents is left out with its empty list
+  const quiet = await open(browser, patched(dir, 'report-health.html', 'report-health-quiet.html', (J) => { J.before.incidents = []; }), scheme);
+  await showExpert(quiet.page); await quiet.page.click('#xtabs button[data-tab=before]');
+  const qt = await quiet.page.locator('#before').innerText();
+  ok(quiet.D.before.eventCount > 0 && !/Vorfälle vor|keine Vorf|^\s*keine\s*$/m.test(qt) && quiet.page.errors.length === 0, 'Rueckblick mit Ereignissen ohne Vorfall: keine Ueberschrift ohne Inhalt, kein "keine": ' + qt.slice(0, 200));
+  await quiet.page.close();
+  const m = await open(browser, path.join(dir, 'report-health-masked.html'), scheme);
+  ok(!/user0\d\d|SIM-VDA01|CONTOSO/.test(await text(m.page)) && m.page.errors.length === 0, 'maskierter Zustandsbericht ohne Namen');
+  await m.page.close();
+  const n = await browser.newPage({ viewport: { width: 400, height: 800 }, colorScheme: scheme }); await n.goto('file://' + path.join(dir, 'report-health.html'));
+  ok(await n.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Zustandsbericht bei schmaler Breite ohne seitliches Scrollen');
+  await n.close();
+}
+async function checkHealthSkip(browser, dir, scheme) {
+  const s = await open(browser, path.join(dir, 'report-skip-zustand.html'), scheme);
+  ok(await s.page.locator('#healthRow .notmeasured[data-place="health"]').count() === 1 && await s.page.locator('#healthRow .htile').count() === 0 && await s.page.locator('#healthInfo').count() === 0, '-Skip Zustand: nicht gemessen statt Kacheln');
+  ok((await s.page.locator('#healthRow').innerText()).includes(s.D.skipped[0].text + ' (-Skip Zustand)'), '-Skip Zustand: Grund steht da');
+  await showExpert(s.page); await s.page.click('#xtabs button[data-tab=health]');
+  ok(await s.page.locator('#xt-health .notmeasured[data-place="health"]').count() === 1 && await s.page.locator('#tHealth tbody tr').count() === 0 && s.page.errors.length === 0, '-Skip Zustand: der Reiter nennt nicht gemessen');
+  await s.page.close();
+}
+
 // every check function with the colour scheme of the system, then those that need one scheme only
 // (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
 // the incident view, of copying, of printing and of the points carried from the review run once)
-const PER_SCHEME = [checkNavigation, checkGuided, checkHealth, checkHealthLinks, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
+const PER_SCHEME = [checkNavigation, checkGuided, checkHealth, checkHealthLinks, checkHealthOnly, checkHealthSkip, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
 const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording, checkFocusFix, checkFinalFixB];
 // the colour functions serve other scripts too (require): the checks run only when this file is called

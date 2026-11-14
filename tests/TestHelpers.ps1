@@ -12,18 +12,17 @@ function Invoke-SimCapture([string]$OutDir, [hashtable]$Extra = @{}, [string]$Co
     }
 }
 function New-SkipRuns([string]$OutDir) {
-    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name>, Zustand (-Skip Zustand), Alle (die sieben
-    # Kategorien ohne Zustand); Name -> Aufzeichnungsordner.
+    # Je eine simulierte Stunde: Voll (ohne -Skip), je Kategorie -Skip <Name> (Zustand: -Skip Zustand), Alle (die acht
+    # Kategorien); Name -> Aufzeichnungsordner.
     # Die Konsolenausgabe des vollen Laufs steht in <OutDir>/Voll.console.txt (neben den Aufzeichnungen). Der Lauf
     # Prozesse hat dazu -IncludeCommandLine (ohne Prozesse ohne Wirkung), seine Konsolenausgabe in <OutDir>/Prozesse.console.txt.
-    $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+    $names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
     [void](New-Item -ItemType Directory -Path $OutDir -Force)
     $runs = [ordered]@{ Voll = (Invoke-SimCapture (Join-Path $OutDir 'Voll') @{} (Join-Path $OutDir 'Voll.console.txt')) }
     foreach ($n in $names) {
         if ($n -eq 'Prozesse') { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n); IncludeCommandLine = $true } (Join-Path $OutDir 'Prozesse.console.txt') }
         else { $runs[$n] = Invoke-SimCapture (Join-Path $OutDir $n) @{ Skip = @($n) } }
     }
-    $runs['Zustand'] = Invoke-SimCapture (Join-Path $OutDir 'Zustand') @{ Skip = @('Zustand') }
     $runs['Alle'] = Invoke-SimCapture (Join-Path $OutDir 'Alle') @{ Skip = $names }
     $runs
 }
@@ -43,7 +42,7 @@ function New-SkipReports([string]$OutDir) {
     $masked = Join-Path $OutDir 'report-skip-alle-masked.html'
     [void](& $report -Path $runs['Alle'] -OutFile $masked -RoleFile $roles -Mask Alles 6>$null)
     $out['AlleMasked'] = @{ Run = $runs['Alle']; Report = $masked }
-    # ohne Befund (Schwellen wie report-none.html): ohne Ereignisse und ohne alle sieben; mit gemeldetem Benutzer user008
+    # ohne Befund (Schwellen wie report-none.html): ohne Ereignisse und ohne alle acht; mit gemeldetem Benutzer user008
     # (zwei Vorfaelle im vollen Lauf) ohne Ereignisse und ohne Prozesse
     $none = New-NoFindingThresholdFile (Join-Path $OutDir 'none.skip.json')
     foreach ($k in 'Ereignisse', 'Alle') {

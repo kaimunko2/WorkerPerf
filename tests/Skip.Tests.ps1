@@ -5,12 +5,13 @@ BeforeAll {
     $script:Texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot '../src/texts.de.json')
     # die Aufzeichnungen von New-SkipRuns und je ein Bericht dazu
     $script:Rep = New-SkipReports (Join-Path $TestDrive 'rep')
-    $script:Names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen')
+    # Aussage angepasst (Zustandsbild, Task 20): Zustand ist der achte Name, der Lauf Alle laesst ihn mit weg
+    $script:Names = @('Prozesse', 'Laufwerke', 'Citrix', 'Ereignisse', 'Rueckblick', 'Drucken', 'Gegenstellen', 'Zustand')
     $script:Runs = [ordered]@{}; $script:D = @{}
-    foreach ($k in @('Voll') + $Names + 'Zustand' + 'Alle') { $Runs[$k] = $Rep[$k].Run; $D[$k] = Get-ReportData $Rep[$k].Report }
+    foreach ($k in @('Voll') + $Names + 'Alle') { $Runs[$k] = $Rep[$k].Run; $D[$k] = Get-ReportData $Rep[$k].Report }
     $script:Places = @{ Prozesse = @('procs', 'apps', 'sessions.resources', 'incidents.contributors', 'incidents.delayProcs', 'print.processes'); Laufwerke = @('volumes', 'shares', 'sessions.profile')
         Citrix = @('citrix', 'sessions.rtt', 'incidents.ica'); Ereignisse = @('events', 'sessions.events', 'incidents.events'); Rueckblick = @('before'); Drucken = @('print.drivers', 'print.queues')
-        Gegenstellen = @('probes', 'incidents.endpoints'); Zustand = @() }
+        Gegenstellen = @('probes', 'incidents.endpoints'); Zustand = @('health') }   # Aussage angepasst (Task 20): die Stelle health
     $script:Files = @{ Prozesse = @('processes.csv', 'procinfo.csv', 'procend.csv', 'inputdelay_proc.csv'); Laufwerke = @('volumes.csv', 'shares.csv'); Citrix = @('citrix.csv')
         Ereignisse = @('events.csv'); Rueckblick = @('events_before.csv'); Drucken = @('printdrivers.csv', 'printqueues.csv'); Gegenstellen = @('probes.csv'); Zustand = @('health.json') }
     $script:Ids = @{ Prozesse = @('process', 'input.process'); Laufwerke = @('disk.latency', 'smb.latency', 'profile.map'); Citrix = @('ica.rtt', 'ica.latency'); Ereignisse = @(); Rueckblick = @()
@@ -39,7 +40,7 @@ Describe 'Aufzeichnung mit -Skip' {
     It 'misst ohne alle Kategorien die Basis wie im vollstaendigen Lauf' {   # Review Focus 1
         $m = Get-Meta $Runs.Alle
         Get-CsvNames $Runs.Alle | Should -Be @('inputdelay.csv', 'sessions.csv', 'snapshots.csv', 'ticks.csv')
-        @($m.Skip) | Should -Be $Names; $m.EventLookbackDays | Should -Be 0; @($m.Endpoints).Count | Should -Be 0; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
+        @($m.Skip) | Should -Be $Names; Test-Path (Join-Path $Runs.Alle 'health.json') | Should -BeFalse; $m.EventLookbackDays | Should -Be 0; @($m.Endpoints).Count | Should -Be 0; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
         $m.Sources.'events.application'.Detail | Should -Be 'abgeschaltet (-Skip Ereignisse,Rueckblick)'; $m.Sources.'input.session'.Available | Should -BeTrue; $m.Sources.sessions.Available | Should -BeTrue
         @($m.Sources.PSObject.Properties | Where-Object { $_.Name -like 'events.*' -and $_.Value.Detail -ne 'abgeschaltet (-Skip Ereignisse,Rueckblick)' }).Count | Should -Be 0
         @($m.EventReadCounts.PSObject.Properties).Count | Should -Be 0; @($m.LookbackReadCounts.PSObject.Properties).Count | Should -Be 0
@@ -62,7 +63,7 @@ Describe 'Aufzeichnung mit -Skip' {
         $counts = 'function Get-WorkerPerfEventCounts { [ordered]@{ application = [ordered]@{ Skipped = 1 } } }'
         $throwing = $counts + "`n" + (@('Get-WorkerPerfServices', 'Get-WorkerPerfEvents', 'Get-WorkerPerfEventsBefore', 'Get-WorkerPerfPrintDrivers', 'Get-WorkerPerfPrintQueues',
                 'Start-WorkerPerfProbes', 'Receive-WorkerPerfProbes', 'Get-WorkerPerfHealth') | ForEach-Object { "function $_ { throw 'Testaufruf $_' }" }) -join "`n"
-        $none = (& (New-PatchedSource (Join-Path $TestDrive 'srcthrow') $throwing) -Simulate -DurationMinutes 60 -Skip ($Names + 'Zustand') -OutputPath (Join-Path $TestDrive 'throw') 6>$null 3>$null) | Select-Object -Last 1
+        $none = (& (New-PatchedSource (Join-Path $TestDrive 'srcthrow') $throwing) -Simulate -DurationMinutes 60 -Skip $Names -OutputPath (Join-Path $TestDrive 'throw') 6>$null 3>$null) | Select-Object -Last 1
         $m = Get-Meta $none
         $m.EndReason | Should -Be 'duration'; @($m.SourceErrors.PSObject.Properties).Count | Should -Be 0
         @($m.EventReadCounts.PSObject.Properties).Count | Should -Be 0; @($m.LookbackReadCounts.PSObject.Properties).Count | Should -Be 0
