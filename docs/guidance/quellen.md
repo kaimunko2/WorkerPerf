@@ -769,7 +769,7 @@ Diese Elemente behalten ihre Quelle; ein Satz im Element nennt die Praxisquelle 
 | Bildrate von HDX auf 30 Bilder je Sekunde begrenzen | beschreibt keinen Vorfall, den der Bericht erfasst (eine feste Einstellung erklärt keine zeitlich begrenzte Verzögerung) |
 | Werbeblocker im Browser gegen Prozessorlast (PXG-14) | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht (Chrome, 2019; die Messung zeigt nicht, dass Werbung die Ursache ist) |
 | Stufen für CPU-Latenz und Co-Stop als Erkennungszeichen; Untergrenze von 4 vCPU; Cache von MCS I/O verkleinern | die Quelle stützt die Empfehlung nicht oder nur mit geringem Gewicht |
-| Der Schritt zum Cache von MCS I/O als eigenes Element beim Dauerzustand und beim Engpass am Arbeitsspeicher nur ohne einzelnen Verursacher (Bedingungen der Auswahl, PXG-22) | steht beim Dauerzustand als Satz im vorhandenen Schritt zur Auslegung des Servers und beim Engpass am Arbeitsspeicher ohne Bedingung am Ende der Liste; mit den Bedingungen der Auswahl verdrängte er eigene Schritte des Katalogs aus den ersten fünf |
+| Der Schritt zum Cache von MCS I/O als eigenes Element beim Dauerzustand und beim Engpass am Arbeitsspeicher nur ohne einzelnen Verursacher (Bedingungen der Auswahl, PXG-22) | steht beim Dauerzustand als Satz im vorhandenen Schritt zur Auslegung des Servers und beim Engpass am Arbeitsspeicher ohne Bedingung am Ende der Liste; mit den Bedingungen der Auswahl verdrängte er eigene Schritte des Katalogs aus den ersten fünf. **Später geändert:** Nach der Abschlussprüfung trägt der Schritt beim Arbeitsspeicher und beim Laufwerk die Bedingung „ohne einzelnen Verursacher“ und steht dann vorn (Entscheidungen P3-R82, P3-R83) |
 
 ## James Kindon (Empfehlung aus der Praxis)
 
