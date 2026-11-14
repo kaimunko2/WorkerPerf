@@ -1311,7 +1311,7 @@ Describe 'Kopiertexte' {
         $dash = [string][char]0x2013
         $p | Should -Be @('WorkerPerf SIM-VDA01, 09.09.2001', "02:46${dash}02:48 (2 Minuten): Titel cpu (Engpass · CPU)", '2 Sitzungen waren betroffen.', 'Langsam.', 'Messwert: 100 %, Soll unter 75 %'
             'Verursacher: Hauptverursacher: EXCEL.EXE in der Sitzung von user003 mit 62 % der CPU-Zeit (sonst 4 %).', 'Betroffen: 2', ''
-            'Empfohlene Pruefschritte:', "1. Pruefen ${dash} Ort; erkennbar an Merkmal", '', 'Moegliche Abhilfe (Vorschlag):', '- Wenn Voraussetzung: Abhelfen', '', 'Ansprechpartner:', '- Kontakt')
+            'Empfohlene Pruefschritte:', "1. Pruefen. Wo: Ort. Woran erkennbar: Merkmal", '', 'Moegliche Abhilfe (Vorschlag):', '- Wenn Voraussetzung: Abhelfen', '', 'Ansprechpartner:', '- Kontakt')
         $t = New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts
         $t | Should -BeExactly (Format-WorkerPerfCopyLines $p)
         # the users of the affected sessions
@@ -1320,7 +1320,7 @@ Describe 'Kopiertexte' {
         # without remedies and contacts: neither label
         $g.remedies = @(); $g.contacts = @()
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
-        $p[-1] | Should -Be "1. Pruefen ${dash} Ort; erkennbar an Merkmal"; $p | Should -Not -Contain $Cat.copy.remedies
+        $p[-1] | Should -Be "1. Pruefen. Wo: Ort. Woran erkennbar: Merkmal"; $p | Should -Not -Contain $Cat.copy.remedies
         # a chronic state without affected sessions names none, as its sentence (Get-WorkerPerfIncidentText) does
         $i = New-Inc @{ type = 'umfeld'; chronic = $true; start = 1e12; end = 1e12 + 3600000; signals = @(@{ id = 'ica.rtt'; resource = 'network'; peak = 225; unit = 'ms'; ideal = 'unter 150 ms'; severity = 1 }) }
         $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide (New-CopyGuide $i) -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts)
@@ -1337,8 +1337,8 @@ Describe 'Kopiertexte' {
         $tail = { param($Catalogue = $Cat) $p = @(Get-WorkerPerfCopyParagraphs -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Catalogue -Texts $Texts); @($p[([array]::IndexOf($p, $Cat.copy.checks) - 1)..($p.Count - 1)]) }
         # seven checks, five remedies, four contacts: the first five and three in the guide's order, one line after each shortened block, every contact
         & $steps 7 5 4
-        & $tail | Should -Be @('', 'Empfohlene Pruefschritte:', "1. Schritt 1 ${dash} Ort; erkennbar an Merkmal", "2. Schritt 2 ${dash} Ort; erkennbar an Merkmal", "3. Schritt 3 ${dash} Ort; erkennbar an Merkmal",
-            "4. Schritt 4 ${dash} Ort; erkennbar an Merkmal", "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal", 'Weitere 2 Pruefschritte im Bericht.', '', 'Moegliche Abhilfe (Vorschlag):',
+        & $tail | Should -Be @('', 'Empfohlene Pruefschritte:', "1. Schritt 1. Wo: Ort. Woran erkennbar: Merkmal", "2. Schritt 2. Wo: Ort. Woran erkennbar: Merkmal", "3. Schritt 3. Wo: Ort. Woran erkennbar: Merkmal",
+            "4. Schritt 4. Wo: Ort. Woran erkennbar: Merkmal", "5. Schritt 5. Wo: Ort. Woran erkennbar: Merkmal", 'Weitere 2 Pruefschritte im Bericht.', '', 'Moegliche Abhilfe (Vorschlag):',
             '- Wenn Voraussetzung: Abhilfe 1', '- Wenn Voraussetzung: Abhilfe 2', '- Wenn Voraussetzung: Abhilfe 3', 'Weitere 2 Vorschlaege im Bericht.', '', 'Ansprechpartner:',
             '- Kontakt 1', '- Kontakt 2', '- Kontakt 3', '- Kontakt 4')
         # the guide itself stays complete: the report shows every step
@@ -1364,7 +1364,7 @@ Describe 'Kopiertexte' {
             $lines = Get-Lines (New-WorkerPerfCopyText -Incident $i -Guide $g -Data (New-Ctx).Data -Catalogue $Cat -Texts $Texts -Mask $mask)
             @($lines | Where-Object { $_ -match '^\d+\. ' }).Count | Should -Be 5; @($lines | Where-Object { $_ -match '^- Wenn ' }).Count | Should -Be 3
             $lines | Should -Contain 'Weitere 2 Pruefschritte im Bericht.'; $lines | Should -Contain 'Weitere 2 Vorschlaege im Bericht.'
-            [array]::IndexOf($lines, 'Weitere 2 Pruefschritte im Bericht.') | Should -Be ([array]::IndexOf($lines, "5. Schritt 5 ${dash} Ort; erkennbar an Merkmal") + 1)
+            [array]::IndexOf($lines, 'Weitere 2 Pruefschritte im Bericht.') | Should -Be ([array]::IndexOf($lines, "5. Schritt 5. Wo: Ort. Woran erkennbar: Merkmal") + 1)
         }
         # the summary of the capture names no steps and no such line
         $i.guide = $g

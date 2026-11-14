@@ -75,20 +75,20 @@
     "none": "Keine Sitzung mit Eingabeverzögerung über dem Soll; Dauer {duration}.",
     "unknown": "Betroffene Sitzungen nicht bestimmbar.",
     "chronic": "Dauerzustand über {duration}, keine einzelne Störung.",
-    "eventMany": "{affected} Sitzungen betroffen, {count}-mal aufgetreten.",
-    "eventOne": "Eine Sitzung betroffen, {count}-mal aufgetreten.",
-    "eventNone": "Keiner Benutzersitzung zugeordnet, {count}-mal aufgetreten.",
-    "before": "Vor der Messung aufgetreten, {count}-mal; für diese Zeit liegen keine Messwerte vor."
+    "eventMany": "{affected} Sitzungen betroffen; Zahl der Ereignisse: {count}.",
+    "eventOne": "Eine Sitzung betroffen; Zahl der Ereignisse: {count}.",
+    "eventNone": "Keiner Benutzersitzung zugeordnet; Zahl der Ereignisse: {count}.",
+    "before": "Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor."
   },
   "lagebild": {
-    "red": "Handlungsbedarf: {parts}; {minutes} min mit spürbarer Störung.",
-    "yellow": "Auffälligkeiten ohne erkannten Engpass auf dem Server: {parts}; {minutes} min mit spürbarer Störung.",
+    "red": "Handlungsbedarf wegen {parts}; {minutes} min mit spürbarer Störung.",
+    "yellow": "Auffälligkeiten ohne erkannten Engpass auf dem Server – {parts}; {minutes} min mit spürbarer Störung.",
     "green": "Keine Störung erkannt.",
     "greenSkipped": "In den gemessenen Werten keine Störung erkannt; Vorfälle aus Ereignissen wurden nicht erfasst. Nicht gemessen: {skipped}.",
-    "partBottlenecks": "{bottlenecks}-mal Engpass auf dem Server",
-    "partDelays": "{delays}-mal Verzögerung",
-    "partEvents": "{events}-mal Absturz oder Fehler",
-    "partChronic": "{chronic}-mal Dauerzustand",
+    "partBottlenecks": "Engpass auf dem Server ({bottlenecks})",
+    "partDelays": "Verzögerung ({delays})",
+    "partEvents": "Absturz oder Fehler ({events})",
+    "partChronic": "Dauerzustand ({chronic})",
     "partSeparator": ", ",
     "notMeasured": "Nicht gemessen: {skipped}."
   },
@@ -294,20 +294,20 @@
           "when": ["cause.security"],
           "text": "{security} war der größte Verbraucher: prüfen, was im Zeitraum untersucht wurde und ob Scan-Ausschlüsse fehlen",
           "where": "Verwaltung der Schutzsoftware: Protokoll und Ausschlüsse der Echtzeitprüfung; Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“ (größter Anteil außerhalb der Schutzsoftware)",
-          "sign": "Echtzeitprüfung ohne Scan-Ausschluss für die Ordner viel genutzter Anwendungen"
+          "sign": "Echtzeitprüfung ohne die Ausschlüsse, die die Hersteller viel genutzter Anwendungen nennen"
         },
         {
           "when": ["cause.security"],
-          "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Programmordner oder Prozesse",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“); mit Microsoft Defender gilt die Form mit den Prozessen des Agenten, nicht der Ordner: Microsoft führt Programmordner unter den Ordnern, die man nicht ausnehmen soll",
-          "sign": "Auslagerungsdatei, Ereignisprotokolle oder WEM-Agent ohne Ausschluss",
+          "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Prozesse mit vollem Pfad; Microsoft führt Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
+          "sign": "Auslagerungsdatei, Ereignisprotokolle oder Prozesse des WEM-Agenten ohne Ausschluss",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
         },
         {
           "when": ["companion.security"],
           "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
-          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
+          "sign": "Prozess dieser Anwendung ohne Ausschluss, obwohl ihr Hersteller einen nennt"
         },
         {
           "when": ["cause.none"],
@@ -329,7 +329,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen: 8 vCPU für einen Windows Server mit mehreren Sitzungen",
+          "text": "Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: 8 vCPU für einen Windows Server mit mehreren Sitzungen",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“: logische Prozessoren; vCenter: Einstellungen der virtuellen Maschine",
           "sign": "Weniger als 8 vCPU bei vielen gleichzeitigen Sitzungen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
@@ -479,9 +479,9 @@
         },
         {
           "when": ["event.defender"],
-          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat; Citrix rät in seinem Leitfaden zu Schutzsoftware dasselbe und nennt keinen Abstand",
+          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Citrix rät in seinem Leitfaden zu Schutzsoftware, das Master-Image regelmäßig mit den neuesten Signaturen zu aktualisieren, und nennt keinen Abstand; die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
-          "source": "John Billekens (Empfehlung aus der Praxis): Citrix · AV exclusions"
+          "source": "Citrix: Endpoint Security, Antivirus, and Antimalware Best Practices"
         },
         {
           "when": ["cause.security"],
@@ -490,13 +490,15 @@
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
-          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
+          "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
           "when": ["cause.none"],
-          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; der Prüfschritt nach Carl Stalhood nennt mindestens 8 vCPU; beide Angaben treffen sich bei 8 vCPU; sie sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
-          "precondition": "der Engpass ohne einzelnen Verursacher an mehreren Tagen auftritt"
+          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; Carl Stalhood gibt der virtuellen Maschine 8 vCPU; beide Angaben sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "precondition": "der Engpass ohne einzelnen Verursacher an mehreren Tagen auftritt",
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
           "when": ["cause.none"],
@@ -628,8 +630,8 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Kein einzelner Verursacher: Arbeitsspeicher je Sitzung und Zahl der Sitzungen ansehen",
-          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Arbeitsspeicher nach Verursacher“, Reiter „Sitzungen“; nach Thomas Kötzing (Durchsicht eines Terminalservers von 2018) auch die Programme ansehen, die in jeder Sitzung von selbst starten: er fand etwa zehn solcher Prozesse mit zusammen 20 bis 25 MB je Benutzer, meist aus den Run-Schlüsseln der Registrierung (im Master-Image: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run und HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run)",
+          "text": "Kein einzelner Verursacher: Arbeitsspeicher je Sitzung und Zahl der Sitzungen ansehen, dazu die Programme, die in jeder Sitzung von selbst starten; nach Thomas Kötzing (Durchsicht eines Terminalservers von 2018) waren das etwa zehn Prozesse mit zusammen 20 bis 25 MB je Benutzer, meist aus den Run-Schlüsseln der Registrierung",
+          "where": "Expertenansicht mit dem Zeitraum des Vorfalls: Diagramm „Arbeitsspeicher nach Verursacher“, Reiter „Sitzungen“; Run-Schlüssel im Master-Image: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run und HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run",
           "sign": "Summe vieler ähnlich großer Sitzungen über dem Soll, ohne einzelne Sitzung mit hohem Anteil"
         },
         {
@@ -640,7 +642,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Arbeitsspeicher der virtuellen Maschine mit der Empfehlung aus der Praxis vergleichen: 24 bis 48 GB für einen Windows Server mit mehreren Sitzungen",
+          "text": "Arbeitsspeicher der virtuellen Maschine mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: 24 bis 48 GB für einen Windows Server mit mehreren Sitzungen",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“: Arbeitsspeicher; vCenter: Einstellungen der virtuellen Maschine",
           "sign": "Weniger als 24 GB Arbeitsspeicher bei vielen gleichzeitigen Sitzungen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
@@ -695,10 +697,11 @@
           "sign": "Arbeitsspeicher-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder Dauerzustand des Arbeitsspeichers im Lagebild"
         },
         {
-          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; Citrix schreibt, dass der Cache Teil des Arbeitsspeichers der Maschine ist; nach der Praxisquelle GO-EUC (Test von 2020 mit Windows 10 und einer einzelnen Maschine) belegt ihn der Treiber von MCS I/O, und Windows kann ihn nicht nutzen; reicht der Rest für die Sitzungen nicht, mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen",
+          "when": ["cause.none"],
+          "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; laut Citrix ist der Cache Teil des Arbeitsspeichers der Maschine; nach der Praxisquelle GO-EUC (Test von 2020 mit Windows 10 und einer einzelnen Maschine) kann Windows diesen Teil nicht nutzen; reicht der Rest für die Sitzungen nicht, mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen, wie Citrix es für den Cache im Arbeitsspeicher nahelegt",
           "where": "Citrix Studio, Maschinenkatalog: Arbeitsspeicher und Größe des Caches",
           "sign": "Arbeitsspeicher der Server abzüglich des Caches reicht für die Sitzungen nicht",
-          "source": "GO-EUC (Empfehlung aus der Praxis): The real impact of Citrix MCSIO"
+          "source": "Citrix: Create machine catalogs"
         }
       ],
       "remedies": [
@@ -714,7 +717,7 @@
         },
         {
           "when": ["cause.app", "app.edge"],
-          "text": "Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten (Richtlinie AutoDiscardSleepingTabsEnabled; eine Richtlinie wirkt auch auf nicht persistente Server); es senkt laut Microsoft den Speicherbedarf, indem lange untätige Tabs im Hintergrund verworfen werden",
+          "text": "Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten (Richtlinie AutoDiscardSleepingTabsEnabled; eine Richtlinie wirkt auch auf nicht persistente Server); es senkt laut Microsoft den Speicherbedarf, indem untätige Tabs im Hintergrund verworfen werden; laut Microsoft verwirft Edge einen Tab erst, wenn er drei Browsersitzungen in Folge im Hintergrund lag; eine neue Browsersitzung beginnt laut Microsoft, wenn der Browser mehr als 12 Stunden nach Beginn der vorigen benutzt wird (mehr als 18 Stunden auf Geräten mit 16 GB Arbeitsspeicher oder mehr)",
           "precondition": "die Richtlinie das automatische Verwerfen abschaltet (ab Microsoft Edge 120)",
           "source": "Microsoft: Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled)"
         },
@@ -732,7 +735,7 @@
         },
         {
           "when": ["cause.app"],
-          "text": "Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen (in der WEM-Konsole); Citrix empfiehlt höchstens 5 %, weil sonst ein Prozess, der gerade benutzt wird, als untätig gelten und seinen Arbeitsspeicher verlieren kann; die Praxis ist sich nicht einig; James Kindon (2023) lässt die Speicheroptimierung fast immer ausgeschaltet, weil sie Arbeitsspeicher untätiger Anwendungen auf das Laufwerk auslagert; Manuel Winkel (2022, Stand WEM 2206) nutzt sie mit einer Leerlaufgrenze von 3 %; nach Guy Leech (2018) danach prüfen, ob Windows mehr Seiten vom Datenträger liest",
+          "text": "Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen (in der WEM-Konsole); Citrix empfiehlt höchstens 5 %; bei einer höheren Grenze kann laut Citrix ein Prozess, der gerade benutzt wird, als untätig gelten und seinen Arbeitsspeicher verlieren; die Praxis ist sich nicht einig; James Kindon (2023) lässt die Speicheroptimierung fast immer ausgeschaltet, weil sie Arbeitsspeicher untätiger Anwendungen auf das Laufwerk auslagert; Manuel Winkel (2022, Stand WEM 2206) nutzt sie mit einer Leerlaufgrenze von 3 %; nach Guy Leech (2018) nach einer Änderung prüfen, ob Windows mehr Seiten vom Datenträger liest",
           "precondition": "die Speicheroptimierung von WEM eingeschaltet ist und Anwendungen nach einer Pause des Benutzers auffällig träge reagieren",
           "source": "Citrix: Memory Management (WEM current release)"
         },
@@ -839,16 +842,16 @@
         },
         {
           "when": ["cause.security"],
-          "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung aus der Praxis vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Programmordner oder Prozesse",
-          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“); mit Microsoft Defender gilt die Form mit den Prozessen des Agenten, nicht der Ordner: Microsoft führt Programmordner unter den Ordnern, die man nicht ausnehmen soll",
-          "sign": "Auslagerungsdatei, Ereignisprotokolle oder WEM-Agent ohne Ausschluss",
+          "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Prozesse mit vollem Pfad; Microsoft führt Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
+          "sign": "Auslagerungsdatei, Ereignisprotokolle oder Prozesse des WEM-Agenten ohne Ausschluss",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
         },
         {
           "when": ["companion.security"],
           "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
-          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
+          "sign": "Prozess dieser Anwendung ohne Ausschluss, obwohl ihr Hersteller einen nennt"
         },
         {
           "when": ["cause.none"],
@@ -911,8 +914,8 @@
         {
           "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): Größe der Datei mcsdif.vhdx und freien Platz auf dem Cache-Datenträger des Servers prüfen; nach der Praxisquelle Thomas Kötzing (2024) wird die Datei nicht wieder kleiner; sie zeigt also den höchsten Stand seit dem Start und nicht die aktuelle Belegung",
           "where": "Cache-Datenträger des Servers: Datei mcsdif.vhdx und freier Platz; Leistungsüberwachung: Indikatoren „Citrix MCS“; Citrix Studio: Maschinenkatalog",
-          "sign": "Datei seit dem Start deutlich gewachsen (der Cache im Arbeitsspeicher ist übergelaufen) oder wenig freier Platz (läuft der Cache-Datenträger voll, werden die Sitzungen nach Angabe von Citrix unbenutzbar); nach Manuel Winkel (2026) auch der umgekehrte Fall: ein angehängter Datenträger ohne die Datei mcsdif.vhdx und ohne Schreibzugriffe, dann arbeitet der Cache nicht",
-          "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix Maschinenerstellungsdienste (MCS) -Skript zum Auslesen des RAM- und Disk-Cache"
+          "sign": "Datei seit dem Start deutlich gewachsen (der Cache im Arbeitsspeicher ist übergelaufen) oder wenig freier Platz; läuft der Cache-Datenträger voll, werden die Sitzungen laut Citrix unbenutzbar; nach Manuel Winkel (2026) auch der umgekehrte Fall: ein angehängter Datenträger ohne die Datei mcsdif.vhdx und ohne Schreibzugriffe, dann arbeitet der Cache nicht",
+          "source": "Citrix: Create machine catalogs"
         }
       ],
       "remedies": [
@@ -928,9 +931,9 @@
         },
         {
           "when": ["event.defender"],
-          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat; Citrix rät in seinem Leitfaden zu Schutzsoftware dasselbe und nennt keinen Abstand",
+          "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Citrix rät in seinem Leitfaden zu Schutzsoftware, das Master-Image regelmäßig mit den neuesten Signaturen zu aktualisieren, und nennt keinen Abstand; die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
-          "source": "John Billekens (Empfehlung aus der Praxis): Citrix · AV exclusions"
+          "source": "Citrix: Endpoint Security, Antivirus, and Antimalware Best Practices"
         },
         {
           "when": ["cause.security"],
@@ -939,8 +942,9 @@
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
-          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
+          "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
           "when": ["cause.none"],
@@ -1030,7 +1034,7 @@
           "when": ["companion.security"],
           "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
-          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
+          "sign": "Prozess dieser Anwendung ohne Ausschluss, obwohl ihr Hersteller einen nennt"
         },
         {
           "when": ["cause.none"],
@@ -1097,9 +1101,9 @@
         },
         {
           "when": ["cause.app", "role.Profil"],
-          "text": "Active Write Back der Citrix Profilverwaltung abschalten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle Carl Stalhood rät dazu, weil die Funktion den Dateiserver zusätzlich belastet, und nennt sie als standardmäßig eingeschaltet; auch James Kindon (2025) nennt die Funktion eine häufige Ursache überlasteter Dateiserver und rät, sie bei Bedarf durch die Variante zu ersetzen, die nur beim Sperren und Trennen der Sitzung sichert (Profilverwaltung ab Version 2303)",
-          "precondition": "Benutzer nicht auf mehreren Servern zugleich angemeldet sind und Änderungen am Profil nicht schon während der Sitzung gesichert werden müssen",
-          "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
+          "text": "Active write back der Citrix Profilverwaltung auf die Variante beschränken, die nur beim Sperren und Trennen der Sitzung zurückschreibt statt alle fünf Minuten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); Citrix empfiehlt diese Variante als bewährtes Vorgehen; ist nichts eingestellt, legt die Profilverwaltung die Einstellung laut Citrix selbst fest; die Praxisquellen Carl Stalhood und James Kindon (2025) nennen die Funktion eine Last für den Dateiserver; Carl Stalhood rät, sie ganz abzuschalten, wenn Benutzer nicht auf mehreren Servern zugleich angemeldet sind und Änderungen am Profil nicht schon während der Sitzung gesichert werden müssen",
+          "precondition": "Active write back eingeschaltet ist, ohne die Richtlinie „Active write back on session lock and disconnection“, und der Dateiserver mit dem Profilspeicher wiederholt langsam antwortet",
+          "source": "Citrix: Configure active write-back"
         },
         {
           "when": ["cause.app"],
@@ -1125,14 +1129,14 @@
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
-          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
+          "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
-          "when": ["cause.app"],
-          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver 12 statt 17 Sekunden Anmeldung; dabei hatte er auch den Dateiserver geändert; welchen Anteil der Wert daran hatte, sagt er nicht",
           "precondition": "der Dateiserver wiederholt langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
-          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
+          "source": "Microsoft: Optimizing Windows configuration for VDI desktops"
         }
       ],
       "contacts": [
@@ -1185,7 +1189,7 @@
         },
         {
           "when": ["cause.app", "app.outlook"],
-          "text": "Größe der OST-Datei von Outlook und Zahl der Elemente je Ordner prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
+          "text": "Größe der OST-Datei von Outlook und Zahl der Elemente je Ordner prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden; ist die Datei größer als 10 GB, die lokalen Postfachdaten verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); nach Aaron Parker (2019, für FSLogix-Container beschrieben) mit dem kleinsten brauchbaren Zeitraum beginnen, üblich sind 3 Monate, und ihn nur für Gruppen verlängern, die mehr brauchen",
           "where": "Profil des Benutzers, dem der Profilcontainer gehört: Outlook-Datendatei (OST); Outlook: Ordnergrößen",
           "sign": "OST-Datei über 10 GB oder Ordner mit annähernd 100 000 Nachrichten oder 10 000 Kalendereinträgen",
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
@@ -1239,7 +1243,7 @@
           "when": ["companion.security"],
           "text": "{security} lief als Begleiter mit: prüfen, ob die Dateien des größten I/O-Erzeugers im Zeitraum bei jedem Zugriff untersucht werden",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: größter I/O-Erzeuger im Fenster; Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung",
-          "sign": "Programm- und Datenordner dieser Anwendung ohne Scan-Ausschluss"
+          "sign": "Prozess dieser Anwendung ohne Ausschluss, obwohl ihr Hersteller einen nennt"
         },
         {
           "when": ["cause.none"],
@@ -1249,7 +1253,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung aus der Praxis vergleichen: Standard-Ausschlussliste für Ordner eingeschaltet, Zwischenspeicher wie INetCache ausgeschlossen",
+          "text": "Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung der Praxisquelle Carl Stalhood (2025) vergleichen: Standard-Ausschlussliste für Ordner eingeschaltet, Zwischenspeicher wie INetCache ausgeschlossen",
           "where": "Richtlinien der Citrix Profilverwaltung: Dateisystem, Ausschlusslisten",
           "sign": "Standard-Ausschlussliste abgeschaltet oder Zwischenspeicher großer Anwendungen im Profil",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
@@ -1317,12 +1321,6 @@
           "precondition": "{app} sehr große Datenbestände im betroffenen Profilcontainer hält"
         },
         {
-          "when": ["cause.app", "app.outlook"],
-          "text": "Lokale Postfachdaten von Outlook verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); nach Aaron Parker (2019, für FSLogix-Container beschrieben) mit dem kleinsten brauchbaren Zeitraum beginnen, üblich sind 3 Monate, und ihn nur für Gruppen verlängern, die mehr brauchen",
-          "precondition": "die OST-Datei im betroffenen Profilcontainer größer als 10 GB ist",
-          "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
-        },
-        {
           "when": ["cause.app", "app.edge"],
           "text": "Cache-Ordner von Microsoft Edge vom Profilcontainer ausnehmen (Richtlinie der Citrix Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) bleiben Daten, die schon im Container liegen, dort, bis sie gelöscht werden oder der Container verkleinert wird",
           "precondition": "der Cache-Ordner von Edge noch nicht ausgenommen ist",
@@ -1340,8 +1338,9 @@
         },
         {
           "when": ["companion.security"],
-          "text": "Scan-Ausschluss für die Programm- und Datenordner des größten I/O-Erzeugers einrichten (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
-          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen"
+          "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
+          "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
+          "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
           "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle Carl Stalhood nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
@@ -1469,7 +1468,7 @@
           "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
-          "source": "GO-EUC (Empfehlung aus der Praxis): VMware vSphere CPU topology effects on VDI performance: NUMA vNUMA and CPU scheduling"
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         }
       ],
       "remedies": [
@@ -1481,7 +1480,7 @@
         {
           "when": ["event.applocker"],
           "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
-          "precondition": "der Modus auf „Overwrite“ steht und Anwendungen blockiert wurden, die vorher liefen",
+          "precondition": "der Modus auf „Overwrite“ steht, Anwendungen blockiert wurden, die vorher liefen, und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications"
         },
         {
@@ -1498,7 +1497,7 @@
       "contacts": [
         {
           "when": ["endpoint.slow"],
-          "text": "Betreuung von {endpoint}: mit Uhrzeit und der gemessenen Antwortzeit aus den Belegen"
+          "text": "Betreuung der Gegenstelle {endpoint}: mit Uhrzeit und der gemessenen Antwortzeit aus den Belegen"
         },
         {
           "text": "Betreuung der Anwendung, in der die Benutzer warteten (bei der Fachanwendung auch die Betreuung ihrer Datenbank): mit Uhrzeit, Dauer und Zahl der betroffenen Sitzungen"
@@ -1565,7 +1564,7 @@
         {
           "text": "Dauer und Höhe der Verzögerung einordnen: ein einzelner kurzer Ausschlag ist meist ohne Bedeutung",
           "where": "Kopf der Vorfallsansicht: Dauer; Abschnitt „Was war los“: Diagramm der Eingabeverzögerung",
-          "sign": "Dauer von wenigen Sekunden ohne Wiederholung (unbedeutend) oder Verzögerung über Minuten und wiederholt (weiter prüfen)"
+          "sign": "Dauer von wenigen Sekunden ohne Wiederholung (unbedeutend) oder Verzögerung über Minuten und wiederholt (bedeutsam)"
         },
         {
           "text": "Prüfen, ob dieselbe Anwendung bei diesem Benutzer öfter hängt",
@@ -1606,7 +1605,7 @@
         {
           "when": ["event.applocker"],
           "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
-          "precondition": "der Modus auf „Overwrite“ steht und Anwendungen blockiert wurden, die vorher liefen",
+          "precondition": "der Modus auf „Overwrite“ steht, Anwendungen blockiert wurden, die vorher liefen, und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications"
         },
         {
@@ -1627,7 +1626,7 @@
       "contacts": [
         {
           "when": ["endpoint.slow"],
-          "text": "Betreuung von {endpoint}: mit Uhrzeit und der gemessenen Antwortzeit aus den Belegen"
+          "text": "Betreuung der Gegenstelle {endpoint}: mit Uhrzeit und der gemessenen Antwortzeit aus den Belegen"
         },
         {
           "text": "Betreuung der Anwendung, in der der Benutzer wartete: mit Uhrzeit, Dauer und dem Vorgang, den der Benutzer nennt"
@@ -1662,15 +1661,15 @@
           "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Netzstrecke) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
         },
         {
-          "text": "Den Benutzer fragen, wie die Störung aussah; die Praxisquelle Benny Tritsch (2026) ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
-          "where": "Rückfrage beim Benutzer; die Antwort mit Uhrzeit und Standort an die Betreuung des Netzes geben",
-          "sign": "Eine der drei Erscheinungen; alle drei liegen außerhalb des Servers; in einem Test der Praxisquelle von 2025 (VDA 2507 LTSR, Windows 11, Netzsimulator) hielt HDX bei wenig Bandbreite die Bildrate und senkte die Bildqualität",
+          "text": "Den Benutzer fragen, wie die Störung aussah, und die Antwort mit Uhrzeit und Standort an die Betreuung des Netzes geben; die Praxisquelle Benny Tritsch (2026) ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
+          "where": "Rückfrage beim Benutzer",
+          "sign": "Eine der drei Erscheinungen; alle drei liegen außerhalb des Servers; in einem Test der Praxisquelle von 2025 auf Azure (VDA 2507 LTSR, Windows 11, Netzsimulator) hielt HDX bei wenig Bandbreite die Bildrate und senkte die Bildqualität",
           "source": "Benny Tritsch (Empfehlung aus der Praxis): A Guide to Common VDI Screen Artifacts and What They Mean"
         },
         {
-          "text": "Feststellen, über welchen Transport die Sitzung des Benutzers läuft (EDT, also UDP, oder TCP); die Voreinstellung von Citrix („Preferred“, EDT mit Rückfall auf TCP) bleibt die Regel; die Praxis sieht es verschieden: Carl Stalhood (2024) führt Adaptive Transport in seiner Prüfliste als eingeschaltet; die Praxisquelle Thomas Kötzing (2025, Meinung ohne Messung) berichtet von schwarzen oder zerstückelten Bildern mit EDT über VPN, WLAN oder Mobilfunk und würde EDT abschalten; das ist die andere Sicht und kein Vorschlag dieses Berichts; meldet der Benutzer solche Bilder und läuft die Sitzung über EDT, die Betreuung des Netzes die MTU auf dieser Strecke prüfen lassen",
+          "text": "Feststellen, über welchen Transport die Sitzung des Benutzers läuft (EDT, also UDP, oder TCP); die Voreinstellung von Citrix ist „Preferred“ (EDT mit Rückfall auf TCP) und bleibt die Regel; meldet der Benutzer schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk und läuft die Sitzung über EDT, die Betreuung des Netzes die MTU auf dieser Strecke prüfen lassen",
           "where": "Citrix Director, Sitzungsdetails, oder auf dem Server der Befehl CtxSession.exe -v; Citrix-Richtlinie: Sitzungszuverlässigkeit und MTU-Erkennung von EDT",
-          "sign": "Sitzung läuft über EDT (UDP) und der Benutzer meldet schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk",
+          "sign": "Sitzung über EDT (UDP) und schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk, wie die Praxisquelle Thomas Kötzing (2025) sie beschreibt",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix, es ist an der Zeit, drei HDX-Dinge zu beheben!"
         }
       ],
@@ -1813,8 +1812,9 @@
         },
         {
           "when": ["cause.none", "lead.cpu"],
-          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere, als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
-          "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
+          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt",
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
           "when": ["cause.none", "lead.memory"],
@@ -1828,16 +1828,16 @@
           "source": "James Rankin (Empfehlung aus der Praxis): QuickPost – Citrix UPM VHD compaction feature"
         },
         {
-          "when": ["cause.app", "lead.share"],
-          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "when": ["lead.share"],
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen",
           "precondition": "der Dateiserver dauerhaft langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
-          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
+          "source": "Microsoft: Optimizing Windows configuration for VDI desktops"
         },
         {
-          "when": ["cause.app", "lead.profile"],
-          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver, zusammen mit Änderungen am Dateiserver, 12 statt 17 Sekunden Anmeldung; welchen Anteil der Wert daran hatte, sagt sie nicht",
+          "when": ["lead.profile"],
+          "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen",
           "precondition": "der Profilspeicher dauerhaft langsam antwortet, die Betreuung des Dateiservers ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
-          "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations, part #5"
+          "source": "Microsoft: Optimizing Windows configuration for VDI desktops"
         }
       ],
       "contacts": [
@@ -2034,10 +2034,10 @@
         },
         {
           "when": ["app.outlook", "pattern.securitymodule"],
-          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund; es geht um beschädigte Daten, nicht um Geschwindigkeit",
+          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; laut Microsoft können Daten beschädigt werden, wenn eine Schutzsoftware diese Dateien prüft, während Outlook läuft; es geht um beschädigte Daten, nicht um Geschwindigkeit; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt denselben Ausschluss",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
           "sign": "Endungen .ost und .pst ohne Ausschluss",
-          "source": "John Billekens (Empfehlung aus der Praxis): Microsoft Office Outlook · AV exclusions"
+          "source": "Microsoft: Planning considerations to deploy Outlook for Windows"
         },
         {
           "when": ["app.outlook"],
@@ -2062,9 +2062,9 @@
         },
         {
           "when": ["app.teams"],
-          "text": "Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen: Microsoft nennt Oktober 2026 als Ende der Unterstützung auf Windows Server 2022 und führt Windows Server 2022 in der Tabelle der Anforderungen zugleich weiter",
+          "text": "Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen: seit Oktober 2026 unterstützt Microsoft Teams auf Windows Server 2022 nicht mehr (Hinweis auf der Seite zu Teams für VDI, Stand der Seite 25.8.2026); die Tabelle der Anforderungen derselben Seite führt Windows Server 2022 noch; vor einer Meldung an Microsoft klären, ob ein Wechsel auf Windows Server 2025 geplant ist",
           "where": "Betriebssystem des Servers und Version von Teams (Programme und Features, Informationen zur Anwendung)",
-          "sign": "Teams auf Windows Server 2022 nach Oktober 2026",
+          "sign": "Teams auf Windows Server 2022",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
@@ -2289,10 +2289,10 @@
         },
         {
           "when": ["app.outlook", "pattern.securitymodule"],
-          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt den Ausschluss mit dem Hinweis, dass ohne ihn Daten beschädigt werden können; Microsoft nennt denselben Grund; es geht um beschädigte Daten, nicht um Geschwindigkeit",
+          "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; laut Microsoft können Daten beschädigt werden, wenn eine Schutzsoftware diese Dateien prüft, während Outlook läuft; es geht um beschädigte Daten, nicht um Geschwindigkeit; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt denselben Ausschluss",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
           "sign": "Endungen .ost und .pst ohne Ausschluss",
-          "source": "John Billekens (Empfehlung aus der Praxis): Microsoft Office Outlook · AV exclusions"
+          "source": "Microsoft: Planning considerations to deploy Outlook for Windows"
         },
         {
           "when": ["app.teams"],
@@ -2307,6 +2307,13 @@
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Landschaftsinformationen der PrinTaurus GUI",
           "sign": "Client auf dem Server mit einem anderen Release als die Druckserver",
           "source": "AKI: Release Notes PrinTaurus 6.4"
+        },
+        {
+          "when": ["app.teams"],
+          "text": "Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen: seit Oktober 2026 unterstützt Microsoft Teams auf Windows Server 2022 nicht mehr (Hinweis auf der Seite zu Teams für VDI, Stand der Seite 25.8.2026); die Tabelle der Anforderungen derselben Seite führt Windows Server 2022 noch; vor einer Meldung an Microsoft klären, ob ein Wechsel auf Windows Server 2025 geplant ist",
+          "where": "Betriebssystem des Servers und Version von Teams (Programme und Features, Informationen zur Anwendung)",
+          "sign": "Teams auf Windows Server 2022",
+          "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         }
       ],
       "remedies": [
@@ -2434,8 +2441,8 @@
         },
         {
           "when": ["pattern.none"],
-          "text": "Kein Muster erkannt: feststellen, welcher Treiber oder welche Druckwarteschlange das Problem auslöst",
-          "where": "Vorfallsansicht, Abschnitt „Belege“: Treiber, Drucker und Meldungstext; Expertenansicht, Reiter „Drucken“: Treiberliste und Druckwarteschlangen; nach Thomas Kötzing (Fall von 2025) zeigt ein Speicherabbild von spoolsv.exe oder splwow64.exe vom nächsten Absturz die DLL des Druckertreibers: es mit der Betreuung der Druckserver oder dem Hersteller des Treibers sichern und auswerten lassen",
+          "text": "Kein Muster erkannt: feststellen, welcher Treiber oder welche Druckwarteschlange das Problem auslöst; nach Thomas Kötzing (Fall von 2025) zeigt ein Speicherabbild von spoolsv.exe oder splwow64.exe vom nächsten Absturz die DLL des Druckertreibers; das Speicherabbild sichert und wertet die Betreuung dieses Servers aus, bei Bedarf mit dem Hersteller des Treibers",
+          "where": "Vorfallsansicht, Abschnitt „Belege“: Treiber, Drucker und Meldungstext; Expertenansicht, Reiter „Drucken“: Treiberliste und Druckwarteschlangen",
           "sign": "Problem nur mit einem Treiber oder nur an einer Druckwarteschlange",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
@@ -2907,7 +2914,7 @@
         },
         {
           "when": ["pattern.companion"],
-          "text": "„Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten (Richtlinie, ab Version 2402 LTSR; eine Richtlinie wirkt auch auf nicht persistente Server), damit der Profilcontainer nach einem kurzen Ausfall wieder eingebunden wird; die Praxisquelle Thomas Kötzing (2026) nennt für wiederkehrende Ausfälle zusätzlich „Enable local caching for profile containers“ und dafür auf nicht persistenten Servern etwa 5 Sekunden längere Anmeldungen (seine Angabe, keine Messreihe); mit lokalem Cache auch die Vorgaben von Citrix für das neue Teams in der Profilverwaltung umsetzen und den freien Platz des Servers beobachten",
+          "text": "„Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten (Richtlinie, ab Version 2402 LTSR; eine Richtlinie wirkt auch auf nicht persistente Server), damit der Profilcontainer nach einem kurzen Ausfall wieder eingebunden wird; die Praxisquelle Thomas Kötzing (2026) nennt für wiederkehrende Ausfälle zusätzlich „Enable local caching for profile containers“; Thomas Kötzing (2026) nennt dafür auf nicht persistenten Servern etwa 5 Sekunden längere Anmeldungen (seine Angabe, keine Messreihe); mit lokalem Cache auch die Vorgaben von Citrix für das neue Teams in der Profilverwaltung umsetzen; mit lokalem Cache den freien Platz des Servers beobachten",
           "precondition": "Ausfälle des Speichers oder des Netzes zum Profilspeicher wiederkehren",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix UPM wie FSLogix nutzen – nur besser!"
         },
