@@ -412,8 +412,8 @@ ohne Server: `.\src\Start-WorkerPerfCapture.ps1 -Simulate -HealthOnly -OutputPat
 
 Die Messung zeigt, was während eines Vorfalls geschieht. Dauerzustände wie ein unübersichtlicher Treiberbestand,
 doppelt prüfende Schutzprodukte oder eine knappe Größe erkennt man auch ohne Vorfall. Das Zustandsbild liest solche
-Zustände **einmal beim Start** (vor dem ersten Messtakt, Ziel: zusammen unter einer Minute; höchstens 10 Sekunden je
-Bereich und 60 Sekunden insgesamt), speichert sie als Fakten in `health.json` und bewertet sie erst bei der
+Zustände **einmal beim Start** (vor dem ersten Messtakt, Ziel: zusammen unter einer Minute; Zeitgrenzen im Code: 10 Sekunden je
+Bereich und 60 Sekunden insgesamt, auf einem echten Server noch nicht gemessen), speichert sie als Fakten in `health.json` und bewertet sie erst bei der
 Auswertung gegen den Katalog `src/health.de.json`. Eine ältere Aufzeichnung lässt sich deshalb mit einem verbesserten
 Katalog neu auswerten. Das Zustandsbild gehört zu jeder Messung, solange sie nicht mit `-Skip Zustand` läuft; als
 Schnelllauf (`-HealthOnly`) entsteht es ohne Messung.
@@ -547,7 +547,7 @@ Durchsicht.
 |---|---|
 | `● In Ordnung` | entspricht der Empfehlung |
 | `▲ Prüfen` | weicht von einer Empfehlung ab oder überschreitet eine Faustregel |
-| `◆ Handeln` | nur in zwei Fällen: eine **harte Grenze** ist erreicht (etwa ein fast volles Laufwerk oder ein fast voller Profilcontainer), oder ein **Dauerzustand trifft mit beobachteten Ereignissen zusammen** (etwa nicht isolierte Druckertreiber und Abstürze des Druckdienstes im Rückblick) |
+| `◆ Handeln` | nur in zwei Fällen: eine **harte Grenze** ist erreicht (etwa ein fast volles Laufwerk oder ein fast voller Profilcontainer), oder ein **Dauerzustand trifft mit beobachteten Ereignissen zusammen** (etwa nicht isolierte Druckertreiber und Druckfehler im Rückblick) |
 | `○ Nicht prüfbar` | ein Wert, den die Prüfung braucht, ließ sich nicht lesen; der Grund steht dabei: die Rechte fehlten, das Produkt ist nicht installiert, das Zeitlimit war erreicht, das Lesen ist gescheitert, der Wert ist nicht gesetzt, die Kategorie fehlt wegen `-Skip`, oder die Aufzeichnung enthält die Daten nicht |
 | `– Trifft nicht zu` | die Prüfung gilt für diesen Server nicht (zum Beispiel die Anwendung ist nicht installiert); der Grund steht dabei, und die Prüfung zählt nicht |
 
@@ -628,7 +628,7 @@ nirgends „keine Vorfälle", weil nichts gemessen wurde.
 `-Mask` wirkt auf das Zustandsbild wie auf die übrige Aufzeichnung. Die Namenssammlung liest `health.json` mit: Werte,
 die Namen tragen (Pfade, Server, Freigaben, Konten), werden nach den Stufen `Personen` und `Alles` ersetzt, ebenso in
 den Kopiertexten ohne Namen. Freier Text des Servers (Meldungen von Ausnahmen, Werte, die eine Probe mit `names: true`
-liest) entfällt; der Reiter „Zustand" nennt das („Freie Texte des Servers: Meldung entfernt (maskiert)"). Anwendungs-,
+liest) entfällt; der Hinweis zur Maskierung im Kopf des Berichts nennt das. Anwendungs-,
 Dienst- und Produktnamen bleiben. Sonst gilt, was unter [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)
 steht.
 
@@ -661,7 +661,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
 | jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
-| einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; höchstens 10 s je Bereich und 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
+| einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; Zeitgrenzen im Code: 10 s je Bereich, 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
 | Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
@@ -787,8 +787,9 @@ erfundenen Server `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Da
 Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Server, ein Dauerzustand der Netzstrecke eines Benutzers)
 und vier Vorfälle aus Ereignissen (eine Anwendung stürzt bei drei Benutzern im selben Modul ab, ein Absturz
 unmittelbar nach dem Arbeitsspeicher-Engpass, ein Ausfall der Druckwarteschlange in einem Treibermodul, ein
-Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung, der Zustand des Druckens und ein erfundenes Zustandsbild
-(zwei Bereiche zum Handeln, vier zum Prüfen, fünf in Ordnung). Alle Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht. Die simulierten Abstürze vor der
+Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung, der Zustand des Druckens und ein
+erfundenes Zustandsbild (zwei Bereiche zum Handeln, vier zum Prüfen, fünf in Ordnung). Alle Namen und Werte stammen
+aus der Simulation; echte Messdaten enthält die Seite nicht. Die simulierten Abstürze vor der
 Messung nennen fast alle einen Benutzer, deshalb zeigt die Demo dort die Muster „ein Benutzer" und „gemeinsames
 Modul"; ein echter Rückblick kann Benutzer nur nennen, wenn die Ereignisse ein Konto tragen (siehe
 [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Ein simulierter Absturz ohne Sitzung und Konto zeigt, wie der
@@ -1323,8 +1324,9 @@ Je Lauf ein Ordner mit (Format 3):
 
 Die Dateien einer mit `-Skip` weggelassenen Kategorie werden nicht angelegt (etwa `processes.csv`, `procinfo.csv`,
 `procend.csv` und `inputdelay_proc.csv` ohne `Prozesse`, `health.json` und `apps.json` ohne `Zustand`). Ein Schnelllauf
-(`-HealthOnly`) schreibt nur `health.json`, `events_before.csv`, `printdrivers.csv`, `apps.json` und `meta.json`; die Basis (`ticks.csv`, `inputdelay.csv`,
-`snapshots.csv`, `sessions.csv`, `meta.json`, `thresholds.json`) entsteht immer. Das Format bleibt 3.
+(`-HealthOnly`) schreibt nur `health.json`, `events_before.csv`, `printdrivers.csv`, `apps.json` und `meta.json`. Eine
+Messung legt die Basis (`ticks.csv`, `inputdelay.csv`, `snapshots.csv`, `sessions.csv`, `meta.json`,
+`thresholds.json`) immer an. Das Format bleibt 3.
 
 `T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
 Die CSVs lassen sich auch direkt in Excel, Power BI o. ä. weiterverwenden – in Excel über den Import (*Daten → Aus
@@ -1439,7 +1441,8 @@ Die Aufzeichnung enthält personenbezogene Daten (Benutzernamen, Clientnamen, ge
 und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf. die Beteiligung
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
-Auch `health.json` enthält Namen (Pfade, Server, Freigaben, Konten, Container). Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
+Auch `health.json` enthält Namen (Pfade, Server, Freigaben, Konten, Container). Ein Bericht enthält dieselben Namen wie die
+Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
 gewählten Stufe durch Ersatznamen; was stehen bleibt und wo die Grenzen liegen, steht unter
 [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Die Aufzeichnung selbst behält die echten Namen.
 Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
