@@ -3923,6 +3923,19 @@ async function checkHealthOnly(browser, dir, scheme) {
   const qt = await quiet.page.locator('#before').innerText();
   ok(quiet.D.before.eventCount > 0 && !/Vorfälle vor|keine Vorf|^\s*keine\s*$/m.test(qt) && quiet.page.errors.length === 0, 'Rueckblick mit Ereignissen ohne Vorfall: keine Ueberschrift ohne Inhalt, kein "keine": ' + qt.slice(0, 200));
   await quiet.page.close();
+  // a health report without lookback cards has no switch of its own beside them: the switches of the area view and the incident view
+  // still choose the version of the copy (one state for all switches)
+  const qctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
+  await qctx.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+  const qp = await qctx.newPage(); qp.errors = []; qp.on('pageerror', (e) => qp.errors.push(e.message));
+  await qp.goto('file://' + patched(dir, 'report-health.html', 'report-health-nocards.html', (J) => { J.before.incidents = []; J.before.near = []; J.before.perDay = []; J.before.eventCount = 0; J.before.incidentEventCount = 0; }));
+  const qD = await qp.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent)), qArea = qD.health.areas.find((a) => a.id === 'profile');
+  await qp.click('#healthRow .htile[data-area="profile"]');
+  ok(await qp.locator('#anonSwitch').count() === 0 && await qp.locator('#avAnon').isVisible() && qArea.copy.anonymous != null && qArea.checks[0].copy.anonymous != null, 'Zustandsbericht ohne Karten: nur der Schalter der Bereichsansicht');
+  await qp.check('#avAnon'); await qp.click('#areaCopy'); await qp.locator('#area .hc-copy').first().click();
+  const qCopied = await qp.evaluate(() => window.__copied);
+  ok(qCopied.length === 2 && qCopied[0] === qArea.copy.anonymous && qCopied[1] === qArea.checks[0].copy.anonymous && qp.errors.length === 0, 'Zustandsbericht ohne Karten: "ohne Namen" in der Bereichsansicht waehlt die Fassung ohne Namen: ' + qp.errors.join(' | ') + JSON.stringify(qCopied.map((t) => t.slice(0, 80))) + JSON.stringify([qArea.copy.anonymous.slice(0, 80), qArea.checks[0].copy.anonymous.slice(0, 80)]));
+  await qctx.close();
   // the masked health report: no name in anything the page shows (nothing hidden from the text: the steps and the cards too) after the
   // visit of the views, and no name in what the buttons copy, which is the text of the masked data (Minor 5)
   const NAMES = /user0\d\d|SIM-VDA01|CONTOSO|ddc0\d|fs01|Inventarlauf|fd00:20::10/;

@@ -3229,9 +3229,12 @@ const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start
 // The texts come complete from the report data (copy.named and copy.anonymous of an incident, copyAll of the capture) and are
 // handed over unchanged. A masked report has one version; elsewhere the switch "ohne Namen" (in the band, in the incident view
 // and in the area view of the health picture, all show the same choice) takes the version without names.
-const anonChosen = () => { const b = document.getElementById("anonSwitch"); return !!b && b.checked; };
+// one state for all the switches (the band's, the card list's of the health report, the incident view's and the area view's)
+let anonState = false;
+const anonChosen = () => anonState;
 const copyVersion = (c) => !c ? "" : (anonChosen() && c.anonymous != null ? c.anonymous : c.named) || "";
 document.getElementById("guided").addEventListener("change", (ev) => {
+  if (ev.target.matches("#anonSwitch, #ivAnon, #avAnon")) anonState = ev.target.checked;
   if (ev.target.matches("#anonSwitch, #ivAnon, #avAnon")) for (const b of document.querySelectorAll("#anonSwitch, #ivAnon, #avAnon")) b.checked = ev.target.checked;
 });
 // the button says "Kopiert" for about 1.5 s and keeps its width
