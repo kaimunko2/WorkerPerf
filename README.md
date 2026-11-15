@@ -32,6 +32,11 @@
 >   (`-Mask Personen` oder `-Mask Alles`, siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)).
 >   Das ist fertig und mit der Simulation getestet; **unter Windows PowerShell 5.1 auf einem Server ist es noch
 >   nicht gelaufen.**
+> - **Zustandsbild:** Der Collector liest beim Start einmal den Zustand des Servers (Größe, Betrieb, Sitzungen, Citrix,
+>   Profilverwaltung, Drucken, Sicherheitsprodukte, Netz, Ereignisbild, Wartung, Anwendungen) und die Auswertung
+>   bewertet ihn gegen einen Katalog mit Quellen; ein Schnelllauf (`-HealthOnly`) liefert es ohne Messung (siehe
+>   [Zustandsbild](#zustandsbild)). Fertig und mit der Simulation getestet; **auf einem echten Server ist das Lesen
+>   noch nicht gelaufen** (siehe [Offene Punkte](#offene-punkte)).
 > - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Leistungsvorfällen und vier Vorfällen aus
 >   Ereignissen](https://kaimunko2.github.io/WorkerPerf/), simulierte Daten (GitHub Pages; Einrichtung siehe
 >   [Demo-Bericht](#demo-bericht)).
@@ -42,7 +47,8 @@ Messzeitraum aus: Der Bericht nennt Engpässe als **Vorfälle**, ihren Hauptveru
 Sitzung, Anwendung und Prozess, die betroffenen Sitzungen und den Vergleich mit dem Soll. Dazu kommen Störungen
 aus den Windows-Ereignisprotokollen – Abstürze und Hänger von Anwendungen, ausgefallene Dienste, Druckprobleme,
 Profil- und Systemfehler – als eigene Vorfälle mit Hinweisen auf die Ursache, die Tage vor der Messung und der
-Zustand des Druckens.
+Zustand des Druckens. Dazu liest die Messung beim Start den **Zustand des Servers** (Dauerzustände wie
+Treiberbestand, Schutzprodukte oder Reserven) und bewertet ihn gegen Empfehlungen mit Quelle.
 
 Der Bericht ist für Administratoren geschrieben, die ein gemeldetes Problem selbst eingrenzen wollen: Er öffnet mit
 einem Lagebild, ordnet die Vorfälle nach Wichtigkeit und nennt zu jedem Vorfall Prüfschritte, mögliche Abhilfe als
@@ -139,11 +145,13 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 | `-MaxSizeMB` | Höchstgröße des Aufzeichnungsordners, Standard 500 MB |
 | `-ThresholdFile` | Schwellwerte und Auslöser-Signale, Standard `thresholds.json` neben dem Skript |
 | `-EndpointFile` | Gegenstellen für die Proben, Standard `endpoints.json` neben dem Skript; fehlt sie, gibt es keine Proben |
+| `-AppsFile` | Anwendungsliste für den Bereich „Anwendungen“ des Zustandsbilds, Standard `apps.json` neben dem Skript (siehe [Die Anwendungsliste](#die-anwendungsliste-appsjson)); der Collector legt eine Kopie in den Aufzeichnungsordner |
 | `-IncludeCommandLine` | Befehlszeilen der Prozesse mitschreiben (können sensible Daten enthalten) |
 | `-Skip` | Messkategorien weglassen, etwa `-Skip Prozesse,Rueckblick` (siehe [Kategorien weglassen](#kategorien-weglassen--skip)) |
 | `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen; dasselbe wie `-Skip Citrix` |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
 | `-EventLookbackDays` | beim Start die Ereignisse so vieler Tage vor dem Start in `events_before.csv` lesen, 0–90, Standard 7; 0 schaltet den Rückblick ab, dasselbe wie `-Skip Rueckblick` |
+| `-HealthOnly` | Schnelllauf: liest nur das Zustandsbild, den Rückblick und die Treiberliste und endet, ohne Messung (siehe [Zustandsbericht ohne Messung](#zustandsbericht-ohne-messung-schnelllauf)) |
 | `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen ab statt das lokale System zu messen, mit einem simulierten Rückblick über sieben Tage, Treiberliste und Warteschlangen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
 
 #### Kategorien weglassen (`-Skip`)
@@ -165,7 +173,7 @@ nicht. Der Standard bleibt deshalb der vollständige Lauf.
 | `Rueckblick` | Ereignisse der Tage vor der Messung | einmalig beim Start | der Abschnitt „Vor der Messung" |
 | `Drucken` | Treiberliste, Zähler der Warteschlangen | die Treiberliste einmalig beim Start, die Zähler der Warteschlangen je regulärem Schnappschuss | Druckzustand, Treiberbezug bei Druckvorfällen |
 | `Gegenstellen` | Verbindungsaufbau zu den konfigurierten Zielen | ein Verbindungsaufbau je Ziel und regulärem Schnappschuss | Erreichbarkeit und Antwortzeit der Ziele |
-| `Zustand` | das Zustandsbild des Servers (`health.json`) | einmalig beim Start | `health.json`; der Bericht zeigt das Zustandsbild noch nicht an |
+| `Zustand` | das Zustandsbild des Servers (`health.json`) | einmalig beim Start, vor dem ersten Messtakt; Ziel unter einer Minute, geht nicht in die Messwerte ein | `health.json`: die Zeile „Zustand des Servers", ihre Bereichsansichten, der Reiter „Zustand" und der Hinweis „Dazu im Zustandsbild" bei Vorfällen |
 
 Regeln:
 
@@ -180,8 +188,10 @@ Regeln:
   mit einer Meldung ab, die die gültigen Werte nennt; ebenso ein Kategoriename als `-OutputPath`, den ein Leerzeichen
   statt eines Kommas dorthin bringt (`-Skip Prozesse Rueckblick`; ein Ordner dieses Namens geht als `.\Rueckblick`).
 - **`Zustand`** lässt das Zustandsbild weg, das der Collector beim Start einmal liest (`health.json`). Der Bericht
-  zeigt das Zustandsbild noch nicht an. Fehlt es wegen `-Skip`, nennt der Bericht es wie jede weggelassene Kategorie
-  unter „Nicht gemessen (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`.
+  hat dann keine Zeile „Zustand des Servers", keine Bereichsansichten und keinen Reiter „Zustand" mit Prüfungen;
+  an ihrer Stelle steht „nicht gemessen". Wie jede weggelassene Kategorie nennt ihn der Bericht unter „Nicht gemessen
+  (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`. Zusammen mit `-HealthOnly` ist `-Skip Zustand`
+  nicht erlaubt.
 - **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
   („Gemessen: Basis, …" und „Nicht gemessen (-Skip): …").
 - **Kombinationen:** Der Collector lehnt keine ab; der Bericht benennt, was fehlt. `Rueckblick` und `Ereignisse` sind
@@ -242,7 +252,8 @@ PowerShell 7); unter Windows PowerShell 5.1 kann sie dafür eine Minute oder lä
 | `-ThresholdFile` | Schwellwerte, Standard `thresholds.json` neben dem Skript |
 | `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System, Drucken), Standard `roles.json` neben dem Skript |
 | `-GuidanceFile` | Katalog der Anleitung (Situationen, Prüfschritte, Vorschläge, Texte des geführten Berichts), Standard `guidance.de.json` neben dem Skript; siehe [Der Katalog der Anleitung](#der-katalog-der-anleitung) |
-| `-AppsFile` | Liste der Standardanwendungen mit den Namen ihrer Prozesse (für die Bedingungen `app.<Anwendung>` des Katalogs), Standard `apps.json` neben dem Skript |
+| `-AppsFile` | Liste der Standardanwendungen mit den Namen ihrer Prozesse und den Proben des Zustandsbilds (für die Bedingungen `app.<Anwendung>` des Katalogs der Anleitung und den Bereich „Anwendungen“ des Zustandsbilds), Standard `apps.json` neben dem Skript; siehe [Die Anwendungsliste](#die-anwendungsliste-appsjson) |
+| `-HealthFile` | Katalog des Zustandsbilds (Bereiche, Schwellen, Prüfungen, Texte), Standard `health.de.json` neben dem Skript; siehe [Der Katalog des Zustandsbilds](#der-katalog-des-zustandsbilds-healthdejson) |
 | `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
 | `-ReportedTime` | gemeldete Uhrzeit in der Ortszeit des gemessenen Servers; Vorfälle bis 15 Minuten davor oder danach werden hervorgehoben. Liegt sie vor Beginn der Messung, nennt der Block „Vor der Messung" die Ereignisse bis 15 Minuten um diese Uhrzeit |
 | `-TopProcesses` | Zahl der Einzelprozesse je Rangliste (CPU-Zeit, Spitzenspeicher), Standard 150 |
@@ -393,7 +404,247 @@ $run = .\src\Start-WorkerPerfCapture.ps1 -Simulate -DurationMinutes 60 -OutputPa
 .\src\New-WorkerPerfReport.ps1 -Path $run
 ```
 
-Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle und Muster, die die Auswertung finden soll.
+Die Simulation legt zusätzlich `expected.json` ab: die Vorfälle und Muster, die die Auswertung finden soll. Sie liefert
+auch ein erfundenes Zustandsbild mit mehreren auffälligen Werten. Den Zustandsbericht ohne Messung gibt es ebenfalls
+ohne Server: `.\src\Start-WorkerPerfCapture.ps1 -Simulate -HealthOnly -OutputPath .\demo`.
+
+## Zustandsbild
+
+Die Messung zeigt, was während eines Vorfalls geschieht. Dauerzustände wie ein unübersichtlicher Treiberbestand,
+doppelt prüfende Schutzprodukte oder eine knappe Größe erkennt man auch ohne Vorfall. Das Zustandsbild liest solche
+Zustände **einmal beim Start** (vor dem ersten Messtakt, Ziel: zusammen unter einer Minute; höchstens 10 Sekunden je
+Bereich und 60 Sekunden insgesamt), speichert sie als Fakten in `health.json` und bewertet sie erst bei der
+Auswertung gegen den Katalog `src/health.de.json`. Eine ältere Aufzeichnung lässt sich deshalb mit einem verbesserten
+Katalog neu auswerten. Das Zustandsbild gehört zu jeder Messung, solange sie nicht mit `-Skip Zustand` läuft; als
+Schnelllauf (`-HealthOnly`) entsteht es ohne Messung.
+
+**Stand:** Das Lesen unter Windows ist geschrieben und mit nachgestellten Windows-Aufrufen getestet. Auf einem echten
+Server ist es noch nicht gelaufen; welche Werte sich dort mit den vorhandenen Rechten lesen lassen, zeigt der erste
+Lauf (siehe [Offene Punkte](#offene-punkte)).
+
+### Was gelesen wird, und was nicht
+
+Das Zustandsbild hat elf Bereiche, in dieser Reihenfolge:
+
+| Bereich | Was gelesen wird |
+|---|---|
+| Größe und Reserve | Prozessoren, Arbeitsspeicher, Auslagerungsdatei, zugesagter Speicher, Zahl der Benutzersitzungen; VMware Tools sowie Netzwerk- und Speicheradapter der VM |
+| Betrieb | letzter Start, Merker für einen ausstehenden Neustart, Datum des letzten installierten Updates, aktiver Energiesparplan, Belegung der Laufwerke |
+| Sitzungen | Sitzungen mit Zustand und Trennzeitpunkt, Richtlinien für Zeitlimits bei Leerlauf und Trennung, lokale Profile ohne angemeldeten Benutzer |
+| Citrix VDA | installierte Version, Dienste (auch der Agent von Workspace Environment Management), Registrierung am Controller, Transportart der Sitzungen, druckbezogene Citrix-Richtlinien |
+| Profilverwaltung | Version, Einstellungen aus Richtlinie und Registrierung, eingebundene Container mit Größe, Belegung und Obergrenze, Zahl der Container je Benutzer |
+| Drucken | Treiberliste aus der Aufzeichnung (Typ, Hersteller, wirksame Isolierung), Isolierungsrichtlinie, Universaltreiber, Zahl der Warteschlangen, Zustand des Betriebsprotokolls des Druckdienstes, der Client des Zuordnungswerkzeugs für Drucker (PrinTaurus SmartSpread) |
+| Sicherheitsprodukte | Status und Ausschlüsse von Microsoft Defender, geladene Filtertreiber, erkannte Produkte aus der Rollenliste (`src/roles.json`), Umfang der AppLocker-Regeln |
+| Netz und Dateiserver | SMB-Einstellungen des Servers, bestehende SMB-Verbindungen mit Protokollstand, Signierung und Verschlüsselung, DNS-Server, Netzwerkadapter, Zeitquelle |
+| Ereignisbild | Zählungen aus dem Rückblick (Abstürze, Hänger, Dienst-, Datenträger-, Druck- und Dateiserver-Ereignisse je Tag), Größe und ältester Eintrag je Protokoll |
+| Wartung in der Arbeitszeit | geplante Aufgaben mit Zeitplan, Zeitpläne für Scans und Updates, Zustand des Suchdienstes |
+| Anwendungen | je Anwendung der Anwendungsliste (zum Start Microsoft Edge, Microsoft Office und Microsoft Teams): installierte Version, maschinenweite Richtlinien und Einstellungen, zugehörige Dienste und geplante Aufgaben |
+
+**Der Collector liest nur.** Beim Lesen wird nichts geändert, gestartet, beendet oder angesprochen: kein Dienst, kein
+externes Programm, kein Cmdlet eines Fachmoduls, keine Verbindung zu einem anderen Rechner. Gelesen wird über lokale
+CIM-Abfragen, die Registrierung (nur lesend, nur `HKLM`), die Ereignisprotokolle, Dateiversionen und die lokale
+Aufgabenplanung. **Nicht gelesen werden:** Inhalte von Benutzerdateien, Postfächern und Profilen; Kennwörter,
+Schlüssel, Zertifikate; Dienstkonten; Befehlszeilen von Prozessen; nichts aus dem Active Directory und nichts von
+anderen Servern. Auch **nichts je Benutzer**: weder Einstellungen unter `HKCU` noch geladene Benutzerzweige. Ein
+Listener, dessen Zeitlimits je Benutzer gelten, erscheint deshalb mit dem Vermerk, dass diese Einstellungen der
+Benutzerkonten nicht gelesen werden. Vorausgesetzt werden Administratorrechte wie für die Messung; ohne sie sind
+einzelne Prüfungen „nicht prüfbar".
+
+Jeder Bereich wird für sich gelesen; scheitert einer oder überschreitet er sein Zeitlimit, bleiben die anderen
+unberührt, und `health.json` nennt den Grund. `health.json` enthält Fakten und Zustände, keine Einstufung, keine
+Schwelle und keinen deutschen Text.
+
+### Zielumgebung und was daraus folgt
+
+Der Katalog geht von **nicht persistenten Servern aus, die über Machine Creation Services (MCS) bereitgestellt werden
+und mehrere Sitzungen tragen** (Multi-Session). Was auf einem solchen Server selbst geändert wird, geht beim nächsten
+Neustart verloren. Daraus folgt:
+
+- Die Vorschläge zum Vorgehen nennen das **Master-Image** oder die **Richtlinie** als Ort einer Änderung, nie den
+  einzelnen Server. Empfehlungen, die nur für Provisioning Services, persistente Maschinen oder Single-Session-Desktops
+  gelten, stehen nicht im Katalog.
+- **Ereignisprotokolle reichen nur bis zum letzten Start des Servers** und mit ihnen das Ereignisbild. Der Bericht nennt
+  dazu den Zeitpunkt: „Die gelesenen Ereignisprotokolle reichen bis … zurück; letzter Start des Servers: …". Auch der
+  Stand der Updates ist der Stand des Abbilds.
+- Der Katalog bleibt allgemein formuliert („bei nicht persistenten Servern im Master-Image") und nennt keine Systeme
+  des Auftraggebers.
+
+### Die Anwendungsliste (`apps.json`)
+
+Der Bereich „Anwendungen“ wächst, **ohne dass Code geändert wird**. Die Datei `src/apps.json` beschreibt je Anwendung:
+
+| Feld | Bedeutung |
+|---|---|
+| `key` | Kennung aus Buchstaben und Ziffern, einmalig; der Katalog verweist mit ihr auf die Anwendung |
+| `label` | Bezeichnung im Bericht |
+| `processes` | Namen der Prozesse; der geführte Bericht wählt damit bei einem Vorfall die Anleitung zur verursachenden Anwendung (Bedingung `app.<Kennung>`) |
+| `installed` | Probe, an der sich erkennen lässt, ob die Anwendung installiert ist; ohne sie liest das Zustandsbild die Anwendung nicht |
+| `probes` | die Werte, die das Zustandsbild für sie liest; je Probe `id` (Buchstaben und Ziffern, mit Kleinbuchstaben beginnend), `label`, `kind` und die Angaben der Leseart |
+
+Eine Probe nutzt eine von **fünf festen Lesearten**; andere gibt es nicht, und nichts aus der Datei wird ausgeführt:
+
+| `kind` | liest (`read`) | Angaben |
+|---|---|---|
+| `registryValue` | den Wert oder sein Vorhandensein | `path` unter `HKLM\`, `name`, `names` (`true`, wenn der Wert Text des Servers tragen kann) |
+| `registryKey` | Vorhandensein (`exists`), Zahl der Werte (`valueCount`) oder der Unterschlüssel (`subKeyCount`) | `path` unter `HKLM\` |
+| `service` | Zustand (`state`), Startart (`startMode`) oder Vorhandensein | `name` oder `displayName` |
+| `scheduledTask` | Vorhandensein, Aktivierung (`enabled`), letzte oder nächste Ausführung (`lastRun`, `nextRun`) | `path` der Aufgabe, mit `\` beginnend |
+| `file` | Vorhandensein oder Version (`version`) | lokaler Pfad; in genau einem Ordnernamen darf ein `*` stehen (das neue Teams liegt in einem Ordner, dessen Name die Version enthält) |
+
+Ein Wert aus einer Quelle, die Microsoft oder der Hersteller nicht dokumentiert, trägt `"documented": false`: er
+erscheint als Rohwert im Bericht, und keine Prüfung des Katalogs darf auf ihm beruhen.
+
+**Eine Anwendung ergänzen:** erstens einen Eintrag in `src/apps.json` (oder in einer eigenen Datei, die `-AppsFile` an
+beiden Skripten nennt), zweitens Prüfungen im Katalog `src/health.de.json` (oder `-HealthFile`), die die Werte der
+Anwendung als `apps.<Kennung>.<id>` verwenden. Code ändert sich dabei nicht. Eine fehlerhafte Datei lehnt der
+Collector beim Start und die Auswertung vor dem Lesen der Aufzeichnung ab; die Meldung nennt Anwendung, Probe und Feld.
+Eine Anwendung, die nicht installiert ist, steht im Bereich als „nicht installiert", ihre Prüfungen haben das Ergebnis
+„Trifft nicht zu", und sie zählt nicht in die Einstufung.
+
+Der Collector legt eine Kopie der Liste in den Aufzeichnungsordner; gelesen wird bei der Auswertung die Datei aus
+`-AppsFile` oder `apps.json` neben dem Skript. Die Texte der Datei (Bezeichnungen, Pfade ergänzter Anwendungen) sind
+Konfiguration des Auftraggebers: in einem maskierten Bericht zählen sie als verfasster Text und werden nicht auf Namen
+geprüft. Wer einen Server- oder Firmennamen in eine Bezeichnung oder einen Pfad schreibt, findet ihn im maskierten
+Bericht wieder.
+
+### Der Katalog des Zustandsbilds (`health.de.json`)
+
+Die Bewertung steht in `src/health.de.json`, nicht im Code. Eine eigene Fassung übergibt `-HealthFile` (nur die
+Auswertung liest den Katalog). Je Prüfung enthält er:
+
+- Bereich, Titel und die Werte aus `health.json`, die sie braucht;
+- die Regeln für „Prüfen" und „Handeln", mit Schwellen als Zahlen;
+- die Befundsätze mit eingesetzten Zahlen, „Was bedeutet das?" (zwei bis drei Sätze in einfacher Sprache) und „Was
+  tun?" (Prüfschritte und übliche Abhilfen als Vorschläge, ohne kopierbare Befehle);
+- die **Quelle** mit Hersteller, Titel, Adresse und Datum, und die **Art** der Prüfung;
+- den Bezug zu Arten und Mustern von Vorfällen, zu denen die Prüfung passt.
+
+**Schwellen** stehen im Abschnitt `thresholds` des Katalogs, je mit Wert, ausgeliefertem Wert, Einheit und Bezeichnung.
+Ändert jemand einen Wert, vermerkt der Bericht das im Kopf: „Geänderte Schwellen: … (ausgeliefert …)". Die Zahl der
+nicht prüfbaren Prüfungen steht dort ebenfalls. Die Auswertung prüft den Katalog gegen die Anwendungsliste, bevor sie
+die Aufzeichnung liest; ein Eintrag, dem Quelle, Art oder Texte fehlen oder der einen unbekannten Wert verlangt, bricht
+mit einer Meldung ab, die Prüfung und Feld nennt.
+
+**Die drei Arten einer Prüfung.** Jede Prüfung nennt, worauf sie sich stützt; keine steht ohne Quelle da.
+
+| Art | Bedeutung |
+|---|---|
+| **Empfehlung des Herstellers** | steht in der Dokumentation des Herstellers des Produkts (Microsoft, Citrix, VMware, …) |
+| **Empfehlung aus der Praxis** | stammt aus einer der Quellen, die der Auftraggeber zugelassen hat (etwa das Base Image Script Framework BIS-F oder die Anleitungen auf carlstalhood.com); sie heißt nie „Empfehlung des Herstellers" |
+| **Faustregel** | weder Hersteller noch Praxisquelle nennen eine Zahl; der Katalog setzt eine vorsichtige Schwelle und nennt den Beleg, auf den sie sich bezieht |
+
+Widerspricht eine Praxisquelle dem Hersteller, gilt der Hersteller, und der Katalog nennt den Widerspruch. **Eine
+Ausnahme hat der Auftraggeber festgelegt: der Energiesparplan.** Dort gilt die Empfehlung der Praxisquellen
+(„Höchstleistung") vor der des Herstellers, weil sich die Praxisquellen ausdrücklich auf Citrix-Terminalserver und
+Betriebserfahrung beziehen und die Herstellerdokumentation nicht. Der Katalog führt die Ausnahme im Teil `precedence`
+mit dieser Begründung und nennt den Widerspruch weiter. Jede Quelle steht mit Datum in
+[docs/guidance/quellen.md](docs/guidance/quellen.md); Empfehlungen ändern sich, der Katalog braucht gelegentlich eine
+Durchsicht.
+
+**Die Einstufungen** erscheinen als Symbol und Wort, nie nur als Farbe:
+
+| Einstufung | Bedeutung |
+|---|---|
+| `● In Ordnung` | entspricht der Empfehlung |
+| `▲ Prüfen` | weicht von einer Empfehlung ab oder überschreitet eine Faustregel |
+| `◆ Handeln` | nur in zwei Fällen: eine **harte Grenze** ist erreicht (etwa ein fast volles Laufwerk oder ein fast voller Profilcontainer), oder ein **Dauerzustand trifft mit beobachteten Ereignissen zusammen** (etwa nicht isolierte Druckertreiber und Abstürze des Druckdienstes im Rückblick) |
+| `○ Nicht prüfbar` | ein Wert, den die Prüfung braucht, ließ sich nicht lesen; der Grund steht dabei: die Rechte fehlten, das Produkt ist nicht installiert, das Zeitlimit war erreicht, das Lesen ist gescheitert, der Wert ist nicht gesetzt, die Kategorie fehlt wegen `-Skip`, oder die Aufzeichnung enthält die Daten nicht |
+| `– Trifft nicht zu` | die Prüfung gilt für diesen Server nicht (zum Beispiel die Anwendung ist nicht installiert); der Grund steht dabei, und die Prüfung zählt nicht |
+
+Jeder Bereich trägt die Einstufung seiner auffälligsten Prüfung. „Nicht prüfbar" allein macht einen Bereich nicht
+auffällig, wird aber gezählt und im Kopf genannt. Eine Gesamtnote oder Punktzahl gibt es nicht. Ist das Ereignisbild
+nicht gelesen (`-Skip Rueckblick`, `-Skip Ereignisse`), sagt der Bericht bei den Prüfungen, die Ereignisse brauchen,
+dass nicht geprüft ist, ob dazu Ereignisse vorliegen.
+
+### Was der Bericht zeigt
+
+- **Die Zeile „Zustand des Servers"** steht in der geführten Ansicht zwischen den Hinweisen und der Zeitleiste: eine
+  Zusammenfassung („2 Bereiche zum Handeln, 4 zum Prüfen, 5 in Ordnung") und **elf Kacheln**, eine je Bereich, in
+  fester Reihenfolge mit Einstufung und Zählung.
+- **Die Bereichsansicht** öffnet eine Kachel. Sie zeigt die Prüfungen des Bereichs, die auffälligen zuerst; je
+  Prüfung Befund, Einstufung, „Was bedeutet das?", „Was tun?" und Quelle mit Art und Datum. Auffällige und nicht
+  prüfbare Prüfungen sind aufgeklappt, „In Ordnung" und „Trifft nicht zu" eingeklappt. Am Ende steht „Nicht
+  abgedeckt": was der Bereich nicht liest. Die Adresse hält den Bereich fest (`#v=guided&a=<Bereich>`); Esc und die
+  Zurück-Taste schließen die Ansicht, und der Fokus kehrt zur Kachel zurück. Nennt eine Adresse einen Vorfall und einen
+  Bereich, öffnet sie den Vorfall.
+- **„Dazu im Zustandsbild"** steht in der Vorfallsansicht zwischen „Was ist zu tun" und „Wer war betroffen". Der
+  Abschnitt nennt die Prüfungen, deren Bezug zur Art oder zum Muster des Vorfalls passt und die nicht „In Ordnung"
+  sind. Sie **können beitragen**; ein Beleg für die Ursache sind sie nie, und der Bericht nennt sie nicht so. Passt
+  keine, entfällt der Abschnitt. „Im Zustandsbild öffnen" führt in die Bereichsansicht; die Zurück-Taste kehrt zum
+  Vorfall zurück.
+- **Der Reiter „Zustand"** der Expertenansicht listet alle Prüfungen in einer Tabelle (Bereich, Prüfung, Wert,
+  Einstufung, Art, Quelle), filterbar nach Einstufung und Bereich, darunter „Gelesene Werte": die Rohwerte, auch
+  solche ohne Prüfung im Katalog. Das Zustandsbild ist ein Stand zum Lesezeitpunkt und gilt **unabhängig vom gewählten
+  Zeitraum**; der Reiter trägt den Vermerk „unabhängig vom gewählten Zeitraum".
+- **Kopieren:** jede Prüfung und jeder Bereich hat den Knopf „Kopieren" mit dem Schalter „ohne Namen" (siehe
+  [Kopieren](#kopieren)). Der Text nennt Server und Lesedatum, Befund, „Was bedeutet das?", die Schritte und die
+  Quelle. Ohne Namen stehen die Ersatznamen der Stufe `-Mask Alles` darin, mit Namen die echten Namen aus
+  `health.json`. Ein maskierter Bericht hat den Schalter nicht.
+- **Der Kopf** nennt Lesezeitpunkt und Dauer des Zustandsbilds, geänderte Schwellen und die Zahl der nicht
+  prüfbaren Prüfungen.
+- **Ältere Aufzeichnungen:** Fehlt `health.json`, und nennt `Skip` die Kategorie nicht, heißt das „Zustandsbild nicht
+  erfasst"; der Bericht meldet es weder als gemessen noch als weggelassen. Ist das Lesen beim Start gescheitert, sagt
+  er das; ist die Datei nicht lesbar, steht „Zustandsbild nicht lesbar". Alles andere am Bericht bleibt wie gewohnt.
+- **Weggelassen** (`-Skip Zustand`): an Stelle der Zeile und des Reiters steht „nicht gemessen", der Kopf nennt die
+  Kategorie unter „Nicht gemessen (-Skip)".
+
+### Zustandsbericht ohne Messung (Schnelllauf)
+
+Der Schnelllauf liest nur das Zustandsbild, den Rückblick und die Treiberliste und beendet sich. Er misst nichts und
+braucht deshalb nur die Zeit des Lesens.
+
+```powershell
+# auf dem Server, in einer administrativen Konsole
+.\src\Start-WorkerPerfCapture.ps1 -HealthOnly -OutputPath D:\WorkerPerf
+# danach wie gewohnt auswerten, am besten auf einem anderen Rechner
+.\src\New-WorkerPerfReport.ps1 -Path D:\WorkerPerf\VDA01_20260101-070000
+```
+
+Es entsteht ein Aufzeichnungsordner ohne Messreihen: `health.json`, `events_before.csv`, `printdrivers.csv`,
+`apps.json` und `meta.json` (`EndReason` ist `healthonly`). Die Konsole nennt Bereiche und Dauer („Zustandsbild: …");
+ließ sich das Zustandsbild nicht lesen oder schreiben, sagt die letzte Zeile „Schnelllauf beendet ohne Zustandsbild".
+
+- **Beim Schnelllauf gelten:** `-OutputPath`, `-AppsFile`, `-EventLookbackDays` und `-Skip`. Mit `-Skip Rueckblick` und
+  `-Skip Drucken` wird der Lauf kürzer; die übrigen Kategorien werden angenommen und haben keine Wirkung.
+  `-Simulate` ist ebenfalls möglich und verlangt keine Dauer.
+- **Der Collector lehnt ab:** `-Skip Zustand` (der Schnelllauf besteht aus dem Zustandsbild) und die Parameter der
+  Messung `-FastIntervalSeconds`, `-IntervalSeconds`, `-BurstIntervalSeconds`, `-BurstHoldSeconds`,
+  `-DurationMinutes`, `-MaxSizeMB`, `-ThresholdFile`, `-EndpointFile`, `-IncludeCommandLine`, `-NoCitrix` und
+  `-CitrixMetricFilter`.
+- **Das Auswertungsskript lehnt bei einem Schnelllauf ab:** `-From`, `-To`, `-FocusUser`, `-ReportedTime` und
+  `-TopProcesses`. Alle anderen Parameter gelten: `-OutFile`, `-ThresholdFile` (für die Einstellungen der Ereignisse
+  und die Bezeichnungen der Quellen), `-RoleFile`, `-GuidanceFile`, `-AppsFile`, `-HealthFile`, `-Mask` und `-MaskMapFile`.
+  `-Mask` wirkt wie bei jedem Bericht.
+
+Der Bericht trägt im Kopf „Zustandsbericht ohne Messung" und zeigt die Zeile „Zustand des Servers" mit den
+Bereichsansichten, den **Rückblick** auf die Tage „vor dem Lesen" (mit dem Hinweis, wie weit die Protokolle reichen),
+die Druckertreiber, die Abschnitte „Drucken" und „Quellen" und in der Expertenansicht nur die Reiter „Drucken", „Vor
+dem Lesen", „Zustand" und „Quellen". **Er lässt jeden Messteil weg:** Lagebild, Kennzahlen, Vorfallskarten, Zeitleiste,
+Diagramme, Kacheln und Tabellen der Messwerte, Zeitraumleiste, Sitzungen, Anwendungen, Prozesse, Messqualität. Es steht
+nirgends „keine Vorfälle", weil nichts gemessen wurde.
+
+### Maskierung des Zustandsbilds
+
+`-Mask` wirkt auf das Zustandsbild wie auf die übrige Aufzeichnung. Die Namenssammlung liest `health.json` mit: Werte,
+die Namen tragen (Pfade, Server, Freigaben, Konten), werden nach den Stufen `Personen` und `Alles` ersetzt, ebenso in
+den Kopiertexten ohne Namen. Freier Text des Servers (Meldungen von Ausnahmen, Werte, die eine Probe mit `names: true`
+liest) entfällt; der Reiter „Zustand" nennt das („Freie Texte des Servers: Meldung entfernt (maskiert)"). Anwendungs-,
+Dienst- und Produktnamen bleiben. Sonst gilt, was unter [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)
+steht.
+
+### Grenzen
+
+- **Stand zum Startzeitpunkt:** Änderungen während der Messung sieht das Zustandsbild nicht.
+- Es zeigt **Abweichungen von Empfehlungen, keine Ursachen**, und ist kein Sicherheits- oder Lizenzaudit und nicht
+  vollständig. Jeder Bereich sagt unter „Nicht abgedeckt", was er nicht liest.
+- Empfehlungen ändern sich; die Quellen tragen ein Datum, der Katalog braucht gelegentlich eine Durchsicht.
+- Für Arctic Wolf Aurora und Nexus KIS wird nur geprüft, was allgemein lesbar ist: Vorhandensein, Dienste,
+  Filtertreiber.
+- **Ein Produkt der Rollenliste ohne Dienst und ohne Filtertreiber, etwa die Fachanwendung, erkennt das Zustandsbild
+  nicht.** Es kann nur erkennen, was sich über Dienst oder Filtertreiber zeigt.
+- Nur der Server selbst: Dateiserver, Controller, VMware-Host (Virtualisierungshost) und Netzwerk erscheinen nur aus
+  seiner Sicht.
+- Das Prüfskript `Test-WorkerPerfSources.ps1` bleibt unverändert.
 
 ## Auswirkung der Messung auf den Server
 
@@ -410,6 +661,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
 | jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
+| einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; höchstens 10 s je Bereich und 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
 | Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
@@ -535,8 +787,8 @@ erfundenen Server `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Da
 Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Server, ein Dauerzustand der Netzstrecke eines Benutzers)
 und vier Vorfälle aus Ereignissen (eine Anwendung stürzt bei drei Benutzern im selben Modul ab, ein Absturz
 unmittelbar nach dem Arbeitsspeicher-Engpass, ein Ausfall der Druckwarteschlange in einem Treibermodul, ein
-Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung und der Zustand des Druckens. Alle
-Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht. Die simulierten Abstürze vor der
+Profilfehler bei einer Anmeldung), dazu sieben simulierte Tage vor der Messung, der Zustand des Druckens und ein erfundenes Zustandsbild
+(zwei Bereiche zum Handeln, vier zum Prüfen, fünf in Ordnung). Alle Namen und Werte stammen aus der Simulation; echte Messdaten enthält die Seite nicht. Die simulierten Abstürze vor der
 Messung nennen fast alle einen Benutzer, deshalb zeigt die Demo dort die Muster „ein Benutzer" und „gemeinsames
 Modul"; ein echter Rückblick kann Benutzer nur nennen, wenn die Ereignisse ein Konto tragen (siehe
 [Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Ein simulierter Absturz ohne Sitzung und Konto zeigt, wie der
@@ -573,8 +825,8 @@ Der Bericht ist eine einzelne HTML-Datei ohne nachgeladene Inhalte. Er läuft oh
 
 | Ansicht | Wofür | Inhalt |
 |---|---|---|
-| **Geführt** (Start, hell) | Was ist los, und was ist zu tun? | Lagebild, Vorfallskarten, Vorfallsansicht mit Prüfschritten und Vorschlägen, Texte zum Kopieren |
-| **Experte** (dunkel, dicht) | die Messwerte im Einzelnen | Vorfallsspalte, ein gemeinsamer Zeitraum, Kacheln, Diagramme, acht Reiter mit Tabellen |
+| **Geführt** (Start, hell) | Was ist los, und was ist zu tun? | Lagebild, die Zeile „Zustand des Servers", Vorfallskarten, Vorfallsansicht mit Prüfschritten und Vorschlägen, Bereichsansicht des Zustandsbilds, Texte zum Kopieren |
+| **Experte** (dunkel, dicht) | die Messwerte im Einzelnen | Vorfallsspalte, ein gemeinsamer Zeitraum, Kacheln, Diagramme, neun Reiter mit Tabellen |
 
 Der Bericht öffnet in der geführten Ansicht. Die zuletzt gewählte Ansicht merkt er sich für diese Datei im Browser,
 soweit der Browser das zulässt; wer die Datei später ohne Adresse öffnet, sieht diese Ansicht. Anleitung,
@@ -617,6 +869,9 @@ gemessen".
 
 Darunter folgen:
 
+- **Zustand des Servers**: die Zeile mit den elf Bereichen des Zustandsbilds, zwischen den Hinweisen und der
+  Zeitleiste (siehe [Zustandsbild](#zustandsbild)). Sie fehlt bei einer Aufzeichnung ohne Zustandsbild nicht,
+  sondern sagt, warum es fehlt.
 - **Zeitleiste der Messung** (Einzelheiten unter [Inhalte im Einzelnen](#inhalte-im-einzelnen)). Ein Klick auf eine
   Markierung öffnet die Vorfallsansicht ihres Vorfalls.
 - **Vorfallskarten** für die zehn wichtigsten Vorfälle. Zuerst stehen Engpässe, kritische Verzögerungen und Vorfälle
@@ -641,13 +896,15 @@ Vorfallsansicht. Im Kopf stehen der Titel in Alltagssprache, darunter klein die 
 Zeit, Dauer und die Einordnung in Benutzersicht. Knöpfe: „Zusammenfassung kopieren" mit dem Schalter „ohne Namen",
 „In der Expertenansicht zeigen", „Zurück zum Lagebild" (aus der Expertenansicht geöffnet: „Zurück zur
 Expertenansicht") und „Nächster Vorfall" in der Rangfolge. Nach „Wichtigsten Vorfall öffnen" rollt die Ansicht so weit,
-dass der erste Prüfschritt ganz zu sehen ist. Dann folgen immer dieselben fünf Abschnitte:
+dass der erste Prüfschritt ganz zu sehen ist. Dann folgen immer dieselben fünf Abschnitte, dazu bei Bedarf der
+Abschnitt „Dazu im Zustandsbild" (siehe [Zustandsbild](#zustandsbild)):
 
 | Abschnitt | Inhalt |
 |---|---|
 | **Was war los** | zwei bis drei Sätze, was passiert ist, und die Wirkung auf die Benutzer; daneben ein kleines Diagramm des auslösenden Messwerts mit den Schwellen und dem Vorfall getönt, mit Vor- und Nachlauf. Ein Vorfall aus Ereignissen hat kein Diagramm; ein Vorfall vor der Messung sagt, dass für diese Zeit keine Messwerte vorliegen |
 | **Wer oder was hat es verursacht** | Hauptverursacher mit Anwendung, Benutzer, Anteil und üblichem Wert, Begleiter, „Kein einzelner Hauptverursacher", wo das gilt; bei einer Verzögerung ohne Engpass, dass die Ursache vermutlich außerhalb des Servers oder in der Anwendung liegt, und was dafür spricht |
 | **Was ist zu tun** | nummerierte Prüfschritte mit „Wo:" und „Woran erkennbar:", die naheliegendsten zuerst; abgesetzt „Mögliche Abhilfe – Vorschlag" als „Wenn …, dann: …"; „An wen wenden". Unter jedem Element steht seine Quelle, wo es eine hat. Sichtbar sind die ersten fünf Prüfschritte und drei Vorschläge, der Rest hinter „Weitere … anzeigen" |
+| **Dazu im Zustandsbild** | nur wenn Prüfungen des Zustandsbilds zur Art des Vorfalls passen und nicht „In Ordnung" sind; steht zwischen „Was ist zu tun" und „Wer war betroffen" |
 | **Wer war betroffen** | die betroffenen Sitzungen mit Benutzer, Client und höchster Verzögerung; bei einem Vorfall im Umfeld die Sitzungen mit eigenem Messwert über dem Soll; bei einem Vorfall aus Ereignissen dessen Sitzungen und Benutzer; ohne gemessene Eingabeverzögerung der Satz, dass die Betroffenen nicht bestimmbar sind. Der Kopiertext zählt dieselben Sitzungen |
 | **Belege** (eingeklappt) | der Fachsatz des Vorfalls und alles, was ihn stützt (siehe [Inhalte im Einzelnen](#inhalte-im-einzelnen)), am Ende, was nicht gemessen wurde |
 
@@ -709,6 +966,7 @@ Der Bericht kopiert über die Zwischenablage des Browsers, sonst über den älte
 | **Ereignisse** | die Ereignisse des Zeitraums (die ersten 200); eine Zeile setzt den Zeitraum auf eine Minute vor bis eine Minute nach dem Ereignis |
 | **Drucken** | Druckertreiber, Warteschlangen und Druckprozesse |
 | **Vor der Messung** | die Ereignisse und Vorfälle der Tage vor der Messung |
+| **Zustand** | alle Prüfungen des Zustandsbilds mit Filtern und die gelesenen Rohwerte; gilt unabhängig vom gewählten Zeitraum (siehe [Zustandsbild](#zustandsbild)) |
 
 **Ein gemeinsamer Zeitraum.** Ein Klick auf einen Vorfall, Ziehen mit gedrückter Maustaste in einem Diagramm, eine
 Zeile der Ereignisse oder „Gesamte Messung" setzt ihn. Diagramme, Kacheln, Soll-Ist und alle Tabellen beziehen sich
@@ -1059,10 +1317,13 @@ Je Lauf ein Ordner mit (Format 3):
 | `events.csv` | je Ereignis der Messzeit | `Timestamp`, `Log`, `Source`, `EventId`, `Level`, `Group`, `Kind`, `App`, `AppVersion`, `Module`, `ModuleVersion`, `Code`, `Pid`, `SessionId`, `User`, `Printer`, `Driver`, `Service`, `Object`, `Text` (erste Zeile, höchstens 300 Zeichen) |
 | `events_before.csv` | je Ereignis der Tage vor der Messung | dieselben Spalten wie `events.csv`; ohne Sitzungsereignisse |
 | `printdrivers.csv` | je Druckertreiber, einmal beim Start | `Name`, `Manufacturer`, `Version`, `Type` (3 oder 4), `Isolation` (`none`, `shared`, `isolated`), `Files` (nur Dateinamen, mit `;` getrennt) |
+| `health.json` | einmal beim Start | das Zustandsbild: Lesezeitpunkt, Dauer und je Bereich Status und gelesene Werte mit Zustand (gelesen, nicht vorhanden, nicht lesbar mit Grund); Fakten, keine Einstufung. Fehlt die Datei und nennt `Skip` die Kategorie nicht, gilt die Aufzeichnung als „Zustandsbild nicht erfasst". Pfade, Server-, Freigaben- und Kontonamen stehen unverändert darin |
+| `apps.json` | einmal beim Start | Kopie der Anwendungsliste, mit der aufgezeichnet wurde (ohne `-Skip Zustand`) |
 | `printqueues.csv` | je Warteschlange beim ersten Auftreten und bei jedem regulären Schnappschuss, an dem sich ein Wert geändert hat | `Timestamp`, `Queue`, wartende Aufträge (`Jobs`), Zählerstände der Auftragsfehler (`JobErrors`) und der „nicht bereit"-Fehler (`NotReadyErrors`); eine Zeile gilt bis zur nächsten derselben Warteschlange. Höchstwert und Zuwachs der Fehler sind dieselben wie aus einer Zeile je Schnappschuss; für einen Ausschnitt nimmt die Auswertung die letzte Zeile davor als Ausgangsstand |
 
 Die Dateien einer mit `-Skip` weggelassenen Kategorie werden nicht angelegt (etwa `processes.csv`, `procinfo.csv`,
-`procend.csv` und `inputdelay_proc.csv` ohne `Prozesse`); die Basis (`ticks.csv`, `inputdelay.csv`,
+`procend.csv` und `inputdelay_proc.csv` ohne `Prozesse`, `health.json` und `apps.json` ohne `Zustand`). Ein Schnelllauf
+(`-HealthOnly`) schreibt nur `health.json`, `events_before.csv`, `printdrivers.csv`, `apps.json` und `meta.json`; die Basis (`ticks.csv`, `inputdelay.csv`,
 `snapshots.csv`, `sessions.csv`, `meta.json`, `thresholds.json`) entsteht immer. Das Format bleibt 3.
 
 `T` ist die laufende Nummer des Takts, `P` die des Schnappschusses, `K` verweist auf `procinfo.csv`.
@@ -1085,6 +1346,7 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
 | Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
 | Ereignisprotokolle, Rückblick, Druckertreiber, Druckwarteschlangen | Windows-Datenquelle, Quellen in der Tabelle unten | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
+| Zustandsbild (elf Bereiche, siehe [Zustandsbild](#zustandsbild)) | Windows-Datenquelle: lokale CIM-Abfragen, Registrierung (`HKLM`, lesend), Ereignisprotokolle, Dateiversionen, lokale Aufgabenplanung; Anwendungen nach `src/apps.json`; die Simulation liefert ein erfundenes Zustandsbild | geschrieben und mit nachgestellten Windows-Aufrufen getestet; **auf einem echten Server noch nicht gelaufen** |
 
 Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
 `System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
@@ -1177,7 +1439,7 @@ Die Aufzeichnung enthält personenbezogene Daten (Benutzernamen, Clientnamen, ge
 und Zeiten, optional Befehlszeilen). Vor dem Einsatz Zweck, Aufbewahrung und ggf. die Beteiligung
 von Betriebsrat/Datenschutz klären und die Ausgabeordner entsprechend schützen. Aufzeichnungen und
 Berichte gehören nicht ins Repository; `.gitignore` schließt Aufzeichnungsordner, CSV- und HTML-Dateien aus.
-Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
+Auch `health.json` enthält Namen (Pfade, Server, Freigaben, Konten, Container). Ein Bericht enthält dieselben Namen wie die Aufzeichnung. Für die Weitergabe ersetzt `-Mask` die Namen der
 gewählten Stufe durch Ersatznamen; was stehen bleibt und wo die Grenzen liegen, steht unter
 [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben). Die Aufzeichnung selbst behält die echten Namen.
 Die Zuordnungsdatei aus `-MaskMapFile` enthält ebenfalls die echten Namen und bleibt beim Ersteller;
@@ -1189,6 +1451,26 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
 
 ## Offene Punkte
 
+- **Erster echter Lauf des Zustandsbilds (Schnelllauf auf dem Test-Server):** `Start-WorkerPerfCapture.ps1 -HealthOnly`
+  in einer neuen administrativen Konsole, danach `New-WorkerPerfReport.ps1 -Path <Ordner>`; die Aufzeichnung bleibt
+  außerhalb des Repositorys. Der Baustein gilt erst danach als fertig; der Lauf führt zu einer Anpassungsrunde von
+  Lesewegen und Katalog. Zu klären:
+  - **Instanznamen der Quellen:** welche Namen die gelesenen Quellen auf einem echten Server tragen (Citrix-Dienste,
+    Richtlinienorte der Citrix-Richtlinien und der Profilverwaltung, Defender-Klassen, Filtertreiber der Produkte der
+    Rollenliste, der Ordner `WindowsApps` für Teams, DNS-Server auch über IPv6) und ob Schlüssel- oder Wertnamen Namen des
+    Auftraggebers tragen (dann wären sie freier Text des Servers).
+  - **Laufzeit des Schnelllaufs:** ob das Lesen unter einer Minute bleibt, auch mit vielen Containern und geplanten
+    Aufgaben (`DurationMs` je Bereich in `health.json`), und welche Werte unter den vorhandenen Rechten lesbar sind.
+  - **Offene Fragen aus dem Umsetzungsplan (Punkte 9 ff.), soweit noch offen:**
+    - Der Katalog des geführten Berichts hat für einen Schnelllauf keine eigene Fassung der Schritte zu Vorfällen vor
+      dem Lesen: ihr Feld `sign` und der Text der weggelassenen Kategorie `Rueckblick` sprechen von einer Messung, die
+      es im Zustandsbericht nicht gibt.
+    - Das Zuordnungswerkzeug für Drucker heißt im Katalog PrinTaurus SmartSpread; die Bezeichnungen aus seinen Release
+      Notes sind am echten Server zu bestätigen. Ob Citrix-Richtlinien Drucker zuordnen, ist aus dokumentierten Quellen
+      nicht lesbar; es gilt „möglich", solange der Dienst „Citrix Print Manager Service" läuft.
+    - Die Praxisquellen außer BIS-F und carlstalhood.com tragen in der ersten Fassung keine Prüfung; der Auftraggeber
+      entscheidet, ob ihre Kandidaten vor oder nach dem ersten echten Lauf in den Katalog kommen.
+    - Die simulierte Demo hat den Energiesparplan „Höchstleistung" und zeigt die Abweichung davon deshalb nicht.
 - **Windows-Datenquelle auf einem echten Server:** noch nicht gelaufen. Erster Schritt ist eine Kurzmessung
   (`Start-WorkerPerfCapture.ps1 -DurationMinutes 10` in einer administrativen Konsole auf einem Server mit
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut

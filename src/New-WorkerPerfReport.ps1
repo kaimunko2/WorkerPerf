@@ -15,6 +15,11 @@
     are refused for it; every other parameter applies (-OutFile, -ThresholdFile for the event settings and the labels of
     the sources, -RoleFile, -GuidanceFile, -AppsFile, -HealthFile, -Mask, -MaskMapFile).
 
+    The health picture of the server (health.json, read once at the start of the capture; none when the capture
+    left it out with -Skip Zustand or predates it) is rated against the catalogue health.de.json (-HealthFile) and
+    shown as the row "Zustand des Servers" with an area view, as the section "Dazu im Zustandsbild" of an incident
+    and as the tab "Zustand" of the expert view.
+
     Thresholds and roles are read at analysis time: a capture can be re-evaluated with changed
     files. Runs on Windows PowerShell 5.1 and PowerShell 7 (any platform).
 
