@@ -560,14 +560,15 @@ details.iv-evidence[open] > summary { margin-bottom: 14px; }
 .ht-counts { color: var(--text2); font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; max-width: 100%; }
 /* the health report (body[data-mode="health"], a quick run without a measurement): the parts of a measurement stay off the
    screen and off the paper (the band with its key figures and buttons, the hints, the timeline, the cards and the list of
-   incidents, what was measured, the quality of the capture; the range bar, the incident column, the tiles, the charts and the
-   tabs of a measurement); the expert view is one column with the tabs of printing, of the days before and of the health picture */
+   incidents, what was measured, the limits of what a measurement says; the range bar, the incident column, the tiles, the charts and the
+   tabs of a measurement); the expert view is one column with the tabs of the sources, of printing, of the days before and of the health picture; the
+   sources (their table and the failed queries) are what the quick run says about itself */
 body[data-mode="health"] #band, body[data-mode="health"] #hints, body[data-mode="health"] #tlCard, body[data-mode="health"] #aroundReported,
 body[data-mode="health"] #cardsHead, body[data-mode="health"] #cards, body[data-mode="health"] #more, body[data-mode="health"] #measured,
-body[data-mode="health"] #qualityG, body[data-mode="health"] #rangeBar, body[data-mode="health"] #incCol, body[data-mode="health"] #noFinding,
+body[data-mode="health"] #limits, body[data-mode="health"] #rangeBar, body[data-mode="health"] #incCol, body[data-mode="health"] #noFinding,
 body[data-mode="health"] #xtiles, body[data-mode="health"] #charts,
-body[data-mode="health"] #xtabs button:not([data-tab="print"]):not([data-tab="before"]):not([data-tab="health"]),
-body[data-mode="health"] #xtables > section:not(#xt-print):not(#xt-before):not(#xt-health) { display: none !important; }
+body[data-mode="health"] #xtabs button:not([data-tab="print"]):not([data-tab="before"]):not([data-tab="health"]):not([data-tab="quality"]),
+body[data-mode="health"] #xtables > section:not(#xt-print):not(#xt-before):not(#xt-health):not(#xt-quality) { display: none !important; }
 body[data-mode="health"] .xcols { grid-template-columns: minmax(0, 1fr); }
 #healthHead:focus { outline: none; }
 .before-reach { margin: 0 0 10px; overflow-wrap: anywhere; }
@@ -896,7 +897,7 @@ document.getElementById("oldBrowser").remove();
 const D = JSON.parse(document.getElementById('wp-data').textContent);
 // The report of a quick run (meta.healthOnly: meta, quality, health, before, print and skipped, no measurement) is a health report
 // (body[data-mode="health"]): the head says so, the guided view holds the row of the health picture, its area views and the
-// days before the reading, the expert view the tabs of printing, of those days and of the health picture. Every part of a
+// days before the reading, the expert view the tabs of the sources, of printing, of those days and of the health picture. Every part of a
 // measurement stays off the screen and off the paper (the style rules of the mode: a chart that is not shown is not drawn), and
 // the head, the foot and the column of incidents say nothing of a measurement. The lists of a measurement that the shared code
 // of both views reads when the page opens stand empty for it; every other field of a measurement it lacks is read where it
@@ -904,11 +905,15 @@ const D = JSON.parse(document.getElementById('wp-data').textContent);
 const HEALTH_ONLY = !!(D.meta && D.meta.healthOnly);
 if (HEALTH_ONLY) {
   document.body.dataset.mode = "health";
-  const empty = { thresholds: [], host: {}, volumes: [], shares: [], probes: [], events: [], sessions: [], apps: [], procs: [], sollIst: [] };
+  const empty = { thresholds: [], host: {}, volumes: [], shares: [], probes: [], events: [], sessions: [], apps: [], procs: [], sollIst: [], pairs: [], citrix: [] };
   for (const k of Object.keys(empty)) if (D[k] == null) D[k] = empty[k];
 }
 // "vor der Messung" of a sentence about the days before the capture; in the health report those days lie before the reading
 const BEFORE_WORD = HEALTH_ONLY ? "vor dem Lesen" : "vor der Messung";
+// the label of the button back to the guided view: the health report has no band of the situation, its start is the overview
+const BACK_GUIDED = HEALTH_ONLY ? "Zurück zur Übersicht" : "Zurück zum Lagebild";
+// the note that the days before the capture have no measured values; a quick run records none at all
+const NO_VALUES = HEALTH_ONLY ? "Ein Schnelllauf zeichnet keine Messwerte auf." : "Für diese Zeit liegen keine Messwerte vor.";
 const M = D.meta, Q = D.quality;
 // a masked report has its message texts removed: an empty one there says so (an unmasked report shows the text as it is)
 const MASKED = M.mask != null && M.mask !== "", REMOVED = "Meldung entfernt (maskiert)";
@@ -1964,8 +1969,8 @@ const procTable = table("tProcs", procCols(true), D.procs, { sort: "cpuSec", id:
 skipTab("procs", "procs");
 
 // ---------- expert view: tabs of the tables ----------
-// the health report has three of them (the others are of a measurement; the style rules of the mode hide them)
-const HEALTH_TABS = ["print", "before", "health"];
+// the health report has four of them (the others are of a measurement; the style rules of the mode hide them)
+const HEALTH_TABS = ["quality", "print", "before", "health"];
 const tabButtons = [...document.querySelectorAll("#xtabs button[data-tab]")].filter((b) => !HEALTH_ONLY || HEALTH_TABS.includes(b.dataset.tab));
 function activate(name) {
   for (const b of tabButtons) { const on = b.dataset.tab === name; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; }
@@ -1988,6 +1993,10 @@ if (HEALTH_ONLY) {
   for (const b of document.querySelectorAll("#xtabs button[data-tab]")) if (!tabButtons.includes(b)) { b.setAttribute("aria-selected", "false"); b.tabIndex = -1; }
   document.getElementById("xtab-before").firstChild.textContent = "Vor dem Lesen ";
   document.getElementById("xt-before").setAttribute("aria-label", "Vor dem Lesen");
+  // the quality section holds the table of the sources and the failed queries only: it is named after that
+  document.getElementById("xtab-quality").textContent = "Quellen";
+  document.getElementById("xt-quality").setAttribute("aria-label", "Quellen");
+  document.querySelector("#qualityG > summary h2").textContent = "Quellen";
   activate("health");
 }
 // ---------- findings ----------
@@ -2712,7 +2721,7 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
   const near = !nearShown ? "" : `<h4>Ereignisse um die gemeldete Uhrzeit ${fmtDT(FOCUS.reportedMs)} (bis 15 min davor oder danach)</h4>` +
     `<ul class="plain">${BEFORE.near.map((e, k) => `<li><span class="num">${evDT(e, true)}</span> ${esc(kindWord(e))}${e.user ? " · " + esc(e.user) : ""} · ${esc(e.source)} ${esc(e.id)}: ${esc(msgText(e.text))}${k >= nearStart ? ' <span class="tag">(während der Messung)</span>' : ""}</li>`).join("")}</ul>`;
   const head = `<div class="cardhead"><h3>${HEALTH_ONLY ? "Vor dem Lesen" : "Vor der Messung"}${NO_RANGE_H}</h3></div>
-    <p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>${BEFORE_REACH}`;
+    <p class="bnote">${NO_VALUES}</p>${BEFORE_REACH}`;
   const logs = BEFORE.logs || [];
   const logLine = !beforePartial ? "" : `<p class="bstate">Gelesen: ${esc(logs.filter((l) => l.available).map((l) => l.label).join(", ") || "–")}. ` +
     `Nicht gelesen: ${esc(logs.filter((l) => !l.available).map((l) => l.label).join(", ") || "–")}.</p>`;
@@ -2729,7 +2738,7 @@ if (BEFORE_STATUS !== "notRecorded" || nearShown) {
       <span>davon mit Vorfallsart <b>${fmt(BEFORE.incidentEventCount, 0)}</b> (Absturz, Hänger, Dienst, Drucken, Profil, System)</span>
       <span>Vorfälle <b>${fmt(BEFORE.incidents.length, 0)}</b></span></div>
     <div class="note">Sitzungsereignisse werden für diese Tage nicht gelesen.</div>
-    ${days ? `<h4>Ereignisse mit Vorfallsart je Tag</h4><div class="days">${days}</div><div class="note" style="margin-top:4px">Tage ohne solche Ereignisse sind nicht aufgeführt. Der erste und der letzte Tag des Rückblicks sind nur zum Teil erfasst: der Rückblick beginnt zur Uhrzeit des Messbeginns und endet mit ihm.</div>` : ""}
+    ${days ? `<h4>Ereignisse mit Vorfallsart je Tag</h4><div class="days">${days}</div><div class="note" style="margin-top:4px">Tage ohne solche Ereignisse sind nicht aufgeführt. Der erste und der letzte Tag des Rückblicks sind nur zum Teil erfasst: der Rückblick beginnt zur Uhrzeit des ${HEALTH_ONLY ? "Lesens" : "Messbeginns"} und endet mit ihm.</div>` : ""}
     ${incidents}
     ${near}`;
   // an entry leads into its incident view; the folded rest of a long list unfolds
@@ -2802,7 +2811,7 @@ if (PRINT.drivers.length || PRINT.queues.length || ["print.drivers", "print.queu
   ], procRows, { sort: null, id: (r) => r.k, text: () => "" });
   el.addEventListener("click", (ev) => { const b = ev.target.closest("button.lnk[data-k]"); if (b) toTable("procs", Number(b.dataset.k)); });
   el.hidden = false;
-} else document.getElementById("printNone").innerHTML = '<div class="empty">Zum Drucken enthält die Aufzeichnung nichts: keine Treiberliste und keine Zähler der Druckwarteschlangen.</div>';
+} else document.getElementById("printNone").innerHTML = `<div class="empty">Zum Drucken enthält die Aufzeichnung nichts: ${HEALTH_ONLY ? "keine Treiberliste." : "keine Treiberliste und keine Zähler der Druckwarteschlangen."}</div>`;
 
 // ---------- expert view: target table, limits, quality ----------
 let sollTable = null;
@@ -2829,7 +2838,7 @@ let sollTable = null;
 
   // a limit of a category left out with -Skip is no limit of this capture: its line stays out
   const noDrives = notMeasured("volumes"), noProcs = notMeasured("procs");
-  document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>` +
+  if (!HEALTH_ONLY) document.getElementById("limits").innerHTML = `<h3 style="margin-bottom:8px">Grenzen der Aussage</h3><ul>` +
     (noDrives || noProcs ? "" : `
     <li>Bei Datenträgern und Freigaben ist sichtbar, dass ein Ziel langsam antwortet und welche Prozesse viel I/O erzeugen, nicht aber, welcher Prozess auf welche Datei wartet.</li>`) + `
     <li>Die Eingabeverzögerung enthält keine Prozesse, die als SYSTEM laufen.</li>
@@ -2854,7 +2863,10 @@ let sollTable = null;
   // the same content twice: in the expert view and, folded, in the guided view (there its ids carry the suffix G and its
   // headings the level under the heading of the folded area: sub)
   const renderQuality = (host, sfx, head, sub) => {
-    host.innerHTML = `${head}
+    // the health report says nothing of a measurement here: the failed queries and the table of the sources only
+    const srcErrHtml = srcErr.length ? `<${sub} style="font-size:13px;margin:0 0 4px">${HEALTH_ONLY ? "Fehlgeschlagene Abfragen beim Lesen" : "Fehlgeschlagene Abfragen während der Aufzeichnung"}</${sub}><ul class="errlist" id="sourceErrors${sfx}">${srcErr.map((e) =>
+      `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "";
+    host.innerHTML = HEALTH_ONLY ? `${head}${srcErrHtml}<div class="tablewrap small"><table id="tSources${sfx}"></table></div>` : `${head}
       <div class="kv"><span>Verspätete oder ausgelassene Takte <b>${fmt(Q.skippedTicks, 0)}</b></span>
         <span>Messdauer je Takt <b>Ø ${fmt(Q.tickMsAvg, 1)} ms · Max ${fmt(Q.tickMsMax, 0)} ms</b></span>
         <span>je Schnappschuss <b>Ø ${fmt(Q.snapMsAvg, 1)} ms · Max ${fmt(Q.snapMsMax, 0)} ms</b></span>
@@ -2865,8 +2877,7 @@ let sollTable = null;
       (reads ? `<${sub} style="font-size:13px;margin:0 0 4px">Ereignisprotokolle: nicht vollständig aufgezeichnet</${sub}><ul class="errlist" id="eventReads${sfx}">${reads}</ul>` +
         '<div class="note" style="margin:0 0 10px">Die Vorfälle aus Ereignissen dieser Protokolle können zu wenige Ereignisse zählen.</div>'
         : notMeasured("events") ? `<${sub} style="font-size:13px;margin:0 0 4px">Ereignisprotokolle während der Messung</${sub}><div style="margin:0 0 10px">${notMeasured("events")}</div>` : "") +
-      (srcErr.length ? `<${sub} style="font-size:13px;margin:0 0 4px">Fehlgeschlagene Abfragen während der Aufzeichnung</${sub}><ul class="errlist" id="sourceErrors${sfx}">${srcErr.map((e) =>
-        `<li>${esc(e.label || e.source)}: <b>${fmt(e.count, 0)}</b> mal, zuerst ${e.firstMs == null ? "–" : fmtDT(e.firstMs, true)}: ${esc(e.firstMessage || (MASKED ? REMOVED : "ohne Meldung"))}</li>`).join("")}</ul>` : "") +
+      srcErrHtml +
       `<div class="tablewrap small"><table id="tSources${sfx}"></table></div>`;
     table("tSources" + sfx, [
       { key: "label", head: "Quelle" },
@@ -2877,7 +2888,7 @@ let sollTable = null;
       { key: "detail", head: "Hinweis", cls: "wrap", fmt: (v) => esc(v || "–") }
     ], Q.sources || [], { sort: null, id: (r) => r.id, text: () => "" });
   };
-  renderQuality(document.getElementById("quality"), "", `<h3 style="margin-bottom:8px">Messqualität${WHOLE_H}</h3>`, "h4");
+  renderQuality(document.getElementById("quality"), "", HEALTH_ONLY ? '<h3 style="margin-bottom:8px">Quellen</h3>' : `<h3 style="margin-bottom:8px">Messqualität${WHOLE_H}</h3>`, "h4");
   renderQuality(document.getElementById("qualityGBody"), "G", "", "h3");
 }
 
@@ -3151,7 +3162,7 @@ const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start
   // a masked report has no second version of the copy texts: the switch is left out
   document.getElementById("bandActions").innerHTML = (incById.has(LB.top) ? '<button type="button" class="btn primary" id="openTop">Wichtigsten Vorfall öffnen</button>' : "") +
     '<button type="button" class="btn" id="copyAll">Zusammenfassung kopieren</button>' +
-    (MASKED ? "" : '<label class="inline"><input type="checkbox" id="anonSwitch"> ohne Namen</label>');
+    (MASKED || HEALTH_ONLY ? "" : '<label class="inline"><input type="checkbox" id="anonSwitch"> ohne Namen</label>');
   const hintBox = document.getElementById("hints");
   hintBox.innerHTML = hints.map((h) => `<div class="hint" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(h)}</div>`).join("");
   hintBox.hidden = !hints.length;
@@ -3174,8 +3185,10 @@ const LOOKBACK = BEFORE_INC.slice().sort((a, b) => (a.rank - b.rank) || (a.start
   // the state of the lookback.
   const FOLD = 10, beforeBox = document.getElementById("beforeG");
   if (LOOKBACK.length || notMeasured("before") || HEALTH_ONLY) {
+    // the health report has no band: its switch "ohne Namen" stands where the cards with their copy buttons are
+    const anonBox = HEALTH_ONLY && !MASKED && LOOKBACK.length ? '<p><label class="inline"><input type="checkbox" id="anonSwitch"> ohne Namen</label></p>' : "";
     beforeBox.innerHTML = `<h2>${HEALTH_ONLY ? "Vor dem Lesen" : "Vor der Messung"}</h2>` + BEFORE_REACH + notMeasured("before") + (!LOOKBACK.length ? (HEALTH_ONLY && beforeState ? `<p class="bstate">${beforeState}</p>` : "")
-      : `<p class="bnote">Für diese Zeit liegen keine Messwerte vor.</p>
+      : `<p class="bnote">${NO_VALUES}</p>${anonBox}
       <div class="cards">${LOOKBACK.slice(0, FOLD).map(cardHtml).join("")}</div>` + (LOOKBACK.length <= FOLD ? "" : `<div class="cards" hidden>${LOOKBACK.slice(FOLD).map(cardHtml).join("")}</div>
       <p><button type="button" class="lnk more" id="beforeMoreG">weitere ${fmt(LOOKBACK.length - FOLD, 0)} Vorfälle anzeigen</button></p>`));
     beforeBox.hidden = false;
@@ -3380,7 +3393,6 @@ function foldRest(items, max, wrap, one, many) {
   const n = items.length - max;
   return wrap(items.slice(0, max), 0) + (n > 0 ? `<details class="morefold"><summary>${n === 1 ? one : `Weitere ${n} ${many} anzeigen`}</summary>${wrap(items.slice(max), max)}</details>` : "");
 }
-const NO_VALUES = "Für diese Zeit liegen keine Messwerte vor.";
 // A section whose part of the data is missing is left out: no heading without content, no empty paragraph or list.
 function renderIncident(id) {
   const inc = incById.get(id), g = inc.guide || {}, k = sevKey(inc.severity), terms = (g.terms || []).filter(termText);
@@ -3406,7 +3418,7 @@ function renderIncident(id) {
       <p class="iv-tech">${esc(g.tech)}</p>` : ""}
       <p class="iv-meta">${statusHtml(k)}<span class="inum">Vorfall ${inc.id}</span><span class="iv-when">${esc(incWhen(inc))}</span>${g.userView ? `<span class="iv-view">${esc(g.userView)}</span>` : ""}${flagsHtml(inc)}</p>
     </div>
-    <div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> ${ivFrom && ivFrom.view === "expert" ? "Zurück zur Expertenansicht" : "Zurück zum Lagebild"}</button>
+    <div class="iv-nav"><button type="button" class="btn" id="ivBack"><span aria-hidden="true">←</span> ${ivFrom && ivFrom.view === "expert" ? "Zurück zur Expertenansicht" : BACK_GUIDED}</button>
       <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button>${next == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div></div>${text || lead ? `
     <section class="iv-what card"><h3>Was war los</h3>
       <div class="iv-cols${text && lead ? "" : " single"}">${text ? `<div class="iv-text">${text}</div>` : ""}${lead ? `
@@ -3685,7 +3697,7 @@ function renderArea(id) {
       <p class="av-meta">${gradeHtml(a.grade)}${countsHtml(a)}</p>${a.statusText ? `
       <p class="hint av-status" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(a.statusText)}${a.error ? " " + esc(a.error) : ""}</p>` : ""}
     </div>
-    <div class="av-nav"><button type="button" class="btn" id="areaBack"><span aria-hidden="true">←</span> Zurück zum Lagebild</button>
+    <div class="av-nav"><button type="button" class="btn" id="areaBack"><span aria-hidden="true">←</span> ${BACK_GUIDED}</button>
       <div class="av-actions"><button type="button" class="btn primary" id="areaCopy">Bereich kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="avAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}</div></div>${a.intro || apps.length ? `
     <section class="av-about card">${a.intro ? `<p class="av-intro">${esc(a.intro)}</p>` : ""}${apps.length ? `
       <ul class="av-apps">${apps.map((x) => `<li class="av-app" data-app="${esc(x.key)}" data-state="${esc(x.state)}">${esc(x.text)}</li>`).join("")}</ul>` : ""}</section>` : ""}

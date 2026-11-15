@@ -78,7 +78,8 @@
     "eventMany": "{affected} Sitzungen betroffen; Zahl der Ereignisse: {count}.",
     "eventOne": "Eine Sitzung betroffen; Zahl der Ereignisse: {count}.",
     "eventNone": "Keiner Benutzersitzung zugeordnet; Zahl der Ereignisse: {count}.",
-    "before": "Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor."
+    "before": "Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor.",
+    "beforeQuick": "Vor dem Lesen aufgetreten (Zahl der Ereignisse: {count}); ein Schnelllauf zeichnet keine Messwerte auf."
   },
   "lagebild": {
     "red": "Handlungsbedarf wegen {parts}; {minutes} min mit spürbarer Störung.",

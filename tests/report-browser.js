@@ -3074,7 +3074,7 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   let hSeen = await hShown();
   await h.page.click('#healthRow .htile[data-area="vda"]'); hSeen += '\n' + await hShown(); await h.page.keyboard.press('Escape');
   await showExpert(h.page);
-  for (const t of ['print', 'before', 'health']) { await showTab(h.page, t); if (t === 'health') await h.page.click('#healthRaw summary'); hSeen += '\n' + await hShown(); }
+  for (const t of ['quality', 'print', 'before', 'health']) { await showTab(h.page, t); if (t === 'health') await h.page.click('#healthRaw summary'); hSeen += '\n' + await hShown(); }
   const hHost = hostWords(hSeen).concat(strings(h.D, []).flatMap(hostWords)), hWorker = hSeen.match(/.{0,30}(?<![A-Za-zÄÖÜäöüß])Worker(?!Perf)[A-Za-zÄÖÜäöüß-]*.{0,20}/g) || [];
   ok(h.D.meta.healthOnly && hSeen.includes('Server') && hWorker.length === 0 && hHost.length === 0 && h.page.errors.length === 0, 'Zustandsbericht: was die Seite zeigt, nennt die gemessene Maschine "Server", nie "Worker" oder "Host": ' + hWorker.concat(hHost).slice(0, 5).join(' | '));
   await h.page.close();
@@ -3824,13 +3824,12 @@ async function checkHealthLinks(browser, dir, scheme) {
 // head says so, the guided view holds the row, the area views and the lookback, the expert view the tabs of printing, of the
 // lookback and of the health picture; the lookback speaks of the reading, never of a measurement, and nothing says "no
 // incidents". The measurement parts of both views (additions 2: the ids of the finished page) are not shown.
-const MEASURE_GUIDED = ['#band', '#kpis', '#bandActions', '#hints', '#tlCard', '#timeline', '#aroundReported', '#cardsHead', '#cards', '#more', '#measured', '#qualityG'];
+const MEASURE_GUIDED = ['#band', '#kpis', '#bandActions', '#hints', '#tlCard', '#timeline', '#aroundReported', '#cardsHead', '#cards', '#more', '#measured'];
 const MEASURE_EXPERT = ['#rangeBar', '#incCol', '#incList', '#noFinding', '#xtiles', '#tiles', '#charts', '#chCpu', '#tSessions'];
 async function checkHealthOnly(browser, dir, scheme) {
   // sichtbarer Text der Seite ohne die Schritte der Anleitung eines Vorfalls (.iv-todo): sie kommen aus den Daten des gefuehrten Berichts, geprueft werden die Saetze der Seite
-  // (Task 20, concern 1: ebenso die Sicht des Benutzers auf einer Karte des Rueckblicks, .card-view: userView.before des Katalogs
-  // "Vor der Messung aufgetreten (Zahl der Ereignisse: …)", ein Text der Berichtsdaten wie die Schritte, ZB-R5)
-  const text = (p) => p.evaluate(() => { const steps = [...document.querySelectorAll('.iv-todo, .card-view')], was = steps.map((e) => e.style.display); steps.forEach((e) => { e.style.display = 'none'; });
+  // (ZB-R65: die Sicht des Benutzers auf einer Karte des Rueckblicks, .card-view, wird mitgeprueft: der Schnelllauf hat seine eigene Fassung)
+  const text = (p) => p.evaluate(() => { const steps = [...document.querySelectorAll('.iv-todo')], was = steps.map((e) => e.style.display); steps.forEach((e) => { e.style.display = 'none'; });
     const t = document.body.innerText; steps.forEach((e, i) => { e.style.display = was[i]; }); return t; });
   const { page, D } = await open(browser, path.join(dir, 'report-health.html'), scheme);
   ok(await page.evaluate(() => document.body.dataset.mode) === 'health' && (await page.locator('#reportKind').innerText()) === 'Zustandsbericht ohne Messung', 'Kopf: Zustandsbericht ohne Messung');
@@ -3839,12 +3838,21 @@ async function checkHealthOnly(browser, dir, scheme) {
   // (additions 2) the brief's ids, all of the finished page, and the other measurement parts of the guided view
   for (const sel of ['#band', '#timeline', '#cards', '#more', '#measured', '#incList', '#tiles', '#rangeBar', '#chCpu', '#tSessions'].concat(MEASURE_GUIDED)) ok(!(await page.locator(sel).first().isVisible()), 'Zustandsbericht ohne ' + sel);
   ok(!/keine Vorf|Kein Vorfall|Keine Störung/i.test(await text(page)), 'nirgends keine Vorfaelle');   // Review Focus 5
-  ok(!/vor der Messung|während der Messung/i.test(await text(page)) && /vor dem Lesen/i.test(await page.locator('#beforeG').innerText()), 'der Rueckblick spricht vom Lesen, nicht von einer Messung');
+  ok(!/vor der Messung|während der Messung|Messbeginn/i.test(await text(page)) && /vor dem Lesen/i.test(await page.locator('#beforeG').innerText()), 'der Rueckblick spricht vom Lesen, nicht von einer Messung');
+  // ZB-R65: die Karten des Rueckblicks tragen die Fassung des Schnelllaufs (Zahl der Ereignisse bleibt), ZB-R66: der Satz zu den Messwerten
+  const cardViews = await page.locator('#beforeG .card-view').allInnerTexts();
+  ok(cardViews.length === D.before.incidents.length && cardViews.every((t, k) => t === D.before.incidents[k].guide.userView) && cardViews.every((t) => /^Vor dem Lesen aufgetreten \(Zahl der Ereignisse: \d+\); ein Schnelllauf zeichnet keine Messwerte auf\.$/.test(t)), 'Karten des Rueckblicks: "Vor dem Lesen aufgetreten", ohne Messung: ' + cardViews.join(' | '));
+  const NV = 'Ein Schnelllauf zeichnet keine Messwerte auf.';
+  ok((await page.locator('#beforeG .bnote').innerText()) === NV && !/Für diese Zeit liegen keine Messwerte vor/.test(await page.locator('body').innerText()), 'Rueckblick: der Satz zu den Messwerten nennt den Schnelllauf');
+  // ZB-R66 / Minor 1: the buttons back name the overview, not a band that this report does not have
+  // Minor 2: "ohne Namen" is a visible switch next to the cards, and there is only one of it
+  ok(await page.locator('#beforeG #anonSwitch').isVisible() && await page.locator('#anonSwitch').count() === 1 && (await page.locator('label:has(#anonSwitch)').innerText()).includes('ohne Namen'), 'Schalter "ohne Namen" sichtbar bei den Karten');
   // the head names the moment of the reading and the end of the quick run, and no part of a measurement
   const sub = await page.locator('#subtitle').innerText(), foot = await page.locator('footer').innerText();
   ok(sub.includes('Schnelllauf ohne Messung') && !/Takt|Schnappschuss| bis /.test(sub) && !/Takte|Schnappschüsse|Messaufwand/.test(foot), 'Kopf und Fuss ohne Messung: ' + sub + ' | ' + foot);
   await page.click('#healthRow .htile[data-area="profile"]');
   ok(await page.locator('#area .hcheck').count() === D.health.areas.find((a) => a.id === 'profile').checks.length, 'Bereichsansicht im Zustandsbericht');
+  ok(oneLine(await page.locator('#areaBack').innerText()) === '← Zurück zur Übersicht' && !/Lagebild/.test(await page.locator('#area').innerText()), 'Bereichsansicht: Zurueck zur Uebersicht');
   await page.keyboard.press('Escape');
   // the incident of the days before the reading in its incident view: its note on the patterns speaks of the reading
   const lb = D.before.incidents[0];
@@ -3852,9 +3860,16 @@ async function checkHealthOnly(browser, dir, scheme) {
   const ivText = await page.locator('#incident').innerText();
   ok(await page.locator('#incident').isVisible() && !/vor der Messung|während der Messung/.test(await page.locator('#incident .iv-evidence').evaluate((d) => { d.open = true; return d.innerText; })), 'Vorfall vor dem Lesen: die Belege sprechen nicht von einer Messung');
   ok(ivText.length > 0 && page.errors.length === 0, 'Vorfall vor dem Lesen ohne Skriptfehler: ' + page.errors.join(' | '));
+  // ZB-R65/R66: the head of the incident view carries the quick run's wording, the sentence on the measured values stands once
+  ok((await page.locator('#incident .iv-view').innerText()) === lb.guide.userView && /^Vor dem Lesen aufgetreten/.test(lb.guide.userView) && await page.locator('#incident .bnote').count() === 0 && !/Für diese Zeit liegen keine Messwerte vor/.test(ivText) && !/vor der Messung/i.test(await page.locator('#incident .iv-meta').innerText()), 'Vorfallsansicht: Kopf mit der Fassung des Schnelllaufs');
+  ok(oneLine(await page.locator('#ivBack').innerText()) === '← Zurück zur Übersicht', 'Vorfallsansicht: Zurueck zur Uebersicht');
+  const noteEv = await open(browser, patched(dir, 'report-health.html', 'report-health-iv-note.html', (J) => { J.before.incidents[0].guide.userView = 'Aufgetreten, 1-mal.'; }), scheme);
+  await noteEv.page.locator(`#beforeG .card.inc[data-id="${noteEv.D.before.incidents[0].id}"] .card-open`).click();
+  ok((await noteEv.page.locator('#incident .bnote').innerText()) === 'Ein Schnelllauf zeichnet keine Messwerte auf.' && noteEv.page.errors.length === 0, 'Vorfallsansicht: fehlt der Satz in der Sicht des Benutzers, setzt die Seite die Fassung des Schnelllaufs');
+  await noteEv.page.close();
   await page.keyboard.press('Escape');
   await showExpert(page);
-  ok(JSON.stringify(await page.locator('#xtabs button[data-tab]').evaluateAll((e) => e.filter((x) => x.offsetParent !== null).map((x) => x.dataset.tab))) === JSON.stringify(['print', 'before', 'health']), 'Expertenansicht nur mit Drucken, Rueckblick und Zustand');
+  ok(JSON.stringify(await page.locator('#xtabs button[data-tab]').evaluateAll((e) => e.filter((x) => x.offsetParent !== null).map((x) => x.dataset.tab))) === JSON.stringify(['quality', 'print', 'before', 'health']), 'Expertenansicht nur mit Quellen, Drucken, Rueckblick und Zustand');
   ok(await page.locator('#tHealth tbody tr').count() === D.health.areas.flatMap((a) => a.checks).length, 'Tabelle der Pruefungen im Zustandsbericht');
   for (const sel of MEASURE_EXPERT) ok(!(await page.locator(sel).first().isVisible()), 'Expertenansicht des Zustandsberichts ohne ' + sel);
   for (const tab of ['print', 'before']) {
@@ -3866,9 +3881,34 @@ async function checkHealthOnly(browser, dir, scheme) {
   const pr = await page.locator('#print').innerText(), cells = (await page.locator('#tPrintDrivers tbody td:nth-child(6)').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
   ok(!/Druckwarteschlangen|Prozesse der Rolle Drucken/.test(pr) && pr.includes('„An einem Vorfall beteiligt“: aus den Vorfällen vor dem Lesen.') && cells.length === D.print.drivers.length &&
     cells.every((t, k) => t === (D.print.drivers[k].involved ? 'beteiligt' : D.print.drivers[k].possiblyInvolved ? t : 'nein (vor dem Lesen)')), 'Drucken im Zustandsbericht: Treiber, Beteiligung aus den Vorfaellen vor dem Lesen: ' + cells.join(' / '));
-  // the keyboard moves between the three tabs only
+  // ZB-R66: the note on the first and the last day names the reading, not the start of a measurement
+  await page.click('#xtabs button[data-tab=before]');
+  ok(await page.locator('#before .days').count() === 1 && (await page.locator('#before').innerText()).includes('der Rückblick beginnt zur Uhrzeit des Lesens und endet mit ihm.') && !/Messbeginn/.test(await page.locator('#before').innerText()) && (await page.locator('#before .bnote').innerText()) === 'Ein Schnelllauf zeichnet keine Messwerte auf.', 'Rueckblick in der Expertenansicht: Uhrzeit des Lesens, Satz zu den Messwerten des Schnelllaufs');
+  // ZB-R67: the quality section is the table of the sources and the failed queries, no figure of a measurement
+  const NOT_QUALITY = /Takt|Schnappschuss|Verdichtung|WorkerPerf selbst|Ereignisprotokolle während der Messung|Ereignisprotokolle: nicht vollständig|Grenzen der Aussage|Messqualität|ticks\.csv|unlesbare Zeilen|Messdauer/;
+  await page.click('#xtabs button[data-tab=quality]');
+  const xq = await page.locator('#xt-quality').innerText();
+  ok(D.quality.sources.length > 0 && await page.locator('#tSources tbody tr').count() === D.quality.sources.length && !NOT_QUALITY.test(xq) && await page.locator('#limits').isHidden() && (await page.locator('#xtab-quality').innerText()).trim() === 'Quellen', 'Quellen im Zustandsbericht: nur die Tabelle der Quellen: ' + xq.slice(0, 200));
+  const sq = await open(browser, patched(dir, 'report-health.html', 'report-health-sourceerr.html', (J) => { J.quality.sourceErrors = [{ source: 'sim.source', label: 'Sim-Quelle', count: 3, firstMs: J.meta.start, firstMessage: 'Simulierter Fehler' }]; }), scheme);
+  await showExpert(sq.page); await sq.page.click('#xtabs button[data-tab=quality]');
+  const sqt = await sq.page.locator('#xt-quality').innerText();
+  ok(/Fehlgeschlagene Abfragen beim Lesen/.test(sqt) && sqt.includes('Sim-Quelle') && sqt.includes('Simulierter Fehler') && !NOT_QUALITY.test(sqt) && !/während der Aufzeichnung/.test(sqt) && sq.page.errors.length === 0, 'Quellen im Zustandsbericht: die fehlgeschlagenen Abfragen: ' + sqt.slice(0, 200));
+  await sq.page.close();
+  // the same in the guided view, folded
+  await page.evaluate(() => window.WP.showView('guided'));
+  const gq = page.locator('#qualityG');
+  await gq.locator('summary').click();
+  const gqt = await gq.innerText();
+  ok(await gq.isVisible() && (await gq.locator('summary h2').innerText()) === 'Quellen' && await gq.locator('#tSourcesG tbody tr').count() === D.quality.sources.length && !NOT_QUALITY.test(gqt), 'Quellen in der gefuehrten Ansicht: nur die Tabelle der Quellen: ' + gqt.slice(0, 200));
+  await showExpert(page);
+  // the print sentence of a report without a list of drivers speaks of the drivers only
+  const pn = await open(browser, patched(dir, 'report-health.html', 'report-health-nodrivers.html', (J) => { J.print.drivers = []; J.skipped = []; }), scheme);
+  await showExpert(pn.page); await pn.page.click('#xtabs button[data-tab=print]');
+  ok((await pn.page.locator('#printNone').innerText()) === 'Zum Drucken enthält die Aufzeichnung nichts: keine Treiberliste.' && pn.page.errors.length === 0, 'Drucken ohne Treiberliste: kein Wort zu Warteschlangen');
+  await pn.page.close();
+  // the keyboard moves between the four tabs only
   await page.focus('#xtab-health'); await page.keyboard.press('ArrowRight');
-  ok(await page.evaluate(() => document.activeElement.id) === 'xtab-print', 'Pfeiltaste: vom letzten zum ersten der drei Reiter');
+  ok(await page.evaluate(() => document.activeElement.id) === 'xtab-quality', 'Pfeiltaste: vom letzten zum ersten der vier Reiter');
   ok(page.errors.length === 0, 'Skriptfehler: ' + page.errors.join(' | '));
   await page.close();
   // ein Rueckblick ohne Ereignisse: sein Satz steht da, aber weder "keine Vorfaelle" noch "vor der Messung"
@@ -3883,9 +3923,29 @@ async function checkHealthOnly(browser, dir, scheme) {
   const qt = await quiet.page.locator('#before').innerText();
   ok(quiet.D.before.eventCount > 0 && !/Vorfälle vor|keine Vorf|^\s*keine\s*$/m.test(qt) && quiet.page.errors.length === 0, 'Rueckblick mit Ereignissen ohne Vorfall: keine Ueberschrift ohne Inhalt, kein "keine": ' + qt.slice(0, 200));
   await quiet.page.close();
-  const m = await open(browser, path.join(dir, 'report-health-masked.html'), scheme);
-  ok(!/user0\d\d|SIM-VDA01|CONTOSO/.test(await text(m.page)) && m.page.errors.length === 0, 'maskierter Zustandsbericht ohne Namen');
-  await m.page.close();
+  // the masked health report: no name in anything the page shows (nothing hidden from the text: the steps and the cards too) after the
+  // visit of the views, and no name in what the buttons copy, which is the text of the masked data (Minor 5)
+  const NAMES = /user0\d\d|SIM-VDA01|CONTOSO|ddc0\d|fs01|Inventarlauf|fd00:20::10/;
+  const mctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: scheme });
+  await mctx.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } } }); });
+  const m = { page: await mctx.newPage() }; m.page.errors = []; m.page.on('pageerror', (e) => m.page.errors.push(e.message));
+  await m.page.goto('file://' + path.join(dir, 'report-health-masked.html'));
+  const mD = await m.page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
+  const all = () => m.page.evaluate(() => document.body.innerText + '\n' + [...document.querySelectorAll('[title], [aria-label]')].map((e) => (e.getAttribute('title') || '') + ' ' + (e.getAttribute('aria-label') || '')).join('\n'));
+  let mSeen = await all();
+  const mProf = mD.health.areas.find((a) => a.id === 'profile'), mInc = mD.before.incidents, mi = mInc[mInc.length - 1];
+  await m.page.click('#beforeG .card.inc[data-id="' + mInc[0].id + '"] .card-copy');
+  await m.page.click('#healthRow .htile[data-area="profile"]'); mSeen += await all();
+  await m.page.click('#areaCopy'); await m.page.keyboard.press('Escape');
+  await m.page.locator('#beforeG .card.inc[data-id="' + mi.id + '"] .card-open').click(); mSeen += await all();
+  await m.page.click('#ivCopy'); await m.page.keyboard.press('Escape');
+  await showExpert(m.page);
+  for (const t of ['quality', 'print', 'before', 'health']) { await showTab(m.page, t); if (t === 'health') await m.page.click('#healthRaw summary'); mSeen += await all(); }
+  const mCopied = await m.page.evaluate(() => window.__copied);
+  ok(!NAMES.test(mSeen) && m.page.errors.length === 0 && await m.page.locator('#anonSwitch').count() === 0, 'maskierter Zustandsbericht: kein Name in Karten, Bereichs- und Vorfallsansicht und Reitern: ' + (mSeen.match(NAMES) || []).join(','));
+  ok(mCopied.length === 3 && mCopied[0] === mInc[0].copy.named && mCopied[1] === mProf.copy.named && mCopied[2] === mi.copy.named && !mCopied.some((t) => NAMES.test(t) || /\\\\/.test(t)),
+    'maskierter Zustandsbericht: "Kopieren" der Karte, "Bereich kopieren" und "Zusammenfassung kopieren" geben den Text der maskierten Daten, ohne Namen: ' + mCopied.map((t) => t.slice(0, 50)).join(' | '));
+  await mctx.close();
   const n = await browser.newPage({ viewport: { width: 400, height: 800 }, colorScheme: scheme }); await n.goto('file://' + path.join(dir, 'report-health.html'));
   ok(await n.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Zustandsbericht bei schmaler Breite ohne seitliches Scrollen');
   await n.close();

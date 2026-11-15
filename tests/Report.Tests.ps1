@@ -771,7 +771,9 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         @(Get-NamesLeft $strings $alles) | Should -BeNullOrEmpty
     }
     It 'traegt den Katalog wie gelesen in die Berichtsdaten' {
-        ($D.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($Catalogue | ConvertTo-Json -Depth 20 -Compress)
+        # the quick run's wording of userView.before (ZB-R65) is not part of the data of a measurement report
+        $asRead = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json') -Apps $AppList; [void]$asRead.userView.PSObject.Properties.Remove('beforeQuick')
+        ($D.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($asRead | ConvertTo-Json -Depth 20 -Compress)
     }
     It 'maskiert den Katalog als einen gebildeten Text, auch unter Schluesseln wie Schluesselwortfelder' {   # P3-R10
         $file = Join-Path $TestDrive 'g-named.json'; $j = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json

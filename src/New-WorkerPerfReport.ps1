@@ -756,6 +756,14 @@ $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
 $appList = Read-WorkerPerfApps $AppsFile
 $healthApps = @(Read-WorkerPerfHealthApps $AppsFile)
 $guidance = Read-WorkerPerfGuidance $GuidanceFile -Apps $appList
+# the quick run's wording of userView.before (the days before the reading, no measurement): taken out of the catalogue here, so
+# that the catalogue in the data of a measurement report stays as it was; the quick path puts it in place of userView.before
+$beforeQuickView = $null
+$guidanceViews = Get-WorkerPerfField $guidance 'userView'
+if ($null -ne (Get-WorkerPerfField $guidanceViews 'beforeQuick')) {
+    $beforeQuickView = [string](Get-WorkerPerfField $guidanceViews 'beforeQuick')
+    [void]$guidanceViews.PSObject.Properties.Remove('beforeQuick')
+}
 $healthCatalogue = Read-WorkerPerfHealthCatalogue $HealthFile $healthApps
 
 Write-Host 'Lese Aufzeichnung ...'
@@ -783,6 +791,7 @@ if ($model.Meta.HealthOnly) {
     $eventSettings = Read-WorkerPerfEventSettings $ThresholdFile
     $eventOffset = [int][Math]::Round([double]$model.Meta.OffsetMinutes)
     $lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId 1 -ReportedWallMs $null
+    if ($null -ne $beforeQuickView) { $guidanceViews.before = $beforeQuickView }
     $beforeIncidents = @($lookback.Incidents)
     $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents @($beforeIncidents)
     $beforeOut = New-ReportBefore

@@ -329,7 +329,7 @@ Describe 'Katalog in src' {
             'lagebild.partSeparator' = @(); 'lagebild.notMeasured' = @('skipped')
             'lagebild.green' = @(); 'lagebild.greenSkipped' = @('skipped'); 'hints.unmeasured' = @('signals'); 'hints.skipped' = @('skipped'); 'hints.error' = @('message')
             'hints.errorNoMessage' = @(); 'hints.notFinished' = @(); 'hints.stopped' = @(); 'userView.unknown' = @('duration', 'from', 'to') }
-        foreach ($k in 'many', 'one', 'none', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before') { $allowed["userView.$k"] = @('affected', 'duration', 'from', 'to', 'count') }
+        foreach ($k in 'many', 'one', 'none', 'chronic', 'eventMany', 'eventOne', 'eventNone', 'before', 'beforeQuick') { $allowed["userView.$k"] = @('affected', 'duration', 'from', 'to', 'count') }
         foreach ($part in 'copy', 'lagebild', 'hints', 'userView') {
             foreach ($p in $Real.$part.PSObject.Properties) {
                 $name = "$part.$($p.Name)"
@@ -389,7 +389,7 @@ Describe 'Katalog in src' {
         # one event, one session: the user's view and the before-note say the number without "1-mal"
         $one = New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = 'simapp.exe'; count = 1; users = @('user003'); sessions = @(3); inSession = $true } }
         $view = (Get-Guide $one).userView; $view | Should -Be 'Eine Sitzung betroffen; Zahl der Ereignisse: 1.'; $view | Should -Not -Match '1-mal'
-        foreach ($k in 'eventMany', 'eventOne', 'eventNone', 'before') {
+        foreach ($k in 'eventMany', 'eventOne', 'eventNone', 'before', 'beforeQuick') {
             (Format-WorkerPerfGuidancePart $Real 'userView' $k @{ affected = '2'; count = '1' }) | Should -Not -Match '\d-mal' -Because $k
         }
         # the state line of the summary of the copy text: symbol, word and the sentence; the sentence brings no label of its
@@ -452,7 +452,7 @@ Describe 'Katalog in src' {
         # a text that cannot be filled falls back to userView.unknown, which therefore needs no value at all
         Get-Placeholders $Real.userView.unknown | Should -Be @()
         # an event incident has no duration when it holds one event; one from before the capture has no number of sessions
-        foreach ($k in 'eventMany', 'eventOne', 'eventNone', 'before') { Get-Placeholders $Real.userView.$k | Should -Not -Contain 'duration' -Because $k }
+        foreach ($k in 'eventMany', 'eventOne', 'eventNone', 'before', 'beforeQuick') { Get-Placeholders $Real.userView.$k | Should -Not -Contain 'duration' -Because $k }
         Get-Placeholders $Real.userView.before | Should -Not -Contain 'affected'
         (Get-Guide (New-Engpass 'cpu')).userView | Should -Match '2 Sitzungen'
         (Get-Guide (New-Inc @{ type = 'ereignis'; start = [long]1e12; end = [long]1e12; event = @{ kind = 'crash'; app = 'EXCEL.EXE'; users = @('user004'); before = $true; count = 3 } })).userView |
