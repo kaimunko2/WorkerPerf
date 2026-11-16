@@ -84,5 +84,15 @@ Describe 'Join-WorkerPerfIncidents' {
         @($in.Findings | Where-Object { $_.Resource -eq 'profile' }).Count | Should -Be 0
         $i.Count | Should -Be 2
     }
+    It 'bildet aus eingelesenen Seiten allein keinen Engpass, nur mit knappem Arbeitsspeicher' {
+        # Seiten-Einlesen ohne knappen Speicher sind Dateizugriffe (Programmstart, Protokolle), kein Speichermangel (SZ-35)
+        (Join-Test (New-TestFinding memory 100 120 -Severity 2 -SignalId 'mem.pagesin')).Count | Should -Be 0
+        $i = Join-Test (New-TestFinding memory 100 120 -Severity 2 -SignalId 'mem.pagesin') (New-TestFinding input 104 108 -SessionIndex 2)
+        $i.Count | Should -Be 1; $i[0].Type | Should -Be 'ohne-engpass'; @($i[0].Findings | Where-Object { $_.SignalId -eq 'mem.pagesin' }).Count | Should -Be 0
+        $j = Join-Test (New-TestFinding memory 100 120 -Severity 2 -SignalId 'mem.pagesin') (New-TestFinding memory 110 150 -SignalId 'mem.used')
+        $j.Count | Should -Be 1; $j[0].Type | Should -Be 'engpass'; $j[0].Lead | Should -Be 'memory'; @($j[0].Findings).Count | Should -Be 2
+        $k = Join-Test (New-TestFinding memory 100 120 -SignalId 'mem.pagesin') (New-TestFinding memory 125 150 -SignalId 'mem.commit')
+        $k.Count | Should -Be 1; @($k[0].Findings.SignalId) | Should -Be @('mem.pagesin', 'mem.commit')
+    }
     It 'liefert ohne Befunde nichts' { @(Join-WorkerPerfIncidents -Findings @()).Count | Should -Be 0 }
 }

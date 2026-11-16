@@ -207,6 +207,14 @@ function Join-WorkerPerfIncidents {
     $workerOrder = @('cpu', 'memory', 'disk', 'share', 'profile')
     $gapMs = [long]$MergeSeconds * 1000
     $chronicMs = [long]$ChronicMinutes * 60000
+    # Pages read from disk alone are no memory shortage: without a tight memory they are file reads through the memory
+    # map (program starts, event logs). Such a finding joins an incident only while a finding of mem.used or mem.commit
+    # lies within the merge gap; otherwise it stays in the findings and the table of signals, but forms no incident.
+    $tight = @(@($Findings) | Where-Object { $_.SignalId -eq 'mem.used' -or $_.SignalId -eq 'mem.commit' })
+    $Findings = @(foreach ($f in @($Findings)) {
+        if ($f.SignalId -ne 'mem.pagesin') { $f; continue }
+        foreach ($t in $tight) { if ($f.StartMs -le ($t.EndMs + $gapMs) -and $f.EndMs -ge ($t.StartMs - $gapMs)) { $f; break } }
+    })
     $chronicFindings = New-Object System.Collections.Generic.List[object]
     $coreFindings = New-Object System.Collections.Generic.List[object]
     $sessionFindings = New-Object System.Collections.Generic.List[object]

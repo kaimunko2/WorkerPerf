@@ -300,6 +300,27 @@ function Read-WorkerPerfHealthFile([string]$File) {
         Health = @{ FormatVersion = $script:WorkerPerfHealthFormatVersion; ReadAtMs = $readAtMs; OffsetMinutes = $offset; DurationMs = $duration; Areas = $areas } }
 }
 
+function Get-WorkerPerfNameUser([string]$Name) {
+    # The user a volume or ICA instance names when the capture wrote no session: a Citrix UPM mount path
+    # "...\Users\<user>_UPM_local\..." or an 'ICA Session' instance "<WinStation> (<domain>\<user>)". '' when none.
+    $m = [regex]::Match($Name, '\\Users\\([^\\]+)_UPM_local(\\|$)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($m.Success) { return $m.Groups[1].Value }
+    $m = [regex]::Match($Name, '\(([^()]*)\)\s*$')
+    if (-not $m.Success) { return '' }
+    $u = $m.Groups[1].Value
+    if ($u.Contains('\')) { $u = $u.Substring($u.LastIndexOf('\') + 1) }
+    return $u
+}
+
+function Find-WorkerPerfSessionByUser($BySid, [string]$User) {
+    # The session of a snapshot (session id -> session) that this user owns, only when exactly one does; else $null.
+    if ($null -eq $BySid -or [string]::IsNullOrEmpty($User)) { return $null }
+    $hit = $null; $n = 0
+    foreach ($e in $BySid.Values) { if ([string]::Equals([string]$e.User, $User, [StringComparison]::OrdinalIgnoreCase)) { $hit = $e; $n++ } }
+    if ($n -eq 1) { return $hit }
+    return $null
+}
+
 function Import-WorkerPerfRun {
     # -From / -To: local time of the measured server (the clock time the tick timestamps carry), like every time the
     # report shows; the Kind of the values is ignored.
@@ -875,6 +896,11 @@ function Import-WorkerPerfRun {
                     }
                     if ($null -ne $e) { $sessIdx = [int]$e.Index }
                 }
+                elseif ($f[$cKind] -eq 'profile' -and $snapOfTick -lt $nP) {
+                    # no session written (first real run, Citrix UPM): the user in the mount path names it
+                    $e = Find-WorkerPerfSessionByUser $sessBySnap[$snapOfTick] (Get-WorkerPerfNameUser $f[$cVol])
+                    if ($null -ne $e) { $sessIdx = [int]$e.Index }
+                }
                 $key = $f[$cVol] + '|' + $f[$cKind] + '|' + $sessIdx
                 $v = $volByKey[$key]
                 if ($null -eq $v) {
@@ -1045,6 +1071,11 @@ function Import-WorkerPerfRun {
                 $h = $sessBySnap[$sp]
                 if ($null -eq $h -or -not $h.ContainsKey($sid)) { continue }
                 $sessIdx = [int]$h[$sid].Index
+            }
+            elseif ($f[$cSrc] -eq 'ICA Session') {
+                # no session written (first real run): the user in the instance name "<WinStation> (<user>)" names it
+                $e = Find-WorkerPerfSessionByUser $sessBySnap[$sp] (Get-WorkerPerfNameUser $f[$cInst])
+                if ($null -ne $e) { $sessIdx = [int]$e.Index }
             }
             $metric = $f[$cMetric]
             $key = $f[$cSrc] + '|' + $sessIdx + '|' + $f[$cInst] + '|' + $metric

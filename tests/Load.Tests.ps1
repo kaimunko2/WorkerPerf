@@ -110,6 +110,19 @@ Describe 'Import-WorkerPerfRun: Sitzungen und Instanzen' {
         $p.Kind | Should -Be 'profile'; $p.SessionIndex | Should -Be 0; $p.Latency[2] | Should -Be 40; $p.Backing | Should -Be '\\fs01\upm$'
         $M.Sessions[0].ProfileVolume | Should -BeGreaterOrEqual 0
     }
+    It 'ordnet Container und ICA-Werte ohne Sitzung ueber den Benutzernamen zu (erster echter Lauf)' {
+        # der Collector schrieb fuer UPM-Container und ICA-Zaehler keine Sitzung; der Name im Pfad bzw. in der Instanz nennt sie
+        $m = Import-TestRun 'nosid' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines
+            'sessions.csv' = @(0..3 | ForEach-Object { "$_,5,alice,DOM,Active,ICA-CGP#5,PC1,,0"; "$_,7,bob,DOM,Active,ICA-CGP#7,PC2,,0"; "$_,9,bob,DOM,Disconnected,,PC3,,0" })
+            'volumes.csv' = @('2,C:\Users\alice_UPM_local\UpmTempMount,profile,,\\fs01\upm$,40,,30,0,0,0,0', '2,C:\Users\bob_UPM_local\UpmTempMount,profile,,\\fs01\upm$,41,,30,0,0,0,0', '2,C:,disk,,,2.5,12.5,10,20,0,0,0')
+            'citrix.csv' = @('1,ICA Session,,ICA-CGP 5 (DOM\alice),NetworkLatency,90', '1,ICA Session,,ICA-CGP 7 (bob),NetworkLatency,70', '1,ICA Session,,ICA-CGP 3 (carol),NetworkLatency,50') }
+        $alice = [array]::IndexOf(@($m.Sessions.User), 'alice')
+        ($m.Volumes | Where-Object Name -like '*alice*').SessionIndex | Should -Be $alice
+        ($m.Volumes | Where-Object Name -like '*bob*').SessionIndex | Should -Be -1          # bob hat zwei Sitzungen: nicht eindeutig
+        ($m.Volumes | Where-Object Name -eq 'C:').SessionIndex | Should -Be -1
+        $m.Sessions[$alice].Latency[0] | Should -Be 90
+        @($m.Citrix | Where-Object { $_.Instance -like '*carol*' }).SessionIndex | Should -Be -1
+    }
     It 'liest Proben, Ereignisse und ICA-Werte' {
         $M.Probes[0].Ms[0] | Should -Be 12.5; [double]::IsPositiveInfinity($M.Probes[0].Ms[2]) | Should -BeTrue; [double]::IsNaN($M.Probes[0].Ms[1]) | Should -BeTrue
         $M.Events.Count | Should -Be 3; $M.Scans.Count | Should -Be 1; $M.Scans[0].EndMs - $M.Scans[0].StartMs | Should -Be 4000

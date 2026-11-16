@@ -1649,7 +1649,7 @@
         "date": "2026-11-12"
       },
       "kind": "rule",
-      "relates": ["print", "delay.single"]
+      "relates": ["print"]
     },
     {
       "id": "print.kernelModeV2",
@@ -1759,7 +1759,7 @@
         "date": "2026-11-13"
       },
       "kind": "rule",
-      "relates": ["print", "delay.single"]
+      "relates": ["print"]
     },
     {
       "id": "print.operationalLogOff",
