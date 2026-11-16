@@ -114,7 +114,7 @@
     "operation.powerPlan": "Aktiver Energiesparplan",
     "operation.volumes": "Lokale Laufwerke",
     "sessions.list": "Sitzungen beim Lesen",
-    "sessions.limits": "Zeitlimits der Sitzungen je Listener",
+    "sessions.limits": "Zeitlimits der Sitzungen je Listener (Einstellung für ankommende Verbindungen)",
     "sessions.localProfiles": "Lokale Profile",
     "vda.version": "Version des VDA",
     "vda.services": "Citrix-Dienste",
@@ -298,7 +298,7 @@
     "reasonAbsent": "er ist auf diesem Server nicht gesetzt oder nicht vorhanden",
     "reasonSkipped": "{category} nicht erfasst (-Skip)",
     "reasonNotRecorded": "die Aufzeichnung enthält die Daten dafür nicht",
-    "reasonPerUser": "ein Listener lässt die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht",
+    "reasonPerUser": "die Remotedesktop-Einstellungen von Windows (der Listener) lassen die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht",
     "kindVendor": "Empfehlung des Herstellers",
     "kindPractice": "Empfehlung aus der Praxis",
     "kindRule": "Faustregel",
@@ -313,14 +313,14 @@
     "stateRead": "gelesen",
     "stateAbsent": "nicht vorhanden",
     "stateUnreadable": "nicht lesbar: {reason}",
-    "stateNotApplicable": "nicht zutreffend: {reason}",
+    "stateNotApplicable": "trifft nicht zu: {reason}",
     "copyHead": "WorkerPerf {server}, Zustandsbild vom {date}",
     "copyCheckTitle": "{area} – {title}: {grade}",
     "copyAreaTitle": "{area}: {grade}",
     "copyAreaItem": "- {title}: {grade}. {finding}",
     "copyMeaning": "Was bedeutet das?",
     "copyTodo": "Was tun?",
-    "copyStep": "{n}. {text} – Wo: {where}. Woran zu erkennen: {sign}",
+    "copyStep": "{n}. {text} – Wo: {where}. Woran erkennbar: {sign}",
     "copySource": "{kind}: {vendor}, {title} (Stand {date})",
     "copySourceRule": "Faustregel des Katalogs; Beleg: {vendor}, {title} (Stand {date})",
     "copyOk": "Weitere Prüfungen in Ordnung: {n}",
@@ -334,7 +334,7 @@
     "size.vmtoolsService": "Running = läuft, Stopped = beendet",
     "size.balloonDriver": "Running = läuft, Stopped = beendet",
     "operation.powerPlan": "highPerformance = Höchstleistung, balanced = Ausbalanciert, powerSaver = Energiesparmodus, other = eigener Plan",
-    "sessions.limits": "TimeLimitPolicy: 0 = die Zeitlimits des Benutzers gelten, 1 = die Zeitlimits des Listeners gelten",
+    "sessions.limits": "TimeLimitPolicy: 0 = die Zeitlimits des Benutzers gelten, 1 = die Zeitlimits des Listeners gelten (Listener: die Einstellungen von Windows für die ankommenden Remotedesktop-Verbindungen)",
     "vda.services": "State: Running = läuft, Stopped = beendet; StartMode: Auto = automatisch, Manual = manuell, Disabled = deaktiviert",
     "vda.desktopService": "Running = läuft, Stopped = beendet",
     "vda.wemService": "Running = läuft, Stopped = beendet",
@@ -362,12 +362,17 @@
     "maintenance.tasks": "Triggers: idle = Leerlauf, logon = Anmeldung, session = Sitzungswechsel",
     "maintenance.scanDay": "0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie",
     "maintenance.scanType": "1 = schnell, 2 = vollständig",
-    "maintenance.updateDay": "0 = täglich, 1 bis 7 = Sonntag bis Samstag",
+    "maintenance.updateDay": "0 = täglich, 1 bis 7 = Sonntag bis Samstag; ein Strich heißt: nicht gesetzt oder nicht gelesen; mit Option 4 nimmt die Prüfung ohne Tag jeden Tag an",
+    "maintenance.updateOptions": "2 = zum Herunterladen benachrichtigen und automatisch installieren, 3 = automatisch herunterladen und zur Installation benachrichtigen, 4 = automatisch herunterladen und zur geplanten Zeit installieren, 5 = lokale Administratoren wählen die Einstellung, 7 = automatisch herunterladen, zur Installation und zum Neustart benachrichtigen; ein Strich heißt: keine Richtlinie",
+    "maintenance.updateHour": "ein Strich heißt: nicht gesetzt oder nicht gelesen; mit Option 4 nimmt die Prüfung ohne Stunde nach Microsoft 03:00 Uhr an",
+    "maintenance.scanOffset": "ein Strich heißt: nicht gesetzt oder nicht gelesen; ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten",
+    "maintenance.scanRandomize": "ein Strich heißt: nicht gesetzt oder nicht gelesen; ohne Einstellung rechnet die Prüfung nach Microsoft mit zufälliger Startzeit",
+    "maintenance.scanRandomWindow": "ein Strich heißt: nicht gesetzt oder nicht gelesen; ohne Einstellung rechnet die Prüfung nach Microsoft mit 30 Minuten",
     "maintenance.searchService": "Running = läuft, Stopped = beendet",
     "maintenance.updateService": "Auto = automatisch, Manual = manuell, Disabled = deaktiviert",
-    "apps.edge.updateDefault": "0 = aus",
+    "apps.edge.updateDefault": "0 = abgeschaltet, 1 = erlaubt, 2 = nur von Hand, 3 = nur automatisch im Hintergrund; ein Strich heißt: nicht gesetzt oder nicht gelesen",
     "apps.edge.updateStable": "0 = aus",
-    "apps.edge.updateWebView2": "0 = aus",
+    "apps.edge.updateWebView2": "0 = abgeschaltet, 1 = erlaubt; für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet; ein Strich heißt: nicht gesetzt oder nicht gelesen",
     "apps.teams.disableFallback": "0 oder nicht gesetzt = an, 1 = aus, 2 = nur Audio"
   },
   "precedence": [
@@ -397,7 +402,7 @@
       "todo": [
         {
           "text": "Nachsehen, welche Sitzungen und Prozesse am meisten Speicher belegen",
-          "where": "Task-Manager auf dem Server, Registerkarten „Benutzer“ und „Details“; Expertenansicht, Reiter „Prozesse“",
+          "where": "Task-Manager auf dem Server, Registerkarten „Benutzer“ und „Details“; in einem Bericht mit Messung auch: Expertenansicht, Reiter „Prozesse“",
           "sign": "einzelne Sitzungen oder Prozesse mit auffällig viel Arbeitsspeicher"
         },
         {
@@ -466,8 +471,8 @@
       "meaning": "Reicht der Arbeitsspeicher je Sitzung nicht, lagert Windows aus, und alle Sitzungen auf dem Server werden langsamer. Der Wert teilt den Arbeitsspeicher des Servers durch die Zahl aller Benutzersitzungen beim Lesen, auch der getrennten. Die Schwelle ist ein Erfahrungswert des Katalogs und lehnt sich an Microsoft an, das für Microsoft Edge in virtuellen Desktop-Umgebungen mindestens 1 GB Arbeitsspeicher je Benutzer nennt.",
       "todo": [
         {
-          "text": "Den Wert zu einer Zeit mit üblicher Last beurteilen: in der Messung ansehen, wie viele Sitzungen liefen und wie voll der Arbeitsspeicher war",
-          "where": "Expertenansicht: Diagramme „Arbeitsspeicher des Servers“ und „Sitzungen“",
+          "text": "Den Wert zu einer Zeit mit üblicher Last beurteilen: ansehen, wie viele Sitzungen liefen und wie voll der Arbeitsspeicher war",
+          "where": "Leistungsüberwachung oder Task-Manager auf dem Server; in einem Bericht mit Messung: Expertenansicht, Diagramme „Arbeitsspeicher des Servers“ und „Sitzungen“",
           "sign": "Arbeitsspeicher über längere Zeit fast voll belegt"
         },
         {
@@ -502,7 +507,7 @@
       "todo": [
         {
           "text": "Auslastung der Prozessoren zu einer Zeit mit üblicher Last ansehen",
-          "where": "Expertenansicht: Diagramm „CPU-Auslastung des Servers“",
+          "where": "Leistungsüberwachung oder Task-Manager auf dem Server; in einem Bericht mit Messung: Expertenansicht, Diagramm „CPU-Auslastung des Servers“",
           "sign": "Auslastung über längere Zeit nahe 100 %"
         },
         {
@@ -536,8 +541,8 @@
       "meaning": "Nutzen die Programme den zugesagten Speicher auch, reicht der Arbeitsspeicher nicht für alles, und Windows lagert aus (Erläuterung des Katalogs, nicht der Quelle). Carl Stalhood nennt in seiner Prüfliste „Citrix Health Check“ (Stand Februar 2024) als Soll, dass der Arbeitsspeicher der virtuellen Maschine mindestens so groß ist wie der zugesagte Speicher, gemessen im Gastsystem, weil der Hypervisor den wirklichen Bedarf nicht zeigt. Der Wert gilt nur für den Augenblick des Lesens.",
       "todo": [
         {
-          "text": "Den Wert über die ganze Messung ansehen, nicht nur beim Lesen",
-          "where": "Expertenansicht: Diagramm „Arbeitsspeicher des Servers“",
+          "text": "Den Wert über längere Zeit ansehen, nicht nur beim Lesen",
+          "where": "Leistungsüberwachung auf dem Server; in einem Bericht mit Messung: Expertenansicht, Diagramm „Arbeitsspeicher des Servers“",
           "sign": "zugesagter Speicher liegt über längere Zeit über dem Arbeitsspeicher"
         },
         {
@@ -568,10 +573,10 @@
         "check": "Logische Prozessoren des Servers: {size.cpuLogical}, weniger als der Praxiswert von {@workerCpuMin}. Das ist ein Hinweis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Server mit sieben oder acht virtuellen Prozessoren trug in einem Lasttest von GO-EUC die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (2019, Windows Server 2016 unter ESXi 6.7 U1; für heutige Prozessoren nicht belegt). Carl Stalhood empfiehlt für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Messung.",
+      "meaning": "Ein Server mit sieben oder acht virtuellen Prozessoren trug in einem Lasttest von GO-EUC die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (2019, Windows Server 2016 unter ESXi 6.7 U1; für heutige Prozessoren nicht belegt). Carl Stalhood empfiehlt für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Last.",
       "todo": [
         {
-          "text": "Die Zahl der virtuellen Prozessoren mit dem Praxiswert und mit der Prozessorlast in der Messung vergleichen und entscheiden, ob sie bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
+          "text": "Die Zahl der virtuellen Prozessoren mit dem Praxiswert und mit der Prozessorlast über längere Zeit vergleichen und entscheiden, ob sie bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
           "where": "Maschinenkatalog in Citrix Studio oder virtuelle Maschine des Master-Image, zusammen mit dem Hypervisor-Team",
           "sign": "die Zahl ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         }
@@ -598,7 +603,7 @@
         "check": "Logische Prozessoren des Servers: {size.cpuLogical}, mehr als der Praxiswert von {@workerCpuMax}. Das ist ein Hinweis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Server mit sieben oder acht virtuellen Prozessoren trug in einem Lasttest von GO-EUC die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (2019, Windows Server 2016 unter ESXi 6.7 U1; für heutige Prozessoren nicht belegt). Carl Stalhood empfiehlt für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Messung.",
+      "meaning": "Ein Server mit sieben oder acht virtuellen Prozessoren trug in einem Lasttest von GO-EUC die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (2019, Windows Server 2016 unter ESXi 6.7 U1; für heutige Prozessoren nicht belegt). Carl Stalhood empfiehlt für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Last.",
       "todo": [
         {
           "text": "Mit dem Hypervisor-Team klären, warum die Server mehr virtuelle Prozessoren haben als den Praxiswert, und entscheiden, ob die Zahl bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
@@ -633,10 +638,10 @@
         "check": "Der Server hat {size.memTotalMB} MB Arbeitsspeicher, weniger als die Untergrenze von {@workerMemMinMB} MB (Praxiswert: 24 GB). Das ist ein Hinweis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Hat ein Server wenig Arbeitsspeicher, trägt er entsprechend weniger Sitzungen, bevor Windows auslagert (Erläuterung des Katalogs). Carl Stalhood empfiehlt für einen Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 24 bis 48 GB Arbeitsspeicher je virtueller Maschine und rechnet bei einem Schreibcache im Arbeitsspeicher (MCS mit Speicheroptimierung) den Speicher für den Cache hinzu (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob der Arbeitsspeicher reicht, zeigen die Prüfung „Arbeitsspeicher je Sitzung“ und die Messung.",
+      "meaning": "Hat ein Server wenig Arbeitsspeicher, trägt er entsprechend weniger Sitzungen, bevor Windows auslagert (Erläuterung des Katalogs). Carl Stalhood empfiehlt für einen Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 24 bis 48 GB Arbeitsspeicher je virtueller Maschine und rechnet bei einem Schreibcache im Arbeitsspeicher (MCS mit Speicheroptimierung) den Speicher für den Cache hinzu (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob der Arbeitsspeicher reicht, zeigen die Prüfung „Arbeitsspeicher je Sitzung“ und die Last.",
       "todo": [
         {
-          "text": "Den Arbeitsspeicher der Server mit dem Praxiswert, mit der Zahl der Sitzungen und mit der Speicherlast in der Messung vergleichen und entscheiden, ob er bleibt: Ist er bewusst so gewählt, ist nichts zu ändern",
+          "text": "Den Arbeitsspeicher der Server mit dem Praxiswert, mit der Zahl der Sitzungen und mit der Speicherlast über längere Zeit vergleichen und entscheiden, ob er bleibt: Ist er bewusst so gewählt, ist nichts zu ändern",
           "where": "Maschinenkatalog in Citrix Studio oder virtuelle Maschine des Master-Image, zusammen mit dem Hypervisor-Team",
           "sign": "die Größe ist bewusst so gewählt, oder das Zustandsbild meldet die Prüfung nach einer Änderung als in Ordnung"
         }
@@ -663,7 +668,7 @@
         "check": "Hauptversion der VMware Tools: {size.vmtoolsMajor} (installierte Version: {size.vmtoolsVersion}). Für die beste Leistung nennt VMware Version 12.0.0 oder neuer. Eine 0 heißt: Auf dieser VMware-VM wurden keine VMware Tools gefunden.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Für die beste Leistung nennt VMware unter Windows Server 2022 die VMware Tools ab Version 12.0.0 und als Mindeststand Version 10.3.5 (unter Windows Server 2025 sind es 12.5.0 und 11.3.0). Ein Stand ab dem Mindeststand und unter 12.0.0 (unter Windows Server 2025 unter 12.5.0) ist danach unterstützt, aber nicht der für die beste Leistung, und ein Stand unter dem Mindeststand ist danach nicht unterstützt. Die Regel prüft nur den Wert für Windows Server 2022 (Hauptversion 12), und die Version auf dem Server ist die des Master-Image.",
+      "meaning": "Veraltete VMware Tools können die Leistung des Servers mindern und werden in älteren Ständen nicht unterstützt. Für die beste Leistung nennt VMware unter Windows Server 2022 die VMware Tools ab Version 12.0.0 und als Mindeststand Version 10.3.5 (unter Windows Server 2025 sind es 12.5.0 und 11.3.0), und ein Stand ab dem Mindeststand und unter 12.0.0 (unter Windows Server 2025 unter 12.5.0) ist danach unterstützt, aber nicht der für die beste Leistung, und ein Stand unter dem Mindeststand ist danach nicht unterstützt. Die Regel prüft nur den Wert für Windows Server 2022 (Hauptversion 12).",
       "todo": [
         {
           "text": "VMware Tools im Abbild auf einen Stand ab 12.0.0 bringen (unter Windows Server 2025 ab 12.5.0); die Version mit dem Hypervisor-Team abstimmen",
@@ -693,7 +698,7 @@
         "check": "Der Ballon-Treiber der VMware Tools (vmmemctl) läuft nicht oder fehlt.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Der Ballon-Treiber ist nach VMware entscheidend für die Leistung („critical to performance“), und VMware verlangt zu prüfen, dass er eingeschaltet ist. Er wird mit den VMware Tools installiert. Nach VMware ist er für das Ballooning nötig, mit dem vSphere den Arbeitsspeicher der virtuellen Maschinen verwaltet, und unter vSphere empfohlen.",
+      "meaning": "Fehlt der Ballon-Treiber, kann der VMware-Host dem Server keinen Arbeitsspeicher geordnet entziehen, und der Server wird langsamer (nach VMware kritisch für die Leistung, und VMware verlangt zu prüfen, dass er eingeschaltet ist). Er wird mit den VMware Tools installiert. Nach VMware ist er für das Ballooning nötig, mit dem vSphere den Arbeitsspeicher der virtuellen Maschinen verwaltet, und unter vSphere empfohlen.",
       "todo": [
         {
           "text": "Nachsehen, ob die VMware Tools vollständig installiert sind und die Komponente zur Speichersteuerung dabei ist",
@@ -763,12 +768,12 @@
         "check": "Speicheradapter mit LSI-Logic-Treiber: {size.lsiControllers}. Das zählt nur bei E/A-starker Last und ist kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Der paravirtuelle SCSI-Adapter bringt nach VMware bei E/A-starker Last, besonders in SAN-Umgebungen, mehr Durchsatz bei weniger Prozessorlast, und VMware nennt den Adapter für direkt angeschlossenen Speicher (DAS) nicht geeignet. Den Adapter, den vSphere beim Anlegen der VM vorgibt, nennt VMware für die beste Leistung ausgelegt, und Laufwerke mit Snapshots oder bei überbuchtem Speicher des Hosts haben auf dem paravirtuellen Adapter nicht unbedingt die beste Leistung. Ein LSI-Logic-Treiber ist deshalb kein Fehler, die Prüfung ist nur ein Hinweis, wenn Laufwerke oder Profile langsam sind.",
+      "meaning": "Der paravirtuelle SCSI-Adapter bringt nach VMware bei starker Ein- und Ausgabelast (E/A), besonders in SAN-Umgebungen, mehr Durchsatz bei weniger Prozessorlast, und VMware nennt den Adapter für direkt angeschlossenen Speicher (DAS) nicht geeignet. Den Adapter, den vSphere beim Anlegen der VM vorgibt, nennt VMware für die beste Leistung ausgelegt, und Laufwerke mit Snapshots oder bei überbuchtem Speicher des VMware-Hosts haben dort nicht unbedingt die beste Leistung. Ein LSI-Logic-Treiber ist deshalb kein Fehler, die Prüfung ist nur ein Hinweis, wenn Laufwerke oder Profile langsam sind.",
       "todo": [
         {
           "text": "Mit dem Hypervisor-Team klären, ob die Last einen paravirtuellen SCSI-Adapter rechtfertigt",
           "where": "Einstellungen der virtuellen Maschine des Master-Image im Hypervisor",
-          "sign": "hohe Laufwerkslast in der Messung und Speicher in einer SAN-Umgebung"
+          "sign": "hohe Laufwerkslast und Speicher in einer SAN-Umgebung"
         },
         {
           "text": "Den Adapter nur im Abbild und nur mit vorher installiertem Treiber umstellen: Nach VMware startet Windows nicht mehr, wenn der Adapter des Startlaufwerks ohne den Treiber gewechselt wird",
@@ -955,7 +960,7 @@
         {
           "text": "Auf Servern aus MCS mit Speicheroptimierung auch den freien Platz des Cache-Laufwerks ansehen, wenn die Auslagerungsdatei nicht darauf liegt (nach Thomas Kötzing behält die Überlaufdatei mcsdif.vhdx bis zum Neustart ihre größte erreichte Größe)",
           "where": "Maschinenkatalog in Citrix Studio (Größe des Cache-Laufwerks), zusammen mit dem Hypervisor-Team",
-          "sign": "Cache-Laufwerk fast voll, Überlaufdatei des Schreibcaches groß"
+          "sign": "Cache-Laufwerk fast voll, Überlaufdatei des Schreibcaches (mcsdif.vhdx) groß"
         },
         {
           "text": "Reicht der Platz dauerhaft nicht, das Systemlaufwerk im Abbild vergrößern oder dort abstellen, was den Platz belegt",
@@ -985,7 +990,7 @@
         "check": "Windows hat kein Zeitlimit für getrennte Sitzungen. Ein Sitzungs-Timer aus einer Citrix-Richtlinie (möglich ab VDA 2203 LTSR CU2) wird nicht gelesen und kann trotzdem gelten.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ohne Zeitlimit bleibt eine getrennte Sitzung bestehen, bis jemand sie beendet, und belegt so lange Arbeitsspeicher (Erläuterung des Katalogs). Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für getrennte Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), und James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden (2023). Wo der Listener von Windows die Zeitlimits je Benutzer gelten lässt, gelten die Einstellungen des Benutzerkontos, und das liest das Zustandsbild nicht.",
+      "meaning": "Ohne Zeitlimit bleibt eine getrennte Sitzung bestehen, bis jemand sie beendet, und belegt so lange Arbeitsspeicher (Erläuterung des Katalogs). Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für getrennte Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), und James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden (2023). Wo die Remotedesktop-Einstellung (Listener) die Zeitlimits je Benutzer gelten lässt, gelten die des Benutzerkontos, und die liest das Zustandsbild nicht.",
       "todo": [
         {
           "text": "Zuerst prüfen, ob in einer Citrix-Richtlinie ein Sitzungs-Timer gesetzt ist (für Multi-Session-Server gibt es ihn ab VDA 2203 LTSR CU2): Dann gilt schon ein Zeitlimit, das diese Prüfung nicht sieht; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
@@ -1020,7 +1025,7 @@
         "check": "Windows hat kein Zeitlimit für Sitzungen im Leerlauf. Ein Sitzungs-Timer aus einer Citrix-Richtlinie (möglich ab VDA 2203 LTSR CU2) wird nicht gelesen und kann trotzdem gelten.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ohne Zeitlimit bleibt eine Sitzung, in der niemand mehr arbeitet, verbunden und belegt Arbeitsspeicher und Rechenleistung (Erläuterung des Katalogs). Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für aktive, aber untätige Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), und James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden bis zum Trennen (2023). Wo der Listener von Windows die Zeitlimits je Benutzer gelten lässt, gelten die Einstellungen des Benutzerkontos, und das liest das Zustandsbild nicht.",
+      "meaning": "Ohne Zeitlimit bleibt eine Sitzung, in der niemand mehr arbeitet, verbunden und belegt Arbeitsspeicher und Rechenleistung (Erläuterung des Katalogs). Carl Stalhood setzt in seinen Gruppenrichtlinien für Multi-Session-Server ein Zeitlimit für aktive, aber untätige Sitzungen von etwa drei Stunden („3 hours or similar“, Stand November 2023), und James Rankin nennt als Beispiel für einfache Benutzer zwei Stunden bis zum Trennen (2023). Wo die Remotedesktop-Einstellung (Listener) die Zeitlimits je Benutzer gelten lässt, gelten die des Benutzerkontos, und die liest das Zustandsbild nicht.",
       "todo": [
         {
           "text": "Zuerst prüfen, ob in einer Citrix-Richtlinie ein Sitzungs-Timer gesetzt ist (für Multi-Session-Server gibt es ihn ab VDA 2203 LTSR CU2): Dann gilt schon ein Zeitlimit, das diese Prüfung nicht sieht; Citrix empfiehlt, nur einen der beiden Wege zu benutzen",
@@ -1129,7 +1134,7 @@
       "findings": {
         "ok": "Kein temporäres Profil in den laufenden Sitzungen (letzter Start: {operation.lastBoot}).",
         "check": "Temporäre Profile in den laufenden Sitzungen: {sessions.tempProfiles}. Windows löscht ein temporäres Profil bei der Abmeldung: Frühere seit dem letzten Start ({operation.lastBoot}) sind nicht mehr zu sehen.",
-        "act": "Temporäre Profile in den laufenden Sitzungen: {sessions.tempProfiles}. Windows löscht ein temporäres Profil bei der Abmeldung: Frühere seit dem letzten Start ({operation.lastBoot}) sind nicht mehr zu sehen. Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Profilfehler; ob sie diese Profile betreffen, zeigt die Ereignisanzeige.",
+        "act": "Temporäre Profile in den laufenden Sitzungen: {sessions.tempProfiles}. Windows löscht ein temporäres Profil bei der Abmeldung: Frühere seit dem letzten Start ({operation.lastBoot}) sind nicht mehr zu sehen. Außerdem stehen in den Ereignissen der letzten Tage Profilfehler; ob sie diese Profile betreffen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Mit einem temporären Profil arbeitet ein Benutzer ohne seine Einstellungen, und was er im Profil ablegt, geht bei der Abmeldung verloren. Windows meldet ihn so an, wenn es sein Profil nicht laden kann, und Thomas Kötzing nennt als einen Auslöser Einträge mit der Endung .bak für den Benutzer in der Profilliste der Windows-Registrierung des Servers (2024, gezeigt mit FSLogix; die Profilliste gehört zu Windows). Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Faustregel des Katalogs also auch.",
@@ -1141,7 +1146,7 @@
         },
         {
           "text": "Herausfinden, warum das Profil nicht geladen wurde",
-          "where": "Ereignisanzeige des Servers, Anwendungsprotokoll; Protokoll der Citrix Profilverwaltung; Expertenansicht, Reiter „Ereignisse“ (Profilfehler)",
+          "where": "Ereignisanzeige des Servers, Anwendungsprotokoll; Protokoll der Citrix Profilverwaltung; in einem Bericht mit Messung auch: Expertenansicht, Reiter „Ereignisse“ (Profilfehler)",
           "sign": "Fehler beim Laden des Profils zur Zeit der Anmeldung"
         },
         {
@@ -1171,7 +1176,7 @@
       "findings": {
         "ok": "Alle Citrix-Dienste mit dem Starttyp „Automatisch“ laufen.",
         "check": "Citrix-Dienste mit dem Starttyp „Automatisch“, die nicht laufen: {vda.stoppedAutoServices}. Gelesener Zustand des Dienstes „Citrix Desktop Service“: {vda.desktopService} (Running = läuft, Stopped = beendet).",
-        "act": "Der Dienst „Citrix Desktop Service“ läuft nicht (gelesener Zustand: {vda.desktopService}; Running = läuft, Stopped = beendet). Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Ereignisse über unerwartet beendete Dienste; ob sie diesen Dienst betreffen, zeigt die Ereignisanzeige.",
+        "act": "Der Dienst „Citrix Desktop Service“ läuft nicht (gelesener Zustand: {vda.desktopService}; Running = läuft, Stopped = beendet). Außerdem stehen in den Ereignissen der letzten Tage Ereignisse über unerwartet beendete Dienste; ob sie diesen Dienst betreffen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Läuft der Dienst „Citrix Desktop Service“ nicht, bekommt der Server keine neuen Sitzungen (Folgerung des Katalogs daraus, dass dieser Dienst nach dem Citrix-Artikel CTX133769 den VDA beim Delivery Controller registriert). Die anderen Citrix-Dienste tragen einzelne Funktionen der Sitzungen, deshalb ist ein Dienst, der automatisch starten soll und nicht läuft, ein Grund nachzusehen (Faustregel des Katalogs). Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Prüfung also auch.",
@@ -1493,7 +1498,7 @@
       "findings": {
         "ok": "Der Dienst der Citrix Profilverwaltung läuft.",
         "check": "Der Dienst der Citrix Profilverwaltung läuft nicht (gelesener Zustand: {profile.service}; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden).",
-        "act": "Der Dienst der Citrix Profilverwaltung läuft nicht (gelesener Zustand: {profile.service}; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden). Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Profilfehler; ob sie mit diesem Dienst zusammenhängen, zeigt die Ereignisanzeige.",
+        "act": "Der Dienst der Citrix Profilverwaltung läuft nicht (gelesener Zustand: {profile.service}; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden). Außerdem stehen in den Ereignissen der letzten Tage Profilfehler; ob sie mit diesem Dienst zusammenhängen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Läuft der Dienst der Citrix Profilverwaltung nicht, bekommen Benutzer ihr Profil nicht, und ihre Änderungen können verloren gehen, denn die Profilverwaltung lädt und speichert die Profile bei der An- und Abmeldung. Stehen außerdem Profilfehler in den Ereignissen, liegt nahe, dass Benutzer schon betroffen sind (Faustregel des Katalogs). Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Prüfung also auch.",
@@ -1535,10 +1540,10 @@
       "findings": {
         "ok": "Kein Druckertreiber läuft ohne Isolierung im Prozess des Dienstes Druckwarteschlange (Spooler).",
         "check": "Druckertreiber, die ohne Isolierung im Prozess des Dienstes Druckwarteschlange (Spooler) laufen: {print.driversInSpooler}.",
-        "act": "Druckertreiber, die ohne Isolierung im Prozess des Dienstes Druckwarteschlange (Spooler) laufen: {print.driversInSpooler}. Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Ereignisse zum Drucken; ob sie diese Treiber betreffen, zeigt die Ereignisanzeige.",
+        "act": "Druckertreiber, die ohne Isolierung im Prozess des Dienstes Druckwarteschlange (Spooler) laufen: {print.driversInSpooler}. Außerdem stehen in den Ereignissen der letzten Tage Ereignisse zum Drucken; ob sie diese Treiber betreffen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Hält ein fehlerhafter Druckertreiber den Dienst Druckwarteschlange an, kann auf dem Server niemand mehr drucken (Erläuterung des Katalogs). Nach Microsoft verhindert die Isolierung eines Treibers, dass ein Fehler in ihm diesen Dienst anhält, und Windows lässt einen Treiber im Prozess des Dienstes laufen, wenn er die Isolierung nicht ausdrücklich unterstützt, und die Prüfung ist eine Faustregel des Katalogs. Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Prüfung also auch.",
+      "meaning": "Hält ein fehlerhafter Druckertreiber den Dienst Druckwarteschlange an, kann auf dem Server niemand mehr drucken (Erläuterung des Katalogs). Nach Microsoft verhindert die Isolierung eines Treibers, dass ein Fehler in ihm diesen Dienst anhält, und ein Treiber, der die Isolierung nicht ausdrücklich unterstützt, läuft deshalb im Prozess des Dienstes. Die Prüfung ist eine Faustregel des Katalogs, und auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick also auch.",
       "todo": [
         {
           "text": "Nachsehen, welche Treiber ohne Isolierung laufen",
@@ -1551,7 +1556,7 @@
           "sign": "auf dem Testserver wird mit dem Treiber ohne Fehler gedruckt; Zustandsbild zeigt keinen Treiber ohne Isolierung mehr"
         },
         {
-          "text": "Stürzt der Dienst Druckwarteschlange wiederholt ab, den beteiligten Treiber ermitteln und im Abbild durch einen neueren ersetzen (Thomas Kötzing empfahl 2025 in einem solchen Fall mit einem Treiber von Konica Minolta aus dem Jahr 2021 einen neueren 64-Bit-Treiber und die Isolierung per Gruppenrichtlinie)",
+          "text": "Stürzt der Dienst Druckwarteschlange wiederholt ab, den beteiligten Treiber ermitteln und im Abbild durch einen neueren ersetzen (Thomas Kötzing empfahl 2025 in einem solchen Fall mit einem Treiber eines Druckerherstellers aus dem Jahr 2021 einen neueren 64-Bit-Treiber und die Isolierung per Gruppenrichtlinie)",
           "where": "Ereignisanzeige des Servers, Anwendungsprotokoll; Master-Image",
           "sign": "der Name des Treibers steht im Absturzereignis oder im Speicherabbild (Dump) des Prozesses"
         }
@@ -1581,7 +1586,7 @@
       "findings": {
         "ok": "Die Richtlinie zur Treiberisolierung schaltet die Isolierung nicht ab (gelesener Wert: {print.isolationExecution}; 0 = Isolierung aus, 1 = Isolierung eingeschaltet, ein Strich heißt: Richtlinie nicht gesetzt).",
         "check": "Die Richtlinie zur Treiberisolierung schaltet die Isolierung aller Druckertreiber ab (gelesener Wert: {print.isolationExecution}; 0 = Isolierung aus).",
-        "act": "Die Richtlinie zur Treiberisolierung schaltet die Isolierung aller Druckertreiber ab (gelesener Wert: {print.isolationExecution}; 0 = Isolierung aus). Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Ereignisse zum Drucken; ob sie mit der abgeschalteten Isolierung zusammenhängen, zeigt die Ereignisanzeige.",
+        "act": "Die Richtlinie zur Treiberisolierung schaltet die Isolierung aller Druckertreiber ab (gelesener Wert: {print.isolationExecution}; 0 = Isolierung aus). Außerdem stehen in den Ereignissen der letzten Tage Ereignisse zum Drucken; ob sie mit der abgeschalteten Isolierung zusammenhängen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Ist die Isolierung über die Richtlinie abgeschaltet, laufen alle Druckertreiber im Prozess des Dienstes Druckwarteschlange (Spooler), und ein Fehler in einem Treiber kann den Dienst für alle Benutzer anhalten. Microsoft nennt das Abschalten der Isolierung als Mittel für die Fehlersuche. Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Faustregel des Katalogs also auch.",
@@ -2076,7 +2081,7 @@
         "check": "Der Treiber des SMBv1-Clients ist vorhanden und nicht abgeschaltet (gelesener Starttyp: {network.smb1}; Boot und System = beim Start von Windows, Auto = automatisch, Manual = manuell).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ist der Treiber des SMBv1-Clients vorhanden und nicht abgeschaltet, kann der Server Freigaben noch über dieses alte Protokoll ansprechen (Erläuterung des Katalogs). Microsoft schreibt, dass SMBv1 erhebliche Sicherheitslücken hat, und rät dringend davon ab, es zu benutzen.",
+      "meaning": "Über SMBv1 können Angreifer Dateiserver und Freigaben leichter erreichen, und der Server sollte es nicht mehr sprechen (Erläuterung des Katalogs). Ist der Treiber des SMBv1-Clients vorhanden und nicht abgeschaltet, kann der Server Freigaben noch über dieses alte Protokoll ansprechen. Microsoft schreibt, dass SMBv1 erhebliche Sicherheitslücken hat, und rät dringend davon ab, es zu benutzen.",
       "todo": [
         {
           "text": "Klären, ob ein Dateiserver oder ein Gerät noch SMBv1 braucht; keine solche Verbindung beim Lesen heißt nicht, dass kein Gerät SMBv1 braucht",
@@ -2110,7 +2115,7 @@
       "findings": {
         "ok": "Keine bestehende SMB-Verbindung nutzt einen Dialekt vor SMB 3.",
         "check": "SMB-Verbindungen mit einem Dialekt vor SMB 3: {network.smbOldDialects}.",
-        "act": "SMB-Verbindungen mit einem Dialekt vor SMB 3: {network.smbOldDialects}. Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung Ereignisse zu Dateiservern; ob sie diese Verbindungen betreffen, zeigt die Ereignisanzeige.",
+        "act": "SMB-Verbindungen mit einem Dialekt vor SMB 3: {network.smbOldDialects}. Außerdem stehen in den Ereignissen der letzten Tage Ereignisse zu Dateiservern; ob sie diese Verbindungen betreffen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Ein Dialekt vor SMB 3 heißt, dass der Dateiserver oder das Gerät nichts Neueres anbietet, und ist bei Problemen mit Freigaben oder Profilen ein Grund, dort nachzusehen (Erfahrungswert des Katalogs, keine Vorgabe von Microsoft). Der Dialekt einer SMB-Verbindung ist die Fassung des Protokolls, auf die sich der Server und der Dateiserver geeinigt haben. Auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick dieser Prüfung also auch.",
@@ -2292,7 +2297,7 @@
       "todo": [
         {
           "text": "Nachsehen, was abgestürzt ist und an welchen Tagen",
-          "where": "im Bericht der Bereich „Vor der Messung“ (Rückblick) und Expertenansicht, Reiter „Ereignisse“; Ereignisanzeige des Servers, Anwendungsprotokoll",
+          "where": "im Bericht der Bereich „Vor der Messung“ oder „Vor dem Lesen“ (Rückblick); Ereignisanzeige des Servers, Anwendungsprotokoll; in einem Bericht mit Messung auch: Expertenansicht, Reiter „Ereignisse“",
           "sign": "dieselbe Anwendung oder dasselbe Modul in mehreren Abstürzen"
         },
         {
@@ -2327,7 +2332,7 @@
       "todo": [
         {
           "text": "Nachsehen, welches Laufwerk und welche Meldung betroffen sind",
-          "where": "im Bericht der Bereich „Vor der Messung“ (Rückblick): Datenträgerfehler; Ereignisanzeige des Servers, Systemprotokoll",
+          "where": "im Bericht der Bereich „Vor der Messung“ oder „Vor dem Lesen“ (Rückblick): Datenträgerfehler; Ereignisanzeige des Servers, Systemprotokoll",
           "sign": "Meldungen zu einem Laufwerk mit Zeitpunkt"
         },
         {
@@ -2362,7 +2367,7 @@
       "todo": [
         {
           "text": "Nachsehen, welche Freigabe betroffen ist und wann",
-          "where": "im Bericht der Bereich „Vor der Messung“ (Rückblick); Expertenansicht: Diagramm „Freigabe-Antwortzeit“; Ereignisanzeige des Servers",
+          "where": "im Bericht der Bereich „Vor der Messung“ oder „Vor dem Lesen“ (Rückblick); Ereignisanzeige des Servers; in einem Bericht mit Messung auch: Expertenansicht, Diagramm „Freigabe-Antwortzeit“",
           "sign": "dieselbe Freigabe oder derselbe Dateiserver an mehreren Tagen"
         },
         {
@@ -2470,7 +2475,7 @@
         "act": "Volle Ereignisprotokolle, die alte Einträge nicht überschreiben: {events.fullLogs}. Neue Ereignisse gehen dort verloren.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Protokoll, das alte Einträge nicht überschreibt, nimmt nach Microsoft keine neuen Ereignisse mehr auf, sobald es seine Höchstgröße erreicht hat. Was danach auf dem Server geschieht, fehlt dann im Rückblick und in der Messung. Die Einstufung ist eine Faustregel des Katalogs.",
+      "meaning": "Ein Protokoll, das alte Einträge nicht überschreibt, nimmt nach Microsoft keine neuen Ereignisse mehr auf, sobald es seine Höchstgröße erreicht hat. Was danach auf dem Server geschieht, fehlt dann im Rückblick und im Bericht. Die Einstufung ist eine Faustregel des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, welches Protokoll so eingestellt ist und warum",
@@ -2606,8 +2611,8 @@
         "check": [{"value": "maintenance.scanInWorkHours", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Der wirksame Beginn der geplanten Scans von Microsoft Defender Antivirus liegt nicht in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es ist kein Scan geplant. Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert (eingestellter Tag: {maintenance.scanDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie; eingestellte Zeit: {maintenance.scanTime}; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}; ein Strich heißt: nicht gesetzt oder nicht gelesen, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster).",
-        "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert. Die Startzeit des Schnellscans rechnet die Prüfung an jedem Tag, unabhängig vom eingestellten Tag, denn Microsoft zeigt sie als Zeit eines täglichen Schnellscans. Eingestellter Tag: {maintenance.scanDay} (0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie); eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; Verzögerung in Minuten: {maintenance.scanOffset}; zufällige Startzeit: {maintenance.scanRandomize}; Zeitfenster in Minuten: {maintenance.scanRandomWindow}. Ein Strich heißt: nicht eingestellt, und ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster.",
+        "ok": "Der wirksame Beginn der geplanten Scans von Microsoft Defender Antivirus liegt nicht in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es ist kein Scan geplant. Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert; ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster. Die eingestellten Werte und ihre Bedeutung stehen bei den Rohwerten (ein Strich heißt: nicht gesetzt oder nicht gelesen).",
+        "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert; ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster. Die Startzeit des Schnellscans rechnet die Prüfung an jedem Tag, unabhängig vom eingestellten Tag, denn Microsoft zeigt sie als Zeit eines täglichen Schnellscans. Eingestellter Tag: {maintenance.scanDay}; eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; weitere Einstellungen stehen bei den Rohwerten; ein Strich heißt: nicht gesetzt oder nicht gelesen.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Ein Scan, der in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Nach Microsoft (Seite „Schedule antivirus scans using PowerShell“) beginnen geplante Scans um eine feste Verzögerung nach der eingestellten Zeit, ohne Einstellung 120 Minuten, und mit zufälliger Startzeit bis zu 30 Minuten oder dem eingestellten Zeitfenster davor oder danach, und diesen wirksamen Beginn prüft der Katalog für den geplanten Scan und für den Schnellscan. Die Prüfung ist eine Faustregel des Katalogs.",
@@ -2711,8 +2716,8 @@
         "check": [{"value": "maintenance.updateInWorkHours", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die Richtlinie für automatische Updates legt keine Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es gibt keine Richtlinie (eingestellte Option: {maintenance.updateOptions}; 2 = zum Herunterladen benachrichtigen und automatisch installieren, 3 = automatisch herunterladen und zur Installation benachrichtigen, 4 = automatisch herunterladen und zur geplanten Zeit installieren, 5 = lokale Administratoren wählen die Einstellung, 7 = automatisch herunterladen, zur Installation und zum Neustart benachrichtigen, ein Strich heißt: keine Richtlinie; eingestellter Tag: {maintenance.updateDay}; 0 = täglich, 1 bis 7 = Sonntag bis Samstag; eingestellte Stunde: {maintenance.updateHour}; ein Strich heißt: nicht gesetzt oder nicht gelesen; mit Option 4 nimmt die Prüfung ohne Tag jeden Tag und ohne Stunde nach Microsoft 03:00 Uhr an). Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt, und die Prüfung steht dann auf „In Ordnung“, obwohl der Zeitpunkt nicht prüfbar ist.",
-        "check": "Die Richtlinie für automatische Updates legt die Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr): eingestellter Tag {maintenance.updateDay}, eingestellte Stunde {maintenance.updateHour} (Tag: 0 = täglich, 1 bis 7 = Sonntag bis Samstag; ein Strich heißt: nicht eingestellt, die Prüfung nimmt dann beim Tag jeden Tag und bei der Stunde nach Microsoft 03:00 Uhr an).",
+        "ok": "Die Richtlinie für automatische Updates legt keine Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr), oder es gibt keine Richtlinie (eingestellte Option: {maintenance.updateOptions}; ein Strich heißt: keine Richtlinie). Ohne Richtlinie ist der Zeitpunkt der Installation nicht bekannt, und die Prüfung steht dann auf „In Ordnung“, obwohl der Zeitpunkt nicht prüfbar ist.",
+        "check": "Die Richtlinie für automatische Updates legt die Installation in die Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr): eingestellter Tag {maintenance.updateDay}, eingestellte Stunde {maintenance.updateHour} (ein Strich heißt: nicht eingestellt, die Prüfung nimmt dann beim Tag jeden Tag und bei der Stunde nach Microsoft 03:00 Uhr an).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Installiert Windows Updates in der Arbeitszeit, belastet das den Server, und ein Neustart danach trifft die Benutzer (Erläuterung des Katalogs). Nach Microsoft installiert Windows mit der Einstellung „automatisch herunterladen und zur geplanten Zeit installieren“ (Option 4) am eingestellten Tag zur eingestellten Stunde, ohne Zeitangabe täglich um 03:00 Uhr, und kann die Installation stattdessen in die automatische Wartung legen. Die Prüfung ist eine Faustregel des Katalogs und wertet nur die Richtlinie aus.",
@@ -2851,8 +2856,8 @@
         "check": [{"value": "apps.webView2UpdatesOff", "op": "eq", "than": true}]
       },
       "findings": {
-        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle).",
-        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet (Update-Vorgabe für die WebView2-Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; 0 = abgeschaltet, 1 = erlaubt, für alle Kanäle auch 2 = nur von Hand und 3 = nur automatisch im Hintergrund, für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle). Dann muss das Master-Image die aktuelle Runtime tragen.",
+        "ok": "Die Updates der WebView2-Runtime sind per Richtlinie nicht abgeschaltet (Vorgabe für die Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; ein Strich heißt: nicht gesetzt oder nicht gelesen). Die Vorgabe für die Runtime geht vor, ohne sie gilt nach Microsoft die Vorgabe für alle Kanäle.",
+        "check": "Die Updates der WebView2-Runtime sind per Richtlinie abgeschaltet (Vorgabe für die Runtime: {apps.edge.updateWebView2}; für alle Kanäle: {apps.edge.updateDefault}; ein Strich heißt: nicht gesetzt oder nicht gelesen). Dann muss das Master-Image die aktuelle Runtime tragen.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
       "meaning": "Abgeschaltete Updates der WebView2-Runtime können nach Microsoft Anwendungen stören, die auf diese Komponente angewiesen sind, und Microsoft rät, nicht auf einer älteren Version der Runtime zu bleiben. Lädt ein nicht persistenter Server ein Update selbst, ist es nach dem Neustart wieder weg, deshalb muss bei abgeschalteten Updates das Master-Image die aktuelle Runtime enthalten (Folgerung des Katalogs). Die Runtime nutzen nach Microsoft unter anderem Teams und Outlook, und ohne eigene Vorgabe für die Runtime gilt für sie nach Microsoft die Update-Vorgabe für alle Kanäle von Microsoft Edge.",

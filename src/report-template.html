@@ -975,11 +975,13 @@ const statusHtml = (st, extra) => markHtml(STATUS[st][2], STATUS[st][0], STATUS[
 // one, as HTML, or "" where the place was measured; the switch is named for a category left out with it. Where the hint
 // stands, the empty table, chart or "keine" is left out.
 const SKIPPED = D.skipped || [];
+// a category that is read, not measured: left out, the page says "nicht gelesen" and "Weggelassen", not "nicht gemessen"
+const SKIP_READ = ["Zustand"];
 const SKIP_AT = new Map(SKIPPED.concat(D.unrecorded || []).flatMap((s) => s.places.map((p) => [p, s])));
 function notMeasured(place, inline) {
   const s = SKIP_AT.get(place); if (!s) return "";
   const tag = inline ? "span" : "div";
-  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${statusHtml("na")} – ${esc(s.text)}${SKIPPED.includes(s) ? ` <span class="opt">(-Skip ${esc(s.id)})</span>` : ""}</${tag}>`;
+  return `<${tag} class="notmeasured${inline ? " inline" : ""}" data-place="${esc(place)}">${SKIP_READ.includes(s.id) ? markHtml("na", STATUS.na[0], "nicht gelesen") : statusHtml("na")} – ${esc(s.text)}${SKIPPED.includes(s) ? ` <span class="opt">(-Skip ${esc(s.id)})</span>` : ""}</${tag}>`;
 }
 const levelOf = (v, th) => (v == null || !th) ? 0 : v >= th.crit ? 2 : v >= th.warn ? 1 : 0;
 // Small inline marker for table cells whose value reached a target band.
@@ -1668,7 +1670,8 @@ if (SKIPPED.length) {
   const info = document.createElement("div"), sym = document.createElement("i");
   info.id = "skipInfo"; info.className = "sub";
   sym.className = "sym"; sym.setAttribute("aria-hidden", "true"); sym.textContent = "○";
-  info.append(sym, document.createTextNode("Nicht gemessen (-Skip): " + SKIPPED.map((s) => s.label).join(", ")));
+  const skipLabels = (read) => SKIPPED.filter((s) => SKIP_READ.includes(s.id) === read).map((s) => s.label).join(", ");
+  info.append(sym, document.createTextNode([skipLabels(false) && "Nicht gemessen (-Skip): " + skipLabels(false), skipLabels(true) && "Weggelassen (-Skip): " + skipLabels(true)].filter(Boolean).join("; ")));
   document.getElementById("subtitle").after(info);
 }
 // The health picture (health of the report data: state, title, headline, texts, grades, areas with their checks; every sentence

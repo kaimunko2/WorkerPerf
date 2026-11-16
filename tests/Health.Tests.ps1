@@ -1125,7 +1125,7 @@ Describe 'Katalog in src' {
         $tp.findings.check | Should -Match 'löscht ein temporäres Profil bei der Abmeldung'
         foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
             $c = $check[$id]; "$($c.findings.check) $(@($c.todo | ForEach-Object { $_.text }) -join ' ')" | Should -Match 'ab VDA 2203 LTSR CU2' -Because $id
-            $c.meaning | Should -Match 'gelten die Einstellungen des Benutzerkontos' -Because $id
+            $c.meaning | Should -Match 'gelten die des Benutzerkontos' -Because $id
         }
         $check['size.pagefilePresent'].meaning | Should -Match 'empfiehlt Microsoft eine eigene Datei dafür \(dedicated dump file\)'
         $check['size.memoryPerSession'].meaning | Should -Match 'aller Benutzersitzungen beim Lesen, auch der getrennten'
@@ -1165,7 +1165,7 @@ Describe 'Katalog in src' {
             reasonAppNotInstalled = '{app} ist nicht installiert'; appNotInstalled = '{app}: nicht installiert'
             environment = 'Der Katalog geht von nicht persistenten, über Machine Creation Services bereitgestellten Multi-Session-Servern aus.' }
         foreach ($k in $want.Keys) { $Real.copy.$k | Should -Be $want[$k] -Because $k }
-        $Real.copy.notRecordedFailed | Should -BeLike 'Zustandsbild nicht erfasst*'; $Real.copy.stateNotApplicable | Should -BeLike 'nicht zutreffend*'
+        $Real.copy.notRecordedFailed | Should -BeLike 'Zustandsbild nicht erfasst*'; $Real.copy.stateNotApplicable | Should -BeLike 'trifft nicht zu*'
         $Real.copy.eventsReach | Should -Match '\{from\}'; $Real.copy.eventsReach | Should -Match '\{boot\}'; $Real.grades.na.word | Should -Be 'Trifft nicht zu'
         @($Real.areas.label) | Should -Be @('Größe und Reserve', 'Betrieb', 'Sitzungen', 'Citrix VDA', 'Profilverwaltung', 'Drucken', 'Sicherheitsprodukte', 'Netz und Dateiserver', 'Ereignisbild', 'Wartung in der Arbeitszeit', 'Anwendungen')
         foreach ($a in $Real.areas) { [string]$a.notCovered | Should -Not -BeNullOrEmpty -Because $a.id }
@@ -1291,7 +1291,7 @@ Describe 'Katalog in src' {
         $Real.copy.reasonNotInstalled | Should -Not -Match 'gibt es'
         # eine Bezeichnung, die in diesem Satz in Anfuehrungszeichen steht, traegt selbst keine (die Werte der fuenf Bereiche dieser Task)
         foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '[„“]' -Because $p.Name }
-        $Real.copy.copyStep | Should -BeExactly '{n}. {text} – Wo: {where}. Woran zu erkennen: {sign}'
+        $Real.copy.copyStep | Should -BeExactly '{n}. {text} – Wo: {where}. Woran erkennbar: {sign}'
         # der Lader verlangt in jedem Schritt Ort und Merkmal: keiner der zwei Teile kann fehlen; kein Teil endet mit einem Punkt, der im Kopiertext doppelt staende
         foreach ($c in $Real.checks) { foreach ($t in $c.todo) { foreach ($part in $t.text, $t.where, $t.sign) { $part | Should -Not -Match '[.;:]\s*$' -Because $c.id } } }
     }
@@ -1313,7 +1313,7 @@ Describe 'Katalog in src' {
         $withEvent = @($Real.checks | Where-Object { @($_.rules.act | Where-Object { $null -ne $_.event }).Count -gt 0 })
         @($withEvent.id) | Should -Be @('sessions.tempProfiles', 'vda.services', 'profile.serviceStopped', 'print.driversInSpooler', 'print.isolationOff', 'network.smbOldDialect')
         foreach ($c in $withEvent) {
-            $c.findings.act | Should -Match 'Außerdem stehen im Rückblick der letzten 7 Tage oder in der Messung .*; ob sie .*, zeigt die Ereignisanzeige\.$' -Because $c.id
+            $c.findings.act | Should -Match 'Außerdem stehen in den Ereignissen der letzten Tage .*; ob sie .*, zeigt die Ereignisanzeige\.$' -Because $c.id
             $c.findings.act | Should -Not -Match 'Dazu stehen' -Because $c.id
             $c.meaning | Should -Match 'auf einem nicht persistenten Server reichen .*nur bis zum letzten Start zurück' -Because $c.id
         }
@@ -1445,14 +1445,14 @@ Describe 'Katalog in src' {
         $ProofFlat | Should -Match ([regex]::Escape('„The previous three keys ensure that the WEM agent service starts before the Windows logon screen appears.“'))
         # der eine Satz zu den Zeitlimits je Benutzer steht in beiden Pruefungen der Zeitlimits
         foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
-            ($Real.checks | Where-Object id -eq $id).meaning | Should -Match 'Wo der Listener von Windows die Zeitlimits je Benutzer gelten lässt, gelten die Einstellungen des Benutzerkontos' -Because $id }
+            ($Real.checks | Where-Object id -eq $id).meaning | Should -Match 'Wo die Remotedesktop-Einstellung \(Listener\) die Zeitlimits je Benutzer gelten lässt, gelten die des Benutzerkontos' -Because $id }   # Finalrunde, Minor 7: der Listener ist erklaert
         # was nicht mehr in die Bedeutung passt, steht im Nachweis
         foreach ($w in 'Spectre und Meltdown', 'ein Testprogramm belegte zusätzlich 2 GB', 'Differenzdatenträger', 'für große Webanwendungen und Erweiterungen mehr', 'ihn neu aufzubauen', 'Defender war nicht Teil des Tests') {
             $ProofFlat | Should -Match ([regex]::Escape($w)) -Because $w }
     }
     It 'fuehrt die Legenden im Teil legends und laesst die Bezeichnungen schlichte Namen sein' {             # Entscheidung ZB-R49
         foreach ($p in $Real.values.PSObject.Properties) { $p.Value | Should -Not -Match '=' -Because $p.Name }
-        @($Real.legends.PSObject.Properties).Count | Should -Be 38                                          # Aussage geaendert (Task 16, Korrekturrunde 1): vier Legenden der Proben
+        @($Real.legends.PSObject.Properties).Count | Should -Be 43                                          # Aussage geaendert (Task 16, Korrekturrunde 1): vier Legenden der Proben; Finalrunde (Minor 12): fuenf Legenden der Werte, die die Befunde der Wartung nicht mehr ausschreiben
         $Real.legends.'print.spooler' | Should -BeExactly 'Running = läuft, Stopped = beendet'
         $Real.legends.'security.defenderMode' | Should -BeExactly 'Normal = aktiv, Passive = passiv'
         $Real.legends.'maintenance.scanDay' | Should -BeExactly '0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie'
@@ -1576,8 +1576,8 @@ Describe 'Katalog in src' {
             Should -BeExactly 'Druckwarteschlangen beim Lesen: 12, Benutzersitzungen: 0, Warteschlangen je Sitzung: 12, mehr als die Schwelle von 10 (ohne Sitzung steht dort die Zahl aller Warteschlangen, und die Warteschlangen des Servers selbst sind mitgezählt).'
         (Get-Check @{ 'network.domainMember' = $true; 'network.timeType' = 'NTP' } @{} 'network.timeSource' $Real).finding |
             Should -BeExactly 'Der Server ist Mitglied einer Domäne, bezieht seine Zeit aber nicht aus der Domäne (eingestellte Art: NTP; NTP = feste Zeitquellen, NoSync = kein Abgleich, ein Strich heißt: keine Art eingetragen).'
-        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30' } @{} 'maintenance.defenderScanInWorkHours' $Real).finding | Should -Match 'Eingestellter Tag: 0 \(0 = täglich, 1 bis 7 = Sonntag bis Samstag, 8 = nie\); eingestellte Zeit: 12:30 Uhr; Startzeit des Schnellscans: –; Verzögerung in Minuten: –;'
-        (Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 3; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 3, eingestellte Stunde 10 \(Tag: 0 = täglich, 1 bis 7 = Sonntag bis Samstag; ein Strich heißt: nicht eingestellt'
+        (Get-Check @{ 'maintenance.scanDay' = 0; 'maintenance.scanTime' = '12:30' } @{} 'maintenance.defenderScanInWorkHours' $Real).finding | Should -Match 'Eingestellter Tag: 0; eingestellte Zeit: 12:30 Uhr; Startzeit des Schnellscans: –; weitere Einstellungen stehen bei den Rohwerten; ein Strich heißt: nicht gesetzt oder nicht gelesen\.'   # Finalrunde, Minor 12: die Legenden stehen im Teil legends
+        (Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateDay' = 3; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellter Tag 3, eingestellte Stunde 10 \(ein Strich heißt: nicht eingestellt'   # Finalrunde, Minor 12: die Legende des Tags steht im Teil legends
         $check['security.citrixExclusions'].findings.check | Should -Match 'zeigt der Rohwert „Ausgeschlossene Prozesse“\. Verbirgt Defender Antivirus'; (& $step 'security.citrixExclusions' 0) | Should -Match 'Rohwert „Ausgeschlossene Prozesse“'
         (Get-Check @{} @{} 'print.spoolerStopped' $Real).finding | Should -Match 'gelesener Zustand: –; Running = läuft, Stopped = beendet, ein Strich heißt: Dienst nicht gefunden'
         (Get-Check @{} @{} 'maintenance.updateServiceEnabled' $Real).finding | Should -Match 'gelesener Starttyp: –; Auto = automatisch, Manual = manuell, ein Strich heißt: Dienst nicht gefunden'
@@ -1591,7 +1591,7 @@ Describe 'Katalog in src' {
         # 22: Stellen im Bericht heissen wie im Bericht
         foreach ($id in 'print.driversInSpooler', 'print.driverCount', 'print.kernelModeV2') { (& $step $id 0) | Should -Match 'Expertenansicht, Reiter „Drucken“: Treiberliste' -Because $id }
         (& $step 'print.driversInSpooler' 0) | Should -Match 'Spalte „Isolierung“'
-        foreach ($id in 'events.crashes', 'events.storage', 'events.fileserver') { (& $step $id 0) | Should -Match 'im Bericht der Bereich „Vor der Messung“ \(Rückblick\)' -Because $id }
+        foreach ($id in 'events.crashes', 'events.storage', 'events.fileserver') { (& $step $id 0) | Should -Match 'im Bericht der Bereich „Vor der Messung“ oder „Vor dem Lesen“ \(Rückblick\)' -Because $id }
         (Get-Content $CatFile -Raw) | Should -Not -Match 'im Bericht die Liste der Druckertreiber|Bericht, Rückblick|Bericht, Verlauf'
     }
     It 'nennt eine Sache mit einem Namen' {                                                                   # Korrekturrunde 1 von Task 14b, Punkt 20
@@ -1687,7 +1687,7 @@ Describe 'Fakten nach der Quellenpruefung (Task 14s)' {
         (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 90 }) })['sessions.disconnectLimitMin'].Value | Should -Be 90
         (Get-Facts @{ 'sessions.limits' = @(@{ Terminal = 'ICA-CGP'; IdleLimitMin = 0; DisconnectedLimitMin = 0 }) })['sessions.disconnectLimitMin'].State | Should -Be 'absent'
         # gerendert: beide Pruefungen sind im Fall je Benutzer nicht pruefbar, mit den Werten des Listeners wie bisher
-        $perUser = 'Ein Wert, den die Prüfung braucht, liegt nicht vor: ein Listener lässt die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht.'
+        $perUser = 'Ein Wert, den die Prüfung braucht, liegt nicht vor: die Remotedesktop-Einstellungen von Windows (der Listener) lassen die Zeitlimits je Benutzer gelten; diese Einstellungen der Benutzerkonten liest das Zustandsbild nicht.'
         foreach ($id in 'sessions.disconnectLimit', 'sessions.idleLimit') {
             $x = Get-Check @{ 'sessions.limits' = @((& $lim 'ICA-CGP' 0 0)) } @{} $id $Real
             $x.grade | Should -Be 'unknown' -Because $id; $x.finding | Should -BeExactly $perUser -Because $id
@@ -1973,10 +1973,10 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         (Get-Check @{} @{} 'operation.powerPlan' $Real).finding | Should -Match 'ein Strich heißt'
         (Get-Check @{} @{} 'vda.controllerCount' $Real).finding | Should -Match 'ein Strich heißt'
         (Get-Check @{} @{} 'profile.serviceStopped' $Real).finding | Should -Match 'ein Strich heißt'
-        foreach ($id in 'maintenance.defenderScanInWorkHours', 'maintenance.updateInstallInWorkHours') { $Chk[$id].findings.ok | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen' -Because $id }
+        $Chk['maintenance.defenderScanInWorkHours'].findings.ok | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen'; $Chk['maintenance.updateInstallInWorkHours'].findings.ok | Should -Match 'ein Strich heißt: keine Richtlinie'   # Finalrunde, Minor 12
         $x = Get-Check @{ 'maintenance.updateOptions' = 4; 'maintenance.updateHour' = 10 } @{} 'maintenance.updateInstallInWorkHours' $Real
         $x.grade | Should -Be 'check'; $x.finding | Should -Match 'eingestellter Tag –, .*die Prüfung nimmt dann beim Tag jeden Tag und bei der Stunde nach Microsoft 03:00 Uhr an'
-        $Chk['maintenance.defenderScanInWorkHours'].findings.check | Should -Match '8 = nie'
+        $Real.legends.'maintenance.scanDay' | Should -Match '8 = nie'   # Finalrunde, Minor 12: die Legende steht im Teil legends
         foreach ($t in $Chk['maintenance.defenderScanInWorkHours'].todo) { $t.sign | Should -Match 'wirksame' }
         $Chk['network.rss'].title | Should -BeExactly 'Receive Side Scaling in Windows und am Netzwerkadapter'
         # Zusatz s: jeder Grund, einmal gerendert, liest sich im Rahmen der Pruefung
@@ -2010,13 +2010,13 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
                 $w = Get-AppCheck 'apps.edgeWebView2Update' $pw; $w.grade | Should -Be $(if ($off) { 'check' } else { 'ok' }) -Because $because
                 foreach ($x in $e, $w) {
                     $x.finding | Should -Not -Match '[{}]' -Because $because; $x.finding | Should -Not -Match 'meldet die Prüfung nicht' -Because $because
-                    $x.finding | Should -Match '0 = abgeschaltet' -Because $because; $x.finding | Should -Match 'ein Strich heißt: nicht gesetzt' -Because $because
+                    $Real.legends.'apps.edge.updateDefault' | Should -Match '0 = abgeschaltet, 1 = erlaubt, 2 = nur von Hand, 3 = nur automatisch im Hintergrund' -Because $because; $x.finding | Should -Match 'ein Strich heißt: nicht gesetzt' -Because $because
                 }
                 # beide gelesenen Werte stehen im Befund
                 $e.finding | Should -Match ('alle Kanäle: ' + $(if ($null -eq $default) { '–' } else { $default })) -Because $because
                 $e.finding | Should -Match ('für Edge selbst: ' + $(if ($null -eq $channel) { '–' } else { $channel })) -Because $because
                 $w.finding | Should -Match ('alle Kanäle: ' + $(if ($null -eq $default) { '–' } else { $default })) -Because $because
-                $w.finding | Should -Match ('WebView2-Runtime: ' + $(if ($null -eq $channel) { '–' } else { $channel })) -Because $because
+                $w.finding | Should -Match ('Vorgabe für die Runtime: ' + $(if ($null -eq $channel) { '–' } else { $channel })) -Because $because
             }
         }
         # nicht gelesen: der Wert je Kanal entscheidet, wo er gelesen ist; sonst ist die Ableitung nicht pruefbar
@@ -2075,7 +2075,7 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
         @($Chk['maintenance.updateInstallInWorkHours'].values) | Should -Contain 'maintenance.updateOptions'
         $x = Get-Check @{} @{} 'maintenance.updateInstallInWorkHours' $Real; $x.grade | Should -Be 'ok'
         $x.finding | Should -Match 'eingestellte Option: –'; $x.finding | Should -Match 'ein Strich heißt: keine Richtlinie'
-        $x.finding | Should -Match '4 = automatisch herunterladen und zur geplanten Zeit installieren'; $x.finding | Should -Match 'nicht prüfbar'
+        $Real.legends.'maintenance.updateOptions' | Should -Match '4 = automatisch herunterladen und zur geplanten Zeit installieren'; $x.finding | Should -Match 'nicht prüfbar'   # Finalrunde, Minor 12
         (Get-Check @{ 'maintenance.updateOptions' = 3 } @{} 'maintenance.updateInstallInWorkHours' $Real).finding | Should -Match 'eingestellte Option: 3'
     }
     It 'uebernimmt die kleineren Punkte der Durchsicht' {                                                 # Korrekturrunde 1, Punkte 5 bis 9
@@ -2122,11 +2122,11 @@ Describe 'Katalog in src: Anwendungen und Berichtigungen der Quellenpruefung (Ta
             $x = Get-AppCheck $case[0] $case[1] @() $case[2]; $x.grade | Should -Be $case[3] -Because $because
             if ($case[3] -ne 'unknown') { $x.finding | Should -Match 'alle Kanäle: –' -Because $because; $x.finding | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen' -Because $because }
         }
-        foreach ($id in 'apps.edgeAutoUpdate', 'apps.edgeWebView2Update') { foreach ($g in 'ok', 'check') { $Chk[$id].findings.$g | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen;' -Because "$id $g" } }
+        foreach ($id in 'apps.edgeAutoUpdate', 'apps.edgeWebView2Update') { foreach ($g in 'ok', 'check') { $Chk[$id].findings.$g | Should -Match 'ein Strich heißt: nicht gesetzt oder nicht gelesen' -Because "$id $g" } }
         # 4: 2 und 3 nennt Microsoft fuer die Runtime nicht; die Pruefung zaehlt sie als nicht abgeschaltet und sagt es
         foreach ($v in 2, 3) {
             $x = Get-AppCheck 'apps.edgeWebView2Update' @{ 'edge.updateWebView2' = $v }; $x.grade | Should -Be 'ok'
-            $x.finding | Should -Match "WebView2-Runtime: $v;"; $x.finding | Should -Match 'für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet'
+            $x.finding | Should -Match "Vorgabe für die Runtime: $v;"; $Real.legends.'apps.edge.updateWebView2' | Should -Match 'für die Runtime nennt Microsoft nur 0 und 1, jeder andere Wert zählt als nicht abgeschaltet'   # Finalrunde, Minor 12
         }
     }
     It 'gibt beim klassischen Teams die eine Reihenfolge von Microsoft' {                                    # Korrekturrunde 1, Nachpruefung, Punkt 3
@@ -2335,7 +2335,7 @@ Describe 'Kopiertexte, Bezuege und Katalogteile (Task 16, Korrekturrunde 1)' {
         $list = Get-Content (Join-Path $PSScriptRoot '../src/apps.json') -Raw -Encoding UTF8 | ConvertFrom-Json; $n = 0
         foreach ($a in $list.apps) { foreach ($p in @(Get-WorkerPerfField $a 'probes')) { if ($null -ne $p) { [string]$p.label | Should -Not -Match '=' -Because "$($a.key).$($p.id)"; $n++ } } }
         $n | Should -BeGreaterThan 30
-        foreach ($id in 'apps.edge.updateDefault', 'apps.edge.updateStable', 'apps.edge.updateWebView2') { $FixReal.legends.$id | Should -Be '0 = aus' -Because $id }
+        foreach ($id in 'apps.edge.updateDefault', 'apps.edge.updateStable', 'apps.edge.updateWebView2') { $FixReal.legends.$id | Should -Match '^0 = (aus|abgeschaltet)' -Because $id }   # Finalrunde, Minor 12: zwei Legenden nennen alle Werte
         $FixReal.legends.'apps.teams.disableFallback' | Should -Be '0 oder nicht gesetzt = an, 1 = aus, 2 = nur Audio'
         $r = Get-WorkerPerfHealthResult -Model (New-HealthModel) -Catalogue $FixReal -EventConfig $Cfg -Roles $Roles -Texts $Texts
         ($r.raw | Where-Object id -eq 'apps.edge.updateDefault').label | Should -Be 'Microsoft Edge – Update-Vorgabe für alle Kanäle'

@@ -2193,7 +2193,10 @@ async function checkSkip(browser, dir, scheme) {   // Messkategorien
     const withPlace = (p) => D.incidents.find((i) => IV_PLACES[p](i));
     const leaveIncident = async () => { if (await page.evaluate(() => window.WP.incident) != null) { await page.evaluate(() => window.WP.closeIncident()); await ivClosed(page); } };
     const info = await page.locator('header #skipInfo').innerText();
-    ok(info.includes('Nicht gemessen (-Skip): ' + D.skipped.map((s) => s.label).join(', ')), n + ': Kopf nennt die Kategorien: ' + info);
+    // the Zustandsbild is read, not measured: the header names it apart ("Weggelassen (-Skip)"), the other categories as before
+    const skipGroup = (read) => D.skipped.filter((s) => (s.id === 'Zustand') === read).map((s) => s.label).join(', ');
+    const skipHead = [skipGroup(false) && 'Nicht gemessen (-Skip): ' + skipGroup(false), skipGroup(true) && 'Weggelassen (-Skip): ' + skipGroup(true)].filter(Boolean).join('; ');
+    ok(info.includes(skipHead), n + ': Kopf nennt die Kategorien: ' + info);
     const all = await page.evaluate(() => { const b = document.body.cloneNode(true); b.querySelectorAll('script').forEach((x) => x.remove()); return b.textContent; });
     for (const s of D.skipped) {
       ok(all.includes(s.text + ' (-Skip ' + s.id + ')'), n + ': Grund von ' + s.id + ' steht auf der Seite');
@@ -3776,7 +3779,7 @@ async function checkHealthLinks(browser, dir, scheme) {
   await page.click('#healthRaw summary');
   ok(await page.locator('#tHealthRaw tbody tr').count() >= D.health.raw.length && (await page.locator('#tHealthRaw').innerText()).includes('Inventarlauf'), 'Rohwerte, auch ohne Pruefung im Katalog');
   const ws = D.health.raw.find((x) => x.id === 'maintenance.searchService');
-  ok(ws.stateText.startsWith('nicht zutreffend') && (await page.locator('#tHealthRaw').innerText()).includes(ws.stateText), 'Rohwert eines nicht vorhandenen Produkts: nicht zutreffend');
+  ok(ws.stateText.startsWith('trifft nicht zu') && (await page.locator('#tHealthRaw').innerText()).includes(ws.stateText), 'Rohwert eines nicht vorhandenen Produkts: nicht zutreffend');
   // (ZB-R49) a value with a legend of its keywords shows label and legend; a list stands as lines one under the other
   const lg = D.health.raw.find((x) => x.items.length > 1 && D.health.legends[x.id]), lgRow = page.locator('#tHealthRaw tbody tr').nth(D.health.raw.indexOf(lg));
   ok((await lgRow.innerText()).includes(lg.label) && (await lgRow.innerText()).includes(D.health.legends[lg.id]) && await lgRow.locator('.raw-item').count() === lg.items.length, 'Rohwert mit Legende, Liste als Zeilen: ' + lg.id);
@@ -3841,7 +3844,7 @@ async function checkHealthOnly(browser, dir, scheme) {
   ok(!/vor der Messung|während der Messung|Messbeginn/i.test(await text(page)) && /vor dem Lesen/i.test(await page.locator('#beforeG').innerText()), 'der Rueckblick spricht vom Lesen, nicht von einer Messung');
   // ZB-R65: die Karten des Rueckblicks tragen die Fassung des Schnelllaufs (Zahl der Ereignisse bleibt), ZB-R66: der Satz zu den Messwerten
   const cardViews = await page.locator('#beforeG .card-view').allInnerTexts();
-  ok(cardViews.length === D.before.incidents.length && cardViews.every((t, k) => t === D.before.incidents[k].guide.userView) && cardViews.every((t) => /^Vor dem Lesen aufgetreten \(Zahl der Ereignisse: \d+\); ein Schnelllauf zeichnet keine Messwerte auf\.$/.test(t)), 'Karten des Rueckblicks: "Vor dem Lesen aufgetreten", ohne Messung: ' + cardViews.join(' | '));
+  ok(cardViews.length === D.before.incidents.length && cardViews.every((t, k) => t === D.before.incidents[k].guide.userView) && cardViews.every((t) => /^Vor dem Lesen aufgetreten \(Zahl der Ereignisse: \d+\)\.$/.test(t)), 'Karten des Rueckblicks: "Vor dem Lesen aufgetreten", der Satz zu den Messwerten steht nur im Kopf des Abschnitts: ' + cardViews.join(' | '));
   const NV = 'Ein Schnelllauf zeichnet keine Messwerte auf.';
   ok((await page.locator('#beforeG .bnote').innerText()) === NV && !/Für diese Zeit liegen keine Messwerte vor/.test(await page.locator('body').innerText()), 'Rueckblick: der Satz zu den Messwerten nennt den Schnelllauf');
   // ZB-R66 / Minor 1: the buttons back name the overview, not a band that this report does not have
@@ -3860,8 +3863,8 @@ async function checkHealthOnly(browser, dir, scheme) {
   const ivText = await page.locator('#incident').innerText();
   ok(await page.locator('#incident').isVisible() && !/vor der Messung|während der Messung/.test(await page.locator('#incident .iv-evidence').evaluate((d) => { d.open = true; return d.innerText; })), 'Vorfall vor dem Lesen: die Belege sprechen nicht von einer Messung');
   ok(ivText.length > 0 && page.errors.length === 0, 'Vorfall vor dem Lesen ohne Skriptfehler: ' + page.errors.join(' | '));
-  // ZB-R65/R66: the head of the incident view carries the quick run's wording, the sentence on the measured values stands once
-  ok((await page.locator('#incident .iv-view').innerText()) === lb.guide.userView && /^Vor dem Lesen aufgetreten/.test(lb.guide.userView) && await page.locator('#incident .bnote').count() === 0 && !/Für diese Zeit liegen keine Messwerte vor/.test(ivText) && !/vor der Messung/i.test(await page.locator('#incident .iv-meta').innerText()), 'Vorfallsansicht: Kopf mit der Fassung des Schnelllaufs');
+  // ZB-R65/R66: the head of the incident view carries the quick run's wording, the sentence on the measured values stands once (the page adds it as the note of the view, the wording of the card no longer repeats it: content Minor 10)
+  ok((await page.locator('#incident .iv-view').innerText()) === lb.guide.userView && /^Vor dem Lesen aufgetreten/.test(lb.guide.userView) && await page.locator('#incident .bnote').count() === 1 && ivText.split(NV).length === 2 && !/Für diese Zeit liegen keine Messwerte vor/.test(ivText) && !/vor der Messung/i.test(await page.locator('#incident .iv-meta').innerText()), 'Vorfallsansicht: Kopf mit der Fassung des Schnelllaufs');
   ok(oneLine(await page.locator('#ivBack').innerText()) === '← Zurück zur Übersicht', 'Vorfallsansicht: Zurueck zur Uebersicht');
   const noteEv = await open(browser, patched(dir, 'report-health.html', 'report-health-iv-note.html', (J) => { J.before.incidents[0].guide.userView = 'Aufgetreten, 1-mal.'; }), scheme);
   await noteEv.page.locator(`#beforeG .card.inc[data-id="${noteEv.D.before.incidents[0].id}"] .card-open`).click();
@@ -3967,6 +3970,9 @@ async function checkHealthSkip(browser, dir, scheme) {
   const s = await open(browser, path.join(dir, 'report-skip-zustand.html'), scheme);
   ok(await s.page.locator('#healthRow .notmeasured[data-place="health"]').count() === 1 && await s.page.locator('#healthRow .htile').count() === 0 && await s.page.locator('#healthInfo').count() === 0, '-Skip Zustand: nicht gemessen statt Kacheln');
   ok((await s.page.locator('#healthRow').innerText()).includes(s.D.skipped[0].text + ' (-Skip Zustand)'), '-Skip Zustand: Grund steht da');
+  // final fix wave (content Minor 9): read, not measured, in the header and in the row; the guided report's other places keep "nicht gemessen"
+  const hrow = await s.page.locator('#healthRow').innerText();
+  ok(hrow.includes('nicht gelesen') && !hrow.includes('nicht gemessen') && (await s.page.locator('header #skipInfo').innerText()).includes('Weggelassen (-Skip): Zustandsbild') && !(await s.page.locator('header #skipInfo').innerText()).includes('Nicht gemessen'), '-Skip Zustand: nicht gelesen, Kopf: Weggelassen: ' + hrow);
   await showExpert(s.page); await s.page.click('#xtabs button[data-tab=health]');
   ok(await s.page.locator('#xt-health .notmeasured[data-place="health"]').count() === 1 && await s.page.locator('#tHealth tbody tr').count() === 0 && s.page.errors.length === 0, '-Skip Zustand: der Reiter nennt nicht gemessen');
   await s.page.close();

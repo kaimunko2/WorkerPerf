@@ -189,8 +189,8 @@ Regeln:
   statt eines Kommas dorthin bringt (`-Skip Prozesse Rueckblick`; ein Ordner dieses Namens geht als `.\Rueckblick`).
 - **`Zustand`** lässt das Zustandsbild weg, das der Collector beim Start einmal liest (`health.json`). Der Bericht
   hat dann keine Zeile „Zustand des Servers", keine Bereichsansichten und keinen Reiter „Zustand" mit Prüfungen;
-  an ihrer Stelle steht „nicht gemessen". Wie jede weggelassene Kategorie nennt ihn der Bericht unter „Nicht gemessen
-  (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`. Zusammen mit `-HealthOnly` ist `-Skip Zustand`
+  an ihrer Stelle steht „nicht gelesen" (das Zustandsbild wird gelesen, nicht gemessen). Der Bericht nennt es im Kopf
+  unter „Weggelassen (-Skip): Zustandsbild", und `meta.json` führt `Zustand` unter `Skip`. Zusammen mit `-HealthOnly` ist `-Skip Zustand`
   nicht erlaubt.
 - **Beim Start** schreibt der Collector auf die Konsole, welche Kategorien er misst und welche nicht
   („Gemessen: Basis, …" und „Nicht gemessen (-Skip): …").
@@ -585,8 +585,8 @@ dass nicht geprüft ist, ob dazu Ereignisse vorliegen.
 - **Ältere Aufzeichnungen:** Fehlt `health.json`, und nennt `Skip` die Kategorie nicht, heißt das „Zustandsbild nicht
   erfasst"; der Bericht meldet es weder als gemessen noch als weggelassen. Ist das Lesen beim Start gescheitert, sagt
   er das; ist die Datei nicht lesbar, steht „Zustandsbild nicht lesbar". Alles andere am Bericht bleibt wie gewohnt.
-- **Weggelassen** (`-Skip Zustand`): an Stelle der Zeile und des Reiters steht „nicht gemessen", der Kopf nennt die
-  Kategorie unter „Nicht gemessen (-Skip)".
+- **Weggelassen** (`-Skip Zustand`): an Stelle der Zeile und des Reiters steht „nicht gelesen", der Kopf nennt die
+  Kategorie unter „Weggelassen (-Skip)".
 
 ### Zustandsbericht ohne Messung (Schnelllauf)
 
