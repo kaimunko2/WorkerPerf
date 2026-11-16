@@ -184,14 +184,25 @@ Describe 'Zustandsbericht aus dem Schnelllauf' {
     }
     It 'nennt die Rueckblick-Vorfaelle im Schnelllauf "vor dem Lesen" und laesst das Wort der Messung in der Antwort nicht stehen' {   # ZB-R65
         foreach ($i in @($H.before.incidents)) {
-            $i.guide.userView | Should -Match '^Vor dem Lesen aufgetreten \(Zahl der Ereignisse: \d+\); ein Schnelllauf zeichnet keine Messwerte auf\.$'
+            $i.guide.userView | Should -Match '^Vor dem Lesen aufgetreten \(Zahl der Ereignisse: \d+\)\.$'
             ($i.guide | ConvertTo-Json -Depth 10) | Should -Not -Match 'Vor der Messung aufgetreten'
             ($i.copy.named + $i.copy.anonymous) | Should -Not -Match 'Vor der Messung aufgetreten'; $i.copy.named | Should -Match 'Vor dem Lesen aufgetreten'
         }
         $H.PSObject.Properties.Name | Should -Not -Contain 'guidance'
         $g = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
         $g.userView.before | Should -Be 'Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor.'
-        $g.userView.beforeQuick | Should -Be 'Vor dem Lesen aufgetreten (Zahl der Ereignisse: {count}); ein Schnelllauf zeichnet keine Messwerte auf.'
+        $g.userView.beforeQuick | Should -Be 'Vor dem Lesen aufgetreten (Zahl der Ereignisse: {count}).'      # ZB-R70/Minor 10: the sentence about the missing values stands once, in the section's intro
+    }
+    It 'nennt die Pruefschritte der Rueckblick-Vorfaelle im Schnelllauf ohne Messung, Lagebild und Reiter, die es dort nicht gibt' {   # ZB-R70
+        $steps = New-Object System.Collections.Generic.List[string]
+        foreach ($i in @($H.before.incidents)) { foreach ($c in @($i.guide.checks)) { $steps.Add($c.text + ' | ' + $c.where + ' | ' + $c.sign) }; $steps.Add($i.copy.named); $steps.Add($i.copy.anonymous) }
+        $steps.Count | Should -BeGreaterThan 0
+        $all = $steps -join "`n"
+        $all | Should -Not -Match 'seit Beginn der Messung|Vorfälle der Messzeit|während der Messung|Lagebild|„Vor der Messung“|Reiter „Ereignisse“'
+        $all | Should -Match 'nach dem Lesen wieder aufgetreten ist \(zum Beispiel mit einem neuen Schnelllauf\)'; $all | Should -Match 'Bereich „Vor dem Lesen“'
+        # the catalogue keeps the wording of both reports side by side, in fields the measurement path drops
+        $g = Get-Content (Join-Path $PSScriptRoot '../src/guidance.de.json') -Raw | ConvertFrom-Json
+        $g.situations.crash.checks | Where-Object { $_.when -contains 'before' -and $_.text -match 'seit Beginn der Messung' } | ForEach-Object { $_.textQuick | Should -Be 'Prüfen, ob der Absturz nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf)'; $_.signQuick | Should -Be 'Absturz derselben Anwendung auch nach dem Lesen' }
     }
     It 'ordnet jedes Textfeld des Zustandsberichts im Bestand tests/MaskCensus.json ein' {                   # Global Constraints, Maskierung
         $file = Get-Content (Join-Path $PSScriptRoot 'MaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -259,6 +270,7 @@ Describe 'Zustandsbericht aus dem Schnelllauf' {
         $o = @(& $ReportScript -Path $cap -OutFile $f 6>&1); $d = Get-ReportData $f
         # ZB-R65: the report of a measurement keeps its wording and its catalogue as it was
         $d.guidance.userView.before | Should -Be 'Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor.'; @($d.guidance.userView.PSObject.Properties.Name) | Should -Not -Contain 'beforeQuick'
+        ($d.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -Not -Match '"(text|where|sign)Quick"'; ($d.before.incidents | ConvertTo-Json -Depth 20 -Compress) | Should -Match 'seit Beginn der Messung'
         foreach ($i in @($d.before.incidents)) { $i.guide.userView | Should -Match '^Vor der Messung aufgetreten \(Zahl der Ereignisse: \d+\)' }
         $d.meta.PSObject.Properties.Name | Should -Contain 'healthOnly'; $d.meta.healthOnly | Should -BeFalse; $d.meta.PSObject.Properties.Name | Should -Not -Contain 'reportKind'
         @($d.PSObject.Properties.Name) | Should -Contain 'incidents'; @($d.PSObject.Properties.Name) | Should -Contain 'lagebild'; $d.print.involvedFrom | Should -Be 'both'

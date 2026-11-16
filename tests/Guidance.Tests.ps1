@@ -203,6 +203,26 @@ Describe 'Katalog laden und pruefen' {
         $cat.copy.maxChecks -is [string] | Should -BeFalse
         $script:WorkerPerfGuidancePartNumbers | Should -Be @('copy.maxChecks', 'copy.maxRemedies')
     }
+    It 'nimmt die Fassung des Schnelllaufs eines Pruefschritts an, nimmt sie heraus und setzt sie ein' {          # ZB-R70
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.crash.checks[0].textQuick = 'Neu'; $c.situations.crash.checks[0].whereQuick = 'Hier'; $c.situations.hang.checks[0].signQuick = 'Zeichen' })
+        $crash = $cat.situations.crash.checks[0]; $crash.textQuick | Should -Be 'Neu'
+        $before = $cat | ConvertTo-Json -Depth 20 -Compress
+        $quick = @(Remove-WorkerPerfGuidanceQuickFields $cat)
+        $quick.Count | Should -Be 2
+        ($cat | ConvertTo-Json -Depth 20 -Compress) | Should -Not -Match 'Quick'
+        $crash.text | Should -Not -Be 'Neu'; $keep = $crash.text; $keepSign = $crash.sign
+        Set-WorkerPerfGuidanceQuickFields $quick
+        $crash.text | Should -Be 'Neu'; $crash.where | Should -Be 'Hier'; $crash.sign | Should -Be $keepSign
+        $cat.situations.hang.checks[0].sign | Should -Be 'Zeichen'
+        # a catalogue without any quick wording is left as it is
+        $plain = Read-WorkerPerfGuidance (New-Catalogue); $same = $plain | ConvertTo-Json -Depth 20 -Compress
+        @(Remove-WorkerPerfGuidanceQuickFields $plain).Count | Should -Be 0; ($plain | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly $same
+    }
+    It 'lehnt eine leere oder keine Fassung des Schnelllaufs ab' -TestCases @(
+        @{ Field = 'textQuick'; Value = '' }; @{ Field = 'whereQuick'; Value = 5 }; @{ Field = 'signQuick'; Value = '{unbekannt}' }
+    ) {
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0][$Field] = $Value }) } | Should -Throw "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld '$Field' *"
+    }
     It 'verlangt das Feld <Field> <Where>' -TestCases @(
         @(foreach ($f in 'title', 'meaning', 'short', 'checks', 'remedies', 'contacts') { @{ Field = $f; Where = 'der Situation'; List = ''; Msg = "*Eintrag 'cpu': Feld '$f' fehlt." } })
         @{ Field = 'where'; Where = 'eines Pruefschritts'; List = 'checks'; Msg = "*Eintrag 'cpu', checks``[0``]: Feld 'where' fehlt." }

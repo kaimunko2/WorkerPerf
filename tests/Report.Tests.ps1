@@ -771,8 +771,8 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
         @(Get-NamesLeft $strings $alles) | Should -BeNullOrEmpty
     }
     It 'traegt den Katalog wie gelesen in die Berichtsdaten' {
-        # the quick run's wording of userView.before (ZB-R65) is not part of the data of a measurement report
-        $asRead = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json') -Apps $AppList; [void]$asRead.userView.PSObject.Properties.Remove('beforeQuick')
+        # the quick run's wording of userView.before (ZB-R65) and of the checks (ZB-R70) is not part of the data of a measurement report
+        $asRead = Read-WorkerPerfGuidance (Join-Path $PSScriptRoot '../src/guidance.de.json') -Apps $AppList; [void]$asRead.userView.PSObject.Properties.Remove('beforeQuick'); [void](Remove-WorkerPerfGuidanceQuickFields $asRead)
         ($D.guidance | ConvertTo-Json -Depth 20 -Compress) | Should -BeExactly ($asRead | ConvertTo-Json -Depth 20 -Compress)
     }
     It 'maskiert den Katalog als einen gebildeten Text, auch unter Schluesseln wie Schluesselwortfelder' {   # P3-R10
@@ -910,7 +910,7 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         # Literal angepasst (Korrekturrunde 1 von Task 14c, ZB-R57): die Updates der WebView2-Runtime werden auch geprueft
         @($apps.checks | Where-Object grade -eq 'check').id | Should -Be @('apps.edgeWebView2Update', 'apps.edgeBackgroundMode', 'apps.teamsAutoUpdate'); ($apps.checks | Where-Object id -eq 'apps.edgeBackgroundMode').app | Should -Be 'edge'
         ($h.raw | Where-Object id -eq 'apps.office.updateUrl').free | Should -Be '\\fs01\office$\updates'; ($h.raw | Where-Object id -eq 'apps.edge.backgroundMode').label | Should -BeLike 'Microsoft Edge – *'
-        ($h.raw | Where-Object id -eq 'maintenance.searchService').stateText | Should -BeLike 'nicht zutreffend*'
+        ($h.raw | Where-Object id -eq 'maintenance.searchService').stateText | Should -BeLike 'trifft nicht zu*'
         # Literal angepasst (ZB-R54): die Treiberpruefung ist eine Faustregel
         $c = ($h.areas | Where-Object id -eq 'print').checks[0]; $c.id | Should -Be 'print.driversInSpooler'; $c.grade | Should -Be 'act'; $c.kind | Should -Be 'rule'; $c.source.url | Should -Match '^https://'
         foreach ($f in 'title', 'finding', 'meaning', 'kindLabel', 'value') { [string]$c.$f | Should -Not -BeNullOrEmpty -Because $f }; @($c.todo).Count | Should -BeGreaterThan 0

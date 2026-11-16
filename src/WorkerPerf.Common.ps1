@@ -192,7 +192,11 @@ function Split-WorkerPerfCsvLine([string]$Line) {
 }
 
 function ConvertFrom-WorkerPerfJsonFile([string]$Path) {
-    # Reads a JSON file explicitly as UTF-8; any failure names the file.
+    # Reads a JSON file explicitly as UTF-8; any failure names the file. A missing file gets a German sentence that says what
+    # to do (a catalogue or the application list is part of the delivery), not the text of the .NET exception.
+    if (-not [IO.File]::Exists($Path)) {
+        throw "Datei '$Path' fehlt. Bitte die Datei aus dem Lieferumfang von WorkerPerf an diesen Platz legen oder den Pfad pruefen."
+    }
     try {
         $text = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
         return ($text | ConvertFrom-Json)
@@ -714,7 +718,7 @@ function Read-WorkerPerfHealthApps([string]$Path) {
     # optional probe installed and the optional probes (only with installed). Returns per application
     # [ordered]@{ key; label; processes; installed; probes }, the probes with their defaults; an application without
     # installed is returned without probes (the health picture does not read it). Plain pipeline output.
-    if (-not $Path -or -not [IO.File]::Exists($Path)) { throw "Anwendungsliste '$Path' fehlt." }
+    if (-not $Path -or -not [IO.File]::Exists($Path)) { throw "Anwendungsliste '$Path' fehlt. Bitte die Datei apps.json aus dem Lieferumfang von WorkerPerf an diesen Platz legen oder mit -AppsFile den Pfad der Liste angeben." }
     try { $list = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) | ConvertFrom-Json }
     catch { Stop-WorkerPerfHealthApps $Path '' '' ('ist nicht lesbar oder kein gueltiges JSON (' + $_.Exception.Message.TrimEnd('.') + ')') }
     if ($null -eq $list -or $list -isnot [System.Management.Automation.PSCustomObject]) { Stop-WorkerPerfHealthApps $Path '' '' 'ist kein JSON-Objekt' }

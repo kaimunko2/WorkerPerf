@@ -769,6 +769,9 @@ if ($null -ne (Get-WorkerPerfField $guidanceViews 'beforeQuick')) {
     $beforeQuickView = [string](Get-WorkerPerfField $guidanceViews 'beforeQuick')
     [void]$guidanceViews.PSObject.Properties.Remove('beforeQuick')
 }
+# the same for the steps of the catalogue that carry a quick run wording (textQuick, whereQuick, signQuick: ZB-R70): taken out
+# here, put in place by the quick path
+$quickSteps = @(Remove-WorkerPerfGuidanceQuickFields $guidance)
 $healthCatalogue = Read-WorkerPerfHealthCatalogue $HealthFile $healthApps
 
 Write-Host 'Lese Aufzeichnung ...'
@@ -797,6 +800,7 @@ if ($model.Meta.HealthOnly) {
     $eventOffset = [int][Math]::Round([double]$model.Meta.OffsetMinutes)
     $lookback = Get-WorkerPerfLookback -Model $model -Config $eventConfig -Settings $eventSettings -Roles $roles -FirstId 1 -ReportedWallMs $null
     if ($null -ne $beforeQuickView) { $guidanceViews.before = $beforeQuickView }
+    Set-WorkerPerfGuidanceQuickFields $quickSteps
     $beforeIncidents = @($lookback.Incidents)
     $printState = Get-WorkerPerfPrintState -Model $model -EventIncidents @($beforeIncidents)
     $beforeOut = New-ReportBefore
@@ -808,6 +812,8 @@ if ($model.Meta.HealthOnly) {
     $readMs = $null
     if ($null -ne $model.CaptureStartMs) { $readMs = [long]$model.CaptureStartMs }
     $sourceLists = ConvertTo-ReportSources
+    # ZB-R72: the report data of a quick run are assembled here, and the measurement path assembles its own further down (the second
+    # `$data = [ordered]@{ ... }`, with the same guide, copy text and mask steps); a field added in one place must be considered in the other
     $data = [ordered]@{
         meta = [ordered]@{
             computer = (Get-MetaValue 'Computer'); os = (Get-MetaValue 'OS'); cores = [int]$model.Meta.Cores; ramGB = $metaFacts.RamGB
@@ -1506,6 +1512,8 @@ function Get-UnrecordedOut {
     [ordered]@{ id = 'Ereignisse'; label = [string]$texts['skip.label.Ereignisse']; text = [string]$texts['unrecorded.text.Ereignisse']
         places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) }
 }
+# ZB-R72: the quick path further up (`if ($model.Meta.HealthOnly)`) assembles the report data of a quick run on its own (meta, quality,
+# before, print, then the same guide, copy text and mask steps); a field added here must be considered there too, and the other way round
 $data = [ordered]@{
     meta = $meta; quality = $quality; thresholds = $thresholdsOut.ToArray()
     tickT = (New-JsonIntegers $tick.TimeMs); snapT = (New-JsonIntegers $snap.TimeMs); snapKind = $snapKindText

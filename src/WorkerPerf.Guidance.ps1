@@ -65,6 +65,9 @@ $script:WorkerPerfGuidanceItemFields = [ordered]@{
     'remedies' = @('text', 'precondition')
     'contacts' = @('text')
 }
+# optional fields of a check -> the field they replace in a quick run (-HealthOnly): the lookback of a quick run has no
+# measurement, so a step of an incident before the reading must not point to one (ZB-R70)
+$script:WorkerPerfGuidanceQuickFields = [ordered]@{ textQuick = 'text'; whereQuick = 'where'; signQuick = 'sign' }
 # placeholders every incident has a value for: the only ones meaning and impact of a situation and the fallbackNote may
 # hold (title and short hold none), so these texts never vanish for want of a value
 $script:WorkerPerfGuidanceAlwaysValues = @('from', 'to', 'duration', 'server', 'date')
@@ -161,6 +164,12 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
     $item = "$ListName[$Index]"
     if (-not (Test-WorkerPerfGuidanceObject $Element)) { Stop-WorkerPerfGuidance $Path $Situation $item '' 'ist kein Objekt' }
     foreach ($f in $script:WorkerPerfGuidanceItemFields[$ListName]) { Assert-WorkerPerfGuidanceField $Path $Situation $item $Element $f }
+    # a check may carry the wording of the quick run next to its own (textQuick, whereQuick, signQuick: ZB-R70)
+    if ($ListName -eq 'checks') {
+        foreach ($q in $script:WorkerPerfGuidanceQuickFields.Keys) {
+            if ($null -ne (Get-WorkerPerfGuidanceMember $Element $q)) { Assert-WorkerPerfGuidanceField $Path $Situation $item $Element $q }
+        }
+    }
     $conditions = @()
     $when = Get-WorkerPerfGuidanceMember $Element 'when'
     if ($null -ne $when) {
@@ -380,6 +389,32 @@ function Read-WorkerPerfApps([string]$Path) {
         }
     }
     return $list
+}
+
+function Remove-WorkerPerfGuidanceQuickFields($Catalogue) {
+    # Takes the quick run's wording of the checks (textQuick, whereQuick, signQuick) out of the catalogue, so that the
+    # catalogue in the data of a measurement report stays as it was. Returns one record per check that had any:
+    # Step (the check, still in the catalogue) and Values (field of the check -> the quick wording); plain pipeline
+    # output (the caller writes @(...)). Set-WorkerPerfGuidanceQuickFields puts them in place.
+    foreach ($situation in @($Catalogue.situations.PSObject.Properties)) {
+        $steps = Get-WorkerPerfGuidanceList $situation.Value 'checks'
+        foreach ($step in $steps) {
+            $values = @{}
+            foreach ($q in $script:WorkerPerfGuidanceQuickFields.Keys) {
+                if ($null -eq (Get-WorkerPerfGuidanceMember $step $q)) { continue }
+                $values[$script:WorkerPerfGuidanceQuickFields[$q]] = [string]$step.$q
+                [void]$step.PSObject.Properties.Remove($q)
+            }
+            if ($values.Count -gt 0) { [pscustomobject]@{ Step = $step; Values = $values } }
+        }
+    }
+}
+
+function Set-WorkerPerfGuidanceQuickFields($QuickSteps) {
+    # The quick run's wording in place of the check's own (QuickSteps: Remove-WorkerPerfGuidanceQuickFields).
+    foreach ($q in @($QuickSteps)) {
+        foreach ($field in $q.Values.Keys) { $q.Step.$field = $q.Values[$field] }
+    }
 }
 
 function Get-WorkerPerfGuidanceAppKeys($Apps) {

@@ -79,7 +79,7 @@
     "eventOne": "Eine Sitzung betroffen; Zahl der Ereignisse: {count}.",
     "eventNone": "Keiner Benutzersitzung zugeordnet; Zahl der Ereignisse: {count}.",
     "before": "Vor der Messung aufgetreten (Zahl der Ereignisse: {count}); für diese Zeit liegen keine Messwerte vor.",
-    "beforeQuick": "Vor dem Lesen aufgetreten (Zahl der Ereignisse: {count}); ein Schnelllauf zeichnet keine Messwerte auf."
+    "beforeQuick": "Vor dem Lesen aufgetreten (Zahl der Ereignisse: {count})."
   },
   "lagebild": {
     "red": "Handlungsbedarf wegen {parts}; {minutes} min mit spürbarer Störung.",
@@ -497,7 +497,7 @@
         },
         {
           "when": ["cause.none"],
-          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; Carl Stalhood gibt der virtuellen Maschine 8 vCPU; beide Angaben sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; Carl Stalhood gibt der virtuellen Maschine 8 vCPU; beide Angaben sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum VMware-Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Engpass ohne einzelnen Verursacher an mehreren Tagen auftritt",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
@@ -1467,7 +1467,7 @@
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         },
         {
-          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
+          "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des VMware-Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
@@ -1718,7 +1718,7 @@
         {
           "when": ["cause.none", "lead.cpu"],
           "text": "Kein einzelner Verursacher: Auslegung des Servers für den Prozessor prüfen (Sitzungen je Server, Prozessoren der virtuellen Maschine)",
-          "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“; nach GO-EUC (Labortest von 2026) und Manuel Winkel (2018) mit der Betreuung von VMware in vCenter vergleichen, ob Prozessoren und Arbeitsspeicher des Servers in einen NUMA-Knoten des Hosts passen (Prozessorsockel mit eigenem Arbeitsspeicher)",
+          "where": "Expertenansicht über die gesamte Messung: Kacheln und Diagramme; Reiter „Sitzungen“; nach GO-EUC (Labortest von 2026) und Manuel Winkel (2018) mit der Betreuung von VMware in vCenter vergleichen, ob Prozessoren und Arbeitsspeicher des Servers in einen NUMA-Knoten des VMware-Hosts passen (Prozessorsockel mit eigenem Arbeitsspeicher)",
           "sign": "Auslastung über die ganze Dauer des Zustands über dem Soll bei üblicher Zahl von Sitzungen"
         },
         {
@@ -1814,7 +1814,7 @@
         },
         {
           "when": ["cause.none", "lead.cpu"],
-          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum Host passt, beurteilt die Betreuung von VMware",
+          "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum VMware-Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
@@ -1881,7 +1881,8 @@
           "when": ["pattern.afterhang"],
           "text": "Die Anwendung reagierte vor dem Absturz nicht mehr und wurde beendet: die Ursache wie bei einem Hänger suchen (worauf wartete die Anwendung)",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Wurde nach Nichtreagieren beendet“; Lagebild: Vorfälle „Anwendung reagierte nicht mehr“",
-          "sign": "Hänger derselben Anwendung in derselben Sitzung höchstens zwei Minuten vor dem Absturz"
+          "sign": "Hänger derselben Anwendung in derselben Sitzung höchstens zwei Minuten vor dem Absturz",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Wurde nach Nichtreagieren beendet“; Bereich „Vor dem Lesen“: Vorfälle „Anwendung reagierte nicht mehr“"
         },
         {
           "when": ["pattern.sharedmodule"],
@@ -1920,7 +1921,8 @@
           "when": ["pattern.manyusers"],
           "text": "Mehrere Benutzer sind betroffen: prüfen, was sich an {app} oder am Server zuletzt geändert hat (neue Version, Aktualisierung, neues Add-in, Windows-Update)",
           "where": "Änderungsprotokoll der Softwareverteilung; Lagebild, Bereich „Vor der Messung“: erster Absturz dieser Art; nach Guy Leech (2014) im Master-Image nach jeder Installation prüfen, ob ein Neustart aussteht (Registrierungswert PendingFileRenameOperations unter HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager), und es vor dem Versiegeln neu starten",
-          "sign": "Beginn der Abstürze kurz nach einer Änderung"
+          "sign": "Beginn der Abstürze kurz nach einer Änderung",
+          "whereQuick": "Änderungsprotokoll der Softwareverteilung; Bereich „Vor dem Lesen“: erster Absturz dieser Art; nach Guy Leech (2014) im Master-Image nach jeder Installation prüfen, ob ein Neustart aussteht (Registrierungswert PendingFileRenameOperations unter HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager), und es vor dem Versiegeln neu starten"
         },
         {
           "when": ["pattern.oneuser"],
@@ -1938,7 +1940,8 @@
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Absturz gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“"
         },
         {
           "when": ["pattern.none"],
@@ -1956,13 +1959,17 @@
           "when": ["before"],
           "text": "Prüfen, ob der Absturz seit Beginn der Messung wieder aufgetreten ist",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
-          "sign": "Absturz derselben Anwendung auch während der Messung"
+          "sign": "Absturz derselben Anwendung auch während der Messung",
+          "textQuick": "Prüfen, ob der Absturz nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige des Servers, Protokoll „Anwendung“",
+          "signQuick": "Absturz derselben Anwendung auch nach dem Lesen"
         },
         {
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Absturz eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
-          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
+          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)"
         },
         {
           "text": "Version der Anwendung und des fehlerhaften Moduls feststellen und mit dem Stand des Herstellers vergleichen",
@@ -1977,7 +1984,8 @@
         {
           "text": "Prüfen, ob derselbe Absturz an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „Anwendung“",
-          "sign": "Absturz derselben Anwendung im selben Modul an mehreren Tagen"
+          "sign": "Absturz derselben Anwendung im selben Modul an mehreren Tagen",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige, Protokoll „Anwendung“"
         },
         {
           "when": ["pattern.unchecked"],
@@ -2011,6 +2019,7 @@
           "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Absturzes blockiert",
+          "whereQuick": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
@@ -2213,7 +2222,8 @@
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Hänger gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“"
         },
         {
           "when": ["skipped.Prozesse", "affected.unknown", "pattern.unchecked"],
@@ -2225,13 +2235,17 @@
           "when": ["before"],
           "text": "Prüfen, ob der Hänger seit Beginn der Messung wieder aufgetreten ist",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
-          "sign": "Hänger derselben Anwendung auch während der Messung"
+          "sign": "Hänger derselben Anwendung auch während der Messung",
+          "textQuick": "Prüfen, ob der Hänger nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige des Servers, Protokoll „Anwendung“",
+          "signQuick": "Hänger derselben Anwendung auch nach dem Lesen"
         },
         {
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Hänger eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
-          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
+          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)"
         },
         {
           "text": "Betroffene Benutzer fragen, was sie taten, als die Anwendung stehen blieb",
@@ -2241,12 +2255,16 @@
         {
           "text": "Prüfen, ob um dieselbe Zeit eine Verzögerung, eine langsame Freigabe oder eine langsame Gegenstelle gemessen wurde",
           "where": "Lagebild: Zeitleiste um die Uhrzeit des Hängers; Expertenansicht, Diagramme „Freigabe-Antwortzeit“ und „Antwortzeit der Gegenstellen“",
-          "sign": "Messwert über dem Soll kurz vor dem Hänger"
+          "sign": "Messwert über dem Soll kurz vor dem Hänger",
+          "textQuick": "Prüfen, ob um dieselbe Zeit eine Verzögerung, eine langsame Freigabe oder eine langsame Gegenstelle bestand",
+          "whereQuick": "Leistungsüberwachung des Servers zur Uhrzeit des Hängers; in einem Bericht mit Messung: Expertenansicht, Diagramme „Freigabe-Antwortzeit“ und „Antwortzeit der Gegenstellen“",
+          "signQuick": "Auffälliger Messwert kurz vor dem Hänger"
         },
         {
           "text": "Prüfen, ob derselbe Hänger an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „Anwendung“",
-          "sign": "Hänger derselben Anwendung an mehreren Tagen"
+          "sign": "Hänger derselben Anwendung an mehreren Tagen",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige, Protokoll „Anwendung“"
         },
         {
           "when": ["pattern.unchecked"],
@@ -2266,6 +2284,7 @@
           "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ausführung von msedgewebview2.exe oder der nutzenden Anwendung zur Zeit des Hängers blockiert",
+          "whereQuick": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
@@ -2363,19 +2382,24 @@
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Ausfall gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“"
         },
         {
           "when": ["before"],
           "text": "Prüfen, ob der Dienst seit Beginn der Messung wieder ausgefallen ist",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
-          "sign": "Ausfall desselben Dienstes auch während der Messung"
+          "sign": "Ausfall desselben Dienstes auch während der Messung",
+          "textQuick": "Prüfen, ob der Dienst nach dem Lesen wieder ausgefallen ist (zum Beispiel mit einem neuen Schnelllauf)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige des Servers, Protokoll „System“",
+          "signQuick": "Ausfall desselben Dienstes auch nach dem Lesen"
         },
         {
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Ausfall eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
-          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
+          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)"
         },
         {
           "text": "Prüfen, ob der Dienst wieder läuft",
@@ -2395,7 +2419,8 @@
         {
           "text": "Prüfen, ob der Dienst an weiteren Tagen ausgefallen ist",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“",
-          "sign": "Ereignis 7031 oder 7034 zum selben Dienst an mehreren Tagen"
+          "sign": "Ereignis 7031 oder 7034 zum selben Dienst an mehreren Tagen",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige, Protokoll „System“"
         },
         {
           "when": ["pattern.unchecked"],
@@ -2481,6 +2506,7 @@
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Druckfehler gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
           "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“",
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
@@ -2607,6 +2633,9 @@
           "text": "Prüfen, ob das Druckproblem seit Beginn der Messung wieder aufgetreten ist und ob es an einem Treiber oder einer Druckwarteschlange hängt",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“; Expertenansicht, Reiter „Drucken“",
           "sign": "Druckproblem mit demselben Treiber oder Drucker auch während der Messung",
+          "textQuick": "Prüfen, ob das Druckproblem nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf) und ob es an einem Treiber oder einer Druckwarteschlange hängt",
+          "whereQuick": "Bereich „Vor dem Lesen“; Expertenansicht, Reiter „Drucken“",
+          "signQuick": "Druckproblem mit demselben Treiber oder Drucker auch nach dem Lesen",
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
@@ -2646,6 +2675,7 @@
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Druckproblem eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
           "source": "WorkerPerf: Hinweis zur Auswertung"
         }
       ],
@@ -2850,19 +2880,24 @@
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Profilfehler gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“"
         },
         {
           "when": ["before"],
           "text": "Prüfen, ob der Profilfehler seit Beginn der Messung wieder aufgetreten ist",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
-          "sign": "Profilfehler desselben Benutzers auch während der Messung"
+          "sign": "Profilfehler desselben Benutzers auch während der Messung",
+          "textQuick": "Prüfen, ob der Profilfehler nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige des Servers, Protokoll „Anwendung“",
+          "signQuick": "Profilfehler desselben Benutzers auch nach dem Lesen"
         },
         {
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Profilfehler eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
-          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
+          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)"
         },
         {
           "text": "Meldungstext des Profilfehlers lesen: er nennt meist den Grund",
@@ -2877,7 +2912,8 @@
         {
           "text": "Erreichbarkeit und freien Platz des Profilspeichers zur Zeit des Fehlers prüfen",
           "where": "Dateiserver mit dem Profilspeicher; Lagebild: Vorfälle zu Dateiserver und Profilcontainer im selben Zeitraum",
-          "sign": "Verbindungsabbruch, Verzögerung oder Platzmangel am Profilspeicher zur Zeit des Fehlers"
+          "sign": "Verbindungsabbruch, Verzögerung oder Platzmangel am Profilspeicher zur Zeit des Fehlers",
+          "whereQuick": "Dateiserver mit dem Profilspeicher"
         },
         {
           "text": "Prüfen, ob der Benutzer zur selben Zeit noch auf einem anderen Server angemeldet war",
@@ -2960,19 +2996,24 @@
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach der Meldung gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
-          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft"
+          "sign": "Ereignis kurz vor dem Vorfall, das dieselbe Anwendung, denselben Benutzer oder denselben Dateiserver betrifft",
+          "whereQuick": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“"
         },
         {
           "when": ["before"],
           "text": "Prüfen, ob die Meldung seit Beginn der Messung wieder aufgetreten ist",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“",
-          "sign": "Meldung derselben Art auch während der Messung"
+          "sign": "Meldung derselben Art auch während der Messung",
+          "textQuick": "Prüfen, ob die Meldung nach dem Lesen wieder aufgetreten ist (zum Beispiel mit einem neuen Schnelllauf)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige des Servers, Protokoll „System“",
+          "signQuick": "Meldung derselben Art auch nach dem Lesen"
         },
         {
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, eine Meldung eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
-          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus"
+          "sign": "Rückblick, der erst mit dem letzten Neustart beginnt: über die Tage davor sagt er nichts aus",
+          "whereQuick": "Bereich „Vor dem Lesen“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)"
         },
         {
           "text": "Art und Meldungstext des Systemfehlers feststellen",
@@ -2987,17 +3028,22 @@
         {
           "text": "Bei einer Warnung vor Speichermangel: nachlesen, welche Anwendungen Windows als größte Verbraucher nennt, und mit den Arbeitsspeicher-Vorfällen dieses Berichts vergleichen",
           "where": "Meldungstext des Ereignisses 2004; Lagebild: Vorfälle „Arbeitsspeicher des Servers knapp“",
-          "sign": "Name der Anwendung im Meldungstext; Arbeitsspeicher-Vorfall zur selben Zeit"
+          "sign": "Name der Anwendung im Meldungstext; Arbeitsspeicher-Vorfall zur selben Zeit",
+          "textQuick": "Bei einer Warnung vor Speichermangel: nachlesen, welche Anwendungen Windows als größte Verbraucher nennt, und mit der Arbeitsspeicher-Auslastung des Servers zur Zeit der Meldung vergleichen",
+          "whereQuick": "Meldungstext des Ereignisses 2004",
+          "signQuick": "Name der Anwendung im Meldungstext; knapper Arbeitsspeicher zur selben Zeit"
         },
         {
           "text": "Bei einem Verbindungsabbruch zum Dateiserver: Netzstrecke und Dateiserver zur Zeit der Meldung prüfen lassen",
           "where": "Betreuung von Netz und Dateiserver; Lagebild: Vorfälle „Dateiserver antwortet langsam“ im selben Zeitraum",
-          "sign": "Störung, Neustart oder Lastspitze am Dateiserver oder im Netz zur Zeit der Meldung"
+          "sign": "Störung, Neustart oder Lastspitze am Dateiserver oder im Netz zur Zeit der Meldung",
+          "whereQuick": "Betreuung von Netz und Dateiserver"
         },
         {
           "text": "Prüfen, ob dieselbe Meldung an weiteren Tagen auftrat",
           "where": "Lagebild, Bereich „Vor der Messung“; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient",
-          "sign": "Meldung derselben Art an mehreren Tagen (Dauerproblem statt Einzelfall)"
+          "sign": "Meldung derselben Art an mehreren Tagen (Dauerproblem statt Einzelfall)",
+          "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient"
         },
         {
           "text": "Wenn der Datenträger- oder Dateisystemfehler das Systemlaufwerk oder den Cache-Datenträger von MCS nennt und dieser fast voll ist: feststellen, was ihn seit dem Start des Servers füllt; die Praxisquelle Guy Leech (Skript ohne Datum) listet dafür die seit dem Start erzeugten oder geänderten Dateien nach Größe auf; finden sich wenige große oder schnell wachsende Dateien eines Produkts, den Schreiber abstellen oder umleiten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",

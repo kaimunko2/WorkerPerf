@@ -363,7 +363,11 @@ Describe 'Anwendungsliste lesen und pruefen' {
         $apps[0].probes[3].path | Should -Be 'HKLM\SOFTWARE\Alpha/Beta'; $apps[0].probes[5].path | Should -Be '\Alpha/Beta\Update'
     }
     It 'meldet eine fehlende oder kaputte Datei' {
-        { Read-WorkerPerfHealthApps (Join-Path $TestDrive 'gibtesnicht.json') } | Should -Throw "Anwendungsliste '*gibtesnicht.json' fehlt."
+        { Read-WorkerPerfHealthApps (Join-Path $TestDrive 'gibtesnicht.json') } | Should -Throw "Anwendungsliste '*gibtesnicht.json' fehlt. Bitte die Datei apps.json aus dem Lieferumfang von WorkerPerf an diesen Platz legen oder mit -AppsFile den Pfad der Liste angeben."
+        # Code Minor 1: the missing catalogue or list says in German what to do, not the text of the .NET exception
+        { ConvertFrom-WorkerPerfJsonFile (Join-Path $TestDrive 'weg.json') } | Should -Throw "Datei '*weg.json' fehlt. Bitte die Datei aus dem Lieferumfang von WorkerPerf an diesen Platz legen oder den Pfad pruefen."
+        $msg = try { ConvertFrom-WorkerPerfJsonFile (Join-Path $TestDrive 'weg.json') } catch { $_.Exception.Message }; $msg | Should -Not -Match 'Could not find|Exception'
+        $bad2 = Join-Path $TestDrive 'bad2.json'; [IO.File]::WriteAllText($bad2, '{ kein json'); { ConvertFrom-WorkerPerfJsonFile $bad2 } | Should -Throw "Datei '*bad2.json' ist nicht lesbar oder kein gueltiges JSON: *"
         $bad = Join-Path $TestDrive 'bad.json'; [IO.File]::WriteAllText($bad, '{ kein json'); { Read-WorkerPerfHealthApps $bad } | Should -Throw "Anwendungsliste '*bad.json': *"
     }
     It 'bildet je Probe eine Zeile mit Zustand und Wert' {
