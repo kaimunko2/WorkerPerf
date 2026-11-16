@@ -17,21 +17,37 @@ BeforeAll {
 Describe 'Update-WorkerPerfBurstState' {
     It 'bleibt 60 Sekunden nach dem letzten Ausloeser aktiv' {
         $s = New-WorkerPerfBurstState
-        Update-WorkerPerfBurstState -State $s -Now $t -BadSignals @('cpu.host') | Should -BeTrue
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(60) -BadSignals @() | Should -BeTrue
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(62) -BadSignals @() | Should -BeFalse
+        Update-WorkerPerfBurstState -State $s -Now $t -BadSignals @('cpu.host') | Should -BeFalse
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2) -BadSignals @('cpu.host') | Should -BeFalse
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(4) -BadSignals @('cpu.host') | Should -BeTrue
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(64) -BadSignals @() | Should -BeTrue
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(66) -BadSignals @() | Should -BeFalse
+    }
+    It 'loest erst nach drei Takten in Folge ueber der Schwelle aus (erster echter Lauf)' {
+        # einzelne Spitzen (eine kurze Eingabeverzoegerung) hielten die Verdichtung fast die ganze Messung offen
+        $s = New-WorkerPerfBurstState
+        $active = foreach ($i in 0..29) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals $(if ($i % 3 -eq 0) { @('input.session') } else { @() }) }
+        @($active | Where-Object { $_ }).Count | Should -Be 0
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(100) -BadSignals @('input.session') | Should -BeFalse
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(102) -BadSignals @('input.session', 'cpu.host') | Should -BeFalse
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(104) -BadSignals @('input.session') | Should -BeTrue
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(106) -BadSignals @() -ConfirmTicks 1 | Should -BeTrue
+        $o = New-WorkerPerfBurstState; Update-WorkerPerfBurstState -State $o -Now $t -BadSignals @('cpu.host') -ConfirmTicks 1 | Should -BeTrue
     }
     It 'begrenzt die Verdichtung bei dauerhaft ueberschrittener Schwelle' {     # Review Focus 1
         $s = New-WorkerPerfBurstState
         $active = foreach ($i in 0..299) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals @('mem.used') }
-        @($active | Where-Object { $_ }).Count | Should -Be 181              # 151 Takte bis 300 s, danach 30 Takte Nachlauf
+        @($active | Where-Object { $_ }).Count | Should -Be 179              # ab dem dritten Takt bis 300 s (149 Takte), danach 30 Takte Nachlauf
         Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(600) -BadSignals @() | Should -BeFalse
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(602) -BadSignals @('mem.used') | Should -BeTrue      # nach Entwarnung wieder scharf
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(602 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(606) -BadSignals @('mem.used') | Should -BeTrue      # nach Entwarnung wieder scharf
     }
     It 'fuehrt die Begrenzung je Signal' {
         $s = New-WorkerPerfBurstState
         foreach ($i in 0..199) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals @('mem.used')) }
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(400) -BadSignals @('mem.used', 'cpu.host') | Should -BeTrue
+        [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(400) -BadSignals @('mem.used', 'cpu.host'))
+        [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(402) -BadSignals @('mem.used', 'cpu.host'))
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(404) -BadSignals @('mem.used', 'cpu.host') | Should -BeTrue
     }
 }
 Describe 'Zeitplan' {

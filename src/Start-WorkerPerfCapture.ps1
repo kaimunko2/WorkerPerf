@@ -13,7 +13,7 @@
           inputdelay.csv, inputdelay_proc.csv)
       snapshots (-IntervalSeconds, default 15 s): processes, sessions and Citrix metrics
           (snapshots.csv, processes.csv, procinfo.csv, procend.csv, sessions.csv, citrix.csv),
-          with each regular snapshot also endpoint probes (probes.csv), events up to 5 s before the read
+          with each regular snapshot also endpoint probes (probes.csv), once a minute events up to 5 s before the read
           (events.csv; one more read without that lag when the capture ends) and the counters of the print
           queues (printqueues.csv, a row only when a value changes)
 
@@ -21,7 +21,7 @@
     installed print drivers to printdrivers.csv. Before the first tick the health picture of the
     server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).
 
-    While a trigger signal of thresholds.json is over its threshold (and -BurstHoldSeconds
+    Once a trigger signal of thresholds.json is over its threshold in three consecutive ticks, while it stays over (and -BurstHoldSeconds
     afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
     is a keyframe that lists every process; the others only list active processes.
 
@@ -491,6 +491,11 @@ try {
         # so the regular reads end EventLagSeconds before now and the cursor moves to that bound (P1-R34); the read at the
         # end of the capture runs without that lag. Run with '.' in this scope.
         $eventLagSeconds = 5
+        # The events are read once a minute, not at every regular slot: each event carries its own time stamp, so only the
+        # moment it reaches events.csv moves (by up to a minute); the read costs the EventLog service most of the
+        # snapshot's time on a real server (first real run). Print queues stay at every regular slot.
+        $eventIntervalSeconds = 60
+        $nextEventsUtc = [datetime]::MinValue
         $readEvents = {
             param([datetime]$Until)
             if ((ConvertTo-WorkerPerfUtc $Until) -gt (ConvertTo-WorkerPerfUtc $lastEvents)) {
@@ -513,7 +518,13 @@ try {
         # The reads of the regular slot besides the snapshot: events since the cursor and the print queue counters. Run
         # with '.' in this scope. With a snapshot their time counts toward its measured duration (CollectMs).
         $readSlot = {
-            if ($null -ne $wEvents) { . $readEvents ((Get-WorkerPerfNow).AddSeconds(-$eventLagSeconds)) }
+            if ($null -ne $wEvents) {
+                $slotNow = Get-WorkerPerfNow
+                if ((ConvertTo-WorkerPerfUtc $slotNow) -ge $nextEventsUtc) {
+                    . $readEvents ($slotNow.AddSeconds(-$eventLagSeconds))
+                    $nextEventsUtc = (ConvertTo-WorkerPerfUtc $slotNow).AddSeconds($eventIntervalSeconds)
+                }
+            }
             if ($null -ne $wQueues) {
                 try {
                     $queueTime = Get-WorkerPerfNow

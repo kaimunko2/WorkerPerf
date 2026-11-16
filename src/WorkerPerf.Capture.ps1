@@ -110,7 +110,11 @@ function New-WorkerPerfBurstState {
 }
 
 function Update-WorkerPerfBurstState {
-    param($State, [datetime]$Now, [AllowEmptyCollection()][string[]]$BadSignals, [int]$HoldSeconds = 60, [int]$MaxEpisodeSeconds = 300)
+    # A signal triggers once it is bad in ConfirmTicks consecutive ticks (a single spike, such as one short input delay,
+    # forms no finding either and must not keep the burst open), then in every further bad tick while its episode is at
+    # most MaxEpisodeSeconds old (counted from its first bad tick). The burst lasts HoldSeconds after the last trigger.
+    param($State, [datetime]$Now, [AllowEmptyCollection()][string[]]$BadSignals, [int]$HoldSeconds = 60, [int]$MaxEpisodeSeconds = 300,
+        [int]$ConfirmTicks = 3)
 
     $bad = @{}
     foreach ($id in @($BadSignals)) { if (-not [string]::IsNullOrEmpty($id)) { $bad[$id] = $true } }
@@ -122,14 +126,10 @@ function Update-WorkerPerfBurstState {
 
     $triggered = $false
     foreach ($id in $bad.Keys) {
-        if (-not $State.Signals.ContainsKey($id)) {
-            # Armed: a new episode begins.
-            $State.Signals[$id] = @{ Armed = $false; Start = $Now }
-            $triggered = $true
-        }
-        elseif (($Now - $State.Signals[$id].Start).TotalSeconds -le $MaxEpisodeSeconds) {
-            $triggered = $true
-        }
+        if (-not $State.Signals.ContainsKey($id)) { $State.Signals[$id] = @{ Armed = $false; Start = $Now; Count = 0 } }
+        $sig = $State.Signals[$id]
+        $sig.Count++
+        if ($sig.Count -ge $ConfirmTicks -and ($Now - $sig.Start).TotalSeconds -le $MaxEpisodeSeconds) { $triggered = $true }
     }
     if ($triggered) {
         $State.HasTrigger = $true

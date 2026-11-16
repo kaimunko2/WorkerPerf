@@ -113,7 +113,7 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
         $e = $FailMeta.SourceErrors
         $e.fast.Count | Should -Be 1; $e.fast.FirstMessage | Should -Be 'Testfehler im schnellen Takt'
         $e.snapshot.Count | Should -Be 1; $e.snapshot.FirstMessage | Should -Be 'Testfehler im Schnappschuss'
-        $e.events.Count | Should -Be 241; $e.events.FirstMessage | Should -Be 'Testfehler im Ereignisprotokoll'    # Aussage geaendert (P1-R34): 240 Abrufe und der letzte zum Ende
+        $e.events.Count | Should -Be 61; $e.events.FirstMessage | Should -Be 'Testfehler im Ereignisprotokoll'    # Aussage geaendert (P1-R34): 240 Abrufe und der letzte zum Ende
         # ConvertFrom-Json liefert Zeiten je nach PowerShell-Version als DateTime oder als Text
         $toDto = { param($v) if ($v -is [datetime]) { [DateTimeOffset]$v } else { [DateTimeOffset]::Parse($v, [cultureinfo]::InvariantCulture) } }
         ((& $toDto $e.fast.FirstTime) - (& $toDto $FailMeta.StartTime)).TotalSeconds | Should -Be 598
@@ -136,7 +136,7 @@ function Get-WorkerPerfEvents { param([datetime]$Since) throw 'Testfehler im Ere
         $FailData.incidents.Count | Should -Be 8; $FailData.meta.endReason | Should -Be 'duration'
         $q = $FailData.quality
         @($q.sourceErrors).source | Should -Be @('events', 'fast', 'snapshot')
-        ($q.sourceErrors | Where-Object source -eq 'events').count | Should -Be 241                               # Aussage geaendert (P1-R34)
+        ($q.sourceErrors | Where-Object source -eq 'events').count | Should -Be 61                               # Aussage geaendert (P1-R34)
         ($q.sourceErrors | Where-Object source -eq 'events').label | Should -Be 'Ereignisprotokoll'
         ($q.sourceErrors | Where-Object source -eq 'fast').firstMessage | Should -Be 'Testfehler im schnellen Takt'
         ($q.sourceErrors | Where-Object source -eq 'fast').firstMs | Should -Be ($FailData.meta.start + 596000)
@@ -177,8 +177,9 @@ function Wait-WorkerPerfTick { param([datetime]$Until, [string]$StopFlagPath)
 function Get-WorkerPerfEventsBefore { param([int]$Days, [datetime]$Until)
     $script:WorkerPerfSimNow = $script:WorkerPerfSimNow.AddSeconds(61)
     @{ Events = @(Get-TestEvents); Capped = @('system') } }
+$script:SlowEventsDone = $false
 function Get-WorkerPerfEvents { param([datetime]$Since)
-    if ((Get-WorkerPerfSimElapsed) -eq 391) { Start-Sleep -Milliseconds 300 }
+    if (-not $script:SlowEventsDone -and (Get-WorkerPerfSimElapsed) -ge 391) { $script:SlowEventsDone = $true; Start-Sleep -Milliseconds 300 }   # der erste Abruf ab 391 s (einmal pro Minute)
     foreach ($e in @(Get-TestEvents)) { if ($e.Time -ge $Since) { $e } } }
 function Get-WorkerPerfPrintDrivers { [pscustomobject]@{ Name = 'Sim PCL 6'; Manufacturer = 'Sim'; Version = '1.0'; Type = 3; Isolation = 'shared'; Files = @('a.dll', 'b.dll') } }
 function Get-WorkerPerfPrintQueues {
@@ -217,10 +218,11 @@ function Get-WorkerPerfPrintQueues {
     It 'zaehlt das Lesen der Ereignisse und Warteschlangen zur Messdauer des Schnappschusses' {   # Fix-Runde 1, Spec 4.4
         $start = $(if ($LbMeta.StartTime -is [datetime]) { [DateTimeOffset]$LbMeta.StartTime } else { [DateTimeOffset]::Parse($LbMeta.StartTime, [cultureinfo]::InvariantCulture) })
         $snaps = @(Import-Csv (Join-Path $LbRun 'snapshots.csv'))
-        foreach ($sec in 361, 391) {
-            $row = @($snaps | Where-Object { $_.Kind -ne 'B' -and [Math]::Round(([DateTimeOffset]::Parse($_.Timestamp, [cultureinfo]::InvariantCulture) - $start).TotalSeconds) -eq $sec })
-            $row.Count | Should -Be 1 -Because $sec; [double]$row[0].CollectMs | Should -BeGreaterOrEqual 300 -Because $sec
-        }
+        $at = { param($From, $To) @($snaps | Where-Object { $_.Kind -ne 'B' -and $(
+                    $x = [Math]::Round(([DateTimeOffset]::Parse($_.Timestamp, [cultureinfo]::InvariantCulture) - $start).TotalSeconds); $x -ge $From -and $x -lt $To) }) }
+        $q = @(& $at 361 362); $q.Count | Should -Be 1; [double]$q[0].CollectMs | Should -BeGreaterOrEqual 300       # Warteschlangen bei jedem regulaeren Schnappschuss
+        # Ereignisse einmal pro Minute: genau ein regulaerer Schnappschuss der Minute ab 391 s traegt den langsamen Abruf
+        @(& $at 391 451 | Where-Object { [double]$_.CollectMs -ge 300 }).Count | Should -Be 1
     }
     It 'vermerkt Tage und unvollstaendige Protokolle in meta.json' {
         $LbMeta.EventLookbackDays | Should -Be 3; @($LbMeta.LookbackCapped) | Should -Be @('system')

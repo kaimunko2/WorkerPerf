@@ -78,7 +78,8 @@ Start-WorkerPerfCapture.ps1  ──►  CSV-Ordner  ──►  New-WorkerPerfRep
 Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Server-Signale (CPU, Speicher,
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
 nimmt er einen Schnappschuss der Prozesse, Sitzungen und Citrix-Werte, prüft die Gegenstellen und liest
-die Ereignisse. Solange ein Auslöser-Signal über seiner Schwelle liegt (und 60 Sekunden danach, je Signal
+einmal pro Minute die Ereignisse. Liegt ein Auslöser-Signal drei Takte in Folge über seiner Schwelle, verdichtet er
+fortan, solange es darüber bleibt (und 60 Sekunden danach, je Signal
 höchstens 5 Minuten am Stück), verdichtet er die Schnappschüsse: mit den Standardwerten alle **6 Sekunden**,
 denn ein Schnappschuss entsteht immer in einem schnellen Takt, also im ersten Takt nach Ablauf von
 `-BurstIntervalSeconds` (5 s) – bei einem Takt von 2 s jeder dritte.
@@ -98,8 +99,11 @@ Der betroffene Takt oder Schnappschuss entfällt, die Konsole warnt einmal je Qu
 die Fehler je Quelle mit Zeit und Meldung des ersten (`SourceErrors`). Der Bericht führt sie unter
 „Messqualität" auf.
 
-**Ereignisse und Drucken:** Bei jedem regulären Schnappschuss liest der Collector die neuen Ereignisse der
-Protokolle aus `src\events.json` (mit einer Obergrenze je Abruf) und die Zähler der Druckwarteschlangen. Je
+**Ereignisse und Drucken:** Einmal pro Minute liest der Collector beim regulären Schnappschuss die neuen Ereignisse
+der Protokolle aus `src\events.json` (mit einer Obergrenze je Abruf), bei jedem regulären Schnappschuss die Zähler der
+Druckwarteschlangen. Jedes Ereignis behält seine eigene Zeit; nur sein Eintrag in `events.csv` folgt bis zu einer
+Minute später. Die Abfrage kostet den Dienst EventLog auf einem echten Server den größten Teil der Zeit eines
+Schnappschusses. Je
 Ereignis speichert er Zeit, Protokoll, Quelle, Kennung, Stufe, Gruppe und Art, wo vorhanden Anwendung und Version,
 fehlerhaftes Modul und Version, Fehlercode, Prozess, Sitzung, Benutzer, Drucker, Treiber und Dienst, und die erste
 Zeile des Meldungstexts (höchstens 300 Zeichen). Die Felder kommen aus den Datenfeldern des Ereignisses, nicht aus
@@ -661,10 +665,10 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 |---|---|---|
 | jeder schnelle Takt (Standard 2 s) | je eine Lesung von zehn Leistungsindikator-Kategorien über .NET: `Processor Information`, `System`, `VM Processor`, `Memory`, `PhysicalDisk`, `Network Interface`, `LogicalDisk`, `SMB Client Shares`, `User Input Delay per Session`, `User Input Delay per Process` | rund 760 Instanzen der Eingabeverzögerung je Prozess, 27 Laufwerke (`LogicalDisk`), 11 Freigaben; die übrigen Kategorien haben nur wenige Instanzen |
 | jeder Schnappschuss (Standard 15 s) | Prozessliste über CIM (`Win32_Process`), Sitzungen über die WTS-Schnittstelle, ICA-Zähler (`ICA Session`, eine Lesung) und Citrix-EUEM-Werte (CIM), Schreiben der geänderten Prozesse | `Win32_Process` für 800 Prozesse: 0,39–0,41 s je Abfrage |
-| jeder reguläre Schnappschuss zusätzlich | die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
+| jeder reguläre Schnappschuss zusätzlich | einmal pro Minute die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
 | einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; Zeitgrenzen im Code: 10 s je Bereich, 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
-| Verdichtung | solange ein Auslöser-Signal über seiner Schwelle liegt und 60 s danach: Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
+| Verdichtung | sobald ein Auslöser-Signal drei Takte in Folge über seiner Schwelle liegt, solange es darüber bleibt, und 60 s danach (eine einzelne Spitze verdichtet nicht): Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
 
 Alles läuft nacheinander in einer Schleife: Ein Schnappschuss entsteht innerhalb eines schnellen Takts. Dauert er
 länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
