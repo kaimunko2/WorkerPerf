@@ -1257,6 +1257,10 @@ gelten nur die Muster ohne Messwerte (alle außer Speichermangel und zeitgleich)
 - **RAM** ist die Summe der Working Sets. Gemeinsam genutzte Seiten (DLLs) werden dabei mehrfach
   gezählt – die Summe über alle Sitzungen kann über dem physisch belegten Speicher liegen.
   **Commit** (Private Bytes) ist die belastbarere Größe für Sizing-Fragen.
+- **Von Datenträger gelesene Seiten** (`Pages Input/sec`) steigen auch bei freiem Speicher stark, wenn Programme
+  starten oder Dateien über das Speicherabbild gelesen werden (etwa Ereignisprotokolle). Allein bilden sie deshalb
+  keinen Engpass; ein Arbeitsspeicher-Engpass entsteht nur, wenn zugleich RAM- oder Commit-Auslastung auffällig ist.
+  In der Tabelle der Signale bleiben sie sichtbar.
 - **I/O** umfasst alle Lese-/Schreibvorgänge eines Prozesses (Datei, Netzwerk, Geräte).
 - **Ø (Mittelwert über die Zeit):** In den Tabellen der Sitzungen, Anwendungen und Prozesse ist Ø ein Mittelwert
   über die Zeit. Jeder Schnappschuss steht für die Zeit seit dem vorigen. Während eines Vorfalls folgen die
