@@ -139,6 +139,13 @@ Describe 'Zustandsbild in der Aufzeichnung' {
         Test-Path (Join-Path $Runs.Zustand 'health.json') | Should -BeFalse; (Get-Meta $Runs.Zustand).Sources.health.Detail | Should -Be 'abgeschaltet (-Skip Zustand)'
         @($D.Zustand.skipped.id) | Should -Be @('Zustand'); $D.Zustand.skipped[0].text | Should -Be 'Das Zustandsbild des Servers wurde bei dieser Messung nicht gelesen.'
     }
+    It 'nimmt -Health ohne Wirkung an und lehnt es mit -Skip Zustand ab, bevor etwas angelegt ist' {
+        $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'; $dir = Join-Path $TestDrive 'healthswitch'
+        { & $capture -Simulate -Health -Skip Zustand -DurationMinutes 60 -OutputPath $dir 6>$null } | Should -Throw '-Health und -Skip Zustand schliessen sich aus.'
+        Test-Path $dir | Should -BeFalse
+        $run = [string]@(& $capture -Simulate -HealthOnly -Health -OutputPath $dir 6>$null)[-1]
+        Test-Path (Join-Path $run 'health.json') | Should -BeTrue
+    }
     It 'liest die Anwendungsliste beim Start, kopiert sie und lehnt eine fehlerhafte ab, bevor etwas angelegt ist' {
         $shipped = Join-Path $PSScriptRoot '../src/apps.json'
         [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $Runs.Voll 'apps.json'))) | Should -Be ([Convert]::ToBase64String([IO.File]::ReadAllBytes($shipped))); Test-Path (Join-Path $Runs.Zustand 'apps.json') | Should -BeFalse
@@ -147,7 +154,7 @@ Describe 'Zustandsbild in der Aufzeichnung' {
         $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'; $dir = Join-Path $TestDrive 'badapps'; $bad = Join-Path $TestDrive 'apps.bad.json'
         [IO.File]::WriteAllText($bad, (Get-Content $shipped -Raw).Replace('HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge"', 'HKCU\\SOFTWARE\\Policies\\Microsoft\\Edge"'))
         { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile $bad 6>$null } | Should -Throw "*Anwendung 'edge': Probe '*':*HKLM*"
-        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw "Anwendungsliste '*keine.json' fehlt."
+        { & $capture -Simulate -DurationMinutes 60 -OutputPath $dir -AppsFile (Join-Path $TestDrive 'keine.json') 6>$null } | Should -Throw "Anwendungsliste '*keine.json' fehlt.*"
         Test-Path $dir | Should -BeFalse
     }
     It 'zeichnet weiter auf, wenn das Lesen als Ganzes scheitert' {   # Review Focus 1

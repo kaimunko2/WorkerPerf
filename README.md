@@ -151,6 +151,7 @@ Gegenstellen für die Verbindungsproben (Datenbank, Proxy, Dateiserver …) steh
 | `-NoCitrix` | Citrix-ICA/EUEM-Messwerte nicht erfassen; dasselbe wie `-Skip Citrix` |
 | `-CitrixMetricFilter` | Regex, welche numerischen Citrix-WMI-Eigenschaften erfasst werden |
 | `-EventLookbackDays` | beim Start die Ereignisse so vieler Tage vor dem Start in `events_before.csv` lesen, 0–90, Standard 7; 0 schaltet den Rückblick ab, dasselbe wie `-Skip Rueckblick` |
+| `-Health` | ohne Wirkung: das Zustandsbild wird ohne Schalter gelesen (der Schalter stammt aus der Zwischenversion, in der es aus war); nicht zusammen mit `-Skip Zustand` |
 | `-HealthOnly` | Schnelllauf: liest nur das Zustandsbild, den Rückblick und die Treiberliste und endet, ohne Messung (siehe [Zustandsbericht ohne Messung](#zustandsbericht-ohne-messung-schnelllauf)) |
 | `-Simulate` | spielt ein 60-minütiges Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen ab statt das lokale System zu messen, mit einem simulierten Rückblick über sieben Tage, Treiberliste und Warteschlangen (läuft auch unter Linux/macOS, verlangt `-DurationMinutes 60` oder mehr) |
 

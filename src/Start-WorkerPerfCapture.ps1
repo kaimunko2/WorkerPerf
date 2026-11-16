@@ -115,6 +115,10 @@
     -EndpointFile, -IncludeCommandLine, -NoCitrix, -CitrixMetricFilter) are refused. When the health picture could not be
     read or written, the last line says so: Schnelllauf beendet ohne Zustandsbild.
 
+.PARAMETER Health
+    Has no effect: the health picture is read by default (it came from the interim version, in which it was off).
+    Not together with -Skip Zustand.
+
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
     between ticks, runs on any platform). Used for demos and tests.
@@ -146,7 +150,8 @@ param(
     [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [string[]]$Skip = @(),
     [switch]$Simulate,
-    [switch]$HealthOnly
+    [switch]$HealthOnly,
+    [switch]$Health
 )
 
 # Where AppLocker or WDAC puts the console into ConstrainedLanguage, .NET types and Add-Type fail with errors that
@@ -165,6 +170,9 @@ $ErrorActionPreference = 'Stop'
 # the categories left out (resolved from -Skip, -NoCitrix and -EventLookbackDays), before anything is read or
 # created (an unknown value stops the start here)
 $leftOut = @(Resolve-WorkerPerfSkip $Skip ([bool]$NoCitrix) $EventLookbackDays)
+# -Health came with the interim version, in which the health picture was off by default. It is read by default
+# again and the switch has no effect; together with -Skip Zustand it still contradicts itself.
+if ($Health -and $leftOut -contains 'Zustand') { throw '-Health und -Skip Zustand schliessen sich aus.' }
 # The quick run consists of the health picture and takes none of the settings of the measurement: refused here, before
 # anything is created.
 if ($HealthOnly) {
@@ -407,12 +415,12 @@ try {
     if ($leftOut -notcontains 'Zustand') {
         $healthStep = 'read'
         try {
-            $health = Get-WorkerPerfHealth
-            if ($null -ne $health) {
+            $picture = Get-WorkerPerfHealth
+            if ($null -ne $picture) {
                 $healthStep = 'write'
-                Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $health
+                Save-WorkerPerfHealth -Path (Join-Path $runDir 'health.json') -Health $picture
                 $healthStep = 'line'
-                Write-Host (Format-WorkerPerfHealthLine $health)
+                Write-Host (Format-WorkerPerfHealthLine $picture)
             }
             else { $noHealth = 'Die Datenquelle hat kein Zustandsbild geliefert.' }
         }
