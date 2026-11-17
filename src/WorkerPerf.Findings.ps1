@@ -215,6 +215,19 @@ function Join-WorkerPerfIncidents {
         if ($f.SignalId -ne 'mem.pagesin') { $f; continue }
         foreach ($t in $tight) { if ($f.StartMs -le ($t.EndMs + $gapMs) -and $f.EndMs -ge ($t.StartMs - $gapMs)) { $f; break } }
     })
+    # Input delay in stages of perception (Nielsen 0.1/1/10 s; Windows marks a window as not responding after 5 s):
+    # a short spike under InputNoticeMs that lasts fewer than InputMinPoints readings is a hint only (it stays in the
+    # table of signals, but forms no incident); critical is a hang from InputHangMs, or InputSlowMs over at least
+    # InputMinPoints readings; everything else that forms an incident is to be checked.
+    $Findings = @(foreach ($f in @($Findings)) {
+        if ($f.SignalId -ne 'input.session') { $f; continue }
+        $peak = [double]$f.PeakValue; $points = [int]$f.BadPoints
+        if ($peak -lt $script:WorkerPerfInputNoticeMs -and $points -lt $script:WorkerPerfInputMinPoints) { continue }
+        $sev = 1
+        if ($peak -ge $script:WorkerPerfInputHangMs -or ($peak -ge $script:WorkerPerfInputSlowMs -and $points -ge $script:WorkerPerfInputMinPoints)) { $sev = 2 }
+        if ([int]$f.Severity -eq $sev) { $f; continue }
+        $c = $f.Clone(); $c.Severity = $sev; $c
+    })
     $chronicFindings = New-Object System.Collections.Generic.List[object]
     $coreFindings = New-Object System.Collections.Generic.List[object]
     $sessionFindings = New-Object System.Collections.Generic.List[object]
@@ -343,6 +356,11 @@ function Join-WorkerPerfIncidents {
 $script:WorkerPerfMinSharePct = 10
 
 # Signals of the worker resources (cpu, memory, disk, share, profile): a finding of one of them makes an incident an "engpass"
+# Stages of input delay (Join-WorkerPerfIncidents): ms and readings of the fast cadence
+$script:WorkerPerfInputNoticeMs = 500
+$script:WorkerPerfInputSlowMs = 1000
+$script:WorkerPerfInputHangMs = 5000
+$script:WorkerPerfInputMinPoints = 3
 $script:WorkerPerfWorkerSignalIds = @('cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'disk.latency', 'smb.latency')
 
 function Get-WorkerPerfUnmeasured {

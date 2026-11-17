@@ -1589,7 +1589,9 @@ Describe 'Situation und Bedingungen der simulierten Stunde' {
         $order = @(Get-WorkerPerfIncidentRanking -Incidents $capture)
         $order.Count | Should -Be 12
         $order[0..3] | Should -Be @($backend, $cpu, $memory, $manyUsers)
-        $order[10..11] | Should -Be @($spooler, $homeOffice)
+        # a single user's delay of 800 ms in a few readings is 'pruefen' since the stages of input delay: it ranks after the spooler
+        $single = & $find { $_.type -eq 'ohne-engpass' -and @($_.affected).Count -eq 1 }
+        $order[10..11] | Should -Be @($single, $homeOffice); [array]::IndexOf($order, $spooler) | Should -BeLessThan 10
         @(Get-WorkerPerfIncidentGroups -Incidents $capture -Order $order -Cards 10 -OffsetMinutes $SimCtx.OffsetMinutes -Texts $Texts).Count | Should -Be 2
         $l = Get-WorkerPerfLagebild -Incidents @($SimData.incidents) -Data $SimData -Catalogue $Cat -Texts $Texts
         $l.kpis.bottlenecks | Should -Be 5; $l.kpis.delays | Should -Be 2; $l.kpis.events | Should -Be 4; $l.kpis.chronic | Should -Be 1

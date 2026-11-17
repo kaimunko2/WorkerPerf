@@ -94,5 +94,15 @@ Describe 'Join-WorkerPerfIncidents' {
         $k = Join-Test (New-TestFinding memory 100 120 -SignalId 'mem.pagesin') (New-TestFinding memory 125 150 -SignalId 'mem.commit')
         $k.Count | Should -Be 1; @($k[0].Findings.SignalId) | Should -Be @('mem.pagesin', 'mem.commit')
     }
+    It 'stuft die Eingabeverzoegerung nach der Wahrnehmung ein (zweiter echter Lauf)' {
+        function In([double]$Peak, [int]$Points, [int]$Sev = 1) { $f = New-TestFinding input 100 (100 + 2 * $Points) -Severity $Sev -SessionIndex 1 -SignalId 'input.session'; $f.PeakValue = $Peak; $f.BadPoints = $Points; $f }
+        (Join-Test (In 344 1)).Count | Should -Be 0                                  # kurze Spitze unter 500 ms: nur Hinweis
+        (Join-Test (In 406 2)).Count | Should -Be 0
+        $i = Join-Test (In 313 3); $i.Count | Should -Be 1; $i[0].Severity | Should -Be 1    # zaeh ueber drei Takte: pruefen
+        $i = Join-Test (In 531 1 2); $i[0].Severity | Should -Be 1                    # ab 500 ms: pruefen, nicht kritisch
+        $i = Join-Test (In 1219 11 2); $i[0].Severity | Should -Be 2                  # ab 1 s ueber drei Takte: kritisch
+        $i = Join-Test (In 1219 2 2); $i[0].Severity | Should -Be 1
+        $i = Join-Test (In 7453 1 2); $i[0].Severity | Should -Be 2                   # Haenger ab 5 s: kritisch
+    }
     It 'liefert ohne Befunde nichts' { @(Join-WorkerPerfIncidents -Findings @()).Count | Should -Be 0 }
 }

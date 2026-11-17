@@ -650,8 +650,9 @@ Describe 'Gefuehrter Bericht: simulierte Stunde' {
     It 'ordnet die Vorfaelle' {
         $rank = @{}; foreach ($k in $Situation.Keys) { $rank[$k] = (Get-ByKey $k).rank }
         $rank.backend | Should -Be 1; $rank.cpu | Should -Be 2; $rank.memory | Should -Be 3; $rank['crash.manyusers'] | Should -Be 4
-        $rank.homeoffice | Should -Be 12; $rank['print.spooler'] | Should -Be 11
-        foreach ($k in 'disk', 'share', 'profile', 'hang', 'crash.memory', 'profile.logon') { $rank[$k] | Should -BeIn (5..10) -Because $k }
+        # the single user's delay of 800 ms is 'pruefen' since the stages of input delay (two readings): it ranks after the spooler
+        $rank.homeoffice | Should -Be 12; $rank.hang | Should -Be 11; $rank['print.spooler'] | Should -BeIn (5..10)
+        foreach ($k in 'disk', 'share', 'profile', 'crash.memory', 'profile.logon') { $rank[$k] | Should -BeIn (5..10) -Because $k }
         @($D.order).Count | Should -Be 12; @($D.cards).Count | Should -Be 10; @($D.more).Count | Should -Be 2
     }
     It 'nennt Rangfolge, Karten und weitere Vorfaelle mit denselben Ids' {
