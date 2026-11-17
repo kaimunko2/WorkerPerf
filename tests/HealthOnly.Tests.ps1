@@ -133,7 +133,7 @@ Describe 'Zustandsbericht aus dem Schnelllauf' {
         $H.meta.healthOnly | Should -BeTrue; $H.meta.endReason | Should -Be 'healthonly'; $H.meta.reportKind | Should -Be 'Zustandsbericht ohne Messung'; $H.meta.computer | Should -Be 'SIM-VDA01'
         $H.meta.ticks | Should -Be 0; $H.meta.start | Should -Be $H.meta.end; $H.meta.start | Should -BeGreaterThan 0
         # Literal angepasst: 208 Werte seit Task 14s und den Proben der Anwendungsliste (Task 16), nicht 202
-        $H.health.state | Should -Be 'read'; $H.health.summary.text | Should -Be '1 Bereich zum Handeln, 5 zum Prüfen, 5 in Ordnung'; @($H.health.raw).Count | Should -Be 208
+        $H.health.state | Should -Be 'read'; $H.health.summary.text | Should -Be '1 Bereich zum Handeln, 5 zum Prüfen, 5 in Ordnung'; @($H.health.raw).Count | Should -Be 209
         $H.health.eventsReachText | Should -Match '\d\d\.\d\d\.\d{4}'; $H.health.environmentText | Should -Match 'nicht persistent'      # ab wann die Protokolle reichen: steht im Zustandsbericht ueber dem Rueckblick
         $H.before.status | Should -Be 'read'; @($H.before.incidents).Count | Should -Be 4; @($H.before.incidents | Where-Object { $null -eq $_.guide }).Count | Should -Be 0
         @($H.print.drivers).Count | Should -Be 3; @($H.print.queues).Count | Should -Be 0; $H.print.involvedFrom | Should -Be 'lookback'; @($H.skipped).Count | Should -Be 0

@@ -3253,6 +3253,24 @@ function Read-WorkerPerfWinHealthSize($Ctx) {
     }
 }
 
+function Format-WorkerPerfPendingRenameTop([string[]]$Entries) {
+    # The source paths are the entries 0, 2, 4, ... ("\??\C:\x\a.dll", a leading '!' marks a replace); each counts toward
+    # its folder of drive and at most three levels. '' without entries.
+    $counts = @{}
+    for ($i = 0; $i -lt @($Entries).Count; $i += 2) {
+        $p = [string]$Entries[$i]
+        if ([string]::IsNullOrEmpty($p)) { continue }
+        $p = $p.TrimStart('!')
+        if ($p.StartsWith('\??\')) { $p = $p.Substring(4) }
+        $parts = @($p.Split('\') | Select-Object -First 5)
+        if ($parts.Count -gt 1) { $parts = @($parts[0..($parts.Count - 2)]) }
+        $key = ($parts -join '\')
+        if ($counts.ContainsKey($key)) { $counts[$key]++ } else { $counts[$key] = 1 }
+    }
+    $top = @($counts.GetEnumerator() | Sort-Object -Property @{ Expression = { $_.Value }; Descending = $true }, @{ Expression = { $_.Key } } | Select-Object -First 5)
+    return (@($top | ForEach-Object { '{0} ({1})' -f $_.Key, $_.Value }) -join '; ')
+}
+
 function Read-WorkerPerfWinHealthOperation($Ctx) {
     $os = $Ctx.State.OperatingSystem
     Set-WorkerPerfWinHealthValue $Ctx 'operation.lastBoot' {
@@ -3269,6 +3287,14 @@ function Read-WorkerPerfWinHealthOperation($Ctx) {
         $entries = 0
         if ($null -ne $sm -and $sm['Values'].Contains('PendingFileRenameOperations')) { $entries = @($sm['Values']['PendingFileRenameOperations']).Count }
         [Math]::Ceiling($entries / 2.0)
+    }
+    Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingRenameTop' {
+        # where the waiting files lie: the five folders (drive and three levels) with the most source paths, so that the
+        # report can name the program ("C:\Program Files\Microsoft Office\root (312); ..."); free server text, masked
+        $sm = Get-WorkerPerfRegistryValues 'SYSTEM\CurrentControlSet\Control\Session Manager'
+        $list = @()
+        if ($null -ne $sm -and $sm['Values'].Contains('PendingFileRenameOperations')) { $list = @($sm['Values']['PendingFileRenameOperations']) }
+        Format-WorkerPerfPendingRenameTop $list
     }
     Set-WorkerPerfWinHealthValue $Ctx 'operation.pendingServicing' {
         $null -ne (Get-WorkerPerfRegistryValues 'SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')

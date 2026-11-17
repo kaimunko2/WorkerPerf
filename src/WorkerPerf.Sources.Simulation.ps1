@@ -791,7 +791,7 @@ function Get-WorkerPerfHealth {
         }) 0
 
     $areas['operation'] = Complete-WorkerPerfHealthArea 'operation' ([ordered]@{
-            'operation.lastBoot' = & $ok (& $time $s.AddDays(-3)); 'operation.pendingRename' = & $ok 2
+            'operation.lastBoot' = & $ok (& $time $s.AddDays(-3)); 'operation.pendingRename' = & $ok 2; 'operation.pendingRenameTop' = & $ok 'C:\Program Files\SimApp (2)'
             'operation.pendingServicing' = & $ok $false; 'operation.pendingUpdate' = & $ok $false
             'operation.lastUpdate' = & $ok (& $time $s.AddDays(-20)); 'operation.lastUpdateId' = & $ok 'KB5099999'
             'operation.powerPlan' = & $ok 'highPerformance'

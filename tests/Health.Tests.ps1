@@ -83,8 +83,8 @@ Describe 'Katalog des Zustandsbilds laden und pruefen' {
         $c = Read-WorkerPerfHealthCatalogue (New-HealthCatalogue)
         @($c.checks).Count | Should -Be 2; $c.thresholds.diskFreeGB.value | Should -Be 10; $c.areas[0].id | Should -Be 'size'; $c.grades.act.word | Should -Be 'Handeln'
         # Korrekturrunde 1 von Task 14c: zwei abgeleitete Fakten der Anwendungen (apps.edgeUpdatesOff, apps.webView2UpdatesOff; Entscheidung ZB-R57)
-        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 170; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 64
-        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 212                         # 170 feste, 38 der ausgelieferten Liste, 4 der simapp
+        $t = Get-WorkerPerfHealthFactTable; @($t.Keys).Count | Should -Be 171; @($WorkerPerfHealthDerived.Keys).Count | Should -Be 64
+        $ta = Get-WorkerPerfHealthFactTable $TestApps; @($ta.Keys).Count | Should -Be 213                         # 170 feste, 38 der ausgelieferten Liste, 4 der simapp
         $t['apps.edgeUpdatesOff'].Area | Should -Be 'apps'; $t['apps.edgeUpdatesOff'].Type | Should -Be 'bool'; $t['apps.webView2UpdatesOff'].Derived | Should -BeTrue
         $ta['apps.edge.installed'].Area | Should -Be 'apps'; $ta['apps.edge.installed'].Type | Should -Be 'bool'; $ta['apps.edge.backgroundMode'].Type | Should -Be 'value'
         $ta['apps.edge.userDataDir'].Type | Should -Be 'text:free'; $ta['apps.office.updateTask'].Type | Should -Be 'bool'; $ta['apps.office.platform'].Documented | Should -BeFalse
@@ -376,7 +376,7 @@ Describe 'Fakten des Zustandsbilds' {
         & $val 'size.commitOfRamPct' | Should -Be 58; & $val 'size.vmware' | Should -BeTrue; & $val 'size.vmtoolsMajor' | Should -Be 11; & $val 'size.balloonRunning' | Should -BeFalse
         & $val 'size.otherNetAdapters' | Should -Be 1; & $val 'size.lsiControllers' | Should -Be 1; & $val 'network.rssOff' | Should -Be 1; & $val 'sessions.idleLimitMin' | Should -Be 180
         & $val 'vda.wemServicesNotReady' | Should -Be 2; & $val 'print.citrixMapping' | Should -BeTrue      # der Anmeldedienst steht, der dritte Dienst fehlt in der Liste
-        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 170                       # gelesene Werte sind selbst Fakten
+        $f['size.cpuLogical'].Value | Should -Be 8; @($f.Keys).Count | Should -Be 171                       # gelesene Werte sind selbst Fakten
     }
     It 'findet den Windows-Dienst des WEM-Agenten am Dienstnamen SENS' {   # ZB-R34
         $citrix = @(@{ Name = 'Citrix WEM Agent Host Service'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'Citrix WEM User Logon Service'; State = 'Running'; StartMode = 'Auto' })
@@ -426,7 +426,7 @@ Describe 'Fakten des Zustandsbilds' {
         $rows = @((& $row 'edge' 'installed' 'read' '' $true $null), (& $row 'edge' 'backgroundMode' 'read' '' 1 $null), (& $row 'edge' 'userDataDir' 'read' '' $null '\\fs01\edge$'),
             (& $row 'edge' 'sleepingTabs' 'absent' '' $null $null), (& $row 'simapp' 'installed' 'read' '' $false $null), (& $row 'simapp' 'cacheMode' 'absent' 'notInstalled' $null $null))
         $f = Get-WorkerPerfHealthFacts -Model (New-HealthModel @{ 'apps.probes' = $rows }) -Catalogue $cat -EventConfig $Cfg -Roles $Roles
-        @($f.Keys).Count | Should -Be 212; @($f.Keys)[170] | Should -BeLike 'apps.edge.*'
+        @($f.Keys).Count | Should -Be 213; @($f.Keys)[171] | Should -BeLike 'apps.edge.*'
         $f['apps.edge.installed'].Value | Should -BeTrue; $f['apps.edge.backgroundMode'].Value | Should -Be 1; $f['apps.edge.userDataDir'].Value | Should -Be '\\fs01\edge$'
         $f['apps.edge.sleepingTabs'].State | Should -Be 'absent'; $f['apps.edge.sleepingTabs'].Reason | Should -Be ''
         $f['apps.simapp.installed'].Value | Should -BeFalse; $f['apps.simapp.cacheMode'].State | Should -Be 'absent'; $f['apps.simapp.cacheMode'].Reason | Should -Be 'notInstalled'
@@ -678,7 +678,7 @@ Describe 'Bewertung' {
         $s = & $get $r 'apps.simCache'; $s.grade | Should -Be 'check'; $s.finding | Should -Be 'Cache-Betriebsart 1.'
         $s.value | Should -Be 'Sim-Fachanwendung – Cache-Betriebsart: 1; Sim-Fachanwendung – Datenordner der Sim-Fachanwendung: Text valueSet'; ($s | ConvertTo-Json -Depth 6) | Should -Not -Match 'fs01'
         $raw = $r.raw | Where-Object id -eq 'apps.simapp.dataPath'; $raw.free | Should -Be '\\fs01\simapp$'; $raw.text | Should -Be ''; $raw.label | Should -Be 'Sim-Fachanwendung – Datenordner der Sim-Fachanwendung'; $raw.area | Should -Be 'apps'
-        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 212
+        ($r.raw | Where-Object id -eq 'apps.simapp.installed').label | Should -Be 'Sim-Fachanwendung – Text appInstalledLabel'; @($r.raw).Count | Should -Be 213
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'read' '' 2 $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'ok'
         (& $get (& $res @((& $row 'simapp' 'installed' 'read' '' $true $null), (& $row 'simapp' 'cacheMode' 'absent' '' $null $null), (& $row 'simapp' 'dataPath' 'read' '' $null 'D:\x'))) 'apps.simCache').grade | Should -Be 'check'   # nicht gesetzt ist ungleich 2
         # die Installation laesst sich nicht lesen: nicht pruefbar mit dem Grund
@@ -745,7 +745,7 @@ Describe 'Bewertung' {
         (& $raw 'vda.controllers').items[0].text | Should -Be 'Entry: ddc01.sim.local; Kind: fqdn; From: policy'; (& $raw 'vda.controllers').items[0].free | Should -Be ''
         (& $raw 'security.defenderSharedSignatures').text | Should -Be '\\fs01\defender$'; (& $raw 'size.cpuLogical').state | Should -Be 'absent'; (& $raw 'size.cpuLogical').text | Should -Be ''
         (& $raw 'size.cpuLogical').stateText | Should -Be 'Text stateAbsent'; (& $raw 'size.memTotalMB').stateText | Should -Be 'Text stateRead'
-        @($r.raw).Count | Should -Be 170
+        @($r.raw).Count | Should -Be 171
     }
     It 'nennt in der Liste aller Dienste nur die Dienste der Sicherheitsprodukte, die anderen als freien Servertext' {   # ZB-R61
         $services = @(@{ Name = 'WinDefend'; State = 'Running'; StartMode = 'Auto' }, @{ Name = 'MSSQL$KANINSTANZ'; State = 'Running'; StartMode = 'Auto' },
@@ -967,7 +967,7 @@ Describe 'Bewertung: Regeln im Einzelnen' {
         foreach ($id in 'operation.minFreeGB', 'apps.simapp.installed') {
             $e = $r.raw | Where-Object id -eq $id; $e.state | Should -Be 'unreadable' -Because $id; $e.reason | Should -Be 'error' -Because $id; $e.stateText | Should -Be 'Text stateUnreadable' -Because $id; $e.text | Should -Be ''
         }
-        @($r.raw).Count | Should -Be 212; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
+        @($r.raw).Count | Should -Be 213; @($r.areas).Count | Should -Be 11; ($r.raw | Where-Object id -eq 'operation.volumes').state | Should -Be 'read'
     }
     It 'zeigt einen Rohwert, dessen Formatierung scheitert, als nicht lesbar' {
         # eine Zeit ausserhalb dessen, was ein Datum fassen kann: der Rohwert und der Satz zur Reichweite der Protokolle scheitern nicht
@@ -1131,7 +1131,7 @@ Describe 'Katalog in src' {
         $check['size.memoryPerSession'].meaning | Should -Match 'aller Benutzersitzungen beim Lesen, auch der getrennten'
         $check['operation.powerPlan'].meaning | Should -Match 'wo nicht das Betriebssystem die Energieverwaltung steuert'
         $check['operation.updateAge'].meaning | Should -Match 'über die Komponentenwartung von Windows installiert'
-        $check['operation.pendingRestart'].findings.check | Should -Match '^Ausstehende Umbenennungen oder Löschungen beim Neustart: '; $Real.values.'operation.pendingRename' | Should -BeExactly 'Ausstehende Umbenennungen oder Löschungen beim Neustart'
+        $check['operation.pendingRestart'].findings.check | Should -Match '^Dateien, die auf einen Neustart warten: {operation.pendingRename}\. Häufigste Ordner: {operation.pendingRenameTop}'; $Real.values.'operation.pendingRename' | Should -BeExactly 'Ausstehende Umbenennungen oder Löschungen beim Neustart'
         "$($check['operation.pendingRestart'].meaning)" | Should -Not -Match 'Microsoft empfiehlt|Empfehlung von Microsoft'
         $check['profile.containersPerUser'].meaning | Should -Match 'in der Voreinstellung mehrere Sitzungen zugleich auf einen Profilcontainer zugreifen'
         $ProofFlat | Should -Match 'TotalPhysicalMemory'; $ProofFlat | Should -Match 'TASK_ENUM_FLAGS'
@@ -1223,9 +1223,9 @@ Describe 'Katalog in src' {
         (Get-Content $CatFile -Raw) | Should -Not -Match 'Provisioning Services|\bPVS\b'                              # nichts, was nur fuer Provisioning Services gilt
     }
     It 'stuetzt keine Pruefung auf einen Wert ohne dokumentierte Lesequelle' {
-        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 208
+        $t = Get-WorkerPerfHealthFactTable $Apps; @($t.Keys).Count | Should -Be 209
         foreach ($c in $Real.checks) { foreach ($v in $c.values) { $t[$v].Documented | Should -BeTrue -Because "$($c.id): $v" } }
-        @($Real.values.PSObject.Properties.Name).Count | Should -Be 170
+        @($Real.values.PSObject.Properties.Name).Count | Should -Be 171
     }
     It 'fuehrt die Quelle jeder Pruefung im Nachweis' {
         foreach ($c in $Real.checks) {

@@ -85,7 +85,7 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         $sm = 'SYSTEM\CurrentControlSet\Control\Session Manager'
         # zwei Umbenennungen und eine Loeschung (Quelle und leeres Ziel), die Loeschung in der Mitte und am Ende
         $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\alt.dll', '', '\??\C:\Sim\b.tmp', '!\??\C:\Sim\b.dll') }
-        (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
+        $h = Read-Health; (Get-V $h 'operation.pendingRename').Value | Should -Be 3; (Get-V $h 'operation.pendingRenameTop').Value | Should -Be 'C:\Sim (3)'
         $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll', '') }
         (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
         # zwei Umbenennungen und zwei Loeschungen, acht Zeichenketten: vier Operationen (ein Leser, der leere Zeichenketten weglaesst, kaeme auf drei)
@@ -95,6 +95,12 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         $script:WinFake.Registry[$sm] = [ordered]@{ PendingFileRenameOperations = [string[]]@('\??\C:\Sim\a.tmp', '\??\C:\Sim\a.dll', '\??\C:\Sim\b.tmp', '\??\C:\Sim\b.dll', '\??\C:\Sim\alt.dll') }
         (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 3
         $script:WinFake.Registry[$sm] = [ordered]@{}; (Get-V (Read-Health) 'operation.pendingRename').Value | Should -Be 0
+    }
+    It 'nennt die Ordner der wartenden Dateien nach Haeufigkeit (zweiter echter Lauf)' {
+        $e = [string[]]@('\??\C:\Program Files\Microsoft Office\root\Office16\a.dll', '', '!\??\C:\Program Files\Microsoft Office\root\vfs\b.dll', '\??\C:\x',
+            '\??\C:\ProgramData\Microsoft\Windows Defender\Platform\4.18\c.dll', '', '\??\C:\Program Files\Microsoft Office\root\d.dll', '')
+        Format-WorkerPerfPendingRenameTop $e | Should -Be 'C:\Program Files\Microsoft Office\root (3); C:\ProgramData\Microsoft\Windows Defender (1)'
+        Format-WorkerPerfPendingRenameTop @() | Should -Be ''
     }
     It 'liest das Datum eines Updates in den dokumentierten Formen: FILETIME, Tag-Monat-Jahr und Monat/Tag/Jahr' {   # Task 14s, Punkt 2
         $qfe = { param($id, $on) [pscustomobject]@{ HotFixID = $id; InstalledOn = $on } }

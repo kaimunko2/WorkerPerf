@@ -269,7 +269,7 @@ Describe 'Simuliertes Zustandsbild' {
             }
             else { & $test $v.Value $def.Type $id }
         }
-        $checked | Should -Be 93      # 106 values less the thirteen absent and unreadable ones
+        $checked | Should -Be 94      # 107 values less the thirteen absent and unreadable ones
     }
     It 'passt zur simulierten Stunde' {
         # size from the simulation's constants, as Initialize-WorkerPerfSource reports it, and the first tick
