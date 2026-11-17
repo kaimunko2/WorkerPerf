@@ -107,6 +107,7 @@
     "size.balloonDriver": "Ballon-Treiber der VMware Tools",
     "operation.lastBoot": "Letzter Start",
     "operation.pendingRename": "Ausstehende Umbenennungen oder Löschungen beim Neustart",
+    "operation.pendingRenameTop": "Häufigste Ordner der wartenden Dateien",
     "operation.pendingServicing": "Komponentenwartung wartet auf einen Neustart",
     "operation.pendingUpdate": "Windows Update wartet auf einen Neustart",
     "operation.lastUpdate": "Jüngstes Installationsdatum eines Updates",
@@ -573,7 +574,7 @@
         "check": "Logische Prozessoren des Servers: {size.cpuLogical}, weniger als der Praxiswert von {@workerCpuMin}. Das ist ein Hinweis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Server mit sieben oder acht virtuellen Prozessoren trug in einem Lasttest von GO-EUC die meisten Benutzer, viele kleine und wenige große Maschinen schnitten schlechter ab (2019, Windows Server 2016 unter ESXi 6.7 U1; für heutige Prozessoren nicht belegt). Carl Stalhood empfiehlt für Multi-Session-Server mit Windows Server 2022, 2019 oder 2016 acht virtuelle Prozessoren je virtueller Maschine (Seite zum VDA 2411, Stand Dezember 2024). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, denn ob die Prozessoren reichen, zeigen die Prüfung „Sitzungen je Prozessor“ und die Last.",
+      "meaning": "Kleine Server mit wenigen Prozessoren tragen je Prozessor meist weniger Benutzer als Server mit etwa acht, weil Windows und die Dienste je Server einen festen Anteil kosten (Erläuterung des Katalogs). Ist die Größe bewusst anders gewählt, ist nichts zu ändern, solange die Last unauffällig ist. Das stützen ein Lasttest von GO-EUC (2019, Windows Server 2016 unter ESXi 6.7) und Carl Stalhood (acht virtuelle Prozessoren, Stand Dezember 2024).",
       "todo": [
         {
           "text": "Die Zahl der virtuellen Prozessoren mit dem Praxiswert und mit der Prozessorlast über längere Zeit vergleichen und entscheiden, ob sie bleibt: Ist sie bewusst so gewählt, ist nichts zu ändern",
@@ -768,7 +769,7 @@
         "check": "Speicheradapter mit LSI-Logic-Treiber: {size.lsiControllers}. Das zählt nur bei E/A-starker Last und ist kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Der paravirtuelle SCSI-Adapter bringt nach VMware bei starker Ein- und Ausgabelast (E/A), besonders in SAN-Umgebungen, mehr Durchsatz bei weniger Prozessorlast, und VMware nennt den Adapter für direkt angeschlossenen Speicher (DAS) nicht geeignet. Den Adapter, den vSphere beim Anlegen der VM vorgibt, nennt VMware für die beste Leistung ausgelegt, und Laufwerke mit Snapshots oder bei überbuchtem Speicher des VMware-Hosts haben dort nicht unbedingt die beste Leistung. Ein LSI-Logic-Treiber ist deshalb kein Fehler, die Prüfung ist nur ein Hinweis, wenn Laufwerke oder Profile langsam sind.",
+      "meaning": "Ein älterer Speicheradapter (LSI Logic) kostet nach VMware bei viel Laufwerksverkehr mehr Rechenleistung als der paravirtuelle Adapter und kann Anmeldungen und Profile bremsen. Bei wenig Laufwerkslast, mit Snapshots oder bei überbuchtem Speicher des VMware-Hosts bringt der Wechsel wenig, die Prüfung zählt nur, wenn Laufwerke oder Profile langsam sind. VMware nennt den Adapter für direkt angeschlossenen Speicher (DAS) nicht geeignet.",
       "todo": [
         {
           "text": "Mit dem Hypervisor-Team klären, ob die Last einen paravirtuellen SCSI-Adapter rechtfertigt",
@@ -794,20 +795,20 @@
       "id": "operation.pendingRestart",
       "area": "operation",
       "title": "Ausstehender Neustart",
-      "values": ["operation.pendingRename"],
+      "values": ["operation.pendingRename", "operation.pendingRenameTop"],
       "rules": {
         "check": [{"value": "operation.pendingRename", "op": "gt", "than": 0}]
       },
       "findings": {
         "ok": "Keine Umbenennung oder Löschung einer Datei wartet auf den nächsten Neustart.",
-        "check": "Ausstehende Umbenennungen oder Löschungen beim Neustart: {operation.pendingRename}.",
+        "check": "Dateien, die auf einen Neustart warten: {operation.pendingRename}. Häufigste Ordner: {operation.pendingRenameTop}.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Wartet auf einem nicht persistenten Server eine Umbenennung oder Löschung auf den Neustart, wurde nach der Faustregel des Katalogs meist seit dem letzten Start etwas installiert oder aktualisiert, und der Neustart, der es abschließen würde, verwirft die Änderung wieder. Windows merkt sich nach Microsoft in einem Wert der Windows-Registrierung, welche Dateien erst beim nächsten Neustart umbenannt oder gelöscht werden. Einen Neustart, den nur Windows Update oder die Komponentenwartung verlangt, sieht diese Prüfung nicht.",
+      "meaning": "Warten Dateien auf einen Neustart, wurde nach der Faustregel des Katalogs meist seit dem letzten Start etwas installiert oder aktualisiert, ohne fertig zu werden. Auf nicht persistenten Servern geht das beim Neustart verloren und wiederholt sich womöglich bei jedem Start, bis dahin laufen Programme halb aktualisiert. Die häufigsten Ordner im Befund zeigen das Programm.",
       "todo": [
         {
-          "text": "Klären, was seit dem letzten Start auf dem Server installiert oder aktualisiert wurde",
-          "where": "Ereignisanzeige des Servers; Softwareverteilung; Anwendungen, die sich selbst aktualisieren",
+          "text": "Aus den häufigsten Ordnern im Befund das Programm bestimmen, das sich auf dem laufenden Server aktualisiert hat",
+          "where": "Befund dieser Prüfung; sonst Ereignisanzeige des Servers und Softwareverteilung",
           "sign": "Installation oder Aktualisierung nach dem letzten Start"
         },
         {
@@ -1543,7 +1544,7 @@
         "act": "Druckertreiber, die ohne Isolierung im Prozess des Dienstes Druckwarteschlange (Spooler) laufen: {print.driversInSpooler}. Außerdem stehen in den Ereignissen der letzten Tage Ereignisse zum Drucken; ob sie diese Treiber betreffen, zeigt die Ereignisanzeige.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Hält ein fehlerhafter Druckertreiber den Dienst Druckwarteschlange an, kann auf dem Server niemand mehr drucken (Erläuterung des Katalogs). Nach Microsoft verhindert die Isolierung eines Treibers, dass ein Fehler in ihm diesen Dienst anhält, und ein Treiber, der die Isolierung nicht ausdrücklich unterstützt, läuft deshalb im Prozess des Dienstes. Die Prüfung ist eine Faustregel des Katalogs, und auf einem nicht persistenten Server reichen die Ereignisprotokolle in der Regel nur bis zum letzten Start zurück, der Rückblick also auch.",
+      "meaning": "Stürzt ein solcher Treiber ab, hält er die Druckwarteschlange an, und auf dem ganzen Server kann niemand mehr drucken (Faustregel des Katalogs). Ein Treiber, der die Isolierung nicht ausdrücklich unterstützt, läuft nach Microsoft im Prozess dieses Dienstes, ein isolierter dagegen in einem eigenen. Auf einem nicht persistenten Server reichen die Ereignisprotokolle und damit der Rückblick in der Regel nur bis zum letzten Start zurück.",
       "todo": [
         {
           "text": "Nachsehen, welche Treiber ohne Isolierung laufen",
@@ -1624,7 +1625,7 @@
         "check": "Druckertreiber, die weder von Microsoft noch von Citrix stammen: {print.vendorDrivers}, mehr als die Schwelle von {@printDrivers}.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Je mehr Druckertreiber auf einem Server installiert sind, desto eher ist ein fehlerhafter darunter, der das Drucken für alle Benutzer stört (Erläuterung des Katalogs). Citrix rät in seinen Empfehlungen zum Drucken, auf Multi-Session-Servern möglichst wenige Druckertreiber zu installieren und den Citrix-Universaltreiber oder die eigenen Windows-Treiber der Drucker zu nutzen („Windows-native drivers“), und schränkt dort selbst ein, dass nicht jede dieser Empfehlungen für jede Umgebung gilt. Citrix nennt keine Zahl, und die Schwelle ist ein Erfahrungswert des Katalogs.",
+      "meaning": "Jeder zusätzliche Druckertreiber ist eine weitere Möglichkeit, dass ein fehlerhafter das Drucken für alle Benutzer stört und Anmeldungen bremst. Citrix rät, möglichst wenige Treiber zu installieren und den Citrix-Universaltreiber oder die eigenen Windows-Treiber der Drucker zu nutzen („Windows-native drivers“), und sagt selbst, dass nicht jede dieser Empfehlungen für jede Umgebung gilt. Die Schwelle ist ein Erfahrungswert des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, welche Treiber installiert sind und für welche Druckermodelle den Benutzern noch Drucker zugeordnet werden",
@@ -1774,7 +1775,7 @@
         "check": "Das Betriebsprotokoll zum Drucken (Microsoft-Windows-PrintService/Operational) ist ausgeschaltet. Das ist ein Hinweis aus der Praxis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Das Betriebsprotokoll macht nichts schneller, ohne es lässt sich aber nicht nachvollziehen, wie das Anlegen der Drucker bei einer Anmeldung verlaufen ist (Erläuterung des Katalogs). Trentent Tye nennt es 2019 als eine der Protokollierungen, die seine Auswertung der Anmeldedauer mit Druckern auf dem Server braucht (gezeigt für Drucker, die Citrix anlegt, und für direkt verbundene Drucker). Auf einem nicht persistenten Server ohne beständiges Laufwerk enthält das Protokoll nur Einträge seit dem letzten Start.",
+      "meaning": "Ohne dieses Protokoll lässt sich nicht nachvollziehen, warum das Anlegen der Drucker bei einer Anmeldung lange dauert oder scheitert (Erläuterung des Katalogs). Es macht nichts schneller und kostet kaum Platz, auf einem nicht persistenten Server enthält es nur Einträge seit dem letzten Start. Trentent Tye (2019) braucht es für seine Auswertung der Anmeldedauer mit Druckern.",
       "todo": [
         {
           "text": "Nachsehen, ob das Protokoll schon im Abbild ausgeschaltet ist",
@@ -2258,7 +2259,7 @@
         "check": "Receive Side Scaling (RSS) ist abgeschaltet. Globaler Schalter von Windows für RSS: {network.rssGlobal} (enabled = eingeschaltet, disabled = ausgeschaltet; ein Strich heißt: nicht gelesen); VMXNET3-Adapter, bei denen RSS in den Einstellungen des Netzwerkadapters abgeschaltet ist: {network.rssOff} (ein Strich heißt: nicht gelesen).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ist Receive Side Scaling (RSS) abgeschaltet, verarbeitet nach VMware ein einziger Prozessor den ganzen eingehenden Netzverkehr und kann zum Engpass werden, während andere Prozessoren wenig zu tun haben. VMware verlangt RSS im Gastsystem an zwei Stellen, global in Windows und am Netzwerkadapter, und das Zustandsbild liest beide. BIS-F widerspricht sich selbst, denn ein Schritt schaltet RSS beim Versiegeln des Abbilds global ab und ein anderer schaltet es auf VMware je Adapter ein, und hier gilt die Linie des Herstellers.",
+      "meaning": "Ohne Receive Side Scaling (RSS) verarbeitet nach VMware ein einziger Prozessor den ganzen eingehenden Netzverkehr und wird bei vielen Sitzungen zum Engpass, Benutzer merken das als zähe Bildschirmübertragung. VMware verlangt RSS global in Windows und am Netzwerkadapter, und das Zustandsbild liest beide. BIS-F widerspricht sich selbst und schaltet RSS beim Versiegeln teils ab, hier gilt die Linie des Herstellers.",
       "todo": [
         {
           "text": "Nachsehen, an welcher der zwei Stellen RSS abgeschaltet ist und ob ein Schritt des Versiegelns es abschaltet, etwa das Werkzeug, mit dem das Abbild versiegelt wird",
@@ -2293,7 +2294,7 @@
         "check": "Tage mit Abstürzen im Rückblick: {events.crashDays}, die Schwelle von {@eventDays} ist erreicht. Letzter Start des Servers: {operation.lastBoot} (ein Strich heißt: nicht gelesen). Reichen die Ereignisprotokolle nicht vor diesen Start zurück (das zeigt die Prüfung „Reichweite der Ereignisprotokolle vor den letzten Start“), zählt der Rückblick nur die Zeit seither.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Jeder Absturz einer Anwendung kostet einen Benutzer seine nicht gespeicherte Arbeit (Erläuterung des Katalogs). Abstürze an mehreren Tagen zeigen eine Häufung, keine Ursache, denn was abgestürzt ist, steht in den Ereignissen selbst. Die Schwelle ist ein Erfahrungswert des Katalogs.",
+      "meaning": "An mehreren Tagen sind Anwendungen abgestürzt, und jeder Absturz kostet einen Benutzer seine nicht gespeicherte Arbeit (Erfahrungswert des Katalogs). Das zeigt eine Häufung, keine Ursache, denn was abgestürzt ist, zeigen die Vorfälle vor der Messung und die Ereignisanzeige.",
       "todo": [
         {
           "text": "Nachsehen, was abgestürzt ist und an welchen Tagen",
@@ -2328,7 +2329,7 @@
         "check": "Datenträgerfehler im Rückblick (Meldungen von Windows über Fehler oder Verzögerungen beim Zugriff auf ein Laufwerk): {events.storageCount}. Letzter Start des Servers: {operation.lastBoot} (ein Strich heißt: nicht gelesen). Reichen die Ereignisprotokolle nicht vor diesen Start zurück (das zeigt die Prüfung „Reichweite der Ereignisprotokolle vor den letzten Start“), zählt der Rückblick nur die Zeit seither.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Laufwerk, das nicht antwortet, hält alle Sitzungen des Servers auf, deshalb ist schon ein einzelner Datenträgerfehler ein Grund nachzusehen (Faustregel des Katalogs). Datenträgerfehler sind hier Meldungen von Windows über Fehler oder Verzögerungen beim Zugriff auf ein Laufwerk.",
+      "meaning": "Windows hat Fehler oder Verzögerungen beim Zugriff auf ein Laufwerk gemeldet, und ein Laufwerk, das nicht antwortet, hält alle Sitzungen des Servers auf. Schon ein einzelner Eintrag ist ein Grund nachzusehen (Faustregel des Katalogs).",
       "todo": [
         {
           "text": "Nachsehen, welches Laufwerk und welche Meldung betroffen sind",
@@ -2363,7 +2364,7 @@
         "check": "Tage mit Dateiserver-Ereignissen im Rückblick: {events.fileserverDays}, die Schwelle von {@eventDays} ist erreicht. Letzter Start des Servers: {operation.lastBoot} (ein Strich heißt: nicht gelesen). Reichen die Ereignisprotokolle nicht vor diesen Start zurück (das zeigt die Prüfung „Reichweite der Ereignisprotokolle vor den letzten Start“), zählt der Rückblick nur die Zeit seither.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Treten Dateiserver-Ereignisse an mehreren Tagen auf, können Profile, umgeleitete Ordner und Dateien der Benutzer langsam oder nicht erreichbar sein (Erläuterung des Katalogs). Dateiserver-Ereignisse sind Meldungen von Windows über abgebrochene oder verzögerte Verbindungen zu Freigaben. Die Schwelle ist ein Erfahrungswert des Katalogs.",
+      "meaning": "An mehreren Tagen sind Verbindungen zu Dateiservern abgebrochen oder verzögert gewesen. Benutzer merken das als langsame oder hängende Profile, umgeleitete Ordner und Laufwerke. Die Schwelle ist ein Erfahrungswert des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, welche Freigabe betroffen ist und wann",
@@ -2438,7 +2439,7 @@
         "check": "Mindestens ein ausgewertetes Ereignisprotokoll hat keinen Eintrag aus den ersten Tagen des Rückblicks (Tage ohne Eintrag: {events.coverageGapDays}); der letzte Start ({operation.lastBoot}) erklärt das nicht. Entweder ist das Protokoll zu klein und hat ältere Einträge überschrieben, oder es hat in dieser Zeit nichts aufgezeichnet.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Der Rückblick kann nur zeigen, was noch in den Ereignisprotokollen steht, und ist ein Protokoll zu klein, überschreibt Windows die ältesten Einträge, sodass die Tage davor fehlen. Ein Protokoll, das in dieser Zeit nichts aufgezeichnet hat, sieht für diese Prüfung genauso aus und ist kein Mangel. Die Prüfung ist eine Faustregel des Katalogs.",
+      "meaning": "Die Ereignisprotokolle reichen nicht über den ganzen Rückblick, weil sie zu klein sind oder der Server neu gestartet wurde. Für die fehlenden Tage kann der Bericht keine Abstürze oder Fehler zeigen, ein ruhiges Protokoll sieht genauso aus und ist kein Mangel (Faustregel des Katalogs).",
       "todo": [
         {
           "text": "Nachsehen, welches Protokoll am wenigsten weit zurückreicht und ob es voll ist",
@@ -2545,7 +2546,7 @@
         "check": "Eingeschaltete geplante Aufgaben außerhalb des Ordners \\Microsoft\\, deren nächster Lauf in der Arbeitszeit liegt (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr) oder die sich wiederholen: {maintenance.tasksInWorkHours}.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Eine geplante Aufgabe, die in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Gezählt werden nach einer Festlegung des Katalogs nur Aufgaben außerhalb des Ordners \\Microsoft\\. Die Wartungsaufgaben von Windows selbst laufen nach Microsoft erst im Leerlauf, und nicht jede gezählte Aufgabe stört (Faustregel des Katalogs).",
+      "meaning": "Geplante Aufgaben in der Arbeitszeit teilen sich Prozessoren und Laufwerk mit allen Sitzungen und können die Benutzer bremsen, nicht jede stört (Faustregel des Katalogs). Gezählt werden nach einer Festlegung des Katalogs nur Aufgaben außerhalb des Ordners \\Microsoft\\. Die Wartungsaufgaben von Windows selbst laufen nach Microsoft erst im Leerlauf.",
       "todo": [
         {
           "text": "Nachsehen, welche Aufgaben gemeint sind, was sie starten und wie lange sie laufen",
@@ -2615,7 +2616,7 @@
         "check": "Der wirksame Beginn eines geplanten Scans von Microsoft Defender Antivirus liegt in der Arbeitszeit (Montag bis Freitag, {@workStartHour} bis {@workEndHour} Uhr). Wirksamer Beginn heißt: die eingestellte Zeit plus die Verzögerung, bei zufälliger Startzeit um das Zeitfenster davor und danach verbreitert; ohne Einstellung rechnet die Prüfung nach Microsoft mit 120 Minuten Verzögerung, zufälliger Startzeit und 30 Minuten Zeitfenster. Die Startzeit des Schnellscans rechnet die Prüfung an jedem Tag, unabhängig vom eingestellten Tag, denn Microsoft zeigt sie als Zeit eines täglichen Schnellscans. Eingestellter Tag: {maintenance.scanDay}; eingestellte Zeit: {maintenance.scanTime} Uhr; Startzeit des Schnellscans: {maintenance.quickScanTime}; weitere Einstellungen stehen bei den Rohwerten; ein Strich heißt: nicht gesetzt oder nicht gelesen.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Ein Scan, der in der Arbeitszeit läuft, teilt sich Rechenleistung und Laufwerk mit allen Sitzungen des Servers. Nach Microsoft (Seite „Schedule antivirus scans using PowerShell“) beginnen geplante Scans um eine feste Verzögerung nach der eingestellten Zeit, ohne Einstellung 120 Minuten, und mit zufälliger Startzeit bis zu 30 Minuten oder dem eingestellten Zeitfenster davor oder danach, und diesen wirksamen Beginn prüft der Katalog für den geplanten Scan und für den Schnellscan. Die Prüfung ist eine Faustregel des Katalogs.",
+      "meaning": "Ein Scan von Defender Antivirus in der Arbeitszeit liest viele Dateien und bremst alle Sitzungen des Servers spürbar (Faustregel des Katalogs). Geprüft wird der tatsächliche Beginn, also die eingestellte Zeit plus die Verzögerung, die Defender Antivirus nach Microsoft selbst hinzufügt.",
       "todo": [
         {
           "text": "Nachsehen, welche Tage, Zeiten, welche Verzögerung und welches Zeitfenster eingestellt sind",
@@ -2755,7 +2756,7 @@
         "check": "Der Dienst Windows Update ist nicht deaktiviert (gelesener Starttyp: {maintenance.updateService}; Auto = automatisch, Manual = manuell, ein Strich heißt: Dienst nicht gefunden). Das ist ein Hinweis aus der Praxis, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Was ein nicht persistenter Server selbst an Updates lädt, kostet Leistung und ist nach dem Neustart verloren (die Begründung ist die des Katalogs). BIS-F stellt den Dienst Windows Update beim Versiegeln auf „Deaktiviert“, nennt dafür keinen Zweck und startet ihn nur im privaten, beständigen Modus wieder (ältere Praxis, Ende 2019). Ist er mit Absicht eingeschaltet, ist nichts zu ändern, etwa weil Microsoft Defender Antivirus seine Signaturen von Microsoft Update bezieht und ihn dafür nach Microsoft braucht (ohne ihn meldet die Prüfung „Alter der Signaturen von Defender Antivirus“).",
+      "meaning": "Lädt ein nicht persistenter Server selbst Updates, kostet das Leistung, und beim Neustart ist es wieder verloren (die Begründung ist die des Katalogs). Ist der Dienst mit Absicht an, ist nichts zu ändern, etwa weil Microsoft Defender Antivirus darüber seine Signaturen bezieht (ohne ihn meldet die Prüfung „Alter der Signaturen von Defender Antivirus“). BIS-F deaktiviert ihn beim Versiegeln, nennt dafür keinen Zweck und startet ihn nur im privaten, beständigen Modus wieder (ältere Praxis, Ende 2019).",
       "todo": [
         {
           "text": "Klären, ob die Server Updates selbst suchen und laden sollen und woher Defender Antivirus seine Signaturen bezieht: Kommen sie von Microsoft Update, braucht Defender Antivirus dafür nach Microsoft die Dienste Windows Update und BITS",
@@ -2790,7 +2791,7 @@
         "check": "Die automatischen Updates von Microsoft Edge sind per Richtlinie nicht abgeschaltet (Update-Vorgabe für alle Kanäle: {apps.edge.updateDefault}; für Edge selbst: {apps.edge.updateStable}; 0 = abgeschaltet, 1 = immer erlauben, 2 = nur von Hand, 3 = nur automatisch im Hintergrund, ein Strich heißt: nicht gesetzt oder nicht gelesen; die Vorgabe für Edge selbst geht vor, ohne sie gilt die Vorgabe für alle Kanäle).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Aktualisiert sich Microsoft Edge auf jedem Server selbst, können im Pool verschiedene Versionen laufen, und Microsoft nennt es für nicht persistente Maschinen bewährte Praxis, die automatischen Updates abzuschalten und Edge über das Master-Image zu aktualisieren. Die Richtlinien für Updates wirken nach Microsoft nur in einer Active-Directory-Domäne, die Vorgabe für Edge selbst geht der Vorgabe für alle Kanäle vor, und diese gilt auch für die WebView2-Runtime. Allgemein nennt Microsoft das Erlauben der Updates als empfohlene Vorgabe, für nicht persistente Maschinen gilt die Seite zu VDI.",
+      "meaning": "Aktualisiert sich Edge auf jedem Server selbst, kostet das bei jedem Start Leistung, und im Pool laufen verschiedene Versionen (Erläuterung des Katalogs). Microsoft empfiehlt für nicht persistente Maschinen, die automatischen Updates abzuschalten und Edge über das Master-Image zu aktualisieren. Die Richtlinien wirken nur in einer Active-Directory-Domäne, und die Vorgabe für Edge selbst geht der Vorgabe für alle Kanäle vor.",
       "todo": [
         {
           "text": "Nachsehen, welche der zwei Richtlinien für Updates von Microsoft Edge gesetzt ist",
@@ -2895,7 +2896,7 @@
         "check": "Startup-Boost von Microsoft Edge ist per Richtlinie nicht abgeschaltet (gelesener Wert: {apps.edge.startupBoost}; 1 = eingeschaltet, ein Strich heißt: nicht gesetzt, dann kann Startup-Boost nach Microsoft zunächst an oder aus sein).",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Mit Startup-Boost starten Prozesse von Microsoft Edge schon bei der Anmeldung und nach dem Schließen des letzten Fensters im Hintergrund neu, auf einem Server mit vielen Sitzungen in jeder Sitzung, und kosten Arbeitsspeicher auch für Benutzer, die Edge nicht öffnen (Faustregel des Katalogs). Microsoft beschreibt nur dieses Verhalten und spricht keine Empfehlung aus. Aaron Parker (2023, Windows Server 2022) schaltet Startup-Boost als Richtlinie für Benutzer ein, damit Web-Apps bei der Anmeldung entstehen, und nennt die dann startenden Prozesse einen Preis an Rechenleistung und Arbeitsspeicher.",
+      "meaning": "Mit Startup-Boost starten Edge-Prozesse in jeder Sitzung schon bei der Anmeldung und laufen im Hintergrund weiter, auch bei Benutzern, die Edge nie öffnen, und kosten spürbar Arbeitsspeicher (Faustregel des Katalogs). Microsoft beschreibt nur dieses Verhalten und spricht keine Empfehlung aus. Aaron Parker (2023) schaltet Startup-Boost für Web-Apps ein und nennt die Prozesse einen Preis an Rechenleistung und Speicher.",
       "todo": [
         {
           "text": "Nachsehen, ob Startup-Boost aus einem bestimmten Grund eingeschaltet ist",
@@ -3185,7 +3186,7 @@
         "check": "Der Rückfallmodus von Microsoft Teams ist nicht abgeschaltet und nicht auf Audio begrenzt (Wert DisableFallback: {apps.teams.disableFallback}; 0 = Rückfall eingeschaltet, 1 = aus, 2 = nur Audio, andere Werte nennt Microsoft nicht; ein Strich heißt: maschinenweit (HKLM) nicht gesetzt, dann ist der Rückfall nach Microsoft eingeschaltet, sofern kein Wert je Benutzer gesetzt ist, den das Zustandsbild nicht liest). Das ist eine Entscheidung des Betreibers, kein Fehler.",
         "unknown": "Ein Wert, den die Prüfung braucht, liegt nicht vor: {reason}."
       },
-      "meaning": "Fällt Teams ohne Optimierung zurück, laufen nach Citrix beim klassischen Teams mit Optimierung über WebRTC Audio, Video und Bildschirmfreigabe auf dem Server, mit Video bei hoher CPU-Last auf dem VDA, und die neue VDI-Lösung fällt auf die normale Umleitung von Audio und Video zurück. Microsoft nennt den Rückfall für Benutzer an nicht unterstützten Endgeräten, und Teams wertet DisableFallback ab Version 24257 aus, nach Citrix aber nur, wo Citrix Workspace-App und Endgerät die Optimierung unterstützen. Keiner der Hersteller nennt einen Sollwert, die Prüfung ist eine Faustregel des Katalogs.",
+      "meaning": "Fällt Teams ohne Optimierung (WebRTC oder die neue VDI-Lösung) zurück, laufen nach Citrix Audio, Video und Bildschirmfreigabe auf dem Server statt auf dem Endgerät, und ein Videoanruf kann den ganzen Server stark belasten. Abschalten oder auf Audio begrenzen schützt die anderen Sitzungen, Benutzer an nicht unterstützten Endgeräten haben dann kein Video. Keiner der Hersteller nennt einen Sollwert, die Prüfung ist eine Faustregel des Katalogs.",
       "todo": [
         {
           "text": "Nachsehen, ob Benutzer sich von Endgeräten verbinden, die die Optimierung von Teams nicht unterstützen, und ob der Rückfall für sie gewollt ist",

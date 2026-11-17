@@ -1244,7 +1244,7 @@ Describe 'Simulierte Stunde, maskiert' {
                 @($md.lagebild.hints) | Should -Contain $md.guidance.hints.errorNoMessage -Because $level
             }
             # the number of tokens, last: a field that changes its kind fails above with its name
-            $CanaryHealth.Free.Count | Should -Be 20; $CanaryHealth.Names.Count | Should -Be 17; $CanaryHealth.Plain.Count | Should -Be 88
+            $CanaryHealth.Free.Count | Should -Be 20; $CanaryHealth.Names.Count | Should -Be 18; $CanaryHealth.Plain.Count | Should -Be 88
         }
         It 'nennt auf der Konsole die Ersatznamen der Namen, die Woertern des Berichts gleichen' {                   # P2-R12
             $copy = Copy-SimRun $R.Run (Join-Path $TestDrive 'vocab')

@@ -79,7 +79,7 @@ $script:WorkerPerfHealthValues = & {
         @('size.netAdapters', 'list', '', 'Name=text, Service=text, SpeedMbit=number, Enabled=bool'),
         @('size.storageControllers', 'list', '', 'Name=text, Driver=text'), @('size.balloonDriver', 'text'),
 
-        @('operation.lastBoot', 'time'), @('operation.pendingRename', 'number'),
+        @('operation.lastBoot', 'time'), @('operation.pendingRename', 'number'), @('operation.pendingRenameTop', 'text:path'),
         @('operation.pendingServicing', 'bool', '', '', 'undocumented'), @('operation.pendingUpdate', 'bool', '', '', 'undocumented'),
         @('operation.lastUpdate', 'time'), @('operation.lastUpdateId', 'text'), @('operation.powerPlan', 'text'),
         @('operation.volumes', 'list', '', 'Drive=text, SizeGB=number, FreeGB=number, FileSystem=text, System=bool, PageFile=bool'),
