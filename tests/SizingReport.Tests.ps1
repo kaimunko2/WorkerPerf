@@ -119,11 +119,11 @@ Describe 'Groessenbericht maskiert' {
     It 'nennt im maskierten Bericht keinen Ordner des Erstellers (Gesamtpruefung, Befund 1)' {
         # Aufzeichnungen und Rollendatei unter einem Ordner, dessen Name in keiner Aufzeichnung steht
         $dir = Join-Path $TestDrive 'kwagner-adm/Desktop'; [void](New-Item -ItemType Directory -Path $dir -Force)
-        $copies = [string[]]@($R.Runs.Days[0], $R.Runs.Days[1] | ForEach-Object { Copy-SimRun $_ $dir }); $roles = Join-Path $dir 'rollen-kwagner.json'; Copy-Item $R.Roles $roles
+        $copies = [string[]]@($R.Runs.Days[0], $R.Runs.Days[1] | ForEach-Object { Copy-SimRun $_ $dir }); $roles = Join-Path $dir 'rollen.json'; Copy-Item $R.Roles $roles
         foreach ($level in 'Alles', 'Personen') {
             $out = Join-Path $TestDrive "pfad-$level.html"; [void](& $SizingScript -Path $copies -OutFile $out -RoleFile $roles -Mask $level 6>$null)
             $t = [IO.File]::ReadAllText($out); $t.Contains('kwagner') | Should -BeFalse -Because $level
-            $d = Get-ReportData $out; $d.runs[0].command | Should -Match "^\.\\New-WorkerPerfReport\.ps1 -Path '[^\\/']+' -RoleFile '[^\\/']+'$"
+            $shownData = Get-ReportData $out; $shownData.runs[0].command | Should -Match "^\.\\New-WorkerPerfReport\.ps1 -Path '[^\\/']+' -RoleFile '[^\\/']+'$"
         }
         # ohne -Mask steht der ganze Pfad da
         $D.runs[0].folder | Should -Be $R.Runs.Days[0]

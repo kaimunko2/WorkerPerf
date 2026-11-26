@@ -404,7 +404,8 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
         # ohne Drucken nennen Vorfaelle der Messung und des Rueckblicks ein Modul
         foreach ($i in @($D.Drucken.incidents)) { if ($null -ne $i.event) { & $walk @($i.event.unchecked) 'incidents[].event.unchecked' } }
         foreach ($i in @($D.Drucken.before.incidents)) { & $walk @($i.event.unchecked) 'before.incidents[].event.unchecked' }
-        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like '*unchecked*' } | Sort-Object)
+        # Aussage geaendert (Groesse Task 6): ohne die Felder unchecked der Einordnung eines Leistungsvorfalls (incidents[].unchecked[])
+        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like '*event.unchecked*' } | Sort-Object)
         @($paths | ForEach-Object { '{0}={1}' -f $_, $census.$_ }) | Should -Be @('before.incidents[].event.unchecked[].category=keyword', 'before.incidents[].event.unchecked[].id=keyword',
             'before.incidents[].event.unchecked[].text=composed', 'incidents[].event.unchecked[].category=keyword', 'incidents[].event.unchecked[].id=keyword', 'incidents[].event.unchecked[].text=composed')
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1'); $WorkerPerfMaskKeywordFields | Should -Contain 'unchecked.category'
