@@ -104,32 +104,42 @@ function Get-WorkerPerfProcessRows {
 # ---- Burst control, scheduling, guards, fast cadence rows and writers ----
 
 function New-WorkerPerfBurstState {
-    # Signals: signal id -> @{ Armed; Start } for signals that are currently over their threshold.
-    # A signal without an entry is armed. HasTrigger/LastTrigger: time of the latest trigger of any signal.
+    # Signals: signal id -> @{ Count; RunStart; HasEpisode; EpisodeStart; LastBad } for signals that are over their
+    # threshold or were so less than RearmSeconds ago. HasTrigger/LastTrigger: time of the latest trigger of any signal.
     return @{ Signals = @{}; HasTrigger = $false; LastTrigger = [datetime]::MinValue }
 }
 
 function Update-WorkerPerfBurstState {
     # A signal triggers once it is bad in ConfirmTicks consecutive ticks (a single spike, such as one short input delay,
-    # forms no finding either and must not keep the burst open), then in every further bad tick while its episode is at
-    # most MaxEpisodeSeconds old (counted from its first bad tick). The burst lasts HoldSeconds after the last trigger.
+    # forms no finding either and must not keep the burst open), then in every further such tick while its episode is at
+    # most MaxEpisodeSeconds old (counted from the first bad tick of the run that opened it). The episode ends only once
+    # the signal was good for RearmSeconds without a break: a value that swings around its threshold stays in one
+    # episode and does not open the burst again and again. The burst lasts HoldSeconds after the last trigger.
     param($State, [datetime]$Now, [AllowEmptyCollection()][string[]]$BadSignals, [int]$HoldSeconds = 60, [int]$MaxEpisodeSeconds = 300,
-        [int]$ConfirmTicks = 3)
+        [int]$ConfirmTicks = 3, [int]$RearmSeconds = 300)
 
     $bad = @{}
     foreach ($id in @($BadSignals)) { if (-not [string]::IsNullOrEmpty($id)) { $bad[$id] = $true } }
 
-    # A signal that is no longer bad is armed again.
+    # A signal that is no longer bad starts its count anew; it is armed again once it was good for RearmSeconds (at once
+    # when its bad ticks opened no episode).
     foreach ($id in @($State.Signals.Keys)) {
-        if (-not $bad.ContainsKey($id)) { $State.Signals.Remove($id) }
+        $sig = $State.Signals[$id]
+        $rested = (($Now - $sig.LastBad).TotalSeconds -ge $RearmSeconds)
+        if (-not $bad.ContainsKey($id)) { if ($rested -or -not $sig.HasEpisode) { $State.Signals.Remove($id) } else { $sig.Count = 0 } }
+        elseif ($rested -and $sig.HasEpisode) { $sig.HasEpisode = $false; $sig.Count = 0 }
     }
 
     $triggered = $false
     foreach ($id in $bad.Keys) {
-        if (-not $State.Signals.ContainsKey($id)) { $State.Signals[$id] = @{ Armed = $false; Start = $Now; Count = 0 } }
+        if (-not $State.Signals.ContainsKey($id)) { $State.Signals[$id] = @{ Count = 0; RunStart = $Now; HasEpisode = $false; EpisodeStart = $Now; LastBad = $Now } }
         $sig = $State.Signals[$id]
         $sig.Count++
-        if ($sig.Count -ge $ConfirmTicks -and ($Now - $sig.Start).TotalSeconds -le $MaxEpisodeSeconds) { $triggered = $true }
+        if ($sig.Count -eq 1) { $sig.RunStart = $Now }
+        $sig.LastBad = $Now
+        if ($sig.Count -lt $ConfirmTicks) { continue }
+        if (-not $sig.HasEpisode) { $sig.HasEpisode = $true; $sig.EpisodeStart = $sig.RunStart }
+        if (($Now - $sig.EpisodeStart).TotalSeconds -le $MaxEpisodeSeconds) { $triggered = $true }
     }
     if ($triggered) {
         $State.HasTrigger = $true

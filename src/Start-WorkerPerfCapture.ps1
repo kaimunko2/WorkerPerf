@@ -22,7 +22,8 @@
     server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).
 
     Once a trigger signal of thresholds.json is over its threshold in three consecutive ticks, while it stays over (and -BurstHoldSeconds
-    afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
+    afterwards) snapshots are taken every -BurstIntervalSeconds, per signal for at most five minutes and again only after
+    it was under its threshold for five minutes without a break. Every 20th regular snapshot
     is a keyframe that lists every process; the others only list active processes.
 
     The run folder also holds a copy of thresholds.json, a copy of the application list (apps.json,

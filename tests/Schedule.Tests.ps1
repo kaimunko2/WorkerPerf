@@ -40,7 +40,24 @@ Describe 'Update-WorkerPerfBurstState' {
         @($active | Where-Object { $_ }).Count | Should -Be 179              # ab dem dritten Takt bis 300 s (149 Takte), danach 30 Takte Nachlauf
         Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(600) -BadSignals @() | Should -BeFalse
         foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(602 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(606) -BadSignals @('mem.used') | Should -BeTrue      # nach Entwarnung wieder scharf
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(606) -BadSignals @('mem.used') | Should -BeFalse     # ein guter Takt macht nicht wieder scharf
+        # erst nach 300 s am Stueck unter der Schwelle (letzter schlechter Takt bei 606 s) wieder scharf
+        foreach ($k in 0..148) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(608 + 2 * $k) -BadSignals @() | Should -BeFalse }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(906 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(910) -BadSignals @('mem.used') | Should -BeTrue
+    }
+    It 'begrenzt die Verdichtung auch, wenn der Wert um die Schwelle pendelt (dritter echter Lauf)' {
+        # eine Stunde lang fuenf Takte ueber der Schwelle, einer darunter: bisher begann mit jedem guten Takt eine neue Episode
+        $s = New-WorkerPerfBurstState
+        $active = foreach ($i in 0..1799) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals $(if ($i % 6 -eq 5) { @() } else { @('mem.used') }) }
+        @($active | Where-Object { $_ }).Count | Should -Be 177              # Ausloeser bis 296 s, danach 60 s Nachlauf
+        # kurz darunter, dann lange Ruhe unterhalb der Wiederscharf-Zeit, dann wieder darueber: weiter dieselbe Episode
+        foreach ($k in 0..2) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(3800 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
+        # eine eigene Wiederscharf-Zeit laesst sich angeben
+        $o = New-WorkerPerfBurstState
+        foreach ($i in 0..199) { [void](Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(2 * $i) -BadSignals @('mem.used') -RearmSeconds 10) }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(420 + 2 * $k) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(424) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeTrue
     }
     It 'fuehrt die Begrenzung je Signal' {
         $s = New-WorkerPerfBurstState

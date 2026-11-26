@@ -79,8 +79,8 @@ Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Server-Signal
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
 nimmt er einen Schnappschuss der Prozesse, Sitzungen und Citrix-Werte, prüft die Gegenstellen und liest
 einmal pro Minute die Ereignisse. Liegt ein Auslöser-Signal drei Takte in Folge über seiner Schwelle, verdichtet er
-fortan, solange es darüber bleibt (und 60 Sekunden danach, je Signal
-höchstens 5 Minuten am Stück), verdichtet er die Schnappschüsse: mit den Standardwerten alle **6 Sekunden**,
+die Schnappschüsse, solange es darüber bleibt (und 60 Sekunden danach, je Signal
+höchstens 5 Minuten; erneut erst, nachdem es 5 Minuten am Stück unter der Schwelle lag): mit den Standardwerten alle **6 Sekunden**,
 denn ein Schnappschuss entsteht immer in einem schnellen Takt, also im ersten Takt nach Ablauf von
 `-BurstIntervalSeconds` (5 s) – bei einem Takt von 2 s jeder dritte.
 
@@ -668,7 +668,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 | jeder reguläre Schnappschuss zusätzlich | einmal pro Minute die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
 | einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; Zeitgrenzen im Code: 10 s je Bereich, 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
-| Verdichtung | sobald ein Auslöser-Signal drei Takte in Folge über seiner Schwelle liegt, solange es darüber bleibt, und 60 s danach (eine einzelne Spitze verdichtet nicht): Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
+| Verdichtung | sobald ein Auslöser-Signal drei Takte in Folge über seiner Schwelle liegt, solange es darüber bleibt, und 60 s danach (eine einzelne Spitze verdichtet nicht): Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten und erneut erst nach 5 Minuten am Stück unter der Schwelle | – |
 
 Alles läuft nacheinander in einer Schleife: Ein Schnappschuss entsteht innerhalb eines schnellen Takts. Dauert er
 länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
