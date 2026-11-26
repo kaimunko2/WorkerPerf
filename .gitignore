@@ -13,8 +13,10 @@ expected.json
 *.flag
 *.html
 !src/report-template.html
+!src/sizing-template.html
 # der Demo-Bericht aus simulierten Daten, den GitHub Pages zeigt
 !pages/index.html
+!pages/groesse.html
 src/endpoints.json
 # Ergebnisse des Quellen-Pruefskripts werden nicht eingecheckt: sie werden ausserhalb des Repositorys uebergeben
 vda-probe_*.json
