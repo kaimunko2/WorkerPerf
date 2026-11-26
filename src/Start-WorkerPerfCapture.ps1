@@ -120,6 +120,14 @@
     Has no effect: the health picture is read by default (it came from the interim version, in which it was off).
     Not together with -Skip Zustand.
 
+.PARAMETER SimulateScenario
+    Only with -Simulate: the scenario of the simulated data. Stunde (default): one hour with eight incidents. Ursachen:
+    one scene per cause of a CPU or memory bottleneck. Tag: a working day with rising and falling sessions.
+
+.PARAMETER SimulateDay
+    Only with -Simulate: the day (1 to 5) of the scenario Tag. Day d starts d - 1 days later; the days 1 to 4 have a
+    CPU bottleneck at their peak, day 3 also CPU time taken away by the VMware host, day 5 has none.
+
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
     between ticks, runs on any platform). Used for demos and tests.
@@ -151,6 +159,8 @@ param(
     [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [string[]]$Skip = @(),
     [switch]$Simulate,
+    [ValidateSet('Stunde', 'Ursachen', 'Tag')][string]$SimulateScenario,
+    [ValidateRange(1, 5)][int]$SimulateDay,
     [switch]$HealthOnly,
     [switch]$Health
 )
@@ -194,6 +204,9 @@ if ($PSBoundParameters.ContainsKey('Skip') -and $PSBoundParameters.ContainsKey('
 $withCommandLine = ([bool]$IncludeCommandLine -and $leftOut -notcontains 'Prozesse')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
+if (-not $Simulate -and ($PSBoundParameters.ContainsKey('SimulateScenario') -or $PSBoundParameters.ContainsKey('SimulateDay'))) {
+    throw '-SimulateScenario und -SimulateDay gelten nur mit -Simulate.'
+}
 if ($Simulate) {
     if (-not $HealthOnly -and $DurationMinutes -lt 60) { throw '-Simulate erfordert -DurationMinutes von mindestens 60 (das Drehbuch dauert 60 Minuten).' }
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Simulation.ps1')
@@ -246,6 +259,9 @@ if ($HealthOnly) { $sourceSkip = @($leftOut) + @(@('Prozesse', 'Laufwerke', 'Cit
 # -HealthOnly only in the quick run: the source then opens no performance counter and lists no measured signal in Sources
 $quickArgs = @{}
 if ($HealthOnly) { $quickArgs['HealthOnly'] = $true }
+# the scenario of the simulation (the Windows source has no such parameters)
+if ($PSBoundParameters.ContainsKey('SimulateScenario')) { $quickArgs['Scenario'] = $SimulateScenario }
+if ($PSBoundParameters.ContainsKey('SimulateDay')) { $quickArgs['Day'] = $SimulateDay }
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
     -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps -CoreBusyPct $coreBusyPct @quickArgs
 $cores = [int]$source.LogicalProcessors

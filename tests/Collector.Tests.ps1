@@ -25,6 +25,20 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
         $Meta.CoreBusyPct | Should -Be 90
         (Get-Content (Join-Path $Run 'ticks.csv') -TotalCount 1) | Should -Be $WorkerPerfHeaders['ticks.csv']
     }
+    It 'lehnt -SimulateScenario ohne -Simulate ab' {
+        $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
+        { & $capture -SimulateScenario Tag -OutputPath (Join-Path $TestDrive 'x') } | Should -Throw '*nur mit -Simulate*'
+        { & $capture -SimulateDay 2 -OutputPath (Join-Path $TestDrive 'x') } | Should -Throw '*nur mit -Simulate*'
+        Test-Path (Join-Path $TestDrive 'x') | Should -BeFalse
+    }
+    It 'legt Tage eines Servers mit verschiedenem Beginn an' {
+        $r = New-SizingRuns (Join-Path $TestDrive 'size'); @($r.Days).Count | Should -Be 5
+        $m = @($r.Days | ForEach-Object { Get-Content (Join-Path $_ 'meta.json') -Raw | ConvertFrom-Json })
+        @($m.Computer | Sort-Object -Unique) | Should -Be @('SIM-VDA01')
+        ([DateTimeOffset]$m[1].StartTime - [DateTimeOffset]$m[0].StartTime).TotalDays | Should -BeGreaterOrEqual 0.99
+        (Get-Content (Join-Path $r.Quick 'meta.json') -Raw | ConvertFrom-Json).Computer | Should -Be 'SIM-VDA01'
+        $e3 = @(Get-Content (Join-Path $r.Days[2] 'expected.json') -Raw | ConvertFrom-Json); @($e3 | Where-Object Key -eq 'steal')[0].Classes | Should -Be @('host', 'capacity')
+    }
     It 'startet nicht mit einem fehlerhaften Katalog der Groesse' {
         $capture = New-PatchedSource (Join-Path $TestDrive 'badsrc') ''
         $cat = Join-Path $TestDrive 'badsrc/sizing.de.json'

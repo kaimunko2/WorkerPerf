@@ -90,6 +90,11 @@ function Copy-SimRun([string]$Run, [string]$OutDir, [string[]]$Without = @()) {
     Get-ChildItem -LiteralPath $Run -File | Where-Object { $Without -notcontains $_.Name -and $_.Name -notlike '*.html' } | Copy-Item -Destination $dir
     $dir
 }
+function New-SizingRuns([string]$OutDir) {
+    # Fuenf simulierte Arbeitstage desselben Servers (Drehbuch Tag, Tag 1 bis 5) und ein Schnelllauf; alle SIM-VDA01
+    $days = @(1..5 | ForEach-Object { [string](Invoke-SimCapture $OutDir @{ SimulateScenario = 'Tag'; SimulateDay = $_ }) })
+    [ordered]@{ Days = [string[]]$days; Quick = [string](Invoke-SimHealthOnly (Join-Path $OutDir 'quick')) }
+}
 function New-OldCaptureCopy([string]$Run, [string]$OutDir) {
     # Kopie einer Aufzeichnung, wie ein aelterer Collector sie schrieb: ticks.csv ohne die fuenf Spalten der Groesse
     # (Kopfzeile und Zeilen), meta.json ohne CoreBusyPct und ohne die fuenf Eintraege in Sources; liefert den neuen Ordner

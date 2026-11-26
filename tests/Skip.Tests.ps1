@@ -111,7 +111,7 @@ Describe 'Aufzeichnung mit -Skip' {
         $m = Get-Meta $Runs.Voll; $names = @($m.PSObject.Properties.Name)
         Get-CsvNames $Runs.Voll | Should -Be @($WorkerPerfHeaders.Keys | Sort-Object)
         # Aussage angepasst: EventReadCounts und LookbackReadCounts kamen nach dem Plan dazu; Skip steht hinter ihnen
-        $names | Should -Be @('SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'MaxSizeMB',
+        $names | Should -Be @('SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'CoreBusyPct', 'FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'MaxSizeMB',      # Aussage geaendert (Groesse Task 2): CoreBusyPct
             'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'Ticks', 'Snapshots', 'SkippedTicks', 'Simulated', 'HealthOnly', 'IncludeCommandLine', 'EventLookbackDays', 'LookbackCapped', 'EventReadCounts', 'LookbackReadCounts', 'Skip', 'CollectorPid', 'Endpoints', 'Sources', 'SourceErrors')
         @($m.Skip).Count | Should -Be 0; $m.EventLookbackDays | Should -Be 7; @($m.Endpoints).Count | Should -Be 3
         $m.HealthOnly | Should -BeFalse

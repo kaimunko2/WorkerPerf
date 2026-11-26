@@ -6,6 +6,24 @@ BeforeAll {
     function Set-SimTime([double]$Minutes) { [void](Wait-WorkerPerfTick -Until $Start.AddMinutes($Minutes) -StopFlagPath '') }
     function Get-SimProcess([string]$Name, [int]$SessionId) { , @((Get-WorkerPerfSnapshot).Processes | Where-Object { $_.Name -eq $Name -and ($SessionId -lt 0 -or $_.SessionId -eq $SessionId) }) }
     function Get-CpuSec($p) { ([double]$p.UserModeTime + [double]$p.KernelModeTime) / 1e7 }
+    # Drehbuecher der Groesse: die Quelle mit dem Drehbuch initialisieren und die virtuelle Uhr auf die Sekunde stellen
+    function Set-SimScenario([string]$Scenario, [double]$Sec, [int]$Day = 1) {
+        [void](Initialize-WorkerPerfSource -StartTime $Start -Scenario $Scenario -Day $Day)
+        $script:ScenarioStart = Get-WorkerPerfNow
+        [void](Wait-WorkerPerfTick -Until $ScenarioStart.AddSeconds($Sec) -StopFlagPath '')
+    }
+    function Get-SimSample([string]$Scenario, [double]$Sec, [int]$Day = 1) { Set-SimScenario $Scenario $Sec $Day; Get-WorkerPerfFastSample }
+    function Get-SimSnapshot([string]$Scenario, [double]$Sec, [int]$Day = 1) { Set-SimScenario $Scenario $Sec $Day; Get-WorkerPerfSnapshot }
+    function Get-SimEvents([string]$Scenario) { Set-SimScenario $Scenario 3600; Get-WorkerPerfEvents -Since $ScenarioStart }
+    function Get-SimExpected([string]$Scenario, [int]$Day = 1) { Set-SimScenario $Scenario 0 $Day; Get-WorkerPerfExpected }
+    # die Werte der Stunde vor dem Baustein "Groesse des Servers" (abgelesen am Stand vor Task 4)
+    $script:StundeBefore = @{
+        10 = @{ CpuPct = 36.74; MemAvailMB = 28721; StealPct = 0.31; PagesInPerSec = 3.1 }
+        360 = @{ CpuPct = 94.53; MemAvailMB = 27670; StealPct = 0.52; PagesInPerSec = 1.1 }
+        1000 = @{ CpuPct = 38.97; MemAvailMB = 4588; StealPct = 0.54; PagesInPerSec = 396.1 }
+        2000 = @{ CpuPct = 36.56; MemAvailMB = 28671; StealPct = 0.79; PagesInPerSec = 3.3 }
+        3000 = @{ CpuPct = 35.65; MemAvailMB = 27086; StealPct = 0.72; PagesInPerSec = 3.8 }
+    }
 }
 Describe 'Simulation' {
     It 'meldet die festen Eckdaten' {
@@ -315,5 +333,63 @@ Describe 'Simuliertes Zustandsbild' {
     }
     It 'liest ohne Zustand nichts' {
         [void](Initialize-WorkerPerfSource -StartTime $Start -Skip Zustand); Get-WorkerPerfHealth | Should -BeNullOrEmpty; [int]$script:WorkerPerfSimReads['health'] | Should -Be 0
+    }
+}
+Describe 'Simulation: Drehbuecher der Groesse' {
+    AfterAll { [void](Initialize-WorkerPerfSource -StartTime $Start) }
+    It 'spielt die Szenen der Ursachen' {
+        $h = Get-SimSample Ursachen 360; $h.StealPct | Should -BeGreaterOrEqual 12; $h.CpuPct | Should -BeGreaterOrEqual 75; $h.CpuPct | Should -BeLessThan 90; ($h.ProcQueue / 8) | Should -BeLessThan 2
+        $s = Get-SimSample Ursachen 960; $s.CoreMaxPct | Should -BeGreaterOrEqual 99; $s.CoresBusy | Should -Be 1; $s.CpuPct | Should -BeLessThan 60
+        ($s.InputSessions | Where-Object SessionId -eq 11).DelayMs | Should -BeGreaterOrEqual 800
+        $c = Get-SimSample Ursachen 1560; $c.CpuPct | Should -BeGreaterOrEqual 95; ($c.ProcQueue / 8) | Should -BeGreaterOrEqual 2
+        $v = Get-SimSample Ursachen 2160; $v.CpuPct | Should -BeGreaterOrEqual 75; $v.CpuPct | Should -BeLessThan 90
+        $l = Get-SimSample Ursachen 2890; (100 * (1 - $l.MemAvailMB / 65536)) | Should -BeGreaterOrEqual 85; $l.MemCommittedMB | Should -BeLessThan 65536; $l.PagesOutPerSec | Should -BeLessThan 5
+        $m = Get-SimSample Ursachen 3100; $m.MemCommittedMB | Should -BeGreaterThan 65536; $m.PagesOutPerSec | Should -BeGreaterOrEqual 300
+        $k = Get-SimSample Ursachen 3400; ($k.MemCommittedMB / $k.MemCommitLimitMB) | Should -BeGreaterOrEqual 0.92; $k.PagesOutPerSec | Should -BeLessThan 5
+        (100 * (1 - $k.MemAvailMB / 65536)) | Should -BeLessThan 75
+        $q = Get-SimSample Ursachen 1200; $q.CpuPct | Should -BeLessThan 45; $q.StealPct | Should -BeLessThan 1      # zwischen den Szenen Ruhe
+    }
+    It 'fuehrt die Prozesse der Szenen' {
+        $p = (Get-SimSnapshot Ursachen 1000).Processes | Where-Object Name -eq 'simcalc.exe'; @($p).Count | Should -Be 1; $p.SessionId | Should -Be 11
+        Get-CpuSec $p | Should -BeGreaterThan 99; Get-CpuSec $p | Should -BeLessThan 101                              # 100 s bei einem Kern
+        @((Get-SimSnapshot Ursachen 1100).Processes | Where-Object Name -eq 'simcalc.exe').Count | Should -Be 0
+        $leak = (Get-SimSnapshot Ursachen 2890).Processes | Where-Object Name -eq 'simleak.exe'; [double]$leak.WorkingSetSize / 1GB | Should -BeGreaterThan 19
+        @((Get-SimSnapshot Ursachen 3400).Processes | Where-Object Name -eq 'simreserve.exe').Count | Should -Be 1
+        @((Get-SimSnapshot Stunde 1000).Processes | Where-Object { $_.Name -like 'sim*' }).Count | Should -Be 0
+    }
+    It 'meldet den Scan als Defender-Ereignisse 1000 und 1001' {
+        $ev = @(Get-SimEvents Ursachen) | Where-Object { $_.Source -like '*Defender*' }
+        @($ev | Where-Object EventId -eq 1000).Count | Should -Be 1; @($ev | Where-Object EventId -eq 1001).Count | Should -Be 1
+    }
+    It 'laesst die Sitzungen eines Tags steigen und fallen' {
+        function Count-Users($Snap) { @($Snap.Sessions | Where-Object { $_.SessionId -ne 0 }).Count }
+        Count-Users (Get-SimSnapshot Tag 30) | Should -Be 6; Count-Users (Get-SimSnapshot Tag 1800) | Should -Be 31; Count-Users (Get-SimSnapshot Tag 3570) | Should -Be 6
+        (Get-SimSample Tag 1800 -Day 5).CpuPct | Should -BeLessThan 75; (Get-SimSample Tag 1800 -Day 2).CpuPct | Should -BeGreaterOrEqual 90
+        (Get-SimSample Tag 1800 -Day 2).ProcQueue | Should -Be 24; (Get-SimSample Tag 1800 -Day 5).ProcQueue | Should -BeLessThan 16
+        (Get-SimSample Tag 1600 -Day 3).StealPct | Should -BeGreaterOrEqual 12; (Get-SimSample Tag 1600 -Day 2).StealPct | Should -BeLessThan 1
+        @((Get-SimSample Tag 30).InputSessions).Count | Should -Be 6
+        Set-SimScenario Tag 0 3; ($ScenarioStart - $Start).TotalDays | Should -Be 2                                  # Tag d beginnt d - 1 Tage spaeter
+    }
+    It 'beschreibt die Soll-Klassen' {
+        (Get-SimExpected Stunde | Where-Object Key -eq 'cpu').Classes | Should -Be @('app')
+        (Get-SimExpected Stunde | Where-Object Key -eq 'memory').Classes | Should -Be @('mem.app')
+        @((Get-SimExpected Stunde | Where-Object Key -eq 'disk').Classes).Count | Should -Be 0
+        (Get-SimExpected Ursachen | Where-Object Key -eq 'host').Classes | Should -Be @('host', 'capacity')
+        (Get-SimExpected Ursachen | Where-Object Key -eq 'commit').Classes | Should -Be @('mem.commit')
+        @(Get-SimExpected Ursachen | Where-Object { $_.Type -ne 'ereignis' }).Key | Should -Be @('host', 'singlecore', 'capacity', 'scan', 'memleak', 'memcapacity', 'commit')
+        @(Get-SimExpected Tag 3 | Where-Object { $_.Type -ne 'ereignis' }).Key | Should -Be @('peak', 'steal'); @(Get-SimExpected Tag 5 | Where-Object { $_.Type -ne 'ereignis' }).Count | Should -Be 0
+    }
+    It 'laesst die simulierte Stunde unveraendert' {
+        # dieselben Werte wie vor diesem Baustein an fuenf festen Sekunden
+        foreach ($sec in 10, 360, 1000, 2000, 3000) {
+            $o = Get-SimSample Stunde $sec
+            foreach ($f in 'CpuPct', 'MemAvailMB', 'StealPct', 'PagesInPerSec') { $o.$f | Should -Be $StundeBefore[$sec][$f] -Because "$f bei $sec s" }
+        }
+    }
+    It 'liefert die fuenf Werte der Groesse in der Stunde' {
+        $o = Get-SimSample Stunde 360; $o.CoresBusy | Should -Be 4; $o.CoreMaxPct | Should -BeGreaterOrEqual 99
+        $q = Get-SimSample Stunde 2000; $q.CoresBusy | Should -Be 0; $q.CoreMaxPct | Should -BeLessThan 70; $q.PerfPct | Should -BeGreaterOrEqual 98; $q.PerfPct | Should -BeLessOrEqual 102
+        $q.UtilityPct | Should -Be ([Math]::Round($q.CpuPct * $q.PerfPct / 100, 1)); $q.PagesOutPerSec | Should -BeLessOrEqual 3
+        foreach ($id in 'cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout') { $Info.Sources[$id].Available | Should -BeTrue -Because $id }
     }
 }
