@@ -5,8 +5,8 @@ Repository und fehlen in einer neuen Sitzung. Alles Nötige steht hier, im Plan 
 
 ## 1. Stand
 
-- Entwicklungsbranch dieser Sitzung: `claude/eloquent-cori-yzz28w` (ausgehend von `bfaab24`). `main` steht weiter auf
-  `bfaab24`; auf `main` geht es erst nach dem OK des Benutzers.
+- Entwicklungsbranch dieser Sitzung: `claude/eloquent-cori-yzz28w` (ausgehend von `bfaab24`). Am 26.11.2026 mit OK des Benutzers nach
+  `main` übernommen (Merge `99673d0`); beide Branches stehen gleich. Weitere Übernahmen wieder erst nach OK.
 - **Fertig auf dem Entwicklungsbranch (26.11.2026):**
   - die Punkte 1–3 aus Lauf 3 (Präfix `*1`, Speichermangel als ein chronischer Vorfall, Burst begrenzt);
   - der Baustein „Größe des Servers“, Tasks 1–12 des Plans `docs/superpowers/plans/2026-11-14-servergroesse.md`:
@@ -47,7 +47,7 @@ Kleinigkeiten, gesammelt und nicht umgesetzt:
   Kachelblock hätten sie die Vorgabe „zwei Kachelzeilen auf dem ersten Bildschirm“ gebrochen.
 - Browserprüfung `checkAddress` scheitert in der Cloud-Umgebung um 1 px am Suchfeld der Sitzungen (259 statt 258), mit
   dem Stand von `main` genauso (Schriftart der Umgebung). Sie wurde nicht geändert; alle anderen Prüfungen sind grün.
-- Auf `main` (`bfaab24`) sind zwei Prüfungen rot, die der Entwicklungsbranch korrigiert: der Zählwert der Rohwerte im
+- Auf dem alten Stand `bfaab24` waren zwei Prüfungen rot, die dieser Baustein korrigiert hat: der Zählwert der Rohwerte im
   Berichtstest (208 statt 209) und der Platz des Druck-Vorfalls in `checkLongNames`.
 
 Letzter Prüfstand (26.11.2026): Pester 2133 von 2135 grün, die zwei roten waren Testfehler und sind korrigiert und
