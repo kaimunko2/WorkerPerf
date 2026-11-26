@@ -113,7 +113,7 @@ function Update-WorkerPerfBurstState {
     # A signal triggers once it is bad in ConfirmTicks consecutive ticks (a single spike, such as one short input delay,
     # forms no finding either and must not keep the burst open), then in every further such tick while its episode is at
     # most MaxEpisodeSeconds old (counted from the first bad tick of the run that opened it). The episode ends only once
-    # the signal was good for RearmSeconds without a break: a value that swings around its threshold stays in one
+    # the signal had no confirmed bad tick for RearmSeconds (a single spike in between does not count): a value that swings around its threshold stays in one
     # episode and does not open the burst again and again. The burst lasts HoldSeconds after the last trigger.
     param($State, [datetime]$Now, [AllowEmptyCollection()][string[]]$BadSignals, [int]$HoldSeconds = 60, [int]$MaxEpisodeSeconds = 300,
         [int]$ConfirmTicks = 3, [int]$RearmSeconds = 300)
@@ -136,8 +136,9 @@ function Update-WorkerPerfBurstState {
         $sig = $State.Signals[$id]
         $sig.Count++
         if ($sig.Count -eq 1) { $sig.RunStart = $Now }
-        $sig.LastBad = $Now
         if ($sig.Count -lt $ConfirmTicks) { continue }
+        # only a confirmed bad tick keeps the episode alive: single spikes between two episodes do not delay the re-arming
+        $sig.LastBad = $Now
         if (-not $sig.HasEpisode) { $sig.HasEpisode = $true; $sig.EpisodeStart = $sig.RunStart }
         if (($Now - $sig.EpisodeStart).TotalSeconds -le $MaxEpisodeSeconds) { $triggered = $true }
     }

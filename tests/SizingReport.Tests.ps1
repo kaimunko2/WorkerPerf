@@ -116,6 +116,18 @@ Describe 'Groessenbericht maskiert' {
         $m.copy.anonymous | Should -BeNullOrEmpty; $m.copy.named | Should -Not -Match 'SIM-VDA01'
         (Get-ReportData $R.MaskedP).meta.server | Should -Be 'SIM-VDA01'
     }
+    It 'nennt im maskierten Bericht keinen Ordner des Erstellers (Gesamtpruefung, Befund 1)' {
+        # Aufzeichnungen und Rollendatei unter einem Ordner, dessen Name in keiner Aufzeichnung steht
+        $dir = Join-Path $TestDrive 'kwagner-adm/Desktop'; [void](New-Item -ItemType Directory -Path $dir -Force)
+        $copies = [string[]]@($R.Runs.Days[0], $R.Runs.Days[1] | ForEach-Object { Copy-SimRun $_ $dir }); $roles = Join-Path $dir 'rollen-kwagner.json'; Copy-Item $R.Roles $roles
+        foreach ($level in 'Alles', 'Personen') {
+            $out = Join-Path $TestDrive "pfad-$level.html"; [void](& $SizingScript -Path $copies -OutFile $out -RoleFile $roles -Mask $level 6>$null)
+            $t = [IO.File]::ReadAllText($out); $t.Contains('kwagner') | Should -BeFalse -Because $level
+            $d = Get-ReportData $out; $d.runs[0].command | Should -Match "^\.\\New-WorkerPerfReport\.ps1 -Path '[^\\/']+' -RoleFile '[^\\/']+'$"
+        }
+        # ohne -Mask steht der ganze Pfad da
+        $D.runs[0].folder | Should -Be $R.Runs.Days[0]
+    }
     It 'ordnet jedes Textfeld der Berichtsdaten im Bestand ein' {
         $census = Get-Content (Join-Path $PSScriptRoot 'SizingMaskCensus.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         @($census.fields.PSObject.Properties | Where-Object { @('name', 'keyword', 'composed') -notcontains [string]$_.Value }) | Should -BeNullOrEmpty

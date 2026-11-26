@@ -2528,10 +2528,18 @@ function Get-WorkerPerfFastSample {
         }
         $previous = $st.Prev[$key]
         if ($null -ne $previous) {
-            $counters = $def.Counters
-            if ($st.Optional.ContainsKey($key) -and $st.Optional[$key].Count -gt 0) { $counters = @($def.Counters) + @($st.Optional[$key]) }
-            $values[$key] = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $counters `
+            $values[$key] = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $def.Counters `
                 -ZeroUnchanged:($def.Mode -eq 'ZeroUnchanged') -MsPercent:($def.Mode -eq 'MsPercent')
+            # the optional counters on their own: one that cannot be calculated costs its value, never the tick
+            if ($st.Optional.ContainsKey($key) -and $st.Optional[$key].Count -gt 0) {
+                try {
+                    $more = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $st.Optional[$key]
+                    foreach ($c in @($more.Keys)) { $values[$key][$c] = $more[$c] }
+                }
+                catch {
+                    Write-WarningOnce ('perf.optional.' + $key) ("Zusaetzliche Zaehler von '{0}' nicht berechenbar; ihre Werte fehlen, die Aufzeichnung laeuft weiter: {1}" -f $def.Category, $_.Exception.Message)
+                }
+            }
         }
         $st.Prev[$key] = $current
         if ($key -eq 'volumes') { $volumeNames = [string[]]@(Get-WorkerPerfWinInstanceNames $current 'Disk Reads/sec') }

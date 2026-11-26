@@ -66,6 +66,15 @@ Describe 'Update-WorkerPerfBurstState' {
         foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(420 + 2 * $k) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeFalse }
         Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(424) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeTrue
     }
+    It 'wird nach einer Episode wieder scharf, auch wenn dazwischen einzelne Spitzen liegen (Gesamtpruefung, Befund 2)' {
+        # 20 s ueber der Schwelle, dann alle vier Minuten ein einzelner Takt, ab Minute 30 wieder dauerhaft: die einzelnen
+        # Spitzen (nie bestaetigt) verlaengern die Sperre nicht
+        $s = New-WorkerPerfBurstState
+        foreach ($i in 0..9) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals @('input.session')) }
+        foreach ($i in 10..899) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals $(if ($i % 120 -eq 0) { @('input.session') } else { @() })) }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(1800 + 2 * $k) -BadSignals @('input.session') | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(1804) -BadSignals @('input.session') | Should -BeTrue
+    }
     It 'fuehrt die Begrenzung je Signal' {
         $s = New-WorkerPerfBurstState
         foreach ($i in 0..199) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals @('mem.used')) }

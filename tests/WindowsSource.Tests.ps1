@@ -404,6 +404,16 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
         $s.UtilityPct | Should -BeNullOrEmpty; $s.PagesOutPerSec | Should -BeNullOrEmpty; $s.CpuPct | Should -Not -BeNullOrEmpty; $s.PerfPct | Should -Be 104
     }
+    It 'verliert keinen Takt, wenn ein optionaler Zaehler beim Berechnen scheitert (Gesamtpruefung, Befund 7)' {
+        $script:WinFake.Perf['Processor Information']['% Processor Utility'] = @{ '_Total' = 41.6 }
+        [void](Initialize-WorkerPerfSource -StartTime (Get-Date) 3>$null)
+        $orig = ${function:Get-WorkerPerfWinCounterValues}
+        function Get-WorkerPerfWinCounterValues { param($Previous, $Current, [string[]]$Counters, [switch]$ZeroUnchanged, [switch]$MsPercent)
+            if ($Counters -contains '% Processor Utility') { throw 'Zaehler nicht berechenbar' }
+            & $orig -Previous $Previous -Current $Current -Counters $Counters -ZeroUnchanged:$ZeroUnchanged -MsPercent:$MsPercent }
+        [void](Get-WorkerPerfFastSample 3>$null); $s = Get-WorkerPerfFastSample 3>$null
+        $s.CpuPct | Should -Be 27.5; $s.CoreMaxPct | Should -Be 31; $s.UtilityPct | Should -BeNullOrEmpty; $s.MemAvailMB | Should -Not -BeNullOrEmpty
+    }
     It 'meldet Eckdaten und verfuegbare Quellen' {
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -Endpoints @([pscustomobject]@{ name = 'Oracle'; host = '127.0.0.1'; port = 1; role = 'Datenbank' }) `
             -CitrixMetricFilter 'Latency|Round' 3>$null

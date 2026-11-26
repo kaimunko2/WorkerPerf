@@ -1134,8 +1134,8 @@ function Get-WorkerPerfExpected {
     }
     if ($script:WorkerPerfSimScenario -eq 'Tag') {
         $rows = @(
-            # (on day 3 the CPU time taken away lies inside the peak: its chronic states carry the VMware host too)
-            @{ Key = 'peak'; Type = 'engpass'; Lead = 'cpu'; Chronic = $true; Classes = $(if ($script:WorkerPerfSimDay -eq 3) { @('host', 'capacity') } else { @('capacity') }) }
+            # (on day 3 the CPU time taken away lies inside the peak, in under a tenth of its ticks: the peak stays capacity)
+            @{ Key = 'peak'; Type = 'engpass'; Lead = 'cpu'; Chronic = $true; Classes = @('capacity') }
             @{ Key = 'steal'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; Classes = @('host', 'capacity') })
     }
     foreach ($r in $rows) { foreach ($k in $none.Keys) { if (-not $r.ContainsKey($k)) { $r[$k] = $none[$k] } }; if (-not $r.ContainsKey('Classes')) { $r['Classes'] = @() } }

@@ -47,7 +47,7 @@ $script:WorkerPerfSizingTextPlaceholders = [ordered]@{
 }
 
 $script:WorkerPerfSizingParts = @('version', 'sources', 'thresholds', 'limits', 'classes', 'levels', 'grades', 'users', 'signals', 'missing', 'evidence', 'texts')
-$script:WorkerPerfSizingThresholdNames = @('coreBusyPct', 'sustainedPct', 'singleCoreMaxCores', 'appSharePct', 'leakGrowthPct', 'pagesOutLowPerSec',
+$script:WorkerPerfSizingThresholdNames = @('coreBusyPct', 'sustainedPct', 'hostSharePct', 'singleCoreMaxCores', 'appSharePct', 'leakGrowthPct', 'pagesOutLowPerSec',
     'pagesOutSharePct', 'recurringPct', 'minRecordings', 'minMainHours', 'mainSessionPct', 'scalingLow', 'scalingHigh', 'vcpuScaleOut', 'vcpuMax',
     'memTargetPct', 'memStepGB')
 $script:WorkerPerfSizingLimitNames = @('target', 'cpuCrit', 'queueWarn', 'stealWarn', 'commitCrit')
@@ -356,7 +356,7 @@ function Get-WorkerPerfIncidentFacts($Incident, $Model, $Thresholds, $Sizing) {
     # VMware host
     $steal = & $stat (& $pick $sig['cpu.steal']) ([double]$lim.stealWarn.Value)
     $facts.StealMeasured = ((& $available 'cpu.steal') -and $steal.N -gt 0)
-    $facts.StealTicks = $steal.Over; $facts.StealMax = $steal.Max
+    $facts.StealTicks = $steal.Over; $facts.StealMax = $steal.Max; $facts.WindowTicks = $ticks.Count
 
     # CPU and queue
     $cpu = & $pick $sig['cpu.host']; $queue = & $pick $sig['cpu.queue']
@@ -463,12 +463,18 @@ function Get-WorkerPerfIncidentClasses([hashtable]$Facts, $Sizing) {
     if ($cpuLike) {
         # 1 VMware host
         if (-not $Facts.StealMeasured) { $unchecked['host'] = [string[]]@('cpu.steal') }
-        elseif ([int]$Facts.StealTicks -ge [int]$Facts.MinTicks['cpu.steal']) {
+        elseif ([int]$Facts.StealTicks -ge [int]$Facts.MinTicks['cpu.steal'] -and
+            [int]$Facts.StealTicks -ge ([double]$own.hostSharePct.Value / 100.0 * [double](Get-WorkerPerfField $Facts 'WindowTicks'))) {
+            # (a few ticks of stolen time scattered over a long window are no incident of the VMware host: a share of its ticks)
             $classes['host'] = @{ Id = 'host'; Level = $null; Values = @{ steal = (& $fmt $Facts.StealMax); stealWarn = (& $fmt $lim.stealWarn.Value) } }
         }
         # 2 performance per core
+        # with a broad load over the target (no application carries most of it) a process on one core is not the cause:
+        # the class is not asked then, and capacity stands
+        $broad = ([bool]$Facts.Cpu -and [int]$Facts.OverTargetTicks -ge [int]$Facts.MinTicks['cpu.host'] -and
+            ($null -eq $Facts.TopApp -or [double]$Facts.TopApp.SharePct -lt [double]$own.appSharePct.Value))
         if (-not $Facts.Processes) { $unchecked['singlecore'] = [string[]]@('processes') }
-        elseif ($null -ne $Facts.TopProcess -and [double]$Facts.TopProcess.BandPct -ge $sustained) {
+        elseif (-not $broad -and $null -ne $Facts.TopProcess -and [double]$Facts.TopProcess.BandPct -ge $sustained) {
             if (-not $Facts.CoreMaxMeasured) { $unchecked['singlecore'] = [string[]]@('cpu.coreMax') }
             elseif ([double]$Facts.CoreMaxHighPct -lt $sustained) { $unchecked['singlecore'] = [string[]]@() }
             elseif ([double]$Facts.CpuP95 -lt [double]$lim.cpuCrit.Value) {
@@ -841,7 +847,12 @@ function Get-WorkerPerfMemoryDecision {
     param([AllowEmptyCollection()][string[]]$Recurring = @(), [double]$CommitMaxMB, [double]$RamMB, $Sizing)
     $d = @{ Kind = 'enough'; TargetGB = $null; Hints = [string[]]@() }
     if (@($Recurring) -contains 'mem.capacity') {
-        $d.Kind = 'more'; $d.TargetGB = Get-WorkerPerfRamTarget $CommitMaxMB $Sizing; $d.Hints = [string[]]@('memPerSession', 'commitAboveRam')
+        # a number only with a committed maximum of the main time, and only when it lies over the RAM of today
+        $d.Kind = 'more'; $d.Hints = [string[]]@('memPerSession', 'commitAboveRam')
+        if (-not [double]::IsNaN($CommitMaxMB)) {
+            $target = Get-WorkerPerfRamTarget $CommitMaxMB $Sizing
+            if ($target * 1024.0 -gt $RamMB) { $d.TargetGB = $target }
+        }
     }
     elseif (@($Recurring) -contains 'mem.commit') { $d.Kind = 'pagefile' }
     elseif (@($Recurring) -contains 'mem.app') { $d.Kind = 'app' }
@@ -874,20 +885,23 @@ function Get-WorkerPerfSizingSummary {
     $pooled = New-Object System.Collections.Generic.List[double]
     $peak = [double]::NaN; $sessionsPeak = 0; $commitMax = [double]::NaN; $mainHours = 0.0; $totalHours = 0.0
     $sizes = New-Object System.Collections.Generic.List[object]
+    # the load (L, peak, sessions, committed memory) comes from the recordings with the size of the last one: a percentage
+    # of 8 vCPU says nothing about 10 vCPU. The classes and the measured time count over all recordings.
+    $cores = 0; $ramMb = 0.0
+    if ($load.Count -gt 0) { $cores = [int]$load[$load.Count - 1].Cores; $ramMb = [double]$load[$load.Count - 1].RamMB }
     foreach ($r in $load) {
+        $mainHours += [double]$r.MainHours; $totalHours += [double]$r.DurationMin / 60.0
+        if ($sizes.Count -eq 0 -or [int]$sizes[$sizes.Count - 1].Cores -ne [int]$r.Cores -or [double]$sizes[$sizes.Count - 1].RamMB -ne [double]$r.RamMB) {
+            $sizes.Add(@{ Cores = [int]$r.Cores; RamMB = [double]$r.RamMB })
+        }
+        if ([int]$r.Cores -ne $cores -or [double]$r.RamMB -ne $ramMb) { continue }
         foreach ($v in @($r.MainCpu)) { $pooled.Add([double]$v) }
         $p = [double]$r.Cpu.Peak
         if (-not [double]::IsNaN($p) -and ([double]::IsNaN($peak) -or $p -gt $peak)) { $peak = $p }
         if ([int]$r.SessionsPeak -gt $sessionsPeak) { $sessionsPeak = [int]$r.SessionsPeak }
         $c = [double]$r.CommitMaxMainMB
         if (-not [double]::IsNaN($c) -and ([double]::IsNaN($commitMax) -or $c -gt $commitMax)) { $commitMax = $c }
-        $mainHours += [double]$r.MainHours; $totalHours += [double]$r.DurationMin / 60.0
-        if ($sizes.Count -eq 0 -or [int]$sizes[$sizes.Count - 1].Cores -ne [int]$r.Cores -or [double]$sizes[$sizes.Count - 1].RamMB -ne [double]$r.RamMB) {
-            $sizes.Add(@{ Cores = [int]$r.Cores; RamMB = [double]$r.RamMB })
-        }
     }
-    $cores = 0; $ramMb = 0.0
-    if ($load.Count -gt 0) { $cores = [int]$load[$load.Count - 1].Cores; $ramMb = [double]$load[$load.Count - 1].RamMB }
     $loadValue = Get-WorkerPerfPercentile $pooled.ToArray() 95
     $target = [double]$Sizing.Limits.target.Value
     $cpu = Get-WorkerPerfCpuDecision -Recurring ([string[]]@($recurring.Keys)) -Seen ([string[]]@($seen.Keys)) -Load $loadValue -Target $target -Cores $cores `
@@ -930,7 +944,8 @@ function New-WorkerPerfSizingData {
     # path of a recording -> the command that makes its report. Generated: Unix ms. Every sentence comes from the
     # catalogue. Fields: meta, grades, result, recommendations, runs, bottlenecks, recurring, usersPerVcpu, scatter,
     # evidence, sources and copy (set by the caller).
-    param($Summary, $Sizing, [hashtable]$Commands = @{}, [long]$Generated = 0)
+    # Folders: the path of a recording -> the folder the report names (a masked report names the last part only).
+    param($Summary, $Sizing, [hashtable]$Commands = @{}, [long]$Generated = 0, [hashtable]$Folders = @{})
     $fmt = { param($v, [int]$d = 1) Format-WorkerPerfSizingNumber $v $d }
     # a value that does not exist, and the sign between two sizes (this file is ASCII)
     $dash = [string][char]0x2013; $arrow = ' ' + [char]0x2192 + ' '
@@ -1019,8 +1034,10 @@ function New-WorkerPerfSizingData {
     switch ([string]$mem.Kind) {
         'more' {
             $status = 'act'; $direction = [string]$Sizing.Classes['mem.capacity'].Direction
-            $projection = [ordered]@{ kind = 'ram'; low = [int]$mem.TargetGB; high = [int]$mem.TargetGB; sessions = $null; unit = 'GB'
-                text = (Format-WorkerPerfSizingText $Sizing 'mem.more' @{ target = [string]$mem.TargetGB; ram = (& $fmt $ramGB 0); commit = $commitText; pct = (& $fmt $own.memTargetPct.Value 0) }) }
+            if ($null -ne $mem.TargetGB) {
+                $projection = [ordered]@{ kind = 'ram'; low = [int]$mem.TargetGB; high = [int]$mem.TargetGB; sessions = $null; unit = 'GB'
+                    text = (Format-WorkerPerfSizingText $Sizing 'mem.more' @{ target = [string]$mem.TargetGB; ram = (& $fmt $ramGB 0); commit = $commitText; pct = (& $fmt $own.memTargetPct.Value 0) }) }
+            }
             $memSources = [string[]](@($Sizing.Classes['mem.capacity'].Sources) + @('ST-02', 'SZ-46'))
         }
         'pagefile' { $status = 'check'; $direction = Format-WorkerPerfSizingText $Sizing 'mem.pagefile'; $memSources = [string[]]@($Sizing.Classes['mem.commit'].Sources) }
@@ -1058,7 +1075,7 @@ function New-WorkerPerfSizingData {
         if (-not $quick) { $classIds = [string[]]@($script:WorkerPerfSizingClassOrder | Where-Object { $r.Classes.ContainsKey($_) }) }
         & $addSources @($classIds | ForEach-Object { $Sizing.Classes[$_].Sources })
         $entry = [ordered]@{
-            index = $index; server = [string]$r.Server; folder = [string]$r.Path; start = [long]$r.StartMs; end = [long]$r.EndMs
+            index = $index; server = [string]$r.Server; folder = $(if ($Folders.ContainsKey([string]$r.Path)) { [string]$Folders[[string]$r.Path] } else { [string]$r.Path }); start = [long]$r.StartMs; end = [long]$r.EndMs
             durationMin = (& $round $r.DurationMin 1); endReason = [string]$r.EndReason; healthOnly = $quick
             cores = [int]$r.Cores; ramGB = (& $round ([double]$r.RamMB / 1024.0) 1); mainHours = $null; cpu = $null; queue = $null; commit = $null; sessionsPeak = $null
             command = [string]$Commands[[string]$r.Path]; classIds = $classIds

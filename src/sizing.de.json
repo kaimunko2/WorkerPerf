@@ -189,6 +189,14 @@
       "kind": "rule",
       "sources": []
     },
+    "hostSharePct": {
+      "value": 10,
+      "default": 10,
+      "unit": "%",
+      "label": "Entzogene CPU-Zeit zählt für einen Vorfall ab diesem Anteil seiner Takte (und mindestens drei Takten)",
+      "kind": "rule",
+      "sources": []
+    },
     "singleCoreMaxCores": {
       "value": 1.2,
       "default": 1.2,
@@ -582,7 +590,7 @@
     "hint.scaleOutToo": "Ab etwa {scaleOut} vCPU bringt jeder weitere Kern wenig: eher mehr Server statt größerer Server.",
     "hint.numa": "Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des VMware-Hosts ist im Server nicht sichtbar.",
     "hint.hostCheck": "Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 % (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend über 70 bis 80 %.",
-    "hint.sizeChanged": "Die Größe wechselte zwischen den Aufzeichnungen ({sizes}); die Hochrechnung geht von der letzten Aufzeichnung aus.",
+    "hint.sizeChanged": "Die Größe wechselte zwischen den Aufzeichnungen ({sizes}); Last und Hochrechnung stammen nur aus den Aufzeichnungen mit der letzten Größe.",
     "hint.lowMeasure": "Achtung, wenig Messzeit: {runs} Aufzeichnungen mit {hours} h Hauptzeit; belastbar ab {minRuns} Aufzeichnungen und {minHours} h Hauptzeit.",
     "hint.commitAboveRam": "Praxisregel (Carl Stalhood): RAM mindestens so groß wie der zugesicherte Speicher. Microsoft wertet zugesicherten Speicher über dem RAM erst mit anhaltendem Auslagern als Mangel; die Einordnung folgt Microsoft.",
     "hint.memPerSession": "Der Arbeitsspeicher muss mit der Zahl der Sitzungen wachsen.",

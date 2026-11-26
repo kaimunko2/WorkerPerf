@@ -157,9 +157,14 @@ if ($Mask -eq 'Alles') {
 # the command that makes the report of a recording, with the files the caller gave
 $commands = @{}
 $quote = { param([string]$Text) "'" + $Text.Replace("'", "''") + "'" }
+# A masked report names only the last part of every path (folder of a recording, a file given by the caller): the folders
+# above belong to the person who made the report and are in no recording, so no replacement name would cover them.
+$shown = @{}
+$asShown = { param([string]$Text) if ($Mask) { Split-Path -Leaf $Text } else { $Text } }
 foreach ($f in $folders) {
-    $cmd = ".\New-WorkerPerfReport.ps1 -Path " + (& $quote $f)
-    foreach ($name in $given.Keys) { $cmd += ' -' + $name + ' ' + (& $quote ([string]$given[$name])) }
+    $shown[$f] = & $asShown $f
+    $cmd = ".\New-WorkerPerfReport.ps1 -Path " + (& $quote $shown[$f])
+    foreach ($name in $given.Keys) { $cmd += ' -' + $name + ' ' + (& $quote (& $asShown ([string]$given[$name]))) }
     $commands[$f] = $cmd
 }
 
@@ -175,7 +180,7 @@ foreach ($f in $folders) {
 # phase 1: one server, the recordings along the axis time
 $group = @(Group-WorkerPerfSizingRuns $runs.ToArray() 'time')[0]
 $summary = Get-WorkerPerfSizingSummary -Group $group -Sizing $sizing
-$data = New-WorkerPerfSizingData -Summary $summary -Sizing $sizing -Commands $commands -Generated ([DateTimeOffset]::Now.ToUnixTimeMilliseconds())
+$data = New-WorkerPerfSizingData -Summary $summary -Sizing $sizing -Commands $commands -Folders $shown -Generated ([DateTimeOffset]::Now.ToUnixTimeMilliseconds())
 
 #endregion
 

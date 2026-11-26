@@ -2291,6 +2291,7 @@ sind Faustregeln des Katalogs.
 
 - `coreBusyPct` = 90 %: Ein logischer Prozessor gilt als voll ab.
 - `sustainedPct` = 80 %: Ein Muster gilt als anhaltend ab diesem Anteil der Takte oder Schnappschüsse.
+- `hostSharePct` = 10 %: Entzogene CPU-Zeit zählt für einen Vorfall ab diesem Anteil seiner Takte (und mindestens drei Takten).
 - `singleCoreMaxCores` = 1,2 Prozessoren: Ein Prozess nutzt etwa einen Kern bis.
 - `appSharePct` = 50 %: Eine einzelne Anwendung trägt den Großteil ab.
 - `leakGrowthPct` = 10 % des RAM: Zuwachs einer Anwendung, der als Verdacht auf ein Speicherleck gilt.

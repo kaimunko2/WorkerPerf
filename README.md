@@ -674,8 +674,8 @@ der Reihenfolge ihres Vorrangs; der VMware-Host steht vorn, weil er jede andere 
 
 | | Klasse | Erkennbar an | Was hilft (Richtung) |
 |---|---|---|---|
-| 1 | VMware-Host | entzogene CPU-Zeit je vCPU über „auffällig“ (5 %) in mindestens drei Takten des Vorfalls | VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung); keine zusätzlichen vCPU |
-| 2 | Leistung je Kern | der Prozess mit der meisten CPU-Zeit läuft anhaltend auf etwa einem vollen logischen Prozessor, der stärkste Kern ist voll, die CPU insgesamt liegt unter „kritisch“ | schnellere Kerne; Energiesparplan und Energierichtlinie des VMware-Hosts prüfen; mehr vCPU helfen dieser Anwendung nicht |
+| 1 | VMware-Host | entzogene CPU-Zeit je vCPU über „auffällig“ (5 %) in mindestens drei Takten und mindestens 10 % der Takte des Vorfalls | VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung); keine zusätzlichen vCPU |
+| 2 | Leistung je Kern | der Prozess mit der meisten CPU-Zeit läuft anhaltend auf etwa einem vollen logischen Prozessor, der stärkste Kern ist voll, die CPU insgesamt liegt unter „kritisch“; nicht bei breiter Last über dem Ziel (dann gilt „Kapazität“) | schnellere Kerne; Energiesparplan und Energierichtlinie des VMware-Hosts prüfen; mehr vCPU helfen dieser Anwendung nicht |
 | 3 | Anwendung | eine Anwendung in **einer** Sitzung (oder ein Systemprozess) trägt mindestens 50 % der genutzten CPU | Anwendung, Aufgabe oder Benutzer klären; keine Größenänderung |
 | 4 | Einmalig | der Hauptverursacher ist ein Virenscan (Rolle „Sicherheit“ und ein Scan im Zeitraum) oder ein Update (Rolle „Wartung“) | Zeitplan ändern; keine Größenänderung |
 | 5 | Kapazität | keine der Klassen 2 bis 4, die Last liegt breit verteilt über dem Ziel (75 %); „deutlich“ bei Warteschlange ab 2 je CPU und CPU ab 90 %, sonst „knapp“ | mehr vCPU oder mehr Server (Hochrechnung im Größenbericht) |
@@ -735,6 +735,9 @@ Der Collector zeichnet im schnellen Takt fünf Werte mehr auf. Sie gehören zur 
 - **Jede Aufzeichnung** wird gelesen wie im normalen Bericht (Lader, Befunde, Vorfälle, Einordnung). Der Größenbericht
   ersetzt den normalen Bericht nicht; er nennt je Aufzeichnung den Befehl, der ihren Bericht erzeugt.
 - **Wiederkehrend** heißt: dieselbe Klasse in mindestens der Hälfte der Aufzeichnungen mit Messung.
+- **Wechsel der Größe:** wechselt die Größe zwischen den Aufzeichnungen (etwa 8 → 10 vCPU), nennt der Kopf das; Last und
+  Hochrechnung stammen dann nur aus den Aufzeichnungen mit der letzten Größe, die Ursachen zählen über alle.
+- **Maskiert** nennt der Bericht von jedem Ordner und jeder Datei nur den letzten Teil des Pfads.
 - **Wenig Messzeit:** unter drei Aufzeichnungen oder unter zwölf Stunden Hauptzeit entsteht der Bericht trotzdem; jede
   Empfehlung trägt dann den Hinweis „wenig Messzeit“.
 
@@ -765,7 +768,7 @@ Eine vCPU-Spanne steht nur, wenn sie trägt. Geprüft wird in dieser Reihenfolge
 
 **Arbeitsspeicher:** mehr RAM empfiehlt der Bericht nur bei wiederkehrender Klasse „Arbeitsspeicher: Kapazität“, also mit
 anhaltendem Auslagern. Die Schätzung: der höchste zugesicherte Speicher der Hauptzeit soll höchstens 80 % des RAM
-belegen (C ÷ 0,8), aufgerundet auf volle 4 GB. Bei der Commit-Grenze ohne Auslagern heißt die Empfehlung
+belegen (C ÷ 0,8), aufgerundet auf volle 4 GB; eine Zahl steht nur, wenn sie über dem heutigen RAM liegt. Bei der Commit-Grenze ohne Auslagern heißt die Empfehlung
 „Auslagerungsdatei vergrößern“, nicht „mehr RAM“.
 
 **Kennzeichnung:** jede Zahl einer Hochrechnung trägt das Wort „Schätzung“ und ihre Annahmen (gleiche Last je Sitzung;

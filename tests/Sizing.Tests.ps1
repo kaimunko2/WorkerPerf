@@ -58,7 +58,7 @@ Describe 'Read-WorkerPerfSizing' {
         $t.minRecordings.Value | Should -Be 3; $t.minMainHours.Value | Should -Be 12; $t.mainSessionPct.Value | Should -Be 50
         $t.scalingLow.Value | Should -Be 1.5; $t.scalingHigh.Value | Should -Be 1.9; $t.vcpuScaleOut.Value | Should -Be 16; $t.vcpuMax.Value | Should -Be 24
         $t.memTargetPct.Value | Should -Be 80; $t.memStepGB.Value | Should -Be 4
-        $t.sustainedPct.Value | Should -Be 80; $t.pagesOutLowPerSec.Value | Should -Be 10; $t.pagesOutSharePct.Value | Should -Be 50
+        $t.sustainedPct.Value | Should -Be 80; $t.hostSharePct.Value | Should -Be 10; $t.pagesOutLowPerSec.Value | Should -Be 10; $t.pagesOutSharePct.Value | Should -Be 50
         $t.singleCoreMaxCores.Value | Should -Be 1.2; $t.leakGrowthPct.Value | Should -Be 10
         $t.scalingLow.Kind | Should -Be 'vendor'; $t.scalingLow.Sources | Should -Be @('SZ-42'); $t.coreBusyPct.Kind | Should -Be 'rule'
     }
@@ -140,6 +140,21 @@ Describe 'Get-WorkerPerfIncidentClasses: Grenzen' {
         ((Get-WorkerPerfIncidentClasses (New-Facts @{ OverTargetTicks = 5; ClearTicks = 3 }) $Sz).Classes | Where-Object Id -eq 'capacity').Level | Should -Be 'clear'
         ((Get-WorkerPerfIncidentClasses (New-Facts @{ OverTargetTicks = 5; ClearTicks = 2 }) $Sz).Classes | Where-Object Id -eq 'capacity').Level | Should -Be 'tight'
         Classes-Of (New-Facts @{ OverTargetTicks = 2; QueueMax = 6 }) | Should -BeNullOrEmpty          # nur Warteschlange: kein CPU-Mangel (SZ-18)
+    }
+    It 'VMware-Host in einem langen Fenster erst ab einem Anteil der Takte (Gesamtpruefung, Befund 3)' {
+        # drei verstreute Takte in acht Stunden sind kein Host-Vorfall; 10 % der Takte sind einer
+        Classes-Of (New-Facts @{ StealTicks = 3; WindowTicks = 14400; OverTargetTicks = 5000 }) | Should -Be @('capacity')
+        Classes-Of (New-Facts @{ StealTicks = 1440; WindowTicks = 14400; OverTargetTicks = 5000 }) | Should -Be @('host', 'capacity')
+        Classes-Of (New-Facts @{ StealTicks = 3; WindowTicks = 30 }) | Should -Contain 'host'
+        $Sz.Thresholds.hostSharePct.Value | Should -Be 10
+    }
+    It 'laesst bei breiter Last einen Prozess auf einem Kern nicht die Kapazitaet verdraengen (Gesamtpruefung, Befund 4)' {
+        $f = @{ OverTargetTicks = 50; CpuP95 = 85.0; TopProcess = @{ Name = 'single.exe'; Cores = 1.0; BandPct = 90 }; TopApp = @{ App = 'single.exe'; Role = ''; RoleLabel = ''; SharePct = 8.0 } }
+        Classes-Of (New-Facts (Merge $f @{ CoreMaxHighPct = 95 })) | Should -Be @('capacity')
+        $r = Get-WorkerPerfIncidentClasses (New-Facts (Merge $f @{ CoreMaxHighPct = 10 })) $Sz; @($r.Classes.Id) | Should -Be @('capacity'); @($r.Unchecked).Count | Should -Be 0
+        Classes-Of (New-Facts (Merge $f @{ CoreMaxMeasured = $false })) | Should -Be @('capacity')
+        # ohne breite Last ueber dem Ziel bleibt es Leistung je Kern
+        Classes-Of (New-Facts (Merge $f @{ OverTargetTicks = 0; CpuP95 = 40.0; CoreMaxHighPct = 95 })) | Should -Be @('singlecore')
     }
     It 'stellt den VMware-Host vor jede andere Klasse' { Classes-Of (New-Facts @{ StealTicks = 4; OverTargetTicks = 5 }) | Should -Be @('host', 'capacity') }
     It 'Arbeitsspeicher: Kapazitaet nur mit anhaltendem Auslagern' {
@@ -278,6 +293,22 @@ Describe 'Ueber die Aufzeichnungen' {
         $s.Cpu.Kind | Should -Be 'range'; $s.Cpu.Low | Should -Be 10; $s.Cpu.High | Should -Be 12; $s.Memory.Kind | Should -Be 'enough'; $s.LowMeasure | Should -BeTrue
         $n = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @($runs[2]) } -Sizing $Sz
         $n.Cpu.Kind | Should -Be 'noMainTime'; [double]::IsNaN($n.Load) | Should -BeTrue
+    }
+    It 'rechnet nach einem Wechsel der Groesse nur mit den Aufzeichnungen der letzten Groesse (Gesamtpruefung, Befund 6)' {
+        $runs = @((New-RunRecord @{ StartMs = 1; Cores = 8; Classes = @{ capacity = 1 }; MainCpu = [double[]]@(92, 92, 92); Cpu = @{ Peak = 99.0; P95 = 92.0 }; SessionsPeak = 31; CommitMaxMainMB = 60000.0 }),
+            (New-RunRecord @{ StartMs = 2; Cores = 8; Classes = @{ capacity = 1 }; MainCpu = [double[]]@(92, 92, 92); Cpu = @{ Peak = 99.0; P95 = 92.0 }; SessionsPeak = 31 }),
+            (New-RunRecord @{ StartMs = 3; Cores = 10; Classes = @{ capacity = 1 }; MainCpu = [double[]]@(78, 78, 78); Cpu = @{ Peak = 80.0; P95 = 78.0 }; SessionsPeak = 30; CommitMaxMainMB = 50000.0 }))
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = $runs } -Sizing $Sz
+        $s.Load | Should -Be 78; $s.Peak | Should -Be 80; $s.SessionsPeak | Should -Be 30; $s.CommitMaxMB | Should -Be 50000; $s.Cores | Should -Be 10
+        $s.Cpu.Kind | Should -Be 'range'; $s.Cpu.High | Should -BeLessOrEqual 12; $s.Recurring['capacity'] | Should -Be 3
+    }
+    It 'empfiehlt ohne Hauptzeit oder mit einem Ziel unter dem heutigen RAM keine RAM-Zahl (Gesamtpruefung, Befund 5)' {
+        $n = Get-WorkerPerfMemoryDecision -Recurring 'mem.capacity' -CommitMaxMB ([double]::NaN) -RamMB 65536 -Sizing $Sz; $n.Kind | Should -Be 'more'; $n.TargetGB | Should -BeNullOrEmpty
+        (Get-WorkerPerfMemoryDecision -Recurring 'mem.capacity' -CommitMaxMB 38000 -RamMB 65536 -Sizing $Sz).TargetGB | Should -BeNullOrEmpty
+        (Get-WorkerPerfMemoryDecision -Recurring 'mem.capacity' -CommitMaxMB 70000 -RamMB 65536 -Sizing $Sz).TargetGB | Should -Be 88
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @((New-RunRecord @{ Classes = @{ 'mem.capacity' = 1 }; MainCpu = [double[]]@(); MainHours = 0.0; SessionsPeak = 0; CommitMaxMainMB = [double]::NaN })) } -Sizing $Sz
+        $d = New-WorkerPerfSizingData -Summary $s -Sizing $Sz
+        $mem = $d.recommendations | Where-Object { $_.resource -eq 'memory' }; $mem.status | Should -Be 'act'; $mem.projection | Should -BeNullOrEmpty
     }
     It 'merkt wenig Messzeit unter drei Aufzeichnungen oder zwoelf Stunden Hauptzeit' {
         (Summary-Of 3 4.0).LowMeasure | Should -BeFalse; (Summary-Of 2 10.0).LowMeasure | Should -BeTrue; (Summary-Of 3 3.96).LowMeasure | Should -BeTrue
