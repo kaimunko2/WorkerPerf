@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Builds the sizing report ("Groesse des Servers") from several WorkerPerf recordings of the same server.

@@ -932,6 +932,8 @@ function New-WorkerPerfSizingData {
     # evidence, sources and copy (set by the caller).
     param($Summary, $Sizing, [hashtable]$Commands = @{}, [long]$Generated = 0)
     $fmt = { param($v, [int]$d = 1) Format-WorkerPerfSizingNumber $v $d }
+    # a value that does not exist, and the sign between two sizes (this file is ASCII)
+    $dash = [string][char]0x2013; $arrow = ' ' + [char]0x2192 + ' '
     $round = { param($v, [int]$d = 1) if ($null -eq $v -or [double]::IsNaN([double]$v)) { $null } else { [Math]::Round([double]$v, $d) } }
     $own = $Sizing.Thresholds
     $runs = @($Summary.Runs); $load = @($Summary.LoadRuns); $total = $load.Count
@@ -940,7 +942,7 @@ function New-WorkerPerfSizingData {
     $sizeText = { param($s) Format-WorkerPerfSizingText $Sizing 'size.item' @{ cores = (& $fmt $s.Cores 0); ram = (& $fmt ([double]$s.RamMB / 1024.0) 0) } }
 
     # ---- result sentence ----
-    $loadText = '–'
+    $loadText = $dash
     if (-not [double]::IsNaN([double]$Summary.Load)) { $loadText = & $fmt $Summary.Load }
     $res = $Summary.Result
     $resultValues = @{ total = [string]$res.Total; load = $loadText; sessions = [string]$Summary.SessionsPeak; count = [string]$res.Count }
@@ -982,7 +984,7 @@ function New-WorkerPerfSizingData {
     $cpuReason = Format-WorkerPerfSizingText $Sizing 'reason.cpu' @{ load = $loadText; peak = (& $fmt $Summary.Peak); target = (& $fmt $Summary.Target); causes = $causes }
     $cpuHints = New-Object System.Collections.Generic.List[string]
     foreach ($h in @($cpu.Hints)) { $cpuHints.Add((& $hintText $h)) }
-    if ($Summary.SizeChanged) { $cpuHints.Add((Format-WorkerPerfSizingText $Sizing 'hint.sizeChanged' @{ sizes = (@($Summary.Sizes | ForEach-Object { & $sizeText $_ }) -join ' → ') })) }
+    if ($Summary.SizeChanged) { $cpuHints.Add((Format-WorkerPerfSizingText $Sizing 'hint.sizeChanged' @{ sizes = (@($Summary.Sizes | ForEach-Object { & $sizeText $_ }) -join $arrow) })) }
     $projection = $null; $status = 'check'; $direction = ''; $cpuSources = [string[]]@()
     $rangeValues = @{ low = [string]$cpu.Low; high = [string]$cpu.High; cores = [string]$Summary.Cores; target = (& $fmt $Summary.Target); load = $loadText; sessions = [string]$cpu.Sessions }
     switch ([string]$cpu.Kind) {
@@ -1010,7 +1012,7 @@ function New-WorkerPerfSizingData {
     # memory
     $mem = $Summary.Memory
     $commitGB = [double]$Summary.CommitMaxMB / 1024.0; $ramGB = [double]$Summary.RamMB / 1024.0
-    $commitText = '–'; if (-not [double]::IsNaN($commitGB)) { $commitText = & $fmt $commitGB }
+    $commitText = $dash; if (-not [double]::IsNaN($commitGB)) { $commitText = & $fmt $commitGB }
     $memReason = Format-WorkerPerfSizingText $Sizing 'reason.memory' @{ commit = $commitText; ram = (& $fmt $ramGB 0); causes = $causes }
     $memHints = @(foreach ($h in @($mem.Hints)) { & $hintText $h })
     $projection = $null; $status = 'ok'; $direction = Format-WorkerPerfSizingText $Sizing 'mem.enough'; $memSources = [string[]]@('SZ-35')

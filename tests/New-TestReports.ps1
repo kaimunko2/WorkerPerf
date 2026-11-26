@@ -7,4 +7,6 @@ $roles = Join-Path $OutDir 'roles.sim.json'
 [void](New-CausesReport $OutDir $roles)
 $old = New-OldCaptureCopy $r.Run (Join-Path $OutDir 'old')
 [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $old -OutFile (Join-Path $OutDir 'report-old.html') -RoleFile $roles 6>$null)
+# die Groessenberichte (sizing.html, sizing-masked.html, sizing-personen.html, sizing-enough.html)
+[void](New-SizingReports $OutDir)
 $OutDir
