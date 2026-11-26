@@ -162,7 +162,7 @@ function Test-WorkerPerfGuidanceCondition([string]$Name, $Catalogue, [string[]]$
     return $false
 }
 
-function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]$ListName, [int]$Index, $Element, $Catalogue, [string[]]$Signals, $Apps = $null) {
+function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]$ListName, [int]$Index, $Element, $Catalogue, [string[]]$Signals, $Apps = $null, $Ids = $null) {
     # One check, remedy or contact; returns whether it has a condition.
     $item = "$ListName[$Index]"
     if (-not (Test-WorkerPerfGuidanceObject $Element)) { Stop-WorkerPerfGuidance $Path $Situation $item '' 'ist kein Objekt' }
@@ -195,6 +195,24 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
     $source = Get-WorkerPerfGuidanceMember $Element 'source'
     if ($null -ne $source) { Assert-WorkerPerfGuidanceString $Path $Situation $item 'source' $source.Value }
     elseif ($needsSource) { Stop-WorkerPerfGuidance $Path $Situation $item 'source' 'fehlt (Pflicht fuer Druckempfehlungen und fuer Elemente zu einer Standardanwendung)' }
+    # an optional stable id '<situation>.<keyword>': what the source record refers to, so that a step may move or be
+    # reworded; unique in the whole catalogue (Ids: id -> first place, shared by all situations of one call)
+    $id = Get-WorkerPerfGuidanceMember $Element 'id'
+    if ($null -ne $id) {
+        Assert-WorkerPerfGuidanceString $Path $Situation $item 'id' $id.Value
+        $value = [string]$id.Value
+        $cut = $value.LastIndexOf('.')
+        $word = ''
+        if ($cut -gt 0) { $word = $value.Substring($cut + 1) }
+        if ($word.Length -lt 1 -or $word.Length -gt 40 -or $word -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') {
+            Stop-WorkerPerfGuidance $Path $Situation $item 'id' 'hat nicht die Form <Situation>.<stichwort> (Kleinbuchstaben, Ziffern, Bindestriche, hoechstens 40 Zeichen)'
+        }
+        if ($value.Substring(0, $cut) -cne $Situation) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' 'nennt eine andere Situation' }
+        if ($null -ne $Ids) {
+            if ($Ids.ContainsKey($value)) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' "ist doppelt vorhanden ($($Ids[$value]))" }
+            $Ids[$value] = "$Situation, $item"
+        }
+    }
     return ($conditions.Count -gt 0)
 }
 
@@ -235,7 +253,7 @@ function Test-WorkerPerfGuidanceImpactVariants([string]$Path, [string]$Name, $En
     }
 }
 
-function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null) {
+function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, $Catalogue, [string[]]$Signals, $Apps = $null, $Ids = $null) {
     if (-not (Test-WorkerPerfGuidanceObject $Entry)) { Stop-WorkerPerfGuidance $Path $Name '' '' 'ist kein Objekt' }
     foreach ($f in 'title', 'meaning', 'impact', 'short') { Assert-WorkerPerfGuidanceField $Path $Name '' $Entry $f }
     # title and short are constant; meaning and impact only use values every incident has
@@ -252,7 +270,7 @@ function Test-WorkerPerfGuidanceSituation([string]$Path, [string]$Name, $Entry, 
         $elements = @($p.Value)
         $general = 0
         for ($i = 0; $i -lt $elements.Count; $i++) {
-            if (-not (Test-WorkerPerfGuidanceItem $Path $Name $list $i $elements[$i] $Catalogue $Signals $Apps)) { $general++ }
+            if (-not (Test-WorkerPerfGuidanceItem $Path $Name $list $i $elements[$i] $Catalogue $Signals $Apps $Ids)) { $general++ }
         }
         if ($list -eq 'checks' -and $general -eq 0) { Stop-WorkerPerfGuidance $Path $Name '' 'checks' 'braucht mindestens einen Pruefschritt ohne Bedingung' }
     }
@@ -334,7 +352,8 @@ function Read-WorkerPerfGuidance([string]$Path, $Apps = $null) {
     }
     # the signal ids once per call
     $signals = [string[]]@((Read-WorkerPerfThresholds $script:WorkerPerfGuidanceThresholdFile).Keys)
-    foreach ($s in $script:WorkerPerfSituations) { Test-WorkerPerfGuidanceSituation $Path $s $situations.$s $cat $signals $Apps }
+    $ids = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+    foreach ($s in $script:WorkerPerfSituations) { Test-WorkerPerfGuidanceSituation $Path $s $situations.$s $cat $signals $Apps $ids }
     return $cat
 }
 

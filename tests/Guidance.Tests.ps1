@@ -142,6 +142,28 @@ Describe 'Katalog laden und pruefen' {
         @{ Change = { $c.situations.cpu.impactVariants = @(@{ when = @('scan', 'unmeasured.eingabe'); text = 'Anders.' }, @{ when = @('scan'); text = 'x' }) }
             Msg = "Katalog '*': Eintrag 'cpu', impactVariants``[0``]: Feld 'when' enthaelt die unbekannte Bedingung 'unmeasured.eingabe'." }
     ) { { Read-WorkerPerfGuidance (New-Catalogue $Change) } | Should -Throw $Msg }
+    It 'nimmt eine Kennung an einem Schritt an und laesst Schritte ohne Kennung gueltig' {
+        $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0].id = 'cpu.prozess-pruefen'; $c.situations['delay.many'].remedies[0].id = 'delay.many.a1' })
+        $cat.situations.cpu.checks[0].id | Should -Be 'cpu.prozess-pruefen'
+        { Read-WorkerPerfGuidance (New-Catalogue) } | Should -Not -Throw
+    }
+    It 'lehnt eine fehlerhafte Kennung ab: <Name>' -TestCases @(
+        @{ Name = 'Grossbuchstabe'; Id = 'cpu.Prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' hat nicht die Form*" }
+        @{ Name = 'Umlaut'; Id = ('cpu.pr' + [char]0xFC + 'fen'); Msg = "*Feld 'id' hat nicht die Form*" }
+        @{ Name = 'ohne Stichwort'; Id = 'cpu.'; Msg = "*Feld 'id' hat nicht die Form*" }
+        @{ Name = 'ohne Punkt'; Id = 'cpu'; Msg = "*Feld 'id' hat nicht die Form*" }
+        @{ Name = 'Bindestrich am Ende'; Id = 'cpu.prozess-'; Msg = "*Feld 'id' hat nicht die Form*" }
+        @{ Name = '41 Zeichen'; Id = 'cpu.' + ('a' * 41); Msg = "*Feld 'id' hat nicht die Form*" }
+        @{ Name = 'andere Situation'; Id = 'memory.prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' nennt eine andere Situation." }
+        @{ Name = 'kein Text'; Id = 7; Msg = "*Feld 'id' ist kein Text." }
+    ) { $script:CaseId = $Id; { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0].id = $script:CaseId }) } | Should -Throw $Msg }
+    It 'lehnt dieselbe Kennung an zwei Schritten ab, auch in verschiedenen Listen' {
+        { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0].id = 'cpu.a'; $c.situations.cpu.remedies[0].id = 'cpu.a' }) } |
+            Should -Throw "Katalog '*': Eintrag 'cpu', remedies``[0``]: Feld 'id' ist doppelt vorhanden (cpu, checks``[0``])."
+    }
+    It 'gibt die Kennung nicht in die Anleitung eines Vorfalls' {
+        foreach ($list in 'checks', 'remedies', 'contacts') { $WorkerPerfGuidanceOutputFields[$list] | Should -Not -Contain 'id' }
+    }
     It 'erlaubt in Bedeutung und Wirkung die Werte, die jeder Vorfall hat' {
         $cat = Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.meaning = 'Am {date} von {from} bis {to} ({duration}) auf {server}.'; $c.situations.cpu.impact = '{server}: {duration} langsam.' })
         $cat.situations.cpu.impact | Should -Be '{server}: {duration} langsam.'
