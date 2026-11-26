@@ -930,6 +930,10 @@ verdichteten (`B`) Schnappschüsse vergleichen.
 
 ## Demo-Bericht
 
+**[➜ Demo-Größenbericht öffnen](https://kaimunko2.github.io/WorkerPerf/groesse.html)** – der Größenbericht aus fünf simulierten
+Arbeitstagen desselben erfundenen Servers (siehe [Größe des Servers](#größe-des-servers)): an vier Tagen ein
+CPU-Engpass aus Kapazität, an einem Tag entzieht zusätzlich der VMware-Host Rechenzeit, der fünfte Tag bleibt ruhig.
+
 **[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
 erfundenen Server `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver,
 Profilcontainer, zwei Verzögerungen ohne Engpass auf dem Server, ein Dauerzustand der Netzstrecke eines Benutzers)
