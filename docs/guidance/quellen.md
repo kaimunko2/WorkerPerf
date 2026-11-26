@@ -2249,3 +2249,63 @@ Zielsystem zu bestätigen; stimmt eine nicht, wird der Text im Katalog angepasst
   andere), und die Administrative Vorlage „Microsoft Office 2016 (Machine)“. Zu bestätigen sind ihre deutschen
   Anzeigenamen und die Einträge „Microsoft Edge WebView2 Runtime“ und „Teams Machine-Wide Installer“ unter den
   installierten Programmen.
+
+## Größe des Servers (`src/sizing.de.json`)
+
+Quellen des Katalogs der Größe (Recherche vom 14.11.2026). Art: Herstellerangabe oder Praxisquelle; Werte ohne Quelle
+sind Faustregeln des Katalogs.
+
+| Kennung | Titel | Adresse | Datum | Art | Wofür im Katalog |
+|---|---|---|---|---|---|
+| SZ-01 | CPU usage exceeds 100% in Task Manager and Performance Monitor if Intel Turbo Boost is active | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/cpu-usage-exceeds-100 | 2026-02-12 | Herstellerangabe | Signal `cpu.perf`; Signal `cpu.utility` |
+| SZ-03 | Power and performance tuning | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning | 2017-10-16 | Herstellerangabe | Klasse „Leistung je Kern“ |
+| SZ-07 | Windows Guest OS reports incorrect CPU clock speed after vMotion | https://knowledge.broadcom.com/external/article/429912 | 2026-02-18 | Herstellerangabe | Signal `cpu.perf`; Signal `cpu.utility` |
+| SZ-13 | Collecting Performance Data | https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data | 2025-07-14 | Herstellerangabe | Klasse „Leistung je Kern“; Signal `cpu.coreMax` |
+| SZ-14 | Scenario guide: Troubleshoot performance problems in Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/troubleshoot-performance-problems-in-windows | 2026-02-12 | Herstellerangabe | Klasse „Leistung je Kern“; Wert `singleCoreMaxCores` |
+| SZ-38 | Scenario guide: Troubleshoot performance problems in Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/troubleshoot-performance-problems-in-windows | 2026-02-12 | Herstellerangabe | Klasse „Arbeitsspeicher: Kapazität“; Speichermangel |
+| SZ-15 | Solutions for Consistently High CPU Usage | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-monitoring-and-performance/monitoring-inventory-objects/troubleshoot-and-enhance-performance/cpu-performance-solutions.html | 2026-10-28 | Herstellerangabe | Klasse „Leistung je Kern“ |
+| SZ-16 | System-Level Bottlenecks | https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks | 2017-06-29 | Herstellerangabe | Klasse „Leistung je Kern“ |
+| SZ-18 | System-Level Bottlenecks | https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks | 2017-06-29 | Herstellerangabe | Klasse „Kapazität“ |
+| SZ-20 | Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance | https://knowledge.broadcom.com/external/article/438023 | 2026-09-14 | Herstellerangabe | Klasse „VMware-Host“ |
+| SZ-21 | Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance | https://knowledge.broadcom.com/external/article/438023 | 2026-09-14 | Herstellerangabe | Klasse „VMware-Host“ |
+| SZ-22 | Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance | https://knowledge.broadcom.com/external/article/438023 | 2026-09-14 | Herstellerangabe | Hinweis NUMA und physische Kerne |
+| VM-08 | Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance | https://knowledge.broadcom.com/external/article/438023 | 2026-09-14 | Herstellerangabe | Klasse „VMware-Host“; Klasse „Kapazität“ |
+| VM-10 | Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance | https://knowledge.broadcom.com/external/article/438023 | 2026-09-14 | Herstellerangabe | gerade Zahl an vCPU |
+| SZ-23 | Hyperthreading with vSphere | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/hyperthreading.html | 2026-10-28 | Herstellerangabe | Annahme Hyper-Threading |
+| SZ-24 | Host Power Management Policies in ESXi | https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/host-power-management-policies.html | 2026-10-28 | Herstellerangabe | Klasse „Leistung je Kern“ |
+| SZ-25 | Application on Virtual Machine runs slower than expected | https://knowledge.broadcom.com/external/article?legacyId=1018206 | 2025-07-27 | Herstellerangabe | Energierichtlinie des VMware-Hosts |
+| SZ-26 | ESXi host CPU usage appears high in vCenter default charts due to Turbo Boost and Hyperthreading counter behavior | https://knowledge.broadcom.com/external/article/431027 | 2026-10-30 | Herstellerangabe | Klasse „VMware-Host“ |
+| SZ-35 | RAM, virtual memory, pagefile, and memory management in Windows | https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/ram-virtual-memory-pagefile-management | 2026-02-12 | Herstellerangabe | Klasse „Arbeitsspeicher: Kapazität“; Klasse „Arbeitsspeicher: genutzt, kein Mangel“; Wert `pagesOutLowPerSec`; Wert `pagesOutSharePct`; Signal `mem.pagesout` |
+| SZ-36 | Introduction to page files | https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/introduction-to-the-page-file | 2026-02-12 | Herstellerangabe | Klasse „Arbeitsspeicher: Commit-Grenze“ |
+| SZ-39 | Performance Tuning Remote Desktop Session Hosts | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts | 2019-10-22 | Herstellerangabe | Klasse „Arbeitsspeicher: Kapazität“ |
+| SZ-42 | Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services | https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines | 2025-07-23 | Herstellerangabe | Wert `scalingLow`; Wert `scalingHigh` |
+| SZ-43 | Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services | https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines | 2025-07-23 | Herstellerangabe | Wert `vcpuScaleOut`; Wert `vcpuMax` |
+| SZ-44 | Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services | https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines | 2025-07-23 | Herstellerangabe | Raum für Anmeldespitzen |
+| SZ-46 | Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services | https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines | 2025-07-23 | Herstellerangabe | Satz zum Pilot |
+| SZ-45 | Troubleshoot issues using Performance Monitor | https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/troubleshoot-issues-performance-monitor | 2026-02-12 | Herstellerangabe | Obergrenze 80 % anhaltend |
+| SZ-47 | Detecting bottlenecks in a virtualized environment | https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/hyper-v-server/detecting-virtualized-environment-bottlenecks | 2017-10-16 | Herstellerangabe | Klasse „Kapazität“; Wert `coreBusyPct`; Signal `cpu.coreBusy` |
+| ST-02 | Citrix Health Check (Carl Stalhood) | https://www.carlstalhood.com/citrix-health-check/ | 2024-02-28 | Praxisquelle | Hinweis RAM gegen zugesicherten Speicher |
+
+**Faustregeln des Katalogs** (keine Quelle nennt eine Zahl):
+
+- `coreBusyPct` = 90 %: Ein logischer Prozessor gilt als voll ab.
+- `sustainedPct` = 80 %: Ein Muster gilt als anhaltend ab diesem Anteil der Takte oder Schnappschüsse.
+- `singleCoreMaxCores` = 1,2 Prozessoren: Ein Prozess nutzt etwa einen Kern bis.
+- `appSharePct` = 50 %: Eine einzelne Anwendung trägt den Großteil ab.
+- `leakGrowthPct` = 10 % des RAM: Zuwachs einer Anwendung, der als Verdacht auf ein Speicherleck gilt.
+- `pagesOutLowPerSec` = 10 1/s: Ausgelagerte Seiten gelten als niedrig bis.
+- `pagesOutSharePct` = 50 %: Auslagern gilt als anhaltend über diesem Anteil der Takte.
+- `recurringPct` = 50 %: Eine Ursache gilt als wiederkehrend ab diesem Anteil der Aufzeichnungen.
+- `minRecordings` = 3 Aufzeichnungen: Mindestzahl der Aufzeichnungen für eine belastbare Empfehlung.
+- `minMainHours` = 12 h: Mindestdauer der Hauptzeit für eine belastbare Empfehlung.
+- `mainSessionPct` = 50 %: Hauptzeit: Anteil der höchsten Sitzungszahl, ab dem ein Takt zählt.
+- `memTargetPct` = 80 %: Zugesicherter Speicher soll höchstens diesen Anteil des RAM belegen.
+- `memStepGB` = 4 GB: Schritt, auf den die Schätzung des RAM aufrundet.
+
+**Aufgelöste Widersprüche der Quellen:**
+
+- **Commit über RAM:** ST-02 (Stalhood) verlangt RAM mindestens so groß wie die zugesicherten Bytes. SZ-35 (Microsoft)
+  wertet Commit über RAM erst mit anhaltendem Auslagern als Mangel. Die Klasse „Arbeitsspeicher: Kapazität“ folgt Microsoft;
+  ST-02 steht als Hinweis im Größenbericht.
+- **Co-Stop:** KB 431027 nennt „anhaltend über 0 %“, KB 438023 „über 3 % je vCPU“. Der Bericht misst Co-Stop nicht und
+  nennt beide Werte als Hinweis für den VMware-Host.
