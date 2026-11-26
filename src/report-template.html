@@ -135,6 +135,8 @@ button.inc-main:hover { background: var(--hover); }
 #bandSentence:focus, #incHead:focus { outline: none; }
 section[hidden] { display: none; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+#xsize { margin-top: var(--gap); }
+#xsize .sizehead { margin: 0 0 8px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; }
 .tile .label { color: var(--text2); font-size: 12px; overflow-wrap: anywhere; }
 .tile .value { font-size: 20px; line-height: 1.25; font-weight: 600; margin: 1px 0; font-variant-numeric: tabular-nums; }
@@ -824,6 +826,7 @@ details#healthRaw[open] > summary { margin-bottom: 8px; }
         <div class="card"><div class="cardhead"><h3>Sitzungen</h3></div><div id="chSess"></div></div>
       </div>
     </section>
+    <section id="xsize" aria-label="Größe des Servers im Zeitraum"><h3 class="sizehead">Größe des Servers: Kerne und Leistungsanteil</h3><div class="tiles" id="sizeTiles"></div></section>
     <div id="xtables">
       <div id="xtabs" role="tablist" aria-label="Tabellen der Expertenansicht">
         <button type="button" role="tab" id="xtab-sollist" data-tab="sollist" aria-selected="true" aria-controls="xt-sollist">Soll-Ist</button>
@@ -1784,7 +1787,10 @@ function sizingTiles(z) {
 // rows: the rows of the target comparison for the range in force
 function renderTiles(rows) {
   const z = window.WP.zoom;
-  document.getElementById("tiles").innerHTML = rows.map(sollTile).join("") + (D.mainApp ? mainAppTile(D.mainApp, z) : "") + usersTile(z) + sizingTiles(z);
+  document.getElementById("tiles").innerHTML = rows.map(sollTile).join("") + (D.mainApp ? mainAppTile(D.mainApp, z) : "") + usersTile(z);
+  // the tiles of the size of the server stand in a row of their own under the charts: the first screen keeps its two rows of tiles
+  const size = sizingTiles(z);
+  document.getElementById("sizeTiles").innerHTML = size; document.getElementById("xsize").hidden = !size;
 }
 
 // ---------- overview: charts ----------

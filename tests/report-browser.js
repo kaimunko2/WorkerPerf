@@ -436,7 +436,7 @@ async function checkOpens(browser, dir, scheme) {                   // jeder Ber
       out.fits = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
       return out;
     });
-    ok(x.inc === D.incidents.length && x.tiles === D.sollIst.length + (D.mainApp ? 1 : 0) + 1 + (D.sizing ? 3 : 0) && x.tabs === 9 && x.range.startsWith('Zeitraum') && x.range.includes('gesamte Messung') && x.all, name + ': Expertenansicht mit Vorfallsspalte, Kacheln, Zeitraumleiste und neun Reitern: ' + JSON.stringify(x));
+    ok(x.inc === D.incidents.length && x.tiles === D.sollIst.length + (D.mainApp ? 1 : 0) + 1 && x.tabs === 9 && x.range.startsWith('Zeitraum') && x.range.includes('gesamte Messung') && x.all, name + ': Expertenansicht mit Vorfallsspalte, Kacheln, Zeitraumleiste und neun Reitern: ' + JSON.stringify(x));
     ok(x.ranged === [x.tiles, false, true, true].join() && x.fits, name + ': Expertenansicht mit einem Zeitraum in der Mitte der Messung, ohne seitliches Rollen: ' + x.ranged + ' ' + x.fits);
     await showGuided(page);
     ok(page.errors.length === 0, name + ': Skriptfehler: ' + page.errors.join(' | '));
@@ -786,7 +786,8 @@ async function checkIncidentStates(browser, dir, scheme) {          // Vorfallsa
   await fb.page.close();
   // the guidance reduced to its title, no cause: only the sections that have something to say; steps without a list of checks
   const rd = await open(browser, patched(dir, 'report.html', 'report-iv-reduced.html', (J) => {
-    const c = J.incidents.find((i) => i.lead === 'cpu'); c.guide = { title: c.guide.title }; c.causeText = '';
+    // (Groesse Task 7: "no cause" also means no class; the line of the class alone opens the section of the cause)
+    const c = J.incidents.find((i) => i.lead === 'cpu'); c.guide = { title: c.guide.title }; c.causeText = ''; c.classLine = ''; c.classes = [];
     const e = J.incidents.find((i) => i.type === 'ereignis'); e.guide = { title: e.guide.title }; e.causeText = '';
     const m = J.incidents.find((i) => i.lead === 'memory'); m.guide.checks = []; m.guide.remedies = null;
     const d = J.incidents.find((i) => i.lead === 'disk'); d.guide.checks = []; d.guide.contacts = [];
@@ -2505,7 +2506,7 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
       'Eintrag ' + inc.id + ': Status, Uhrzeit, Art, Verursacher, Weg in die gefuehrte Ansicht: ' + t);
   }
   // tiles and charts stand above the tabs, always
-  const nTiles = D.sollIst.length + (D.mainApp ? 1 : 0) + 1 + (D.sizing ? 3 : 0);      // Aussage geaendert (Groesse Task 7): drei Kacheln der Groesse
+  const nTiles = D.sollIst.length + (D.mainApp ? 1 : 0) + 1;
   ok(await page.locator('#tiles .tile:visible').count() === nTiles && await page.locator('#charts .card:visible').count() === 14 && await page.locator('#charts .card svg').count() === 14, 'Kacheln je Messwert und vierzehn gezeichnete Diagramme, ohne Reiter sichtbar');
   const first = await page.evaluate(() => [document.getElementById('tiles').getBoundingClientRect().top, document.querySelector('#charts .card').getBoundingClientRect().top, document.documentElement.scrollWidth - document.documentElement.clientWidth]);
   ok(first[0] < 200 && first[1] < 900 && first[2] <= 0, 'erster Bildschirm (1400 x 900): Kacheln oben, das erste Diagramm beginnt im Bild, kein seitliches Rollen: ' + first.join(' '));
@@ -3119,19 +3120,19 @@ async function checkClasses(browser, dir, scheme) {                // Groesse: E
   await page.setViewportSize({ width: 1400, height: 900 });
   await showExpert(page);
   ok((await page.locator(`#incList .inc[data-id="${host.id}"]`).innerText()).includes('Einordnung: VMware-Host'), 'Einordnung in der Vorfallsspalte');
-  for (const k of ['coremax', 'corebusy', 'perf']) ok(await page.locator(`#tiles .tile[data-info="${k}"]`).count() === 1, 'Kachel ' + k);
-  const perf = page.locator('#tiles .tile[data-info="perf"]');
+  for (const k of ['coremax', 'corebusy', 'perf']) ok(await page.locator(`#sizeTiles .tile[data-info="${k}"]`).count() === 1, 'Kachel ' + k);
+  const perf = page.locator('#sizeTiles .tile[data-info="perf"]');
   ok((await perf.innerText()).includes('ohne Bewertung') && await perf.locator('.status').count() === 0, 'Leistungsanteil ohne Bewertung');
-  ok(/(◆|▲|●) (normal|auffällig|kritisch)/.test(await page.locator('#tiles .tile[data-info="coremax"]').innerText()), 'Statusmarke als Symbol und Wort');
-  ok((await page.locator('#tiles .tile[data-info="corebusy"]').innerText()).includes('von 8'), 'Kerne voll: von der Zahl der Kerne');
+  ok(/(◆|▲|●) (normal|auffällig|kritisch)/.test(await page.locator('#sizeTiles .tile[data-info="coremax"]').innerText()), 'Statusmarke als Symbol und Wort');
+  ok((await page.locator('#sizeTiles .tile[data-info="corebusy"]').innerText()).includes('von 8'), 'Kerne voll: von der Zahl der Kerne');
   ok(page.errors.length === 0 && page.requests.every((u) => u.startsWith('file:')), 'ohne Skriptfehler und Anfragen: ' + page.errors.join(' | '));
   // texts of the classes say "Host" only as "VMware-Host", and never "Worker"
   const texts = D.incidents.flatMap((i) => [i.classLine || ''].concat((i.classes || []).flatMap((c) => [c.reason, c.advice])));
   ok(texts.every((t) => !/(?<!VMware-)Host/.test(t) && !/Worker/.test(t)), 'die Texte der Einordnung sagen Server und VMware-Host');
   await page.close();
   const old = await openExpert(browser, path.join(dir, 'report-old.html'), scheme);
-  ok((await old.page.locator('#tiles .tile[data-info="coremax"]').innerText()).includes('nicht gemessen'), 'aeltere Aufzeichnung: nicht gemessen');
-  ok((await old.page.locator('#tiles .tile[data-info="perf"]').innerText()).includes('nicht gemessen') && old.page.errors.length === 0, 'aeltere Aufzeichnung: Leistungsanteil nicht gemessen');
+  ok((await old.page.locator('#sizeTiles .tile[data-info="coremax"]').innerText()).includes('nicht gemessen'), 'aeltere Aufzeichnung: nicht gemessen');
+  ok((await old.page.locator('#sizeTiles .tile[data-info="perf"]').innerText()).includes('nicht gemessen') && old.page.errors.length === 0, 'aeltere Aufzeichnung: Leistungsanteil nicht gemessen');
   await old.page.close();
 }
 
@@ -3389,6 +3390,8 @@ async function checkAddress(browser, dir, scheme) {
   ok(await len() === n + 1 && a.v === 'expert' && a.i === String(cpu.id) && Number(a.t1) - Number(a.t0) > 0 && Number(a.t0) === (await page.evaluate(() => window.WP.zoom)).t0, 'Klick auf einen Vorfall: ein Schritt, die Adresse haelt Vorfall und Zeitraum: ' + JSON.stringify(a));
   // dragging over a chart writes one step when it ends, not one per movement of the mouse
   n = await len();
+  // (Groesse Task 7: three tiles more push the chart down; it is scrolled into view before the mouse is moved over it)
+  await page.locator('#chCpu svg .hit').scrollIntoViewIfNeeded();
   const box = await page.locator('#chCpu svg .hit').boundingBox();
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2); await page.mouse.down();
   for (let k = 1; k <= 8; k++) await page.mouse.move(box.x + box.width * (0.2 + k * 0.05), box.y + box.height / 2);
