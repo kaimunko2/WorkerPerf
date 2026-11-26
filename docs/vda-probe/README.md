@@ -27,8 +27,11 @@ Nach der letzten Prüfung meldet die Konsole „Namen werden erneut gelesen, das
 ### Schreibcache von MCS
 
 Die Prüfung `mcs.cache` sucht auf den fest eingebauten Laufwerken die Überlaufdatei des Schreibcaches (`mcsdif.vhdx`)
-und nennt Laufwerk, Größe der Datei und freien Platz. Dazu listet sie alle Leistungsindikatoren, deren Kategorie mit
-„Citrix MCS“ beginnt, mit ihren aktuellen Werten. Die Datei wird dabei nicht geöffnet. Auf einem Server ohne MCS mit
+und nennt Laufwerk, Größe der Datei und freien Platz. Dazu führt sie jedes fest eingebaute Laufwerk mit Bezeichnung,
+Dateisystem und den Dateien `*.vhd*` in seinem Stammverzeichnis auf, die Namen aller Kategorien von
+Leistungsindikatoren, die mit „Citrix“ beginnen, und für jede Kategorie „Citrix MCS…“ die Indikatoren mit Typ, Rohwert
+und Wert (zwei Lesungen im Abstand von einer Sekunde). Keine Datei wird dabei geöffnet. Was nicht gelesen werden
+konnte, steht mit dem Grund im Ergebnis. Auf einem Server ohne MCS mit
 Speicheroptimierung (MCS I/O) steht im Ergebnis „mcsdif.vhdx nicht gefunden“; das ist kein Fehler.
 
 ### AppLocker und eingeschränkter Sprachmodus

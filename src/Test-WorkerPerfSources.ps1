@@ -826,14 +826,20 @@ function Invoke-ProbeVolumesCheck($Ctx, $Check) {
     return $out
 }
 
-function Get-ProbeMcsCacheResult([object[]]$Drives, [object[]]$Categories) {
-    # Result of the check 'mcs.cache' from what was read. Drives: @{ Drive ('D:'); TotalMb; FreeMb; HasFile; FileMb (or
-    # $null); FileError }. Categories: @{ Category; Error; Counters = @(@{ Counter; Instance; Value }) }. A server
-    # without the overflow file is not an error: Ok is false and the detail says what was not found.
+function Get-ProbeMcsCacheResult([object[]]$Drives, [object[]]$Categories, [string[]]$CitrixCategories = @(), [string]$DriveError = '', [string]$CategoryError = '') {
+    # Result of the check 'mcs.cache' from what was read. Drives: every fixed drive, @{ Drive ('D:'); Label; Format;
+    # TotalMb; FreeMb; HasFile; FileMb (or $null); FileBytes; FileError; VhdFiles; Error }. Categories: what Read-ProbePerf
+    # returned for every category 'Citrix MCS...' (or @{ Category; Ok = $false; Error }). CitrixCategories: the names of
+    # all categories 'Citrix...'. DriveError, CategoryError: why a whole list could not be read. A server without the
+    # overflow file is not an error: Ok is false and the detail says what was not found - and what could not be read,
+    # so that a failed reading never looks like an absent write cache.
     $cache = New-Object 'System.Collections.Generic.List[object]'
     $parts = New-Object 'System.Collections.Generic.List[string]'
+    $failed = 0
     foreach ($d in @($Drives)) {
-        if ($null -eq $d -or -not $d.HasFile) { continue }
+        if ($null -eq $d) { continue }
+        if ($d.ContainsKey('Error') -and $d.Error) { $failed++ }
+        if (-not $d.HasFile) { continue }
         $pct = $null
         if ($d.TotalMb -gt 0) { $pct = [Math]::Round(100.0 * $d.FreeMb / $d.TotalMb, 1) }
         $cache.Add([ordered]@{ Drive = $d.Drive; FileMb = $d.FileMb; FileError = [string]$d.FileError; TotalMb = $d.TotalMb; FreeMb = $d.FreeMb; FreePct = $pct })
@@ -842,66 +848,77 @@ function Get-ProbeMcsCacheResult([object[]]$Drives, [object[]]$Categories) {
         $parts.Add(('mcsdif.vhdx auf {0} ({1}), frei {2} von {3} MB' -f $d.Drive, $size, $d.FreeMb, $d.TotalMb))
     }
     if ($parts.Count -eq 0) { $parts.Add('mcsdif.vhdx nicht gefunden') }
-    $parts.Add(('{0} Kategorien Citrix MCS' -f @($Categories).Count))
-    return @{ Ok = ($cache.Count -gt 0); Detail = ($parts.ToArray() -join '; '); Data = [ordered]@{ CacheDrives = $cache.ToArray(); Categories = @($Categories) } }
+    $unread = @(@($Categories) | Where-Object { $null -ne $_ -and -not $_.Ok -and @($_.Counters).Count -eq 0 }).Count
+    $cats = '{0} Kategorien Citrix MCS' -f @($Categories).Count
+    if ($unread -gt 0) { $cats += ', davon {0} nicht lesbar' -f $unread }
+    $parts.Add($cats)
+    if ($failed -eq 1) { $parts.Add('1 Laufwerk nicht lesbar') } elseif ($failed -gt 1) { $parts.Add(('{0} Laufwerke nicht lesbar' -f $failed)) }
+    if ($DriveError) { $parts.Add('Laufwerke nicht lesbar: ' + $DriveError) }
+    if ($CategoryError) { $parts.Add('Kategorien nicht lesbar: ' + $CategoryError) }
+    $data = [ordered]@{ CacheDrives = $cache.ToArray(); Drives = @($Drives); DriveError = $DriveError
+        Categories = @($Categories); CitrixCategories = @($CitrixCategories); CategoryError = $CategoryError }
+    return @{ Ok = ($cache.Count -gt 0); Detail = ($parts.ToArray() -join '; '); Data = $data }
 }
 
 function Read-ProbeMcsDrives {
-    # Every ready fixed drive with its size and free space, and whether the overflow file of the MCS write cache
-    # (mcsdif.vhdx) lies in its root. Reads the directory entry only; the file is never opened.
+    # Every fixed drive with label, file system, size and free space, the virtual disk files in its root (*.vhd*) and
+    # whether the overflow file of the MCS write cache (mcsdif.vhdx) is among them. Reads directory entries only; no file
+    # is opened. A drive that cannot be read keeps its letter and the reason.
     foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+        $letter = ''
         try {
-            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -or -not $drive.IsReady) { continue }
-            $row = @{ Drive = $drive.Name.TrimEnd('\'); TotalMb = [Math]::Round($drive.TotalSize / 1MB); FreeMb = [Math]::Round($drive.TotalFreeSpace / 1MB)
-                HasFile = $false; FileMb = $null; FileError = '' }
-            $file = Join-Path $drive.RootDirectory.FullName 'mcsdif.vhdx'
+            $letter = $drive.Name.TrimEnd('\')
+            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) { continue }
+            $row = @{ Drive = $letter; Label = ''; Format = ''; TotalMb = $null; FreeMb = $null; HasFile = $false; FileMb = $null; FileBytes = $null
+                FileError = ''; VhdFiles = @(); Error = '' }
+            if (-not $drive.IsReady) { $row.Error = 'nicht bereit'; $row; continue }
+            $row.Label = [string]$drive.VolumeLabel; $row.Format = [string]$drive.DriveFormat
+            $row.TotalMb = [Math]::Round($drive.TotalSize / 1MB); $row.FreeMb = [Math]::Round($drive.TotalFreeSpace / 1MB)
+            $root = $drive.RootDirectory.FullName
+            try {
+                $row.VhdFiles = @(foreach ($f in (New-Object System.IO.DirectoryInfo $root).GetFiles('*.vhd*')) {
+                        $bytes = $null
+                        try { $bytes = $f.Length } catch { $bytes = $null }
+                        @{ Name = [string]$f.Name; Bytes = $bytes }
+                    })
+            }
+            catch { $row.FileError = 'Stammverzeichnis: ' + (Get-ProbeErrorText $_) }
+            $file = Join-Path $root 'mcsdif.vhdx'
             if ([System.IO.File]::Exists($file)) {
                 $row.HasFile = $true
-                try { $row.FileMb = [Math]::Round((New-Object System.IO.FileInfo $file).Length / 1MB) }
+                try { $row.FileBytes = (New-Object System.IO.FileInfo $file).Length; $row.FileMb = [Math]::Round($row.FileBytes / 1MB) }
                 catch { $row.FileError = Get-ProbeErrorText $_ }
             }
             $row
         }
-        catch { continue }
+        catch { @{ Drive = $letter; HasFile = $false; Error = (Get-ProbeErrorText $_) } }
     }
 }
 
-function Read-ProbeMcsCategories([object[]]$All = $null) {
-    # Every performance counter category whose name starts with 'Citrix MCS', with its counters and their current values
-    # (first reading, no wait: a rate counter shows 0). At most 8 instances per category; a counter that cannot be read
-    # keeps its name and has no value. Instance names stay as read: the result is masked once, when it is written. All: the categories to look at (tests); by default those of the machine.
-    if ($null -eq $All) { $All = @([System.Diagnostics.PerformanceCounterCategory]::GetCategories()) }
-    foreach ($cat in @($All)) {
-        $name = [string]$cat.CategoryName
+function Read-ProbeMcsCategories([string[]]$Names = $null, [scriptblock]$Read = $null) {
+    # Citrix: the names of all performance counter categories starting with 'Citrix'. Mcs: every category starting with
+    # 'Citrix MCS', read like every other category of the probe (Read-ProbePerf: two readings 1 s apart, counter type,
+    # raw values and the calculated value, at most 8 instances). A category that cannot be read costs only itself.
+    # Names, Read: the category names and the reader (tests); by default those of the machine.
+    if ($null -eq $Names) { $Names = @([System.Diagnostics.PerformanceCounterCategory]::GetCategories() | ForEach-Object { [string]$_.CategoryName }) }
+    if ($null -eq $Read) { $Read = { param($Category, $Counters, $Instances, $MaxInstances) Read-ProbePerf -Category $Category -Counters $Counters -Instances $Instances -MaxInstances $MaxInstances } }
+    $citrix = @($Names | Where-Object { $_.StartsWith('Citrix', [StringComparison]::OrdinalIgnoreCase) })
+    $mcs = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($name in $citrix) {
         if (-not $name.StartsWith('Citrix MCS', [StringComparison]::OrdinalIgnoreCase)) { continue }
-        $out = [ordered]@{ Category = $name; Error = ''; InstanceCount = 0; Counters = @() }
-        $rows = New-Object 'System.Collections.Generic.List[object]'
-        try {
-            $instances = @($cat.GetInstanceNames())
-            $out.InstanceCount = $instances.Count
-            if ($instances.Count -eq 0) { $sets = @(@{ Instance = ''; Counters = @($cat.GetCounters()) }) }
-            else { $sets = @($instances | Select-Object -First 8 | ForEach-Object { @{ Instance = [string]$_; Counters = @($cat.GetCounters([string]$_)) } }) }
-            foreach ($set in $sets) {
-                foreach ($c in $set.Counters) {
-                    $value = $null
-                    try { $value = [double]$c.NextValue() } catch { $value = $null }
-                    $rows.Add([ordered]@{ Counter = [string]$c.CounterName; Instance = [string]$set.Instance; Value = $value })
-                }
-            }
-        }
-        catch { $out.Error = Get-ProbeErrorText $_ }
-        $out.Counters = $rows.ToArray()
-        $out
+        try { $mcs.Add((& $Read $name @() 'all' 8)) }
+        catch { $mcs.Add([ordered]@{ Category = $name; Ok = $false; Error = (Get-ProbeErrorText $_); Counters = @() }) }
     }
+    return @{ Citrix = $citrix; Mcs = $mcs.ToArray() }
 }
 
 function Invoke-ProbeMcsCacheCheck($Ctx, $Check) {
     # MCS with storage optimisation (MCS I/O): where the overflow file lies, how full its drive is, and which counters
     # 'Citrix MCS...' the server has. The basis for measuring the write cache.
-    $drives = @(); $categories = @()
-    try { $drives = @(Read-ProbeMcsDrives) } catch { $drives = @() }
-    try { $categories = @(Read-ProbeMcsCategories) } catch { $categories = @() }
-    return Get-ProbeMcsCacheResult $drives $categories
+    $drives = @(); $driveError = ''; $read = @{ Citrix = @(); Mcs = @() }; $categoryError = ''
+    try { $drives = @(Read-ProbeMcsDrives) } catch { $driveError = Get-ProbeErrorText $_ }
+    try { $read = Read-ProbeMcsCategories } catch { $categoryError = Get-ProbeErrorText $_ }
+    return Get-ProbeMcsCacheResult $drives @($read.Mcs) @($read.Citrix) $driveError $categoryError
 }
 
 function Invoke-ProbeIcaCheck($Ctx, $Check) {

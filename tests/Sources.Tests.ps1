@@ -926,7 +926,7 @@ namespace WorkerPerfProbe
 Describe 'Schreibcache von MCS im Pruefskript' {
     BeforeAll {
         function New-McsDrive([string]$Letter, [bool]$Has, $FileMb, [string]$Err = '') { @{ Drive = $Letter; TotalMb = 40000; FreeMb = 10000; HasFile = $Has; FileMb = $FileMb; FileError = $Err } }
-        $script:McsCat = @{ Category = 'Citrix MCS Storage Driver'; Error = ''; Counters = @(@{ Counter = 'X'; Instance = ''; Value = 12.0 }, @{ Counter = 'Y'; Instance = ''; Value = $null }) }
+        $script:McsCat = @{ Category = 'Citrix MCS Storage Driver'; Ok = $true; Error = ''; Counters = @(@{ Counter = 'X'; Type = 'NumberOfItems64'; Instances = @(@{ Instance = ''; Value = 12.0 }) }) }
     }
     It 'meldet einen Server ohne MCS I/O ohne Fehler' {
         $res = Get-ProbeMcsCacheResult @((New-McsDrive 'C:' $false $null)) @()
@@ -950,28 +950,49 @@ Describe 'Schreibcache von MCS im Pruefskript' {
         $d = New-McsDrive 'D:' $true 1; $d.TotalMb = 0
         @((Get-ProbeMcsCacheResult @($d) @()).Data.CacheDrives)[0].FreePct | Should -BeNullOrEmpty
     }
-    It 'gibt Kategorien mit lesbaren und unlesbaren Werten unveraendert weiter' {
+    It 'gibt die gelesenen Kategorien unveraendert weiter' {
         $res = Get-ProbeMcsCacheResult @() @($McsCat)
-        $res.Ok | Should -BeFalse; @($res.Data.Categories)[0].Counters[1].Value | Should -BeNullOrEmpty; @($res.Data.Categories)[0].Counters[0].Value | Should -Be 12.0
+        $res.Ok | Should -BeFalse; @($res.Data.Categories)[0].Counters[0].Counter | Should -Be 'X'
     }
-    It 'liest nur Kategorien Citrix MCS, hoechstens acht Instanzen, und behaelt einen Indikator ohne lesbaren Wert' {
-        $counter = { param($n, $v) $o = [pscustomobject]@{ CounterName = $n }; $o | Add-Member ScriptMethod NextValue ([scriptblock]::Create($(if ($null -eq $v) { 'throw "kaputt"' } else { "$v" }))); $o }
-        $multi = [pscustomobject]@{ CategoryName = 'Citrix MCS Storage Driver' }
-        $multi | Add-Member ScriptMethod GetInstanceNames { @(1..10 | ForEach-Object { "disk$_" }) }
-        $multi | Add-Member ScriptMethod GetCounters { param($i) @((& $counter 'Cache disk used' 5), (& $counter 'Defekt' $null)) }.GetNewClosure()
-        $single = [pscustomobject]@{ CategoryName = 'citrix mcs' }
-        $single | Add-Member ScriptMethod GetInstanceNames { @() }
-        $single | Add-Member ScriptMethod GetCounters { @(& $counter 'Cache memory used' 7) }.GetNewClosure()
-        $other = [pscustomobject]@{ CategoryName = 'Memory' }
-        $broken = [pscustomobject]@{ CategoryName = 'Citrix MCS Kaputt' }
-        $broken | Add-Member ScriptMethod GetInstanceNames { throw 'nicht lesbar' }
-        $read = @(Read-ProbeMcsCategories @($multi, $single, $other, $broken))
-        @($read | ForEach-Object { $_.Category }) | Should -Be @('Citrix MCS Storage Driver', 'citrix mcs', 'Citrix MCS Kaputt')
-        @($read[0].Counters).Count | Should -Be 16; $read[0].InstanceCount | Should -Be 10
-        @($read[0].Counters | Where-Object { $_.Counter -eq 'Defekt' })[0].Value | Should -BeNullOrEmpty
-        @($read[0].Counters | Where-Object { $_.Counter -eq 'Cache disk used' })[0].Value | Should -Be 5
-        $read[1].Counters[0].Instance | Should -Be ''; $read[1].Counters[0].Value | Should -Be 7
-        $read[2].Error | Should -Match 'nicht lesbar'; @($read[2].Counters).Count | Should -Be 0
+    It 'liest jede Kategorie Citrix MCS mit dem Zaehlerleser des Skripts und nennt alle Citrix-Kategorien' {      # Befund 2, 3
+        $script:McsAsked = @()
+        $read = { param($Category, $Counters, $Instances, $MaxInstances) $script:McsAsked += ,@($Category, $Instances, $MaxInstances, @($Counters).Count)
+            if ($Category -eq 'Citrix MCS Kaputt') { throw 'nicht lesbar' }
+            [ordered]@{ Category = $Category; Exists = $true; CategoryType = 'MultiInstance'; Ok = $true; Error = ''; Counters = @([ordered]@{ Counter = 'Cache disk used'; Type = 'NumberOfItems64'; Instances = @(@{ Instance = 'x'; Raw2 = 3221225473; Value = 3221225473 }) }) } }
+        $got = Read-ProbeMcsCategories @('Memory', 'Citrix MCS Storage Driver', 'citrix mcs', 'Citrix MCS Kaputt', 'Citrix Profile Management') $read
+        $got.Citrix | Should -Be @('Citrix MCS Storage Driver', 'citrix mcs', 'Citrix MCS Kaputt', 'Citrix Profile Management')
+        @($got.Mcs | ForEach-Object { $_.Category }) | Should -Be @('Citrix MCS Storage Driver', 'citrix mcs', 'Citrix MCS Kaputt')
+        $McsAsked[0] | Should -Be @('Citrix MCS Storage Driver', 'all', 8, 0)
+        $got.Mcs[0].Counters[0].Type | Should -Be 'NumberOfItems64'; $got.Mcs[0].Counters[0].Instances[0].Raw2 | Should -Be 3221225473
+        # one category that cannot be read costs only itself (Befund 4)
+        $got.Mcs[2].Ok | Should -BeFalse; $got.Mcs[2].Error | Should -Match 'nicht lesbar'; $got.Mcs[1].Ok | Should -BeTrue
+    }
+    It 'sagt, wenn Laufwerke oder Kategorien nicht gelesen werden konnten, statt nichts gefunden zu melden' {         # Befund 1
+        $res = Get-ProbeMcsCacheResult @() @() @() 'Zugriff verweigert' 'Registrierung defekt'
+        $res.Ok | Should -BeFalse
+        $res.Detail | Should -Be 'mcsdif.vhdx nicht gefunden; 0 Kategorien Citrix MCS; Laufwerke nicht lesbar: Zugriff verweigert; Kategorien nicht lesbar: Registrierung defekt'
+        $res.Data.DriveError | Should -Be 'Zugriff verweigert'; $res.Data.CategoryError | Should -Be 'Registrierung defekt'
+        $bad = @{ Category = 'Citrix MCS Kaputt'; Ok = $false; Error = 'nicht lesbar'; Counters = @() }
+        (Get-ProbeMcsCacheResult @() @($McsCat, $bad)).Detail | Should -Be 'mcsdif.vhdx nicht gefunden; 2 Kategorien Citrix MCS, davon 1 nicht lesbar'
+    }
+    It 'behaelt jedes Laufwerk mit Bezeichnung, VHD-Dateien und Lesefehler, auch ohne die Datei' {                    # Befund 1, 3
+        $c = New-McsDrive 'C:' $false $null; $c.Label = 'System'; $c.Format = 'NTFS'; $c.VhdFiles = @(@{ Name = 'alt.vhdx'; Mb = 5 })
+        $e = @{ Drive = 'E:'; Error = 'Geraet nicht bereit'; HasFile = $false }
+        $res = Get-ProbeMcsCacheResult @($c, $e, (New-McsDrive 'D:' $true 7)) @() @('Citrix Profile Management')
+        @($res.Data.Drives).Count | Should -Be 3; @($res.Data.CacheDrives).Count | Should -Be 1
+        @($res.Data.Drives)[0].Label | Should -Be 'System'; @($res.Data.Drives)[0].VhdFiles[0].Name | Should -Be 'alt.vhdx'
+        @($res.Data.Drives)[1].Error | Should -Be 'Geraet nicht bereit'
+        $res.Detail | Should -Be 'mcsdif.vhdx auf D: (7 MB), frei 10000 von 40000 MB; 0 Kategorien Citrix MCS; 1 Laufwerk nicht lesbar'
+        $res.Data.CitrixCategories | Should -Be @('Citrix Profile Management')
+    }
+    It 'laeuft durch den Ablauf des Skripts und wird am Ende maskiert' {
+        Reset-TestMask; Add-ProbeMaskNames -Computers @('SRV01')
+        $script:McsFake = Get-ProbeMcsCacheResult @((New-McsDrive 'D:' $true 7)) @(@{ Category = 'Citrix MCS Storage Driver'; Ok = $true; Error = ''; Counters = @(@{ Counter = 'X'; Instances = @(@{ Instance = 'SRV01-disk'; Value = 1 }) }) })
+        function Invoke-FakeMcs($Ctx, $Check) { $script:McsFake }
+        $results = @(Invoke-ProbeCatalogue @(@{ Id = 'mcs.cache'; Signals = @(); Title = 'T'; Run = 'Invoke-FakeMcs' }) @{} { @() } 6>$null)
+        $json = (Protect-ProbeValue $results) | ConvertTo-Json -Depth 16
+        $json | Should -Not -Match 'SRV01'; $json | Should -Match '<server>-disk'; $json | Should -Match '"Drive":\s*"D:"'
+        Reset-TestMask
     }
     It 'steht im Katalog der Pruefungen' {
         $check = @($Checks | Where-Object { $_.Id -eq 'mcs.cache' }); $check.Count | Should -Be 1
