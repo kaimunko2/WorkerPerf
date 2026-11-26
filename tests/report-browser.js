@@ -3016,6 +3016,119 @@ async function checkExpertFix(browser, dir, scheme) {               // Zeitmitte
   await lp.page.close();
 }
 
+// The measured machine is never called "Host" (P3-R71): hostWords returns the places of a text that say so. "Host" stays where it
+// means the hypervisor ("VMware-Host", a sentence about VMware) and in "hostbasiert"; the rules are explained in checkWording.
+const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
+const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
+  !(/^Hosts?$/.test(m[0]) && /Remote\s+Desktop\s+Session\s+$/.test(text.substring(Math.max(0, m.index - 40), m.index))) && !(m[0] === 'Host' && /^\s+Service\b/.test(text.substring(m.index + 4, m.index + 20)) && /Agent\s+$/.test(text.substring(Math.max(0, m.index - 12), m.index))) &&
+  !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
+  .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
+
+async function checkSizing(browser, dir, scheme) {                  // Groessenbericht: Lesbarkeit, Statusmarken, schmale Breite
+  const { page, D } = await open(browser, path.join(dir, 'sizing.html'), scheme);
+  ok(page.errors.length === 0 && page.requests.every((u) => u.startsWith('file:')), 'ohne Skriptfehler und Anfragen: ' + page.errors.join(' | '));
+  ok((await page.locator('#result').innerText()).trim() === D.result.text, 'Ergebnis in einem Satz');
+  ok((await page.locator('header').innerText()).includes('SIM-VDA01') && (await page.locator('header').innerText()).includes('5 Aufzeichnungen und 1 Schnelllauf'), 'Kopf: Server und Zahl der Aufzeichnungen');
+  const cards = page.locator('#recommendations .rec');
+  ok(await cards.count() === D.recommendations.length, 'eine Karte je Empfehlung');
+  for (let i = 0; i < D.recommendations.length; i++) {
+    const t = await cards.nth(i).innerText(), r = D.recommendations[i];
+    ok(/(◆ Handeln|▲ Prüfen|● In Ordnung)/.test(t), 'Statusmarke als Symbol und Wort: ' + r.resource);
+    if (r.projection) ok(t.includes('Schätzung') && t.includes('Vor einem Umbau mit einem Pilot oder Lasttest bestätigen.'), 'Hochrechnung gekennzeichnet: ' + r.resource);
+    ok(t.includes('wenig Messzeit'), 'wenig Messzeit: ' + r.resource);
+    ok(r.sources.length === 0 || await cards.nth(i).locator('a[href^="https://"]').count() >= 1, 'Quellen als Verweise: ' + r.resource);
+  }
+  const cpu = D.recommendations.find((r) => r.resource === 'cpu');
+  const span = cpu.projection && cpu.projection.low === cpu.projection.high ? `${cpu.projection.low}` : `${cpu.projection.low} bis ${cpu.projection.high}`;
+  ok(cpu.projection && (await page.locator('#recommendations .rec[data-resource="cpu"] .proj .num').innerText()) === `etwa ${span} vCPU`, 'die Spanne als Zahl der Hochrechnung');
+  ok(await page.locator('#history svg rect.bar').count() === 2 * D.runs.filter((r) => !r.healthOnly).length, 'Balken je Aufzeichnung fuer Spitze und P95');
+  ok(await page.locator('#history svg line.target').count() === 1 && (await page.locator('#history').innerText()).includes('Kapazität: in 4 von 5 Aufzeichnungen'), 'Verlauf: Linie des Ziels und wiederkehrende Ursache');
+  ok(await page.locator('#scatter svg circle').count() === D.scatter.cpu.length && await page.locator('#scatter svg line.target').count() === 1, 'Punktwolke mit der Linie des Ziels');
+  ok(await page.locator('#users tbody tr').count() === 4 && (await page.locator('#users').innerText()).includes(D.usersPerVcpu.note), 'Sitzungen je vCPU mit dem Satz zur Einordnung');
+  ok(await page.locator('#runs tbody tr').count() === D.runs.length && await page.locator('#runs button.cmd').count() === D.runs.length, 'Liste der Aufzeichnungen mit Befehl');
+  ok((await page.locator('#runs').innerText()).includes(D.runs[0].command), 'der Befehl des Berichts einer Aufzeichnung');
+  ok(await page.locator('#sources a').count() >= 3 && await page.locator('#evidence tr').count() === D.evidence.length, 'Quellen und Belege');
+  ok((await page.locator('#copyText').innerText()).includes('SIM-VDA01'), 'Kopiertext mit Namen');
+  await page.check('#anon');
+  ok(!(await page.locator('#copyText').innerText()).includes('SIM-VDA01') && (await page.locator('#copyText').innerText()).includes('Schätzung'), 'Kopiertext ohne Namen');
+  ok(await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(255, 255, 255)', 'hell auch im dunklen Schema');
+  for (const sel of ['#result', '#recommendations .rec p']) {
+    const c = await page.locator(sel).first().evaluate((e) => [getComputedStyle(e).color, getComputedStyle(document.body).backgroundColor]);
+    ok(contrast(c[0], c[1]) >= 4.5, 'Kontrast ' + sel);
+  }
+  await page.setViewportSize({ width: 360, height: 800 });
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'schmale Breite ohne seitliches Rollen');
+  await page.close();
+  const e = await open(browser, path.join(dir, 'sizing-enough.html'), scheme);
+  ok(!(await e.page.locator('#recommendations').innerText()).includes('wenig Messzeit'), 'genug Messzeit: kein Hinweis');
+  await e.page.close();
+  const m = await open(browser, path.join(dir, 'sizing-masked.html'), scheme);
+  ok(!(await m.page.locator('body').innerText()).includes('SIM-VDA01') && (await m.page.locator('header').innerText()).includes('maskiert'), 'maskiert: kein Servername, Vermerk im Kopf');
+  ok(!(await m.page.locator('#anonLabel').isVisible()) && m.page.errors.length === 0, 'maskiert: nur eine Fassung des Kopiertexts');
+  await m.page.close();
+  // Review Focus 5: a range of one number is shown as one number, never "8 bis 8"
+  const one = path.join(dir, 'sizing-one.html'), src = fs.readFileSync(path.join(dir, 'sizing.html'), 'utf8'), tag = '<script id="wp-data" type="application/json">';
+  const a = src.indexOf(tag) + tag.length, b = src.indexOf('</script>', a), J = JSON.parse(src.substring(a, b));
+  const pr = J.recommendations.find((r) => r.resource === 'cpu').projection; pr.low = 8; pr.high = 8;
+  fs.writeFileSync(one, src.substring(0, a) + JSON.stringify(J).replace(/</g, '\\u003c') + src.substring(b));
+  const o = await open(browser, one, scheme), num = await o.page.locator('#recommendations .rec[data-resource="cpu"] .proj .num').innerText();
+  ok(num === 'etwa 8 vCPU' && !num.includes('8 bis 8') && o.page.errors.length === 0, 'eine Spanne aus einer Zahl als eine Zahl: ' + num);
+  await o.page.close();
+}
+async function checkSizingPrint(browser, dir, scheme) {             // Groessenbericht: Druck
+  const { page } = await open(browser, path.join(dir, 'sizing.html'), scheme);
+  await page.emulateMedia({ media: 'print' });
+  for (const id of ['result', 'recommendations', 'history', 'scatter', 'users', 'runs', 'sources']) ok(await page.locator('#' + id).isVisible(), 'im Druck sichtbar: ' + id);
+  ok(!(await page.locator('button').first().isVisible()), 'Knoepfe nicht im Druck');
+  await page.close();
+}
+async function checkSizingWording(browser, dir, scheme) {           // Groessenbericht: Wortregeln
+  const src = fs.readFileSync(path.join(dir, 'sizing.html'), 'utf8'), tag = '<script id="wp-data" type="application/json">';
+  const own = src.substring(0, src.indexOf(tag)) + src.substring(src.indexOf('</script>', src.indexOf(tag)));
+  ok(!/(?<![A-Za-zÄÖÜäöüß])Worker(?!Perf)/.test(own) && hostWords(own).length === 0, 'Seite: nie "Worker", "Host" nur als VMware-Host: ' + hostWords(own).join(' | '));
+  const { page, D } = await open(browser, path.join(dir, 'sizing.html'), scheme), shown = await page.locator('body').innerText();
+  ok(hostWords(shown).length === 0 && shown.includes('Server') && !/(?<![A-Za-zÄÖÜäöüß])Worker(?!Perf)/.test(shown), 'gezeigte Texte: "Server", "Host" nur als VMware-Host: ' + hostWords(shown).join(' | '));
+  ok(D.recommendations.every((r) => !r.projection || r.projection.text.includes('Schätzung')), 'jede Hochrechnung der Daten traegt das Wort Schaetzung');
+  await page.close();
+}
+
+async function checkClasses(browser, dir, scheme) {                // Groesse: Einordnung und Kacheln
+  const { page, D } = await open(browser, path.join(dir, 'report-causes.html'), scheme);
+  const classed = D.incidents.filter((i) => i.classLine);
+  ok(classed.length >= 7, 'der Bericht der Ursachen ordnet seine Vorfaelle ein: ' + classed.length);
+  for (const inc of classed) {
+    const v = await openIncident(page, inc.id), t = await v.locator('.iv-cause .classline').innerText();
+    ok(t.startsWith('Einordnung: ') && t.includes(inc.classes.length ? inc.classes[0].label : 'Nicht'), `Vorfall ${inc.id}: Einordnung in der Vorfallsansicht: ` + t);
+    ok(await v.locator('.iv-cause .classdir').count() === inc.classes.length, `Vorfall ${inc.id}: je Klasse ihre Richtung`);
+  }
+  const host = D.incidents.find((i) => (i.classes || []).some((c) => c.id === 'host'));
+  const hv = await openIncident(page, host.id);
+  ok((await hv.locator('.iv-todo li').first().innerText()).includes('VMware-Host'), 'der Schritt des VMware-Hosts steht vorne');
+  ok((await hv.locator('.iv-cause .classsrc').first().innerText()).includes('Rightsizing virtual machines'), 'die Quelle der Klasse mit ihrem Titel');
+  const single = D.incidents.find((i) => (i.classes || []).some((c) => c.id === 'singlecore'));
+  ok(single && single.type === 'ohne-engpass' && (await (await openIncident(page, single.id)).locator('.iv-cause .classline').innerText()).includes('Leistung je Kern'),
+    'ein Vorfall ohne Engpass zeigt seine Einordnung');
+  await page.setViewportSize({ width: 380, height: 800 });
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'schmale Breite: die Einordnung bricht um');
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await showExpert(page);
+  ok((await page.locator(`#incList .inc[data-id="${host.id}"]`).innerText()).includes('Einordnung: VMware-Host'), 'Einordnung in der Vorfallsspalte');
+  for (const k of ['coremax', 'corebusy', 'perf']) ok(await page.locator(`#tiles .tile[data-info="${k}"]`).count() === 1, 'Kachel ' + k);
+  const perf = page.locator('#tiles .tile[data-info="perf"]');
+  ok((await perf.innerText()).includes('ohne Bewertung') && await perf.locator('.status').count() === 0, 'Leistungsanteil ohne Bewertung');
+  ok(/(◆|▲|●) (normal|auffällig|kritisch)/.test(await page.locator('#tiles .tile[data-info="coremax"]').innerText()), 'Statusmarke als Symbol und Wort');
+  ok((await page.locator('#tiles .tile[data-info="corebusy"]').innerText()).includes('von 8'), 'Kerne voll: von der Zahl der Kerne');
+  ok(page.errors.length === 0 && page.requests.every((u) => u.startsWith('file:')), 'ohne Skriptfehler und Anfragen: ' + page.errors.join(' | '));
+  // texts of the classes say "Host" only as "VMware-Host", and never "Worker"
+  const texts = D.incidents.flatMap((i) => [i.classLine || ''].concat((i.classes || []).flatMap((c) => [c.reason, c.advice])));
+  ok(texts.every((t) => !/(?<!VMware-)Host/.test(t) && !/Worker/.test(t)), 'die Texte der Einordnung sagen Server und VMware-Host');
+  await page.close();
+  const old = await openExpert(browser, path.join(dir, 'report-old.html'), scheme);
+  ok((await old.page.locator('#tiles .tile[data-info="coremax"]').innerText()).includes('nicht gemessen'), 'aeltere Aufzeichnung: nicht gemessen');
+  ok((await old.page.locator('#tiles .tile[data-info="perf"]').innerText()).includes('nicht gemessen') && old.page.errors.length === 0, 'aeltere Aufzeichnung: Leistungsanteil nicht gemessen');
+  await old.page.close();
+}
+
 async function checkWording(browser, dir, scheme) {                 // die gemessene Maschine heisst in den Texten der Seite "Server" (P3-R66)
   // the page's own texts: everything of the page source but the report data (labels, hints, sentences, titles, tooltips);
   // the name of the tool stays
@@ -3040,11 +3153,6 @@ async function checkWording(browser, dir, scheme) {                 // die gemes
   // health picture: its texts in the report data say "Virtualisierungshost" for the hypervisor and call the measured machine
   // "Server" too; "Host" stays only in two English names it quotes as they are, the Windows role "Remote Desktop Session
   // Host(s)" in the title of a Microsoft source and the Citrix service "… Agent Host Service". The probe below.)
-  const sentenceOf = (text, i) => { const a = Math.max(...['. ', '! ', '? ', ';', '\n'].map((x) => text.lastIndexOf(x, i))), b = text.slice(i).search(/[.!?](\s|$)|[;\n]/); return text.substring(a + 1, b < 0 ? text.length : i + b); };
-  const hostWords = (text) => [...text.matchAll(/(?<![\p{L}\p{N}])Host[\p{L}]*/gu)].filter((m) => !/^Hostbasiert/i.test(m[0]) && !text.substring(Math.max(0, m.index - 7), m.index).endsWith('VMware-') &&
-    !(/^Hosts?$/.test(m[0]) && /Remote\s+Desktop\s+Session\s+$/.test(text.substring(Math.max(0, m.index - 40), m.index))) && !(m[0] === 'Host' && /^\s+Service\b/.test(text.substring(m.index + 4, m.index + 20)) && /Agent\s+$/.test(text.substring(Math.max(0, m.index - 12), m.index))) &&
-    !(m[0] === 'Hosts' && /VMware/.test(text.substring(Math.max(0, m.index - 150), m.index))) && !(/^Hosts?$/.test(m[0]) && text[m.index + m[0].length] !== '-' && /VMware/.test(sentenceOf(text, m.index))))
-    .map((m) => text.substring(Math.max(0, m.index - 40), m.index + 30).replace(/\s+/g, ' '));
   ok(hostWords('des Hosts, Host-Signale; der VMware-Host, hostbasierte und Hostbasierte Treiber, CtxSvcHost.exe').length === 2 && hostWords('Last des Hosts. Ob die vCPU zum Host passt, beurteilt die Betreuung von VMware. Der Host-Name').length === 2 &&
     hostWords('Ob der VMware-Host Zeit entzog; ' + 'Wert A; '.repeat(25) + 'dazu Co-Stop des Hosts.').length === 1 && hostWords('dazu Co-Stop des VMware-Hosts.').length === 0 &&
     hostWords('Performance Tuning Remote Desktop Session Hosts; der Dienst „Citrix WEM Agent Host Service“; Kerne des Virtualisierungshosts; Remote Desktop Session\r\n  Hosts').length === 0 &&
@@ -3981,9 +4089,9 @@ async function checkHealthSkip(browser, dir, scheme) {
 // every check function with the colour scheme of the system, then those that need one scheme only
 // (the page does not follow the colour scheme of the system, checkViews asserts that for both: the checks of single states of
 // the incident view, of copying, of printing and of the points carried from the review run once)
-const PER_SCHEME = [checkNavigation, checkGuided, checkHealth, checkHealthLinks, checkHealthOnly, checkHealthSkip, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
+const PER_SCHEME = [checkClasses, checkSizing, checkNavigation, checkGuided, checkHealth, checkHealthLinks, checkHealthOnly, checkHealthSkip, checkViews, checkCards, checkGuidedStates, checkOpens, checkIncidentView, checkIncidentContent, checkRange, checkPage, checkFindings, checkFinalFix, checkEvents,
   checkEventDetails, checkNarrow, checkFix1, checkFix2, checkLongNames, checkMask, checkMaskedPersonen, checkFinalWave, checkSkip];
-const ONCE = [checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording, checkFocusFix, checkFinalFixB];
+const ONCE = [checkSizingPrint, checkSizingWording, checkColourMath, checkAddress, checkIncidentStates, checkTerms, checkCopy, checkIncidentNav, checkIncidentLayout, checkReported, checkMotion, checkPrint, checkCarried, checkMaskedPage, checkFixWave, checkExpert, checkExpertFix, checkWording, checkFocusFix, checkFinalFixB];
 // the colour functions serve other scripts too (require): the checks run only when this file is called
 module.exports = { deltaE2000, simulateCvd, contrast, labOf, colourDiff, paletteCheck, windowColours, windowCheck };
 if (require.main === module) (async () => {

@@ -17,6 +17,12 @@
           (events.csv; one more read without that lag when the capture ends) and the counters of the print
           queues (printqueues.csv, a row only when a value changes)
 
+    The fast cadence also records five values for the size of the server (the last columns of ticks.csv): the load
+    of the busiest logical processor, the number of logical processors over the core limit, % Processor Performance,
+    % Processor Utility and Pages Output/sec. The core limit comes from the catalogue sizing.de.json (coreBusyPct) and
+    is noted in meta.json as CoreBusyPct; a counter the server lacks leaves the measurement running, and only that
+    signal is listed as not available.
+
     At the start the events of the last -EventLookbackDays days go to events_before.csv and the
     installed print drivers to printdrivers.csv. Before the first tick the health picture of the
     server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).

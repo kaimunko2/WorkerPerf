@@ -583,7 +583,7 @@
     "hint.numa": "Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des VMware-Hosts ist im Server nicht sichtbar.",
     "hint.hostCheck": "Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 % (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend über 70 bis 80 %.",
     "hint.sizeChanged": "Die Größe wechselte zwischen den Aufzeichnungen ({sizes}); die Hochrechnung geht von der letzten Aufzeichnung aus.",
-    "hint.lowMeasure": "Wenig Messzeit: {runs} Aufzeichnungen mit {hours} h Hauptzeit; belastbar ab {minRuns} Aufzeichnungen und {minHours} h.",
+    "hint.lowMeasure": "Achtung, wenig Messzeit: {runs} Aufzeichnungen mit {hours} h Hauptzeit; belastbar ab {minRuns} Aufzeichnungen und {minHours} h Hauptzeit.",
     "hint.commitAboveRam": "Praxisregel (Carl Stalhood): RAM mindestens so groß wie der zugesicherte Speicher. Microsoft wertet zugesicherten Speicher über dem RAM erst mit anhaltendem Auslagern als Mangel; die Einordnung folgt Microsoft.",
     "hint.memPerSession": "Der Arbeitsspeicher muss mit der Zahl der Sitzungen wachsen.",
     "hint.powerPlan": "Energiesparplan laut Zustandsbild: {value}.",
@@ -597,6 +597,21 @@
     "reliability": "Belastbarkeit: {runs} Aufzeichnungen, {hours} h Messzeit, davon {main} h Hauptzeit.",
     "usersNote": "Einordnung, keine Bewertung: die Art der Nutzer ist nicht bekannt.",
     "copy.head": "Größe des Servers {server}: {result}",
-    "copy.recommendation": "{resource}: {text}"
+    "copy.recommendation": "{resource}: {text}",
+    "reason.cpu": "Typische Spitzenlast (P95 der Hauptzeit) {load} %, höchste Spitze {peak} %, Ziel unter {target} %; {causes}.",
+    "reason.memory": "Höchster zugesicherter Speicher der Hauptzeit {commit} GB bei {ram} GB RAM; {causes}.",
+    "reason.host": "Der VMware-Host entzog dem Server in {count} von {total} Aufzeichnungen Rechenzeit.",
+    "reason.singlecore": "In {count} von {total} Aufzeichnungen lief eine Anwendung anhaltend auf einem vollen logischen Prozessor.",
+    "reason.recurring": "wiederkehrend: {list}",
+    "reason.noRecurring": "keine wiederkehrende Ursache",
+    "recurring.item": "{class} ({count} von {total})",
+    "dir.cpu.range": "Mehr vCPU oder mehr Server.",
+    "dir.cpu.scaleOut": "Mehr Server statt größerer Server.",
+    "rec.cpu": "CPU",
+    "rec.memory": "Arbeitsspeicher",
+    "rec.host": "VMware-Host",
+    "rec.singlecore": "Leistung je Kern",
+    "copy.assumptions": "Annahmen: {list}",
+    "size.item": "{cores} vCPU / {ram} GB"
   }
 }

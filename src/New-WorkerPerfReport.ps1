@@ -20,6 +20,12 @@
     shown as the row "Zustand des Servers" with an area view, as the section "Dazu im Zustandsbild" of an incident
     and as the tab "Zustand" of the expert view.
 
+    Every incident with a CPU or memory finding, and every input delay without a bottleneck, gets the class of its
+    cause from the catalogue sizing.de.json (-SizingFile): the VMware host, the performance per core, one
+    application, a one-off run, capacity, or one of the memory classes. The incident view shows it as the line
+    "Einordnung", the copy text carries it, and the expert view has the tiles of the strongest core, the busy cores
+    and the performance share. Several recordings of one server are compared by New-WorkerPerfSizingReport.ps1.
+
     Thresholds and roles are read at analysis time: a capture can be re-evaluated with changed
     files. Runs on Windows PowerShell 5.1 and PowerShell 7 (any platform).
 
@@ -135,75 +141,14 @@ $nan = [double]::NaN
 # the masking: a masked run masks the report data; without -Mask the report uses it only for the copy texts without names
 # (one mask of level Alles and its replacing, never Protect-WorkerPerfReportData or Clear-WorkerPerfReportFreeText).
 . (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
+# the JSON writer of the report data and the writing of the page (shared with the sizing report)
+. (Join-Path $PSScriptRoot 'WorkerPerf.Page.ps1')
 # The level in the spelling of the set (ValidateSet takes any case), as the report data carries it.
 if ($Mask) {
     if ($Mask -eq 'Alles') { $Mask = 'Alles' } else { $Mask = 'Personen' }
 }
 
 #region ---------- helpers ----------------------------------------------------------------
-
-$script:JsonSpecial = New-Object System.Text.RegularExpressions.Regex ('[\x00-\x1f"\\<>&\u2028\u2029]', [System.Text.RegularExpressions.RegexOptions]::Compiled)
-
-function Format-JsonString([string]$Text) {
-    if ($null -eq $Text) { return 'null' }
-    if (-not $script:JsonSpecial.IsMatch($Text)) { return '"' + $Text + '"' }
-    $sb = New-Object System.Text.StringBuilder ($Text.Length + 16)
-    [void]$sb.Append('"')
-    foreach ($c in $Text.ToCharArray()) {
-        $code = [int]$c
-        if ($c -eq '"') { [void]$sb.Append('\"') }
-        elseif ($c -eq '\') { [void]$sb.Append('\\') }
-        elseif ($code -lt 32 -or $c -eq '<' -or $c -eq '>' -or $c -eq '&' -or $code -eq 0x2028 -or $code -eq 0x2029) { [void]$sb.Append('\u' + $code.ToString('x4', $inv)) }
-        else { [void]$sb.Append($c) }
-    }
-    [void]$sb.Append('"')
-    return $sb.ToString()
-}
-
-function Format-JsonNumber([double]$Value, [int]$Decimals) {
-    if ([double]::IsNaN($Value) -or [double]::IsInfinity($Value)) { return 'null' }
-    return [Math]::Round($Value, $Decimals).ToString($inv)
-}
-
-function ConvertTo-JsonText($Value, [System.IO.TextWriter]$Out) {
-    # Small JSON writer for ordered records, writing to $Out. A StringBuilder value is inserted verbatim (pre-rendered series).
-    if ($null -eq $Value) { $Out.Write('null'); return }
-    if ($Value -is [System.Text.StringBuilder]) { $Out.Write($Value.ToString()); return }
-    if ($Value -is [string]) { $Out.Write((Format-JsonString $Value)); return }
-    if ($Value -is [bool]) { if ($Value) { $Out.Write('true') } else { $Out.Write('false') }; return }
-    if ($Value -is [double] -or $Value -is [single] -or $Value -is [decimal]) { $Out.Write((Format-JsonNumber ([double]$Value) 3)); return }
-    if ($Value -is [ValueType]) { $Out.Write(([IConvertible]$Value).ToString($inv)); return }
-    if ($Value -is [System.Collections.IDictionary]) {
-        $Out.Write('{')
-        $first = $true
-        foreach ($k in $Value.Keys) {
-            if (-not $first) { $Out.Write(',') }
-            $first = $false
-            # plain keys, strings without special characters and whole numbers are written here, without a call per
-            # value (one record per event: the writer runs this loop hundreds of thousands of times)
-            $ks = [string]$k
-            if ($script:JsonSpecial.IsMatch($ks)) { $Out.Write((Format-JsonString $ks)); $Out.Write(':') } else { $Out.Write('"' + $ks + '":') }
-            $v = $Value[$k]
-            if ($v -is [string] -and -not $script:JsonSpecial.IsMatch($v)) { $Out.Write('"' + $v + '"') }
-            elseif ($v -is [int] -or $v -is [long]) { $Out.Write($v.ToString($inv)) }
-            else { ConvertTo-JsonText $v $Out }
-        }
-        $Out.Write('}')
-        return
-    }
-    if ($Value -is [System.Collections.IEnumerable]) {
-        $Out.Write('[')
-        $first = $true
-        foreach ($v in $Value) {
-            if (-not $first) { $Out.Write(',') }
-            $first = $false
-            ConvertTo-JsonText $v $Out
-        }
-        $Out.Write(']')
-        return
-    }
-    $Out.Write((Format-JsonString ([string]$Value)))
-}
 
 function New-JsonSeries([double[]]$Values, [int]$Decimals, [int]$Start = 0, [int]$End = -1) {
     # JSON array of $Values[$Start..$End], rounded; NaN and infinity become null.
@@ -663,33 +608,7 @@ function Complete-Report($Data, [string]$Done, [string[]]$Details = @()) {
     }
 
     Write-Host 'Schreibe Bericht ...'
-    $template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
-    $marker = '<script id="wp-data" type="application/json">null</script>'
-    $at = $template.IndexOf($marker)
-    if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
-    $open = '<script id="wp-data" type="application/json">'
-    # The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
-    # never held in memory as a whole. It goes to a temporary file next to the target first; only when it is complete is an
-    # existing target deleted and the temporary file moved onto its name. An error while writing, or a target that cannot
-    # be deleted (read-only, locked), leaves the previous report as it was. Only an error between the delete and the move
-    # leaves no report. The temporary file is removed on any error. No File.Replace: some file systems used for reports
-    # (FAT/exFAT, some SMB/NAS and DFS shares) do not support it.
-    $tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
-    try {
-        $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
-        try {
-            $writer.Write($template.Substring(0, $at + $open.Length))
-            ConvertTo-JsonText $Data $writer
-            $writer.Write($template.Substring($at + $open.Length + 4))
-        }
-        finally { $writer.Dispose() }
-        if ([IO.File]::Exists($OutFile)) { [IO.File]::Delete($OutFile) }
-        [IO.File]::Move($tmpFile, $OutFile)
-    }
-    catch {
-        if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
-        throw
-    }
+    Write-WorkerPerfPage $templateFile $Data $OutFile
     # the map only once the report is complete; a failure here leaves the report as written
     if ($MaskMapFile) {
         try { Save-WorkerPerfMaskMap -Mask $maskObj -Path $MaskMapFile }

@@ -23,6 +23,19 @@ Describe 'Namen der Aufzeichnung' {
     It 'ersetzt bei Personen nur Benutzer, Clients und Konten' {
         Get-Entries 'Personen' | Should -Be @('user:mueller=Benutzer 01', 'client:WS-0001=Client 01', 'client:WS-0002=Client 02', 'user:mu=Benutzer 02', 'client:WS-0003=Client 03', 'user:anna=Benutzer 03', 'sid:S-1-5-21-1-2-3-1108=Konto 01')
     }
+    It 'fuehrt die Namen mehrerer Aufzeichnungen in einer Maske, die der zweiten nach denen der ersten' {      # Groesse des Servers, Task 9
+        # eine zweite Aufzeichnung mit einem Benutzer und einem Drucker mehr: ihre Ersatznamen haben die naechste Nummer
+        $sess2 = @('0,0,,,Disconnected,Services,,,', '0,2,mueller,KLINIK,Active,ICA-1,WS-0001,,0', '0,5,schulz,KLINIK,Active,ICA-4,WS-0009,,0')
+        $second = Write-TestRun 'mask2' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines; 'sessions.csv' = $sess2 }
+        [IO.File]::WriteAllLines((Join-Path $second 'printqueues.csv'), @('Timestamp,Queue,Jobs,JobErrors,NotReadyErrors', "$(Get-Ts 5),PRN-OG-07,0,0,0"))
+        $one = @(Get-Entries 'Alles')
+        $both = @((New-WorkerPerfMask -Path $Run, $second -Level 'Alles' -Texts $Texts).Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement })
+        $both[0..($one.Count - 1)] | Should -Be $one                                       # die Namen der ersten behalten ihre Nummern
+        @($both | Select-Object -Skip $one.Count) | Should -Be @('user:schulz=Benutzer 04', 'client:WS-0009=Client 04', 'printer:PRN-OG-07=Drucker 02')
+        # mit einem Pfad wie bisher, auch als Liste aus einem Eintrag
+        @((New-WorkerPerfMask -Path @($Run) -Level 'Alles' -Texts $Texts).Entries | ForEach-Object { '{0}:{1}={2}' -f $_.Kind, $_.Name, $_.Replacement }) | Should -Be $one
+        (New-WorkerPerfMask -Path $Run, $second -Level 'Alles' -Texts $Texts).Protected | Should -Contain 'EXCEL.EXE'
+    }
     It 'nimmt keinen leeren Namen auf und kennt die geschuetzten Namen' {                     # Review Focus 3
         $m = New-WorkerPerfMask -Path $Run -Level 'Alles' -Texts $Texts
         @($m.Entries | Where-Object { [string]::IsNullOrWhiteSpace($_.Name) }).Count | Should -Be 0
@@ -1203,6 +1216,14 @@ Describe 'Simulierte Stunde, maskiert' {
             foreach ($d in $p, $a) { $d.meta.focus.user | Should -Be '(Name entfernt)'; $d.meta.focus.found | Should -BeFalse }
             foreach ($f in $R.MaskedP, (Join-Path $TestDrive 'focus-unknown.html')) { $t = [IO.File]::ReadAllText($f); $t | Should -Not -Match 'schmidt'; $t | Should -Not -Match 'KLINIK' }
             (Get-ReportData $R.MaskedP).meta.mask | Should -Be 'Personen'
+        }
+        It 'laesst in der Einordnung eines Vorfalls keinen Benutzer stehen (Groesse des Servers)' {
+            foreach ($d in (Get-ReportData $R.Masked), (Get-ReportData $R.MaskedP)) {
+                $lines = @($d.incidents | Where-Object { $_.PSObject.Properties.Name -contains 'classLine' } | ForEach-Object { $_.classLine; $_.classes | ForEach-Object { $_.reason; $_.advice } })
+                @($lines | Where-Object { $_ }).Count | Should -BeGreaterThan 1
+                foreach ($u in $Persons) { @($lines | Where-Object { $_ -match $u }).Count | Should -Be 0 -Because $u }
+                ($d.incidents | Where-Object lead -eq 'cpu').classLine | Should -Match 'EXCEL\.EXE'          # Prozessnamen bleiben
+            }
         }
         It 'laesst keinen Freitext der Aufzeichnung in einen maskierten Bericht' {                                       # P2-R15
             $canary = New-CanaryRun $R.Run (Join-Path $TestDrive 'canary')

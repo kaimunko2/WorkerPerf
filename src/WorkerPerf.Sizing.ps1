@@ -39,7 +39,11 @@ $script:WorkerPerfSizingTextPlaceholders = [ordered]@{
     'hint.hostCheck' = @(); 'hint.sizeChanged' = @('sizes'); 'hint.lowMeasure' = @('runs', 'hours', 'minRuns', 'minHours')
     'hint.commitAboveRam' = @(); 'hint.memPerSession' = @(); 'hint.powerPlan' = @('value')
     'assumptions' = @(); 'pilot' = @(); 'reliability' = @('runs', 'hours', 'main'); 'usersNote' = @()
-    'copy.head' = @('server', 'result'); 'copy.recommendation' = @('resource', 'text')
+    'copy.head' = @('server', 'result'); 'copy.recommendation' = @('resource', 'text'); 'copy.assumptions' = @('list')
+    'reason.cpu' = @('load', 'peak', 'target', 'causes'); 'reason.memory' = @('commit', 'ram', 'causes'); 'reason.host' = @('count', 'total')
+    'reason.singlecore' = @('count', 'total'); 'reason.recurring' = @('list'); 'reason.noRecurring' = @(); 'recurring.item' = @('class', 'count', 'total')
+    'dir.cpu.range' = @(); 'dir.cpu.scaleOut' = @(); 'rec.cpu' = @(); 'rec.memory' = @(); 'rec.host' = @(); 'rec.singlecore' = @()
+    'size.item' = @('cores', 'ram')
 }
 
 $script:WorkerPerfSizingParts = @('version', 'sources', 'thresholds', 'limits', 'classes', 'levels', 'grades', 'users', 'signals', 'missing', 'evidence', 'texts')
@@ -624,16 +628,21 @@ function Get-WorkerPerfRunAnalysis {
 # ---------------------------------------------------------------------------------------------
 
 function Get-WorkerPerfRunServer([string]$Path) {
-    # The head of a recording from its meta.json only: @{ Path; Server; StartMs; HealthOnly }.
+    # The head of a recording from its meta.json only: @{ Path; Server; StartMs; OffsetMinutes; HealthOnly }.
     $metaPath = Join-Path $Path 'meta.json'
     if (-not (Test-Path -LiteralPath $metaPath -PathType Leaf)) { throw "Die Aufzeichnung '$Path' hat keine meta.json; ist es ein Aufzeichnungsordner?" }
     $meta = ConvertFrom-WorkerPerfJsonFile $metaPath
-    $startMs = [long]0
-    $text = [string](Get-WorkerPerfField $meta 'StartTime')
+    $startMs = [long]0; $offset = 0.0
+    # the start as text (ConvertFrom-Json would turn it into a local time and lose the offset of the server)
+    $raw = [regex]::Match([IO.File]::ReadAllText($metaPath, [Text.Encoding]::UTF8), '"StartTime"\s*:\s*"([^"]+)"')
+    $text = ''
+    if ($raw.Success) { $text = $raw.Groups[1].Value }
     $dto = [DateTimeOffset]::MinValue
-    if ($text -ne '' -and [DateTimeOffset]::TryParse($text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$dto)) { $startMs = $dto.ToUnixTimeMilliseconds() }
+    if ($text -ne '' -and [DateTimeOffset]::TryParse($text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$dto)) {
+        $startMs = $dto.ToUnixTimeMilliseconds(); $offset = $dto.Offset.TotalMinutes
+    }
     $quick = Get-WorkerPerfField $meta 'HealthOnly'
-    return @{ Path = $Path; Server = [string](Get-WorkerPerfField $meta 'Computer'); StartMs = $startMs; HealthOnly = ($quick -is [bool] -and $quick) }
+    return @{ Path = $Path; Server = [string](Get-WorkerPerfField $meta 'Computer'); StartMs = $startMs; OffsetMinutes = $offset; HealthOnly = ($quick -is [bool] -and $quick) }
 }
 
 function Assert-WorkerPerfSameServer([object[]]$Runs) {
@@ -698,6 +707,7 @@ function Get-WorkerPerfSizingRun {
     $head = Get-WorkerPerfRunServer $Path
     $run = @{
         Path = $Path; Server = [string]$meta['Computer']; StartMs = [long]$head.StartMs; EndMs = [long]$head.StartMs; DurationMin = 0.0
+        OffsetMinutes = [double]$head.OffsetMinutes
         EndReason = [string]$meta['EndReason']; HealthOnly = [bool]$meta['HealthOnly']; Cores = [int]$meta['Cores']; RamMB = [double]$meta['RamMB']; Health = $health
     }
     if ($run.HealthOnly) {
@@ -905,4 +915,244 @@ function Get-WorkerPerfSizingSummary {
         LowMeasure = ($load.Count -lt [double]$own.minRecordings.Value -or $mainHours -lt [double]$own.minMainHours.Value)
         Cpu = $cpu; Memory = $memory; Result = $result; Evidence = $evidence
     }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Report data and copy text of the sizing report
+# ---------------------------------------------------------------------------------------------
+
+function Format-WorkerPerfSizingText($Sizing, [string]$Key, $Values = $null) {
+    return (Expand-WorkerPerfSizingText ([string]$Sizing.Texts[$Key]) $Values)
+}
+
+function New-WorkerPerfSizingData {
+    # The report data of the sizing report from the summary of one server (Get-WorkerPerfSizingSummary). Commands: the
+    # path of a recording -> the command that makes its report. Generated: Unix ms. Every sentence comes from the
+    # catalogue. Fields: meta, grades, result, recommendations, runs, bottlenecks, recurring, usersPerVcpu, scatter,
+    # evidence, sources and copy (set by the caller).
+    param($Summary, $Sizing, [hashtable]$Commands = @{}, [long]$Generated = 0)
+    $fmt = { param($v, [int]$d = 1) Format-WorkerPerfSizingNumber $v $d }
+    $round = { param($v, [int]$d = 1) if ($null -eq $v -or [double]::IsNaN([double]$v)) { $null } else { [Math]::Round([double]$v, $d) } }
+    $own = $Sizing.Thresholds
+    $runs = @($Summary.Runs); $load = @($Summary.LoadRuns); $total = $load.Count
+    $usedSources = New-Object System.Collections.Generic.List[string]
+    $addSources = { param($Ids) foreach ($s in @($Ids)) { if ($s -and -not $usedSources.Contains([string]$s)) { $usedSources.Add([string]$s) } } }
+    $sizeText = { param($s) Format-WorkerPerfSizingText $Sizing 'size.item' @{ cores = (& $fmt $s.Cores 0); ram = (& $fmt ([double]$s.RamMB / 1024.0) 0) } }
+
+    # ---- result sentence ----
+    $loadText = '–'
+    if (-not [double]::IsNaN([double]$Summary.Load)) { $loadText = & $fmt $Summary.Load }
+    $res = $Summary.Result
+    $resultValues = @{ total = [string]$res.Total; load = $loadText; sessions = [string]$Summary.SessionsPeak; count = [string]$res.Count }
+    if ($res.Key -ne 'none') {
+        $resultValues['resource'] = Format-WorkerPerfSizingText $Sizing ('resource.' + $res.Resource)
+        $resultValues['class'] = [string]$Sizing.Classes[$res.Class].Label
+    }
+    $resultText = Format-WorkerPerfSizingText $Sizing ('result.' + $res.Key) $resultValues
+
+    # ---- recommendations ----
+    $reliability = Format-WorkerPerfSizingText $Sizing 'reliability' @{ runs = [string]$total; hours = (& $fmt $Summary.TotalHours); main = (& $fmt $Summary.MainHours) }
+    if ($Summary.LowMeasure) {
+        $reliability += ' ' + (Format-WorkerPerfSizingText $Sizing 'hint.lowMeasure' @{ runs = [string]$total; hours = (& $fmt $Summary.MainHours)
+                minRuns = (& $fmt $own.minRecordings.Value 0); minHours = (& $fmt $own.minMainHours.Value) })
+    }
+    $assumptions = [string[]](@($Sizing.Texts['assumptions']) + @([string]$Sizing.Texts['pilot']))
+    $recurringList = @(foreach ($id in $Summary.Recurring.Keys) {
+            Format-WorkerPerfSizingText $Sizing 'recurring.item' @{ class = [string]$Sizing.Classes[$id].Label; count = [string]$Summary.Recurring[$id]; total = [string]$total } })
+    $causes = Format-WorkerPerfSizingText $Sizing 'reason.noRecurring'
+    if ($recurringList.Count -gt 0) { $causes = Format-WorkerPerfSizingText $Sizing 'reason.recurring' @{ list = ($recurringList -join ', ') } }
+    $hintText = {
+        param([string]$Id)
+        $v = @{ scaleOut = (& $fmt $own.vcpuScaleOut.Value 0); total = [string]$total; count = '0' }
+        if ($Summary.Seen.Contains('host')) { $v['count'] = [string]$Summary.Seen['host'] }
+        Format-WorkerPerfSizingText $Sizing ('hint.' + $Id) $v
+    }
+    $recs = New-Object System.Collections.Generic.List[object]
+    $newRec = {
+        param([string]$Resource, [string]$Status, [string]$Direction, [string]$Reason, $Projection, [string[]]$Hints, [string[]]$Sources)
+        & $addSources $Sources
+        $assume = [string[]]@()
+        if ($null -ne $Projection) { $assume = $assumptions }
+        [ordered]@{ resource = $Resource; status = $Status; advice = $Direction; reason = $Reason; projection = $Projection
+            assumptions = $assume; hints = [string[]]@($Hints | Where-Object { $_ }); sources = [string[]]@($Sources); reliability = $reliability }
+    }
+
+    # CPU
+    $cpu = $Summary.Cpu
+    $cpuReason = Format-WorkerPerfSizingText $Sizing 'reason.cpu' @{ load = $loadText; peak = (& $fmt $Summary.Peak); target = (& $fmt $Summary.Target); causes = $causes }
+    $cpuHints = New-Object System.Collections.Generic.List[string]
+    foreach ($h in @($cpu.Hints)) { $cpuHints.Add((& $hintText $h)) }
+    if ($Summary.SizeChanged) { $cpuHints.Add((Format-WorkerPerfSizingText $Sizing 'hint.sizeChanged' @{ sizes = (@($Summary.Sizes | ForEach-Object { & $sizeText $_ }) -join ' → ') })) }
+    $projection = $null; $status = 'check'; $direction = ''; $cpuSources = [string[]]@()
+    $rangeValues = @{ low = [string]$cpu.Low; high = [string]$cpu.High; cores = [string]$Summary.Cores; target = (& $fmt $Summary.Target); load = $loadText; sessions = [string]$cpu.Sessions }
+    switch ([string]$cpu.Kind) {
+        'range' {
+            $status = 'act'; $direction = Format-WorkerPerfSizingText $Sizing 'dir.cpu.range'
+            $key = 'cpu.range'; if ([int]$cpu.Low -eq [int]$cpu.High) { $key = 'cpu.rangeOne' }
+            $projection = [ordered]@{ kind = 'range'; low = [int]$cpu.Low; high = [int]$cpu.High; sessions = $null; unit = 'vCPU'; text = (Format-WorkerPerfSizingText $Sizing $key $rangeValues) }
+            $cpuSources = [string[]](@($Sizing.Classes['capacity'].Sources) + @($own.scalingLow.Sources) + @($own.vcpuScaleOut.Sources) + @('VM-10', 'SZ-22', 'SZ-23', 'SZ-46'))
+        }
+        'scaleOut' {
+            $status = 'act'; $direction = Format-WorkerPerfSizingText $Sizing 'dir.cpu.scaleOut'
+            $projection = [ordered]@{ kind = 'scaleOut'; low = $null; high = $null; sessions = [int]$cpu.Sessions; unit = 'Sitzungen'; text = (Format-WorkerPerfSizingText $Sizing 'cpu.scaleOut' $rangeValues) }
+            $cpuSources = [string[]](@($Sizing.Classes['capacity'].Sources) + @($own.vcpuMax.Sources) + @('SZ-46'))
+        }
+        'host' { $status = 'act'; $direction = Format-WorkerPerfSizingText $Sizing 'cpu.host'; $cpuSources = [string[]]@($Sizing.Classes['host'].Sources) }
+        'enough' { $status = 'ok'; $direction = Format-WorkerPerfSizingText $Sizing 'cpu.enough' $rangeValues; $cpuSources = [string[]]@('VM-08', 'SZ-45') }
+        'noMainTime' { $direction = Format-WorkerPerfSizingText $Sizing 'cpu.noMainTime' }
+        default {
+            if ([string]$cpu.Cause -ne '') { $direction = Format-WorkerPerfSizingText $Sizing 'cpu.other' @{ cause = [string]$Sizing.Classes[[string]$cpu.Cause].Label }; $cpuSources = [string[]]@($Sizing.Classes[[string]$cpu.Cause].Sources) }
+            else { $direction = Format-WorkerPerfSizingText $Sizing 'cpu.otherNone' }
+        }
+    }
+    $recs.Add((& $newRec 'cpu' $status $direction $cpuReason $projection $cpuHints.ToArray() $cpuSources))
+
+    # memory
+    $mem = $Summary.Memory
+    $commitGB = [double]$Summary.CommitMaxMB / 1024.0; $ramGB = [double]$Summary.RamMB / 1024.0
+    $commitText = '–'; if (-not [double]::IsNaN($commitGB)) { $commitText = & $fmt $commitGB }
+    $memReason = Format-WorkerPerfSizingText $Sizing 'reason.memory' @{ commit = $commitText; ram = (& $fmt $ramGB 0); causes = $causes }
+    $memHints = @(foreach ($h in @($mem.Hints)) { & $hintText $h })
+    $projection = $null; $status = 'ok'; $direction = Format-WorkerPerfSizingText $Sizing 'mem.enough'; $memSources = [string[]]@('SZ-35')
+    switch ([string]$mem.Kind) {
+        'more' {
+            $status = 'act'; $direction = [string]$Sizing.Classes['mem.capacity'].Direction
+            $projection = [ordered]@{ kind = 'ram'; low = [int]$mem.TargetGB; high = [int]$mem.TargetGB; sessions = $null; unit = 'GB'
+                text = (Format-WorkerPerfSizingText $Sizing 'mem.more' @{ target = [string]$mem.TargetGB; ram = (& $fmt $ramGB 0); commit = $commitText; pct = (& $fmt $own.memTargetPct.Value 0) }) }
+            $memSources = [string[]](@($Sizing.Classes['mem.capacity'].Sources) + @('ST-02', 'SZ-46'))
+        }
+        'pagefile' { $status = 'check'; $direction = Format-WorkerPerfSizingText $Sizing 'mem.pagefile'; $memSources = [string[]]@($Sizing.Classes['mem.commit'].Sources) }
+        'app' { $status = 'check'; $direction = Format-WorkerPerfSizingText $Sizing 'mem.app' }
+    }
+    if (@($mem.Hints) -contains 'commitAboveRam' -and $memSources -notcontains 'ST-02') { $memSources = [string[]](@($memSources) + @('ST-02')) }
+    $recs.Add((& $newRec 'memory' $status $direction $memReason $projection $memHints $memSources))
+
+    # the VMware host and the performance per core, where seen
+    if ($Summary.Seen.Contains('host')) {
+        $status = 'check'; if ($Summary.Recurring.Contains('host')) { $status = 'act' }
+        $reason = Format-WorkerPerfSizingText $Sizing 'reason.host' @{ count = [string]$Summary.Seen['host']; total = [string]$total }
+        $recs.Add((& $newRec 'host' $status ([string]$Sizing.Classes['host'].Direction) $reason $null @((& $hintText 'hostCheck')) ([string[]]@($Sizing.Classes['host'].Sources))))
+    }
+    if ($Summary.Seen.Contains('singlecore')) {
+        $reason = Format-WorkerPerfSizingText $Sizing 'reason.singlecore' @{ count = [string]$Summary.Seen['singlecore']; total = [string]$total }
+        $hints = @()
+        if ($null -ne $Summary.Evidence -and $null -ne $Summary.Evidence['operation.powerPlan']) { $hints = @(Format-WorkerPerfSizingText $Sizing 'hint.powerPlan' @{ value = [string]$Summary.Evidence['operation.powerPlan'] }) }
+        $recs.Add((& $newRec 'singlecore' 'check' ([string]$Sizing.Classes['singlecore'].Direction) $reason $null $hints ([string[]]@($Sizing.Classes['singlecore'].Sources))))
+    }
+
+    # ---- recordings, bottlenecks, recurring ----
+    $runsOut = New-Object System.Collections.Generic.List[object]
+    $bottlenecks = New-Object System.Collections.Generic.List[object]
+    $from = $null; $to = $null; $index = 0; $duration = 0.0
+    foreach ($r in $runs) {
+        $index++
+        $quick = [bool]$r.HealthOnly
+        if (-not $quick) {
+            if ($null -eq $from -or [long]$r.StartMs -lt $from) { $from = [long]$r.StartMs }
+            if ($null -eq $to -or [long]$r.EndMs -gt $to) { $to = [long]$r.EndMs }
+            $duration += [double]$r.DurationMin
+        }
+        $classIds = [string[]]@()
+        if (-not $quick) { $classIds = [string[]]@($script:WorkerPerfSizingClassOrder | Where-Object { $r.Classes.ContainsKey($_) }) }
+        & $addSources @($classIds | ForEach-Object { $Sizing.Classes[$_].Sources })
+        $entry = [ordered]@{
+            index = $index; server = [string]$r.Server; folder = [string]$r.Path; start = [long]$r.StartMs; end = [long]$r.EndMs
+            durationMin = (& $round $r.DurationMin 1); endReason = [string]$r.EndReason; healthOnly = $quick
+            cores = [int]$r.Cores; ramGB = (& $round ([double]$r.RamMB / 1024.0) 1); mainHours = $null; cpu = $null; queue = $null; commit = $null; sessionsPeak = $null
+            command = [string]$Commands[[string]$r.Path]; classIds = $classIds
+            classLabels = [string[]]@($classIds | ForEach-Object { [string]$Sizing.Classes[$_].Label }); offsetMin = [double](Get-WorkerPerfField $r 'OffsetMinutes')
+        }
+        if (-not $quick) {
+            $entry.mainHours = & $round $r.MainHours 2
+            $entry.cpu = [ordered]@{ peak = (& $round $r.Cpu.Peak 1); p95 = (& $round $r.Cpu.P95 1) }
+            $entry.queue = [ordered]@{ peak = (& $round $r.Queue.Peak 2); p95 = (& $round $r.Queue.P95 2) }
+            $entry.commit = [ordered]@{ peakGB = (& $round ([double]$r.Commit.PeakMB / 1024.0) 1); p95GB = (& $round ([double]$r.Commit.P95MB / 1024.0) 1); peakPct = (& $round $r.Commit.PeakPctRam 1) }
+            $entry.sessionsPeak = [int]$r.SessionsPeak
+            foreach ($b in @($r.Bottlenecks)) {
+                $labels = @($b.ClassIds | ForEach-Object { [string]$Sizing.Classes[$_].Label }) -join ', '
+                $bottlenecks.Add([ordered]@{ run = $index; id = [int]$b.Id; start = [long]$b.StartMs; end = [long]$b.EndMs; lead = [string]$b.Lead
+                        classIds = [string[]]@($b.ClassIds); label = $labels; app = [string]$b.App })
+            }
+        }
+        $runsOut.Add($entry)
+    }
+    $recurringOut = @(foreach ($id in $Summary.Recurring.Keys) { [ordered]@{ id = [string]$id; label = [string]$Sizing.Classes[$id].Label; count = [int]$Summary.Recurring[$id]; of = $total } })
+
+    # ---- sessions per vCPU, scatter, evidence, sources ----
+    $cores = [int]$Summary.Cores
+    $perVcpu = $null; if ($cores -gt 0) { $perVcpu = [Math]::Round([double]$Summary.SessionsPeak / $cores, 2) }
+    $limits = @(foreach ($u in $Sizing.Users.Keys) { [ordered]@{ id = [string]$u; label = [string]$Sizing.Users[$u].Label; perVcpu = [double]$Sizing.Users[$u].PerVcpu; sessions = [int]([double]$Sizing.Users[$u].PerVcpu * $cores) } })
+    & $addSources @('SZ-43')
+    $points = 0
+    foreach ($r in $load) { $points += @($r.MainCpu).Count }
+    $step = [int][Math]::Ceiling($points / 2000.0); if ($step -lt 1) { $step = 1 }
+    $sbCpu = New-Object System.Text.StringBuilder; $sbSess = New-Object System.Text.StringBuilder
+    [void]$sbCpu.Append('['); [void]$sbSess.Append('[')
+    $n = 0; $written = 0
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    foreach ($r in $load) {
+        $c = @($r.MainCpu); $s = @($r.MainSessions)
+        for ($i = 0; $i -lt $c.Count; $i++) {
+            if (($n++ % $step) -ne 0 -or [double]::IsNaN([double]$c[$i])) { continue }
+            if ($written -gt 0) { [void]$sbCpu.Append(','); [void]$sbSess.Append(',') }
+            [void]$sbCpu.Append([Math]::Round([double]$c[$i], 1).ToString($inv)); [void]$sbSess.Append([Math]::Round([double]$s[$i], 0).ToString($inv))
+            $written++
+        }
+    }
+    [void]$sbCpu.Append(']'); [void]$sbSess.Append(']')
+    $evidence = New-Object System.Collections.Generic.List[object]
+    if ($null -ne $Summary.Evidence) {
+        foreach ($id in $Sizing.Evidence.Keys) {
+            if ($null -eq $Summary.Evidence[$id]) { continue }
+            $value = $Summary.Evidence[$id]
+            if ($value -is [double] -or $value -is [single] -or $value -is [decimal]) { $value = & $fmt $value 1 }
+            $evidence.Add([ordered]@{ id = [string]$id; label = [string]$Sizing.Evidence[$id]; value = [string]$value })
+        }
+    }
+    $sourcesOut = @($Sizing.Sources.Keys | Where-Object { $usedSources.Contains($_) } | ForEach-Object {
+            $src = $Sizing.Sources[$_]
+            [ordered]@{ id = [string]$_; title = [string]$src.Title; url = [string]$src.Url; date = [string]$src.Date; kind = [string]$src.Kind } })
+    $grades = [ordered]@{}
+    foreach ($g in $Sizing.Grades.Keys) { $grades[$g] = [ordered]@{ word = [string]$Sizing.Grades[$g].Word; symbol = [string]$Sizing.Grades[$g].Symbol } }
+
+    return [ordered]@{
+        meta = [ordered]@{
+            server = [string]$Summary.Server; axis = 'time'; from = $from; to = $to; recordings = $total; quick = ($runs.Count - $total)
+            durationMin = (& $round $duration 1); mainHours = (& $round $Summary.MainHours 2); cores = $cores; ramGB = (& $round $ramGB 1)
+            sizes = @($Summary.Sizes | ForEach-Object { [ordered]@{ cores = [int]$_.Cores; ramGB = (& $round ([double]$_.RamMB / 1024.0) 1) } })
+            sizeChanged = [bool]$Summary.SizeChanged; lowMeasure = [bool]$Summary.LowMeasure; catalogueVersion = [string]$Sizing.Version
+            target = [double]$Summary.Target; load = (& $round $Summary.Load 1); peak = (& $round $Summary.Peak 1); sessionsPeak = [int]$Summary.SessionsPeak
+            generated = $Generated; mask = $null
+        }
+        grades = $grades
+        result = [ordered]@{ text = $resultText; key = [string]$res.Key }
+        recommendations = $recs.ToArray()
+        runs = $runsOut.ToArray()
+        bottlenecks = $bottlenecks.ToArray()
+        recurring = $recurringOut
+        usersPerVcpu = [ordered]@{ value = $perVcpu; sessionsPeak = [int]$Summary.SessionsPeak; cores = $cores; note = [string]$Sizing.Texts['usersNote']; limits = $limits }
+        scatter = [ordered]@{ cpu = $sbCpu; sessions = $sbSess; target = [double]$Summary.Target }
+        evidence = $evidence.ToArray()
+        sources = $sourcesOut
+        copy = [ordered]@{ named = $null; anonymous = $null }
+    }
+}
+
+function Get-WorkerPerfSizingCopyParagraphs($Data, $Sizing) {
+    # The copy text of the sizing report as unwrapped paragraphs: the head with the result, then per recommendation its
+    # direction, its projection, the assumptions and the hints, at the end how reliable it is.
+    Format-WorkerPerfSizingText $Sizing 'copy.head' @{ server = [string]$Data['meta']['server']; result = [string]$Data['result']['text'] }
+    foreach ($r in @($Data['recommendations'])) {
+        ''
+        $text = [string]$r['advice']
+        Format-WorkerPerfSizingText $Sizing 'copy.recommendation' @{ resource = (Format-WorkerPerfSizingText $Sizing ('rec.' + [string]$r['resource'])); text = $text }
+        [string]$r['reason']
+        if ($null -ne $r['projection']) {
+            [string]$r['projection']['text']
+            Format-WorkerPerfSizingText $Sizing 'copy.assumptions' @{ list = (@($r['assumptions']) -join '; ') }
+        }
+        foreach ($h in @($r['hints'])) { '- ' + [string]$h }
+    }
+    ''
+    [string]@($Data['recommendations'])[0]['reliability']
 }
