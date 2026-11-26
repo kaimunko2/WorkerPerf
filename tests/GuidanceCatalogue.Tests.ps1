@@ -935,7 +935,7 @@ Describe 'Katalog in src' {
         foreach ($e in $undone) { $e.Texts[0] | Should -Match 'am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image' -Because $e.Position }
         # every element that empties the spool folder, in whatever words (follow-up of fix round 2: also Brother's reset)
         $emptied = @($Elements | Where-Object { ($_.Texts -join ' ') -match '(Spool-Ordner|PRINTERS)[^;]*(löschen|leeren)|(löschen|leeren)[^;]*(Spool-Ordner|PRINTERS)' })
-        @($emptied | ForEach-Object { $_.Position }) | Should -Be @('print.remedies[10]', 'print.remedies[14]')
+        @($emptied | ForEach-Object { $_.Id }) | Should -Be @('print.spool-ordner-hand-leeren', 'print.brother-dienst-zuruecksetzen')      # Aussage geaendert (Kennungen)
         foreach ($e in $emptied) { $e.Texts[0] | Should -Match 'bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück$' -Because $e.Position }
         # ending a process or restarting an application lasts until it starts or fills the memory again, as a restart does
         $ended = @($remedies | Where-Object { $_.Texts[0] -match 'Prozess\b[^;]*\bbeenden' })

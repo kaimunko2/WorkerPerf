@@ -148,18 +148,19 @@ Describe 'Katalog laden und pruefen' {
         { Read-WorkerPerfGuidance (New-Catalogue) } | Should -Not -Throw
     }
     It 'lehnt eine fehlerhafte Kennung ab: <Name>' -TestCases @(
-        @{ Name = 'Grossbuchstabe'; Id = 'cpu.Prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' hat nicht die Form*" }
+        @{ Name = 'Grossbuchstabe'; Id = 'cpu.Prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' hat nicht die Form*: 'cpu.Prozess'." }
+        @{ Name = 'Zeilenumbruch am Ende'; Id = "cpu.prozess`n"; Msg = "*Feld 'id' hat nicht die Form*" }
         @{ Name = 'Umlaut'; Id = ('cpu.pr' + [char]0xFC + 'fen'); Msg = "*Feld 'id' hat nicht die Form*" }
         @{ Name = 'ohne Stichwort'; Id = 'cpu.'; Msg = "*Feld 'id' hat nicht die Form*" }
         @{ Name = 'ohne Punkt'; Id = 'cpu'; Msg = "*Feld 'id' hat nicht die Form*" }
         @{ Name = 'Bindestrich am Ende'; Id = 'cpu.prozess-'; Msg = "*Feld 'id' hat nicht die Form*" }
         @{ Name = '41 Zeichen'; Id = 'cpu.' + ('a' * 41); Msg = "*Feld 'id' hat nicht die Form*" }
-        @{ Name = 'andere Situation'; Id = 'memory.prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' nennt eine andere Situation." }
+        @{ Name = 'andere Situation'; Id = 'memory.prozess'; Msg = "Katalog '*': Eintrag 'cpu', checks``[0``]: Feld 'id' nennt eine andere Situation: 'memory.prozess'." }
         @{ Name = 'kein Text'; Id = 7; Msg = "*Feld 'id' ist kein Text." }
     ) { $script:CaseId = $Id; { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0].id = $script:CaseId }) } | Should -Throw $Msg }
     It 'lehnt dieselbe Kennung an zwei Schritten ab, auch in verschiedenen Listen' {
         { Read-WorkerPerfGuidance (New-Catalogue { $c.situations.cpu.checks[0].id = 'cpu.a'; $c.situations.cpu.remedies[0].id = 'cpu.a' }) } |
-            Should -Throw "Katalog '*': Eintrag 'cpu', remedies``[0``]: Feld 'id' ist doppelt vorhanden (cpu, checks``[0``])."
+            Should -Throw "Katalog '*': Eintrag 'cpu', remedies``[0``]: Feld 'id' ist doppelt vorhanden: 'cpu.a' (auch cpu, checks``[0``])."
     }
     It 'gibt die Kennung nicht in die Anleitung eines Vorfalls' {
         foreach ($list in 'checks', 'remedies', 'contacts') { $WorkerPerfGuidanceOutputFields[$list] | Should -Not -Contain 'id' }

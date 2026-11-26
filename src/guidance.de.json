@@ -280,7 +280,7 @@
           "sign": "Druckwarteschlange mit vielen wartenden Aufträgen, Druckfehler im selben Zeitraum oder Anmeldung eines Benutzers kurz vor Beginn des Vorfalls"
         },
         {
-          "id": "cpu.workspace-environment-management",
+          "id": "cpu.wem-prioritaet-realtime",
           "when": ["cause.app"],
           "text": "In Workspace Environment Management prüfen, ob einem Prozess, vor allem {app}, die Priorität „Realtime“ zugewiesen ist; die Praxisquelle Manuel Winkel (2022) rät davon ab, weil das zu Fehlfunktionen des Systems führen kann; Guy Leech (2016) rät ebenfalls davon ab, weil ein rechenintensiver Prozess mit dieser Priorität schweren Ressourcenmangel auslösen kann",
           "where": "WEM-Konsole, Konfigurationssatz dieser Server: System Optimization, CPU Management, Prozessprioritäten",
@@ -479,7 +479,7 @@
           "source": "Citrix: Browser content redirection (CVAD 2402 LTSR)"
         },
         {
-          "id": "cpu.webview2-gezielte-scan",
+          "id": "cpu.webview2-scan-ausschluesse",
           "when": ["cause.app", "app.webview2", "companion.security"],
           "text": "Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen; Microsoft rät von pauschalen Ausschlüssen ab (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "Anwendungen mit WebView2 beim Start auffällig lange brauchen und die Verantwortlichen für die Sicherheit zustimmen",
@@ -500,14 +500,14 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
-          "id": "cpu.rueckfall-teams-optimierte",
+          "id": "cpu.rueckfall-teams-nicht-optimiert",
           "when": ["cause.app", "app.teams"],
           "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
-          "id": "cpu.teams-bildrate-vom-kodierten",
+          "id": "cpu.teams-bildrate-bildschirmfreigabe",
           "when": ["cause.app", "app.teams"],
           "text": "Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen (Registrierungswert MaxFPS unter HKLM\\Software\\Microsoft\\Teams\\VMSS zwischen 5 und 10; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "geteilte Bildschirme den Prozessor wiederholt belasten",
@@ -794,7 +794,7 @@
           "source": "Microsoft: Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb)"
         },
         {
-          "id": "memory.rueckfall-teams-optimierte",
+          "id": "memory.rueckfall-teams-nicht-optimiert",
           "when": ["cause.app", "app.teams"],
           "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
@@ -1807,7 +1807,7 @@
           "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Netzstrecke) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
         },
         {
-          "id": "chronic.network.fragen-stoerung-aussah",
+          "id": "chronic.network.benutzer-nach-stoerungsbild-fragen",
           "text": "Den Benutzer fragen, wie die Störung aussah, und die Antwort mit Uhrzeit und Standort an die Betreuung des Netzes geben; die Praxisquelle Benny Tritsch (2026) ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
           "where": "Rückfrage beim Benutzer",
           "sign": "Eine der drei Erscheinungen; alle drei liegen außerhalb des Servers; in einem Test der Praxisquelle von 2025 auf Azure (VDA 2507 LTSR, Windows 11, Netzsimulator) hielt HDX bei wenig Bandbreite die Bildrate und senkte die Bildqualität",
@@ -2309,7 +2309,7 @@
           "precondition": "der Absturz mit einem anderen Benutzer beim selben Arbeitsschritt ausbleibt"
         },
         {
-          "id": "crash.webview2-runtime-aktuellen",
+          "id": "crash.webview2-runtime-aktualisieren",
           "when": ["app.webview2"],
           "text": "WebView2-Runtime auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Runtime älter ist als der aktuelle Stand von Microsoft und ihre automatische Aktualisierung abgeschaltet ist",
@@ -2801,7 +2801,7 @@
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Die zehn Regeln zum Drucken unter Citrix"
         },
         {
-          "id": "print.auftraegen-haengen-bleiben",
+          "id": "print.haengende-auftraege-eingrenzen",
           "when": ["queue.stuck"],
           "text": "Bei Aufträgen, die hängen bleiben oder fehlschlagen: eingrenzen, an welchem Treiber oder welcher Druckwarteschlange es liegt, und im Spool-Ordner nach alten Dateien suchen",
           "where": "Expertenansicht, Reiter „Drucken“: Druckwarteschlangen mit Auftrags- oder „nicht bereit“-Fehlern; Testdruck aus dem Editor über eine Druckwarteschlange mit anderem Treiber; Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS",

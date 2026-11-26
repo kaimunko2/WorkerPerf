@@ -204,12 +204,12 @@ function Test-WorkerPerfGuidanceItem([string]$Path, [string]$Situation, [string]
         $cut = $value.LastIndexOf('.')
         $word = ''
         if ($cut -gt 0) { $word = $value.Substring($cut + 1) }
-        if ($word.Length -lt 1 -or $word.Length -gt 40 -or $word -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') {
-            Stop-WorkerPerfGuidance $Path $Situation $item 'id' 'hat nicht die Form <Situation>.<stichwort> (Kleinbuchstaben, Ziffern, Bindestriche, hoechstens 40 Zeichen)'
+        if ($word.Length -lt 1 -or $word.Length -gt 40 -or $word -cnotmatch '\A[a-z0-9]+(-[a-z0-9]+)*\z') {
+            Stop-WorkerPerfGuidance $Path $Situation $item 'id' "hat nicht die Form <Situation>.<stichwort> (Kleinbuchstaben, Ziffern, Bindestriche, hoechstens 40 Zeichen): '$value'"
         }
-        if ($value.Substring(0, $cut) -cne $Situation) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' 'nennt eine andere Situation' }
+        if ($value.Substring(0, $cut) -cne $Situation) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' "nennt eine andere Situation: '$value'" }
         if ($null -ne $Ids) {
-            if ($Ids.ContainsKey($value)) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' "ist doppelt vorhanden ($($Ids[$value]))" }
+            if ($Ids.ContainsKey($value)) { Stop-WorkerPerfGuidance $Path $Situation $item 'id' "ist doppelt vorhanden: '$value' (auch $($Ids[$value]))" }
             $Ids[$value] = "$Situation, $item"
         }
     }
