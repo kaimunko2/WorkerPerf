@@ -472,6 +472,9 @@ details.fold[open] > summary { margin-bottom: 12px; }
 .iv-cause .notmeasured + p { margin-top: 10px; }
 .iv-cause .classline { margin-top: 10px; overflow-wrap: anywhere; }
 .iv-cause .classline:first-of-type { margin-top: 0; }
+.iv-cause .classmore { margin-top: 4px; font-size: 13px; }
+.iv-cause .classmore summary { cursor: pointer; color: var(--text2); }
+@media print { .iv-cause .classmore > summary { display: none; } .iv-cause .classmore > ul { display: block; } }
 .iv-cause .classdirs { margin: 6px 0 0; padding-left: 18px; max-width: 100ch; }
 .iv-cause .classdirs li { margin-top: 4px; overflow-wrap: anywhere; }
 .iv-cause .classsrc { display: block; font-size: 12px; color: var(--muted); }
@@ -2348,7 +2351,8 @@ function classHtml(inc) {
     const titles = [...new Set((c.sources || []).map((id) => src.get(id)).filter(Boolean).map((s) => s.title))];
     return `<li class="classdir"><b>${esc(c.label)}:</b> ${esc(c.advice)}<span class="classsrc">${titles.length ? "Quelle: " + esc(titles.join("; ")) : "Faustregel des Katalogs"}</span></li>`;
   }).join("");
-  return `<p class="classline">${esc(inc.classLine)}</p>${dirs ? `<ul class="classdirs">${dirs}</ul>` : ""}`;
+  // what helps and the sources fold away: the first step of "Was ist zu tun" stays on the first screen
+  return `<p class="classline">${esc(inc.classLine)}</p>${dirs ? `<details class="classmore"><summary>Was hilft, und Quellen der Einordnung</summary><ul class="classdirs">${dirs}</ul></details>` : ""}`;
 }
 function incEntry(inc) {
   const k = sevKey(inc.severity), before = !!(inc.event && inc.event.before), c = causeParts(inc);

@@ -436,7 +436,7 @@ async function checkOpens(browser, dir, scheme) {                   // jeder Ber
       out.fits = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
       return out;
     });
-    ok(x.inc === D.incidents.length && x.tiles === D.sollIst.length + (D.mainApp ? 1 : 0) + 1 && x.tabs === 9 && x.range.startsWith('Zeitraum') && x.range.includes('gesamte Messung') && x.all, name + ': Expertenansicht mit Vorfallsspalte, Kacheln, Zeitraumleiste und neun Reitern: ' + JSON.stringify(x));
+    ok(x.inc === D.incidents.length && x.tiles === D.sollIst.length + (D.mainApp ? 1 : 0) + 1 + (D.sizing ? 3 : 0) && x.tabs === 9 && x.range.startsWith('Zeitraum') && x.range.includes('gesamte Messung') && x.all, name + ': Expertenansicht mit Vorfallsspalte, Kacheln, Zeitraumleiste und neun Reitern: ' + JSON.stringify(x));
     ok(x.ranged === [x.tiles, false, true, true].join() && x.fits, name + ': Expertenansicht mit einem Zeitraum in der Mitte der Messung, ohne seitliches Rollen: ' + x.ranged + ' ' + x.fits);
     await showGuided(page);
     ok(page.errors.length === 0, name + ': Skriptfehler: ' + page.errors.join(' | '));
@@ -2503,7 +2503,7 @@ async function checkExpert(browser, dir, scheme) {                  // Expertena
       'Eintrag ' + inc.id + ': Status, Uhrzeit, Art, Verursacher, Weg in die gefuehrte Ansicht: ' + t);
   }
   // tiles and charts stand above the tabs, always
-  const nTiles = D.sollIst.length + (D.mainApp ? 1 : 0) + 1;
+  const nTiles = D.sollIst.length + (D.mainApp ? 1 : 0) + 1 + (D.sizing ? 3 : 0);      // Aussage geaendert (Groesse Task 7): drei Kacheln der Groesse
   ok(await page.locator('#tiles .tile:visible').count() === nTiles && await page.locator('#charts .card:visible').count() === 14 && await page.locator('#charts .card svg').count() === 14, 'Kacheln je Messwert und vierzehn gezeichnete Diagramme, ohne Reiter sichtbar');
   const first = await page.evaluate(() => [document.getElementById('tiles').getBoundingClientRect().top, document.querySelector('#charts .card').getBoundingClientRect().top, document.documentElement.scrollWidth - document.documentElement.clientWidth]);
   ok(first[0] < 200 && first[1] < 900 && first[2] <= 0, 'erster Bildschirm (1400 x 900): Kacheln oben, das erste Diagramm beginnt im Bild, kein seitliches Rollen: ' + first.join(' '));
@@ -3104,12 +3104,14 @@ async function checkClasses(browser, dir, scheme) {                // Groesse: E
   const host = D.incidents.find((i) => (i.classes || []).some((c) => c.id === 'host'));
   const hv = await openIncident(page, host.id);
   ok((await hv.locator('.iv-todo li').first().innerText()).includes('VMware-Host'), 'der Schritt des VMware-Hosts steht vorne');
+  await hv.locator('.iv-cause .classmore summary').click();
   ok((await hv.locator('.iv-cause .classsrc').first().innerText()).includes('Rightsizing virtual machines'), 'die Quelle der Klasse mit ihrem Titel');
   const single = D.incidents.find((i) => (i.classes || []).some((c) => c.id === 'singlecore'));
   ok(single && single.type === 'ohne-engpass' && (await (await openIncident(page, single.id)).locator('.iv-cause .classline').innerText()).includes('Leistung je Kern'),
     'ein Vorfall ohne Engpass zeigt seine Einordnung');
   await page.setViewportSize({ width: 380, height: 800 });
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await page.locator('.iv-cause .classmore summary').click();
   ok(await page.evaluate(() => [...document.querySelectorAll('.iv-cause .classline, .iv-cause .classdir')].every((e) => e.getBoundingClientRect().right <= window.innerWidth + 1)),
     'schmale Breite: die Einordnung bricht um');
   await page.setViewportSize({ width: 1400, height: 900 });
