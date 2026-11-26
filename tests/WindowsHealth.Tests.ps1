@@ -102,6 +102,10 @@ Describe 'Zustandsbild unter Windows: Geruest, Groesse, Betrieb, Ereignisbild' {
         Format-WorkerPerfPendingRenameTop $e | Should -Be 'C:\Program Files\Microsoft Office\root (3); C:\ProgramData\Microsoft\Windows Defender (1)'
         Format-WorkerPerfPendingRenameTop @() | Should -Be ''
     }
+    It 'entfernt das Praefix *1 vor dem Pfad einer wartenden Datei (dritter echter Lauf)' {
+        $e = [string[]]@('*1\??\C:\Windows\System32\a.dll', '', '*1\??\C:\Windows\System32\b.dll', '*1\??\C:\Windows\x', '!*2\??\C:\Windows\c.dll', '')
+        Format-WorkerPerfPendingRenameTop $e | Should -Be 'C:\Windows\System32 (2); C:\Windows (1)'
+    }
     It 'liest das Datum eines Updates in den dokumentierten Formen: FILETIME, Tag-Monat-Jahr und Monat/Tag/Jahr' {   # Task 14s, Punkt 2
         $qfe = { param($id, $on) [pscustomobject]@{ HotFixID = $id; InstalledOn = $on } }
         $instant = [datetime]::SpecifyKind([datetime]'2026-10-20T08:15:00', [DateTimeKind]::Utc)

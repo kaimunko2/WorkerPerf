@@ -3254,13 +3254,14 @@ function Read-WorkerPerfWinHealthSize($Ctx) {
 }
 
 function Format-WorkerPerfPendingRenameTop([string[]]$Entries) {
-    # The source paths are the entries 0, 2, 4, ... ("\??\C:\x\a.dll", a leading '!' marks a replace); each counts toward
-    # its folder of drive and at most three levels. '' without entries.
+    # The source paths are the entries 0, 2, 4, ... ("\??\C:\x\a.dll"; a leading '!' marks a replace, a leading '*1'
+    # or another '*' with digits is a flag of the entry, both are dropped); each counts toward its folder of drive and at
+    # most three levels. '' without entries.
     $counts = @{}
     for ($i = 0; $i -lt @($Entries).Count; $i += 2) {
         $p = [string]$Entries[$i]
         if ([string]::IsNullOrEmpty($p)) { continue }
-        $p = $p.TrimStart('!')
+        $p = $p -replace '^(?:!|\*\d+)+', ''
         if ($p.StartsWith('\??\')) { $p = $p.Substring(4) }
         $parts = @($p.Split('\') | Select-Object -First 5)
         if ($parts.Count -gt 1) { $parts = @($parts[0..($parts.Count - 2)]) }
