@@ -3109,7 +3109,9 @@ async function checkClasses(browser, dir, scheme) {                // Groesse: E
   ok(single && single.type === 'ohne-engpass' && (await (await openIncident(page, single.id)).locator('.iv-cause .classline').innerText()).includes('Leistung je Kern'),
     'ein Vorfall ohne Engpass zeigt seine Einordnung');
   await page.setViewportSize({ width: 380, height: 800 });
-  ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'schmale Breite: die Einordnung bricht um');
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  ok(await page.evaluate(() => [...document.querySelectorAll('.iv-cause .classline, .iv-cause .classdir')].every((e) => e.getBoundingClientRect().right <= window.innerWidth + 1)),
+    'schmale Breite: die Einordnung bricht um');
   await page.setViewportSize({ width: 1400, height: 900 });
   await showExpert(page);
   ok((await page.locator(`#incList .inc[data-id="${host.id}"]`).innerText()).includes('Einordnung: VMware-Host'), 'Einordnung in der Vorfallsspalte');
