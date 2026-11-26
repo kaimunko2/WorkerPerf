@@ -1977,7 +1977,9 @@ async function checkLongNames(browser, dir, scheme) {               // I2: lange
   await page.goto('file://' + file);
   const D = await page.evaluate(() => JSON.parse(document.getElementById('wp-data').textContent));
   const wg = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
-  ok((await page.locator('#cards').innerText()).includes(long) && (await page.locator('#more').innerText()).includes(long.replace('.dll', ' Druckertreiber')) && wg[0] <= wg[1], 'lange Namen in der gefuehrten Ansicht schmal ohne seitliches Rollen: ' + wg.join(' > '));
+  // Aussage geaendert: seit der Stufung der Eingabeverzoegerung (5d5f7fa) ist die kurze Verzoegerung nur noch auffaellig und steht
+  // unter den weiteren Vorfaellen; der Druck-Vorfall steht seitdem unter den Karten. Der lange Treibername steht in einer der beiden Listen.
+  ok((await page.locator('#cards').innerText()).includes(long) && ((await page.locator('#cards').innerText()) + (await page.locator('#more').innerText())).includes(long.replace('.dll', ' Druckertreiber')) && wg[0] <= wg[1], 'lange Namen in der gefuehrten Ansicht schmal ohne seitliches Rollen: ' + wg.join(' > '));
   // the expert view with the list of incidents unfolded and the tab of the print drivers, then the incident views
   await showExpert(page);
   await page.click('#incToggle'); await showTab(page, 'print');
