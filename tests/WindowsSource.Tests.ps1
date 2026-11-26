@@ -274,6 +274,22 @@ Describe 'Windows-Datenquelle: Umrechnung der Leistungsindikatoren' {
         $r = Get-WorkerPerfWinCounterValues -Previous $prev -Current $cur -Counters @('CPU stolen time') -MsPercent
         $r['CPU stolen time']['_Total'] | Should -Be 1.5
     }
+    It 'bildet staerksten Kern und volle Kerne ohne Gesamtinstanzen' {                    # Review Focus 1
+        $c = Get-WorkerPerfCoreStats @{ '0,0' = 95.0; '0,1' = 10.0; '0,_Total' = 52.5; '_Total' = 52.5 } 90
+        $c.CoreMaxPct | Should -Be 95; $c.CoresBusy | Should -Be 1
+        (Get-WorkerPerfCoreStats @{ '0,0' = 90.0; '0,1' = 89.9 } 90).CoresBusy | Should -Be 1
+        $n = Get-WorkerPerfCoreStats @{ '_Total' = 40.0; '0,_Total' = 40.0 } 90; $n.CoreMaxPct | Should -BeNullOrEmpty; $n.CoresBusy | Should -BeNullOrEmpty
+        $z = Get-WorkerPerfCoreStats $null 90; $z.CoreMaxPct | Should -BeNullOrEmpty
+        Test-WorkerPerfProcessorTotal '0,_Total' | Should -BeTrue; Test-WorkerPerfProcessorTotal '_Total' | Should -BeTrue; Test-WorkerPerfProcessorTotal '1,7' | Should -BeFalse
+    }
+    It 'liest Leistungsanteil, geleistete Arbeit und ausgelagerte Seiten' {
+        $v = @{ cpu = @{ '% Processor Time' = @{ '_Total' = 40.0; '0,0' = 97.0 }; '% Processor Performance' = @{ '_Total' = 104.0 }; '% Processor Utility' = @{ '_Total' = 41.6 } }
+                memory = @{ 'Available Bytes' = @{ '' = 1GB }; 'Committed Bytes' = @{ '' = 2GB }; 'Commit Limit' = @{ '' = 4GB }; 'Pages Input/sec' = @{ '' = 1.0 }; 'Pages Output/sec' = @{ '' = 12.0 } } }
+        $s = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time ([datetime]'2026-01-15 08:00') -ProfileMap $null -LogicalProcessors 8 -CoreBusyPct 90
+        $s.CpuPct | Should -Be 40; $s.CoreMaxPct | Should -Be 97; $s.CoresBusy | Should -Be 1; $s.PerfPct | Should -Be 104; $s.UtilityPct | Should -Be 41.6; $s.PagesOutPerSec | Should -Be 12
+        $o = ConvertTo-WorkerPerfWinFastSample -Values @{ cpu = @{ '% Processor Time' = @{ '_Total' = 40.0 } } } -ElapsedSec 2 -Time ([datetime]'2026-01-15 08:00') -ProfileMap $null -LogicalProcessors 8
+        $o.CpuPct | Should -Be 40; $o.CoreMaxPct | Should -BeNullOrEmpty; $o.PerfPct | Should -BeNullOrEmpty; $o.PagesOutPerSec | Should -BeNullOrEmpty
+    }
     It 'schreibt die entzogene CPU-Zeit je vCPU, ohne sie auf 0 zu runden' {
         $v = $Values.Clone(); $v.steal = @{ 'CPU stolen time' = @{ '_Total' = 0.05 } }            # 1 ms in 2 s auf 6 vCPUs
         $x = ConvertTo-WorkerPerfWinFastSample -Values $v -ElapsedSec 2 -Time $Time -ProfileMap $null -LogicalProcessors 6
@@ -369,6 +385,25 @@ Describe 'Windows-Datenquelle mit nachgestellten Windows-Aufrufen' {
         $script:Cfg = Read-WorkerPerfEventConfig (Join-Path $PSScriptRoot '../src/events.json')
     }
     BeforeEach { Reset-WinStandIns }
+    It 'misst die neuen Werte der Groesse und nennt sie als Quellen' {
+        $script:WinFake.Perf['Processor Information']['% Processor Performance'] = @{ '_Total' = 104.0 }
+        $script:WinFake.Perf['Processor Information']['% Processor Utility'] = @{ '_Total' = 41.6 }
+        $script:WinFake.Perf['Memory']['Pages Output/sec'] = @{ 'systemdiagnosticsperfcounterlibsingleinstance' = 12.0 }
+        $src = Initialize-WorkerPerfSource -StartTime (Get-Date) -CoreBusyPct 30 3>$null
+        foreach ($id in 'cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout') { $src.Sources[$id].Available | Should -BeTrue -Because $id }
+        $src.Sources['cpu.utility'].Detail | Should -Be 'Processor Information / % Processor Utility'
+        [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
+        $s.CoreMaxPct | Should -Be 31; $s.CoresBusy | Should -Be 1; $s.PerfPct | Should -Be 104; $s.UtilityPct | Should -Be 41.6; $s.PagesOutPerSec | Should -Be 12      # Kern-Schwelle 30: '0,0' = 31 ist voll
+    }
+    It 'misst die CPU weiter, wenn ein neuer Zaehler fehlt' {                            # Review Focus 1
+        $script:WinFake.Perf['Processor Information']['% Processor Performance'] = @{ '_Total' = 104.0 }
+        $src = Initialize-WorkerPerfSource -StartTime (Get-Date) -CoreBusyPct 90 3>$null
+        $src.Sources['cpu.host'].Available | Should -BeTrue; $src.Sources['cpu.coreMax'].Available | Should -BeTrue; $src.Sources['cpu.perf'].Available | Should -BeTrue
+        $src.Sources['cpu.utility'].Available | Should -BeFalse; $src.Sources['cpu.utility'].Detail | Should -Match "Processor Information: Zaehler '% Processor Utility' fehlt"
+        $src.Sources['mem.pagesout'].Available | Should -BeFalse; $src.Sources['mem.used'].Available | Should -BeTrue
+        [void](Get-WorkerPerfFastSample); $s = Get-WorkerPerfFastSample
+        $s.UtilityPct | Should -BeNullOrEmpty; $s.PagesOutPerSec | Should -BeNullOrEmpty; $s.CpuPct | Should -Not -BeNullOrEmpty; $s.PerfPct | Should -Be 104
+    }
     It 'meldet Eckdaten und verfuegbare Quellen' {
         $info = Initialize-WorkerPerfSource -StartTime ([datetime]::Now) -Endpoints @([pscustomobject]@{ name = 'Oracle'; host = '127.0.0.1'; port = 1; role = 'Datenbank' }) `
             -CitrixMetricFilter 'Latency|Round' 3>$null

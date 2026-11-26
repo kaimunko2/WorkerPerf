@@ -18,8 +18,20 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
     }
     It 'schreibt Zahlen mit Dezimalpunkt trotz deutscher Kultur' {              # Review Focus 2
         $lines = Get-Content (Join-Path $Run 'ticks.csv') | Select-Object -Skip 1 -First 50
-        foreach ($line in $lines) { $line.Split(',').Count | Should -Be 19 }
+        foreach ($line in $lines) { $line.Split(',').Count | Should -Be 24 }      # Aussage geaendert (Groesse Task 2): fuenf Spalten mehr
         $lines[0] | Should -Match '^0,[^,]+,2,\d+(\.\d+)?,'
+    }
+    It 'schreibt die Kern-Schwelle in meta.json und die neue Kopfzeile' {
+        $Meta.CoreBusyPct | Should -Be 90
+        (Get-Content (Join-Path $Run 'ticks.csv') -TotalCount 1) | Should -Be $WorkerPerfHeaders['ticks.csv']
+    }
+    It 'startet nicht mit einem fehlerhaften Katalog der Groesse' {
+        $capture = New-PatchedSource (Join-Path $TestDrive 'badsrc') ''
+        $cat = Join-Path $TestDrive 'badsrc/sizing.de.json'
+        $j = [IO.File]::ReadAllText($cat, [Text.Encoding]::UTF8) | ConvertFrom-Json; $j.thresholds.coreBusyPct.value = 40
+        [IO.File]::WriteAllText($cat, ($j | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding $false))
+        { & $capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'bad') } | Should -Throw '*sizing.de.json*coreBusyPct*'
+        Test-Path (Join-Path $TestDrive 'bad') | Should -BeFalse
     }
     It 'nimmt 240 regulaere Schnappschuesse, davon 12 Stuetzpunkte' {
         @($Snaps | Where-Object Kind -in 'R', 'K').Count | Should -Be 240

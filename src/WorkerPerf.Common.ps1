@@ -3,13 +3,17 @@
 # Dot-source this file; it only defines variables and functions and runs nothing.
 
 $script:WorkerPerfFormatVersion = 3
+# Columns at the end of ticks.csv that a recording may lack (older collector): the loader reads them as empty. They stay
+# the last columns, so an older WorkerPerf still reads a new recording. Their signals (size of the server):
+$script:WorkerPerfTickOptionalColumns = @('CoreMaxPct', 'CoresBusy', 'PerfPct', 'UtilityPct', 'PagesOutPerSec')
+$script:WorkerPerfSizingSignalIds = @('cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout')
 # Formats the report reads. Format 2 has the short events.csv (Timestamp,Source,EventId,Kind,Text) and none of the files
 # events_before.csv, printdrivers.csv and printqueues.csv; the loader reads each file by its own header line.
 $script:WorkerPerfReadableFormats = @(2, 3)
 
 # File name -> header line of the capture format. The only source for file names and headers.
 $script:WorkerPerfHeaders = [ordered]@{
-    'ticks.csv'           = 'T,Timestamp,ElapsedSec,CpuPct,ProcQueue,StealPct,MemAvailMB,MemCommittedMB,MemCommitLimitMB,PagesInPerSec,DiskReadBps,DiskWriteBps,DiskReadIops,DiskWriteIops,DiskQueue,NetRecvBps,NetSentBps,Burst,CollectMs'
+    'ticks.csv'           = 'T,Timestamp,ElapsedSec,CpuPct,ProcQueue,StealPct,MemAvailMB,MemCommittedMB,MemCommitLimitMB,PagesInPerSec,DiskReadBps,DiskWriteBps,DiskReadIops,DiskWriteIops,DiskQueue,NetRecvBps,NetSentBps,Burst,CollectMs,CoreMaxPct,CoresBusy,PerfPct,UtilityPct,PagesOutPerSec'
     'volumes.csv'         = 'T,Volume,Kind,SessionId,Backing,ReadLatMs,WriteLatMs,ReadOps,WriteOps,ReadBps,WriteBps,Queue'
     'shares.csv'          = 'T,Share,ReadLatMs,WriteLatMs,ReadOps,WriteOps,ReadBps,WriteBps'
     'inputdelay.csv'      = 'T,SessionId,DelayMs'
@@ -362,6 +366,9 @@ function Get-WorkerPerfHostSignals($Tick, [int]$LogicalProcessors, [double]$Phys
     $committed = & $num 'MemCommittedMB'
     $limit = & $num 'MemCommitLimitMB'
     $pagesIn = & $num 'PagesInPerSec'
+    $coreBusy = $nan
+    $cb = Get-WorkerPerfField $Tick 'CoresBusy'
+    if ($null -ne $cb -and -not ($cb -is [string] -and $cb -eq '')) { $coreBusy = [double]$cb }
 
     $queuePerCpu = $nan
     if ($LogicalProcessors -gt 0) { $queuePerCpu = $queue / $LogicalProcessors }
@@ -377,6 +384,11 @@ function Get-WorkerPerfHostSignals($Tick, [int]$LogicalProcessors, [double]$Phys
         'mem.used'    = $used
         'mem.commit'  = $commit
         'mem.pagesin' = $pagesIn
+        'cpu.coreMax' = (& $num 'CoreMaxPct')
+        'cpu.coreBusy' = $coreBusy
+        'cpu.perf'    = (& $num 'PerfPct')
+        'cpu.utility' = (& $num 'UtilityPct')
+        'mem.pagesout' = (& $num 'PagesOutPerSec')
     }
 }
 

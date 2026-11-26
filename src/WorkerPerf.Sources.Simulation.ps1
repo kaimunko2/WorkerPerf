@@ -186,7 +186,8 @@ function Add-WorkerPerfSimRead([string]$Kind) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly)
+          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly, [double]$CoreBusyPct = 90)
+    # CoreBusyPct: from this load a logical processor counts as busy (cpu.coreBusy), as in the Windows source.
     # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
     # Apps: the application list of the health picture (Read-WorkerPerfHealthApps); without it the area apps is empty.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). The source reads nothing of them and writes no entry of
@@ -573,6 +574,7 @@ function Get-WorkerPerfFastSample {
         DiskReadIops = [Math]::Round($opsR / 2, 1); DiskWriteIops = [Math]::Round($opsW / 2, 1); DiskQueue = $diskQ
         NetRecvBps = [Math]::Round($netR); NetSentBps = [Math]::Round($netS)
         Volumes = $volumeRows; Shares = $shareRows; InputSessions = $inSessions.ToArray(); InputProcesses = $inProcs.ToArray()
+        CoreMaxPct = $null; CoresBusy = $null; PerfPct = $null; UtilityPct = $null; PagesOutPerSec = $null
     }
 }
 

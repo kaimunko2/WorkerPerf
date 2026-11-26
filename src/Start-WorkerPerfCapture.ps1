@@ -226,6 +226,12 @@ $inv = [Globalization.CultureInfo]::InvariantCulture
 # the quick run reads neither thresholds nor endpoints
 $thresholds = $null
 if (-not $HealthOnly) { $thresholds = Read-WorkerPerfThresholds $ThresholdFile }
+# the sizing catalogue gives the load from which a logical processor counts as busy; a faulty catalogue stops the start
+# here, before anything is created (the quick run reads the thresholds for it only)
+. (Join-Path $PSScriptRoot 'WorkerPerf.Sizing.ps1')
+$sizingThresholds = $thresholds
+if ($null -eq $sizingThresholds) { $sizingThresholds = Read-WorkerPerfThresholds $ThresholdFile }
+$coreBusyPct = [double](Read-WorkerPerfSizing (Join-Path $PSScriptRoot 'sizing.de.json') $sizingThresholds).Thresholds.coreBusyPct.Value
 # the application list of the health picture: a missing or faulty list stops the start here, before anything is created
 $healthApps = @()
 if ($leftOut -notcontains 'Zustand') { $healthApps = @(Read-WorkerPerfHealthApps $AppsFile) }
@@ -241,7 +247,7 @@ if ($HealthOnly) { $sourceSkip = @($leftOut) + @(@('Prozesse', 'Laufwerke', 'Cit
 $quickArgs = @{}
 if ($HealthOnly) { $quickArgs['HealthOnly'] = $true }
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps @quickArgs
+    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps -CoreBusyPct $coreBusyPct @quickArgs
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -277,6 +283,7 @@ $meta = [ordered]@{
     OS                   = $source.OS
     LogicalProcessors    = $cores
     PhysicalMemoryMB     = $source.PhysicalMemoryMB
+    CoreBusyPct          = $coreBusyPct
     FastIntervalSeconds  = $FastIntervalSeconds
     IntervalSeconds      = $IntervalSeconds
     BurstIntervalSeconds = $BurstIntervalSeconds
