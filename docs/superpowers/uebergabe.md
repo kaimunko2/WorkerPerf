@@ -43,6 +43,15 @@ Kleinigkeiten, gesammelt und nicht umgesetzt:
 - Stufe „deutlich“ der Kapazität zählt verstreute Takte; zwei Schleifen in `tests/Sizing.Tests.ps1` können leer laufen.
 - Weiter offen aus Lauf 3: Obergrenze für die Ereignisabfrage; Zwischenspeicher für Stammdaten der Prozesse.
 - `src/*.html`-Vorlagen und Demo-Seiten brauchen eine Ausnahme in `.gitignore` (Regel `*.html`).
+- Die drei Kacheln der Größe stehen in einer eigenen Zeile unter den Diagrammen der Expertenansicht (`#sizeTiles`): im
+  Kachelblock hätten sie die Vorgabe „zwei Kachelzeilen auf dem ersten Bildschirm“ gebrochen.
+- Browserprüfung `checkAddress` scheitert in der Cloud-Umgebung um 1 px am Suchfeld der Sitzungen (259 statt 258), mit
+  dem Stand von `main` genauso (Schriftart der Umgebung). Sie wurde nicht geändert; alle anderen Prüfungen sind grün.
+- Auf `main` (`bfaab24`) sind zwei Prüfungen rot, die der Entwicklungsbranch korrigiert: der Zählwert der Rohwerte im
+  Berichtstest (208 statt 209) und der Platz des Druck-Vorfalls in `checkLongNames`.
+
+Letzter Prüfstand (26.11.2026): Pester 2133 von 2135 grün, die zwei roten waren Testfehler und sind korrigiert und
+einzeln nachgeprüft; Browser hell 1457 und dunkel 1455 Prüfungen je Schema, 540 einmalige Prüfungen (ohne `checkAddress`).
 
 ## 3. Arbeitsweise (Ergebnis der Kostendiagnose vom 26.11.)
 
