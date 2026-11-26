@@ -10,7 +10,8 @@ BeforeAll {
         'Get-Prop', 'Get-ProbeEventFieldNames', 'Get-ProbeEventSummary', 'Get-ProbeDriverSummary', 'Get-ProbeEventQuery', 'Resolve-ProbeEventProviders',
         'Select-ProbeDriverValueNames', 'Split-ProbeProviderChunks', 'ConvertTo-ProbeProviderInfo', 'Read-ProbeEventRecords', 'Get-ProbeChunkSize',
         'Get-ProbeDriverAttributeCounts', 'Get-ProbeIsolationPolicy', 'Get-ProbeInstanceCount', 'ConvertTo-ProbeDword', 'Test-ProbeQueryName',
-        'Get-ProbeEventLog', 'Get-ProbeCitrixRoots', 'Get-ProbeEffectiveIsolation', 'Get-ProbeIsolationGroupMap') {
+        'Get-ProbeEventLog', 'Get-ProbeCitrixRoots', 'Get-ProbeEffectiveIsolation', 'Get-ProbeIsolationGroupMap',
+        'Get-ProbeMcsCacheResult', 'Read-ProbeMcsCategories') {
         $f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
         if ($null -ne $f) { . ([scriptblock]::Create($f.Extent.Text)) }
     }
@@ -48,7 +49,7 @@ Describe 'Quellen-Pruefskript' {
     It 'listet die Pruefungen ohne Systemzugriff' {
         # Aussage geaendert (Groesse Task 11): zwei Pruefungen mehr, die Kerne und die Taktzaehler
         $Checks.Id | Should -Be @('system', 'process.snapshot', 'sessions.wts', 'services.map', 'perf.cpu', 'perf.cpu.cores', 'perf.cpu.frequency', 'perf.queue', 'perf.steal', 'perf.memory',
-            'perf.disk.total', 'perf.network', 'perf.volumes', 'perf.shares', 'perf.input.session', 'perf.input.process', 'perf.ica',
+            'perf.disk.total', 'perf.network', 'perf.volumes', 'mcs.cache', 'perf.shares', 'perf.input.session', 'perf.input.process', 'perf.ica',
             'profile.volumes', 'events.defender', 'events.applocker', 'events.application', 'events.system', 'events.printservice',
             'events.smbclient', 'events.profileservice', 'events.session', 'print.drivers', 'print.queues', 'security.products', 'user.processes', 'endpoints')
     }
@@ -919,5 +920,61 @@ namespace WorkerPerfProbe
             @(Get-ChildItem -LiteralPath $OutDir -Filter '*.json' -ErrorAction SilentlyContinue).Count | Should -Be 0
         }
         finally { $script:TestCatalogue = $TestCatalogueSaved }
+    }
+}
+
+Describe 'Schreibcache von MCS im Pruefskript' {
+    BeforeAll {
+        function New-McsDrive([string]$Letter, [bool]$Has, $FileMb, [string]$Err = '') { @{ Drive = $Letter; TotalMb = 40000; FreeMb = 10000; HasFile = $Has; FileMb = $FileMb; FileError = $Err } }
+        $script:McsCat = @{ Category = 'Citrix MCS Storage Driver'; Error = ''; Counters = @(@{ Counter = 'X'; Instance = ''; Value = 12.0 }, @{ Counter = 'Y'; Instance = ''; Value = $null }) }
+    }
+    It 'meldet einen Server ohne MCS I/O ohne Fehler' {
+        $res = Get-ProbeMcsCacheResult @((New-McsDrive 'C:' $false $null)) @()
+        $res.Ok | Should -BeFalse; $res.Detail | Should -Be 'mcsdif.vhdx nicht gefunden; 0 Kategorien Citrix MCS'; @($res.Data.CacheDrives).Count | Should -Be 0
+    }
+    It 'nennt Laufwerk, Dateigroesse und freien Platz' {
+        $res = Get-ProbeMcsCacheResult @((New-McsDrive 'C:' $false $null), (New-McsDrive 'D:' $true 2048)) @($McsCat)
+        $res.Ok | Should -BeTrue; $res.Detail | Should -Be 'mcsdif.vhdx auf D: (2048 MB), frei 10000 von 40000 MB; 1 Kategorien Citrix MCS'
+        @($res.Data.CacheDrives)[0].FreePct | Should -Be 25
+    }
+    It 'behaelt Laufwerk und freien Platz, wenn die Dateigroesse nicht lesbar ist' {
+        $res = Get-ProbeMcsCacheResult @((New-McsDrive 'D:' $true $null 'Zugriff verweigert')) @()
+        $res.Ok | Should -BeTrue; @($res.Data.CacheDrives)[0].FileMb | Should -BeNullOrEmpty; @($res.Data.CacheDrives)[0].FileError | Should -Be 'Zugriff verweigert'
+        $res.Detail | Should -Be 'mcsdif.vhdx auf D: (Groesse nicht lesbar), frei 10000 von 40000 MB; 0 Kategorien Citrix MCS'
+    }
+    It 'nennt jedes Laufwerk mit der Datei' {
+        $res = Get-ProbeMcsCacheResult @((New-McsDrive 'D:' $true 1), (New-McsDrive 'E:' $true 2)) @()
+        @($res.Data.CacheDrives).Count | Should -Be 2; $res.Detail | Should -BeLike 'mcsdif.vhdx auf D: (1 MB)*; mcsdif.vhdx auf E: (2 MB)*; 0 Kategorien Citrix MCS'
+    }
+    It 'rechnet bei einem Laufwerk ohne Groesse keinen Anteil' {
+        $d = New-McsDrive 'D:' $true 1; $d.TotalMb = 0
+        @((Get-ProbeMcsCacheResult @($d) @()).Data.CacheDrives)[0].FreePct | Should -BeNullOrEmpty
+    }
+    It 'gibt Kategorien mit lesbaren und unlesbaren Werten unveraendert weiter' {
+        $res = Get-ProbeMcsCacheResult @() @($McsCat)
+        $res.Ok | Should -BeFalse; @($res.Data.Categories)[0].Counters[1].Value | Should -BeNullOrEmpty; @($res.Data.Categories)[0].Counters[0].Value | Should -Be 12.0
+    }
+    It 'liest nur Kategorien Citrix MCS, hoechstens acht Instanzen, und behaelt einen Indikator ohne lesbaren Wert' {
+        $counter = { param($n, $v) $o = [pscustomobject]@{ CounterName = $n }; $o | Add-Member ScriptMethod NextValue ([scriptblock]::Create($(if ($null -eq $v) { 'throw "kaputt"' } else { "$v" }))); $o }
+        $multi = [pscustomobject]@{ CategoryName = 'Citrix MCS Storage Driver' }
+        $multi | Add-Member ScriptMethod GetInstanceNames { @(1..10 | ForEach-Object { "disk$_" }) }
+        $multi | Add-Member ScriptMethod GetCounters { param($i) @((& $counter 'Cache disk used' 5), (& $counter 'Defekt' $null)) }.GetNewClosure()
+        $single = [pscustomobject]@{ CategoryName = 'citrix mcs' }
+        $single | Add-Member ScriptMethod GetInstanceNames { @() }
+        $single | Add-Member ScriptMethod GetCounters { @(& $counter 'Cache memory used' 7) }.GetNewClosure()
+        $other = [pscustomobject]@{ CategoryName = 'Memory' }
+        $broken = [pscustomobject]@{ CategoryName = 'Citrix MCS Kaputt' }
+        $broken | Add-Member ScriptMethod GetInstanceNames { throw 'nicht lesbar' }
+        $read = @(Read-ProbeMcsCategories @($multi, $single, $other, $broken))
+        @($read | ForEach-Object { $_.Category }) | Should -Be @('Citrix MCS Storage Driver', 'citrix mcs', 'Citrix MCS Kaputt')
+        @($read[0].Counters).Count | Should -Be 16; $read[0].InstanceCount | Should -Be 10
+        @($read[0].Counters | Where-Object { $_.Counter -eq 'Defekt' })[0].Value | Should -BeNullOrEmpty
+        @($read[0].Counters | Where-Object { $_.Counter -eq 'Cache disk used' })[0].Value | Should -Be 5
+        $read[1].Counters[0].Instance | Should -Be ''; $read[1].Counters[0].Value | Should -Be 7
+        $read[2].Error | Should -Match 'nicht lesbar'; @($read[2].Counters).Count | Should -Be 0
+    }
+    It 'steht im Katalog der Pruefungen' {
+        $check = @($Checks | Where-Object { $_.Id -eq 'mcs.cache' }); $check.Count | Should -Be 1
+        @($check[0].Signals).Count | Should -Be 0
     }
 }

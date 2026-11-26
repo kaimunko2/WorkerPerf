@@ -24,6 +24,13 @@ Bei den Druckertreibern zählt es Treiber je Hersteller, Bauart (Typ 3 oder 4) u
 
 Nach der letzten Prüfung meldet die Konsole „Namen werden erneut gelesen, das Ergebnis wird maskiert und geschrieben ...“. Das dauert noch einige Sekunden; bitte in dieser Zeit nicht abbrechen. Danach zeigt die Konsole eine Tabelle mit allen Prüfungen und den Pfad der Ergebnisdatei `vda-probe_<Datum-Uhrzeit>.json`.
 
+### Schreibcache von MCS
+
+Die Prüfung `mcs.cache` sucht auf den fest eingebauten Laufwerken die Überlaufdatei des Schreibcaches (`mcsdif.vhdx`)
+und nennt Laufwerk, Größe der Datei und freien Platz. Dazu listet sie alle Leistungsindikatoren, deren Kategorie mit
+„Citrix MCS“ beginnt, mit ihren aktuellen Werten. Die Datei wird dabei nicht geöffnet. Auf einem Server ohne MCS mit
+Speicheroptimierung (MCS I/O) steht im Ergebnis „mcsdif.vhdx nicht gefunden“; das ist kein Fehler.
+
 ### AppLocker und eingeschränkter Sprachmodus
 
 Das Skript braucht den PowerShell-Sprachmodus `FullLanguage`. Wo AppLocker oder WDAC eine Konsole in den Modus `ConstrainedLanguage` versetzt, bricht es gleich zu Beginn mit einer Meldung ab, die den aktiven Modus nennt, statt später an unverständlichen Fehlern zu scheitern. Abhilfe: eine uneingeschränkte administrative Konsole verwenden (unter den AppLocker-Standardregeln ist das die Konsole „Als Administrator ausführen“) oder das Skript an einem Ort ablegen, den die Skriptregeln zulassen. Welcher Modus aktiv ist, zeigt `$ExecutionContext.SessionState.LanguageMode`. Dieselbe Prüfung machen später auch die Aufzeichnung und die Auswertung.

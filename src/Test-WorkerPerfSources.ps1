@@ -826,6 +826,84 @@ function Invoke-ProbeVolumesCheck($Ctx, $Check) {
     return $out
 }
 
+function Get-ProbeMcsCacheResult([object[]]$Drives, [object[]]$Categories) {
+    # Result of the check 'mcs.cache' from what was read. Drives: @{ Drive ('D:'); TotalMb; FreeMb; HasFile; FileMb (or
+    # $null); FileError }. Categories: @{ Category; Error; Counters = @(@{ Counter; Instance; Value }) }. A server
+    # without the overflow file is not an error: Ok is false and the detail says what was not found.
+    $cache = New-Object 'System.Collections.Generic.List[object]'
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($d in @($Drives)) {
+        if ($null -eq $d -or -not $d.HasFile) { continue }
+        $pct = $null
+        if ($d.TotalMb -gt 0) { $pct = [Math]::Round(100.0 * $d.FreeMb / $d.TotalMb, 1) }
+        $cache.Add([ordered]@{ Drive = $d.Drive; FileMb = $d.FileMb; FileError = [string]$d.FileError; TotalMb = $d.TotalMb; FreeMb = $d.FreeMb; FreePct = $pct })
+        $size = 'Groesse nicht lesbar'
+        if ($null -ne $d.FileMb) { $size = '{0} MB' -f $d.FileMb }
+        $parts.Add(('mcsdif.vhdx auf {0} ({1}), frei {2} von {3} MB' -f $d.Drive, $size, $d.FreeMb, $d.TotalMb))
+    }
+    if ($parts.Count -eq 0) { $parts.Add('mcsdif.vhdx nicht gefunden') }
+    $parts.Add(('{0} Kategorien Citrix MCS' -f @($Categories).Count))
+    return @{ Ok = ($cache.Count -gt 0); Detail = ($parts.ToArray() -join '; '); Data = [ordered]@{ CacheDrives = $cache.ToArray(); Categories = @($Categories) } }
+}
+
+function Read-ProbeMcsDrives {
+    # Every ready fixed drive with its size and free space, and whether the overflow file of the MCS write cache
+    # (mcsdif.vhdx) lies in its root. Reads the directory entry only; the file is never opened.
+    foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+        try {
+            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -or -not $drive.IsReady) { continue }
+            $row = @{ Drive = $drive.Name.TrimEnd('\'); TotalMb = [Math]::Round($drive.TotalSize / 1MB); FreeMb = [Math]::Round($drive.TotalFreeSpace / 1MB)
+                HasFile = $false; FileMb = $null; FileError = '' }
+            $file = Join-Path $drive.RootDirectory.FullName 'mcsdif.vhdx'
+            if ([System.IO.File]::Exists($file)) {
+                $row.HasFile = $true
+                try { $row.FileMb = [Math]::Round((New-Object System.IO.FileInfo $file).Length / 1MB) }
+                catch { $row.FileError = Get-ProbeErrorText $_ }
+            }
+            $row
+        }
+        catch { continue }
+    }
+}
+
+function Read-ProbeMcsCategories([object[]]$All = $null) {
+    # Every performance counter category whose name starts with 'Citrix MCS', with its counters and their current values
+    # (first reading, no wait: a rate counter shows 0). At most 8 instances per category; a counter that cannot be read
+    # keeps its name and has no value. Instance names stay as read: the result is masked once, when it is written. All: the categories to look at (tests); by default those of the machine.
+    if ($null -eq $All) { $All = @([System.Diagnostics.PerformanceCounterCategory]::GetCategories()) }
+    foreach ($cat in @($All)) {
+        $name = [string]$cat.CategoryName
+        if (-not $name.StartsWith('Citrix MCS', [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $out = [ordered]@{ Category = $name; Error = ''; InstanceCount = 0; Counters = @() }
+        $rows = New-Object 'System.Collections.Generic.List[object]'
+        try {
+            $instances = @($cat.GetInstanceNames())
+            $out.InstanceCount = $instances.Count
+            if ($instances.Count -eq 0) { $sets = @(@{ Instance = ''; Counters = @($cat.GetCounters()) }) }
+            else { $sets = @($instances | Select-Object -First 8 | ForEach-Object { @{ Instance = [string]$_; Counters = @($cat.GetCounters([string]$_)) } }) }
+            foreach ($set in $sets) {
+                foreach ($c in $set.Counters) {
+                    $value = $null
+                    try { $value = [double]$c.NextValue() } catch { $value = $null }
+                    $rows.Add([ordered]@{ Counter = [string]$c.CounterName; Instance = [string]$set.Instance; Value = $value })
+                }
+            }
+        }
+        catch { $out.Error = Get-ProbeErrorText $_ }
+        $out.Counters = $rows.ToArray()
+        $out
+    }
+}
+
+function Invoke-ProbeMcsCacheCheck($Ctx, $Check) {
+    # MCS with storage optimisation (MCS I/O): where the overflow file lies, how full its drive is, and which counters
+    # 'Citrix MCS...' the server has. The basis for measuring the write cache.
+    $drives = @(); $categories = @()
+    try { $drives = @(Read-ProbeMcsDrives) } catch { $drives = @() }
+    try { $categories = @(Read-ProbeMcsCategories) } catch { $categories = @() }
+    return Get-ProbeMcsCacheResult $drives $categories
+}
+
 function Invoke-ProbeIcaCheck($Ctx, $Check) {
     $out = Invoke-ProbePerfCheck $Ctx $Check
     $euem = [ordered]@{ Namespace = 'root\citrix\euem'; Available = $false; Classes = @(); Error = '' }
@@ -1750,6 +1828,7 @@ $script:Catalogue = @(
         Perf = @{ Category = 'Network Interface'; Counters = @('Bytes Received/sec', 'Bytes Sent/sec'); Instances = 'all'; MaxInstances = 0 } }
     @{ Id = 'perf.volumes'; Signals = @('disk.latency'); Title = 'Antwortzeiten je Laufwerk'; Run = 'Invoke-ProbeVolumesCheck'
         Perf = @{ Category = 'LogicalDisk'; Counters = @('Avg. Disk sec/Read', 'Avg. Disk sec/Write', 'Disk Reads/sec', 'Disk Writes/sec', 'Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Current Disk Queue Length'); Instances = 'nototal'; MaxInstances = 0 } }
+    @{ Id = 'mcs.cache'; Signals = @(); Title = 'Schreibcache von MCS (Ueberlaufdatei und Indikatoren)'; Run = 'Invoke-ProbeMcsCacheCheck' }
     @{ Id = 'perf.shares'; Signals = @('smb.latency'); Title = 'Antwortzeiten je SMB-Freigabe'; Run = 'Invoke-ProbePerfCheck'
         Perf = @{ Category = 'SMB Client Shares'; Counters = @('Avg. sec/Read', 'Avg. sec/Write', 'Read Requests/sec', 'Write Requests/sec', 'Read Bytes/sec', 'Write Bytes/sec'); Instances = 'all'; MaxInstances = 0 } }
     @{ Id = 'perf.input.session'; Signals = @('input.session'); Title = 'Eingabeverzoegerung je Sitzung'; Run = 'Invoke-ProbeInputSessionCheck'
