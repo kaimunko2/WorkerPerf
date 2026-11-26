@@ -154,7 +154,7 @@ $script:WorkerPerfHealthValues = & {
 }
 
 $script:WorkerPerfOrigins = @('Herstellerangabe', 'Faustregel', 'eigene Annahme')
-$script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'Drucken', 'System')
+$script:WorkerPerfRoleNames = @('Hauptanwendung', 'Sicherheit', 'Profil', 'Citrix', 'Drucken', 'System', 'Wartung')
 
 function Test-WorkerPerfWindows {
     return [bool](($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows)

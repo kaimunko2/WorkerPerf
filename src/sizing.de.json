@@ -546,7 +546,8 @@
     "cpu.coreMax": "stärkster logischer Prozessor",
     "cpu.steal": "entzogene CPU-Zeit (VMware Tools)",
     "mem.pagesout": "ausgelagerte Seiten",
-    "processes": "Prozessdaten"
+    "processes": "Prozessdaten",
+    "contradiction": "widerspruchsfreie Messwerte (Prozess bei einem vollen Kern, der stärkste Kern aber frei)"
   },
   "evidence": {
     "operation.powerPlan": "Energiesparplan",

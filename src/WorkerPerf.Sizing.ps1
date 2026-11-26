@@ -48,7 +48,7 @@ $script:WorkerPerfSizingThresholdNames = @('coreBusyPct', 'sustainedPct', 'singl
     'memTargetPct', 'memStepGB')
 $script:WorkerPerfSizingLimitNames = @('target', 'cpuCrit', 'queueWarn', 'stealWarn', 'commitCrit')
 $script:WorkerPerfSizingSignalNames = @('cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout')
-$script:WorkerPerfSizingMissingNames = @('cpu.coreMax', 'cpu.steal', 'mem.pagesout', 'processes')
+$script:WorkerPerfSizingMissingNames = @('cpu.coreMax', 'cpu.steal', 'mem.pagesout', 'processes', 'contradiction')
 
 function Stop-WorkerPerfSizing([string]$Path, [string]$Part, [string]$Id, [string]$Field, [string]$Reason) {
     # "Katalog '<path>': <part> <id>: <field> <reason>."
@@ -274,4 +274,346 @@ function Read-WorkerPerfSizing([string]$Path, $Thresholds) {
         Version = [string]$version; Sources = $sources; Thresholds = $own; Limits = $limits; Classes = $classes; Levels = $levels
         Grades = $grades; Users = $users; Signals = $signals; Missing = $missing; Evidence = $evidence; Texts = $texts
     }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Class of an incident (the cause of a CPU or memory bottleneck)
+# ---------------------------------------------------------------------------------------------
+
+function Get-WorkerPerfPercentile([double[]]$Values, [double]$Pct) {
+    # nearest rank: sorted, index ceil(Pct / 100 * n) - 1; NaN is passed over; NaN without a value
+    $list = New-Object System.Collections.Generic.List[double]
+    foreach ($v in @($Values)) { if (-not [double]::IsNaN($v)) { $list.Add($v) } }
+    if ($list.Count -eq 0) { return [double]::NaN }
+    $a = $list.ToArray(); [Array]::Sort($a)
+    $i = [int][Math]::Ceiling($Pct / 100.0 * $a.Length) - 1
+    if ($i -lt 0) { $i = 0 }
+    if ($i -ge $a.Length) { $i = $a.Length - 1 }
+    return $a[$i]
+}
+
+function Format-WorkerPerfSizingNumber($Value, [int]$Decimals = 1) {
+    # a number for a German text: decimal comma, no trailing zeros; '' for nothing
+    if ($null -eq $Value) { return '' }
+    $d = [double]$Value
+    if ([double]::IsNaN($d) -or [double]::IsInfinity($d)) { return '' }
+    $format = '0'
+    if ($Decimals -gt 0) { $format = '0.' + ('#' * $Decimals) }
+    return [Math]::Round($d, $Decimals, [MidpointRounding]::AwayFromZero).ToString($format, [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+}
+
+function Get-WorkerPerfIncidentFacts($Incident, $Model, $Thresholds, $Sizing) {
+    # What the window of an incident says, as far as the classes need it (one table of processes per measure and
+    # incident). Cpu, Memory: the incident has a finding of that resource; Delay: an input delay without a bottleneck.
+    # MinTicks: signal -> minTicks of thresholds.json ("lasting" is a value over its limit in that many ticks).
+    # StealMeasured/Ticks/Max; CpuP95, CpuMax, OverTargetTicks, ClearTicks (CPU critical and the queue per CPU over its
+    # limit in the same tick), QueueMax; CoreMaxMeasured, CoreMaxHighPct (share of ticks with the strongest logical
+    # processor busy), CoreMaxP95; Processes (process data exist for the window); TopProcess: Name, Cores (median of the
+    # cores per snapshot), BandPct (share of snapshots in which it used about one core), without the collector; TopApp:
+    # App, Role, RoleLabel, SharePct of the largest application in one session of the CPU used; Scan; PagesOutMeasured,
+    # PagesOutPct (share of ticks over the low value), PagesOutMax; CommitOverRamTicks, CommitCritTicks, CommitMax (%),
+    # CommittedMaxMB, RamMB; MemTop: App, SharePct, GrowthMB (the application in one session that grew most when its
+    # growth reaches the leak value, else the largest); UsedMax (%).
+    $nan = [double]::NaN
+    $lim = $Sizing.Limits; $own = $Sizing.Thresholds
+    $findings = @($Incident.Findings)
+    $facts = @{
+        Cpu = (@($findings | Where-Object { $_.Resource -eq 'cpu' }).Count -gt 0)
+        Memory = (@($findings | Where-Object { $_.Resource -eq 'memory' }).Count -gt 0)
+        Delay = ([string]$Incident.Type -eq 'ohne-engpass')
+        MinTicks = @{}
+    }
+    foreach ($id in 'cpu.steal', 'cpu.host', 'mem.commit') {
+        $facts.MinTicks[$id] = 3
+        if ($null -ne $Thresholds -and $Thresholds.Contains($id)) { $facts.MinTicks[$id] = [int]$Thresholds[$id].minTicks }
+    }
+    $ticks = @(Get-WorkerPerfWindowTicks $Model ([long]$Incident.StartMs) ([long]$Incident.EndMs))
+    $sig = $Model.Tick.Signal
+    $pick = {
+        param([double[]]$Series)
+        $out = New-Object double[] $ticks.Count
+        for ($i = 0; $i -lt $ticks.Count; $i++) { $out[$i] = $Series[$ticks[$i]] }
+        , $out
+    }
+    $stat = {
+        # count of values, count at or over the limit, the maximum
+        param([double[]]$Values, [double]$Limit)
+        $n = 0; $over = 0; $max = $nan
+        foreach ($v in $Values) {
+            if ([double]::IsNaN($v)) { continue }
+            $n++
+            if ($v -ge $Limit) { $over++ }
+            if ([double]::IsNaN($max) -or $v -gt $max) { $max = $v }
+        }
+        @{ N = $n; Over = $over; Max = $max }
+    }
+    $available = { param([string]$Id) (-not $Model.Sources.ContainsKey($Id)) -or [bool]$Model.Sources[$Id].Available }
+
+    # VMware host
+    $steal = & $stat (& $pick $sig['cpu.steal']) ([double]$lim.stealWarn.Value)
+    $facts.StealMeasured = ((& $available 'cpu.steal') -and $steal.N -gt 0)
+    $facts.StealTicks = $steal.Over; $facts.StealMax = $steal.Max
+
+    # CPU and queue
+    $cpu = & $pick $sig['cpu.host']; $queue = & $pick $sig['cpu.queue']
+    $cpuStat = & $stat $cpu ([double]$lim.target.Value)
+    $facts.CpuP95 = Get-WorkerPerfPercentile $cpu 95; $facts.CpuMax = $cpuStat.Max; $facts.OverTargetTicks = $cpuStat.Over
+    $facts.QueueMax = (& $stat $queue 0).Max
+    $clear = 0
+    for ($i = 0; $i -lt $ticks.Count; $i++) { if ($cpu[$i] -ge [double]$lim.cpuCrit.Value -and $queue[$i] -ge [double]$lim.queueWarn.Value) { $clear++ } }
+    $facts.ClearTicks = $clear
+
+    # strongest logical processor
+    $coreMax = & $pick $sig['cpu.coreMax']
+    $coreStat = & $stat $coreMax ([double]$own.coreBusyPct.Value)
+    $facts.CoreMaxMeasured = ([bool]$Model.Measured['cpu.coreMax'] -and $coreStat.N -gt 0)
+    $facts.CoreMaxHighPct = 0.0
+    if ($coreStat.N -gt 0) { $facts.CoreMaxHighPct = 100.0 * $coreStat.Over / $coreStat.N }
+    $facts.CoreMaxP95 = Get-WorkerPerfPercentile $coreMax 95
+
+    # processes: the one with the most CPU time, and the largest application in one session
+    $snaps = [int[]]@(Get-WorkerPerfWindowSnaps $Model ([long]$Incident.StartMs) ([long]$Incident.EndMs))
+    $rows = $Model.Rows; $proc = @($Model.Proc)
+    $cpuOf = @{}
+    foreach ($p in $snaps) {
+        for ($r = [int]$rows.Start[$p]; $r -lt [int]$rows.Start[$p + 1]; $r++) {
+            $k = [int]$rows.K[$r]
+            if ($k -lt 0 -or $k -ge $proc.Count -or $null -eq $proc[$k]) { continue }
+            if (-not $cpuOf.ContainsKey($k)) { $cpuOf[$k] = 0.0 }
+            $cpuOf[$k] += [double]$rows.CpuMs[$r]
+        }
+    }
+    $facts.Processes = (@($Model.Skip) -notcontains 'Prozesse' -and $cpuOf.Count -gt 0)
+    $facts.TopProcess = $null; $facts.TopApp = $null; $facts.MemTop = $null
+    if ($facts.Processes) {
+        $top = -1
+        foreach ($k in $cpuOf.Keys) {
+            if ([bool]$proc[$k].IsCollector) { continue }
+            if ($top -lt 0 -or $cpuOf[$k] -gt $cpuOf[$top] -or ($cpuOf[$k] -eq $cpuOf[$top] -and $k -lt $top)) { $top = $k }
+        }
+        if ($top -ge 0 -and $cpuOf[$top] -gt 0) {
+            $low = [double]$own.coreBusyPct.Value / 100.0; $high = [double]$own.singleCoreMaxCores.Value
+            $perSnap = New-Object System.Collections.Generic.List[double]
+            $inBand = 0
+            foreach ($p in $snaps) {
+                $ms = 0.0
+                for ($r = [int]$rows.Start[$p]; $r -lt [int]$rows.Start[$p + 1]; $r++) { if ([int]$rows.K[$r] -eq $top) { $ms += [double]$rows.CpuMs[$r] } }
+                $sec = [double]$Model.Snap.ElapsedSec[$p]
+                $coresUsed = 0.0
+                if ($sec -gt 0) { $coresUsed = $ms / ($sec * 1000.0) }
+                $perSnap.Add($coresUsed)
+                if ($coresUsed -ge $low -and $coresUsed -le $high) { $inBand++ }
+            }
+            $facts.TopProcess = @{ Name = [string]$proc[$top].Name; Cores = (Get-WorkerPerfPercentile $perSnap.ToArray() 50); BandPct = (100.0 * $inBand / $perSnap.Count) }
+        }
+        $cpuTable = @(Get-WorkerPerfShareTable -Model $Model -Measure 'cpu' -WindowSnaps $snaps -BaseSnaps ([int[]]@()) -SessionFilter ([int[]]@()) -Cache @{})
+        $apps = @(Group-WorkerPerfShareTable -Model $Model -Table $cpuTable -By 'app-in-session')
+        if ($apps.Count -gt 0) {
+            $a = $apps[0]; $role = ''; $roleLabel = ''
+            foreach ($x in @($Model.Apps)) { if ([int]$x.Index -eq [int]$a.AppIndex) { $role = [string]$x.Role; $roleLabel = [string]$x.RoleLabel } }
+            $facts.TopApp = @{ App = [string]$a.Name; Role = $role; RoleLabel = $roleLabel; SharePct = [double]$a.Share }
+        }
+        if ($facts.Memory) {
+            $memTable = @(Get-WorkerPerfShareTable -Model $Model -Measure 'memory' -WindowSnaps $snaps -BaseSnaps ([int[]]@()) -SessionFilter ([int[]]@()) -Cache @{})
+            $memApps = @(Group-WorkerPerfShareTable -Model $Model -Table $memTable -By 'app-in-session')
+            if ($memApps.Count -gt 0) {
+                $pickApp = $memApps[0]
+                $grown = @($memApps | Sort-Object -Property @{ Expression = { [double]$_.Growth }; Descending = $true }, @{ Expression = { $_.Name } })[0]
+                if ([double]$grown.Growth -ge ([double]$own.leakGrowthPct.Value / 100.0 * [double]$Model.Meta.RamMB)) { $pickApp = $grown }
+                $facts.MemTop = @{ App = [string]$pickApp.Name; SharePct = [double]$pickApp.Share; GrowthMB = [double]$pickApp.Growth }
+            }
+        }
+    }
+    $facts.Scan = $false
+    foreach ($sc in @($Model.Scans)) { if ([long]$sc.StartMs -le [long]$Incident.EndMs -and [long]$sc.EndMs -ge [long]$Incident.StartMs) { $facts.Scan = $true; break } }
+
+    # memory
+    $pagesOut = & $stat (& $pick $sig['mem.pagesout']) ([double]$own.pagesOutLowPerSec.Value)
+    $facts.PagesOutMeasured = ([bool]$Model.Measured['mem.pagesout'] -and $pagesOut.N -gt 0)
+    $facts.PagesOutPct = 0.0
+    if ($pagesOut.N -gt 0) { $facts.PagesOutPct = 100.0 * $pagesOut.Over / $pagesOut.N }
+    $facts.PagesOutMax = $pagesOut.Max
+    $ramMb = [double]$Model.Meta.RamMB
+    $committed = & $pick $Model.Tick.Raw['MemCommittedMB']
+    $overRam = 0
+    foreach ($v in $committed) { if (-not [double]::IsNaN($v) -and $ramMb -gt 0 -and $v -gt $ramMb) { $overRam++ } }
+    $commitStat = & $stat (& $pick $sig['mem.commit']) ([double]$lim.commitCrit.Value)
+    $facts.CommitOverRamTicks = $overRam; $facts.CommitCritTicks = $commitStat.Over; $facts.CommitMax = $commitStat.Max
+    $facts.CommittedMaxMB = (& $stat $committed 0).Max; $facts.RamMB = $ramMb
+    $facts.UsedMax = (& $stat (& $pick $sig['mem.used']) 0).Max
+    return $facts
+}
+
+function Get-WorkerPerfIncidentClasses([hashtable]$Facts, $Sizing) {
+    # The classes of an incident from its facts, in the order of precedence: Classes = @(@{ Id; Level; Values }) (Level
+    # only for capacity: clear or tight; Values: the placeholder values of the texts), Unchecked = @(@{ Id; Missing })
+    # for a class that cannot be told (Missing: the measurements that lack, none for contradicting values).
+    # A class is asked only where its incident allows it: host and singlecore with a CPU finding or an input delay
+    # without a bottleneck, app, oneoff and capacity with a CPU finding, the memory classes with a memory finding.
+    $own = $Sizing.Thresholds; $lim = $Sizing.Limits
+    $fmt = { param($v, [int]$d = 1) Format-WorkerPerfSizingNumber $v $d }
+    $classes = [ordered]@{}; $unchecked = [ordered]@{}
+    $sustained = [double]$own.sustainedPct.Value
+    $cpuLike = ([bool]$Facts.Cpu -or [bool]$Facts.Delay)
+
+    if ($cpuLike) {
+        # 1 VMware host
+        if (-not $Facts.StealMeasured) { $unchecked['host'] = [string[]]@('cpu.steal') }
+        elseif ([int]$Facts.StealTicks -ge [int]$Facts.MinTicks['cpu.steal']) {
+            $classes['host'] = @{ Id = 'host'; Level = $null; Values = @{ steal = (& $fmt $Facts.StealMax); stealWarn = (& $fmt $lim.stealWarn.Value) } }
+        }
+        # 2 performance per core
+        if (-not $Facts.Processes) { $unchecked['singlecore'] = [string[]]@('processes') }
+        elseif ($null -ne $Facts.TopProcess -and [double]$Facts.TopProcess.BandPct -ge $sustained) {
+            if (-not $Facts.CoreMaxMeasured) { $unchecked['singlecore'] = [string[]]@('cpu.coreMax') }
+            elseif ([double]$Facts.CoreMaxHighPct -lt $sustained) { $unchecked['singlecore'] = [string[]]@() }
+            elseif ([double]$Facts.CpuP95 -lt [double]$lim.cpuCrit.Value) {
+                $classes['singlecore'] = @{ Id = 'singlecore'; Level = $null; Values = @{
+                        app = [string]$Facts.TopProcess.Name; cores = (& $fmt $Facts.TopProcess.Cores); coreMax = (& $fmt $Facts.CoreMaxP95)
+                        coreBusyPct = (& $fmt $own.coreBusyPct.Value); cpu = (& $fmt $Facts.CpuP95); cpuCrit = (& $fmt $lim.cpuCrit.Value) } }
+            }
+        }
+    }
+    if ($Facts.Cpu) {
+        $top = $Facts.TopApp
+        # 4 one-off (asked before 3: a scan is no "clear up the application")
+        if ($null -ne $top -and [double]$top.SharePct -ge $script:WorkerPerfSizingMinSharePct -and
+            ([string]$top.Role -eq 'Wartung' -or ([string]$top.Role -eq 'Sicherheit' -and [bool]$Facts.Scan))) {
+            $role = [string]$top.RoleLabel
+            if ($role -eq '') { $role = [string]$top.Role }
+            $classes['oneoff'] = @{ Id = 'oneoff'; Level = $null; Values = @{ app = [string]$top.App; role = $role } }
+        }
+        # 3 application
+        if (-not $classes.Contains('singlecore') -and -not $classes.Contains('oneoff') -and -not $unchecked.Contains('singlecore') -and
+            $null -ne $top -and [double]$top.SharePct -ge [double]$own.appSharePct.Value) {
+            $classes['app'] = @{ Id = 'app'; Level = $null; Values = @{ app = [string]$top.App; share = (& $fmt $top.SharePct 0); appSharePct = (& $fmt $own.appSharePct.Value) } }
+        }
+        # 5 capacity: broad load over the target
+        if (-not $classes.Contains('singlecore') -and -not $classes.Contains('app') -and -not $classes.Contains('oneoff') -and -not $unchecked.Contains('singlecore') -and
+            [int]$Facts.OverTargetTicks -ge [int]$Facts.MinTicks['cpu.host']) {
+            $level = 'tight'
+            if ([int]$Facts.ClearTicks -ge [int]$Facts.MinTicks['cpu.host']) { $level = 'clear' }
+            $classes['capacity'] = @{ Id = 'capacity'; Level = $level; Values = @{
+                    cpu = (& $fmt $Facts.CpuP95); queue = (& $fmt $Facts.QueueMax); target = (& $fmt $lim.target.Value)
+                    cpuCrit = (& $fmt $lim.cpuCrit.Value); queueWarn = (& $fmt $lim.queueWarn.Value) } }
+        }
+    }
+    if ($Facts.Memory) {
+        $minCommit = [int]$Facts.MinTicks['mem.commit']
+        $paging = ([double]$Facts.PagesOutPct -gt [double]$own.pagesOutSharePct.Value)
+        $mt = $Facts.MemTop
+        # 8 application (asked first: capacity is a broad load)
+        if (-not $Facts.Processes) { $unchecked['mem.app'] = [string[]]@('processes') }
+        elseif ($null -ne $mt -and ([double]$mt.SharePct -ge [double]$own.appSharePct.Value -or
+                [double]$mt.GrowthMB -ge ([double]$own.leakGrowthPct.Value / 100.0 * [double]$Facts.RamMB))) {
+            $classes['mem.app'] = @{ Id = 'mem.app'; Level = $null; Values = @{ app = [string]$mt.App; share = (& $fmt $mt.SharePct 0); growthGB = (& $fmt ([double]$mt.GrowthMB / 1024.0)) } }
+        }
+        # 6 capacity
+        if (-not $classes.Contains('mem.app') -and [int]$Facts.CommitOverRamTicks -ge $minCommit) {
+            if (-not $Facts.PagesOutMeasured) { $unchecked['mem.capacity'] = [string[]]@('mem.pagesout') }
+            elseif ($paging) {
+                $classes['mem.capacity'] = @{ Id = 'mem.capacity'; Level = $null; Values = @{
+                        commitGB = (& $fmt ([double]$Facts.CommittedMaxMB / 1024.0)); ramGB = (& $fmt ([double]$Facts.RamMB / 1024.0)); pagesOut = (& $fmt $Facts.PagesOutMax 0) } }
+            }
+        }
+        # 7 commit limit
+        if ([int]$Facts.CommitCritTicks -ge $minCommit) {
+            if (-not $Facts.PagesOutMeasured) { $unchecked['mem.commit'] = [string[]]@('mem.pagesout') }
+            elseif (-not $paging) {
+                $classes['mem.commit'] = @{ Id = 'mem.commit'; Level = $null; Values = @{
+                        commit = (& $fmt $Facts.CommitMax); commitCrit = (& $fmt $lim.commitCrit.Value); pagesOut = (& $fmt $Facts.PagesOutMax 0) } }
+            }
+        }
+        # 9 used, no shortage
+        if (-not $classes.Contains('mem.capacity') -and -not $classes.Contains('mem.commit') -and -not $classes.Contains('mem.app') -and
+            -not $unchecked.Contains('mem.capacity') -and -not $unchecked.Contains('mem.commit') -and -not $unchecked.Contains('mem.app')) {
+            $classes['mem.used'] = @{ Id = 'mem.used'; Level = $null; Values = @{ used = (& $fmt $Facts.UsedMax) } }
+        }
+    }
+    # 10 undecidable: no class, and at least one could not be told
+    if ($classes.Count -eq 0 -and $unchecked.Count -gt 0) {
+        $names = New-Object System.Collections.Generic.List[string]
+        foreach ($id in $unchecked.Keys) {
+            $miss = @($unchecked[$id])
+            if ($miss.Count -eq 0) { $miss = @('contradiction') }
+            foreach ($m in $miss) { $label = [string]$Sizing.Missing[$m]; if (-not $names.Contains($label)) { $names.Add($label) } }
+        }
+        $classes['undecidable'] = @{ Id = 'undecidable'; Level = $null; Values = @{ missing = ($names.ToArray() -join ', ') } }
+    }
+    $outClasses = @(foreach ($id in $script:WorkerPerfSizingClassOrder) { if ($classes.Contains($id)) { $classes[$id] } })
+    $outUnchecked = @(foreach ($id in $script:WorkerPerfSizingClassOrder) { if ($unchecked.Contains($id)) { @{ Id = $id; Missing = [string[]]@($unchecked[$id]) } } })
+    return @{ Classes = [object[]]$outClasses; Unchecked = [object[]]$outUnchecked }
+}
+
+# Minimum share (%) of the largest application for the class one-off (as $WorkerPerfMinSharePct of the incident details)
+$script:WorkerPerfSizingMinSharePct = 10
+
+function Add-WorkerPerfIncidentClasses {
+    # Sets Classes and Unchecked at every performance incident (empty lists where no class is asked).
+    param([AllowEmptyCollection()][object[]]$Incidents, $Model, $Thresholds, $Sizing)
+    foreach ($inc in @($Incidents)) {
+        $facts = Get-WorkerPerfIncidentFacts $inc $Model $Thresholds $Sizing
+        $r = Get-WorkerPerfIncidentClasses $facts $Sizing
+        $inc['Classes'] = [object[]]@($r.Classes); $inc['Unchecked'] = [object[]]@($r.Unchecked)
+    }
+}
+
+function Expand-WorkerPerfSizingText([string]$Template, $Values) {
+    # replaces {name} by the value of that name; a placeholder without a value stays
+    if ($null -eq $Values) { return $Template }
+    $text = $Template
+    foreach ($k in @($Values.Keys)) { $text = $text.Replace('{' + [string]$k + '}', [string]$Values[$k]) }
+    return $text
+}
+
+function Get-WorkerPerfClassOut($Incident, $Sizing) {
+    # The classes of an incident as texts of the catalogue: Line (the line "Einordnung: ...", '' without a class and
+    # without an unsettled one), Classes = @([ordered]@{ id; level; label; reason; direction; sources }),
+    # Unchecked = @([ordered]@{ id; missing; text }).
+    $classes = New-Object System.Collections.Generic.List[object]
+    $labels = New-Object System.Collections.Generic.List[string]
+    $reasons = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @(Get-WorkerPerfField $Incident 'Classes')) {
+        if ($null -eq $c) { continue }
+        $def = $Sizing.Classes[[string]$c.Id]
+        $label = [string]$def.Label
+        if ($null -ne $c.Level -and [string]$c.Level -ne '') { $label = '{0} ({1})' -f $def.Label, $Sizing.Levels[[string]$c.Level] }
+        $reason = Expand-WorkerPerfSizingText ([string]$def.Reason) $c.Values
+        $classes.Add([ordered]@{
+                id = [string]$c.Id; level = $(if ($null -ne $c.Level) { [string]$c.Level } else { $null }); label = $label; reason = $reason
+                direction = (Expand-WorkerPerfSizingText ([string]$def.Direction) $c.Values); sources = [string[]]@($def.Sources)
+            })
+        $labels.Add($label); $reasons.Add($reason)
+    }
+    $unchecked = New-Object System.Collections.Generic.List[object]
+    $notes = New-Object System.Collections.Generic.List[string]
+    foreach ($u in @(Get-WorkerPerfField $Incident 'Unchecked')) {
+        if ($null -eq $u) { continue }
+        $label = [string]$Sizing.Classes[[string]$u.Id].Label
+        $missing = [string[]]@($u.Missing)
+        if ($missing.Count -eq 0) { $text = Expand-WorkerPerfSizingText ([string]$Sizing.Texts['contradiction']) @{ label = $label } }
+        else { $text = Expand-WorkerPerfSizingText ([string]$Sizing.Texts['unchecked']) @{ label = $label; missing = (@($missing | ForEach-Object { [string]$Sizing.Missing[$_] }) -join ', ') } }
+        $unchecked.Add([ordered]@{ id = [string]$u.Id; missing = $missing; text = $text })
+        $notes.Add($text)
+    }
+    $line = ''
+    if ($classes.Count -gt 0) {
+        $line = Expand-WorkerPerfSizingText ([string]$Sizing.Texts['line']) @{ labels = ($labels.ToArray() -join ', '); reason = ($reasons.ToArray() -join ' ') }
+        if ($notes.Count -gt 0) { $line = $line + ' ' + ($notes.ToArray() -join '; ') + '.' }
+    }
+    return @{ Line = $line; Classes = [object[]]$classes.ToArray(); Unchecked = [object[]]$unchecked.ToArray() }
+}
+
+function Get-WorkerPerfRunAnalysis {
+    # One recording, evaluated as the normal report does it (the same calls in the same order), with the class of every
+    # incident: @{ Model; Series; Findings; Incidents }. A quick run has no measurement: empty lists.
+    param([string]$Path, [datetime]$From = [datetime]::MinValue, [datetime]$To = [datetime]::MaxValue, $Thresholds, [object[]]$Roles, $Sizing)
+    $model = Import-WorkerPerfRun -Path $Path -From $From -To $To -Thresholds $Thresholds -Roles $Roles
+    if ([bool]$model.Meta['HealthOnly']) { return @{ Model = $model; Series = [object[]]@(); Findings = [object[]]@(); Incidents = [object[]]@() } }
+    $series = @(Get-WorkerPerfSeries $model $Thresholds)
+    $findings = @(Get-WorkerPerfFindings -Series $series -Thresholds $Thresholds)
+    $incidents = @(Join-WorkerPerfIncidents -Findings $findings)
+    Add-WorkerPerfIncidentDetail -Incidents $incidents -Model $model -Thresholds $Thresholds
+    Add-WorkerPerfIncidentClasses -Incidents $incidents -Model $model -Thresholds $Thresholds -Sizing $Sizing
+    return @{ Model = $model; Series = [object[]]$series; Findings = [object[]]$findings; Incidents = [object[]]$incidents }
 }
