@@ -568,7 +568,8 @@ function Expand-WorkerPerfSizingText([string]$Template, $Values) {
 
 function Get-WorkerPerfClassOut($Incident, $Sizing) {
     # The classes of an incident as texts of the catalogue: Line (the line "Einordnung: ...", '' without a class and
-    # without an unsettled one), Classes = @([ordered]@{ id; level; label; reason; direction; sources }),
+    # without an unsettled one), Classes = @([ordered]@{ id; level; label; reason; advice; sources }) (advice: the direction
+    # of the class, what helps; not named direction, which is a keyword field of the report data),
     # Unchecked = @([ordered]@{ id; missing; text }).
     $classes = New-Object System.Collections.Generic.List[object]
     $labels = New-Object System.Collections.Generic.List[string]
@@ -581,7 +582,7 @@ function Get-WorkerPerfClassOut($Incident, $Sizing) {
         $reason = Expand-WorkerPerfSizingText ([string]$def.Reason) $c.Values
         $classes.Add([ordered]@{
                 id = [string]$c.Id; level = $(if ($null -ne $c.Level) { [string]$c.Level } else { $null }); label = $label; reason = $reason
-                direction = (Expand-WorkerPerfSizingText ([string]$def.Direction) $c.Values); sources = [string[]]@($def.Sources)
+                advice = (Expand-WorkerPerfSizingText ([string]$def.Direction) $c.Values); sources = [string[]]@($def.Sources)
             })
         $labels.Add($label); $reasons.Add($reason)
     }

@@ -1414,6 +1414,6 @@ function ConvertTo-WorkerPerfEventIncidentOut {
         events = @($kept | ForEach-Object { ConvertTo-WorkerPerfEventOut $_ $OffsetMinutes })
         signals = @(); affected = @(); main = $null; cause = $null; contributors = [ordered]@{}
         delayProcs = @(); endpoints = @(); ica = @(); security = [ordered]@{ products = @(); totalPct = $null }
-        companion = $null; chronicContext = @(); eventIncidents = [int[]]@(); event = $eventPart
+        companion = $null; chronicContext = @(); classes = @(); unchecked = @(); classLine = ''; eventIncidents = [int[]]@(); event = $eventPart
     }
 }

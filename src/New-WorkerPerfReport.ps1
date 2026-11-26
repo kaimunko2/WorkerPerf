@@ -46,6 +46,10 @@
     Guidance catalogue (situations, checks, remedies, texts of the guided report). Default: guidance.de.json next to
     this script. It is checked before the capture is read; an error names the entry and the field.
 
+.PARAMETER SizingFile
+    Catalogue of the size of the server (the classes of a CPU or memory bottleneck, their limits and sources). Default:
+    sizing.de.json next to this script. It is checked before the capture is read; an error names part and field.
+
 .PARAMETER AppsFile
     Application list (standard applications and the name patterns of their processes; the guidance catalogue has steps
     for them under the conditions app.<key>; the health picture rates the applications with installed and probes by the
@@ -98,6 +102,7 @@ param(
     [string]$ThresholdFile,
     [string]$RoleFile,
     [string]$GuidanceFile,
+    [string]$SizingFile,
     [string]$AppsFile,
     [string]$HealthFile,
     [string]$FocusUser,
@@ -125,6 +130,7 @@ $nan = [double]::NaN
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Guidance.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.Sizing.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Health.ps1')
 # the masking: a masked run masks the report data; without -Mask the report uses it only for the copy texts without names
 # (one mask of level Alles and its replacing, never Protect-WorkerPerfReportData or Clear-WorkerPerfReportFreeText).
@@ -717,6 +723,7 @@ if (-not $OutFile) { $OutFile = Join-Path $Path 'report.html' }
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
 if (-not $GuidanceFile) { $GuidanceFile = Join-Path $PSScriptRoot 'guidance.de.json' }
+if (-not $SizingFile) { $SizingFile = Join-Path $PSScriptRoot 'sizing.de.json' }
 if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
 if (-not $HealthFile) { $HealthFile = Join-Path $PSScriptRoot 'health.de.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
@@ -753,6 +760,8 @@ if ($Mask -eq 'Alles') {
 }
 
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
+# the catalogue of the size of the server: an error stops here, before the capture is read
+$sizing = Read-WorkerPerfSizing $SizingFile $thresholds
 $roles = @(Read-WorkerPerfRoles $RoleFile)
 $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
 # an error in the application list or in a catalogue stops before the capture is read; the guidance catalogue's
@@ -855,6 +864,8 @@ $series = @(Get-WorkerPerfSeries $model $thresholds)
 $findings = @(Get-WorkerPerfFindings -Series $series -Thresholds $thresholds)
 $incidents = @(Join-WorkerPerfIncidents -Findings $findings)
 Add-WorkerPerfIncidentDetail -Incidents $incidents -Model $model -Thresholds $thresholds
+# the class of every incident: the cause of a CPU or memory bottleneck (size of the server)
+Add-WorkerPerfIncidentClasses -Incidents $incidents -Model $model -Thresholds $thresholds -Sizing $sizing
 # one result for the status of tiles and table rows (from the findings) and for what the texts call "nicht gemessen"
 $sollIst = @(Get-WorkerPerfSollIst -Series $series -Thresholds $thresholds -Sources $model.Sources -Findings $findings)
 $unmeasured = Get-WorkerPerfUnmeasured -SollIst $sollIst
@@ -1067,6 +1078,8 @@ $hostOut = [ordered]@{
     diskR = (New-JsonSeries $diskR 1); diskW = (New-JsonSeries $diskW 1)
     iopsR = (New-JsonSeries $raw['DiskReadIops'] 1); iopsW = (New-JsonSeries $raw['DiskWriteIops'] 1)
     netR = (New-JsonSeries $netR 1); netS = (New-JsonSeries $netS 1); burst = (New-JsonSeries $burst 0)
+    coreMax = (New-JsonSeries $sig['cpu.coreMax'] 1); coreBusy = (New-JsonSeries $sig['cpu.coreBusy'] 0)
+    perf = (New-JsonSeries $sig['cpu.perf'] 1); utility = (New-JsonSeries $sig['cpu.utility'] 1); pagesOut = (New-JsonSeries $sig['mem.pagesout'] 1)
     sessions = (New-JsonSeries ([double[]]$snap.Sessions) 0); active = (New-JsonSeries ([double[]]$snap.ActiveSessions) 0)
     procs = (New-JsonSeries ([double[]]$snap.Processes) 0)
 }
@@ -1241,6 +1254,7 @@ function ConvertTo-MainEntry($Main, [string]$Resource) {
 }
 $rankedK = @{}
 $incOut = New-Object System.Collections.Generic.List[object]
+$usedClasses = @{}                      # the classes the incidents carry: their sources go into the part sizing
 foreach ($inc in $incidents) {
     $start = [long]$inc.StartMs; $end = [long]$inc.EndMs
     $signals = New-Object System.Collections.Generic.List[object]
@@ -1334,6 +1348,8 @@ foreach ($inc in $incidents) {
     $eventRefs = [int[]]@()
     $refs = Get-WorkerPerfField $inc 'EventIncidents'
     if ($null -ne $refs) { $eventRefs = [int[]]@($refs) }
+    $classOut = Get-WorkerPerfClassOut $inc $sizing
+    foreach ($c in $classOut.Classes) { $usedClasses[[string]$c.id] = $true }
     $entry = [ordered]@{
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
@@ -1344,6 +1360,7 @@ foreach ($inc in $incidents) {
             delayProcs = $delayProcs.ToArray(); endpoints = $endpoints.ToArray(); ica = $ica.ToArray()
             security = [ordered]@{ products = $products.ToArray(); totalPct = (Get-Round $inc.Security.TotalPct 1) }
             companion = $companion; chronicContext = $context.ToArray()
+            classes = $classOut.Classes; unchecked = $classOut.Unchecked; classLine = [string]$classOut.Line
             eventIncidents = $eventRefs; event = $null
         }
     # an input delay without bottleneck: unverified when -Skip Laufwerke left out the drives' latencies (the text then says
@@ -1512,6 +1529,30 @@ function Get-UnrecordedOut {
     [ordered]@{ id = 'Ereignisse'; label = [string]$texts['skip.label.Ereignisse']; text = [string]$texts['unrecorded.text.Ereignisse']
         places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) }
 }
+# the part sizing: what the page needs to show the new values and the sources of the classes (only the sources that a
+# class of these report data or a signal names)
+$sizingSignals = New-Object System.Collections.Generic.List[object]
+$sizingSourceIds = New-Object System.Collections.Generic.List[string]
+foreach ($id in $sizing.Classes.Keys) { if ($usedClasses.ContainsKey($id)) { foreach ($s in $sizing.Classes[$id].Sources) { if (-not $sizingSourceIds.Contains($s)) { $sizingSourceIds.Add($s) } } } }
+foreach ($id in $sizing.Signals.Keys) {
+    $sg = $sizing.Signals[$id]
+    $sizingSignals.Add([ordered]@{ id = [string]$id; label = [string]$sg.Label; note = [string]$sg.Note; sources = [string[]]@($sg.Sources) })
+    foreach ($s in $sg.Sources) { if (-not $sizingSourceIds.Contains($s)) { $sizingSourceIds.Add($s) } }
+}
+$coreBusyRecorded = $null
+if ($null -ne $model.Meta['CoreBusyPct']) { $coreBusyRecorded = [double]$model.Meta['CoreBusyPct'] }
+$sizingOut = [ordered]@{
+    catalogueVersion = [string]$sizing.Version; coreBusyPct = $coreBusyRecorded; coreBusyNow = [double]$sizing.Thresholds.coreBusyPct.Value
+    measured = [ordered]@{
+        coreMax = [bool]$model.Measured['cpu.coreMax']; coreBusy = [bool]$model.Measured['cpu.coreBusy']; perf = [bool]$model.Measured['cpu.perf']
+        utility = [bool]$model.Measured['cpu.utility']; pagesOut = [bool]$model.Measured['mem.pagesout']
+    }
+    signals = $sizingSignals.ToArray()
+    sources = @($sizing.Sources.Keys | Where-Object { $sizingSourceIds.Contains($_) } | ForEach-Object {
+            $src = $sizing.Sources[$_]
+            [ordered]@{ id = [string]$_; title = [string]$src.Title; url = [string]$src.Url; date = [string]$src.Date; kind = [string]$src.Kind } })
+}
+
 # ZB-R72: the quick path further up (`if ($model.Meta.HealthOnly)`) assembles the report data of a quick run on its own (meta, quality,
 # before, print, then the same guide, copy text and mask steps); a field added here must be considered there too, and the other way round
 $data = [ordered]@{
@@ -1522,6 +1563,7 @@ $data = [ordered]@{
     sessions = $sessOut.ToArray(); apps = $appsOut.ToArray(); pairs = $pairsOut.ToArray(); procs = $procOut.ToArray()
     citrix = $citrixOut.ToArray(); sollIst = $sollOut.ToArray(); incidents = $incOut.ToArray()
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
+    sizing = $sizingOut
     noFinding = ($incOut.Count -eq 0)
     before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
     # the application list as read (like thresholds): its keys are identifiers, its labels and process patterns are

@@ -87,6 +87,7 @@ Describe 'Read-WorkerPerfSizing' {
         @{ Name = 'Quelle ohne Adresse'; Change = { $j.sources.'SZ-42'.url = '' }; Message = '*sources SZ-42: url*' }
         @{ Name = 'unbekannte Art'; Change = { ($j.classes | Where-Object id -eq 'app').kind = 'hersteller' }; Message = '*classes app: kind*' }
         @{ Name = 'unbekannter Platzhalter'; Change = { ($j.classes | Where-Object id -eq 'host').reason = 'x {cpu}' }; Message = '*classes host: reason*{cpu}*' }
+        @{ Name = 'unbekannter Platzhalter in der Richtung'; Change = { ($j.classes | Where-Object id -eq 'app').direction = 'x {cpu}' }; Message = '*classes app: direction*{cpu}*' }
         @{ Name = 'Kern-Schwelle ausserhalb 50 bis 100'; Change = { $j.thresholds.coreBusyPct.value = 40 }; Message = '*thresholds coreBusyPct: value*' }
         @{ Name = 'Verweis auf ein Signal, das thresholds.json nicht kennt'; Change = { $j.limits.target.signal = 'cpu.unbekannt' }; Message = '*limits target: signal*' }
         @{ Name = 'unbekanntes Mitglied'; Change = { $j | Add-Member 'extra' 1 }; Message = '*extra*unbekannt*' }
@@ -163,7 +164,7 @@ Describe 'Get-WorkerPerfIncidentClasses: Grenzen' {
         $o = Get-WorkerPerfClassOut @{ Classes = $r.Classes; Unchecked = $r.Unchecked } $Sz
         $o.Line | Should -Match '^Einordnung: VMware-Host, Kapazität \(deutlich\) – '; $o.Line | Should -Match '12,6 % je vCPU'; $o.Line | Should -Not -Match '\{'
         @($o.Classes.id) | Should -Be @('host', 'capacity'); $o.Classes[1].level | Should -Be 'clear'; $o.Classes[0].sources | Should -Be @('SZ-21', 'SZ-20', 'SZ-26', 'VM-08')
-        $o.Classes[0].direction | Should -Match 'VMware-Host'
+        $o.Classes[0].advice | Should -Match 'VMware-Host'
         (Get-WorkerPerfClassOut @{ Classes = @(); Unchecked = @() } $Sz).Line | Should -Be ''
     }
     It 'laesst einen Vorfall ohne CPU, Arbeitsspeicher und Verzoegerung ohne Einordnung' {

@@ -394,6 +394,20 @@
           "text": "Prüfen, ob der VMware-Host dem Server Rechenzeit entzogen hat",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; steht dort „nicht gemessen“: vCenter, Leistungsdiagramm der virtuellen Maschine, CPU-Bereitschaft (Ready); nach GO-EUC (Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine, ESXi 8.0.3) im selben Diagramm auch CPU-Latenz und Co-Stop ansehen",
           "sign": "Wert über dem Soll im Zeitraum des Vorfalls"
+        },
+        {
+          "when": ["class.host"],
+          "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
+          "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
+          "sign": "CPU Ready je vCPU über 5 % (über 10 %: handeln); Co-Stop anhaltend über 0 %, über 3 % je vCPU (zu viele vCPU); Auslastung des VMware-Hosts anhaltend über 70–80 %",
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
+        },
+        {
+          "when": ["class.singlecore"],
+          "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
+          "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
+          "sign": "ein logischer Prozessor dauerhaft voll, die anderen weitgehend frei",
+          "source": "Microsoft: Scenario guide: Troubleshoot performance problems in Windows"
         }
       ],
       "remedies": [
@@ -1471,6 +1485,20 @@
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
+        },
+        {
+          "when": ["class.host"],
+          "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
+          "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
+          "sign": "CPU Ready je vCPU über 5 % (über 10 %: handeln); Co-Stop anhaltend über 0 %, über 3 % je vCPU (zu viele vCPU); Auslastung des VMware-Hosts anhaltend über 70–80 %",
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
+        },
+        {
+          "when": ["class.singlecore"],
+          "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
+          "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
+          "sign": "ein logischer Prozessor dauerhaft voll, die anderen weitgehend frei",
+          "source": "Microsoft: Scenario guide: Troubleshoot performance problems in Windows"
         }
       ],
       "remedies": [
@@ -1596,6 +1624,20 @@
           "where": "In einer Sitzung: Internetoptionen, Verbindungen, LAN-Einstellungen; Betreuung von Netz und Proxy: ob eine automatische Erkennung eingerichtet ist",
           "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
+        },
+        {
+          "when": ["class.host"],
+          "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
+          "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
+          "sign": "CPU Ready je vCPU über 5 % (über 10 %: handeln); Co-Stop anhaltend über 0 %, über 3 % je vCPU (zu viele vCPU); Auslastung des VMware-Hosts anhaltend über 70–80 %",
+          "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
+        },
+        {
+          "when": ["class.singlecore"],
+          "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
+          "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
+          "sign": "ein logischer Prozessor dauerhaft voll, die anderen weitgehend frei",
+          "source": "Microsoft: Scenario guide: Troubleshoot performance problems in Windows"
         }
       ],
       "remedies": [

@@ -90,10 +90,51 @@ function Copy-SimRun([string]$Run, [string]$OutDir, [string[]]$Without = @()) {
     Get-ChildItem -LiteralPath $Run -File | Where-Object { $Without -notcontains $_.Name -and $_.Name -notlike '*.html' } | Copy-Item -Destination $dir
     $dir
 }
+function New-CausesReport([string]$OutDir, [string]$RoleFile) {
+    # Die Szenen der Ursachen (Groesse des Servers): je Ursache eines Engpasses ein Vorfall mit seiner Einordnung, und ihr
+    # Bericht report-causes.html; liefert @{ Run; Report }. Nicht Teil von New-TestReports: die Pruefungen ueber alle
+    # Testberichte (Reihung der Anleitung, P3-R75) behalten ihren Umfang.
+    [void](New-Item -ItemType Directory -Path $OutDir -Force)
+    $run = Invoke-SimCapture (Join-Path $OutDir 'causes') @{ SimulateScenario = 'Ursachen' }
+    $out = Join-Path $OutDir 'report-causes.html'
+    [void](& (Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1') -Path $run -OutFile $out -RoleFile $RoleFile 6>$null)
+    @{ Run = [string]$run; Report = $out }
+}
 function New-SizingRuns([string]$OutDir) {
     # Fuenf simulierte Arbeitstage desselben Servers (Drehbuch Tag, Tag 1 bis 5) und ein Schnelllauf; alle SIM-VDA01
     $days = @(1..5 | ForEach-Object { [string](Invoke-SimCapture $OutDir @{ SimulateScenario = 'Tag'; SimulateDay = $_ }) })
     [ordered]@{ Days = [string[]]$days; Quick = [string](Invoke-SimHealthOnly (Join-Path $OutDir 'quick')) }
+}
+function New-SizingReports([string]$OutDir) {
+    # Groessenberichte aus den fuenf Tagen und dem Schnelllauf: sizing.html, sizing-masked.html (-Mask Alles),
+    # sizing-personen.html (-Mask Personen), sizing-enough.html (Katalog mit minRecordings 1 und minMainHours 0.1);
+    # liefert @{ Runs; Report; Masked; MaskedP; Enough }
+    [void](New-Item -ItemType Directory -Path $OutDir -Force)
+    $runs = New-SizingRuns (Join-Path $OutDir 'runs')
+    $script = Join-Path $PSScriptRoot '../src/New-WorkerPerfSizingReport.ps1'; $roles = New-SimRoleFile (Join-Path $OutDir 'roles.sim.json')
+    $all = [string[]](@($runs.Days) + @($runs.Quick))
+    $r = @{ Runs = $runs; Report = (Join-Path $OutDir 'sizing.html'); Masked = (Join-Path $OutDir 'sizing-masked.html'); MaskedP = (Join-Path $OutDir 'sizing-personen.html')
+            Enough = (Join-Path $OutDir 'sizing-enough.html'); Roles = $roles }
+    [void](& $script -Path $all -OutFile $r.Report -RoleFile $roles 6>$null)
+    [void](& $script -Path $all -OutFile $r.Masked -RoleFile $roles -Mask Alles 6>$null)
+    [void](& $script -Path $all -OutFile $r.MaskedP -RoleFile $roles -Mask Personen 6>$null)
+    $cat = Join-Path $OutDir 'sizing-enough.json'
+    $j = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/sizing.de.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+    $j.thresholds.minRecordings.value = 1; $j.thresholds.minMainHours.value = 0.1
+    [IO.File]::WriteAllText($cat, ($j | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding $false))
+    [void](& $script -Path $all -OutFile $r.Enough -RoleFile $roles -SizingFile $cat 6>$null)
+    $r
+}
+function Get-StringFieldPaths($Value) {
+    # jeder Pfad gelesener Berichtsdaten (Get-ReportData), der einen Text haelt; Listenebenen als []
+    $out = New-Object System.Collections.Generic.List[string]
+    $walk = { param($v, [string]$p)
+        if ($null -eq $v -or $v -is [ValueType]) { return }
+        if ($v -is [string]) { if (-not $out.Contains($p)) { $out.Add($p) }; return }
+        if ($v -is [System.Management.Automation.PSCustomObject]) { foreach ($m in $v.PSObject.Properties) { & $walk $m.Value $(if ($p) { "$p.$($m.Name)" } else { [string]$m.Name }) }; return }
+        foreach ($x in $v) { & $walk $x "$p[]" } }
+    & $walk $Value ''
+    $out.ToArray()
 }
 function New-OldCaptureCopy([string]$Run, [string]$OutDir) {
     # Kopie einer Aufzeichnung, wie ein aelterer Collector sie schrieb: ticks.csv ohne die fuenf Spalten der Groesse
