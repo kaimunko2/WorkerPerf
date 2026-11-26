@@ -1732,12 +1732,18 @@ $script:Catalogue = @(
     @{ Id = 'services.map'; Signals = @(); Title = 'Dienste und ihre Prozesse (Win32_Service)'; Run = 'Invoke-ProbeServicesCheck' }
     @{ Id = 'perf.cpu'; Signals = @('cpu.host'); Title = 'CPU-Auslastung des Hosts'; Run = 'Invoke-ProbePerfCheck'
         Perf = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); Instances = 'total'; MaxInstances = 0 } }
+    # size of the server: every logical processor with the names of its instances (the collector takes an instance with
+    # the part _Total as a total), and the frequency counters, whose meaning inside a VMware VM the first run shows
+    @{ Id = 'perf.cpu.cores'; Signals = @('cpu.coreMax', 'cpu.coreBusy'); Title = 'CPU-Auslastung je logischem Prozessor und Namen der Instanzen'; Run = 'Invoke-ProbePerfCheck'
+        Perf = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); Instances = 'all'; MaxInstances = 0 } }
+    @{ Id = 'perf.cpu.frequency'; Signals = @('cpu.perf', 'cpu.utility'); Title = 'Leistungsanteil und geleistete Arbeit der CPU'; Run = 'Invoke-ProbePerfCheck'
+        Perf = @{ Category = 'Processor Information'; Counters = @('% Processor Performance', '% Processor Utility'); Instances = 'all'; MaxInstances = 4 } }
     @{ Id = 'perf.queue'; Signals = @('cpu.queue'); Title = 'Prozessor-Warteschlange'; Run = 'Invoke-ProbePerfCheck'
         Perf = @{ Category = 'System'; Counters = @('Processor Queue Length'); Instances = 'none'; MaxInstances = 0 } }
     @{ Id = 'perf.steal'; Signals = @('cpu.steal'); Title = 'CPU-Wartezeit der VM (VMware)'; Run = 'Invoke-ProbePerfCheck'
         Perf = @{ Category = 'VM Processor'; Counters = @('CPU stolen time'); Instances = 'all'; MaxInstances = 0 } }
-    @{ Id = 'perf.memory'; Signals = @('mem.used', 'mem.commit', 'mem.pagesin'); Title = 'Arbeitsspeicher, Zusagen, Seiteneingaben'; Run = 'Invoke-ProbePerfCheck'
-        Perf = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec'); Instances = 'none'; MaxInstances = 0 } }
+    @{ Id = 'perf.memory'; Signals = @('mem.used', 'mem.commit', 'mem.pagesin', 'mem.pagesout'); Title = 'Arbeitsspeicher, Zusagen, Seitenein- und -ausgaben'; Run = 'Invoke-ProbePerfCheck'
+        Perf = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec', 'Pages Output/sec'); Instances = 'none'; MaxInstances = 0 } }
     @{ Id = 'perf.disk.total'; Signals = @(); Title = 'Physische Datentraeger gesamt'; Run = 'Invoke-ProbePerfCheck'
         Perf = @{ Category = 'PhysicalDisk'; Counters = @('Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Disk Reads/sec', 'Disk Writes/sec', 'Current Disk Queue Length'); Instances = 'total'; MaxInstances = 0 } }
     @{ Id = 'perf.network'; Signals = @(); Title = 'Netzwerkdurchsatz je Adapter'; Run = 'Invoke-ProbePerfCheck'
