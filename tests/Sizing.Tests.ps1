@@ -18,6 +18,21 @@ BeforeAll {
             RamMB = 65536.0; MemTop = $null; UsedMax = 60.0 } $Change
     }
     function Classes-Of($Facts) { @((Get-WorkerPerfIncidentClasses $Facts $Sz).Classes | ForEach-Object { $_.Id }) }
+    function New-RunRecord([hashtable]$Change) {
+        # eine Aufzeichnung mit Messung: 8 vCPU, 65536 MB, Server SIM-VDA01, vier Stunden Hauptzeit, keine Klasse
+        Merge @{ Path = 'run'; Server = 'SIM-VDA01'; StartMs = 1; EndMs = 14400001; DurationMin = 240.0; EndReason = 'duration'; HealthOnly = $false
+            Cores = 8; RamMB = 65536.0; MainTicks = 7200; MainHours = 4.0; Cpu = @{ Peak = 60.0; P95 = 50.0 }; Queue = @{ Peak = 1.0; P95 = 0.5 }
+            Commit = @{ PeakMB = 40000.0; P95MB = 39000.0; PeakPctRam = 61.0 }; SessionsPeak = 25; MainCpu = [double[]]@(50, 50, 50); MainSessions = [double[]]@(25, 25, 25)
+            CommitMaxMainMB = 40000.0; Classes = @{}; Bottlenecks = @(); Health = $null } $Change
+    }
+    function Summary-Of([int]$Runs, [double]$HoursEach) {
+        Get-WorkerPerfSizingSummary -Group @{ Key = 'SIM-VDA01'; Runs = @(1..$Runs | ForEach-Object { New-RunRecord @{ StartMs = $_; MainHours = $HoursEach } }) } -Sizing $Sz
+    }
+    function New-SessionModel([double[]]$Sessions) {
+        # Schnappschuesse mit diesen Sitzungszahlen auf den Takten 1, 3, 5, ...; ein Takt mehr als der letzte Schnappschuss
+        $n = 2 * $Sessions.Count
+        @{ Tick = @{ N = $n; ElapsedSec = [double[]]@(1..$n | ForEach-Object { 2.0 }) }; Snap = @{ N = $Sessions.Count; Sessions = $Sessions; TickPos = [int[]]@(0..($Sessions.Count - 1) | ForEach-Object { 2 * $_ + 1 }) } }
+    }
     $script:BadNo = 0
     function New-BadCatalogue([scriptblock]$Change) {
         # eine Kopie des Katalogs mit einer Aenderung; $Change sieht den Katalog als $j
@@ -188,5 +203,120 @@ Describe 'Einordnung an simulierten Aufzeichnungen' {
     It 'liefert fuer einen Schnelllauf leere Listen' {
         $a = Get-WorkerPerfRunAnalysis -Path (Invoke-SimHealthOnly (Join-Path $TestDrive 'q')) -Thresholds $Th -Roles $SimRoles -Sizing $Sz
         @($a.Incidents).Count | Should -Be 0; @($a.Findings).Count | Should -Be 0; $a.Model.Meta.HealthOnly | Should -BeTrue
+    }
+}
+Describe 'Hochrechnung von Hand nachgerechnet' {
+    It 'rechnet das Beispiel des Entwurfs: 8 vCPU, L 92, T 75 -> 10 bis 12' {
+        $lo = Get-WorkerPerfCpuNeed 8 92 75 1.9; $lo | Should -BeGreaterThan 9.97; $lo | Should -BeLessThan 9.98
+        $hi = Get-WorkerPerfCpuNeed 8 92 75 1.5; $hi | Should -BeGreaterThan 11.34; $hi | Should -BeLessThan 11.35
+        $r = Get-WorkerPerfCpuRange 8 92 75 $Sz; $r.Low | Should -Be 10; $r.High | Should -Be 12
+    }
+    It 'rundet auf eine gerade Zahl auf' { @(9.975, 11.344, 10.0, 10.0000001, 7.01) | ForEach-Object { Get-WorkerPerfEvenUp $_ } | Should -Be @(10, 12, 10, 10, 8) }
+    It 'zeigt eine Spanne aus einer Zahl als eine Zahl' {                                    # Review Focus 5
+        $r = Get-WorkerPerfCpuRange 7 75.1 75 $Sz; $r.Low | Should -Be 8; $r.High | Should -Be 8
+    }
+    It 'Grenze 16: obere Grenze 16 ohne, 18 mit dem Hinweis auf mehr Server' {
+        (Get-WorkerPerfCpuRange 10 92 75 $Sz).High | Should -Be 16
+        (Get-WorkerPerfCpuDecision -Recurring 'capacity' -Seen 'capacity' -Load 92 -Target 75 -Cores 10 -SessionsPeak 31 -HasMainTime $true -Sizing $Sz).Hints | Should -Not -Contain 'scaleOutToo'
+        $d = Get-WorkerPerfCpuDecision -Recurring 'capacity' -Seen 'capacity' -Load 92 -Target 75 -Cores 12 -SessionsPeak 31 -HasMainTime $true -Sizing $Sz
+        $d.Kind | Should -Be 'range'; $d.High | Should -Be 18; $d.Hints | Should -Contain 'scaleOutToo'
+    }
+    It 'Grenze 24: bis 24 Spanne, darueber nur mehr Server mit Sitzungen x T / L' {
+        $d = Get-WorkerPerfCpuDecision -Recurring 'capacity' -Seen 'capacity' -Load 92 -Target 75 -Cores 16 -SessionsPeak 31 -HasMainTime $true -Sizing $Sz
+        $d.Kind | Should -Be 'range'; $d.Low | Should -Be 20; $d.High | Should -Be 24
+        $e = Get-WorkerPerfCpuDecision -Recurring 'capacity' -Seen 'capacity' -Load 92 -Target 75 -Cores 18 -SessionsPeak 31 -HasMainTime $true -Sizing $Sz
+        $e.Kind | Should -Be 'scaleOut'; $e.Sessions | Should -Be 25; $e.Low | Should -BeNullOrEmpty
+    }
+}
+Describe 'Wann eine vCPU-Spanne steht' {
+    BeforeAll { function D([string[]]$Rec, [string[]]$Seen, [double]$L) { Get-WorkerPerfCpuDecision -Recurring $Rec -Seen $Seen -Load $L -Target 75 -Cores 8 -SessionsPeak 31 -HasMainTime $true -Sizing $Sz } }
+    It 'keine vCPU-Zahl bei wiederkehrendem VMware-Host' { $d = D @('host', 'capacity') @('host', 'capacity') 92; $d.Kind | Should -Be 'host'; $d.Low | Should -BeNullOrEmpty; $d.Hints | Should -Contain 'hostCheck' }
+    It 'Groesse reicht unter und bei T' { (D @('capacity') @('capacity') 74.9).Kind | Should -Be 'enough'; (D @('capacity') @('capacity') 75).Kind | Should -Be 'enough' }
+    It 'Spanne bei wiederkehrender Kapazitaet, mit Hinweis bei Leistung je Kern' {
+        $d = D @('capacity', 'singlecore') @('capacity', 'singlecore') 92; $d.Kind | Should -Be 'range'; $d.Hints | Should -Contain 'singlecoreToo'; $d.Hints | Should -Contain 'numa'
+    }
+    It 'keine vCPU-Zahl bei Leistung je Kern oder Anwendung allein' {
+        $d = D @('singlecore') @('singlecore') 92; $d.Kind | Should -Be 'other'; $d.Cause | Should -Be 'singlecore'; $d.Low | Should -BeNullOrEmpty
+        (D @('app') @('app') 92).Cause | Should -Be 'app'; (D @() @('capacity') 92).Cause | Should -Be ''
+    }
+    It 'nennt einen einzelnen Host-Vorfall als Hinweis bei der Spanne' { (D @('capacity') @('capacity', 'host') 92).Hints | Should -Contain 'hostOnce' }
+    It 'rechnet ohne Hauptzeit nicht hoch' {                                                        # Review Focus 4
+        (Get-WorkerPerfCpuDecision -Recurring 'capacity' -Seen 'capacity' -Load ([double]::NaN) -Target 75 -Cores 8 -SessionsPeak 0 -HasMainTime $false -Sizing $Sz).Kind | Should -Be 'noMainTime'
+    }
+}
+Describe 'Arbeitsspeicher' {
+    It 'rundet C / 0,8 auf volle 4 GB' { Get-WorkerPerfRamTarget 60000 $Sz | Should -Be 76; Get-WorkerPerfRamTarget 49152 $Sz | Should -Be 60 }
+    It 'empfiehlt mehr RAM nur bei wiederkehrender Kapazitaet' {
+        $m = Get-WorkerPerfMemoryDecision -Recurring 'mem.capacity' -CommitMaxMB 70000 -RamMB 65536 -Sizing $Sz; $m.Kind | Should -Be 'more'; $m.TargetGB | Should -Be 88
+        (Get-WorkerPerfMemoryDecision -Recurring 'mem.commit' -CommitMaxMB 90000 -RamMB 65536 -Sizing $Sz).Kind | Should -Be 'pagefile'
+        (Get-WorkerPerfMemoryDecision -Recurring 'mem.app' -CommitMaxMB 60000 -RamMB 65536 -Sizing $Sz).Kind | Should -Be 'app'
+        $e = Get-WorkerPerfMemoryDecision -Recurring @() -CommitMaxMB 70000 -RamMB 65536 -Sizing $Sz; $e.Kind | Should -Be 'enough'; $e.Hints | Should -Contain 'commitAboveRam'
+        (Get-WorkerPerfMemoryDecision -Recurring @() -CommitMaxMB 60000 -RamMB 65536 -Sizing $Sz).Hints | Should -Not -Contain 'commitAboveRam'
+    }
+}
+Describe 'Ueber die Aufzeichnungen' {
+    It 'nimmt als Hauptzeit die Takte mit mindestens halb so vielen Sitzungen wie in der Spitze' {
+        # Modell mit Schnappschuessen Sessions 0, 10, 20, 9, 10 auf den Takten 1, 3, 5, 7, 9 (10 Takte)
+        Get-WorkerPerfMainTicks (New-SessionModel @(0, 10, 20, 9, 10)) 50 | Should -Be @(3, 4, 5, 6, 9)
+        @(Get-WorkerPerfMainTicks (New-SessionModel @(0, 0, 0)) 50).Count | Should -Be 0                       # Review Focus 4
+    }
+    It 'zaehlt wiederkehrend ab der Haelfte der Aufzeichnungen' {
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'SIM-VDA01'; Runs = @((New-RunRecord @{ Classes = @{ capacity = 1 } }), (New-RunRecord @{ Classes = @{ capacity = 2 } }), (New-RunRecord @{}), (New-RunRecord @{})) } -Sizing $Sz
+        $s.Recurring.Contains('capacity') | Should -BeTrue; $s.Recurring['capacity'] | Should -Be 2; $s.Result.Key | Should -Be 'recurring'; $s.Result.Class | Should -Be 'capacity'
+        $s.Result.Count | Should -Be 2; $s.Result.Total | Should -Be 4; $s.Result.Resource | Should -Be 'cpu'
+        $t = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @((New-RunRecord @{ Classes = @{ capacity = 1 } }), (New-RunRecord @{}), (New-RunRecord @{})) } -Sizing $Sz
+        $t.Recurring.Contains('capacity') | Should -BeFalse; $t.Seen['capacity'] | Should -Be 1; $t.Result.Key | Should -Be 'once'
+        (Summary-Of 3 4.0).Result.Key | Should -Be 'none'
+    }
+    It 'bildet L aus der Hauptzeit aller Aufzeichnungen und entscheidet daraus' {
+        $runs = @((New-RunRecord @{ StartMs = 1; Classes = @{ capacity = 1 }; MainCpu = [double[]]@(80, 90, 92); Cpu = @{ Peak = 97.0; P95 = 92.0 }; SessionsPeak = 31; CommitMaxMainMB = 55000.0 }),
+            (New-RunRecord @{ StartMs = 2; Classes = @{ capacity = 1 }; MainCpu = [double[]]@(85, 91, 92); SessionsPeak = 28 }),
+            (New-RunRecord @{ StartMs = 3; MainCpu = [double[]]@(); MainHours = 0.0; SessionsPeak = 0 }))                          # Review Focus 4: ohne Hauptzeit
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = $runs } -Sizing $Sz
+        $s.Load | Should -Be 92; $s.Peak | Should -Be 97; $s.Target | Should -Be 75; $s.SessionsPeak | Should -Be 31; $s.CommitMaxMB | Should -Be 55000; $s.MainHours | Should -Be 8
+        $s.Cpu.Kind | Should -Be 'range'; $s.Cpu.Low | Should -Be 10; $s.Cpu.High | Should -Be 12; $s.Memory.Kind | Should -Be 'enough'; $s.LowMeasure | Should -BeTrue
+        $n = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @($runs[2]) } -Sizing $Sz
+        $n.Cpu.Kind | Should -Be 'noMainTime'; [double]::IsNaN($n.Load) | Should -BeTrue
+    }
+    It 'merkt wenig Messzeit unter drei Aufzeichnungen oder zwoelf Stunden Hauptzeit' {
+        (Summary-Of 3 4.0).LowMeasure | Should -BeFalse; (Summary-Of 2 10.0).LowMeasure | Should -BeTrue; (Summary-Of 3 3.96).LowMeasure | Should -BeTrue
+    }
+    It 'nennt einen Wechsel der Groesse und rechnet von der letzten Aufzeichnung' {                 # Review Focus 2
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @((New-RunRecord @{ StartMs = 1; Cores = 8 }), (New-RunRecord @{ StartMs = 2; Cores = 8 }), (New-RunRecord @{ StartMs = 3; Cores = 10 })) } -Sizing $Sz
+        $s.SizeChanged | Should -BeTrue; $s.Cores | Should -Be 10; @($s.Sizes).Count | Should -Be 2; $s.Sizes[0].Cores | Should -Be 8
+        (Summary-Of 3 4.0).SizeChanged | Should -BeFalse
+    }
+    It 'zaehlt einen Schnelllauf nicht fuer die Last' {
+        $s = Get-WorkerPerfSizingSummary -Group @{ Key = 'x'; Runs = @((New-RunRecord @{}), (New-RunRecord @{ HealthOnly = $true; StartMs = 5; Health = @{ 'operation.powerPlan' = 'Ausbalanciert' } })) } -Sizing $Sz
+        @($s.LoadRuns).Count | Should -Be 1; @($s.Runs).Count | Should -Be 2; $s.Evidence['operation.powerPlan'] | Should -Be 'Ausbalanciert'
+    }
+    It 'prueft denselben Server an einer Stelle, ohne Ruecksicht auf die Schreibweise' {               # Review Focus 3
+        { Assert-WorkerPerfSameServer @(@{ Path = 'a'; Server = 'SIM-VDA01' }, @{ Path = 'b'; Server = 'sim-vda01' }) } | Should -Not -Throw
+        { Assert-WorkerPerfSameServer @(@{ Path = 'a'; Server = 'SIM-VDA01' }, @{ Path = 'C:\x\b'; Server = 'SIM-VDA02' }) } | Should -Throw "*'C:\x\b'*SIM-VDA02*spaeterer Baustein*"
+    }
+    It 'ordnet die Aufzeichnungen auf der Achse Zeit nach ihrem Beginn' {                            # Review Focus 3
+        $g = @(Group-WorkerPerfSizingRuns @((New-RunRecord @{ StartMs = 3 }), (New-RunRecord @{ StartMs = 1 }), (New-RunRecord @{ StartMs = 2 })) 'time')
+        $g.Count | Should -Be 1; @($g[0].Runs | ForEach-Object { $_.StartMs }) | Should -Be @(1, 2, 3); $g[0].Key | Should -Be 'SIM-VDA01'
+    }
+    It 'bildet die Kennzahlen einer simulierten Aufzeichnung' {
+        $run = Invoke-SimCapture (Join-Path $TestDrive 'tag') @{ SimulateScenario = 'Tag'; SimulateDay = 3 }
+        $roles = Read-WorkerPerfRoles (New-SimRoleFile (Join-Path $TestDrive 'rt.json'))
+        $head = Get-WorkerPerfRunServer $run; $head.Server | Should -Be 'SIM-VDA01'; $head.HealthOnly | Should -BeFalse; $head.StartMs | Should -BeGreaterThan 0
+        $r = Get-WorkerPerfSizingRun -Analysis (Get-WorkerPerfRunAnalysis -Path $run -Thresholds $Th -Roles $roles -Sizing $Sz) -Path $run -Sizing $Sz
+        $r.Server | Should -Be 'SIM-VDA01'; $r.Cores | Should -Be 8; $r.RamMB | Should -Be 65536; $r.SessionsPeak | Should -Be 31; $r.HealthOnly | Should -BeFalse
+        $r.Cpu.Peak | Should -BeGreaterOrEqual 91; $r.Cpu.P95 | Should -BeGreaterOrEqual 90; $r.Queue.Peak | Should -Be 3; $r.DurationMin | Should -BeGreaterThan 59
+        $r.MainHours | Should -BeGreaterThan 0.5; $r.MainHours | Should -BeLessThan 0.8; @($r.MainCpu).Count | Should -Be $r.MainTicks; @($r.MainSessions).Count | Should -Be $r.MainTicks
+        ($r.MainSessions | Measure-Object -Minimum).Minimum | Should -BeGreaterOrEqual 15.5
+        # die entzogene CPU-Zeit liegt in der Spitze: ihr eigener Vorfall und die Dauerzustaende der Spitze tragen den VMware-Host
+        $r.Classes['capacity'] | Should -BeGreaterOrEqual 1; $r.Classes['host'] | Should -BeGreaterOrEqual 1
+        foreach ($e in @(Get-Content (Join-Path $run 'expected.json') -Raw | ConvertFrom-Json | Where-Object { $_.Type -ne 'ereignis' })) {
+            $hit = @($r.Bottlenecks | Where-Object { $_.StartMs -lt $e.EndMs -and $_.EndMs -gt $e.StartMs -and [Math]::Abs($_.StartMs - $e.StartMs) -le 30000 })
+            $hit.Count | Should -BeGreaterOrEqual 1 -Because $e.Key; $hit[0].ClassIds | Should -Be @($e.Classes) -Because $e.Key
+        }
+        $r.CommitMaxMainMB | Should -BeGreaterThan 50000
+        $r.Health['size.cpuLogical'] | Should -Be 8
+        $q = Invoke-SimHealthOnly (Join-Path $TestDrive 'tq'); (Get-WorkerPerfRunServer $q).HealthOnly | Should -BeTrue
+        $qr = Get-WorkerPerfSizingRun -Analysis (Get-WorkerPerfRunAnalysis -Path $q -Thresholds $Th -Roles $roles -Sizing $Sz) -Path $q -Sizing $Sz
+        $qr.HealthOnly | Should -BeTrue; $qr.Server | Should -Be 'SIM-VDA01'; $qr.Health['size.cpuLogical'] | Should -Be 8
     }
 }

@@ -617,3 +617,291 @@ function Get-WorkerPerfRunAnalysis {
     Add-WorkerPerfIncidentClasses -Incidents $incidents -Model $model -Thresholds $Thresholds -Sizing $Sizing
     return @{ Model = $model; Series = [object[]]$series; Findings = [object[]]$findings; Incidents = [object[]]$incidents }
 }
+
+# ---------------------------------------------------------------------------------------------
+# Several recordings of one server: main time, figures per recording, recurring causes, projection
+# ---------------------------------------------------------------------------------------------
+
+function Get-WorkerPerfRunServer([string]$Path) {
+    # The head of a recording from its meta.json only: @{ Path; Server; StartMs; HealthOnly }.
+    $metaPath = Join-Path $Path 'meta.json'
+    if (-not (Test-Path -LiteralPath $metaPath -PathType Leaf)) { throw "Die Aufzeichnung '$Path' hat keine meta.json; ist es ein Aufzeichnungsordner?" }
+    $meta = ConvertFrom-WorkerPerfJsonFile $metaPath
+    $startMs = [long]0
+    $text = [string](Get-WorkerPerfField $meta 'StartTime')
+    $dto = [DateTimeOffset]::MinValue
+    if ($text -ne '' -and [DateTimeOffset]::TryParse($text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$dto)) { $startMs = $dto.ToUnixTimeMilliseconds() }
+    $quick = Get-WorkerPerfField $meta 'HealthOnly'
+    return @{ Path = $Path; Server = [string](Get-WorkerPerfField $meta 'Computer'); StartMs = $startMs; HealthOnly = ($quick -is [bool] -and $quick) }
+}
+
+function Assert-WorkerPerfSameServer([object[]]$Runs) {
+    # The one place that decides what "the same server" is (phase 1: the computer name, without regard to case). A later
+    # comparison of several servers replaces this check.
+    $list = @($Runs)
+    if ($list.Count -eq 0) { return }
+    $first = [string]$list[0].Server
+    foreach ($r in $list) {
+        if ([string]::Compare([string]$r.Server, $first, [StringComparison]::OrdinalIgnoreCase) -ne 0) {
+            throw ("Die Aufzeichnung '{0}' stammt vom Server '{1}', die erste von '{2}'. Der Groessenbericht vergleicht nur Aufzeichnungen desselben Servers; der Vergleich verschiedener Server ist ein spaeterer Baustein." -f $r.Path, $r.Server, $first)
+        }
+    }
+}
+
+function Get-WorkerPerfTickSessions($Model) {
+    # the number of sessions of every tick: that of the last snapshot at or before the tick, before the first one the first's
+    $n = [int]$Model.Tick.N
+    $out = New-Object double[] $n
+    $sessions = @($Model.Snap.Sessions); $pos = @($Model.Snap.TickPos)
+    if ($sessions.Count -eq 0) { return , $out }
+    $p = 0
+    for ($i = 0; $i -lt $n; $i++) {
+        while ($p + 1 -lt $sessions.Count -and [int]$pos[$p + 1] -le $i) { $p++ }
+        $v = [double]$sessions[$p]
+        if ([double]::IsNaN($v)) { $v = 0.0 }
+        $out[$i] = $v
+    }
+    return , $out
+}
+
+function Get-WorkerPerfMainTicks($Model, [double]$SessionPct) {
+    # Main time: the ticks with at least SessionPct % of the highest number of sessions of the recording (no calendar
+    # needed: it fits day work and shifts). A recording without sessions has none.
+    $perTick = Get-WorkerPerfTickSessions $Model
+    $peak = 0.0
+    foreach ($v in $perTick) { if ($v -gt $peak) { $peak = $v } }
+    if ($peak -le 0) { return }
+    $need = $peak * $SessionPct / 100.0
+    for ($i = 0; $i -lt $perTick.Length; $i++) { if ($perTick[$i] -ge $need) { $i } }
+}
+
+function Get-WorkerPerfSizingRun {
+    # The figures of one recording for the sizing report, from its analysis (Get-WorkerPerfRunAnalysis): Path; Server;
+    # StartMs; EndMs; DurationMin; EndReason; HealthOnly; Cores; RamMB; MainTicks (count); MainHours; Cpu @{ Peak; P95 };
+    # Queue @{ Peak; P95 } (per CPU); Commit @{ PeakMB; P95MB; PeakPctRam }; SessionsPeak; MainCpu and MainSessions (the
+    # values of the main time, tick by tick); CommitMaxMainMB; Classes (id -> number of incidents); Bottlenecks
+    # @(@{ Id; StartMs; EndMs; Lead; ClassIds; App }); Health (the values of the health picture the catalogue names as
+    # evidence, id -> value, or $null). A quick run has the head fields and Health only.
+    param($Analysis, [string]$Path, $Sizing)
+    $model = $Analysis.Model; $meta = $model.Meta
+    $health = $null
+    if ($null -ne $model.Health) {
+        $health = [ordered]@{}
+        foreach ($id in $Sizing.Evidence.Keys) {
+            if (-not $script:WorkerPerfHealthValues.Contains($id)) { continue }
+            $area = Get-WorkerPerfField (Get-WorkerPerfField $model.Health 'Areas') ([string]$script:WorkerPerfHealthValues[$id].Area)
+            $entry = Get-WorkerPerfField (Get-WorkerPerfField $area 'Values') $id
+            if ($null -ne $entry -and [string](Get-WorkerPerfField $entry 'State') -eq 'read') { $health[$id] = Get-WorkerPerfField $entry 'Value' }
+        }
+    }
+    $head = Get-WorkerPerfRunServer $Path
+    $run = @{
+        Path = $Path; Server = [string]$meta['Computer']; StartMs = [long]$head.StartMs; EndMs = [long]$head.StartMs; DurationMin = 0.0
+        EndReason = [string]$meta['EndReason']; HealthOnly = [bool]$meta['HealthOnly']; Cores = [int]$meta['Cores']; RamMB = [double]$meta['RamMB']; Health = $health
+    }
+    if ($run.HealthOnly) {
+        # the size of a quick run comes from its health picture
+        if ($null -ne $health) {
+            if ($null -ne $health['size.cpuLogical']) { $run.Cores = [int]$health['size.cpuLogical'] }
+            if ($null -ne $health['size.memTotalMB']) { $run.RamMB = [double]$health['size.memTotalMB'] }
+        }
+        return $run
+    }
+    if ($null -ne $model.CaptureStartMs) { $run.StartMs = [long]$model.CaptureStartMs }
+    if ($null -ne $model.CaptureEndMs) { $run.EndMs = [long]$model.CaptureEndMs }
+    $run.DurationMin = ($run.EndMs - $run.StartMs) / 60000.0
+    $sig = $model.Tick.Signal
+    $max = { param([double[]]$Values) $m = [double]::NaN; foreach ($v in $Values) { if (-not [double]::IsNaN($v) -and ([double]::IsNaN($m) -or $v -gt $m)) { $m = $v } }; $m }
+    $run.Cpu = @{ Peak = (& $max $sig['cpu.host']); P95 = (Get-WorkerPerfPercentile $sig['cpu.host'] 95) }
+    $run.Queue = @{ Peak = (& $max $sig['cpu.queue']); P95 = (Get-WorkerPerfPercentile $sig['cpu.queue'] 95) }
+    $committed = [double[]]$model.Tick.Raw['MemCommittedMB']
+    $commitPeak = & $max $committed
+    $pctRam = [double]::NaN
+    if ($run.RamMB -gt 0 -and -not [double]::IsNaN($commitPeak)) { $pctRam = 100.0 * $commitPeak / $run.RamMB }
+    $run.Commit = @{ PeakMB = $commitPeak; P95MB = (Get-WorkerPerfPercentile $committed 95); PeakPctRam = $pctRam }
+    $perTick = Get-WorkerPerfTickSessions $model
+    $run.SessionsPeak = [int](& $max $perTick)
+    if ($run.SessionsPeak -lt 0) { $run.SessionsPeak = 0 }
+    $main = [int[]]@(Get-WorkerPerfMainTicks $model ([double]$Sizing.Thresholds.mainSessionPct.Value))
+    $mainCpu = New-Object double[] $main.Length; $mainSessions = New-Object double[] $main.Length
+    $seconds = 0.0; $commitMain = [double]::NaN
+    for ($k = 0; $k -lt $main.Length; $k++) {
+        $i = $main[$k]
+        $mainCpu[$k] = $sig['cpu.host'][$i]; $mainSessions[$k] = $perTick[$i]
+        $e = [double]$model.Tick.ElapsedSec[$i]
+        if (-not [double]::IsNaN($e) -and $e -gt 0) { $seconds += $e }
+        $c = $committed[$i]
+        if (-not [double]::IsNaN($c) -and ([double]::IsNaN($commitMain) -or $c -gt $commitMain)) { $commitMain = $c }
+    }
+    $run.MainTicks = $main.Length; $run.MainHours = $seconds / 3600.0; $run.MainCpu = $mainCpu; $run.MainSessions = $mainSessions; $run.CommitMaxMainMB = $commitMain
+    $classes = @{}
+    $bottlenecks = New-Object System.Collections.Generic.List[object]
+    foreach ($inc in @($Analysis.Incidents)) {
+        $ids = [string[]]@(@(Get-WorkerPerfField $inc 'Classes') | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_.Id })
+        if ($ids.Count -eq 0) { continue }
+        foreach ($id in $ids) { if ($classes.ContainsKey($id)) { $classes[$id]++ } else { $classes[$id] = 1 } }
+        $app = ''
+        foreach ($c in @($inc.Classes)) { if ($app -eq '' -and $null -ne $c.Values -and $c.Values.ContainsKey('app')) { $app = [string]$c.Values['app'] } }
+        $bottlenecks.Add(@{ Id = [int]$inc.Id; StartMs = [long]$inc.StartMs; EndMs = [long]$inc.EndMs; Lead = [string]$inc.Lead; ClassIds = $ids; App = $app })
+    }
+    $run.Classes = $classes; $run.Bottlenecks = [object[]]$bottlenecks.ToArray()
+    return $run
+}
+
+function Group-WorkerPerfSizingRuns([object[]]$Runs, [ValidateSet('time')][string]$Axis = 'time') {
+    # The recordings along an axis. Axis time: one group per server (phase 1: one), its recordings by their start. A later
+    # axis "server" groups the other way round without another data format.
+    $groups = [ordered]@{}
+    foreach ($r in @($Runs)) {
+        $key = ([string]$r.Server).ToUpperInvariant()
+        if (-not $groups.Contains($key)) { $groups[$key] = New-Object System.Collections.Generic.List[object] }
+        $groups[$key].Add($r)
+    }
+    foreach ($key in $groups.Keys) {
+        @{ Key = $key; Runs = [object[]]@($groups[$key].ToArray() | Sort-Object -Property @{ Expression = { [long]$_.StartMs } }, @{ Expression = { [string]$_.Path } }) }
+    }
+}
+
+function Get-WorkerPerfCpuNeed([int]$Cores, [double]$Load, [double]$Target, [double]$Factor) {
+    # Not linear: twice the cores carry Factor times the load (1.5 to 1.9), so the size for the load is
+    # Cores * (Load / Target) ^ (1 / log2(Factor)).
+    return $Cores * [Math]::Pow($Load / $Target, 1.0 / [Math]::Log($Factor, 2))
+}
+
+function Get-WorkerPerfEvenUp([double]$Value) {
+    # up to an even number of vCPU (a value that is even but for rounding noise stays)
+    return [int](2 * [Math]::Ceiling([Math]::Round($Value, 6) / 2))
+}
+
+function Get-WorkerPerfCpuRange([int]$Cores, [double]$Load, [double]$Target, $Sizing) {
+    # the range of the estimate: Low with the better scaling, High with the worse one
+    return @{
+        Low = (Get-WorkerPerfEvenUp (Get-WorkerPerfCpuNeed $Cores $Load $Target ([double]$Sizing.Thresholds.scalingHigh.Value)))
+        High = (Get-WorkerPerfEvenUp (Get-WorkerPerfCpuNeed $Cores $Load $Target ([double]$Sizing.Thresholds.scalingLow.Value)))
+    }
+}
+
+function Get-WorkerPerfCpuDecision {
+    # What the report says about the CPU, in this order: no main time -> noMainTime; the VMware host recurring -> host
+    # (no number of vCPU: more vCPU make it worse); the load at or under the target -> enough; capacity recurring ->
+    # range (over the limit per server: scaleOut with the sessions the server carries at its size, counted down
+    # linearly); else other, with the first recurring cause of singlecore, app, oneoff ('' without one).
+    # Returns @{ Kind; Low; High; Sessions; Cause; Hints } (ids only, no texts).
+    param([AllowEmptyCollection()][string[]]$Recurring = @(), [AllowEmptyCollection()][string[]]$Seen = @(), [double]$Load, [double]$Target, [int]$Cores,
+        [int]$SessionsPeak, [bool]$HasMainTime, $Sizing)
+    $d = @{ Kind = ''; Low = $null; High = $null; Sessions = $null; Cause = ''; Hints = [string[]]@() }
+    $hints = New-Object System.Collections.Generic.List[string]
+    $hostOnce = (@($Seen) -contains 'host' -and @($Recurring) -notcontains 'host')
+    if (-not $HasMainTime -or [double]::IsNaN($Load)) { $d.Kind = 'noMainTime'; return $d }
+    if (@($Recurring) -contains 'host') { $d.Kind = 'host'; $d.Hints = [string[]]@('hostCheck'); return $d }
+    if ($hostOnce) { $hints.Add('hostOnce') }
+    if ($Load -le $Target) { $d.Kind = 'enough'; $d.Hints = [string[]]$hints.ToArray(); return $d }
+    if (@($Recurring) -contains 'capacity') {
+        $range = Get-WorkerPerfCpuRange $Cores $Load $Target $Sizing
+        if ($range.High -gt [double]$Sizing.Thresholds.vcpuMax.Value) {
+            $d.Kind = 'scaleOut'; $d.Sessions = [int][Math]::Floor($SessionsPeak * $Target / $Load)
+        }
+        else {
+            $d.Kind = 'range'; $d.Low = [int]$range.Low; $d.High = [int]$range.High
+            if ($range.High -gt [double]$Sizing.Thresholds.vcpuScaleOut.Value) { $hints.Add('scaleOutToo') }
+            $hints.Add('numa')
+        }
+        if (@($Recurring) -contains 'singlecore') { $hints.Add('singlecoreToo') }
+        $d.Hints = [string[]]$hints.ToArray()
+        return $d
+    }
+    $d.Kind = 'other'
+    foreach ($c in 'singlecore', 'app', 'oneoff') { if ($d.Cause -eq '' -and @($Recurring) -contains $c) { $d.Cause = $c } }
+    $d.Hints = [string[]]$hints.ToArray()
+    return $d
+}
+
+function Get-WorkerPerfRamTarget([double]$CommitMB, $Sizing) {
+    # RAM (GB) so that the committed memory is at most memTargetPct of it, up to a full step
+    $step = [double]$Sizing.Thresholds.memStepGB.Value
+    $gb = $CommitMB / ([double]$Sizing.Thresholds.memTargetPct.Value / 100.0) / 1024.0
+    return [int]($step * [Math]::Ceiling([Math]::Round($gb / $step, 6)))
+}
+
+function Get-WorkerPerfMemoryDecision {
+    # What the report says about the memory: more RAM only with a recurring shortage (lasting page output); the commit
+    # limit alone means the page file; a recurring single application means that application; else enough.
+    # Returns @{ Kind ('more' | 'pagefile' | 'app' | 'enough'); TargetGB; Hints }.
+    param([AllowEmptyCollection()][string[]]$Recurring = @(), [double]$CommitMaxMB, [double]$RamMB, $Sizing)
+    $d = @{ Kind = 'enough'; TargetGB = $null; Hints = [string[]]@() }
+    if (@($Recurring) -contains 'mem.capacity') {
+        $d.Kind = 'more'; $d.TargetGB = Get-WorkerPerfRamTarget $CommitMaxMB $Sizing; $d.Hints = [string[]]@('memPerSession', 'commitAboveRam')
+    }
+    elseif (@($Recurring) -contains 'mem.commit') { $d.Kind = 'pagefile' }
+    elseif (@($Recurring) -contains 'mem.app') { $d.Kind = 'app' }
+    elseif (-not [double]::IsNaN($CommitMaxMB) -and $CommitMaxMB -gt $RamMB) { $d.Hints = [string[]]@('commitAboveRam') }
+    return $d
+}
+
+# classes that are no bottleneck of their own in the result sentence (memory in use is no shortage; undecidable names a gap)
+$script:WorkerPerfSizingNoResultClasses = @('mem.used', 'undecidable')
+
+function Get-WorkerPerfSizingSummary {
+    # The recordings of one group (one server) together: Server; Runs (all, by start); LoadRuns (without quick runs);
+    # Seen (class -> number of recordings with it); Recurring (the classes in at least recurringPct of the recordings with
+    # a measurement); Load (L: P95 of the CPU over the main time of all recordings); Peak; Target; SessionsPeak;
+    # CommitMaxMB (of the main time); Cores, RamMB (of the last recording with a measurement); SizeChanged; Sizes (the
+    # sizes in their order); MainHours; TotalHours; LowMeasure; Cpu and Memory (the decisions); Result @{ Key
+    # ('recurring' | 'once' | 'none'); Class; Resource; Count; Total }; Evidence (the newest health picture of all
+    # recordings, quick runs included, or $null).
+    param($Group, $Sizing)
+    $runs = [object[]]@(@($Group.Runs) | Sort-Object -Property @{ Expression = { [long]$_.StartMs } })
+    $load = [object[]]@($runs | Where-Object { -not [bool]$_.HealthOnly })
+    $own = $Sizing.Thresholds
+    $seen = [ordered]@{}; $recurring = [ordered]@{}
+    foreach ($id in $script:WorkerPerfSizingClassOrder) {
+        $n = @($load | Where-Object { $null -ne $_.Classes -and $_.Classes.ContainsKey($id) -and [int]$_.Classes[$id] -gt 0 }).Count
+        if ($n -eq 0) { continue }
+        $seen[$id] = $n
+        if (100.0 * $n / $load.Count -ge [double]$own.recurringPct.Value) { $recurring[$id] = $n }
+    }
+    $pooled = New-Object System.Collections.Generic.List[double]
+    $peak = [double]::NaN; $sessionsPeak = 0; $commitMax = [double]::NaN; $mainHours = 0.0; $totalHours = 0.0
+    $sizes = New-Object System.Collections.Generic.List[object]
+    foreach ($r in $load) {
+        foreach ($v in @($r.MainCpu)) { $pooled.Add([double]$v) }
+        $p = [double]$r.Cpu.Peak
+        if (-not [double]::IsNaN($p) -and ([double]::IsNaN($peak) -or $p -gt $peak)) { $peak = $p }
+        if ([int]$r.SessionsPeak -gt $sessionsPeak) { $sessionsPeak = [int]$r.SessionsPeak }
+        $c = [double]$r.CommitMaxMainMB
+        if (-not [double]::IsNaN($c) -and ([double]::IsNaN($commitMax) -or $c -gt $commitMax)) { $commitMax = $c }
+        $mainHours += [double]$r.MainHours; $totalHours += [double]$r.DurationMin / 60.0
+        if ($sizes.Count -eq 0 -or [int]$sizes[$sizes.Count - 1].Cores -ne [int]$r.Cores -or [double]$sizes[$sizes.Count - 1].RamMB -ne [double]$r.RamMB) {
+            $sizes.Add(@{ Cores = [int]$r.Cores; RamMB = [double]$r.RamMB })
+        }
+    }
+    $cores = 0; $ramMb = 0.0
+    if ($load.Count -gt 0) { $cores = [int]$load[$load.Count - 1].Cores; $ramMb = [double]$load[$load.Count - 1].RamMB }
+    $loadValue = Get-WorkerPerfPercentile $pooled.ToArray() 95
+    $target = [double]$Sizing.Limits.target.Value
+    $cpu = Get-WorkerPerfCpuDecision -Recurring ([string[]]@($recurring.Keys)) -Seen ([string[]]@($seen.Keys)) -Load $loadValue -Target $target -Cores $cores `
+        -SessionsPeak $sessionsPeak -HasMainTime ($pooled.Count -gt 0) -Sizing $Sizing
+    $memory = Get-WorkerPerfMemoryDecision -Recurring ([string[]]@($recurring.Keys)) -CommitMaxMB $commitMax -RamMB $ramMb -Sizing $Sizing
+    $result = @{ Key = 'none'; Class = ''; Resource = ''; Count = 0; Total = $load.Count }
+    foreach ($pair in @(@('recurring', $recurring), @('once', $seen))) {
+        if ($result.Key -ne 'none') { break }
+        foreach ($id in $pair[1].Keys) {
+            if ($script:WorkerPerfSizingNoResultClasses -contains $id) { continue }
+            $res = [string]$Sizing.Classes[$id].Resource
+            if ($res -ne 'memory') { $res = 'cpu' }
+            $result = @{ Key = $pair[0]; Class = [string]$id; Resource = $res; Count = [int]$pair[1][$id]; Total = $load.Count }
+            break
+        }
+    }
+    $evidence = $null
+    foreach ($r in $runs) { if ($null -ne $r.Health) { $evidence = $r.Health } }
+    $server = [string]$Group.Key
+    if ($runs.Count -gt 0) { $server = [string]$runs[0].Server }
+    return @{
+        Server = $server; Runs = $runs; LoadRuns = $load; Seen = $seen; Recurring = $recurring
+        Load = $loadValue; Peak = $peak; Target = $target; SessionsPeak = $sessionsPeak; CommitMaxMB = $commitMax; Cores = $cores; RamMB = $ramMb
+        SizeChanged = ($sizes.Count -gt 1); Sizes = [object[]]$sizes.ToArray(); MainHours = $mainHours; TotalHours = $totalHours
+        LowMeasure = ($load.Count -lt [double]$own.minRecordings.Value -or $mainHours -lt [double]$own.minMainHours.Value)
+        Cpu = $cpu; Memory = $memory; Result = $result; Evidence = $evidence
+    }
+}

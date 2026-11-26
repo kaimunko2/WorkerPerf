@@ -377,7 +377,7 @@ Describe 'Simulation: Drehbuecher der Groesse' {
         (Get-SimExpected Ursachen | Where-Object Key -eq 'host').Classes | Should -Be @('host', 'capacity')
         (Get-SimExpected Ursachen | Where-Object Key -eq 'commit').Classes | Should -Be @('mem.commit')
         @(Get-SimExpected Ursachen | Where-Object { $_.Type -ne 'ereignis' }).Key | Should -Be @('host', 'singlecore', 'capacity', 'scan', 'memleak', 'memcapacity', 'commit')
-        @(Get-SimExpected Tag 3 | Where-Object { $_.Type -ne 'ereignis' }).Key | Should -Be @('peak', 'steal'); @(Get-SimExpected Tag 5 | Where-Object { $_.Type -ne 'ereignis' }).Count | Should -Be 0
+        @(Get-SimExpected Tag 3 | Where-Object { $_.Type -ne 'ereignis' }).Key | Should -Be @('peak', 'steal'); (Get-SimExpected Tag 3 | Where-Object Key -eq 'peak').Classes | Should -Be @('host', 'capacity'); (Get-SimExpected Tag 2 | Where-Object Key -eq 'peak').Classes | Should -Be @('capacity'); @(Get-SimExpected Tag 5 | Where-Object { $_.Type -ne 'ereignis' }).Count | Should -Be 0
     }
     It 'laesst die simulierte Stunde unveraendert' {
         # dieselben Werte wie vor diesem Baustein an fuenf festen Sekunden
