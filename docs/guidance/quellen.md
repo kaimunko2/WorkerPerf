@@ -118,13 +118,12 @@ steht im Element. Namen von Richtlinien und Einstellungen stehen im Katalog engl
 deutschen Bezeichnungen der Oberflächen sind nicht aus einer Quelle belegt.
 
 Wer ein Element mit Quelle ergänzt, entfernt oder seinen Textanfang ändert, passt diese Datei an; ein Element nur zu
-verschieben, braucht hier keine Änderung. Der Test
-`tests/GuidanceCatalogue.Tests.ps1` prüft, dass jedes Element mit Quelle eine Kennung hat, dass es hier mit ihr unter
-seinem Dokument steht und dass hier keine Kennung steht, die der Katalog nicht hat. In den Abschnitten ab „AKI“ bis
-zur letzten Quelle aus der Praxis steht bei jeder Kennung der Anfang des Elementtexts: bis zum ersten Doppelpunkt, Semikolon oder zur ersten öffnenden Klammer
-nach dem zwanzigsten Zeichen, höchstens 110 Zeichen (ein längerer Anfang endet nach 107 Zeichen mit „…“); steht ein
-Schritt für jedes Office-Programm ein zweites Mal für Outlook im Katalog, folgt „(für Outlook)“. Der Test vergleicht
-auch das mit dem Katalog.
+verschieben, braucht hier keine Änderung. Der Test `tests/GuidanceCatalogue.Tests.ps1` prüft, dass jedes Element mit
+Quelle eine Kennung hat, dass es hier mit ihr unter seinem Dokument steht und dass hier keine Kennung steht, die der
+Katalog nicht hat. In den Abschnitten ab „AKI“ bis zur letzten Quelle aus der Praxis steht bei jeder Kennung der Anfang
+des Elementtexts: bis zum ersten Doppelpunkt, Semikolon oder zur ersten öffnenden Klammer nach dem zwanzigsten Zeichen,
+höchstens 110 Zeichen (ein längerer Anfang endet nach 107 Zeichen mit „…“); steht ein Schritt für jedes Office-Programm
+ein zweites Mal für Outlook im Katalog, folgt „(für Outlook)“. Der Test vergleicht auch das mit dem Katalog.
 
 ## Quellen aus der Praxis
 
