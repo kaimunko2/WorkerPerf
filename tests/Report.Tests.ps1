@@ -916,7 +916,7 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         $c = ($h.areas | Where-Object id -eq 'print').checks[0]; $c.id | Should -Be 'print.driversInSpooler'; $c.grade | Should -Be 'act'; $c.kind | Should -Be 'rule'; $c.source.url | Should -Match '^https://'
         foreach ($f in 'title', 'finding', 'meaning', 'kindLabel', 'value') { [string]$c.$f | Should -Not -BeNullOrEmpty -Because $f }; @($c.todo).Count | Should -BeGreaterThan 0
         # Literal angepasst (Task 14s und die Proben aus src/apps.json): 208 Rohwerte
-        $h.grades.act.word | Should -Be 'Handeln'; $h.grades.na.word | Should -Be 'Trifft nicht zu'; @($h.raw).Count | Should -Be 208; $h.offsetMin | Should -Be $D.meta.offsetMin
+        $h.grades.act.word | Should -Be 'Handeln'; $h.grades.na.word | Should -Be 'Trifft nicht zu'; @($h.raw).Count | Should -Be 209; $h.offsetMin | Should -Be $D.meta.offsetMin
         ($h.areas | Where-Object id -eq 'profile').countsText | Should -Be '1 zum Handeln'; ($h.areas | Where-Object id -eq 'size').countsText | Should -Be ''
         ($h.areas | Where-Object id -eq 'security').statusText | Should -Not -BeNullOrEmpty; ($h.areas | Where-Object id -eq 'size').statusText | Should -Be ''      # Sicherheitsprodukte: teilweise gelesen
     }
