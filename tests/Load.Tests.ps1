@@ -481,3 +481,49 @@ Describe 'Import-WorkerPerfRun: Zustandsbild' {
         $q.Rows.Start | Should -Be @(0); $q.Pairs.Count | Should -Be 0
     }
 }
+Describe 'Import-WorkerPerfRun: neue Signale' {
+    It 'liest Zeilen ohne die optionalen Felder und laesst die neuen Signale leer' {
+        $m = Import-TestRun 'g1' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }
+        $m.Tick.N | Should -Be 8; $m.Unreadable.Ticks | Should -Be 0
+        [double]::IsNaN($m.Tick.Signal['cpu.coreMax'][0]) | Should -BeTrue; $m.Measured['cpu.coreMax'] | Should -BeTrue      # Spalte in der Kopfzeile, keine Quelle dagegen
+        $m.Meta.CoreBusyPct | Should -BeNullOrEmpty
+    }
+    It 'liest die fuenf Werte und die Kern-Schwelle' {
+        $lines = @(0..7 | ForEach-Object { (New-TickLine $_) + ',97.5,1,104,41.6,12' })
+        $dir = Write-TestRun 'g2' @{ 'ticks.csv' = $lines; 'snapshots.csv' = $SnapLines }; $mf = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($mf, [IO.File]::ReadAllText($mf).Replace('"Simulated":false,', '"Simulated":false,"CoreBusyPct":90,'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Tick.Signal['cpu.coreMax'][3] | Should -Be 97.5; $m.Tick.Signal['cpu.coreBusy'][3] | Should -Be 1; $m.Tick.Signal['mem.pagesout'][3] | Should -Be 12
+        $m.Tick.Signal['cpu.perf'][3] | Should -Be 104; $m.Tick.Signal['cpu.utility'][3] | Should -Be 41.6; $m.Tick.Raw['CoreMaxPct'][0] | Should -Be 97.5
+        $m.Meta.CoreBusyPct | Should -Be 90
+    }
+    It 'liest eine aeltere Aufzeichnung ohne die Spalten ganz' {                       # Review Focus 2
+        $dir = Write-TestRun 'g3' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $tf = Join-Path $dir 'ticks.csv'
+        $old = $WorkerPerfHeaders['ticks.csv'].Substring(0, $WorkerPerfHeaders['ticks.csv'].IndexOf(',CoreMaxPct'))
+        [IO.File]::WriteAllLines($tf, [string[]](@($old) + @($Ticks)))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Tick.N | Should -Be 8; $m.Unreadable.Ticks | Should -Be 0
+        foreach ($id in $WorkerPerfSizingSignalIds) { $m.Measured[$id] | Should -BeFalse -Because $id; [double]::IsNaN($m.Tick.Signal[$id][0]) | Should -BeTrue }
+        $m.Tick.Signal['cpu.host'][0] | Should -Be 50
+    }
+    It 'nimmt ein Signal einer nicht verfuegbaren Quelle als nicht gemessen' {
+        $dir = Write-TestRun 'g4' @{ 'ticks.csv' = $Ticks; 'snapshots.csv' = $SnapLines }; $mf = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($mf, [IO.File]::ReadAllText($mf).Replace('"Sources":{', '"Sources":{"cpu.utility":{"Available":false,"Detail":"x"},'))
+        $m = Import-WorkerPerfRun -Path $dir -Thresholds $Th -Roles $Roles
+        $m.Measured['cpu.utility'] | Should -BeFalse; $m.Measured['cpu.perf'] | Should -BeTrue
+    }
+    It 'haelt im Modell eines Schnelllaufs dieselben Schluessel' {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        $m = Import-WorkerPerfRun -Path (Invoke-SimHealthOnly (Join-Path $TestDrive 'q')) -Thresholds $Th -Roles $Roles
+        @($m.Tick.Signal['cpu.coreMax']).Count | Should -Be 0; $m.Measured['cpu.coreMax'] | Should -BeFalse
+    }
+    It 'bildet eine aeltere Aufzeichnung aus einer neuen nach (Testhelfer)' {
+        . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
+        $dir = Write-TestRun 'g5' @{ 'ticks.csv' = @(0..7 | ForEach-Object { (New-TickLine $_) + ',97.5,1,104,41.6,12' }); 'snapshots.csv' = $SnapLines }; $mf = Join-Path $dir 'meta.json'
+        [IO.File]::WriteAllText($mf, [IO.File]::ReadAllText($mf).Replace('"Sources":{', '"CoreBusyPct":90,"Sources":{"cpu.utility":{"Available":true,"Detail":"x"},'))
+        $old = New-OldCaptureCopy $dir (Join-Path $TestDrive 'oldcopy')
+        (Get-Content (Join-Path $old 'ticks.csv') -TotalCount 2)[1].Split(',').Count | Should -Be 19
+        $m = Import-WorkerPerfRun -Path $old -Thresholds $Th -Roles $Roles
+        $m.Tick.N | Should -Be 8; $m.Measured['cpu.coreMax'] | Should -BeFalse; $m.Meta.CoreBusyPct | Should -BeNullOrEmpty; $m.Sources.ContainsKey('cpu.utility') | Should -BeFalse
+    }
+}

@@ -90,6 +90,21 @@ function Copy-SimRun([string]$Run, [string]$OutDir, [string[]]$Without = @()) {
     Get-ChildItem -LiteralPath $Run -File | Where-Object { $Without -notcontains $_.Name -and $_.Name -notlike '*.html' } | Copy-Item -Destination $dir
     $dir
 }
+function New-OldCaptureCopy([string]$Run, [string]$OutDir) {
+    # Kopie einer Aufzeichnung, wie ein aelterer Collector sie schrieb: ticks.csv ohne die fuenf Spalten der Groesse
+    # (Kopfzeile und Zeilen), meta.json ohne CoreBusyPct und ohne die fuenf Eintraege in Sources; liefert den neuen Ordner
+    $dir = Copy-SimRun $Run $OutDir
+    $tf = Join-Path $dir 'ticks.csv'
+    $lines = [IO.File]::ReadAllLines($tf)
+    $keep = $lines[0].Split(',').Count - 5
+    [IO.File]::WriteAllLines($tf, [string[]]@($lines | ForEach-Object { ($_.Split(',') | Select-Object -First $keep) -join ',' }))
+    $mf = Join-Path $dir 'meta.json'
+    $meta = [IO.File]::ReadAllText($mf, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    $meta.PSObject.Properties.Remove('CoreBusyPct')
+    foreach ($id in 'cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout') { $meta.Sources.PSObject.Properties.Remove($id) }
+    [IO.File]::WriteAllText($mf, ($meta | ConvertTo-Json -Depth 12 -Compress), (New-Object Text.UTF8Encoding $false))
+    $dir
+}
 function New-SpikeRun([string]$Run, [string]$OutDir) {
     # ruhige Kopie mit zwei kritischen CPU-Takten (unter der Mindestdauer eines Befunds); ohne ICA-Werte, damit der
     # Dauerzustand der Netzstrecke keinen Vorfall bildet
