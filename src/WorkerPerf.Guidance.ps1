@@ -23,7 +23,10 @@ $script:WorkerPerfGuidanceConditions = @('cause.app', 'cause.security', 'cause.n
     'companion.security', 'endpoint.slow', 'event.applocker', 'event.defender', 'affected.many', 'affected.one', 'affected.unknown', 'chronic',
     'lead.cpu', 'lead.memory', 'lead.disk', 'lead.share', 'lead.profile',
     'pattern.none', 'pattern.unchecked', 'driver.v3', 'driver.v4', 'driver.shared', 'driver.isolated', 'spooler.crash', 'queue.stuck', 'before',
-    'incident.unverified')
+    'incident.unverified', 'class.host', 'class.singlecore')
+# conditions of the class of an incident (size of the server) whose class has a direction of its own: their steps stand
+# first in the guide (Get-WorkerPerfGuidanceItems)
+$script:WorkerPerfGuidanceClassConditions = @('class.host', 'class.singlecore')
 # conditions that only name a gap, something the capture did not measure or the report did not check: these names and
 # every unmeasured.<signal> and skipped.<category>
 $script:WorkerPerfGuidanceGapConditions = @('cause.notmeasured', 'pattern.unchecked', 'incident.unverified')
@@ -638,6 +641,11 @@ function Get-WorkerPerfGuidanceFacts($Incident, $Context, $Catalogue) {
     $leadResource = [string](Get-WorkerPerfField $Incident 'lead')
     if ($type -eq 'engpass' -and $script:WorkerPerfGuidanceWorker -ccontains $leadResource) { $c.Add('lead.' + $leadResource) }
     if ([bool](Get-WorkerPerfField $Incident 'unverified')) { $c.Add('incident.unverified') }
+    # the class of the incident, where the class has a step of its own
+    # (a loop, no script block: the facts of an incident are computed in one call of this function)
+    $classIds = New-Object System.Collections.Generic.List[string]
+    foreach ($cl in @(Get-WorkerPerfField $Incident 'classes')) { if ($null -ne $cl) { $classIds.Add('class.' + [string](Get-WorkerPerfField $cl 'id')) } }
+    foreach ($name in $script:WorkerPerfGuidanceClassConditions) { if ($classIds.Contains($name)) { $c.Add($name) } }
 
     # patterns, driver, spooler and queues of an event incident
     $driver = $null
@@ -787,8 +795,9 @@ function Test-WorkerPerfGuidanceTrailingCondition([string]$Name) {
 
 function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Conditions, [hashtable]$Values, $Templates) {
     # The elements of one list of a catalogue entry that the facts support: every condition of 'when' holds and every
-    # text can be filled. Groups, the order of the file within each: first the elements with a condition that says
-    # more than a gap or a coincidence in time, then the general ones, then those whose conditions all name a gap or
+    # text can be filled. Groups, the order of the file within each: first the elements with a condition of the class
+    # of the incident (the VMware host or the performance per core decides what every other step is worth), then the
+    # elements with a condition that says more than a gap or a coincidence in time, then the general ones, then those whose conditions all name a gap or
     # a coincidence in time (what is unknown, or merely happened at the same time, is not the first thing to do).
     # One rule for the sources from practice (ruling P3-R75): an element of the second or third group whose source
     # carries the catalogue's mark of a source from practice stands after both groups, the general ones first. So a
@@ -796,6 +805,7 @@ function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Condi
     # what was not measured, out of the first places. With a condition that says more it keeps its place.
     # Plain pipeline output (the caller writes @(...)). Templates (a List[string]) receives the templates of the texts
     # of the elements emitted (not their sources), for the glossary.
+    $withClass = New-Object System.Collections.Generic.List[object]
     $withCondition = New-Object System.Collections.Generic.List[object]
     $general = New-Object System.Collections.Generic.List[object]
     $trailing = New-Object System.Collections.Generic.List[object]
@@ -823,8 +833,10 @@ function Get-WorkerPerfGuidanceItems($Entry, [string]$ListName, [string[]]$Condi
         $practice = ([string](Get-WorkerPerfField $el 'source')).Contains($script:WorkerPerfGuidancePracticeMark)
         if ($when.Count -eq 0) { if ($practice) { $generalPractice.Add($item) } else { $general.Add($item) } }
         elseif (@($when | Where-Object { -not (Test-WorkerPerfGuidanceTrailingCondition ([string]$_)) }).Count -eq 0) { if ($practice) { $trailingPractice.Add($item) } else { $trailing.Add($item) } }
+        elseif (@($when | Where-Object { $script:WorkerPerfGuidanceClassConditions -ccontains [string]$_ }).Count -gt 0) { $withClass.Add($item) }
         else { $withCondition.Add($item) }
     }
+    foreach ($item in $withClass) { $item }
     foreach ($item in $withCondition) { $item }
     foreach ($item in $general) { $item }
     foreach ($item in $trailing) { $item }
@@ -1510,6 +1522,9 @@ function Get-WorkerPerfCopyParagraphs {
     }
     $cause = ([string](Get-WorkerPerfField $Incident 'causeText')).Trim()
     if ($cause) { (Format-WorkerPerfGuidancePart $Catalogue 'copy' 'cause' @{}) + ' ' + $cause }
+    # the class of the incident (size of the server), a paragraph of its own
+    $classLine = ([string](Get-WorkerPerfField $Incident 'classLine')).Trim()
+    if ($classLine) { $classLine }
     $affected = Get-WorkerPerfCopyAffected $Incident $Data $own $Catalogue $Texts
     if ($null -ne $affected) { $affected }
     $checks = Get-WorkerPerfGuidanceList $Guide 'checks'

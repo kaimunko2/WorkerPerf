@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkerPerf – Größe des Servers</title>
+<style>
+/* The sizing report: one page of its own in the style of the guided view of the report. It is light in every colour
+   scheme of the system and makes no request; on paper the buttons are left out. */
+html { color-scheme: light; }
+body {
+  --surface: #ffffff; --border: #d9dde3; --grid: #e8ebef; --text: #111418; --text2: #4b5360; --muted: #656d7a;
+  --warn: #f0a400; --warn-ink: #b97a00; --crit: #d03b3b; --good: #0c9a0c; --accent: #1f62c4; --on-accent: #ffffff;
+  --bar: #2a78d6; --bar2: #9ec5f4; --tint: #f4f7fb; --tint-edge: #cfdcee;
+  margin: 0; background: #ffffff; color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+header { padding: 14px 24px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 19px; margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+h2 { font-size: 17px; margin: 0 0 10px; font-weight: 600; }
+h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+.sub { color: var(--text2); font-size: 13px; overflow-wrap: anywhere; margin-top: 2px; }
+#maskInfo, #sizeInfo { margin-top: 4px; font-weight: 600; overflow-wrap: anywhere; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 22px; }
+section { min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; min-width: 0; }
+#result { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+#recommendations { display: flex; flex-direction: column; gap: 14px; }
+.rec { border-left-width: 5px; }
+.rec.st-act { border-left-color: var(--crit); } .rec.st-check { border-left-color: var(--warn); } .rec.st-ok { border-left-color: var(--good); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 6px; }
+.rec p { margin: 6px 0 0; max-width: 100ch; overflow-wrap: anywhere; }
+.rec .dir { font-weight: 600; }
+.status { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.status .sym { font-style: normal; }
+.st-act .status .sym { color: var(--crit); } .st-check .status .sym { color: var(--warn-ink); } .st-ok .status .sym { color: var(--good); }
+.proj { margin-top: 10px; padding: 10px 12px; background: var(--tint); border: 1px solid var(--tint-edge); border-radius: 6px; max-width: 100ch; }
+.proj .tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .02em; padding: 1px 8px; border: 1px solid var(--text2); border-radius: 10px; margin-right: 8px; }
+.proj .num { font-size: 18px; font-weight: 700; }
+.proj p { margin-top: 6px; }
+.rec h4 { font-size: 13px; margin: 10px 0 2px; font-weight: 600; color: var(--text2); }
+.rec ul { margin: 2px 0 0; padding-left: 20px; max-width: 100ch; }
+.rec li { overflow-wrap: anywhere; }
+.rel { color: var(--text2); font-size: 13px; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--text2); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.wrap { overflow-wrap: anywhere; min-width: 160px; }
+svg { display: block; width: 100%; height: auto; max-width: 900px; }
+svg text { font: 11px "Segoe UI", system-ui, sans-serif; fill: var(--text2); }
+rect.bar.peak { fill: var(--bar); } rect.bar.p95 { fill: var(--bar2); }
+line.target { stroke: var(--crit); stroke-width: 1.5; stroke-dasharray: 5 4; }
+line.axis { stroke: var(--border); stroke-width: 1; }
+circle.pt { fill: var(--bar); fill-opacity: .35; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--text2); margin: 6px 0 10px; }
+.legend i { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
+.note { color: var(--text2); font-size: 13px; margin: 8px 0 0; max-width: 100ch; overflow-wrap: anywhere; }
+code { font: 12px/1.4 Consolas, "Cascadia Mono", monospace; overflow-wrap: anywhere; word-break: break-all; }
+.btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.small { font-size: 12px; padding: 2px 8px; margin-top: 4px; }
+.copybar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+#copyText { margin: 10px 0 0; padding: 10px 12px; background: var(--tint); border: 1px solid var(--tint-edge); border-radius: 6px; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+#copyDone { font-size: 13px; color: var(--text2); }
+footer { color: var(--muted); font-size: 12px; padding: 0 24px 24px; max-width: 1100px; margin: 0 auto; }
+@media (max-width: 520px) { header { padding: 12px 14px; } main { padding: 14px 14px 30px; } .card { padding: 12px; } }
+@media print {
+  button, .btn, label.inline { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .card { break-inside: avoid; }
+  .scroll { overflow: visible; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Größe des Servers</h1>
+  <div class="sub" id="subtitle"></div>
+  <div id="sizeInfo" hidden></div>
+  <div id="maskInfo" hidden></div>
+</header>
+<main>
+  <section><h2>Ergebnis</h2><p id="result"></p></section>
+  <section><h2>Empfehlungen</h2><div id="recommendations"></div></section>
+  <section id="history" class="card"><h2>Verlauf über die Aufzeichnungen</h2><div id="historyBody"></div></section>
+  <section id="scatter" class="card"><h2>Sitzungen gegen CPU in der Hauptzeit</h2><div id="scatterBody"></div></section>
+  <section id="users" class="card"><h2>Sitzungen je vCPU</h2><div id="usersBody"></div></section>
+  <section id="evidence" class="card"><h2>Belege aus dem Zustandsbild</h2><div id="evidenceBody"></div></section>
+  <section id="runs" class="card"><h2>Aufzeichnungen</h2><div id="runsBody"></div></section>
+  <section id="sources" class="card"><h2>Quellen</h2><div id="sourcesBody"></div></section>
+  <section id="copy" class="card"><h2>Zusammenfassung zum Weitergeben</h2>
+    <div class="copybar"><button type="button" class="btn primary" id="copyBtn">Empfehlungen kopieren</button><label class="inline" id="anonLabel"><input type="checkbox" id="anon"> ohne Namen</label><span id="copyDone" role="status"></span></div>
+    <pre id="copyText"></pre></section>
+</main>
+<footer id="footer"></footer>
+<script id="wp-data" type="application/json">{"meta":{"server":"SIM-VDA01","axis":"time","from":1795679281821,"to":1796028534760,"recordings":5,"quick":0,"durationMin":299.8,"mainHours":3.67,"cores":8,"ramGB":64,"sizes":[{"cores":8,"ramGB":64}],"sizeChanged":false,"lowMeasure":true,"catalogueVersion":"2026-11-14","target":75,"load":93.6,"peak":94,"sessionsPeak":31,"generated":1795688344859,"mask":null},"grades":{"act":{"word":"Handeln","symbol":"◆"},"check":{"word":"Prüfen","symbol":"▲"},"ok":{"word":"In Ordnung","symbol":"●"}},"result":{"text":"Wiederkehrender CPU-Engpass aus Kapazität in 4 von 5 Aufzeichnungen; typische Spitzenlast 93,7 % bei 31 Sitzungen.","key":"recurring"},"recommendations":[{"resource":"cpu","status":"act","advice":"Mehr vCPU oder mehr Server.","reason":"Typische Spitzenlast (P95 der Hauptzeit) 93,7 %, höchste Spitze 94,1 %, Ziel unter 75 %; wiederkehrend: Kapazität (4 von 5).","projection":{"kind":"range","low":12,"high":12,"sessions":null,"unit":"vCPU","text":"Schätzung, nicht gemessen: Bei der gemessenen Last käme der Server mit etwa 12 statt 8 vCPU unter 75 %."},"assumptions":["gleiche Last je Sitzung","Skalierung 1,5- bis 1,9-fach je Verdopplung der Kerne","der VMware-Host liefert die zusätzliche Rechenzeit","Hyper-Threading nicht eingerechnet","Vor einem Umbau mit einem Pilot oder Lasttest bestätigen."],"hints":["In 1 von 5 Aufzeichnungen entzog der VMware-Host Rechenzeit; vor einem Umbau den VMware-Host prüfen lassen.","Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des VMware-Hosts ist im Server nicht sichtbar."],"sources":["SZ-18","SZ-47","VM-08","SZ-42","SZ-43","VM-10","SZ-22","SZ-23","SZ-46"],"reliability":"Belastbarkeit: 5 Aufzeichnungen, 5 h Messzeit, davon 3,7 h Hauptzeit. Achtung, wenig Messzeit: 5 Aufzeichnungen mit 3,7 h Hauptzeit; belastbar ab 3 Aufzeichnungen und 12 h Hauptzeit."},{"resource":"memory","status":"ok","advice":"Der Arbeitsspeicher reicht für die gemessene Last.","reason":"Höchster zugesicherter Speicher der Hauptzeit 55,3 GB bei 64 GB RAM; wiederkehrend: Kapazität (4 von 5).","projection":null,"assumptions":[],"hints":[],"sources":["SZ-35"],"reliability":"Belastbarkeit: 5 Aufzeichnungen, 5 h Messzeit, davon 3,7 h Hauptzeit. Achtung, wenig Messzeit: 5 Aufzeichnungen mit 3,7 h Hauptzeit; belastbar ab 3 Aufzeichnungen und 12 h Hauptzeit."},{"resource":"host","status":"check","advice":"VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung des VMware-Hosts); keine zusätzlichen vCPU, eher weniger, wenn Co-Stop hoch ist.","reason":"Der VMware-Host entzog dem Server in 1 von 5 Aufzeichnungen Rechenzeit.","projection":null,"assumptions":[],"hints":["Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 % (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend über 70 bis 80 %."],"sources":["SZ-21","SZ-20","SZ-26","VM-08"],"reliability":"Belastbarkeit: 5 Aufzeichnungen, 5 h Messzeit, davon 3,7 h Hauptzeit. Achtung, wenig Messzeit: 5 Aufzeichnungen mit 3,7 h Hauptzeit; belastbar ab 3 Aufzeichnungen und 12 h Hauptzeit."}],"runs":[{"index":1,"server":"SIM-VDA01","folder":"/srv/WorkerPerf/SIM-VDA01_20261126-074759","start":1795679281821,"end":1795682879821,"durationMin":60,"endReason":"duration","healthOnly":false,"cores":8,"ramGB":64,"mainHours":0.73,"cpu":{"peak":94,"p95":93.6},"queue":{"peak":3,"p95":3},"commit":{"peakGB":55.3,"p95GB":55.2,"peakPct":86.5},"sessionsPeak":31,"command":".\\New-WorkerPerfReport.ps1 -Path '/srv/WorkerPerf/SIM-VDA01_20261126-074759'","classIds":["capacity"],"classLabels":["Kapazität"],"offsetMin":0},{"index":2,"server":"SIM-VDA01","folder":"/srv/WorkerPerf/SIM-VDA01_20261127-074812","start":1795765694945,"end":1795769292945,"durationMin":60,"endReason":"duration","healthOnly":false,"cores":8,"ramGB":64,"mainHours":0.73,"cpu":{"peak":94,"p95":93.6},"queue":{"peak":3,"p95":3},"commit":{"peakGB":55.3,"p95GB":55.2,"peakPct":86.5},"sessionsPeak":31,"command":".\\New-WorkerPerfReport.ps1 -Path '/srv/WorkerPerf/SIM-VDA01_20261127-074812'","classIds":["capacity"],"classLabels":["Kapazität"],"offsetMin":0},{"index":3,"server":"SIM-VDA01","folder":"/srv/WorkerPerf/SIM-VDA01_20261128-074825","start":1795852107551,"end":1795855705551,"durationMin":60,"endReason":"duration","healthOnly":false,"cores":8,"ramGB":64,"mainHours":0.73,"cpu":{"peak":94,"p95":93.6},"queue":{"peak":3,"p95":3},"commit":{"peakGB":55.3,"p95GB":55.2,"peakPct":86.5},"sessionsPeak":31,"command":".\\New-WorkerPerfReport.ps1 -Path '/srv/WorkerPerf/SIM-VDA01_20261128-074825'","classIds":["host","capacity"],"classLabels":["VMware-Host","Kapazität"],"offsetMin":0},{"index":4,"server":"SIM-VDA01","folder":"/srv/WorkerPerf/SIM-VDA01_20261129-074840","start":1795938522161,"end":1795942120161,"durationMin":60,"endReason":"duration","healthOnly":false,"cores":8,"ramGB":64,"mainHours":0.73,"cpu":{"peak":94,"p95":93.6},"queue":{"peak":3,"p95":3},"commit":{"peakGB":55.3,"p95GB":55.2,"peakPct":86.5},"sessionsPeak":31,"command":".\\New-WorkerPerfReport.ps1 -Path '/srv/WorkerPerf/SIM-VDA01_20261129-074840'","classIds":["capacity"],"classLabels":["Kapazität"],"offsetMin":0},{"index":5,"server":"SIM-VDA01","folder":"/srv/WorkerPerf/SIM-VDA01_20261130-074854","start":1796024936760,"end":1796028534760,"durationMin":60,"endReason":"duration","healthOnly":false,"cores":8,"ramGB":64,"mainHours":0.73,"cpu":{"peak":73.1,"p95":72.7},"queue":{"peak":0.75,"p95":0.75},"commit":{"peakGB":55.3,"p95GB":55.2,"peakPct":86.5},"sessionsPeak":31,"command":".\\New-WorkerPerfReport.ps1 -Path '/srv/WorkerPerf/SIM-VDA01_20261130-074854'","classIds":[],"classLabels":[],"offsetMin":0}],"bottlenecks":[{"run":1,"id":1,"start":1795680135821,"end":1795682065821,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":1,"id":2,"start":1795680359821,"end":1795681837821,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":2,"id":1,"start":1795766548945,"end":1795768478945,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":2,"id":2,"start":1795766772945,"end":1795768250945,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":3,"id":1,"start":1795852961551,"end":1795854891551,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":3,"id":2,"start":1795853185551,"end":1795854663551,"lead":"cpu","classIds":["host","capacity"],"label":"VMware-Host, Kapazität","app":""},{"run":3,"id":3,"start":1795853605551,"end":1795853785551,"lead":"cpu","classIds":["host","capacity"],"label":"VMware-Host, Kapazität","app":""},{"run":4,"id":1,"start":1795939376161,"end":1795941306161,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""},{"run":4,"id":2,"start":1795939600161,"end":1795941078161,"lead":"cpu","classIds":["capacity"],"label":"Kapazität","app":""}],"recurring":[{"id":"capacity","label":"Kapazität","count":4,"of":5}],"usersPerVcpu":{"value":3.88,"sessionsPeak":31,"cores":8,"note":"Einordnung, keine Bewertung: die Art der Nutzer ist nicht bekannt.","limits":[{"id":"light","label":"leichte Nutzer","perVcpu":6,"sessions":48},{"id":"medium","label":"mittlere Nutzer","perVcpu":4,"sessions":32},{"id":"heavy","label":"schwere Nutzer","perVcpu":2,"sessions":16},{"id":"power","label":"Power-Nutzer","perVcpu":1,"sessions":8}]},"scatter":{"cpu":[51.3,49.6,52.2,51.8,50.9,54,54.2,54.1,52.5,53.5,56.7,55.8,56.9,57,56.6,58.6,57.6,58,59.3,58.8,59.6,61.9,61.1,61.1,63.4,64.8,64.1,65.3,63.2,64.5,66.4,68,68.7,68.4,69,70.1,69.6,69.7,69.1,69.8,73.2,72.5,74.1,72.8,72.4,74.6,74.7,76.4,75.8,74.9,77.8,78.3,78.7,77.9,77.3,81.7,80.6,81.9,79.6,80.9,82.7,82.1,83.4,84.4,84.2,86.3,87.1,87.5,86.8,85.3,89.3,88,87.9,90.7,89.2,90.5,91,91.3,92.1,91.2,90.6,92,93.6,91.3,93.2,92.2,92.2,92.6,92.3,91.4,93.6,93.2,92.5,92.9,92.6,92.9,91.7,92.6,93.3,93.1,93.8,91.8,93,92.6,92.2,93.2,93.1,91.2,93.4,94,93.8,92,92.4,92.1,93.1,93.1,91.6,93.3,92.9,93.2,93.4,91.7,93.2,91.2,92.8,92.8,91.9,92,93.6,91.9,91.9,91.4,92.8,93.1,93.8,92.4,92.9,92.5,91.7,93.6,92.3,91.8,92.9,93.5,93.7,92.4,92.3,93.5,92.4,93.3,91.9,91.4,91.5,92.4,93.6,92.2,93,93.1,93,91.1,93.7,92.4,93.6,92.7,93.5,92.8,93.8,91.8,93.3,92.5,92.1,93.8,93.8,93.5,92.1,93.2,92.7,93.1,94,92.2,92.2,93.4,92.3,92.6,92.3,91.5,91.8,94,92.7,91.7,92.1,92.7,93.6,94,94,93.2,92.5,93.1,91.2,93.1,91.8,93.5,91.4,93,92.7,92.7,92.2,93,92.7,93.8,92.3,93.8,92.3,93.4,92.7,93.5,91.4,93.3,91.3,91.3,92.9,93.7,91.4,92,93.3,91.6,92.9,93.2,92.4,93.7,91.4,92.5,94,93.4,91.8,92.6,91.2,92.8,91.2,93.2,92.1,92.9,91.5,91.9,93.5,93.5,91.4,92.1,93.9,91.2,91.3,92.6,93.7,91.8,92.6,92.3,91.8,93.4,89,90,90.6,89.4,90.8,86.9,86.7,86.3,88.3,87.6,85.7,85,83.8,85,85,83,82.7,82.8,82.9,82.6,78.7,78.5,79.2,79.3,76.2,76.6,75.2,77.3,75.4,74.6,74.4,72.8,73.8,74.2,70.2,69.3,71.3,72,71.2,67.9,66.8,68.2,67.7,67.5,66.1,63.9,64.7,65,63.6,62.5,63.8,63,61.1,59.4,60.8,59.5,60.2,59.8,57,55.9,57,57.5,58.1,54.9,55.6,53.4,53.2,55.6,52.4,52.5,51.7,52,51.3,49.6,52.2,51.8,50.9,54,54.2,54.1,52.5,53.5,56.7,55.8,56.9,57,56.6,58.6,57.6,58,59.3,58.8,59.6,61.9,61.1,61.1,63.4,64.8,64.1,65.3,63.2,64.5,66.4,68,68.7,68.4,69,70.1,69.6,69.7,69.1,69.8,73.2,72.5,74.1,72.8,72.4,74.6,74.7,76.4,75.8,74.9,77.8,78.3,78.7,77.9,77.3,81.7,80.6,81.9,79.6,80.9,82.7,82.1,83.4,84.4,84.2,86.3,87.1,87.5,86.8,85.3,89.3,88,87.9,90.7,89.2,90.5,91,91.3,92.1,91.2,90.6,92,93.6,91.3,93.2,92.2,92.2,92.6,92.3,91.4,93.6,93.2,92.5,92.9,92.6,92.9,91.7,92.6,93.3,93.1,93.8,91.8,93,92.6,92.2,93.2,93.1,91.2,93.4,94,93.8,92,92.4,92.1,93.1,93.1,91.6,93.3,92.9,93.2,93.4,91.7,93.2,91.2,92.8,92.8,91.9,92,93.6,91.9,91.9,91.4,92.8,93.1,93.8,92.4,92.9,92.5,91.7,93.6,92.3,91.8,92.9,93.5,93.7,92.4,92.3,93.5,92.4,93.3,91.9,91.4,91.5,92.4,93.6,92.2,93,93.1,93,91.1,93.7,92.4,93.6,92.7,93.5,92.8,93.8,91.8,93.3,92.5,92.1,93.8,93.8,93.5,92.1,93.2,92.7,93.1,94,92.2,92.2,93.4,92.3,92.6,92.3,91.5,91.8,94,92.7,91.7,92.1,92.7,93.6,94,94,93.2,92.5,93.1,91.2,93.1,91.8,93.5,91.4,93,92.7,92.7,92.2,93,92.7,93.8,92.3,93.8,92.3,93.4,92.7,93.5,91.4,93.3,91.3,91.3,92.9,93.7,91.4,92,93.3,91.6,92.9,93.2,92.4,93.7,91.4,92.5,94,93.4,91.8,92.6,91.2,92.8,91.2,93.2,92.1,92.9,91.5,91.9,93.5,93.5,91.4,92.1,93.9,91.2,91.3,92.6,93.7,91.8,92.6,92.3,91.8,93.4,89,90,90.6,89.4,90.8,86.9,86.7,86.3,88.3,87.6,85.7,85,83.8,85,85,83,82.7,82.8,82.9,82.6,78.7,78.5,79.2,79.3,76.2,76.6,75.2,77.3,75.4,74.6,74.4,72.8,73.8,74.2,70.2,69.3,71.3,72,71.2,67.9,66.8,68.2,67.7,67.5,66.1,63.9,64.7,65,63.6,62.5,63.8,63,61.1,59.4,60.8,59.5,60.2,59.8,57,55.9,57,57.5,58.1,54.9,55.6,53.4,53.2,55.6,52.4,52.5,51.7,52,51.3,49.6,52.2,51.8,50.9,54,54.2,54.1,52.5,53.5,56.7,55.8,56.9,57,56.6,58.6,57.6,58,59.3,58.8,59.6,61.9,61.1,61.1,63.4,64.8,64.1,65.3,63.2,64.5,66.4,68,68.7,68.4,69,70.1,69.6,69.7,69.1,69.8,73.2,72.5,74.1,72.8,72.4,74.6,74.7,76.4,75.8,74.9,77.8,78.3,78.7,77.9,77.3,81.7,80.6,81.9,79.6,80.9,82.7,82.1,83.4,84.4,84.2,86.3,87.1,87.5,86.8,85.3,89.3,88,87.9,90.7,89.2,90.5,91,91.3,92.1,91.2,90.6,92,93.6,91.3,93.2,92.2,92.2,92.6,92.3,91.4,93.6,93.2,92.5,92.9,92.6,92.9,91.7,92.6,93.3,93.1,93.8,91.8,93,92.6,92.2,93.2,93.1,91.2,93.4,94,93.8,92,92.4,92.1,93.1,93.1,91.6,93.3,92.9,93.2,93.4,91.7,93.2,91.2,92.8,92.8,91.9,92,93.6,91.9,91.9,91.4,92.8,93.1,93.8,92.4,92.9,92.5,91.7,93.6,92.3,91.8,92.9,93.5,93.7,92.4,92.3,93.5,92.4,93.3,91.9,91.4,91.5,92.4,93.6,92.2,93,93.1,93,91.1,93.7,92.4,93.6,92.7,93.5,92.8,93.8,91.8,93.3,92.5,92.1,93.8,93.8,93.5,92.1,93.2,92.7,93.1,94,92.2,92.2,93.4,92.3,92.6,92.3,91.5,91.8,94,92.7,91.7,92.1,92.7,93.6,94,94,93.2,92.5,93.1,91.2,93.1,91.8,93.5,91.4,93,92.7,92.7,92.2,93,92.7,93.8,92.3,93.8,92.3,93.4,92.7,93.5,91.4,93.3,91.3,91.3,92.9,93.7,91.4,92,93.3,91.6,92.9,93.2,92.4,93.7,91.4,92.5,94,93.4,91.8,92.6,91.2,92.8,91.2,93.2,92.1,92.9,91.5,91.9,93.5,93.5,91.4,92.1,93.9,91.2,91.3,92.6,93.7,91.8,92.6,92.3,91.8,93.4,89,90,90.6,89.4,90.8,86.9,86.7,86.3,88.3,87.6,85.7,85,83.8,85,85,83,82.7,82.8,82.9,82.6,78.7,78.5,79.2,79.3,76.2,76.6,75.2,77.3,75.4,74.6,74.4,72.8,73.8,74.2,70.2,69.3,71.3,72,71.2,67.9,66.8,68.2,67.7,67.5,66.1,63.9,64.7,65,63.6,62.5,63.8,63,61.1,59.4,60.8,59.5,60.2,59.8,57,55.9,57,57.5,58.1,54.9,55.6,53.4,53.2,55.6,52.4,52.5,51.7,52,51.3,49.6,52.2,51.8,50.9,54,54.2,54.1,52.5,53.5,56.7,55.8,56.9,57,56.6,58.6,57.6,58,59.3,58.8,59.6,61.9,61.1,61.1,63.4,64.8,64.1,65.3,63.2,64.5,66.4,68,68.7,68.4,69,70.1,69.6,69.7,69.1,69.8,73.2,72.5,74.1,72.8,72.4,74.6,74.7,76.4,75.8,74.9,77.8,78.3,78.7,77.9,77.3,81.7,80.6,81.9,79.6,80.9,82.7,82.1,83.4,84.4,84.2,86.3,87.1,87.5,86.8,85.3,89.3,88,87.9,90.7,89.2,90.5,91,91.3,92.1,91.2,90.6,92,93.6,91.3,93.2,92.2,92.2,92.6,92.3,91.4,93.6,93.2,92.5,92.9,92.6,92.9,91.7,92.6,93.3,93.1,93.8,91.8,93,92.6,92.2,93.2,93.1,91.2,93.4,94,93.8,92,92.4,92.1,93.1,93.1,91.6,93.3,92.9,93.2,93.4,91.7,93.2,91.2,92.8,92.8,91.9,92,93.6,91.9,91.9,91.4,92.8,93.1,93.8,92.4,92.9,92.5,91.7,93.6,92.3,91.8,92.9,93.5,93.7,92.4,92.3,93.5,92.4,93.3,91.9,91.4,91.5,92.4,93.6,92.2,93,93.1,93,91.1,93.7,92.4,93.6,92.7,93.5,92.8,93.8,91.8,93.3,92.5,92.1,93.8,93.8,93.5,92.1,93.2,92.7,93.1,94,92.2,92.2,93.4,92.3,92.6,92.3,91.5,91.8,94,92.7,91.7,92.1,92.7,93.6,94,94,93.2,92.5,93.1,91.2,93.1,91.8,93.5,91.4,93,92.7,92.7,92.2,93,92.7,93.8,92.3,93.8,92.3,93.4,92.7,93.5,91.4,93.3,91.3,91.3,92.9,93.7,91.4,92,93.3,91.6,92.9,93.2,92.4,93.7,91.4,92.5,94,93.4,91.8,92.6,91.2,92.8,91.2,93.2,92.1,92.9,91.5,91.9,93.5,93.5,91.4,92.1,93.9,91.2,91.3,92.6,93.7,91.8,92.6,92.3,91.8,93.4,89,90,90.6,89.4,90.8,86.9,86.7,86.3,88.3,87.6,85.7,85,83.8,85,85,83,82.7,82.8,82.9,82.6,78.7,78.5,79.2,79.3,76.2,76.6,75.2,77.3,75.4,74.6,74.4,72.8,73.8,74.2,70.2,69.3,71.3,72,71.2,67.9,66.8,68.2,67.7,67.5,66.1,63.9,64.7,65,63.6,62.5,63.8,63,61.1,59.4,60.8,59.5,60.2,59.8,57,55.9,57,57.5,58.1,54.9,55.6,53.4,53.2,55.6,52.4,52.5,51.7,52,40.5,38.8,41.4,41,40.1,42.6,42.7,42.6,41,42.1,44.5,43.7,44.8,44.8,44.4,45.8,44.7,45.2,46.5,46,46.1,48.4,47.6,47.6,49.9,50.6,50,51.2,49,50.3,51.6,53.2,53.8,53.6,54.1,54.6,54.1,54.2,53.6,54.3,57,56.3,57.9,56.6,56.2,57.7,57.8,59.5,58.9,58,60.2,60.7,61.2,60.4,59.8,63.5,62.4,63.6,61.4,62.7,63.8,63.2,64.5,65.5,65.3,66.7,67.5,67.9,67.2,65.7,69.1,67.8,67.7,70.5,69,69.6,70.1,70.4,71.2,70.2,69.7,71,72.7,70.4,72.2,71.3,71.3,71.7,71.4,70.5,72.7,72.3,71.6,72,71.6,71.9,70.8,71.7,72.4,72.2,72.9,70.9,72.1,71.7,71.3,72.3,72.2,70.2,72.5,73.1,72.8,71.1,71.4,71.2,72.2,72.2,70.7,72.4,72,72.2,72.4,70.8,72.2,70.3,71.8,71.9,71,71,72.6,71,71,70.5,71.8,72.2,72.9,71.5,72,71.6,70.8,72.6,71.3,70.9,71.9,72.6,72.8,71.4,71.4,72.6,71.5,72.4,71,70.4,70.6,71.5,72.7,71.3,72.1,72.2,72.1,70.1,72.8,71.4,72.7,71.8,72.6,71.9,72.8,70.8,72.4,71.6,71.2,72.8,72.8,72.5,71.2,72.3,71.7,72.2,73.1,71.3,71.3,72.5,71.4,71.7,71.4,70.6,70.9,73,71.8,70.8,71.2,71.8,72.7,73,73.1,72.2,71.6,72.2,70.2,72.2,70.9,72.6,70.5,72,71.8,71.7,71.2,72.1,71.8,72.8,71.4,72.8,71.3,72.4,71.7,72.6,70.4,72.4,70.4,70.4,72,72.8,70.5,71.1,72.3,70.6,72,72.3,71.5,72.8,70.5,71.5,73,72.5,70.9,71.7,70.2,71.9,70.3,72.3,71.2,72,70.6,71,72.6,72.6,70.5,71.2,73,70.3,70.4,71.7,72.7,70.9,71.7,71.3,70.8,72.5,68.8,69.8,70.3,69.1,70.6,67.3,67.2,66.8,68.8,68,66.8,66.1,64.9,66.1,66,64.8,64.4,64.5,64.6,64.4,61.1,61,61.7,61.7,59.4,59.7,58.3,60.4,58.5,58.4,58.2,56.6,57.6,58,54.7,53.8,55.8,56.5,55.7,53.1,52,53.4,52.8,52.7,52,49.7,50.5,50.9,50.1,49,50.2,49.5,47.6,46.6,48,46.7,47.3,46.9,44.8,43.8,44.8,45.3,46,43.4,44.1,41.9,41.7,44.2,41.6,41.7,40.9,41.2],"sessions":[16,16,16,16,17,17,17,17,17,17,18,18,18,18,18,19,19,19,19,20,20,20,20,20,20,21,21,21,21,21,22,22,22,22,23,23,23,23,23,23,24,24,24,24,24,25,25,25,25,26,26,26,26,26,27,27,27,27,27,28,28,28,28,28,29,29,29,29,29,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,30,30,30,30,30,30,29,29,29,28,28,28,28,28,28,27,27,27,27,26,26,26,26,26,25,25,25,25,24,24,24,24,24,24,23,23,23,23,22,22,22,22,22,21,21,21,21,21,21,20,20,20,20,19,19,19,19,19,18,18,18,18,17,17,17,17,17,17,16,16,16,16,16,16,16,17,17,17,17,17,17,18,18,18,18,18,19,19,19,19,20,20,20,20,20,20,21,21,21,21,21,22,22,22,22,23,23,23,23,23,23,24,24,24,24,24,25,25,25,25,26,26,26,26,26,27,27,27,27,27,28,28,28,28,28,29,29,29,29,29,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,30,30,30,30,30,30,29,29,29,28,28,28,28,28,28,27,27,27,27,26,26,26,26,26,25,25,25,25,24,24,24,24,24,24,23,23,23,23,22,22,22,22,22,21,21,21,21,21,21,20,20,20,20,19,19,19,19,19,18,18,18,18,17,17,17,17,17,17,16,16,16,16,16,16,16,17,17,17,17,17,17,18,18,18,18,18,19,19,19,19,20,20,20,20,20,20,21,21,21,21,21,22,22,22,22,23,23,23,23,23,23,24,24,24,24,24,25,25,25,25,26,26,26,26,26,27,27,27,27,27,28,28,28,28,28,29,29,29,29,29,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,30,30,30,30,30,30,29,29,29,28,28,28,28,28,28,27,27,27,27,26,26,26,26,26,25,25,25,25,24,24,24,24,24,24,23,23,23,23,22,22,22,22,22,21,21,21,21,21,21,20,20,20,20,19,19,19,19,19,18,18,18,18,17,17,17,17,17,17,16,16,16,16,16,16,16,17,17,17,17,17,17,18,18,18,18,18,19,19,19,19,20,20,20,20,20,20,21,21,21,21,21,22,22,22,22,23,23,23,23,23,23,24,24,24,24,24,25,25,25,25,26,26,26,26,26,27,27,27,27,27,28,28,28,28,28,29,29,29,29,29,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,30,30,30,30,30,30,29,29,29,28,28,28,28,28,28,27,27,27,27,26,26,26,26,26,25,25,25,25,24,24,24,24,24,24,23,23,23,23,22,22,22,22,22,21,21,21,21,21,21,20,20,20,20,19,19,19,19,19,18,18,18,18,17,17,17,17,17,17,16,16,16,16,16,16,16,17,17,17,17,17,17,18,18,18,18,18,19,19,19,19,20,20,20,20,20,20,21,21,21,21,21,22,22,22,22,23,23,23,23,23,23,24,24,24,24,24,25,25,25,25,26,26,26,26,26,26,27,27,27,27,27,28,28,28,28,29,29,29,29,29,29,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,30,30,30,30,30,30,29,29,29,28,28,28,28,28,28,27,27,27,27,26,26,26,26,26,25,25,25,25,24,24,24,24,24,24,23,23,23,23,22,22,22,22,22,21,21,21,21,21,21,20,20,20,20,19,19,19,19,19,18,18,18,18,17,17,17,17,17,17,16,16,16],"target":75},"evidence":[{"id":"operation.powerPlan","label":"Energiesparplan","value":"highPerformance"},{"id":"size.cpuLogical","label":"Logische Prozessoren","value":"8"},{"id":"size.memTotalMB","label":"Arbeitsspeicher (MB)","value":"65536"},{"id":"size.hypervisor","label":"Virtuelle Maschine","value":"True"},{"id":"size.vmtoolsVersion","label":"VMware Tools","value":"12.3.5"}],"sources":[{"id":"SZ-18","title":"System-Level Bottlenecks","url":"https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks","date":"2017-06-29","kind":"vendor"},{"id":"SZ-20","title":"Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance","url":"https://knowledge.broadcom.com/external/article/438023","date":"2026-09-14","kind":"vendor"},{"id":"SZ-21","title":"Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance","url":"https://knowledge.broadcom.com/external/article/438023","date":"2026-09-14","kind":"vendor"},{"id":"SZ-22","title":"Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance","url":"https://knowledge.broadcom.com/external/article/438023","date":"2026-09-14","kind":"vendor"},{"id":"VM-08","title":"Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance","url":"https://knowledge.broadcom.com/external/article/438023","date":"2026-09-14","kind":"vendor"},{"id":"VM-10","title":"Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance","url":"https://knowledge.broadcom.com/external/article/438023","date":"2026-09-14","kind":"vendor"},{"id":"SZ-23","title":"Hyperthreading with vSphere","url":"https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/hyperthreading.html","date":"2026-10-28","kind":"vendor"},{"id":"SZ-26","title":"ESXi host CPU usage appears high in vCenter default charts due to Turbo Boost and Hyperthreading counter behavior","url":"https://knowledge.broadcom.com/external/article/431027","date":"2026-10-30","kind":"vendor"},{"id":"SZ-35","title":"RAM, virtual memory, pagefile, and memory management in Windows","url":"https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/ram-virtual-memory-pagefile-management","date":"2026-02-12","kind":"vendor"},{"id":"SZ-42","title":"Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services","url":"https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines","date":"2025-07-23","kind":"vendor"},{"id":"SZ-43","title":"Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services","url":"https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines","date":"2025-07-23","kind":"vendor"},{"id":"SZ-46","title":"Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services","url":"https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines","date":"2025-07-23","kind":"vendor"},{"id":"SZ-47","title":"Detecting bottlenecks in a virtualized environment","url":"https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/hyper-v-server/detecting-virtualized-environment-bottlenecks","date":"2017-10-16","kind":"vendor"}],"copy":{"named":"Größe des Servers SIM-VDA01: Wiederkehrender CPU-Engpass aus Kapazität in 4\u000d\u000avon 5 Aufzeichnungen; typische Spitzenlast 93,7 % bei 31 Sitzungen.\u000d\u000a\u000d\u000aCPU: Mehr vCPU oder mehr Server.\u000d\u000aTypische Spitzenlast (P95 der Hauptzeit) 93,7 %, höchste Spitze 94,1 %, Ziel\u000d\u000aunter 75 %; wiederkehrend: Kapazität (4 von 5).\u000d\u000aSchätzung, nicht gemessen: Bei der gemessenen Last käme der Server mit etwa 12\u000d\u000astatt 8 vCPU unter 75 %.\u000d\u000aAnnahmen: gleiche Last je Sitzung; Skalierung 1,5- bis 1,9-fach je Verdopplung\u000d\u000ader Kerne; der VMware-Host liefert die zusätzliche Rechenzeit; Hyper-Threading\u000d\u000anicht eingerechnet; Vor einem Umbau mit einem Pilot oder Lasttest bestätigen.\u000d\u000a- In 1 von 5 Aufzeichnungen entzog der VMware-Host Rechenzeit; vor einem Umbau\u000d\u000a  den VMware-Host prüfen lassen.\u000d\u000a- Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host\u000d\u000a  physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des\u000d\u000a  VMware-Hosts ist im Server nicht sichtbar.\u000d\u000a\u000d\u000aArbeitsspeicher: Der Arbeitsspeicher reicht für die gemessene Last.\u000d\u000aHöchster zugesicherter Speicher der Hauptzeit 55,3 GB bei 64 GB RAM;\u000d\u000awiederkehrend: Kapazität (4 von 5).\u000d\u000a\u000d\u000aVMware-Host: VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung des\u000d\u000aVMware-Hosts); keine zusätzlichen vCPU, eher weniger, wenn Co-Stop hoch ist.\u000d\u000aDer VMware-Host entzog dem Server in 1 von 5 Aufzeichnungen Rechenzeit.\u000d\u000a- Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 %\u000d\u000a  (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU\u000d\u000a  sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend\u000d\u000a  über 70 bis 80 %.\u000d\u000a\u000d\u000aBelastbarkeit: 5 Aufzeichnungen, 5 h Messzeit, davon 3,7 h Hauptzeit. Achtung,\u000d\u000awenig Messzeit: 5 Aufzeichnungen mit 3,7 h Hauptzeit; belastbar ab 3\u000d\u000aAufzeichnungen und 12 h Hauptzeit.","anonymous":"Größe des Servers Server 01: Wiederkehrender CPU-Engpass aus Kapazität in 4\u000d\u000avon 5 Aufzeichnungen; typische Spitzenlast 93,7 % bei 31 Sitzungen.\u000d\u000a\u000d\u000aCPU: Mehr vCPU oder mehr Server.\u000d\u000aTypische Spitzenlast (P95 der Hauptzeit) 93,7 %, höchste Spitze 94,1 %, Ziel\u000d\u000aunter 75 %; wiederkehrend: Kapazität (4 von 5).\u000d\u000aSchätzung, nicht gemessen: Bei der gemessenen Last käme der Server mit etwa 12\u000d\u000astatt 8 vCPU unter 75 %.\u000d\u000aAnnahmen: gleiche Last je Sitzung; Skalierung 1,5- bis 1,9-fach je Verdopplung\u000d\u000ader Kerne; der VMware-Host liefert die zusätzliche Rechenzeit; Hyper-Threading\u000d\u000anicht eingerechnet; Vor einem Umbau mit einem Pilot oder Lasttest bestätigen.\u000d\u000a- In 1 von 5 Aufzeichnungen entzog der VMware-Host Rechenzeit; vor einem Umbau\u000d\u000a  den VMware-Host prüfen lassen.\u000d\u000a- Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host\u000d\u000a  physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des\u000d\u000a  VMware-Hosts ist im Server nicht sichtbar.\u000d\u000a\u000d\u000aArbeitsspeicher: Der Arbeitsspeicher reicht für die gemessene Last.\u000d\u000aHöchster zugesicherter Speicher der Hauptzeit 55,3 GB bei 64 GB RAM;\u000d\u000awiederkehrend: Kapazität (4 von 5).\u000d\u000a\u000d\u000aVMware-Host: VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung des\u000d\u000aVMware-Hosts); keine zusätzlichen vCPU, eher weniger, wenn Co-Stop hoch ist.\u000d\u000aDer VMware-Host entzog dem Server in 1 von 5 Aufzeichnungen Rechenzeit.\u000d\u000a- Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 %\u000d\u000a  (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU\u000d\u000a  sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend\u000d\u000a  über 70 bis 80 %.\u000d\u000a\u000d\u000aBelastbarkeit: 5 Aufzeichnungen, 5 h Messzeit, davon 3,7 h Hauptzeit. Achtung,\u000d\u000awenig Messzeit: 5 Aufzeichnungen mit 3,7 h Hauptzeit; belastbar ab 3\u000d\u000aAufzeichnungen und 12 h Hauptzeit."}}</script>
+<script>
+"use strict";
+// Every value of the report data goes into the page as text (esc or textContent), never as markup.
+const D = JSON.parse(document.getElementById("wp-data").textContent);
+const M = D.meta;
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (v, d) => v == null || !isFinite(v) ? "–" : Number(v).toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: d == null ? 1 : d });
+const pad = (n) => String(n).padStart(2, "0");
+// times in the local time of the server (the offset each recording carries)
+function fmtDT(ms, offsetMin) {
+  if (ms == null) return "–";
+  const t = new Date(ms + (offsetMin || 0) * 60000);
+  return `${pad(t.getUTCDate())}.${pad(t.getUTCMonth() + 1)}.${t.getUTCFullYear()} ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
+}
+const fmtDay = (ms, offsetMin) => fmtDT(ms, offsetMin).slice(0, 6);
+const fmtDur = (min) => min == null ? "–" : min >= 90 ? fmt(min / 60, 1) + " h" : fmt(min, 0) + " min";
+const RES = { cpu: "CPU", memory: "Arbeitsspeicher", host: "VMware-Host", singlecore: "Leistung je Kern" };
+const END = { duration: "Dauer erreicht", stopped: "angehalten", maxsize: "Größengrenze erreicht", diskspace: "Speicherplatz knapp", error: "Fehler" };
+const loadRuns = D.runs.filter((r) => !r.healthOnly), lastOffset = D.runs.length ? D.runs[D.runs.length - 1].offsetMin : 0;
+const srcById = new Map(D.sources.map((s) => [s.id, s]));
+
+// ---------- head ----------
+document.getElementById("title").textContent = "Größe des Servers " + M.server;
+document.title = "WorkerPerf – Größe des Servers " + M.server;
+document.getElementById("subtitle").textContent =
+  `${fmtDT(M.from, loadRuns.length ? loadRuns[0].offsetMin : 0)} bis ${fmtDT(M.to, lastOffset)} · ${fmt(M.recordings, 0)} ${M.recordings === 1 ? "Aufzeichnung" : "Aufzeichnungen"}` +
+  (M.quick ? ` und ${fmt(M.quick, 0)} ${M.quick === 1 ? "Schnelllauf" : "Schnellläufe"}` : "") +
+  ` · Messzeit ${fmtDur(M.durationMin)}, davon Hauptzeit ${fmt(M.mainHours, 1)} h · ${fmt(M.cores, 0)} vCPU, ${fmt(M.ramGB, 0)} GB RAM`;
+if (M.sizeChanged) {
+  const el = document.getElementById("sizeInfo"); el.hidden = false;
+  el.textContent = "▲ Die Größe wechselte zwischen den Aufzeichnungen: " + M.sizes.map((s) => `${fmt(s.cores, 0)} vCPU / ${fmt(s.ramGB, 0)} GB`).join(" → ") + ". Die Hochrechnung geht von der letzten Aufzeichnung aus.";
+}
+if (M.mask) {
+  const el = document.getElementById("maskInfo"); el.hidden = false;
+  el.textContent = "● Bericht maskiert (Stufe " + M.mask + "): Namen sind durch Ersatznamen ersetzt.";
+}
+document.getElementById("result").textContent = D.result.text;
+
+// ---------- recommendations ----------
+function projectionNumber(p) {
+  // a range of one number is shown as one number
+  if (p.kind === "scaleOut") return `etwa ${fmt(p.sessions, 0)} ${p.unit} je Server`;
+  return p.low === p.high ? `etwa ${fmt(p.low, 0)} ${p.unit}` : `etwa ${fmt(p.low, 0)} bis ${fmt(p.high, 0)} ${p.unit}`;
+}
+function sourceLinks(ids) {
+  const seen = new Set(), out = [];
+  for (const id of ids || []) { const s = srcById.get(id); if (!s || seen.has(s.url)) continue; seen.add(s.url); out.push(`<li><a href="${esc(s.url)}" rel="noopener noreferrer">${esc(s.title)}</a></li>`); }
+  return out.join("");
+}
+function recHtml(r) {
+  const g = D.grades[r.status] || { word: r.status, symbol: "" }, p = r.projection;
+  const list = (title, items) => items && items.length ? `<h4>${title}</h4><ul>${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : "";
+  const links = sourceLinks(r.sources);
+  return `<article class="rec card st-${esc(r.status)}" data-resource="${esc(r.resource)}">
+    <div class="rec-head"><span class="status"><i class="sym" aria-hidden="true">${esc(g.symbol)}</i> ${esc(g.word)}</span><h3>${esc(RES[r.resource] || r.resource)}</h3></div>
+    <p class="dir">${esc(r.advice)}</p><p class="reason">${esc(r.reason)}</p>${p ? `
+    <div class="proj"><span class="tag">Schätzung</span><span class="num">${esc(projectionNumber(p))}</span><p>${esc(p.text)}</p></div>` : ""}
+    ${list("Annahmen", r.assumptions)}${list("Hinweise", r.hints)}${links ? `<h4>Quellen</h4><ul>${links}</ul>` : ""}
+    <p class="rel">${esc(r.reliability)}</p></article>`;
+}
+document.getElementById("recommendations").innerHTML = D.recommendations.map(recHtml).join("");
+
+// ---------- history: bars per recording, table, bottlenecks, recurring classes ----------
+function barsSvg() {
+  const W = 720, H = 220, L = 40, B = 30, T = 12, n = loadRuns.length, slot = (W - L - 10) / Math.max(n, 1), bw = Math.min(26, slot / 3);
+  const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(100, v || 0)) / 100);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="CPU je Aufzeichnung: Spitze und P95, mit der Linie des Ziels">`;
+  for (const g of [0, 25, 50, 75, 100]) s += `<line class="axis" x1="${L}" x2="${W - 10}" y1="${y(g)}" y2="${y(g)}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end">${g} %</text>`;
+  loadRuns.forEach((r, i) => {
+    const x = L + slot * i + slot / 2;
+    s += `<rect class="bar peak" x="${x - bw - 1}" y="${y(r.cpu.peak)}" width="${bw}" height="${H - B - y(r.cpu.peak)}"><title>Aufzeichnung ${r.index}: Spitze ${esc(fmt(r.cpu.peak, 1))} %</title></rect>` +
+      `<rect class="bar p95" x="${x + 1}" y="${y(r.cpu.p95)}" width="${bw}" height="${H - B - y(r.cpu.p95)}"><title>Aufzeichnung ${r.index}: P95 ${esc(fmt(r.cpu.p95, 1))} %</title></rect>` +
+      `<text x="${x}" y="${H - B + 14}" text-anchor="middle">${esc(fmtDay(r.start, r.offsetMin))}</text>`;
+  });
+  s += `<line class="target" x1="${L}" x2="${W - 10}" y1="${y(M.target)}" y2="${y(M.target)}"/><text x="${W - 12}" y="${y(M.target) - 4}" text-anchor="end">Ziel ${esc(fmt(M.target, 0))} %</text></svg>`;
+  return s;
+}
+{
+  const rows = loadRuns.map((r) => `<tr><td class="num">${r.index}</td><td>${esc(fmtDT(r.start, r.offsetMin))}</td><td class="num">${esc(fmt(r.cpu.peak, 1))} / ${esc(fmt(r.cpu.p95, 1))}</td>` +
+    `<td class="num">${esc(fmt(r.queue.peak, 1))} / ${esc(fmt(r.queue.p95, 1))}</td><td class="num">${esc(fmt(r.commit.peakGB, 1))} / ${esc(fmt(r.commit.p95GB, 1))}</td>` +
+    `<td class="num">${esc(fmt(r.sessionsPeak, 0))}</td><td class="wrap">${(r.classLabels || []).length ? esc(r.classLabels.join("; ")) : "–"}</td></tr>`).join("");
+  const bn = D.bottlenecks.map((b) => { const r = D.runs.find((x) => x.index === b.run) || {};
+    return `<tr><td class="num">${b.run}</td><td>${esc(fmtDT(b.start, r.offsetMin))}</td><td class="num">${esc(fmtDur((b.end - b.start) / 60000))}</td><td class="wrap">${esc(b.label)}</td><td class="wrap">${b.app ? esc(b.app) : "–"}</td></tr>`; }).join("");
+  const rec = D.recurring.length ? `<ul>${D.recurring.map((c) => `<li>${esc(c.label)}: in ${c.count} von ${c.of} Aufzeichnungen</li>`).join("")}</ul>` : `<p class="note">Keine Ursache kehrt in mindestens der Hälfte der Aufzeichnungen wieder.</p>`;
+  document.getElementById("historyBody").innerHTML =
+    `<div class="legend"><span><i style="background:var(--bar)"></i>Spitze der CPU</span><span><i style="background:var(--bar2)"></i>P95 der CPU</span><span>gestrichelt: Ziel</span></div>${barsSvg()}` +
+    `<h3 style="margin-top:16px">Kennzahlen je Aufzeichnung</h3><div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Beginn</th><th class="num">CPU % Spitze / P95</th><th class="num">Warteschlange je CPU</th><th class="num">Zugesichert GB</th><th class="num">Sitzungen</th><th>Ursachen</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+    `<h3 style="margin-top:16px">Wiederkehrende Ursachen</h3>${rec}` +
+    `<h3 style="margin-top:16px">Engpässe mit ihrer Einordnung</h3>` + (bn ? `<div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Beginn</th><th class="num">Dauer</th><th>Einordnung</th><th>Anwendung</th></tr></thead><tbody>${bn}</tbody></table></div>` : `<p class="note">Kein eingeordneter Vorfall in den Aufzeichnungen.</p>`);
+}
+
+// ---------- scatter: sessions against CPU over the main time ----------
+{
+  const W = 720, H = 260, L = 40, B = 34, T = 12, cpu = D.scatter.cpu, ses = D.scatter.sessions, maxS = Math.max(1, ...ses);
+  const x = (v) => L + (W - L - 12) * (v / maxS), y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(100, v)) / 100);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punktwolke: CPU-Auslastung gegen die Zahl der Sitzungen in der Hauptzeit">`;
+  for (const g of [0, 25, 50, 75, 100]) s += `<line class="axis" x1="${L}" x2="${W - 12}" y1="${y(g)}" y2="${y(g)}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end">${g} %</text>`;
+  const step = Math.max(1, Math.ceil(maxS / 8));
+  for (let v = 0; v <= maxS; v += step) s += `<text x="${x(v)}" y="${H - B + 14}" text-anchor="middle">${v}</text>`;
+  s += `<text x="${(W + L) / 2}" y="${H - 4}" text-anchor="middle">Sitzungen</text>`;
+  for (let i = 0; i < cpu.length; i++) s += `<circle class="pt" cx="${x(ses[i]).toFixed(1)}" cy="${y(cpu[i]).toFixed(1)}" r="2.2"/>`;
+  s += `<line class="target" x1="${L}" x2="${W - 12}" y1="${y(D.scatter.target)}" y2="${y(D.scatter.target)}"/><text x="${W - 14}" y="${y(D.scatter.target) - 4}" text-anchor="end">Ziel ${esc(fmt(D.scatter.target, 0))} %</text></svg>`;
+  document.getElementById("scatterBody").innerHTML = cpu.length ? s + `<p class="note">Jeder Punkt ist ein Takt der Hauptzeit (höchstens 2000 Punkte). Typische Spitzenlast (P95): ${esc(fmt(M.load, 1))} %, höchste Spitze ${esc(fmt(M.peak, 1))} %.</p>`
+    : `<p class="note">Keine Hauptzeit in den Aufzeichnungen (keine Sitzungen): keine Punkte.</p>`;
+}
+
+// ---------- sessions per vCPU ----------
+{
+  const u = D.usersPerVcpu;
+  document.getElementById("usersBody").innerHTML =
+    `<p>Höchste Sitzungszahl ${esc(fmt(u.sessionsPeak, 0))} auf ${esc(fmt(u.cores, 0))} vCPU: ${esc(fmt(u.value, 2))} Sitzungen je vCPU.</p>` +
+    `<div class="scroll"><table><thead><tr><th>Art der Nutzer</th><th class="num">Obergrenze je vCPU</th><th class="num">Sitzungen bei ${esc(fmt(u.cores, 0))} vCPU</th></tr></thead><tbody>` +
+    u.limits.map((l) => `<tr><td>${esc(l.label)}</td><td class="num">${esc(fmt(l.perVcpu, 0))}</td><td class="num">${esc(fmt(l.sessions, 0))}</td></tr>`).join("") + `</tbody></table></div><p class="note">${esc(u.note)}</p>`;
+}
+
+// ---------- evidence, recordings, sources ----------
+document.getElementById("evidenceBody").innerHTML = D.evidence.length
+  ? `<div class="scroll"><table><tbody>${D.evidence.map((e) => `<tr><th>${esc(e.label)}</th><td class="wrap">${esc(e.value)}</td></tr>`).join("")}</tbody></table></div>`
+  : `<p class="note">Keine Aufzeichnung enthält ein Zustandsbild.</p>`;
+document.getElementById("runsBody").innerHTML = `<div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Ordner</th><th>Beginn</th><th class="num">Dauer</th><th>Ende</th><th>Bericht dieser Aufzeichnung</th></tr></thead><tbody>` +
+  D.runs.map((r, i) => `<tr><td class="num">${r.index}</td><td class="wrap">${esc(r.folder)}</td><td>${esc(fmtDT(r.start, r.offsetMin))}</td>` +
+    `<td class="num">${r.healthOnly ? "–" : esc(fmtDur(r.durationMin))}</td><td>${r.healthOnly ? "Schnelllauf (zählt nicht für die Last)" : esc(END[r.endReason] || r.endReason || "–")}</td>` +
+    `<td class="wrap"><code>${esc(r.command)}</code><br><button type="button" class="btn small cmd" data-run="${i}">Befehl kopieren</button></td></tr>`).join("") + `</tbody></table></div>`;
+document.getElementById("sourcesBody").innerHTML = (() => {
+  const seen = new Map();
+  for (const s of D.sources) { if (!seen.has(s.url)) seen.set(s.url, { s, ids: [] }); seen.get(s.url).ids.push(s.id); }
+  return `<ul>${[...seen.values()].map((o) => `<li><a href="${esc(o.s.url)}" rel="noopener noreferrer">${esc(o.s.title)}</a> <span class="rel">(${o.s.kind === "practice" ? "Praxisquelle" : "Herstellerangabe"}, Stand ${esc(o.s.date)}; ${esc(o.ids.join(", "))})</span></li>`).join("")}</ul>` +
+    `<p class="note">Werte ohne Quelle sind Faustregeln des Katalogs (Fassung ${esc(M.catalogueVersion)}).</p>`;
+})();
+
+// ---------- copy ----------
+async function copyText(text, done) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+    ta.remove();
+  }
+  if (done) done.textContent = ok ? "Kopiert." : "Kopieren nicht möglich: bitte den Text markieren und kopieren.";
+}
+{
+  const anon = document.getElementById("anon"), pre = document.getElementById("copyText"), done = document.getElementById("copyDone");
+  // a masked report has one version only
+  if (M.mask || D.copy.anonymous == null) document.getElementById("anonLabel").hidden = true;
+  const current = () => anon.checked && D.copy.anonymous != null ? D.copy.anonymous : D.copy.named;
+  const show = () => { pre.textContent = current() || ""; done.textContent = ""; };
+  anon.addEventListener("change", show); show();
+  document.getElementById("copyBtn").addEventListener("click", () => copyText(current() || "", done));
+  document.getElementById("runsBody").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button.cmd"); if (!b) return;
+    copyText(D.runs[Number(b.dataset.run)].command, null).then(() => { b.textContent = "Kopiert"; setTimeout(() => { b.textContent = "Befehl kopieren"; }, 1500); });
+  });
+}
+document.getElementById("footer").textContent = `Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated, lastOffset)} mit WorkerPerf. Jede Zahl einer Hochrechnung ist eine Schätzung, nicht gemessen.`;
+</script>
+</body>
+</html>

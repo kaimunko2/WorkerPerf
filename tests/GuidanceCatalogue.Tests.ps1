@@ -2028,8 +2028,9 @@ Describe 'Nachweis der Druckempfehlungen' {
         # Aussage angepasst (final fix wave, items 1, 2, 4, 5, 10): 89 then; 15 elements more carry the vendor's document
         # (four exclusions, three SMB, two Outlook, two signatures, two machine catalogues, active write back, Teams under
         # hang), one less (the Outlook remedy taken into its check), three carry VMware's
-        @(Get-Elements $Real | Where-Object { $_.Source -like 'Citrix: *' -or $_.Source -like 'Microsoft: *' }).Count | Should -Be 103
-        @(Get-Elements $Real | Where-Object { $_.Source -like 'VMware: *' }).Count | Should -Be 3
+        # Aussage geaendert (Groesse Task 6): je drei Schritte der Einordnung mehr (Leistung je Kern: Microsoft; VMware-Host: VMware)
+        @(Get-Elements $Real | Where-Object { $_.Source -like 'Citrix: *' -or $_.Source -like 'Microsoft: *' }).Count | Should -Be 106
+        @(Get-Elements $Real | Where-Object { $_.Source -like 'VMware: *' }).Count | Should -Be 6
     }
     It 'haelt fest, was die Korrekturrunde nicht mehr als Schritt fuehrt, und was auf dem Zielsystem zu bestaetigen ist' {      # round 5, fix round 1, items 1, 2, 5, 7, 9, 11, 13
         $section = { param($n) $from = $Doc.IndexOf("`n## $n (Empfehlung aus der Praxis)`n"); $to = $Doc.IndexOf("`n## ", $from + 4); $Doc.Substring($from, $to - $from) }

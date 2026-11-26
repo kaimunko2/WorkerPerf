@@ -106,6 +106,7 @@ button.inc-main:hover { background: var(--hover); }
 .inc-kind { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .inc-cause { display: block; color: var(--text2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inc-cause .notmeasured { font-size: 12px; }
+.inc-class { display: block; color: var(--text2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inc-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 0 10px 6px; font-size: 12px; }
 .inc-foot .inum { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 .inc-foot .flag { order: 1; border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; color: var(--text); }
@@ -134,6 +135,8 @@ button.inc-main:hover { background: var(--hover); }
 #bandSentence:focus, #incHead:focus { outline: none; }
 section[hidden] { display: none; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+#xsize { margin-top: var(--gap); }
+#xsize .sizehead { margin: 0 0 8px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; }
 .tile .label { color: var(--text2); font-size: 12px; overflow-wrap: anywhere; }
 .tile .value { font-size: 20px; line-height: 1.25; font-weight: 600; margin: 1px 0; font-variant-numeric: tabular-nums; }
@@ -469,6 +472,14 @@ details.fold[open] > summary { margin-bottom: 12px; }
 .iv-chart .note { margin: 4px 0 0; }
 .iv-cause p { margin: 0; max-width: 100ch; }
 .iv-cause .notmeasured + p { margin-top: 10px; }
+.iv-cause .classline { margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.iv-cause .classline:first-of-type { margin-top: 0; }
+.iv-cause .classmore { margin-top: 2px; font-size: 12px; }
+.iv-cause .classmore summary { cursor: pointer; color: var(--text2); }
+@media print { .iv-cause .classmore > summary { display: none; } .iv-cause .classmore > ul { display: block; } }
+.iv-cause .classdirs { margin: 6px 0 0; padding-left: 18px; max-width: 100ch; }
+.iv-cause .classdirs li { margin-top: 4px; overflow-wrap: anywhere; }
+.iv-cause .classsrc { display: block; font-size: 12px; color: var(--muted); }
 .iv-todo p { margin: 0; }
 .iv-todo .fallback { margin-bottom: 14px; }
 ol.checks { margin: 0; padding-left: 28px; }
@@ -815,6 +826,7 @@ details#healthRaw[open] > summary { margin-bottom: 8px; }
         <div class="card"><div class="cardhead"><h3>Sitzungen</h3></div><div id="chSess"></div></div>
       </div>
     </section>
+    <section id="xsize" aria-label="Größe des Servers im Zeitraum"><h3 class="sizehead">Größe des Servers: Kerne und Leistungsanteil</h3><div class="tiles" id="sizeTiles"></div></section>
     <div id="xtables">
       <div id="xtabs" role="tablist" aria-label="Tabellen der Expertenansicht">
         <button type="button" role="tab" id="xtab-sollist" data-tab="sollist" aria-selected="true" aria-controls="xt-sollist">Soll-Ist</button>
@@ -1746,10 +1758,39 @@ function usersTile(z) {
   return `<div class="tile info" data-info="userspercore" title="${esc(what + " · " + who)}"><div class="label">Benutzer je logischer CPU</div><div class="value">${fmt(value, 2)}</div>` +
     `<div class="extra">${who}</div><div class="extra">${what}</div></div>`;
 }
+// The values of the size of the server, in the range: the strongest logical processor, the number of busy ones and the
+// performance share (shown without a rating: no vendor says what it means inside a VMware VM). A value an older capture
+// or a server without the counter does not have says so.
+function sizingTiles(z) {
+  const S = D.sizing; if (!S) return "";
+  const T = GRID.tick, lo = z ? lowerBound(T, z.t0) : 0, hi = z ? upperBound(T, z.t1) : T.length, ms = S.measured || {};
+  const stat = (a) => { const v = (a || []).slice(lo, hi).filter((x) => x != null).sort((p, q) => p - q); return v.length ? { max: v[v.length - 1], p95: v[Math.min(v.length - 1, Math.ceil(0.95 * v.length) - 1)] } : null; };
+  const NM = "nicht gemessen (ältere Aufzeichnung oder Zähler fehlt)", sig = (id) => (S.signals || []).find((x) => x.id === id) || {};
+  const none = (key, label) => `<div class="tile info" data-info="${key}" title="${esc(NM)}"><div class="label">${esc(label)}</div><div class="value">–</div><div class="extra">${NM}</div></div>`;
+  const core = ms.coreMax ? stat(D.host.coreMax) : null, busy = ms.coreBusy ? stat(D.host.coreBusy) : null, perf = ms.perf ? stat(D.host.perf) : null;
+  const cpu = stat(D.host.cpu), th = TH.get("cpu.host"), util = ms.utility ? stat(D.host.utility) : null;
+  // one processor busy while the server as a whole is under its target: worth a look (performance per core)
+  const coreSt = core && cpu && th && core.p95 >= S.coreBusyNow && cpu.p95 < th.warn ? "1" : "0";
+  // every processor busy: no room left
+  const busySt = busy && M.cores && busy.p95 >= M.cores ? "1" : "0", over = S.coreBusyPct != null ? S.coreBusyPct : S.coreBusyNow;
+  return (!core ? none("coremax", sig("cpu.coreMax").label || "Stärkster Kern") :
+      `<div class="tile" data-info="coremax" data-status="${coreSt}" title="${esc(sig("cpu.coreMax").note || "")}"><div class="label">${esc(sig("cpu.coreMax").label || "Stärkster Kern")}</div>` +
+      `<div class="value">${fmt(core.max, 1)}<small> % Max</small></div><div class="extra stat">P95 ${fmt(core.p95, 1)} %</div>${statusHtml(coreSt)}<div class="extra goal">voll ab ${fmt(S.coreBusyNow, 0)} %</div></div>`) +
+    (!busy ? none("corebusy", sig("cpu.coreBusy").label || "Kerne voll") :
+      `<div class="tile" data-info="corebusy" data-status="${busySt}" title="${esc(sig("cpu.coreBusy").note || "")}"><div class="label">${esc(sig("cpu.coreBusy").label || "Kerne voll")}</div>` +
+      `<div class="value">${fmt(busy.max, 0)}<small> von ${fmt(M.cores, 0)} Max</small></div><div class="extra stat">P95 ${fmt(busy.p95, 0)} von ${fmt(M.cores, 0)}</div>${statusHtml(busySt)}<div class="extra goal">über ${fmt(over, 0)} %</div></div>`) +
+    (!perf ? none("perf", sig("cpu.perf").label || "Leistungsanteil") :
+      `<div class="tile info" data-info="perf" title="${esc(sig("cpu.perf").note || "")}"><div class="label">${esc(sig("cpu.perf").label || "Leistungsanteil")}</div>` +
+      `<div class="value">${fmt(perf.max, 1)}<small> % Max</small></div><div class="extra">P95 ${fmt(perf.p95, 1)} % · ohne Bewertung</div>` +
+      `<div class="extra">${util ? `${esc(sig("cpu.utility").label || "Geleistete Arbeit")}: P95 ${fmt(util.p95, 1)} %` : "geleistete Arbeit: nicht gemessen"}</div></div>`);
+}
 // rows: the rows of the target comparison for the range in force
 function renderTiles(rows) {
   const z = window.WP.zoom;
   document.getElementById("tiles").innerHTML = rows.map(sollTile).join("") + (D.mainApp ? mainAppTile(D.mainApp, z) : "") + usersTile(z);
+  // the tiles of the size of the server stand in a row of their own under the charts: the first screen keeps its two rows of tiles
+  const size = sizingTiles(z);
+  document.getElementById("sizeTiles").innerHTML = size; document.getElementById("xsize").hidden = !size;
 }
 
 // ---------- overview: charts ----------
@@ -2305,13 +2346,27 @@ const incOrder = INC.slice().sort((a, b) => (b.focus - a.focus) || (a.chronic - 
 // way into its guided view; the number names the incident the sentences refer to ("Zeitgleich mit Vorfall 3"). An entry of
 // the capture is a button that sets the range to the incident; an incident of the days before the capture has no range. The
 // detail of an incident stands in its incident view.
+// The class of an incident (size of the server): the cause of a CPU or memory bottleneck, set by the report script.
+// classLabels: the labels of its classes for the column; classHtml: the line "Einordnung: ..." of the incident view and, per
+// class, what helps (its direction) with the titles of its sources (sizing.sources). Values of the report data go in as text.
+const classLabels = (inc) => (inc.classes || []).map((c) => c.label).join(", ");
+function classHtml(inc) {
+  if (!inc.classLine) return "";
+  const src = new Map(((D.sizing || {}).sources || []).map((s) => [s.id, s]));
+  const dirs = (inc.classes || []).map((c) => {
+    const titles = [...new Set((c.sources || []).map((id) => src.get(id)).filter(Boolean).map((s) => s.title))];
+    return `<li class="classdir"><b>${esc(c.label)}:</b> ${esc(c.advice)}<span class="classsrc">${titles.length ? "Quelle: " + esc(titles.join("; ")) : "Faustregel des Katalogs"}</span></li>`;
+  }).join("");
+  // what helps and the sources fold away: the first step of "Was ist zu tun" stays on the first screen
+  return `<p class="classline">${esc(inc.classLine)}</p>${dirs ? `<details class="classmore"><summary>Was hilft, und Quellen der Einordnung</summary><ul class="classdirs">${dirs}</ul></details>` : ""}`;
+}
 function incEntry(inc) {
   const k = sevKey(inc.severity), before = !!(inc.event && inc.event.before), c = causeParts(inc);
   const cls = ["inc", "sev" + k, "type-" + inc.type, inc.focus ? "focus" : "", inc.nearReported ? "near" : "", inc.chronic ? "chronic" : ""].filter(Boolean).join(" ");
   const cause = [c.skip ? notMeasured(c.place, true) : "", esc(c.text)].filter(Boolean).join(" ");
   return `<article class="${cls}" data-id="${inc.id}">
     <${before ? "div" : 'button type="button" aria-pressed="false"'} class="inc-main"><span class="inc-top">${statusHtml(k)}<span class="inc-when">${esc(incWhen(inc, !before))}</span></span>
-      <span class="inc-kind">${esc((inc.guide || {}).tech || typeText(inc))}</span>${cause ? `<span class="inc-cause" title="${esc(c.full)}">${cause}</span>` : ""}</${before ? "div" : "button"}>
+      <span class="inc-kind">${esc((inc.guide || {}).tech || typeText(inc))}</span>${cause ? `<span class="inc-cause" title="${esc(c.full)}">${cause}</span>` : ""}${classLabels(inc) ? `<span class="inc-class" title="${esc(inc.classLine)}">Einordnung: ${esc(classLabels(inc))}</span>` : ""}</${before ? "div" : "button"}>
     <div class="inc-foot"><button type="button" class="lnk inc-guided">Geführt öffnen</button>${flagsHtml(inc)}<span class="inum">Vorfall ${inc.id}</span></div></article>`;
 }
 document.getElementById("incList").innerHTML = incOrder.map(incEntry).join("");
@@ -3428,8 +3483,8 @@ function renderIncident(id) {
       <div class="iv-actions"><button type="button" class="btn primary" id="ivCopy">Zusammenfassung kopieren</button>${MASKED ? "" : `<label class="inline"><input type="checkbox" id="ivAnon"${anonChosen() ? " checked" : ""}> ohne Namen</label>`}<button type="button" class="btn" id="ivExpert">In der Expertenansicht zeigen</button>${next == null ? "" : `<button type="button" class="btn" id="ivNext">Nächster Vorfall <span aria-hidden="true">→</span></button>`}</div></div>${text || lead ? `
     <section class="iv-what card"><h3>Was war los</h3>
       <div class="iv-cols${text && lead ? "" : " single"}">${text ? `<div class="iv-text">${text}</div>` : ""}${lead ? `
-        <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: ${caption}</p></div>` : ""}</div></section>` : ""}${cause.skip || cause.text ? `
-    <section class="iv-cause card"><h3>Wer oder was hat es verursacht</h3>${cause.skip ? notMeasured(cause.place) : ""}${tx("p", "causetext", cause.text)}</section>` : ""}${note || checks.length || remedies.length || contacts.length ? `
+        <div class="iv-chart"><h4>${esc(lead.title)}</h4><div class="iv-plot"></div><p class="note">${rangeText(win, win.t1 - win.t0 < 3600000)}: ${caption}</p></div>` : ""}</div></section>` : ""}${cause.skip || cause.text || inc.classLine ? `
+    <section class="iv-cause card"><h3>Wer oder was hat es verursacht</h3>${cause.skip ? notMeasured(cause.place) : ""}${tx("p", "causetext", cause.text)}${classHtml(inc)}</section>` : ""}${note || checks.length || remedies.length || contacts.length ? `
     <section class="iv-todo card"><h3>Was ist zu tun</h3>${note ? `<p class="hint fallback" role="note"><i class="sym" aria-hidden="true">▲</i>${esc(note)}</p>` : ""}
       ${foldRest(checks, STEP_MAX.checks, checkList, "Weiteren Prüfschritt anzeigen", "Prüfschritte")}${remedies.length ? `
       <div class="remedies"><h4>Mögliche Abhilfe – Vorschlag</h4>${foldRest(remedies, STEP_MAX.remedies, remedyList, "Weiteren Vorschlag anzeigen", "Vorschläge")}</div>` : ""}${contacts.length ? `

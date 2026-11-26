@@ -10,6 +10,22 @@ BeforeAll {
     }
     function Get-Hit([string]$Key) { (Find-Incident $D ($Exp | Where-Object Key -eq $Key))[0] }
     $script:ReportScript = Join-Path $PSScriptRoot '../src/New-WorkerPerfReport.ps1'; $script:RoleFile = Join-Path (Split-Path $R.Report) 'roles.sim.json'
+    # Groesse des Servers: Katalog, Rollen der Simulation, die Aufzeichnung der Ursachen und ihr Bericht
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.EventConfig.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Events.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Load.ps1')
+    . (Join-Path $PSScriptRoot '../src/WorkerPerf.Findings.ps1'); . (Join-Path $PSScriptRoot '../src/WorkerPerf.Sizing.ps1')
+    $script:Th = Read-WorkerPerfThresholds (Join-Path $PSScriptRoot '../src/thresholds.json')
+    $script:Sz = Read-WorkerPerfSizing (Join-Path $PSScriptRoot '../src/sizing.de.json') $Th
+    $script:SimRoles = Read-WorkerPerfRoles $RoleFile
+    $c = New-CausesReport (Join-Path $TestDrive 'c') $RoleFile; $script:Causes = $c.Run; $script:CausesReport = $c.Report
+    function New-ReportOf([string]$Run) {
+        $out = Join-Path $TestDrive ('of-' + [IO.Path]::GetRandomFileName() + '.html')
+        [void](& $ReportScript -Path $Run -OutFile $out -RoleFile $RoleFile 6>$null); $out
+    }
+    function New-BadSizing {
+        $p = Join-Path $TestDrive 'sizing-bad.json'
+        $j = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../src/sizing.de.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json; $j.thresholds.coreBusyPct.value = 40
+        [IO.File]::WriteAllText($p, ($j | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding $false)); $p
+    }
 }
 Describe 'Durchlauf Simulation -> Bericht' {
     It 'findet genau die Vorfaelle des Drehbuchs' {
@@ -916,7 +932,7 @@ Describe 'Zustandsbild in den Berichtsdaten' {
         $c = ($h.areas | Where-Object id -eq 'print').checks[0]; $c.id | Should -Be 'print.driversInSpooler'; $c.grade | Should -Be 'act'; $c.kind | Should -Be 'rule'; $c.source.url | Should -Match '^https://'
         foreach ($f in 'title', 'finding', 'meaning', 'kindLabel', 'value') { [string]$c.$f | Should -Not -BeNullOrEmpty -Because $f }; @($c.todo).Count | Should -BeGreaterThan 0
         # Literal angepasst (Task 14s und die Proben aus src/apps.json): 208 Rohwerte
-        $h.grades.act.word | Should -Be 'Handeln'; $h.grades.na.word | Should -Be 'Trifft nicht zu'; @($h.raw).Count | Should -Be 208; $h.offsetMin | Should -Be $D.meta.offsetMin
+        $h.grades.act.word | Should -Be 'Handeln'; $h.grades.na.word | Should -Be 'Trifft nicht zu'; @($h.raw).Count | Should -Be 209; $h.offsetMin | Should -Be $D.meta.offsetMin
         ($h.areas | Where-Object id -eq 'profile').countsText | Should -Be '1 zum Handeln'; ($h.areas | Where-Object id -eq 'size').countsText | Should -Be ''
         ($h.areas | Where-Object id -eq 'security').statusText | Should -Not -BeNullOrEmpty; ($h.areas | Where-Object id -eq 'size').statusText | Should -Be ''      # Sicherheitsprodukte: teilweise gelesen
     }
@@ -1126,4 +1142,36 @@ Describe 'Abschlussrunde Teil B' {
         $names.Count | Should -BeGreaterThan 100
         @($names | Where-Object { [regex]::Matches($script, '(?<![\w$]|(?<!\.\.)\.)' + [regex]::Escape($_) + '(?![\w$])').Count -lt 2 }) | Should -BeNullOrEmpty
     }
+}
+Describe 'Einordnung im Bericht' {
+    It 'ordnet die Vorfaelle der simulierten Stunde ein' {
+        $d = Get-ReportData $R.Report
+        $cpu = $d.incidents | Where-Object lead -eq 'cpu'; $cpu.classes[0].id | Should -Be 'app'; $cpu.classLine | Should -Match '^Einordnung: Anwendung'
+        ($d.incidents | Where-Object lead -eq 'memory').classes[0].id | Should -Be 'mem.app'
+        ($d.incidents | Where-Object { $_.type -eq 'ohne-engpass' } | Select-Object -First 1).classLine | Should -Be ''
+        @($d.host.coreMax).Count | Should -Be $d.meta.ticks; $d.sizing.coreBusyPct | Should -Be 90; $d.sizing.measured.coreMax | Should -BeTrue
+        @($d.host.coreBusy).Count | Should -Be $d.meta.ticks; @($d.host.pagesOut).Count | Should -Be $d.meta.ticks
+        $d.sizing.coreBusyNow | Should -Be 90; $d.sizing.catalogueVersion | Should -Be $Sz.Version; ($d.sizing.signals | Where-Object id -eq 'cpu.perf').label | Should -Be 'Leistungsanteil'
+        $ev = $d.incidents | Where-Object type -eq 'ereignis' | Select-Object -First 1; @($ev.classes).Count | Should -Be 0; $ev.classLine | Should -Be ''      # ein Ereignisvorfall hat keine Einordnung
+        # nur die Quellen, die eine Klasse der Berichtsdaten oder ein Signal nennt
+        @($d.sizing.sources.id) | Should -Contain 'SZ-35'; @($d.sizing.sources.id) | Should -Not -Contain 'SZ-21'; ($d.sizing.sources | Where-Object id -eq 'SZ-35').url | Should -Match '^https://learn.microsoft.com/'
+    }
+    It 'zeigt dieselben Klassen wie die Auswertung des Groessenberichts' {
+        $a = Get-WorkerPerfRunAnalysis -Path $Causes -Thresholds $Th -Roles $SimRoles -Sizing $Sz; $d = Get-ReportData $CausesReport
+        @($a.Incidents).Count | Should -BeGreaterThan 6
+        foreach ($inc in $a.Incidents) { @(($d.incidents | Where-Object id -eq $inc.Id).classes | ForEach-Object { $_.id }) | Should -Be @($inc.Classes | ForEach-Object { $_.Id }) -Because "Vorfall $($inc.Id)" }
+    }
+    It 'reiht den Schritt des VMware-Hosts vorne in die Anleitung ein und nennt die Einordnung im Kopiertext' {
+        $h = (Get-ReportData $CausesReport).incidents | Where-Object { $_.classes.id -contains 'host' }
+        $h.guide.checks[0].text | Should -Match 'VMware-Host'; $h.guide.conditions | Should -Contain 'class.host'
+        ($h.copy.named -join "`n") | Should -Match 'Einordnung: VMware-Host'; ($h.copy.anonymous -join "`n") | Should -Match 'Einordnung: VMware-Host'
+        $s = (Get-ReportData $CausesReport).incidents | Where-Object { $_.classes.id -contains 'singlecore' }
+        $s.guide.checks[0].text | Should -Match 'nur einen Kern'; $s.classes[0].reason | Should -Match 'simcalc\.exe'
+    }
+    It 'entsteht an einer aelteren Aufzeichnung und sagt, was nicht gemessen ist' {                  # Review Focus 2
+        $d = Get-ReportData (New-ReportOf (New-OldCaptureCopy $Causes (Join-Path $TestDrive 'old')))
+        $d.sizing.measured.coreMax | Should -BeFalse; $d.sizing.coreBusyPct | Should -BeNullOrEmpty
+        @($d.incidents | Where-Object { $_.classes.id -contains 'undecidable' })[0].unchecked[0].text | Should -Match 'Stärkster|stärkster'
+    }
+    It 'lehnt einen fehlerhaften Katalog der Groesse vor dem Lesen ab' { { & $ReportScript -Path $Causes -SizingFile (New-BadSizing) 6>$null } | Should -Throw '*sizing*' }
 }

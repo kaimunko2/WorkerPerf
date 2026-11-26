@@ -12,6 +12,13 @@ BeforeAll {
         Volumes = @((New-TestVolume 'C:' 2.347 12), (New-TestVolume 'D:' $null 0)); Shares = @()
         InputSessions = @([pscustomobject]@{ SessionId = 5; DelayMs = 0 }, [pscustomobject]@{ SessionId = 6; DelayMs = 300 })
         InputProcesses = @([pscustomobject]@{ SessionId = 6; Pid = 100; Name = 'a.exe'; DelayMs = 30 }, [pscustomobject]@{ SessionId = 6; Pid = 200; Name = 'b.exe'; DelayMs = 80 })
+        CoreMaxPct = $null; CoresBusy = $null; PerfPct = $null; UtilityPct = $null; PagesOutPerSec = $null
+    }
+    function New-TestSample([hashtable]$Change) {
+        # die schnelle Probe der Tests mit geaenderten Feldern
+        $c = $script:Sample.PSObject.Copy()
+        foreach ($k in $Change.Keys) { $c.$k = $Change[$k] }
+        $c
     }
 }
 Describe 'Update-WorkerPerfBurstState' {
@@ -40,7 +47,33 @@ Describe 'Update-WorkerPerfBurstState' {
         @($active | Where-Object { $_ }).Count | Should -Be 179              # ab dem dritten Takt bis 300 s (149 Takte), danach 30 Takte Nachlauf
         Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(600) -BadSignals @() | Should -BeFalse
         foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(602 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
-        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(606) -BadSignals @('mem.used') | Should -BeTrue      # nach Entwarnung wieder scharf
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(606) -BadSignals @('mem.used') | Should -BeFalse     # ein guter Takt macht nicht wieder scharf
+        # erst nach 300 s am Stueck unter der Schwelle (letzter schlechter Takt bei 606 s) wieder scharf
+        foreach ($k in 0..148) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(608 + 2 * $k) -BadSignals @() | Should -BeFalse }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(906 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(910) -BadSignals @('mem.used') | Should -BeTrue
+    }
+    It 'begrenzt die Verdichtung auch, wenn der Wert um die Schwelle pendelt (dritter echter Lauf)' {
+        # eine Stunde lang fuenf Takte ueber der Schwelle, einer darunter: bisher begann mit jedem guten Takt eine neue Episode
+        $s = New-WorkerPerfBurstState
+        $active = foreach ($i in 0..1799) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals $(if ($i % 6 -eq 5) { @() } else { @('mem.used') }) }
+        @($active | Where-Object { $_ }).Count | Should -Be 177              # Ausloeser bis 296 s, danach 60 s Nachlauf
+        # kurz darunter, dann lange Ruhe unterhalb der Wiederscharf-Zeit, dann wieder darueber: weiter dieselbe Episode
+        foreach ($k in 0..2) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(3800 + 2 * $k) -BadSignals @('mem.used') | Should -BeFalse }
+        # eine eigene Wiederscharf-Zeit laesst sich angeben
+        $o = New-WorkerPerfBurstState
+        foreach ($i in 0..199) { [void](Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(2 * $i) -BadSignals @('mem.used') -RearmSeconds 10) }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(420 + 2 * $k) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $o -Now $t.AddSeconds(424) -BadSignals @('mem.used') -RearmSeconds 10 | Should -BeTrue
+    }
+    It 'wird nach einer Episode wieder scharf, auch wenn dazwischen einzelne Spitzen liegen (Gesamtpruefung, Befund 2)' {
+        # 20 s ueber der Schwelle, dann alle vier Minuten ein einzelner Takt, ab Minute 30 wieder dauerhaft: die einzelnen
+        # Spitzen (nie bestaetigt) verlaengern die Sperre nicht
+        $s = New-WorkerPerfBurstState
+        foreach ($i in 0..9) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals @('input.session')) }
+        foreach ($i in 10..899) { [void](Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(2 * $i) -BadSignals $(if ($i % 120 -eq 0) { @('input.session') } else { @() })) }
+        foreach ($k in 0..1) { Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(1800 + 2 * $k) -BadSignals @('input.session') | Should -BeFalse }
+        Update-WorkerPerfBurstState -State $s -Now $t.AddSeconds(1804) -BadSignals @('input.session') | Should -BeTrue
     }
     It 'fuehrt die Begrenzung je Signal' {
         $s = New-WorkerPerfBurstState
@@ -75,10 +108,15 @@ Describe 'Test-WorkerPerfGuard' {
     }
 }
 Describe 'ConvertTo-WorkerPerfFastRows' {
+    It 'schreibt die fuenf Werte am Ende der Zeile des Takts' {
+        $r = ConvertTo-WorkerPerfFastRows -Sample (New-TestSample @{ CoreMaxPct = 97.54; CoresBusy = 1; PerfPct = 104.0; UtilityPct = 41.63; PagesOutPerSec = 12.0 }) -T 3 -ElapsedSec 2 -Burst $false -CollectMs 5
+        $r.Tick | Should -Match ',5,97\.5,1,104,41\.6,12$'
+        (ConvertTo-WorkerPerfFastRows -Sample (New-TestSample @{}) -T 3 -ElapsedSec 2 -Burst $false -CollectMs 5).Tick | Should -Match ',5,,,,,$'
+    }
     It 'schreibt den Takt und nur Instanzen mit Aktivitaet' {                   # Review Focus 2
         [cultureinfo]::CurrentCulture = [cultureinfo]'de-DE'
         $r = ConvertTo-WorkerPerfFastRows -Sample $Sample -T 7 -ElapsedSec 2 -Burst $true -CollectMs 41.6
-        $r.Tick | Should -Be '7,2026-01-15T08:00:02.0000000,2,12.5,3,,20000,30000,70000,1.3,1000,2000,10.5,20,0,300,400,1,42'
+        $r.Tick | Should -Be '7,2026-01-15T08:00:02.0000000,2,12.5,3,,20000,30000,70000,1.3,1000,2000,10.5,20,0,300,400,1,42,,,,,'      # Aussage geaendert (Groesse Task 2): fuenf Spalten mehr
         $r.Volumes | Should -Be @('7,C:,disk,,,2.35,,12,0,5000,0,1')
         $r.Shares.Count | Should -Be 0
         $r.InputSessions | Should -Be @('7,6,300'); $r.InputProcesses | Should -Be @('7,6,200,b.exe,80')
@@ -107,9 +145,10 @@ Describe 'ConvertTo-WorkerPerfFastRows' {
             InputProcesses = @([pscustomobject]@{ SessionId = 6; Pid = 100; Name = 'a.exe'; DelayMs = 49.9 },
                 [pscustomobject]@{ SessionId = 6; Pid = 200; Name = 'Übersicht, "alt".exe'; DelayMs = 80.5 },
                 [pscustomobject]@{ SessionId = 8; Pid = 300; Name = 'c.exe'; DelayMs = $null }, [pscustomobject]@{ SessionId = 8; Pid = 301; Name = ''; DelayMs = 50 })
+            CoreMaxPct = $null; CoresBusy = $null; PerfPct = $null; UtilityPct = $null; PagesOutPerSec = $null
         }
         $r = ConvertTo-WorkerPerfFastRows -Sample $s -T 42 -ElapsedSec 2.0006 -Burst $false -CollectMs 12.5
-        $r.Tick | Should -BeExactly '42,2026-01-15T08:00:02.5000000,2.001,100,2,,20000,30002,,0.2,1234568,,10.1,-3.8,4,123456789012,0,0,12'
+        $r.Tick | Should -BeExactly '42,2026-01-15T08:00:02.5000000,2.001,100,2,,20000,30002,,0.2,1234568,,10.1,-3.8,4,123456789012,0,0,12,,,,,'      # Aussage geaendert (Groesse Task 2)
         $r.Volumes | Should -BeExactly @('42,C:,disk,,,2.35,0.12,12,0,5000,0,1', '42,HarddiskVolume12,profile,4,\\fs01\profile$,1.01,44.44,30,20,6291456,4194304,3',
             '42,"Vol,""x""",profile,0,"Ärzte, ""Daten""",,,0,1,2,4,')
         $r.Shares | Should -BeExactly @('42,\\fs01\daten,78.12,,100,0,20971520,0', '42,"\\fs01\Büro,""neu""  Zeile",,2.68,2,0,2,0')

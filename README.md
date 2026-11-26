@@ -79,8 +79,8 @@ Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Server-Signal
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
 nimmt er einen Schnappschuss der Prozesse, Sitzungen und Citrix-Werte, prüft die Gegenstellen und liest
 einmal pro Minute die Ereignisse. Liegt ein Auslöser-Signal drei Takte in Folge über seiner Schwelle, verdichtet er
-fortan, solange es darüber bleibt (und 60 Sekunden danach, je Signal
-höchstens 5 Minuten am Stück), verdichtet er die Schnappschüsse: mit den Standardwerten alle **6 Sekunden**,
+die Schnappschüsse, solange es darüber bleibt (und 60 Sekunden danach, je Signal
+höchstens 5 Minuten; erneut erst, nachdem es 5 Minuten am Stück unter der Schwelle lag): mit den Standardwerten alle **6 Sekunden**,
 denn ein Schnappschuss entsteht immer in einem schnellen Takt, also im ersten Takt nach Ablauf von
 `-BurstIntervalSeconds` (5 s) – bei einem Takt von 2 s jeder dritte.
 
@@ -257,6 +257,7 @@ PowerShell 7); unter Windows PowerShell 5.1 kann sie dafür eine Minute oder lä
 | `-ThresholdFile` | Schwellwerte, Standard `thresholds.json` neben dem Skript |
 | `-RoleFile` | Rollen (Hauptanwendung, Sicherheit, Profil, Citrix, System, Drucken), Standard `roles.json` neben dem Skript |
 | `-GuidanceFile` | Katalog der Anleitung (Situationen, Prüfschritte, Vorschläge, Texte des geführten Berichts), Standard `guidance.de.json` neben dem Skript; siehe [Der Katalog der Anleitung](#der-katalog-der-anleitung) |
+| `-SizingFile` | Katalog der Größe des Servers (Klassen der Einordnung, ihre Schwellen und Quellen), Standard `sizing.de.json` neben dem Skript; siehe [Größe des Servers](#größe-des-servers) |
 | `-AppsFile` | Liste der Standardanwendungen mit den Namen ihrer Prozesse und den Proben des Zustandsbilds (für die Bedingungen `app.<Anwendung>` des Katalogs der Anleitung und den Bereich „Anwendungen“ des Zustandsbilds), Standard `apps.json` neben dem Skript; siehe [Die Anwendungsliste](#die-anwendungsliste-appsjson) |
 | `-HealthFile` | Katalog des Zustandsbilds (Bereiche, Schwellen, Prüfungen, Texte), Standard `health.de.json` neben dem Skript; siehe [Der Katalog des Zustandsbilds](#der-katalog-des-zustandsbilds-healthdejson) |
 | `-FocusUser` | gemeldeter Benutzer als `Benutzer` oder `Domäne\Benutzer` (Groß-/Kleinschreibung egal); unbekannte Namen brechen nicht ab |
@@ -651,6 +652,151 @@ steht.
   seiner Sicht.
 - Das Prüfskript `Test-WorkerPerfSources.ps1` bleibt unverändert.
 
+## Größe des Servers
+
+Zeigt der Bericht einen CPU- oder Arbeitsspeicher-Engpass, muss der Administrator entscheiden, woran es liegt: an einer
+Anwendung, an einem einmaligen Vorgang, am VMware-Host, an der Leistung je Kern – oder ob der Server schlicht zu klein
+ist. Die Antwort bestimmt, ob er Ressourcen ändert und welche. Mehr Kerne helfen nicht, wenn eine Anwendung nur einen
+Kern nutzt; mehr vCPU helfen nicht, wenn der VMware-Host die Rechenzeit nicht liefert; mehr Arbeitsspeicher hilft nicht
+gegen ein Speicherleck. Der Baustein liefert zweierlei:
+
+1. **Einordnung je Vorfall** im normalen Bericht: jeder CPU- und Arbeitsspeicher-Vorfall bekommt eine Ursachenklasse,
+   begründet mit Messwerten.
+2. **Größenbericht** aus mehreren Aufzeichnungen desselben Servers (etwa fünf Arbeitstage): welche Ursache wiederkehrt,
+   die typische Spitzenlast und je Ressource eine Empfehlung als Richtung mit einer **als Schätzung gekennzeichneten
+   Hochrechnung**.
+
+### Die Einordnung eines Vorfalls
+
+Eine Klasse bekommen Vorfälle mit einem CPU- oder Arbeitsspeicher-Befund und Eingabeverzögerungen ohne Engpass (bei
+ihnen kommen nur „VMware-Host“ und „Leistung je Kern“ in Frage). Ein Vorfall kann mehrere Klassen tragen. Sie stehen in
+der Reihenfolge ihres Vorrangs; der VMware-Host steht vorn, weil er jede andere Empfehlung entwertet.
+
+| | Klasse | Erkennbar an | Was hilft (Richtung) |
+|---|---|---|---|
+| 1 | VMware-Host | entzogene CPU-Zeit je vCPU über „auffällig“ (5 %) in mindestens drei Takten und mindestens 10 % der Takte des Vorfalls | VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung); keine zusätzlichen vCPU |
+| 2 | Leistung je Kern | der Prozess mit der meisten CPU-Zeit läuft anhaltend auf etwa einem vollen logischen Prozessor, der stärkste Kern ist voll, die CPU insgesamt liegt unter „kritisch“; nicht bei breiter Last über dem Ziel (dann gilt „Kapazität“) | schnellere Kerne; Energiesparplan und Energierichtlinie des VMware-Hosts prüfen; mehr vCPU helfen dieser Anwendung nicht |
+| 3 | Anwendung | eine Anwendung in **einer** Sitzung (oder ein Systemprozess) trägt mindestens 50 % der genutzten CPU | Anwendung, Aufgabe oder Benutzer klären; keine Größenänderung |
+| 4 | Einmalig | der Hauptverursacher ist ein Virenscan (Rolle „Sicherheit“ und ein Scan im Zeitraum) oder ein Update (Rolle „Wartung“) | Zeitplan ändern; keine Größenänderung |
+| 5 | Kapazität | keine der Klassen 2 bis 4, die Last liegt breit verteilt über dem Ziel (75 %); „deutlich“ bei Warteschlange ab 2 je CPU und CPU ab 90 %, sonst „knapp“ | mehr vCPU oder mehr Server (Hochrechnung im Größenbericht) |
+| 6 | Arbeitsspeicher: Kapazität | zugesichert über RAM **und** anhaltend ausgelagerte Seiten, bei breit verteilter Last | mehr Arbeitsspeicher oder weniger Sitzungen je Server |
+| 7 | Arbeitsspeicher: Commit-Grenze | zugesichert über 90 % der Commit-Grenze, **ohne** anhaltendes Auslagern | Auslagerungsdatei vergrößern oder vom System verwalten lassen; mehr RAM ist dafür nicht nötig |
+| 8 | Arbeitsspeicher: Anwendung | eine Anwendung trägt mindestens die Hälfte des belegten Speichers oder wächst um mindestens 10 % des RAM | Anwendung klären, Verdacht auf Speicherleck |
+| 9 | Arbeitsspeicher: genutzt, kein Mangel | ein Arbeitsspeicher-Vorfall ohne die Klassen 6 bis 8 | nichts nötig: Windows nutzt freien Speicher, ein Mangel zeigt sich erst am Auslagern |
+| 10 | Nicht entscheidbar | eine Messung fehlt (ältere Aufzeichnung, `-Skip Prozesse`, keine VMware Tools) oder die Werte widersprechen sich | der Bericht nennt die fehlende Messung |
+
+Im Bericht steht die Einordnung in der Vorfallsansicht unter „Wer oder was hat es verursacht“ (mit der Richtung und den
+Quellen je Klasse), in der Vorfallsspalte der Expertenansicht und als eigene Zeile im Kopiertext. Die Klassen
+„VMware-Host“ und „Leistung je Kern“ stellen einen eigenen Prüfschritt an den Anfang der Anleitung. Die Bildung der
+Vorfälle bleibt, wie sie ist; es gibt keinen neuen Auslöser.
+
+### Die neuen Messwerte
+
+Der Collector zeichnet im schnellen Takt fünf Werte mehr auf. Sie gehören zur Grundmessung (keine neue Kategorie für
+`-Skip`):
+
+| Signal | Inhalt | Zweck |
+|---|---|---|
+| `cpu.coreMax` | Auslastung des am stärksten belasteten logischen Prozessors | ein Kern voll, die anderen frei |
+| `cpu.coreBusy` | Zahl der logischen Prozessoren über der Kern-Schwelle (90 %) | wie viele Kerne gleichzeitig voll sind |
+| `cpu.perf` | `% Processor Performance` | Anzeige ohne Bewertung |
+| `cpu.utility` | `% Processor Utility` | Anzeige ohne Bewertung |
+| `mem.pagesout` | `Pages Output/sec` | entscheidet, ob ein hoher zugesicherter Speicher wirklich fehlt |
+
+- Die Kern-Schwelle steht im Katalog (`coreBusyPct`) und wird beim Aufzeichnen angewandt; ihr Wert steht deshalb als
+  `CoreBusyPct` in `meta.json`.
+- Fehlt einem Server ein Zähler (`% Processor Utility`, `Pages Output/sec`), läuft die Messung weiter; nur dieses Signal
+  steht in den Datenquellen als nicht verfügbar.
+- Eine ältere Aufzeichnung ohne die fünf Spalten bleibt lesbar. Die Einordnung sagt dann, welche Unterscheidung ohne
+  diese Werte nicht möglich ist.
+- `cpu.perf` und `cpu.utility` tragen keine Klasse: kein Hersteller belegt, was sie in einer VMware-VM bedeuten. Die
+  Expertenansicht zeigt sie in der Kachel „Leistungsanteil“ ohne Bewertung, daneben die Kacheln „Stärkster Kern“ und
+  „Kerne voll“.
+
+### Der Größenbericht
+
+```powershell
+.\New-WorkerPerfSizingReport.ps1 -Path D:\WorkerPerf\SIM-VDA01_20260101-080000, D:\WorkerPerf\SIM-VDA01_20260102-080000, D:\WorkerPerf\SIM-VDA01_20260103-080000
+```
+
+| Parameter | Bedeutung |
+|---|---|
+| `-Path` | die Ordner der Aufzeichnungen, in beliebiger Reihenfolge; mindestens eine mit Messung, sinnvoll sind mehrere Arbeitstage |
+| `-OutFile` | Zieldatei, Standard `groesse-<Datum-Uhrzeit>.html` im Ordner über der ersten Aufzeichnung |
+| `-Mask`, `-MaskMapFile` | wie im normalen Bericht (`Personen` oder `Alles`); die Namen aller Aufzeichnungen bekommen ihre Ersatznamen in der angegebenen Reihenfolge |
+| `-SizingFile` | Katalog der Größe, Standard `sizing.de.json` neben dem Skript |
+| `-ThresholdFile`, `-RoleFile`, `-GuidanceFile`, `-AppsFile` | wie im normalen Bericht; eine angegebene Datei steht auch im Befehl, den der Größenbericht je Aufzeichnung nennt |
+
+- **Derselbe Server:** alle Aufzeichnungen müssen denselben Computernamen tragen (Groß- und Kleinschreibung egal). Sonst
+  bricht das Skript ab und nennt die abweichende Aufzeichnung. Der Vergleich verschiedener Server ist ein späterer
+  Baustein. Dieselbe Aufzeichnung zweimal wird abgelehnt.
+- **Schnelllauf:** ein Schnelllauf (`-HealthOnly`) zählt nicht für die Last; sein Zustandsbild dient als Beleg
+  (Energiesparplan, vCPU, RAM). Nur Schnellläufe ergeben keinen Bericht.
+- **Jede Aufzeichnung** wird gelesen wie im normalen Bericht (Lader, Befunde, Vorfälle, Einordnung). Der Größenbericht
+  ersetzt den normalen Bericht nicht; er nennt je Aufzeichnung den Befehl, der ihren Bericht erzeugt.
+- **Wiederkehrend** heißt: dieselbe Klasse in mindestens der Hälfte der Aufzeichnungen mit Messung.
+- **Wechsel der Größe:** wechselt die Größe zwischen den Aufzeichnungen (etwa 8 → 10 vCPU), nennt der Kopf das; Last und
+  Hochrechnung stammen dann nur aus den Aufzeichnungen mit der letzten Größe, die Ursachen zählen über alle.
+- **Maskiert** nennt der Bericht von jedem Ordner und jeder Datei nur den letzten Teil des Pfads.
+- **Wenig Messzeit:** unter drei Aufzeichnungen oder unter zwölf Stunden Hauptzeit entsteht der Bericht trotzdem; jede
+  Empfehlung trägt dann den Hinweis „wenig Messzeit“.
+
+Die Seite zeigt: Kopf, das Ergebnis in einem Satz, die Empfehlungen je Ressource (CPU, Arbeitsspeicher, dazu
+VMware-Host und Leistung je Kern, wo erkannt), den Verlauf über die Aufzeichnungen, Sitzungen gegen CPU, Sitzungen je
+vCPU im Vergleich mit Microsofts Obergrenzen (6/4/2/1 je vCPU für leichte, mittlere, schwere und Power-Nutzer – eine
+Einordnung, keine Bewertung), Belege aus dem Zustandsbild, die Liste der Aufzeichnungen, die Quellen und einen
+Kopiertext mit und ohne Namen.
+
+### Hochrechnung
+
+- **Hauptzeit:** die Takte, in denen mindestens halb so viele Sitzungen angemeldet sind wie in der Spitze derselben
+  Aufzeichnung. Das braucht keinen Kalender und passt zu Tagbetrieb wie zu Schichtbetrieb.
+- **Maßgebliche Last L:** P95 der CPU-Auslastung über die Hauptzeit aller Aufzeichnungen.
+- **Ziel T:** die Schwelle „auffällig“ der CPU-Auslastung aus `thresholds.json` (75 %).
+- **Nicht linear:** doppelt so viele Kerne tragen laut Microsoft das 1,5- bis 1,9-Fache. Mit k = log₂(f) ist die
+  benötigte Größe n₂ = n₁ · (L / T)^(1/k); für f = 1,9 und f = 1,5 ergibt das eine Spanne, aufgerundet auf eine gerade
+  Zahl an vCPU. **Beispiel:** 8 vCPU, L = 92 %, T = 75 % → etwa 10 bis 12 vCPU.
+
+Eine vCPU-Spanne steht nur, wenn sie trägt. Geprüft wird in dieser Reihenfolge:
+
+1. „VMware-Host“ ist wiederkehrend → **keine** Zahl: „Erst den VMware-Host klären; mehr vCPU verschärfen das.“
+2. L liegt bei oder unter T → „Die Größe reicht für die gemessene Last.“
+3. „Kapazität“ ist wiederkehrend → **Spanne**. Liegt ihre obere Grenze über 16 vCPU, steht zusätzlich „mehr Server statt
+   größerer Server“; liegt sie über 24, steht nur noch „mehr Server“ mit der Sitzungszahl, die der Server bei gleicher
+   Größe unter T trägt (Sitzungen × T / L).
+4. Sonst → keine Zahl: „Last über dem Ziel, aber nicht aus breiter Last; erst <Ursache> klären.“
+
+**Arbeitsspeicher:** mehr RAM empfiehlt der Bericht nur bei wiederkehrender Klasse „Arbeitsspeicher: Kapazität“, also mit
+anhaltendem Auslagern. Die Schätzung: der höchste zugesicherte Speicher der Hauptzeit soll höchstens 80 % des RAM
+belegen (C ÷ 0,8), aufgerundet auf volle 4 GB; eine Zahl steht nur, wenn sie über dem heutigen RAM liegt. Bei der Commit-Grenze ohne Auslagern heißt die Empfehlung
+„Auslagerungsdatei vergrößern“, nicht „mehr RAM“.
+
+**Kennzeichnung:** jede Zahl einer Hochrechnung trägt das Wort „Schätzung“ und ihre Annahmen (gleiche Last je Sitzung;
+Skalierung 1,5- bis 1,9-fach je Verdopplung; der VMware-Host liefert die zusätzliche Rechenzeit; Hyper-Threading nicht
+eingerechnet) und den Satz „Vor einem Umbau mit einem Pilot oder Lasttest bestätigen.“ Eine feste Zielgröße gibt der
+Bericht nicht vor.
+
+### Der Katalog der Größe (`sizing.de.json`)
+
+Die Regeln stehen als Daten in `src/sizing.de.json`: Klassen mit Begründung und Richtung, eigene Werte (Kern-Schwelle,
+Anteil des Hauptverursachers, Mindestmesszeit, Skalierung, Obergrenzen), die Texte des Größenberichts und die Quellen.
+Jede Regel nennt ihre Art (Herstellerangabe, Praxisquelle oder Faustregel des Katalogs) und ihre Quellen; alle Quellen
+stehen mit Adresse und Datum in [docs/guidance/quellen.md](docs/guidance/quellen.md). Die Schwellen von CPU-Auslastung,
+Warteschlange, entzogener CPU-Zeit und Commit kommen nur aus `thresholds.json`; der Katalog führt keinen zweiten Satz.
+Eine eigene Fassung übergibt `-SizingFile`. Die Datei wird vor dem Lesen der Aufzeichnung geprüft; ein Fehler nennt
+Teil, Kennung und Feld. Auch der Collector liest den Katalog (für die Kern-Schwelle) und startet mit einem fehlerhaften
+Katalog nicht.
+
+### Grenzen der Einordnung und der Hochrechnung
+
+- Die Hochrechnung rechnet mit der Spanne von Microsoft (1,5- bis 1,9-fach). Reale Last kann abweichen, etwa durch
+  Speicherbandbreite oder Grenzen der Anwendung. Ein Wachstum der Benutzerzahl rechnet der Bericht nicht ein.
+- Der VMware-Host ist nur über die entzogene CPU-Zeit sichtbar. Co-Stop, Auslastung des VMware-Hosts und Ballooning
+  sind es nicht; der Bericht nennt, wo dort nachzusehen ist und welche Werte auffällig wären.
+- Eine Aufzeichnung mit wenigen Sitzungen sagt wenig über die Spitzenlast.
+- „Leistung je Kern“ stützt sich auf Prozess-Schnappschüsse (alle 6 bis 15 s) und den stärksten Kern, nicht auf Threads.
+- Im maskierten Größenbericht sind die Namen aller Aufzeichnungen ersetzt; Prozessnamen bleiben.
+
 ## Auswirkung der Messung auf den Server
 
 Der Collector ist ein einzelner Prozess `powershell.exe`, der nur liest und in den Ausgabeordner schreibt. Was er auf
@@ -668,7 +814,7 @@ Zahlen ohne Messung sind als Schätzung gekennzeichnet.
 | jeder reguläre Schnappschuss zusätzlich | einmal pro Minute die Ereignisprotokolle aus `events.json` seit dem letzten Abruf bis 5 s vor dem Abruf (eine Abfrage je Protokollname, mit dem mitgelieferten Katalog acht; je Quelle eine Auswahl mit höchstens 12 Kennungen; höchstens die ältesten 200 Ereignisse je Protokoll, bis zu 1000 weitere werden nur gezählt), die Zähler der Druckwarteschlangen (eine Lesung; eine Zeile nur bei einer neuen Warteschlange oder einem geänderten Wert); Verbindungsproben, nur mit `endpoints.json` | Dauer der Ereignisabfragen nicht gemessen |
 | einmal beim Start, vor dem ersten Takt | das Zustandsbild (`health.json`): je Bereich lokale CIM-Abfragen, Registrierungswerte, Dateiversionen und die Aufgabenplanung, lesend; Zeitgrenzen im Code: 10 s je Bereich, 60 s insgesamt; zusätzlich der Rückblick und die Treiberliste | Dauer auf einem echten Server nicht gemessen; steht im Kopf des Berichts |
 | jeder Stützpunkt (jeder 20. reguläre Schnappschuss, Standard alle 5 min) | Dienstliste (`Win32_Service`); Abfrage der Profilcontainer (`MSFT_Disk`, `MSFT_Partition`, je höchstens 10 s), ebenso beim ersten regulären Schnappschuss, nachdem ein neues Laufwerk eingehängt wurde (meist bei einer Anmeldung) | `Win32_Service`: 0,29 s |
-| Verdichtung | sobald ein Auslöser-Signal drei Takte in Folge über seiner Schwelle liegt, solange es darüber bleibt, und 60 s danach (eine einzelne Spitze verdichtet nicht): Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten am Stück | – |
+| Verdichtung | sobald ein Auslöser-Signal drei Takte in Folge über seiner Schwelle liegt, solange es darüber bleibt, und 60 s danach (eine einzelne Spitze verdichtet nicht): Schnappschüsse alle 6 s statt alle 15 s, je Signal höchstens 5 Minuten und erneut erst nach 5 Minuten am Stück unter der Schwelle | – |
 
 Alles läuft nacheinander in einer Schleife: Ein Schnappschuss entsteht innerhalb eines schnellen Takts. Dauert er
 länger als der Takt, fällt der nächste Takt aus (er wird nicht nachgeholt).
@@ -786,6 +932,10 @@ Dienste, „Gehe zu Details"); danach in `snapshots.csv` die Spalte `CollectMs` 
 verdichteten (`B`) Schnappschüsse vergleichen.
 
 ## Demo-Bericht
+
+**[➜ Demo-Größenbericht öffnen](https://kaimunko2.github.io/WorkerPerf/groesse.html)** – der Größenbericht aus fünf simulierten
+Arbeitstagen desselben erfundenen Servers (siehe [Größe des Servers](#größe-des-servers)): an vier Tagen ein
+CPU-Engpass aus Kapazität, an einem Tag entzieht zusätzlich der VMware-Host Rechenzeit, der fünfte Tag bleibt ruhig.
 
 **[➜ Demo-Bericht öffnen](https://kaimunko2.github.io/WorkerPerf/)** – der Bericht einer simulierten Stunde auf dem
 erfundenen Server `SIM-VDA01`: acht Leistungsvorfälle (CPU, Arbeitsspeicher, Datenträger, Dateiserver,
@@ -1312,7 +1462,7 @@ Je Lauf ein Ordner mit (Format 3):
 |---|---|---|
 | `meta.json` | – | Formatversion, Name des Servers (`Computer`), Betriebssystem, CPUs, RAM, Takte, Start/Ende, Endegrund (`EndReason`, bei `error` mit `EndMessage`), Collector-PID, Gegenstellen, verfügbare Datenquellen (`Sources`; ein Ereignisprotokoll, das während der Aufzeichnung nicht lesbar war, mit `ReadFailed`, ein abgeschaltetes, das nur der Rückblick las, mit `LookbackRead`), Fehler der Datenquelle je Quelle (`SourceErrors`; ein nicht lesbares Ereignisprotokoll als `events.<Protokoll>` bzw. `eventsbefore.<Protokoll>`), Tage des Rückblicks (`EventLookbackDays`) und die Protokolle, deren Rückblick unvollständig ist (`LookbackCapped`), und je Protokoll die Zähler `EventReadCounts` (`SkippedRecords`: nicht lesbare Datensätze, `UnformattedMessages`: Meldungstexte, die sich nicht formatieren ließen, `DroppedEvents`: Ereignisse über der Obergrenze eines Abrufs, je Abruf bis 1000 gezählt, also mindestens so viele) und dieselben Zähler nach dem Rückblick (`LookbackReadCounts`). Die Felder nach `EventLookbackDays` sind beim Lesen freiwillig; dazu die mit `-Skip` weggelassenen Kategorien (`Skip`, eine Liste von Kategorienamen, ohne `-Skip` leer; fehlt das Feld, gilt die Aufzeichnung als vollständig gemessen) |
 | `thresholds.json` | – | Kopie der Schwellwerte, mit denen aufgezeichnet wurde |
-| `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung |
+| `ticks.csv` | je Takt | CPU %, Warteschlange, entzogene CPU-Zeit, Speicher, Commit, Paging, Datenträger, Netzwerk, Verdichtung; am Ende fünf Spalten, die einer älteren Aufzeichnung fehlen dürfen: stärkster logischer Prozessor, Zahl der vollen logischen Prozessoren, Leistungsanteil, geleistete Arbeit, ausgelagerte Seiten |
 | `volumes.csv` | je Takt × Laufwerk | Antwortzeiten, Operationen und Durchsatz je Laufwerk und Profilcontainer |
 | `shares.csv` | je Takt × Freigabe | Antwortzeiten, Operationen und Durchsatz je SMB-Freigabe |
 | `inputdelay.csv` | je Takt × Sitzung | höchste Eingabeverzögerung der Sitzung |

@@ -17,12 +17,19 @@
           (events.csv; one more read without that lag when the capture ends) and the counters of the print
           queues (printqueues.csv, a row only when a value changes)
 
+    The fast cadence also records five values for the size of the server (the last columns of ticks.csv): the load
+    of the busiest logical processor, the number of logical processors over the core limit, % Processor Performance,
+    % Processor Utility and Pages Output/sec. The core limit comes from the catalogue sizing.de.json (coreBusyPct) and
+    is noted in meta.json as CoreBusyPct; a counter the server lacks leaves the measurement running, and only that
+    signal is listed as not available.
+
     At the start the events of the last -EventLookbackDays days go to events_before.csv and the
     installed print drivers to printdrivers.csv. Before the first tick the health picture of the
     server is read once (health.json: facts about the machine, no rating; -Skip Zustand leaves it out).
 
     Once a trigger signal of thresholds.json is over its threshold in three consecutive ticks, while it stays over (and -BurstHoldSeconds
-    afterwards) snapshots are taken every -BurstIntervalSeconds. Every 20th regular snapshot
+    afterwards) snapshots are taken every -BurstIntervalSeconds, per signal for at most five minutes and again only after
+    it was under its threshold for five minutes without a break. Every 20th regular snapshot
     is a keyframe that lists every process; the others only list active processes.
 
     The run folder also holds a copy of thresholds.json, a copy of the application list (apps.json,
@@ -119,6 +126,14 @@
     Has no effect: the health picture is read by default (it came from the interim version, in which it was off).
     Not together with -Skip Zustand.
 
+.PARAMETER SimulateScenario
+    Only with -Simulate: the scenario of the simulated data. Stunde (default): one hour with eight incidents. Ursachen:
+    one scene per cause of a CPU or memory bottleneck. Tag: a working day with rising and falling sessions.
+
+.PARAMETER SimulateDay
+    Only with -Simulate: the day (1 to 5) of the scenario Tag. Day d starts d - 1 days later; the days 1 to 4 have a
+    CPU bottleneck at their peak, day 3 also CPU time taken away by the VMware host, day 5 has none.
+
 .PARAMETER Simulate
     Replay the scripted 60-minute scenario instead of reading the local system (no waiting
     between ticks, runs on any platform). Used for demos and tests.
@@ -150,6 +165,8 @@ param(
     [ValidateRange(0, 90)][int]$EventLookbackDays = 7,
     [string[]]$Skip = @(),
     [switch]$Simulate,
+    [ValidateSet('Stunde', 'Ursachen', 'Tag')][string]$SimulateScenario,
+    [ValidateRange(1, 5)][int]$SimulateDay,
     [switch]$HealthOnly,
     [switch]$Health
 )
@@ -193,6 +210,9 @@ if ($PSBoundParameters.ContainsKey('Skip') -and $PSBoundParameters.ContainsKey('
 $withCommandLine = ([bool]$IncludeCommandLine -and $leftOut -notcontains 'Prozesse')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Capture.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.EventConfig.ps1')
+if (-not $Simulate -and ($PSBoundParameters.ContainsKey('SimulateScenario') -or $PSBoundParameters.ContainsKey('SimulateDay'))) {
+    throw '-SimulateScenario und -SimulateDay gelten nur mit -Simulate.'
+}
 if ($Simulate) {
     if (-not $HealthOnly -and $DurationMinutes -lt 60) { throw '-Simulate erfordert -DurationMinutes von mindestens 60 (das Drehbuch dauert 60 Minuten).' }
     . (Join-Path $PSScriptRoot 'WorkerPerf.Sources.Simulation.ps1')
@@ -225,6 +245,12 @@ $inv = [Globalization.CultureInfo]::InvariantCulture
 # the quick run reads neither thresholds nor endpoints
 $thresholds = $null
 if (-not $HealthOnly) { $thresholds = Read-WorkerPerfThresholds $ThresholdFile }
+# the sizing catalogue gives the load from which a logical processor counts as busy; a faulty catalogue stops the start
+# here, before anything is created (the quick run reads the thresholds for it only)
+. (Join-Path $PSScriptRoot 'WorkerPerf.Sizing.ps1')
+$sizingThresholds = $thresholds
+if ($null -eq $sizingThresholds) { $sizingThresholds = Read-WorkerPerfThresholds $ThresholdFile }
+$coreBusyPct = [double](Read-WorkerPerfSizing (Join-Path $PSScriptRoot 'sizing.de.json') $sizingThresholds).Thresholds.coreBusyPct.Value
 # the application list of the health picture: a missing or faulty list stops the start here, before anything is created
 $healthApps = @()
 if ($leftOut -notcontains 'Zustand') { $healthApps = @(Read-WorkerPerfHealthApps $AppsFile) }
@@ -239,8 +265,11 @@ if ($HealthOnly) { $sourceSkip = @($leftOut) + @(@('Prozesse', 'Laufwerke', 'Cit
 # -HealthOnly only in the quick run: the source then opens no performance counter and lists no measured signal in Sources
 $quickArgs = @{}
 if ($HealthOnly) { $quickArgs['HealthOnly'] = $true }
+# the scenario of the simulation (the Windows source has no such parameters)
+if ($PSBoundParameters.ContainsKey('SimulateScenario')) { $quickArgs['Scenario'] = $SimulateScenario }
+if ($PSBoundParameters.ContainsKey('SimulateDay')) { $quickArgs['Day'] = $SimulateDay }
 $source = Initialize-WorkerPerfSource -StartTime (Get-Date) -Endpoints $endpoints -CitrixMetricFilter $CitrixMetricFilter `
-    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps @quickArgs
+    -IncludeCommandLine:$withCommandLine -Skip $sourceSkip -EventConfig $eventConfig -Apps $healthApps -CoreBusyPct $coreBusyPct @quickArgs
 $cores = [int]$source.LogicalProcessors
 $ramMB = [double]$source.PhysicalMemoryMB
 
@@ -276,6 +305,7 @@ $meta = [ordered]@{
     OS                   = $source.OS
     LogicalProcessors    = $cores
     PhysicalMemoryMB     = $source.PhysicalMemoryMB
+    CoreBusyPct          = $coreBusyPct
     FastIntervalSeconds  = $FastIntervalSeconds
     IntervalSeconds      = $IntervalSeconds
     BurstIntervalSeconds = $BurstIntervalSeconds

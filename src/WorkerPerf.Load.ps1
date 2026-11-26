@@ -18,24 +18,30 @@ function Open-WorkerPerfCsvReader {
     # else with Split-WorkerPerfCsvLine, and skip rows with fewer than Need fields (as Read-WorkerPerfCsvFile does).
     # -OwnHeader: Col holds only the columns of the file's own header and Need is its width, for a file whose columns
     # differ between formats (events.csv of format 2 has 5, of format 3 has 20); a missing file then has no columns.
-    param([string]$Path, [string]$FileName, [switch]$OwnHeader)
+    # -Optional: columns at the end of the format that a file (an older recording) or a single row may lack: Need is the
+    # width without them, and Col holds one of them only when the file's header names it. Header: the names of the file's
+    # header line (none for a missing file).
+    param([string]$Path, [string]$FileName, [switch]$OwnHeader, [string[]]$Optional = @())
     $col = @{}
     $need = 0
     if (-not $OwnHeader) {
         $canon = $script:WorkerPerfHeaders[$FileName].Split(',')
-        for ($i = 0; $i -lt $canon.Length; $i++) { $col[$canon[$i]] = $i }
-        $need = $canon.Length
+        for ($i = 0; $i -lt $canon.Length; $i++) {
+            if ($Optional -contains $canon[$i]) { continue }
+            $col[$canon[$i]] = $i; $need++
+        }
     }
+    $names = [string[]]@()
     $full = Join-Path $Path $FileName
-    if (-not (Test-WorkerPerfRunFile $full)) { return @{ Col = $col; Need = $need; Reader = $null } }
+    if (-not (Test-WorkerPerfRunFile $full)) { return @{ Col = $col; Need = $need; Reader = $null; Header = $names } }
     $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = $null
     try {
         $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::UTF8)
         $header = $reader.ReadLine()
         if ($null -ne $header -and $header.Length -gt 0) {
-            $names = $header.Split(',')
-            for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i].Trim()] = $i }
+            $names = [string[]]@($header.Split(',') | ForEach-Object { $_.Trim() })
+            for ($i = 0; $i -lt $names.Length; $i++) { $col[$names[$i]] = $i }
             if ($OwnHeader) { $need = $names.Length }
         }
     }
@@ -44,19 +50,20 @@ function Open-WorkerPerfCsvReader {
         if ($null -ne $reader) { $reader.Dispose() } else { $stream.Dispose() }
         throw
     }
-    return @{ Col = $col; Need = $need; Reader = $reader }
+    return @{ Col = $col; Need = $need; Reader = $reader; Header = $names }
 }
 
 function Read-WorkerPerfCsvFile {
     # Reads one capture file. Returns @{ Col = column name -> index; Rows = List[string[]]; Skipped = number of rows left out }.
     # A missing file counts as an empty one; rows with fewer fields than the format has columns are skipped (and counted).
-    # -OwnHeader: by the file's own header (see Open-WorkerPerfCsvReader).
-    param([string]$Path, [string]$FileName, [switch]$OwnHeader)
+    # -OwnHeader: by the file's own header; -Optional: columns a file or row may lack; Header: the names of the file's
+    # header line (see Open-WorkerPerfCsvReader).
+    param([string]$Path, [string]$FileName, [switch]$OwnHeader, [string[]]$Optional = @())
     $rows = New-Object System.Collections.Generic.List[string[]]
     $skipped = 0
     $reader = $null
     try {
-        $csv = Open-WorkerPerfCsvReader $Path $FileName -OwnHeader:$OwnHeader
+        $csv = Open-WorkerPerfCsvReader $Path $FileName -OwnHeader:$OwnHeader -Optional $Optional
         $reader = $csv.Reader; $need = $csv.Need
         while ($null -ne $reader -and $null -ne ($line = $reader.ReadLine())) {
             if ($line.Length -eq 0) { continue }
@@ -65,7 +72,7 @@ function Read-WorkerPerfCsvFile {
         }
     }
     finally { if ($null -ne $reader) { $reader.Dispose() } }
-    return @{ Col = $csv.Col; Rows = $rows; Skipped = $skipped }
+    return @{ Col = $csv.Col; Rows = $rows; Skipped = $skipped; Header = $csv.Header }
 }
 
 function ConvertTo-WorkerPerfTimestamp([string]$Text) {
@@ -336,7 +343,7 @@ function Import-WorkerPerfRun {
     $metaJson = ConvertFrom-WorkerPerfJsonFile $metaPath
     $meta = @{}
     foreach ($p in $metaJson.PSObject.Properties) { $meta[$p.Name] = $p.Value }
-    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'CollectorPid', 'Simulated', 'Endpoints', 'EventLookbackDays') {
+    foreach ($k in 'SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'CollectorPid', 'Simulated', 'Endpoints', 'EventLookbackDays', 'CoreBusyPct') {
         if (-not $meta.ContainsKey($k)) { $meta[$k] = $null }
     }
     # format 3: the logs whose lookback reached its cap (absent in format 2)
@@ -442,13 +449,16 @@ function Import-WorkerPerfRun {
         $raw = @{}
         foreach ($name in $script:WorkerPerfHeaders['ticks.csv'].Split(',')) { if ($name -ne 'T' -and $name -ne 'Timestamp') { $raw[$name] = [double[]]@() } }
         $signal = @{}
-        foreach ($id in 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin') { $signal[$id] = [double[]]@() }
+        foreach ($id in @('cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin') + @($script:WorkerPerfSizingSignalIds)) { $signal[$id] = [double[]]@() }
+        $measured = @{}
+        foreach ($id in $script:WorkerPerfSizingSignalIds) { $measured[$id] = $false }
         $meta['Cores'] = $cores; $meta['RamMB'] = $ramMb; $meta['OffsetMinutes'] = $offsetMinutes
         $meta['FastSec'] = $fastSec; $meta['SnapSec'] = $snapSec
         return @{
             Meta = $meta
             Skip = $recordedSkip
             Sources = $sources
+            Measured = $measured
             Tick = @{ N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); Burst = [bool[]]@(); CollectMs = [double[]]@(); Raw = $raw; Signal = $signal }
             Snap = @{
                 N = 0; TimeMs = [long[]]@(); ElapsedSec = [double[]]@(); WeightSec = [double[]]@(); Kind = [string[]]@(); TickPos = [int[]]@()
@@ -489,13 +499,18 @@ function Import-WorkerPerfRun {
     if ($fromTicks -gt $toTicks) { throw '-From liegt nach -To.' }
 
     #region ticks
-    $csv = Read-WorkerPerfCsvFile $Path 'ticks.csv'
+    $csv = Read-WorkerPerfCsvFile $Path 'ticks.csv' -Optional $script:WorkerPerfTickOptionalColumns
     $col = $csv.Col
     $numNames = New-Object System.Collections.Generic.List[string]
     foreach ($name in $script:WorkerPerfHeaders['ticks.csv'].Split(',')) { if ($name -ne 'T' -and $name -ne 'Timestamp') { $numNames.Add($name) } }
     $numIdx = New-Object int[] $numNames.Count
     $numLists = New-Object object[] $numNames.Count
-    for ($i = 0; $i -lt $numNames.Count; $i++) { $numIdx[$i] = [int]$col[$numNames[$i]]; $numLists[$i] = New-Object System.Collections.Generic.List[double] }
+    for ($i = 0; $i -lt $numNames.Count; $i++) {
+        # an optional column the file lacks has the index -1 (its values are NaN)
+        $numIdx[$i] = -1
+        if ($col.ContainsKey($numNames[$i])) { $numIdx[$i] = [int]$col[$numNames[$i]] }
+        $numLists[$i] = New-Object System.Collections.Generic.List[double]
+    }
     $tickT = New-Object System.Collections.Generic.List[int]
     $tickMs = New-Object System.Collections.Generic.List[long]
     $cT = [int]$col['T']; $cTs = [int]$col['Timestamp']; $cEl = [int]$col['ElapsedSec']
@@ -522,9 +537,13 @@ function Import-WorkerPerfRun {
         $tickT.Add($t); $tickMs.Add($ms)
         for ($i = 0; $i -lt $numIdx.Length; $i++) {
             # NaN when empty or unreadable; one reused reference costs less than [ref]$v per value
+            # an optional column the file or this row lacks is NaN as well
             $v = $nan
-            $txt = $f[$numIdx[$i]]
-            if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
+            $ix = $numIdx[$i]
+            if ($ix -ge 0 -and $ix -lt $f.Length) {
+                $txt = $f[$ix]
+                if ($txt.Length -gt 0 -and [double]::TryParse($txt, $numStyle, $inv, $numRef)) { $v = $numRef.Value }
+            }
             $numLists[$i].Add($v)
         }
     }
@@ -555,6 +574,14 @@ function Import-WorkerPerfRun {
     $signalIds = 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin'
     $signal = @{}
     foreach ($id in $signalIds) { $signal[$id] = New-Object double[] $nT }
+    # the signals of the size of the server are their columns; measured: the column is in the header of the file and no
+    # source entry says the signal was not available
+    $sizingColumns = @{ 'cpu.coreMax' = 'CoreMaxPct'; 'cpu.coreBusy' = 'CoresBusy'; 'cpu.perf' = 'PerfPct'; 'cpu.utility' = 'UtilityPct'; 'mem.pagesout' = 'PagesOutPerSec' }
+    $measured = @{}
+    foreach ($id in $script:WorkerPerfSizingSignalIds) {
+        $signal[$id] = $raw[$sizingColumns[$id]]
+        $measured[$id] = (($csv.Header -contains $sizingColumns[$id]) -and (-not $sources.ContainsKey($id) -or [bool]$sources[$id].Available))
+    }
     # host signals per tick, computed as in Get-WorkerPerfHostSignals
     $rCpu = $raw['CpuPct']; $rQueue = $raw['ProcQueue']; $rSteal = $raw['StealPct']; $rAvail = $raw['MemAvailMB']
     $rCommitted = $raw['MemCommittedMB']; $rLimit = $raw['MemCommitLimitMB']; $rPagesIn = $raw['PagesInPerSec']
@@ -1494,6 +1521,7 @@ function Import-WorkerPerfRun {
         Meta = $meta
         Skip = $recordedSkip
         Sources = $sources
+        Measured = $measured
         Tick = @{
             N = $nT; TimeMs = $tickMsArr; ElapsedSec = $raw['ElapsedSec']; Burst = $burst; CollectMs = $raw['CollectMs']
             Raw = $raw; Signal = $signal

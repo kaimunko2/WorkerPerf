@@ -46,10 +46,23 @@ BeforeAll {
 }
 Describe 'Quellen-Pruefskript' {
     It 'listet die Pruefungen ohne Systemzugriff' {
-        $Checks.Id | Should -Be @('system', 'process.snapshot', 'sessions.wts', 'services.map', 'perf.cpu', 'perf.queue', 'perf.steal', 'perf.memory',
+        # Aussage geaendert (Groesse Task 11): zwei Pruefungen mehr, die Kerne und die Taktzaehler
+        $Checks.Id | Should -Be @('system', 'process.snapshot', 'sessions.wts', 'services.map', 'perf.cpu', 'perf.cpu.cores', 'perf.cpu.frequency', 'perf.queue', 'perf.steal', 'perf.memory',
             'perf.disk.total', 'perf.network', 'perf.volumes', 'perf.shares', 'perf.input.session', 'perf.input.process', 'perf.ica',
             'profile.volumes', 'events.defender', 'events.applocker', 'events.application', 'events.system', 'events.printservice',
             'events.smbclient', 'events.profileservice', 'events.session', 'print.drivers', 'print.queues', 'security.products', 'user.processes', 'endpoints')
+    }
+    It 'deckt jedes Signal ab, auch die neuen der Groesse' {
+        $covered = @($Checks | ForEach-Object { $_.Signals })
+        foreach ($id in 'cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'input.session', 'disk.latency', 'smb.latency', 'ica.rtt', 'ica.latency', 'probe.connect',
+            'cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout') { $covered | Should -Contain $id }
+    }
+    It 'liest die Kerne einzeln, die Taktzaehler und die ausgelagerten Seiten' {
+        $text = [IO.File]::ReadAllText($Probe)
+        $text | Should -Match "Id = 'perf\.cpu\.cores'[^\r\n]*\r?\n[^\r\n]*Counters = @\('% Processor Time'\); Instances = 'all'; MaxInstances = 0"
+        $text | Should -Match "Id = 'perf\.cpu\.frequency'[^\r\n]*\r?\n[^\r\n]*Counters = @\('% Processor Performance', '% Processor Utility'\); Instances = 'all'; MaxInstances = 4"
+        $text | Should -Match "Id = 'perf\.memory'[^\r\n]*\r?\n[^\r\n]*'Pages Input/sec', 'Pages Output/sec'\)"
+        ($Checks | Where-Object Id -eq 'perf.memory').Title | Should -Be 'Arbeitsspeicher, Zusagen, Seitenein- und -ausgaben'
     }
     It 'ruft in jeder Pruefung eine Funktion auf, die das Skript definiert' {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($Probe, [ref]$null, [ref]$null)

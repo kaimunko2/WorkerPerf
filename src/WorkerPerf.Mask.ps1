@@ -43,7 +43,9 @@ $script:WorkerPerfMaskKeywordFields = @(
     'sourceErrors.source', 'citrix.source', 'procs.role', 'apps.role', 'delayProcs.role', 'skipped.places', 'unrecorded.places', 'unchecked.category',
     'situation', 'conditions', 'lagebild.state', 'print.involvedFrom', 'apps.key',
     'health.state', 'health.catalogueVersion', 'grade', 'apps.state', 'checks.app', 'source.date', 'checks.relates', 'raw.area',
-    'raw.state', 'raw.reason', 'incidents.health', 'checks.cause')
+    'raw.state', 'raw.reason', 'incidents.health', 'checks.cause',
+    'classes.level', 'classes.sources', 'unchecked.missing', 'sizing.catalogueVersion', 'sources.kind', 'sources.date', 'signals.sources',
+    'axis', 'classIds', 'projection.kind', 'meta.catalogueVersion', 'result.key', 'recommendations.sources', 'meta.mask')
 
 $script:WorkerPerfMaskIpv4Text = '(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)'
 $script:WorkerPerfMaskIpv4 = New-Object System.Text.RegularExpressions.Regex ('^' + $script:WorkerPerfMaskIpv4Text + '$')
@@ -740,7 +742,9 @@ function New-WorkerPerfMask {
     # to a name of the level; Lookup = lower-case name -> replacement; Regex = one pattern of all names of the level,
     # longer before shorter, whole names only, without regard to case ($null without names) }.
     # -EventConfig: from Read-WorkerPerfEventConfig (NonPersonAccounts, NonPersonDomains); without it the built-in lists.
-    param([string]$Path, [ValidateSet('Personen', 'Alles')][string]$Level, [hashtable]$Texts, [string[]]$RoleLabels = @(), $EventConfig = $null)
+    # -Path: one recording, or several (the sizing report): the recordings in the given order, each with the same steps; a
+    # name of a later recording follows the names of the earlier ones.
+    param([string[]]$Path, [ValidateSet('Personen', 'Alles')][string]$Level, [hashtable]$Texts, [string[]]$RoleLabels = @(), $EventConfig = $null)
     if ($null -eq $EventConfig) {
         $EventConfig = @{ NonPersonAccounts = $script:WorkerPerfDefaultNonPersonAccounts; NonPersonDomains = $script:WorkerPerfDefaultNonPersonDomains }
     }
@@ -750,88 +754,90 @@ function New-WorkerPerfMask {
         Designations = (New-Object System.Collections.Generic.List[string]); DesignationSeen = (New-Object System.Collections.Hashtable ([StringComparer]::Ordinal))
         EventConfig = $EventConfig; Vocabulary = (Get-WorkerPerfMaskVocabulary $Texts) }
 
-    # (1) meta.json: the worker and the endpoints' hosts
-    $metaPath = Join-Path $Path 'meta.json'
-    if (-not (Test-Path -LiteralPath $metaPath) -and (Test-Path -LiteralPath ($metaPath + '.tmp'))) { $metaPath = $metaPath + '.tmp' }
-    $meta = $null
-    if (Test-Path -LiteralPath $metaPath) { $meta = ConvertFrom-WorkerPerfJsonFile $metaPath }
-    Add-WorkerPerfMaskHost $st ([string](Get-WorkerPerfField $meta 'Computer'))
-    $endpoints = @(Get-WorkerPerfField $meta 'Endpoints' | Where-Object { $null -ne $_ })
-    foreach ($e in $endpoints) { Add-WorkerPerfMaskHost $st ([string](Get-WorkerPerfField $e 'Host')) }
+    foreach ($onePath in @($Path)) {
+        # (1) meta.json: the worker and the endpoints' hosts
+        $metaPath = Join-Path $onePath 'meta.json'
+        if (-not (Test-Path -LiteralPath $metaPath) -and (Test-Path -LiteralPath ($metaPath + '.tmp'))) { $metaPath = $metaPath + '.tmp' }
+        $meta = $null
+        if (Test-Path -LiteralPath $metaPath) { $meta = ConvertFrom-WorkerPerfJsonFile $metaPath }
+        Add-WorkerPerfMaskHost $st ([string](Get-WorkerPerfField $meta 'Computer'))
+        $endpoints = @(Get-WorkerPerfField $meta 'Endpoints' | Where-Object { $null -ne $_ })
+        foreach ($e in $endpoints) { Add-WorkerPerfMaskHost $st ([string](Get-WorkerPerfField $e 'Host')) }
 
-    # (2) sessions.csv (the session's user as it is, without the check for accounts that are not persons)
-    $winStations = New-Object System.Collections.Generic.List[string]
-    foreach ($r in @(Get-WorkerPerfMaskRows $Path 'sessions.csv' @('User', 'Domain', 'ClientName', 'WinStation'))) {
-        Add-WorkerPerfMaskAccount $st $r[0] $r[1] $false
-        [void](Add-WorkerPerfMaskName $st 'client' $r[2])
-        $winStations.Add($r[3])
-    }
-    # (2a) citrix.csv: an ICA instance "<WinStation> (<domain>\<user>)" or "<WinStation> (<user>)" names its user, which
-    # may hold brackets itself ("ICA-CGP 7 (Meier (Extern))"): everything between the first opening and the last bracket
-    foreach ($r in @(Get-WorkerPerfMaskRows $Path 'citrix.csv' @('Instance'))) {
-        $m = [regex]::Match($r[0], '^([^()]*?)\s*\((.*)\)\s*$')
-        if ($m.Success) { Add-WorkerPerfMaskAccount $st $m.Groups[2].Value '' $false }
-    }
-    # (3) shares.csv, (4) volumes.csv
-    foreach ($r in @(Get-WorkerPerfMaskRows $Path 'shares.csv' @('Share'))) { Add-WorkerPerfMaskUncName $st 'share' $r[0] }
-    $volumes = @(Get-WorkerPerfMaskRows $Path 'volumes.csv' @('Volume', 'Backing'))
-    # the backing of a profile container is a share or a whole path on it (\\fs01\fslogix\<SID>_<user>\x.vhdx): its share
-    # and server come from the UNC prefix, its user from the path patterns below (step 8)
-    foreach ($r in $volumes) {
-        $m = [regex]::Match($r[1].Trim(), '^' + $script:WorkerPerfMaskUncPrefix + '\\[^\\/]+', 'IgnoreCase')
-        if ($m.Success) { Add-WorkerPerfMaskUncName $st 'share' $m.Value }
-    }
-    # (5) probes.csv
-    foreach ($r in @(Get-WorkerPerfMaskRows $Path 'probes.csv' @('Host'))) { Add-WorkerPerfMaskHost $st $r[0] }
-
-    # (6) events.csv, then events_before.csv (each ordered by time, as the reader gives them)
-    $events = New-Object System.Collections.Generic.List[object]
-    foreach ($file in 'events.csv', 'events_before.csv') {
-        foreach ($ev in @(Read-WorkerPerfEventCsv $Path $file)) {
-            $events.Add($ev)
-            Add-WorkerPerfMaskAccount $st ([string]$ev['User']) '' $true
-            Add-WorkerPerfMaskUncName $st 'printer' ([string]$ev['Printer'])
-            if ($ev['Group'] -eq 'fileserver') { Add-WorkerPerfMaskHost $st ([string]$ev['Object']) }
+        # (2) sessions.csv (the session's user as it is, without the check for accounts that are not persons)
+        $winStations = New-Object System.Collections.Generic.List[string]
+        foreach ($r in @(Get-WorkerPerfMaskRows $onePath 'sessions.csv' @('User', 'Domain', 'ClientName', 'WinStation'))) {
+            Add-WorkerPerfMaskAccount $st $r[0] $r[1] $false
+            [void](Add-WorkerPerfMaskName $st 'client' $r[2])
+            $winStations.Add($r[3])
         }
-    }
-    # (7) printqueues.csv
-    foreach ($r in @(Get-WorkerPerfMaskRows $Path 'printqueues.csv' @('Queue'))) { Add-WorkerPerfMaskUncName $st 'printer' $r[0] }
+        # (2a) citrix.csv: an ICA instance "<WinStation> (<domain>\<user>)" or "<WinStation> (<user>)" names its user, which
+        # may hold brackets itself ("ICA-CGP 7 (Meier (Extern))"): everything between the first opening and the last bracket
+        foreach ($r in @(Get-WorkerPerfMaskRows $onePath 'citrix.csv' @('Instance'))) {
+            $m = [regex]::Match($r[0], '^([^()]*?)\s*\((.*)\)\s*$')
+            if ($m.Success) { Add-WorkerPerfMaskAccount $st $m.Groups[2].Value '' $false }
+        }
+        # (3) shares.csv, (4) volumes.csv
+        foreach ($r in @(Get-WorkerPerfMaskRows $onePath 'shares.csv' @('Share'))) { Add-WorkerPerfMaskUncName $st 'share' $r[0] }
+        $volumes = @(Get-WorkerPerfMaskRows $onePath 'volumes.csv' @('Volume', 'Backing'))
+        # the backing of a profile container is a share or a whole path on it (\\fs01\fslogix\<SID>_<user>\x.vhdx): its share
+        # and server come from the UNC prefix, its user from the path patterns below (step 8)
+        foreach ($r in $volumes) {
+            $m = [regex]::Match($r[1].Trim(), '^' + $script:WorkerPerfMaskUncPrefix + '\\[^\\/]+', 'IgnoreCase')
+            if ($m.Success) { Add-WorkerPerfMaskUncName $st 'share' $m.Value }
+        }
+        # (5) probes.csv
+        foreach ($r in @(Get-WorkerPerfMaskRows $onePath 'probes.csv' @('Host'))) { Add-WorkerPerfMaskHost $st $r[0] }
 
-    # (8) fixed patterns: in the fields that hold nothing but a path or a name (procinfo.csv Path, volumes.csv Volume and
-    # Backing, the name fields of the events: User, Printer, Object, App, Module), then sessions.csv WinStation, then with
-    # addresses the free texts of meta.json (source details and error messages). Not the event Text: it never reaches a
-    # masked report.
-    $procs = @(Get-WorkerPerfMaskRows $Path 'procinfo.csv' @('Name', 'Path', 'Services'))
-    $pathTexts = New-Object System.Collections.Generic.List[string]
-    foreach ($r in $procs) { $pathTexts.Add($r[1]) }
-    foreach ($r in $volumes) { $pathTexts.Add($r[0]); $pathTexts.Add($r[1]) }
-    foreach ($ev in $events) { foreach ($c in 'User', 'Printer', 'Object', 'App', 'Module') { $pathTexts.Add([string]$ev[$c]) } }
-    foreach ($t in $pathTexts) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskPathFieldPatterns }
-    foreach ($t in $winStations) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskPathPatterns }
-    $freeTexts = New-Object System.Collections.Generic.List[string]
-    $sources = Get-WorkerPerfField $meta 'Sources'
-    if ($null -ne $sources) { foreach ($p in $sources.PSObject.Properties) { $freeTexts.Add([string](Get-WorkerPerfField $p.Value 'Detail')) } }
-    $errors = Get-WorkerPerfField $meta 'SourceErrors'
-    if ($null -ne $errors) { foreach ($p in $errors.PSObject.Properties) { $freeTexts.Add([string](Get-WorkerPerfField $p.Value 'FirstMessage')) } }
-    $freeTexts.Add([string](Get-WorkerPerfField $meta 'EndMessage'))
-    foreach ($t in $freeTexts) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskTextPatterns }
-    # (9) health.json, after all other files: the names above keep their numbers, except a name that arrives here as a
-    # person kind (see the head comment)
-    Add-WorkerPerfMaskHealthNames $st $Path
+        # (6) events.csv, then events_before.csv (each ordered by time, as the reader gives them)
+        $events = New-Object System.Collections.Generic.List[object]
+        foreach ($file in 'events.csv', 'events_before.csv') {
+            foreach ($ev in @(Read-WorkerPerfEventCsv $onePath $file)) {
+                $events.Add($ev)
+                Add-WorkerPerfMaskAccount $st ([string]$ev['User']) '' $true
+                Add-WorkerPerfMaskUncName $st 'printer' ([string]$ev['Printer'])
+                if ($ev['Group'] -eq 'fileserver') { Add-WorkerPerfMaskHost $st ([string]$ev['Object']) }
+            }
+        }
+        # (7) printqueues.csv
+        foreach ($r in @(Get-WorkerPerfMaskRows $onePath 'printqueues.csv' @('Queue'))) { Add-WorkerPerfMaskUncName $st 'printer' $r[0] }
 
-    # names that stay; of an event's application and module only the file name (the field may hold a whole path, whose
-    # user folder is a name)
-    foreach ($r in $procs) {
-        Add-WorkerPerfMaskProtected $st $r[0]
-        foreach ($s in $r[2].Split(';')) { Add-WorkerPerfMaskProtected $st $s }
+        # (8) fixed patterns: in the fields that hold nothing but a path or a name (procinfo.csv Path, volumes.csv Volume and
+        # Backing, the name fields of the events: User, Printer, Object, App, Module), then sessions.csv WinStation, then with
+        # addresses the free texts of meta.json (source details and error messages). Not the event Text: it never reaches a
+        # masked report.
+        $procs = @(Get-WorkerPerfMaskRows $onePath 'procinfo.csv' @('Name', 'Path', 'Services'))
+        $pathTexts = New-Object System.Collections.Generic.List[string]
+        foreach ($r in $procs) { $pathTexts.Add($r[1]) }
+        foreach ($r in $volumes) { $pathTexts.Add($r[0]); $pathTexts.Add($r[1]) }
+        foreach ($ev in $events) { foreach ($c in 'User', 'Printer', 'Object', 'App', 'Module') { $pathTexts.Add([string]$ev[$c]) } }
+        foreach ($t in $pathTexts) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskPathFieldPatterns }
+        foreach ($t in $winStations) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskPathPatterns }
+        $freeTexts = New-Object System.Collections.Generic.List[string]
+        $sources = Get-WorkerPerfField $meta 'Sources'
+        if ($null -ne $sources) { foreach ($p in $sources.PSObject.Properties) { $freeTexts.Add([string](Get-WorkerPerfField $p.Value 'Detail')) } }
+        $errors = Get-WorkerPerfField $meta 'SourceErrors'
+        if ($null -ne $errors) { foreach ($p in $errors.PSObject.Properties) { $freeTexts.Add([string](Get-WorkerPerfField $p.Value 'FirstMessage')) } }
+        $freeTexts.Add([string](Get-WorkerPerfField $meta 'EndMessage'))
+        foreach ($t in $freeTexts) { Add-WorkerPerfMaskPatternNames $st $t $script:WorkerPerfMaskTextPatterns }
+        # (9) health.json, after all other files: the names above keep their numbers, except a name that arrives here as a
+        # person kind (see the head comment)
+        Add-WorkerPerfMaskHealthNames $st $onePath
+
+        # names that stay; of an event's application and module only the file name (the field may hold a whole path, whose
+        # user folder is a name)
+        foreach ($r in $procs) {
+            Add-WorkerPerfMaskProtected $st $r[0]
+            foreach ($s in $r[2].Split(';')) { Add-WorkerPerfMaskProtected $st $s }
+        }
+        foreach ($ev in $events) {
+            foreach ($c in 'App', 'Module') { $v = [string]$ev[$c]; Add-WorkerPerfMaskProtected $st $v.Substring($v.LastIndexOfAny([char[]]@('\', '/')) + 1) }
+            foreach ($c in 'Service', 'Driver') { Add-WorkerPerfMaskProtected $st ([string]$ev[$c]) }
+        }
+        foreach ($d in @(Read-WorkerPerfPrintDrivers $onePath)) { Add-WorkerPerfMaskProtected $st $d.Name; Add-WorkerPerfMaskProtected $st $d.Manufacturer }
+        # the designations the customer wrote (P2-R13)
+        foreach ($e in $endpoints) { Add-WorkerPerfMaskProtected $st ([string](Get-WorkerPerfField $e 'Name')) -Designation; Add-WorkerPerfMaskProtected $st ([string](Get-WorkerPerfField $e 'Role')) -Designation }
     }
-    foreach ($ev in $events) {
-        foreach ($c in 'App', 'Module') { $v = [string]$ev[$c]; Add-WorkerPerfMaskProtected $st $v.Substring($v.LastIndexOfAny([char[]]@('\', '/')) + 1) }
-        foreach ($c in 'Service', 'Driver') { Add-WorkerPerfMaskProtected $st ([string]$ev[$c]) }
-    }
-    foreach ($d in @(Read-WorkerPerfPrintDrivers $Path)) { Add-WorkerPerfMaskProtected $st $d.Name; Add-WorkerPerfMaskProtected $st $d.Manufacturer }
-    # the designations the customer wrote (P2-R13)
-    foreach ($e in $endpoints) { Add-WorkerPerfMaskProtected $st ([string](Get-WorkerPerfField $e 'Name')) -Designation; Add-WorkerPerfMaskProtected $st ([string](Get-WorkerPerfField $e 'Role')) -Designation }
     foreach ($l in $RoleLabels) { Add-WorkerPerfMaskProtected $st $l -Designation }
 
     # numbers per kind in the order of the names (whatever the level), then the level's kinds; a second name of a server

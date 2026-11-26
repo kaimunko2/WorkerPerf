@@ -433,6 +433,14 @@ Describe 'Situation und Bedingungen' {
         $f.Values.app | Should -Be 'EXCEL.EXE'; $f.Values.share | Should -Be '62 %'; $f.Values.baseline | Should -Be '4 %'; $f.Values.security | Should -Be 'Microsoft Defender'
         $f.Values.ContainsKey('module') | Should -BeFalse
     }
+    It 'kennt die Bedingungen der Einordnung und setzt sie aus den Klassen' {                # Groesse des Servers, Task 6
+        Test-WorkerPerfGuidanceCondition 'class.host' $Cat | Should -BeTrue; Test-WorkerPerfGuidanceCondition 'class.singlecore' $Cat | Should -BeTrue
+        Test-WorkerPerfGuidanceCondition 'class.app' $Cat | Should -BeFalse
+        $f = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'engpass'; lead = 'cpu'; classes = @(@{ id = 'singlecore' }) }) -Context (New-Ctx) -Catalogue $Cat
+        $f.Conditions | Should -Contain 'class.singlecore'; $f.Conditions | Should -Not -Contain 'class.host'
+        $g = Get-WorkerPerfGuidanceFacts -Incident (New-Inc @{ type = 'ohne-engpass'; classes = @(@{ id = 'host' }, @{ id = 'capacity' }) }) -Context (New-Ctx) -Catalogue $Cat
+        $g.Conditions | Should -Contain 'class.host'; @($g.Conditions | Where-Object { $_ -like 'class.*' }).Count | Should -Be 1
+    }
     It 'leitet Treiber, Hersteller und Druckwarteschlange eines Druckproblems ab' {
         $i = New-Inc @{ type = 'ereignis'; event = @{ kind = 'print'; key = 'Sim PCL 6'; app = 'spoolsv.exe'; sessions = @(); before = $false; count = 1
             patterns = @(@{ id = 'printdriver'; detail = @{ module = 'hpsimgr.dll'; driver = 'Sim PCL 6' } }); modules = @(@{ name = 'hpsimgr.dll'; count = 1 }) }

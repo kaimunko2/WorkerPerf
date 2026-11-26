@@ -18,8 +18,34 @@ Describe 'Start-WorkerPerfCapture -Simulate' {
     }
     It 'schreibt Zahlen mit Dezimalpunkt trotz deutscher Kultur' {              # Review Focus 2
         $lines = Get-Content (Join-Path $Run 'ticks.csv') | Select-Object -Skip 1 -First 50
-        foreach ($line in $lines) { $line.Split(',').Count | Should -Be 19 }
+        foreach ($line in $lines) { $line.Split(',').Count | Should -Be 24 }      # Aussage geaendert (Groesse Task 2): fuenf Spalten mehr
         $lines[0] | Should -Match '^0,[^,]+,2,\d+(\.\d+)?,'
+    }
+    It 'schreibt die Kern-Schwelle in meta.json und die neue Kopfzeile' {
+        $Meta.CoreBusyPct | Should -Be 90
+        (Get-Content (Join-Path $Run 'ticks.csv') -TotalCount 1) | Should -Be $WorkerPerfHeaders['ticks.csv']
+    }
+    It 'lehnt -SimulateScenario ohne -Simulate ab' {
+        $capture = Join-Path $PSScriptRoot '../src/Start-WorkerPerfCapture.ps1'
+        { & $capture -SimulateScenario Tag -OutputPath (Join-Path $TestDrive 'x') } | Should -Throw '*nur mit -Simulate*'
+        { & $capture -SimulateDay 2 -OutputPath (Join-Path $TestDrive 'x') } | Should -Throw '*nur mit -Simulate*'
+        Test-Path (Join-Path $TestDrive 'x') | Should -BeFalse
+    }
+    It 'legt Tage eines Servers mit verschiedenem Beginn an' {
+        $r = New-SizingRuns (Join-Path $TestDrive 'size'); @($r.Days).Count | Should -Be 5
+        $m = @($r.Days | ForEach-Object { Get-Content (Join-Path $_ 'meta.json') -Raw | ConvertFrom-Json })
+        @($m.Computer | Sort-Object -Unique) | Should -Be @('SIM-VDA01')
+        ([DateTimeOffset]$m[1].StartTime - [DateTimeOffset]$m[0].StartTime).TotalDays | Should -BeGreaterOrEqual 0.99
+        (Get-Content (Join-Path $r.Quick 'meta.json') -Raw | ConvertFrom-Json).Computer | Should -Be 'SIM-VDA01'
+        $e3 = @(Get-Content (Join-Path $r.Days[2] 'expected.json') -Raw | ConvertFrom-Json); @($e3 | Where-Object Key -eq 'steal')[0].Classes | Should -Be @('host', 'capacity')
+    }
+    It 'startet nicht mit einem fehlerhaften Katalog der Groesse' {
+        $capture = New-PatchedSource (Join-Path $TestDrive 'badsrc') ''
+        $cat = Join-Path $TestDrive 'badsrc/sizing.de.json'
+        $j = [IO.File]::ReadAllText($cat, [Text.Encoding]::UTF8) | ConvertFrom-Json; $j.thresholds.coreBusyPct.value = 40
+        [IO.File]::WriteAllText($cat, ($j | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding $false))
+        { & $capture -Simulate -DurationMinutes 60 -OutputPath (Join-Path $TestDrive 'bad') } | Should -Throw '*sizing.de.json*coreBusyPct*'
+        Test-Path (Join-Path $TestDrive 'bad') | Should -BeFalse
     }
     It 'nimmt 240 regulaere Schnappschuesse, davon 12 Stuetzpunkte' {
         @($Snaps | Where-Object Kind -in 'R', 'K').Count | Should -Be 240

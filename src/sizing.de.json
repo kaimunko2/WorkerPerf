@@ -1,0 +1,625 @@
+{
+  "version": "2026-11-14",
+  "sources": {
+    "SZ-01": {
+      "title": "CPU usage exceeds 100% in Task Manager and Performance Monitor if Intel Turbo Boost is active",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/cpu-usage-exceeds-100",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-03": {
+      "title": "Power and performance tuning",
+      "url": "https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/hardware/power/power-performance-tuning",
+      "date": "2017-10-16",
+      "kind": "vendor"
+    },
+    "SZ-07": {
+      "title": "Windows Guest OS reports incorrect CPU clock speed after vMotion",
+      "url": "https://knowledge.broadcom.com/external/article/429912",
+      "date": "2026-02-18",
+      "kind": "vendor"
+    },
+    "SZ-13": {
+      "title": "Collecting Performance Data",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data",
+      "date": "2025-07-14",
+      "kind": "vendor"
+    },
+    "SZ-14": {
+      "title": "Scenario guide: Troubleshoot performance problems in Windows",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/troubleshoot-performance-problems-in-windows",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-38": {
+      "title": "Scenario guide: Troubleshoot performance problems in Windows",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/troubleshoot-performance-problems-in-windows",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-15": {
+      "title": "Solutions for Consistently High CPU Usage",
+      "url": "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-monitoring-and-performance/monitoring-inventory-objects/troubleshoot-and-enhance-performance/cpu-performance-solutions.html",
+      "date": "2026-10-28",
+      "kind": "vendor"
+    },
+    "SZ-16": {
+      "title": "System-Level Bottlenecks",
+      "url": "https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks",
+      "date": "2017-06-29",
+      "kind": "vendor"
+    },
+    "SZ-18": {
+      "title": "System-Level Bottlenecks",
+      "url": "https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks",
+      "date": "2017-06-29",
+      "kind": "vendor"
+    },
+    "SZ-20": {
+      "title": "Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance",
+      "url": "https://knowledge.broadcom.com/external/article/438023",
+      "date": "2026-09-14",
+      "kind": "vendor"
+    },
+    "SZ-21": {
+      "title": "Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance",
+      "url": "https://knowledge.broadcom.com/external/article/438023",
+      "date": "2026-09-14",
+      "kind": "vendor"
+    },
+    "SZ-22": {
+      "title": "Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance",
+      "url": "https://knowledge.broadcom.com/external/article/438023",
+      "date": "2026-09-14",
+      "kind": "vendor"
+    },
+    "VM-08": {
+      "title": "Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance",
+      "url": "https://knowledge.broadcom.com/external/article/438023",
+      "date": "2026-09-14",
+      "kind": "vendor"
+    },
+    "VM-10": {
+      "title": "Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance",
+      "url": "https://knowledge.broadcom.com/external/article/438023",
+      "date": "2026-09-14",
+      "kind": "vendor"
+    },
+    "SZ-23": {
+      "title": "Hyperthreading with vSphere",
+      "url": "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/hyperthreading.html",
+      "date": "2026-10-28",
+      "kind": "vendor"
+    },
+    "SZ-24": {
+      "title": "Host Power Management Policies in ESXi",
+      "url": "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/vsphere-resource-management/host-power-management-policies.html",
+      "date": "2026-10-28",
+      "kind": "vendor"
+    },
+    "SZ-25": {
+      "title": "Application on Virtual Machine runs slower than expected",
+      "url": "https://knowledge.broadcom.com/external/article?legacyId=1018206",
+      "date": "2025-07-27",
+      "kind": "vendor"
+    },
+    "SZ-26": {
+      "title": "ESXi host CPU usage appears high in vCenter default charts due to Turbo Boost and Hyperthreading counter behavior",
+      "url": "https://knowledge.broadcom.com/external/article/431027",
+      "date": "2026-10-30",
+      "kind": "vendor"
+    },
+    "SZ-35": {
+      "title": "RAM, virtual memory, pagefile, and memory management in Windows",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/ram-virtual-memory-pagefile-management",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-36": {
+      "title": "Introduction to page files",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/introduction-to-the-page-file",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-39": {
+      "title": "Performance Tuning Remote Desktop Session Hosts",
+      "url": "https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/remote-desktop/session-hosts",
+      "date": "2019-10-22",
+      "kind": "vendor"
+    },
+    "SZ-42": {
+      "title": "Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services",
+      "url": "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines",
+      "date": "2025-07-23",
+      "kind": "vendor"
+    },
+    "SZ-43": {
+      "title": "Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services",
+      "url": "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines",
+      "date": "2025-07-23",
+      "kind": "vendor"
+    },
+    "SZ-44": {
+      "title": "Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services",
+      "url": "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines",
+      "date": "2025-07-23",
+      "kind": "vendor"
+    },
+    "SZ-46": {
+      "title": "Session host virtual machine sizing guidelines for Azure Virtual Desktop and Remote Desktop Services",
+      "url": "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/session-host-virtual-machine-sizing-guidelines",
+      "date": "2025-07-23",
+      "kind": "vendor"
+    },
+    "SZ-45": {
+      "title": "Troubleshoot issues using Performance Monitor",
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/troubleshoot-issues-performance-monitor",
+      "date": "2026-02-12",
+      "kind": "vendor"
+    },
+    "SZ-47": {
+      "title": "Detecting bottlenecks in a virtualized environment",
+      "url": "https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/hyper-v-server/detecting-virtualized-environment-bottlenecks",
+      "date": "2017-10-16",
+      "kind": "vendor"
+    },
+    "ST-02": {
+      "title": "Citrix Health Check (Carl Stalhood)",
+      "url": "https://www.carlstalhood.com/citrix-health-check/",
+      "date": "2024-02-28",
+      "kind": "practice"
+    }
+  },
+  "thresholds": {
+    "coreBusyPct": {
+      "value": 90,
+      "default": 90,
+      "unit": "%",
+      "label": "Ein logischer Prozessor gilt als voll ab",
+      "kind": "rule",
+      "sources": [
+        "SZ-47"
+      ]
+    },
+    "sustainedPct": {
+      "value": 80,
+      "default": 80,
+      "unit": "%",
+      "label": "Ein Muster gilt als anhaltend ab diesem Anteil der Takte oder Schnappschüsse",
+      "kind": "rule",
+      "sources": []
+    },
+    "hostSharePct": {
+      "value": 10,
+      "default": 10,
+      "unit": "%",
+      "label": "Entzogene CPU-Zeit zählt für einen Vorfall ab diesem Anteil seiner Takte (und mindestens drei Takten)",
+      "kind": "rule",
+      "sources": []
+    },
+    "singleCoreMaxCores": {
+      "value": 1.2,
+      "default": 1.2,
+      "unit": "Prozessoren",
+      "label": "Ein Prozess nutzt etwa einen Kern bis",
+      "kind": "rule",
+      "sources": [
+        "SZ-14"
+      ]
+    },
+    "appSharePct": {
+      "value": 50,
+      "default": 50,
+      "unit": "%",
+      "label": "Eine einzelne Anwendung trägt den Großteil ab",
+      "kind": "rule",
+      "sources": []
+    },
+    "leakGrowthPct": {
+      "value": 10,
+      "default": 10,
+      "unit": "% des RAM",
+      "label": "Zuwachs einer Anwendung, der als Verdacht auf ein Speicherleck gilt",
+      "kind": "rule",
+      "sources": []
+    },
+    "pagesOutLowPerSec": {
+      "value": 10,
+      "default": 10,
+      "unit": "1/s",
+      "label": "Ausgelagerte Seiten gelten als niedrig bis",
+      "kind": "rule",
+      "sources": [
+        "SZ-35"
+      ]
+    },
+    "pagesOutSharePct": {
+      "value": 50,
+      "default": 50,
+      "unit": "%",
+      "label": "Auslagern gilt als anhaltend über diesem Anteil der Takte",
+      "kind": "rule",
+      "sources": [
+        "SZ-35"
+      ]
+    },
+    "recurringPct": {
+      "value": 50,
+      "default": 50,
+      "unit": "%",
+      "label": "Eine Ursache gilt als wiederkehrend ab diesem Anteil der Aufzeichnungen",
+      "kind": "rule",
+      "sources": []
+    },
+    "minRecordings": {
+      "value": 3,
+      "default": 3,
+      "unit": "Aufzeichnungen",
+      "label": "Mindestzahl der Aufzeichnungen für eine belastbare Empfehlung",
+      "kind": "rule",
+      "sources": []
+    },
+    "minMainHours": {
+      "value": 12,
+      "default": 12,
+      "unit": "h",
+      "label": "Mindestdauer der Hauptzeit für eine belastbare Empfehlung",
+      "kind": "rule",
+      "sources": []
+    },
+    "mainSessionPct": {
+      "value": 50,
+      "default": 50,
+      "unit": "%",
+      "label": "Hauptzeit: Anteil der höchsten Sitzungszahl, ab dem ein Takt zählt",
+      "kind": "rule",
+      "sources": []
+    },
+    "scalingLow": {
+      "value": 1.5,
+      "default": 1.5,
+      "unit": "fach",
+      "label": "Leistung bei doppelter Kernzahl, untere Grenze",
+      "kind": "vendor",
+      "sources": [
+        "SZ-42"
+      ]
+    },
+    "scalingHigh": {
+      "value": 1.9,
+      "default": 1.9,
+      "unit": "fach",
+      "label": "Leistung bei doppelter Kernzahl, obere Grenze",
+      "kind": "vendor",
+      "sources": [
+        "SZ-42"
+      ]
+    },
+    "vcpuScaleOut": {
+      "value": 16,
+      "default": 16,
+      "unit": "vCPU",
+      "label": "Ab dieser Größe bringt jeder weitere Kern wenig",
+      "kind": "vendor",
+      "sources": [
+        "SZ-43"
+      ]
+    },
+    "vcpuMax": {
+      "value": 24,
+      "default": 24,
+      "unit": "vCPU",
+      "label": "Obergrenze je Server für mehrere Benutzer",
+      "kind": "vendor",
+      "sources": [
+        "SZ-43"
+      ]
+    },
+    "memTargetPct": {
+      "value": 80,
+      "default": 80,
+      "unit": "%",
+      "label": "Zugesicherter Speicher soll höchstens diesen Anteil des RAM belegen",
+      "kind": "rule",
+      "sources": []
+    },
+    "memStepGB": {
+      "value": 4,
+      "default": 4,
+      "unit": "GB",
+      "label": "Schritt, auf den die Schätzung des RAM aufrundet",
+      "kind": "rule",
+      "sources": []
+    }
+  },
+  "limits": {
+    "target": {
+      "signal": "cpu.host",
+      "level": "warn",
+      "label": "Ziel der CPU-Auslastung"
+    },
+    "cpuCrit": {
+      "signal": "cpu.host",
+      "level": "crit",
+      "label": "CPU-Auslastung kritisch"
+    },
+    "queueWarn": {
+      "signal": "cpu.queue",
+      "level": "warn",
+      "label": "Warteschlange je CPU auffällig"
+    },
+    "stealWarn": {
+      "signal": "cpu.steal",
+      "level": "warn",
+      "label": "Entzogene CPU-Zeit je vCPU auffällig"
+    },
+    "commitCrit": {
+      "signal": "mem.commit",
+      "level": "crit",
+      "label": "Commit-Auslastung kritisch"
+    }
+  },
+  "classes": [
+    {
+      "id": "host",
+      "resource": "any",
+      "label": "VMware-Host",
+      "reason": "Der VMware-Host entzog dem Server Rechenzeit: bis {steal} % je vCPU (auffällig ab {stealWarn} %).",
+      "direction": "VMware-Host prüfen lassen (CPU Ready, Co-Stop, Auslastung des VMware-Hosts); keine zusätzlichen vCPU, eher weniger, wenn Co-Stop hoch ist.",
+      "kind": "vendor",
+      "sources": [
+        "SZ-21",
+        "SZ-20",
+        "SZ-26",
+        "VM-08"
+      ]
+    },
+    {
+      "id": "singlecore",
+      "resource": "any",
+      "label": "Leistung je Kern",
+      "reason": "{app} lief anhaltend auf etwa einem vollen logischen Prozessor ({cores} Kerne). Der stärkste Kern lag bei {coreMax} % (voll ab {coreBusyPct} %), die CPU insgesamt nur bei {cpu} % (kritisch ab {cpuCrit} %).",
+      "direction": "Schnellere Kerne; Energiesparplan im Master-Image und Energierichtlinie des VMware-Hosts prüfen; Hersteller der Anwendung fragen. Mehr vCPU helfen dieser Anwendung nicht.",
+      "kind": "vendor",
+      "sources": [
+        "SZ-13",
+        "SZ-14",
+        "SZ-15",
+        "SZ-16",
+        "SZ-03",
+        "SZ-24"
+      ]
+    },
+    {
+      "id": "app",
+      "resource": "cpu",
+      "label": "Anwendung",
+      "reason": "{app} trug {share} % der genutzten CPU (eine einzelne Anwendung gilt ab {appSharePct} % als Ursache).",
+      "direction": "Anwendung, Aufgabe oder Benutzer klären; keine Größenänderung.",
+      "kind": "rule",
+      "sources": []
+    },
+    {
+      "id": "oneoff",
+      "resource": "cpu",
+      "label": "Einmalig",
+      "reason": "Die Last kam von {app} ({role}), einem geplanten oder seltenen Vorgang.",
+      "direction": "Zeitplan ändern; keine Größenänderung.",
+      "kind": "rule",
+      "sources": []
+    },
+    {
+      "id": "capacity",
+      "resource": "cpu",
+      "label": "Kapazität",
+      "reason": "Die Last war breit über Prozesse und Sitzungen verteilt: CPU {cpu} % (Ziel unter {target} %), Warteschlange bis {queue} je CPU (deutlich ab {queueWarn} bei CPU ab {cpuCrit} %).",
+      "direction": "Mehr vCPU oder mehr Server (Hochrechnung im Größenbericht).",
+      "kind": "vendor",
+      "sources": [
+        "SZ-18",
+        "SZ-47",
+        "VM-08"
+      ]
+    },
+    {
+      "id": "mem.capacity",
+      "resource": "memory",
+      "label": "Arbeitsspeicher: Kapazität",
+      "reason": "Zugesichert waren bis {commitGB} GB bei {ramGB} GB RAM, und der Server lagerte anhaltend Seiten aus (bis {pagesOut} je s).",
+      "direction": "Mehr Arbeitsspeicher oder weniger Sitzungen je Server.",
+      "kind": "vendor",
+      "sources": [
+        "SZ-35",
+        "SZ-38",
+        "SZ-39"
+      ]
+    },
+    {
+      "id": "mem.commit",
+      "resource": "memory",
+      "label": "Arbeitsspeicher: Commit-Grenze",
+      "reason": "Der zugesicherte Speicher erreichte {commit} % der Commit-Grenze (kritisch ab {commitCrit} %), ohne anhaltendes Auslagern (bis {pagesOut} Seiten je s).",
+      "direction": "Auslagerungsdatei vergrößern oder vom System verwalten lassen (im Master-Image); mehr Arbeitsspeicher ist dafür nicht nötig.",
+      "kind": "vendor",
+      "sources": [
+        "SZ-36"
+      ]
+    },
+    {
+      "id": "mem.app",
+      "resource": "memory",
+      "label": "Arbeitsspeicher: Anwendung",
+      "reason": "{app} trug {share} % des belegten Arbeitsspeichers und wuchs während der Aufzeichnung um {growthGB} GB.",
+      "direction": "Anwendung klären, Verdacht auf Speicherleck.",
+      "kind": "rule",
+      "sources": []
+    },
+    {
+      "id": "mem.used",
+      "resource": "memory",
+      "label": "Arbeitsspeicher: genutzt, kein Mangel",
+      "reason": "Der Arbeitsspeicher war bis {used} % belegt, aber der Server lagerte nicht anhaltend aus.",
+      "direction": "Nichts nötig: Windows nutzt freien Speicher, ein Mangel zeigt sich erst am Auslagern.",
+      "kind": "vendor",
+      "sources": [
+        "SZ-35"
+      ]
+    },
+    {
+      "id": "undecidable",
+      "resource": "any",
+      "label": "Nicht entscheidbar",
+      "reason": "Für die Einordnung fehlt: {missing}.",
+      "direction": "Die fehlende Messung nachholen (neuere Fassung des Collectors, ohne -Skip für diese Werte).",
+      "kind": "rule",
+      "sources": []
+    }
+  ],
+  "levels": {
+    "clear": "deutlich",
+    "tight": "knapp"
+  },
+  "grades": {
+    "act": {
+      "word": "Handeln",
+      "symbol": "◆"
+    },
+    "check": {
+      "word": "Prüfen",
+      "symbol": "▲"
+    },
+    "ok": {
+      "word": "In Ordnung",
+      "symbol": "●"
+    }
+  },
+  "users": {
+    "light": {
+      "label": "leichte Nutzer",
+      "perVcpu": 6
+    },
+    "medium": {
+      "label": "mittlere Nutzer",
+      "perVcpu": 4
+    },
+    "heavy": {
+      "label": "schwere Nutzer",
+      "perVcpu": 2
+    },
+    "power": {
+      "label": "Power-Nutzer",
+      "perVcpu": 1
+    }
+  },
+  "signals": {
+    "cpu.coreMax": {
+      "label": "Stärkster Kern",
+      "note": "Auslastung des am stärksten belasteten logischen Prozessors.",
+      "sources": [
+        "SZ-13"
+      ]
+    },
+    "cpu.coreBusy": {
+      "label": "Kerne voll",
+      "note": "Zahl der logischen Prozessoren über der Kern-Schwelle.",
+      "sources": [
+        "SZ-47"
+      ]
+    },
+    "cpu.perf": {
+      "label": "Leistungsanteil",
+      "note": "Anzeige ohne Bewertung: ob der Wert in einer VMware-VM etwas bedeutet, belegt keine Herstellerseite; der im Server angezeigte Takt ist nach vMotion veraltet.",
+      "sources": [
+        "SZ-01",
+        "SZ-07"
+      ]
+    },
+    "cpu.utility": {
+      "label": "Geleistete Arbeit",
+      "note": "Anzeige ohne Bewertung: ob der Wert in einer VMware-VM etwas bedeutet, belegt keine Herstellerseite; der im Server angezeigte Takt ist nach vMotion veraltet.",
+      "sources": [
+        "SZ-01",
+        "SZ-07"
+      ]
+    },
+    "mem.pagesout": {
+      "label": "Ausgelagerte Seiten",
+      "note": "Entscheidet, ob ein hoher zugesicherter Speicher wirklich fehlt.",
+      "sources": [
+        "SZ-35"
+      ]
+    }
+  },
+  "missing": {
+    "cpu.coreMax": "stärkster logischer Prozessor",
+    "cpu.steal": "entzogene CPU-Zeit (VMware Tools)",
+    "mem.pagesout": "ausgelagerte Seiten",
+    "processes": "Prozessdaten",
+    "contradiction": "widerspruchsfreie Messwerte (Prozess bei einem vollen Kern, der stärkste Kern aber frei)"
+  },
+  "evidence": {
+    "operation.powerPlan": "Energiesparplan",
+    "size.cpuLogical": "Logische Prozessoren",
+    "size.memTotalMB": "Arbeitsspeicher (MB)",
+    "size.hypervisor": "Virtuelle Maschine",
+    "size.vmtoolsVersion": "VMware Tools"
+  },
+  "texts": {
+    "line": "Einordnung: {labels} – {reason}",
+    "unchecked": "Nicht unterscheidbar: {label} (fehlt: {missing})",
+    "contradiction": "Nicht unterscheidbar: {label} (die Messwerte widersprechen sich)",
+    "result.recurring": "Wiederkehrender {resource} aus {class} in {count} von {total} Aufzeichnungen; typische Spitzenlast {load} % bei {sessions} Sitzungen.",
+    "result.once": "{resource} aus {class} in {count} von {total} Aufzeichnungen, nicht wiederkehrend; typische Spitzenlast {load} % bei {sessions} Sitzungen.",
+    "result.none": "Kein CPU- oder Arbeitsspeicher-Engpass in {total} Aufzeichnungen; typische Spitzenlast {load} % bei {sessions} Sitzungen.",
+    "resource.cpu": "CPU-Engpass",
+    "resource.memory": "Arbeitsspeicher-Engpass",
+    "cpu.host": "Erst den VMware-Host klären; mehr vCPU verschärfen das.",
+    "cpu.enough": "Die Größe reicht für die gemessene Last.",
+    "cpu.range": "Schätzung, nicht gemessen: Bei der gemessenen Last käme der Server mit etwa {low} bis {high} statt {cores} vCPU unter {target} %.",
+    "cpu.rangeOne": "Schätzung, nicht gemessen: Bei der gemessenen Last käme der Server mit etwa {low} statt {cores} vCPU unter {target} %.",
+    "cpu.scaleOut": "Schätzung, nicht gemessen: Bei gleicher Größe trägt der Server etwa {sessions} Sitzungen unter {target} %; mehr Server statt größerer Server.",
+    "cpu.other": "Last über dem Ziel, aber nicht aus breiter Last; erst {cause} klären.",
+    "cpu.otherNone": "Last über dem Ziel, aber ohne wiederkehrende Ursache; erst die einzelnen Engpässe klären.",
+    "cpu.noMainTime": "Ohne Hauptzeit (keine Sitzungen in den Aufzeichnungen) wird nicht hochgerechnet.",
+    "mem.more": "Schätzung, nicht gemessen: Mit etwa {target} GB statt {ram} GB RAM läge der höchste zugesicherte Speicher der Hauptzeit ({commit} GB) bei höchstens {pct} % des RAM.",
+    "mem.pagefile": "Auslagerungsdatei vergrößern oder vom System verwalten lassen (im Master-Image); mehr Arbeitsspeicher ist dafür nicht nötig.",
+    "mem.app": "Erst die Anwendung klären (Verdacht auf Speicherleck); mehr Arbeitsspeicher verschiebt das Problem nur.",
+    "mem.enough": "Der Arbeitsspeicher reicht für die gemessene Last.",
+    "hint.hostOnce": "In {count} von {total} Aufzeichnungen entzog der VMware-Host Rechenzeit; vor einem Umbau den VMware-Host prüfen lassen.",
+    "hint.singlecoreToo": "Die zusätzlichen vCPU helfen der breiten Last, nicht der Anwendung, die nur einen Kern nutzt.",
+    "hint.scaleOutToo": "Ab etwa {scaleOut} vCPU bringt jeder weitere Kern wenig: eher mehr Server statt größerer Server.",
+    "hint.numa": "Zu prüfen: Der Server darf nicht mehr vCPU haben als der VMware-Host physische Kerne und soll in einen NUMA-Knoten passen; die Kernzahl des VMware-Hosts ist im Server nicht sichtbar.",
+    "hint.hostCheck": "Am VMware-Host auffällig: CPU Ready je vCPU über 5 % (Warnung) und über 10 % (handeln); Co-Stop anhaltend über 0 % prüfen (KB 431027), über 3 % je vCPU sind es zu viele vCPU (KB 438023); Auslastung des VMware-Hosts anhaltend über 70 bis 80 %.",
+    "hint.sizeChanged": "Die Größe wechselte zwischen den Aufzeichnungen ({sizes}); Last und Hochrechnung stammen nur aus den Aufzeichnungen mit der letzten Größe.",
+    "hint.lowMeasure": "Achtung, wenig Messzeit: {runs} Aufzeichnungen mit {hours} h Hauptzeit; belastbar ab {minRuns} Aufzeichnungen und {minHours} h Hauptzeit.",
+    "hint.commitAboveRam": "Praxisregel (Carl Stalhood): RAM mindestens so groß wie der zugesicherte Speicher. Microsoft wertet zugesicherten Speicher über dem RAM erst mit anhaltendem Auslagern als Mangel; die Einordnung folgt Microsoft.",
+    "hint.memPerSession": "Der Arbeitsspeicher muss mit der Zahl der Sitzungen wachsen.",
+    "hint.powerPlan": "Energiesparplan laut Zustandsbild: {value}.",
+    "assumptions": [
+      "gleiche Last je Sitzung",
+      "Skalierung 1,5- bis 1,9-fach je Verdopplung der Kerne",
+      "der VMware-Host liefert die zusätzliche Rechenzeit",
+      "Hyper-Threading nicht eingerechnet"
+    ],
+    "pilot": "Vor einem Umbau mit einem Pilot oder Lasttest bestätigen.",
+    "reliability": "Belastbarkeit: {runs} Aufzeichnungen, {hours} h Messzeit, davon {main} h Hauptzeit.",
+    "usersNote": "Einordnung, keine Bewertung: die Art der Nutzer ist nicht bekannt.",
+    "copy.head": "Größe des Servers {server}: {result}",
+    "copy.recommendation": "{resource}: {text}",
+    "reason.cpu": "Typische Spitzenlast (P95 der Hauptzeit) {load} %, höchste Spitze {peak} %, Ziel unter {target} %; {causes}.",
+    "reason.memory": "Höchster zugesicherter Speicher der Hauptzeit {commit} GB bei {ram} GB RAM; {causes}.",
+    "reason.host": "Der VMware-Host entzog dem Server in {count} von {total} Aufzeichnungen Rechenzeit.",
+    "reason.singlecore": "In {count} von {total} Aufzeichnungen lief eine Anwendung anhaltend auf einem vollen logischen Prozessor.",
+    "reason.recurring": "wiederkehrend: {list}",
+    "reason.noRecurring": "keine wiederkehrende Ursache",
+    "recurring.item": "{class} ({count} von {total})",
+    "dir.cpu.range": "Mehr vCPU oder mehr Server.",
+    "dir.cpu.scaleOut": "Mehr Server statt größerer Server.",
+    "rec.cpu": "CPU",
+    "rec.memory": "Arbeitsspeicher",
+    "rec.host": "VMware-Host",
+    "rec.singlecore": "Leistung je Kern",
+    "copy.assumptions": "Annahmen: {list}",
+    "size.item": "{cores} vCPU / {ram} GB"
+  }
+}

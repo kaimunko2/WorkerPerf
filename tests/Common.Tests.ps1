@@ -140,7 +140,17 @@ Describe 'Formatkonstanten' {
         $names = @($WorkerPerfHeaders.Keys)
         $names.IndexOf('events_before.csv') | Should -Be ($names.IndexOf('events.csv') + 1); $names[14] | Should -Be 'printdrivers.csv'; $names[15] | Should -Be 'printqueues.csv'
         $WorkerPerfHeaders['processes.csv'] | Should -Be 'P,K,CpuMs,WsKB,PrivKB,ReadBytes,WriteBytes,IoOps,Handles,Threads'
-        $WorkerPerfHeaders['ticks.csv'].Split(',').Count | Should -Be 19
+    }
+    It 'fuehrt die fuenf neuen Spalten am Ende von ticks.csv' {              # Aussage geaendert (Groesse Task 2): 24 statt 19 Spalten, Entwurf 4.1
+        $h = $WorkerPerfHeaders['ticks.csv'].Split(','); $h.Count | Should -Be 24
+        $h[-5..-1] | Should -Be $WorkerPerfTickOptionalColumns
+        $WorkerPerfFormatVersion | Should -Be 3
+    }
+    It 'leitet die neuen Signale aus dem Takt ab' {
+        $s = Get-WorkerPerfHostSignals ([pscustomobject]@{ CpuPct = 40; CoreMaxPct = 97.5; CoresBusy = 1; PerfPct = 104; UtilityPct = 41.6; PagesOutPerSec = 12 }) 8 65536
+        $s['cpu.coreMax'] | Should -Be 97.5; $s['cpu.coreBusy'] | Should -Be 1; $s['cpu.perf'] | Should -Be 104; $s['cpu.utility'] | Should -Be 41.6; $s['mem.pagesout'] | Should -Be 12
+        [double]::IsNaN((Get-WorkerPerfHostSignals ([pscustomobject]@{ CpuPct = 40 }) 8 65536)['cpu.coreMax']) | Should -BeTrue
+        $WorkerPerfSizingSignalIds | Should -Be @('cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout')
     }
 }
 Describe 'Messkategorien' {

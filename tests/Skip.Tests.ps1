@@ -111,7 +111,7 @@ Describe 'Aufzeichnung mit -Skip' {
         $m = Get-Meta $Runs.Voll; $names = @($m.PSObject.Properties.Name)
         Get-CsvNames $Runs.Voll | Should -Be @($WorkerPerfHeaders.Keys | Sort-Object)
         # Aussage angepasst: EventReadCounts und LookbackReadCounts kamen nach dem Plan dazu; Skip steht hinter ihnen
-        $names | Should -Be @('SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'MaxSizeMB',
+        $names | Should -Be @('SchemaVersion', 'Computer', 'OS', 'LogicalProcessors', 'PhysicalMemoryMB', 'CoreBusyPct', 'FastIntervalSeconds', 'IntervalSeconds', 'BurstIntervalSeconds', 'BurstHoldSeconds', 'MaxSizeMB',      # Aussage geaendert (Groesse Task 2): CoreBusyPct
             'StartTime', 'EndTime', 'EndReason', 'EndMessage', 'Ticks', 'Snapshots', 'SkippedTicks', 'Simulated', 'HealthOnly', 'IncludeCommandLine', 'EventLookbackDays', 'LookbackCapped', 'EventReadCounts', 'LookbackReadCounts', 'Skip', 'CollectorPid', 'Endpoints', 'Sources', 'SourceErrors')
         @($m.Skip).Count | Should -Be 0; $m.EventLookbackDays | Should -Be 7; @($m.Endpoints).Count | Should -Be 3
         $m.HealthOnly | Should -BeFalse
@@ -404,7 +404,8 @@ Describe 'Vorfallserklaerungen und Muster mit weggelassenen Kategorien' {   # Re
         # ohne Drucken nennen Vorfaelle der Messung und des Rueckblicks ein Modul
         foreach ($i in @($D.Drucken.incidents)) { if ($null -ne $i.event) { & $walk @($i.event.unchecked) 'incidents[].event.unchecked' } }
         foreach ($i in @($D.Drucken.before.incidents)) { & $walk @($i.event.unchecked) 'before.incidents[].event.unchecked' }
-        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like '*unchecked*' } | Sort-Object)
+        # Aussage geaendert (Groesse Task 6): ohne die Felder unchecked der Einordnung eines Leistungsvorfalls (incidents[].unchecked[])
+        @($paths) | Should -Be @($census.PSObject.Properties.Name | Where-Object { $_ -like '*event.unchecked*' } | Sort-Object)
         @($paths | ForEach-Object { '{0}={1}' -f $_, $census.$_ }) | Should -Be @('before.incidents[].event.unchecked[].category=keyword', 'before.incidents[].event.unchecked[].id=keyword',
             'before.incidents[].event.unchecked[].text=composed', 'incidents[].event.unchecked[].category=keyword', 'incidents[].event.unchecked[].id=keyword', 'incidents[].event.unchecked[].text=composed')
         . (Join-Path $PSScriptRoot '../src/WorkerPerf.Mask.ps1'); $WorkerPerfMaskKeywordFields | Should -Contain 'unchecked.category'

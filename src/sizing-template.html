@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkerPerf – Größe des Servers</title>
+<style>
+/* The sizing report: one page of its own in the style of the guided view of the report. It is light in every colour
+   scheme of the system and makes no request; on paper the buttons are left out. */
+html { color-scheme: light; }
+body {
+  --surface: #ffffff; --border: #d9dde3; --grid: #e8ebef; --text: #111418; --text2: #4b5360; --muted: #656d7a;
+  --warn: #f0a400; --warn-ink: #b97a00; --crit: #d03b3b; --good: #0c9a0c; --accent: #1f62c4; --on-accent: #ffffff;
+  --bar: #2a78d6; --bar2: #9ec5f4; --tint: #f4f7fb; --tint-edge: #cfdcee;
+  margin: 0; background: #ffffff; color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+header { padding: 14px 24px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 19px; margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+h2 { font-size: 17px; margin: 0 0 10px; font-weight: 600; }
+h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+.sub { color: var(--text2); font-size: 13px; overflow-wrap: anywhere; margin-top: 2px; }
+#maskInfo, #sizeInfo { margin-top: 4px; font-weight: 600; overflow-wrap: anywhere; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 22px; }
+section { min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; min-width: 0; }
+#result { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+#recommendations { display: flex; flex-direction: column; gap: 14px; }
+.rec { border-left-width: 5px; }
+.rec.st-act { border-left-color: var(--crit); } .rec.st-check { border-left-color: var(--warn); } .rec.st-ok { border-left-color: var(--good); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 6px; }
+.rec p { margin: 6px 0 0; max-width: 100ch; overflow-wrap: anywhere; }
+.rec .dir { font-weight: 600; }
+.status { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.status .sym { font-style: normal; }
+.st-act .status .sym { color: var(--crit); } .st-check .status .sym { color: var(--warn-ink); } .st-ok .status .sym { color: var(--good); }
+.proj { margin-top: 10px; padding: 10px 12px; background: var(--tint); border: 1px solid var(--tint-edge); border-radius: 6px; max-width: 100ch; }
+.proj .tag { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .02em; padding: 1px 8px; border: 1px solid var(--text2); border-radius: 10px; margin-right: 8px; }
+.proj .num { font-size: 18px; font-weight: 700; }
+.proj p { margin-top: 6px; }
+.rec h4 { font-size: 13px; margin: 10px 0 2px; font-weight: 600; color: var(--text2); }
+.rec ul { margin: 2px 0 0; padding-left: 20px; max-width: 100ch; }
+.rec li { overflow-wrap: anywhere; }
+.rel { color: var(--text2); font-size: 13px; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--text2); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.wrap { overflow-wrap: anywhere; min-width: 160px; }
+svg { display: block; width: 100%; height: auto; max-width: 900px; }
+svg text { font: 11px "Segoe UI", system-ui, sans-serif; fill: var(--text2); }
+rect.bar.peak { fill: var(--bar); } rect.bar.p95 { fill: var(--bar2); }
+line.target { stroke: var(--crit); stroke-width: 1.5; stroke-dasharray: 5 4; }
+line.axis { stroke: var(--border); stroke-width: 1; }
+circle.pt { fill: var(--bar); fill-opacity: .35; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--text2); margin: 6px 0 10px; }
+.legend i { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
+.note { color: var(--text2); font-size: 13px; margin: 8px 0 0; max-width: 100ch; overflow-wrap: anywhere; }
+code { font: 12px/1.4 Consolas, "Cascadia Mono", monospace; overflow-wrap: anywhere; word-break: break-all; }
+.btn { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.small { font-size: 12px; padding: 2px 8px; margin-top: 4px; }
+.copybar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+#copyText { margin: 10px 0 0; padding: 10px 12px; background: var(--tint); border: 1px solid var(--tint-edge); border-radius: 6px; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+#copyDone { font-size: 13px; color: var(--text2); }
+footer { color: var(--muted); font-size: 12px; padding: 0 24px 24px; max-width: 1100px; margin: 0 auto; }
+@media (max-width: 520px) { header { padding: 12px 14px; } main { padding: 14px 14px 30px; } .card { padding: 12px; } }
+@media print {
+  button, .btn, label.inline { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .card { break-inside: avoid; }
+  .scroll { overflow: visible; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Größe des Servers</h1>
+  <div class="sub" id="subtitle"></div>
+  <div id="sizeInfo" hidden></div>
+  <div id="maskInfo" hidden></div>
+</header>
+<main>
+  <section><h2>Ergebnis</h2><p id="result"></p></section>
+  <section><h2>Empfehlungen</h2><div id="recommendations"></div></section>
+  <section id="history" class="card"><h2>Verlauf über die Aufzeichnungen</h2><div id="historyBody"></div></section>
+  <section id="scatter" class="card"><h2>Sitzungen gegen CPU in der Hauptzeit</h2><div id="scatterBody"></div></section>
+  <section id="users" class="card"><h2>Sitzungen je vCPU</h2><div id="usersBody"></div></section>
+  <section id="evidence" class="card"><h2>Belege aus dem Zustandsbild</h2><div id="evidenceBody"></div></section>
+  <section id="runs" class="card"><h2>Aufzeichnungen</h2><div id="runsBody"></div></section>
+  <section id="sources" class="card"><h2>Quellen</h2><div id="sourcesBody"></div></section>
+  <section id="copy" class="card"><h2>Zusammenfassung zum Weitergeben</h2>
+    <div class="copybar"><button type="button" class="btn primary" id="copyBtn">Empfehlungen kopieren</button><label class="inline" id="anonLabel"><input type="checkbox" id="anon"> ohne Namen</label><span id="copyDone" role="status"></span></div>
+    <pre id="copyText"></pre></section>
+</main>
+<footer id="footer"></footer>
+<script id="wp-data" type="application/json">null</script>
+<script>
+"use strict";
+// Every value of the report data goes into the page as text (esc or textContent), never as markup.
+const D = JSON.parse(document.getElementById("wp-data").textContent);
+const M = D.meta;
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (v, d) => v == null || !isFinite(v) ? "–" : Number(v).toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: d == null ? 1 : d });
+const pad = (n) => String(n).padStart(2, "0");
+// times in the local time of the server (the offset each recording carries)
+function fmtDT(ms, offsetMin) {
+  if (ms == null) return "–";
+  const t = new Date(ms + (offsetMin || 0) * 60000);
+  return `${pad(t.getUTCDate())}.${pad(t.getUTCMonth() + 1)}.${t.getUTCFullYear()} ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
+}
+const fmtDay = (ms, offsetMin) => fmtDT(ms, offsetMin).slice(0, 6);
+const fmtDur = (min) => min == null ? "–" : min >= 90 ? fmt(min / 60, 1) + " h" : fmt(min, 0) + " min";
+const RES = { cpu: "CPU", memory: "Arbeitsspeicher", host: "VMware-Host", singlecore: "Leistung je Kern" };
+const END = { duration: "Dauer erreicht", stopped: "angehalten", maxsize: "Größengrenze erreicht", diskspace: "Speicherplatz knapp", error: "Fehler" };
+const loadRuns = D.runs.filter((r) => !r.healthOnly), lastOffset = D.runs.length ? D.runs[D.runs.length - 1].offsetMin : 0;
+const srcById = new Map(D.sources.map((s) => [s.id, s]));
+
+// ---------- head ----------
+document.getElementById("title").textContent = "Größe des Servers " + M.server;
+document.title = "WorkerPerf – Größe des Servers " + M.server;
+document.getElementById("subtitle").textContent =
+  `${fmtDT(M.from, loadRuns.length ? loadRuns[0].offsetMin : 0)} bis ${fmtDT(M.to, lastOffset)} · ${fmt(M.recordings, 0)} ${M.recordings === 1 ? "Aufzeichnung" : "Aufzeichnungen"}` +
+  (M.quick ? ` und ${fmt(M.quick, 0)} ${M.quick === 1 ? "Schnelllauf" : "Schnellläufe"}` : "") +
+  ` · Messzeit ${fmtDur(M.durationMin)}, davon Hauptzeit ${fmt(M.mainHours, 1)} h · ${fmt(M.cores, 0)} vCPU, ${fmt(M.ramGB, 0)} GB RAM`;
+if (M.sizeChanged) {
+  const el = document.getElementById("sizeInfo"); el.hidden = false;
+  el.textContent = "▲ Die Größe wechselte zwischen den Aufzeichnungen: " + M.sizes.map((s) => `${fmt(s.cores, 0)} vCPU / ${fmt(s.ramGB, 0)} GB`).join(" → ") + ". Die Hochrechnung geht von der letzten Aufzeichnung aus.";
+}
+if (M.mask) {
+  const el = document.getElementById("maskInfo"); el.hidden = false;
+  el.textContent = "● Bericht maskiert (Stufe " + M.mask + "): Namen sind durch Ersatznamen ersetzt.";
+}
+document.getElementById("result").textContent = D.result.text;
+
+// ---------- recommendations ----------
+function projectionNumber(p) {
+  // a range of one number is shown as one number
+  if (p.kind === "scaleOut") return `etwa ${fmt(p.sessions, 0)} ${p.unit} je Server`;
+  return p.low === p.high ? `etwa ${fmt(p.low, 0)} ${p.unit}` : `etwa ${fmt(p.low, 0)} bis ${fmt(p.high, 0)} ${p.unit}`;
+}
+function sourceLinks(ids) {
+  const seen = new Set(), out = [];
+  for (const id of ids || []) { const s = srcById.get(id); if (!s || seen.has(s.url)) continue; seen.add(s.url); out.push(`<li><a href="${esc(s.url)}" rel="noopener noreferrer">${esc(s.title)}</a></li>`); }
+  return out.join("");
+}
+function recHtml(r) {
+  const g = D.grades[r.status] || { word: r.status, symbol: "" }, p = r.projection;
+  const list = (title, items) => items && items.length ? `<h4>${title}</h4><ul>${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : "";
+  const links = sourceLinks(r.sources);
+  return `<article class="rec card st-${esc(r.status)}" data-resource="${esc(r.resource)}">
+    <div class="rec-head"><span class="status"><i class="sym" aria-hidden="true">${esc(g.symbol)}</i> ${esc(g.word)}</span><h3>${esc(RES[r.resource] || r.resource)}</h3></div>
+    <p class="dir">${esc(r.advice)}</p><p class="reason">${esc(r.reason)}</p>${p ? `
+    <div class="proj"><span class="tag">Schätzung</span><span class="num">${esc(projectionNumber(p))}</span><p>${esc(p.text)}</p></div>` : ""}
+    ${list("Annahmen", r.assumptions)}${list("Hinweise", r.hints)}${links ? `<h4>Quellen</h4><ul>${links}</ul>` : ""}
+    <p class="rel">${esc(r.reliability)}</p></article>`;
+}
+document.getElementById("recommendations").innerHTML = D.recommendations.map(recHtml).join("");
+
+// ---------- history: bars per recording, table, bottlenecks, recurring classes ----------
+function barsSvg() {
+  const W = 720, H = 220, L = 40, B = 30, T = 12, n = loadRuns.length, slot = (W - L - 10) / Math.max(n, 1), bw = Math.min(26, slot / 3);
+  const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(100, v || 0)) / 100);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="CPU je Aufzeichnung: Spitze und P95, mit der Linie des Ziels">`;
+  for (const g of [0, 25, 50, 75, 100]) s += `<line class="axis" x1="${L}" x2="${W - 10}" y1="${y(g)}" y2="${y(g)}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end">${g} %</text>`;
+  loadRuns.forEach((r, i) => {
+    const x = L + slot * i + slot / 2;
+    s += `<rect class="bar peak" x="${x - bw - 1}" y="${y(r.cpu.peak)}" width="${bw}" height="${H - B - y(r.cpu.peak)}"><title>Aufzeichnung ${r.index}: Spitze ${esc(fmt(r.cpu.peak, 1))} %</title></rect>` +
+      `<rect class="bar p95" x="${x + 1}" y="${y(r.cpu.p95)}" width="${bw}" height="${H - B - y(r.cpu.p95)}"><title>Aufzeichnung ${r.index}: P95 ${esc(fmt(r.cpu.p95, 1))} %</title></rect>` +
+      `<text x="${x}" y="${H - B + 14}" text-anchor="middle">${esc(fmtDay(r.start, r.offsetMin))}</text>`;
+  });
+  s += `<line class="target" x1="${L}" x2="${W - 10}" y1="${y(M.target)}" y2="${y(M.target)}"/><text x="${W - 12}" y="${y(M.target) - 4}" text-anchor="end">Ziel ${esc(fmt(M.target, 0))} %</text></svg>`;
+  return s;
+}
+{
+  const rows = loadRuns.map((r) => `<tr><td class="num">${r.index}</td><td>${esc(fmtDT(r.start, r.offsetMin))}</td><td class="num">${esc(fmt(r.cpu.peak, 1))} / ${esc(fmt(r.cpu.p95, 1))}</td>` +
+    `<td class="num">${esc(fmt(r.queue.peak, 1))} / ${esc(fmt(r.queue.p95, 1))}</td><td class="num">${esc(fmt(r.commit.peakGB, 1))} / ${esc(fmt(r.commit.p95GB, 1))}</td>` +
+    `<td class="num">${esc(fmt(r.sessionsPeak, 0))}</td><td class="wrap">${(r.classLabels || []).length ? esc(r.classLabels.join("; ")) : "–"}</td></tr>`).join("");
+  const bn = D.bottlenecks.map((b) => { const r = D.runs.find((x) => x.index === b.run) || {};
+    return `<tr><td class="num">${b.run}</td><td>${esc(fmtDT(b.start, r.offsetMin))}</td><td class="num">${esc(fmtDur((b.end - b.start) / 60000))}</td><td class="wrap">${esc(b.label)}</td><td class="wrap">${b.app ? esc(b.app) : "–"}</td></tr>`; }).join("");
+  const rec = D.recurring.length ? `<ul>${D.recurring.map((c) => `<li>${esc(c.label)}: in ${c.count} von ${c.of} Aufzeichnungen</li>`).join("")}</ul>` : `<p class="note">Keine Ursache kehrt in mindestens der Hälfte der Aufzeichnungen wieder.</p>`;
+  document.getElementById("historyBody").innerHTML =
+    `<div class="legend"><span><i style="background:var(--bar)"></i>Spitze der CPU</span><span><i style="background:var(--bar2)"></i>P95 der CPU</span><span>gestrichelt: Ziel</span></div>${barsSvg()}` +
+    `<h3 style="margin-top:16px">Kennzahlen je Aufzeichnung</h3><div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Beginn</th><th class="num">CPU % Spitze / P95</th><th class="num">Warteschlange je CPU</th><th class="num">Zugesichert GB</th><th class="num">Sitzungen</th><th>Ursachen</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+    `<h3 style="margin-top:16px">Wiederkehrende Ursachen</h3>${rec}` +
+    `<h3 style="margin-top:16px">Engpässe mit ihrer Einordnung</h3>` + (bn ? `<div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Beginn</th><th class="num">Dauer</th><th>Einordnung</th><th>Anwendung</th></tr></thead><tbody>${bn}</tbody></table></div>` : `<p class="note">Kein eingeordneter Vorfall in den Aufzeichnungen.</p>`);
+}
+
+// ---------- scatter: sessions against CPU over the main time ----------
+{
+  const W = 720, H = 260, L = 40, B = 34, T = 12, cpu = D.scatter.cpu, ses = D.scatter.sessions, maxS = Math.max(1, ...ses);
+  const x = (v) => L + (W - L - 12) * (v / maxS), y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(100, v)) / 100);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punktwolke: CPU-Auslastung gegen die Zahl der Sitzungen in der Hauptzeit">`;
+  for (const g of [0, 25, 50, 75, 100]) s += `<line class="axis" x1="${L}" x2="${W - 12}" y1="${y(g)}" y2="${y(g)}"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end">${g} %</text>`;
+  const step = Math.max(1, Math.ceil(maxS / 8));
+  for (let v = 0; v <= maxS; v += step) s += `<text x="${x(v)}" y="${H - B + 14}" text-anchor="middle">${v}</text>`;
+  s += `<text x="${(W + L) / 2}" y="${H - 4}" text-anchor="middle">Sitzungen</text>`;
+  for (let i = 0; i < cpu.length; i++) s += `<circle class="pt" cx="${x(ses[i]).toFixed(1)}" cy="${y(cpu[i]).toFixed(1)}" r="2.2"/>`;
+  s += `<line class="target" x1="${L}" x2="${W - 12}" y1="${y(D.scatter.target)}" y2="${y(D.scatter.target)}"/><text x="${W - 14}" y="${y(D.scatter.target) - 4}" text-anchor="end">Ziel ${esc(fmt(D.scatter.target, 0))} %</text></svg>`;
+  document.getElementById("scatterBody").innerHTML = cpu.length ? s + `<p class="note">Jeder Punkt ist ein Takt der Hauptzeit (höchstens 2000 Punkte). Typische Spitzenlast (P95): ${esc(fmt(M.load, 1))} %, höchste Spitze ${esc(fmt(M.peak, 1))} %.</p>`
+    : `<p class="note">Keine Hauptzeit in den Aufzeichnungen (keine Sitzungen): keine Punkte.</p>`;
+}
+
+// ---------- sessions per vCPU ----------
+{
+  const u = D.usersPerVcpu;
+  document.getElementById("usersBody").innerHTML =
+    `<p>Höchste Sitzungszahl ${esc(fmt(u.sessionsPeak, 0))} auf ${esc(fmt(u.cores, 0))} vCPU: ${esc(fmt(u.value, 2))} Sitzungen je vCPU.</p>` +
+    `<div class="scroll"><table><thead><tr><th>Art der Nutzer</th><th class="num">Obergrenze je vCPU</th><th class="num">Sitzungen bei ${esc(fmt(u.cores, 0))} vCPU</th></tr></thead><tbody>` +
+    u.limits.map((l) => `<tr><td>${esc(l.label)}</td><td class="num">${esc(fmt(l.perVcpu, 0))}</td><td class="num">${esc(fmt(l.sessions, 0))}</td></tr>`).join("") + `</tbody></table></div><p class="note">${esc(u.note)}</p>`;
+}
+
+// ---------- evidence, recordings, sources ----------
+document.getElementById("evidenceBody").innerHTML = D.evidence.length
+  ? `<div class="scroll"><table><tbody>${D.evidence.map((e) => `<tr><th>${esc(e.label)}</th><td class="wrap">${esc(e.value)}</td></tr>`).join("")}</tbody></table></div>`
+  : `<p class="note">Keine Aufzeichnung enthält ein Zustandsbild.</p>`;
+document.getElementById("runsBody").innerHTML = `<div class="scroll"><table><thead><tr><th class="num">Nr.</th><th>Ordner</th><th>Beginn</th><th class="num">Dauer</th><th>Ende</th><th>Bericht dieser Aufzeichnung</th></tr></thead><tbody>` +
+  D.runs.map((r, i) => `<tr><td class="num">${r.index}</td><td class="wrap">${esc(r.folder)}</td><td>${esc(fmtDT(r.start, r.offsetMin))}</td>` +
+    `<td class="num">${r.healthOnly ? "–" : esc(fmtDur(r.durationMin))}</td><td>${r.healthOnly ? "Schnelllauf (zählt nicht für die Last)" : esc(END[r.endReason] || r.endReason || "–")}</td>` +
+    `<td class="wrap"><code>${esc(r.command)}</code><br><button type="button" class="btn small cmd" data-run="${i}">Befehl kopieren</button></td></tr>`).join("") + `</tbody></table></div>`;
+document.getElementById("sourcesBody").innerHTML = (() => {
+  const seen = new Map();
+  for (const s of D.sources) { if (!seen.has(s.url)) seen.set(s.url, { s, ids: [] }); seen.get(s.url).ids.push(s.id); }
+  return `<ul>${[...seen.values()].map((o) => `<li><a href="${esc(o.s.url)}" rel="noopener noreferrer">${esc(o.s.title)}</a> <span class="rel">(${o.s.kind === "practice" ? "Praxisquelle" : "Herstellerangabe"}, Stand ${esc(o.s.date)}; ${esc(o.ids.join(", "))})</span></li>`).join("")}</ul>` +
+    `<p class="note">Werte ohne Quelle sind Faustregeln des Katalogs (Fassung ${esc(M.catalogueVersion)}).</p>`;
+})();
+
+// ---------- copy ----------
+async function copyText(text, done) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+    ta.remove();
+  }
+  if (done) done.textContent = ok ? "Kopiert." : "Kopieren nicht möglich: bitte den Text markieren und kopieren.";
+}
+{
+  const anon = document.getElementById("anon"), pre = document.getElementById("copyText"), done = document.getElementById("copyDone");
+  // a masked report has one version only
+  if (M.mask || D.copy.anonymous == null) document.getElementById("anonLabel").hidden = true;
+  const current = () => anon.checked && D.copy.anonymous != null ? D.copy.anonymous : D.copy.named;
+  const show = () => { pre.textContent = current() || ""; done.textContent = ""; };
+  anon.addEventListener("change", show); show();
+  document.getElementById("copyBtn").addEventListener("click", () => copyText(current() || "", done));
+  document.getElementById("runsBody").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button.cmd"); if (!b) return;
+    copyText(D.runs[Number(b.dataset.run)].command, null).then(() => { b.textContent = "Kopiert"; setTimeout(() => { b.textContent = "Befehl kopieren"; }, 1500); });
+  });
+}
+document.getElementById("footer").textContent = `Zeiten in Ortszeit des Servers. Bericht erstellt am ${fmtDT(M.generated, lastOffset)} mit WorkerPerf. Jede Zahl einer Hochrechnung ist eine Schätzung, nicht gemessen.`;
+</script>
+</body>
+</html>

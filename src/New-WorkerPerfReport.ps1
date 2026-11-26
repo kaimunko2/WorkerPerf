@@ -20,6 +20,12 @@
     shown as the row "Zustand des Servers" with an area view, as the section "Dazu im Zustandsbild" of an incident
     and as the tab "Zustand" of the expert view.
 
+    Every incident with a CPU or memory finding, and every input delay without a bottleneck, gets the class of its
+    cause from the catalogue sizing.de.json (-SizingFile): the VMware host, the performance per core, one
+    application, a one-off run, capacity, or one of the memory classes. The incident view shows it as the line
+    "Einordnung", the copy text carries it, and the expert view has the tiles of the strongest core, the busy cores
+    and the performance share. Several recordings of one server are compared by New-WorkerPerfSizingReport.ps1.
+
     Thresholds and roles are read at analysis time: a capture can be re-evaluated with changed
     files. Runs on Windows PowerShell 5.1 and PowerShell 7 (any platform).
 
@@ -45,6 +51,10 @@
 .PARAMETER GuidanceFile
     Guidance catalogue (situations, checks, remedies, texts of the guided report). Default: guidance.de.json next to
     this script. It is checked before the capture is read; an error names the entry and the field.
+
+.PARAMETER SizingFile
+    Catalogue of the size of the server (the classes of a CPU or memory bottleneck, their limits and sources). Default:
+    sizing.de.json next to this script. It is checked before the capture is read; an error names part and field.
 
 .PARAMETER AppsFile
     Application list (standard applications and the name patterns of their processes; the guidance catalogue has steps
@@ -98,6 +108,7 @@ param(
     [string]$ThresholdFile,
     [string]$RoleFile,
     [string]$GuidanceFile,
+    [string]$SizingFile,
     [string]$AppsFile,
     [string]$HealthFile,
     [string]$FocusUser,
@@ -125,79 +136,19 @@ $nan = [double]::NaN
 . (Join-Path $PSScriptRoot 'WorkerPerf.Load.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Findings.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Guidance.ps1')
+. (Join-Path $PSScriptRoot 'WorkerPerf.Sizing.ps1')
 . (Join-Path $PSScriptRoot 'WorkerPerf.Health.ps1')
 # the masking: a masked run masks the report data; without -Mask the report uses it only for the copy texts without names
 # (one mask of level Alles and its replacing, never Protect-WorkerPerfReportData or Clear-WorkerPerfReportFreeText).
 . (Join-Path $PSScriptRoot 'WorkerPerf.Mask.ps1')
+# the JSON writer of the report data and the writing of the page (shared with the sizing report)
+. (Join-Path $PSScriptRoot 'WorkerPerf.Page.ps1')
 # The level in the spelling of the set (ValidateSet takes any case), as the report data carries it.
 if ($Mask) {
     if ($Mask -eq 'Alles') { $Mask = 'Alles' } else { $Mask = 'Personen' }
 }
 
 #region ---------- helpers ----------------------------------------------------------------
-
-$script:JsonSpecial = New-Object System.Text.RegularExpressions.Regex ('[\x00-\x1f"\\<>&\u2028\u2029]', [System.Text.RegularExpressions.RegexOptions]::Compiled)
-
-function Format-JsonString([string]$Text) {
-    if ($null -eq $Text) { return 'null' }
-    if (-not $script:JsonSpecial.IsMatch($Text)) { return '"' + $Text + '"' }
-    $sb = New-Object System.Text.StringBuilder ($Text.Length + 16)
-    [void]$sb.Append('"')
-    foreach ($c in $Text.ToCharArray()) {
-        $code = [int]$c
-        if ($c -eq '"') { [void]$sb.Append('\"') }
-        elseif ($c -eq '\') { [void]$sb.Append('\\') }
-        elseif ($code -lt 32 -or $c -eq '<' -or $c -eq '>' -or $c -eq '&' -or $code -eq 0x2028 -or $code -eq 0x2029) { [void]$sb.Append('\u' + $code.ToString('x4', $inv)) }
-        else { [void]$sb.Append($c) }
-    }
-    [void]$sb.Append('"')
-    return $sb.ToString()
-}
-
-function Format-JsonNumber([double]$Value, [int]$Decimals) {
-    if ([double]::IsNaN($Value) -or [double]::IsInfinity($Value)) { return 'null' }
-    return [Math]::Round($Value, $Decimals).ToString($inv)
-}
-
-function ConvertTo-JsonText($Value, [System.IO.TextWriter]$Out) {
-    # Small JSON writer for ordered records, writing to $Out. A StringBuilder value is inserted verbatim (pre-rendered series).
-    if ($null -eq $Value) { $Out.Write('null'); return }
-    if ($Value -is [System.Text.StringBuilder]) { $Out.Write($Value.ToString()); return }
-    if ($Value -is [string]) { $Out.Write((Format-JsonString $Value)); return }
-    if ($Value -is [bool]) { if ($Value) { $Out.Write('true') } else { $Out.Write('false') }; return }
-    if ($Value -is [double] -or $Value -is [single] -or $Value -is [decimal]) { $Out.Write((Format-JsonNumber ([double]$Value) 3)); return }
-    if ($Value -is [ValueType]) { $Out.Write(([IConvertible]$Value).ToString($inv)); return }
-    if ($Value -is [System.Collections.IDictionary]) {
-        $Out.Write('{')
-        $first = $true
-        foreach ($k in $Value.Keys) {
-            if (-not $first) { $Out.Write(',') }
-            $first = $false
-            # plain keys, strings without special characters and whole numbers are written here, without a call per
-            # value (one record per event: the writer runs this loop hundreds of thousands of times)
-            $ks = [string]$k
-            if ($script:JsonSpecial.IsMatch($ks)) { $Out.Write((Format-JsonString $ks)); $Out.Write(':') } else { $Out.Write('"' + $ks + '":') }
-            $v = $Value[$k]
-            if ($v -is [string] -and -not $script:JsonSpecial.IsMatch($v)) { $Out.Write('"' + $v + '"') }
-            elseif ($v -is [int] -or $v -is [long]) { $Out.Write($v.ToString($inv)) }
-            else { ConvertTo-JsonText $v $Out }
-        }
-        $Out.Write('}')
-        return
-    }
-    if ($Value -is [System.Collections.IEnumerable]) {
-        $Out.Write('[')
-        $first = $true
-        foreach ($v in $Value) {
-            if (-not $first) { $Out.Write(',') }
-            $first = $false
-            ConvertTo-JsonText $v $Out
-        }
-        $Out.Write(']')
-        return
-    }
-    $Out.Write((Format-JsonString ([string]$Value)))
-}
 
 function New-JsonSeries([double[]]$Values, [int]$Decimals, [int]$Start = 0, [int]$End = -1) {
     # JSON array of $Values[$Start..$End], rounded; NaN and infinity become null.
@@ -657,33 +608,7 @@ function Complete-Report($Data, [string]$Done, [string[]]$Details = @()) {
     }
 
     Write-Host 'Schreibe Bericht ...'
-    $template = [IO.File]::ReadAllText($templateFile, [Text.Encoding]::UTF8)
-    $marker = '<script id="wp-data" type="application/json">null</script>'
-    $at = $template.IndexOf($marker)
-    if ($at -lt 0) { throw 'Die Berichtsvorlage enthaelt keinen Datenplatzhalter.' }
-    $open = '<script id="wp-data" type="application/json">'
-    # The JSON is written straight into the file (UTF-8 without BOM) in place of the placeholder's 'null', so the report is
-    # never held in memory as a whole. It goes to a temporary file next to the target first; only when it is complete is an
-    # existing target deleted and the temporary file moved onto its name. An error while writing, or a target that cannot
-    # be deleted (read-only, locked), leaves the previous report as it was. Only an error between the delete and the move
-    # leaves no report. The temporary file is removed on any error. No File.Replace: some file systems used for reports
-    # (FAT/exFAT, some SMB/NAS and DFS shares) do not support it.
-    $tmpFile = $OutFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
-    try {
-        $writer = New-Object System.IO.StreamWriter($tmpFile, $false, (New-Object System.Text.UTF8Encoding $false), 65536)
-        try {
-            $writer.Write($template.Substring(0, $at + $open.Length))
-            ConvertTo-JsonText $Data $writer
-            $writer.Write($template.Substring($at + $open.Length + 4))
-        }
-        finally { $writer.Dispose() }
-        if ([IO.File]::Exists($OutFile)) { [IO.File]::Delete($OutFile) }
-        [IO.File]::Move($tmpFile, $OutFile)
-    }
-    catch {
-        if ([IO.File]::Exists($tmpFile)) { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
-        throw
-    }
+    Write-WorkerPerfPage $templateFile $Data $OutFile
     # the map only once the report is complete; a failure here leaves the report as written
     if ($MaskMapFile) {
         try { Save-WorkerPerfMaskMap -Mask $maskObj -Path $MaskMapFile }
@@ -717,6 +642,7 @@ if (-not $OutFile) { $OutFile = Join-Path $Path 'report.html' }
 if (-not $ThresholdFile) { $ThresholdFile = Join-Path $PSScriptRoot 'thresholds.json' }
 if (-not $RoleFile) { $RoleFile = Join-Path $PSScriptRoot 'roles.json' }
 if (-not $GuidanceFile) { $GuidanceFile = Join-Path $PSScriptRoot 'guidance.de.json' }
+if (-not $SizingFile) { $SizingFile = Join-Path $PSScriptRoot 'sizing.de.json' }
 if (-not $AppsFile) { $AppsFile = Join-Path $PSScriptRoot 'apps.json' }
 if (-not $HealthFile) { $HealthFile = Join-Path $PSScriptRoot 'health.de.json' }
 $templateFile = Join-Path $PSScriptRoot 'report-template.html'
@@ -753,6 +679,8 @@ if ($Mask -eq 'Alles') {
 }
 
 $thresholds = Read-WorkerPerfThresholds $ThresholdFile
+# the catalogue of the size of the server: an error stops here, before the capture is read
+$sizing = Read-WorkerPerfSizing $SizingFile $thresholds
 $roles = @(Read-WorkerPerfRoles $RoleFile)
 $texts = Read-WorkerPerfTexts (Join-Path $PSScriptRoot 'texts.de.json')
 # an error in the application list or in a catalogue stops before the capture is read; the guidance catalogue's
@@ -855,6 +783,8 @@ $series = @(Get-WorkerPerfSeries $model $thresholds)
 $findings = @(Get-WorkerPerfFindings -Series $series -Thresholds $thresholds)
 $incidents = @(Join-WorkerPerfIncidents -Findings $findings)
 Add-WorkerPerfIncidentDetail -Incidents $incidents -Model $model -Thresholds $thresholds
+# the class of every incident: the cause of a CPU or memory bottleneck (size of the server)
+Add-WorkerPerfIncidentClasses -Incidents $incidents -Model $model -Thresholds $thresholds -Sizing $sizing
 # one result for the status of tiles and table rows (from the findings) and for what the texts call "nicht gemessen"
 $sollIst = @(Get-WorkerPerfSollIst -Series $series -Thresholds $thresholds -Sources $model.Sources -Findings $findings)
 $unmeasured = Get-WorkerPerfUnmeasured -SollIst $sollIst
@@ -1067,6 +997,8 @@ $hostOut = [ordered]@{
     diskR = (New-JsonSeries $diskR 1); diskW = (New-JsonSeries $diskW 1)
     iopsR = (New-JsonSeries $raw['DiskReadIops'] 1); iopsW = (New-JsonSeries $raw['DiskWriteIops'] 1)
     netR = (New-JsonSeries $netR 1); netS = (New-JsonSeries $netS 1); burst = (New-JsonSeries $burst 0)
+    coreMax = (New-JsonSeries $sig['cpu.coreMax'] 1); coreBusy = (New-JsonSeries $sig['cpu.coreBusy'] 0)
+    perf = (New-JsonSeries $sig['cpu.perf'] 1); utility = (New-JsonSeries $sig['cpu.utility'] 1); pagesOut = (New-JsonSeries $sig['mem.pagesout'] 1)
     sessions = (New-JsonSeries ([double[]]$snap.Sessions) 0); active = (New-JsonSeries ([double[]]$snap.ActiveSessions) 0)
     procs = (New-JsonSeries ([double[]]$snap.Processes) 0)
 }
@@ -1241,6 +1173,7 @@ function ConvertTo-MainEntry($Main, [string]$Resource) {
 }
 $rankedK = @{}
 $incOut = New-Object System.Collections.Generic.List[object]
+$usedClasses = @{}                      # the classes the incidents carry: their sources go into the part sizing
 foreach ($inc in $incidents) {
     $start = [long]$inc.StartMs; $end = [long]$inc.EndMs
     $signals = New-Object System.Collections.Generic.List[object]
@@ -1334,6 +1267,8 @@ foreach ($inc in $incidents) {
     $eventRefs = [int[]]@()
     $refs = Get-WorkerPerfField $inc 'EventIncidents'
     if ($null -ne $refs) { $eventRefs = [int[]]@($refs) }
+    $classOut = Get-WorkerPerfClassOut $inc $sizing
+    foreach ($c in $classOut.Classes) { $usedClasses[[string]$c.id] = $true }
     $entry = [ordered]@{
             id = [int]$inc.Id; type = [string]$inc.Type; chronic = [bool]$inc.Chronic; severity = [int]$inc.Severity
             start = $start; end = $end; durSec = [Math]::Round(($end - $start) / 1000.0, 1); lead = $lead; resources = [string[]]@($inc.Resources)
@@ -1344,6 +1279,7 @@ foreach ($inc in $incidents) {
             delayProcs = $delayProcs.ToArray(); endpoints = $endpoints.ToArray(); ica = $ica.ToArray()
             security = [ordered]@{ products = $products.ToArray(); totalPct = (Get-Round $inc.Security.TotalPct 1) }
             companion = $companion; chronicContext = $context.ToArray()
+            classes = $classOut.Classes; unchecked = $classOut.Unchecked; classLine = [string]$classOut.Line
             eventIncidents = $eventRefs; event = $null
         }
     # an input delay without bottleneck: unverified when -Skip Laufwerke left out the drives' latencies (the text then says
@@ -1512,6 +1448,30 @@ function Get-UnrecordedOut {
     [ordered]@{ id = 'Ereignisse'; label = [string]$texts['skip.label.Ereignisse']; text = [string]$texts['unrecorded.text.Ereignisse']
         places = [string[]]@($script:WorkerPerfCategories['Ereignisse'].Places) }
 }
+# the part sizing: what the page needs to show the new values and the sources of the classes (only the sources that a
+# class of these report data or a signal names)
+$sizingSignals = New-Object System.Collections.Generic.List[object]
+$sizingSourceIds = New-Object System.Collections.Generic.List[string]
+foreach ($id in $sizing.Classes.Keys) { if ($usedClasses.ContainsKey($id)) { foreach ($s in $sizing.Classes[$id].Sources) { if (-not $sizingSourceIds.Contains($s)) { $sizingSourceIds.Add($s) } } } }
+foreach ($id in $sizing.Signals.Keys) {
+    $sg = $sizing.Signals[$id]
+    $sizingSignals.Add([ordered]@{ id = [string]$id; label = [string]$sg.Label; note = [string]$sg.Note; sources = [string[]]@($sg.Sources) })
+    foreach ($s in $sg.Sources) { if (-not $sizingSourceIds.Contains($s)) { $sizingSourceIds.Add($s) } }
+}
+$coreBusyRecorded = $null
+if ($null -ne $model.Meta['CoreBusyPct']) { $coreBusyRecorded = [double]$model.Meta['CoreBusyPct'] }
+$sizingOut = [ordered]@{
+    catalogueVersion = [string]$sizing.Version; coreBusyPct = $coreBusyRecorded; coreBusyNow = [double]$sizing.Thresholds.coreBusyPct.Value
+    measured = [ordered]@{
+        coreMax = [bool]$model.Measured['cpu.coreMax']; coreBusy = [bool]$model.Measured['cpu.coreBusy']; perf = [bool]$model.Measured['cpu.perf']
+        utility = [bool]$model.Measured['cpu.utility']; pagesOut = [bool]$model.Measured['mem.pagesout']
+    }
+    signals = $sizingSignals.ToArray()
+    sources = @($sizing.Sources.Keys | Where-Object { $sizingSourceIds.Contains($_) } | ForEach-Object {
+            $src = $sizing.Sources[$_]
+            [ordered]@{ id = [string]$_; title = [string]$src.Title; url = [string]$src.Url; date = [string]$src.Date; kind = [string]$src.Kind } })
+}
+
 # ZB-R72: the quick path further up (`if ($model.Meta.HealthOnly)`) assembles the report data of a quick run on its own (meta, quality,
 # before, print, then the same guide, copy text and mask steps); a field added here must be considered there too, and the other way round
 $data = [ordered]@{
@@ -1522,6 +1482,7 @@ $data = [ordered]@{
     sessions = $sessOut.ToArray(); apps = $appsOut.ToArray(); pairs = $pairsOut.ToArray(); procs = $procOut.ToArray()
     citrix = $citrixOut.ToArray(); sollIst = $sollOut.ToArray(); incidents = $incOut.ToArray()
     unmeasured = [ordered]@{ input = [bool]$unmeasured.Input; worker = [string[]]@($unmeasured.Worker) }
+    sizing = $sizingOut
     noFinding = ($incOut.Count -eq 0)
     before = $beforeOut; print = $printOut; eventsOutsideCut = [int]$model.EventsOutsideCut
     # the application list as read (like thresholds): its keys are identifiers, its labels and process patterns are

@@ -1,5 +1,6 @@
 #Requires -Version 5.1
-# WorkerPerf simulated data source: a deterministic 60-minute scenario ("Drehbuch") with eight scripted incidents.
+# WorkerPerf simulated data source: a deterministic 60-minute scenario ("Drehbuch") with eight scripted incidents
+# ("Stunde"), and two more for the size of the server: one scene per cause ("Ursachen") and a working day ("Tag").
 # Library: defines constants and functions only. State lives in $script: variables and is built by Initialize-WorkerPerfSource.
 # Every value is a pure function of the virtual clock: noise comes from a hash of time and key, cumulative process
 # counters from a closed formula (base rate times lifetime plus scripted extra times overlap with its window).
@@ -21,7 +22,7 @@ $script:WorkerPerfSimDomain = 'CONTOSO'
 # Scenario windows in seconds after the start; a window A-B holds for A < t <= B.
 # The memory window ends off the snapshot grid (18:51): the growing process exits between two snapshots, one second
 # after the last tick over the threshold, so the last snapshot of the incident no longer contains it.
-$script:WorkerPerfSimWindows = [ordered]@{
+$script:WorkerPerfSimHourWindows = [ordered]@{
     homeoffice = @{ A = 0.0; B = 3600.0 }
     cpu        = @{ A = 300.0; B = 420.0 }
     memory     = @{ A = 900.0; B = 1131.0 }
@@ -31,6 +32,62 @@ $script:WorkerPerfSimWindows = [ordered]@{
     backend    = @{ A = 2820.0; B = 2910.0 }
     hang       = @{ A = 3178.0; B = 3180.0 }
 }
+# Scenario "Ursachen" (size of the server): one scene per cause of a bottleneck, on the 25 sessions of the hour.
+#   host         every nexus.exe works more (CPU about 81 %) while the VMware host takes CPU time away
+#   singlecore   simcalc.exe of user010 holds one logical processor; the input of that session is delayed
+#   capacity     every nexus.exe works more: CPU over 95 %, processor queue 3 per CPU
+#   scan         a scan of Defender (events 1000 and 1001), CPU about 87 %
+#   memleak      simleak.exe of user012 grows to 20 GB: RAM 88 %, committed under RAM, nothing paged out
+#   memcapacity  every nexus.exe needs 1.2 GB more: committed over RAM, RAM 95 %, pages go out from 30 s on
+#   commit       simreserve.exe commits 51.5 GB it does not use: over 92 % of the commit limit, RAM and paging calm
+$script:WorkerPerfSimCauseWindows = [ordered]@{
+    host        = @{ A = 300.0; B = 420.0 }
+    singlecore  = @{ A = 900.0; B = 1020.0 }
+    capacity    = @{ A = 1500.0; B = 1620.0 }
+    scan        = @{ A = 2100.0; B = 2220.0 }
+    memleak     = @{ A = 2700.0; B = 2900.0 }
+    memcapacity = @{ A = 3000.0; B = 3200.0 }
+    commit      = @{ A = 3300.0; B = 3480.0 }
+}
+$script:WorkerPerfSimLeakMB = 20000.0          # working set simleak.exe gains in the first LeakRampSec of its window
+$script:WorkerPerfSimLeakRampSec = 120.0
+$script:WorkerPerfSimMemCapMB = 1200.0         # working set every nexus.exe gains in the window memcapacity
+$script:WorkerPerfSimMemCapPagesFrom = 3030.0
+$script:WorkerPerfSimReserveMB = 51500.0       # committed by simreserve.exe, without working set
+# Scenario "Tag" (day 1 to 5 of the same server, day d starts d - 1 days later): user001..user031, six logged on at the
+# start, one more every 40 s from minute 2 (31 at minute 18), 31 until minute 42, then one less every 38.4 s (six at
+# minute 58). Every session costs TagCoresPerSession (on day 5 less: the day without a bottleneck), so 31 sessions are
+# 92.5 % CPU with a processor queue of 3 per CPU on the days 1 to 4. peak: the time with at least 25 sessions (CPU over
+# 75 %), the expected chronic CPU state. steal: on day 3 the VMware host takes CPU time away in minute 25 to 28.
+$script:WorkerPerfSimTagWindows = [ordered]@{
+    peak  = @{ A = 840.0; B = 2790.0 }
+    steal = @{ A = 1500.0; B = 1680.0 }
+}
+$script:WorkerPerfSimTagCoresPerSession = 0.219
+$script:WorkerPerfSimTagCoresPerSessionCalm = 0.165
+$script:WorkerPerfSimScenario = 'Stunde'
+$script:WorkerPerfSimDay = 1
+
+function Set-WorkerPerfSimScenario([string]$Scenario, [int]$Day) {
+    # The windows of the chosen scenario; every window of another scenario exists but never holds (A = B = -1), so the
+    # code of each scene can ask for its window in any scenario.
+    $script:WorkerPerfSimScenario = $Scenario
+    $script:WorkerPerfSimDay = $Day
+    $active = @{ 'Stunde' = $script:WorkerPerfSimHourWindows; 'Ursachen' = $script:WorkerPerfSimCauseWindows; 'Tag' = $script:WorkerPerfSimTagWindows }
+    $all = [ordered]@{}
+    foreach ($name in 'Stunde', 'Ursachen', 'Tag') {
+        foreach ($key in $active[$name].Keys) {
+            $w = $active[$name][$key]
+            $on = ($name -eq $Scenario)
+            if ($name -eq 'Tag' -and $key -eq 'steal' -and $Day -ne 3) { $on = $false }
+            if ($name -eq 'Tag' -and $key -eq 'peak' -and $Day -eq 5) { $on = $false }
+            if ($on) { $all[$key] = @{ A = [double]$w.A; B = [double]$w.B } } else { $all[$key] = @{ A = -1.0; B = -1.0 } }
+        }
+    }
+    $script:WorkerPerfSimWindows = $all
+}
+Set-WorkerPerfSimScenario 'Stunde' 1
+
 # Inside the memory window: RAM ramp ends at 16:00, page reads start at 15:30, C: write latency starts at 16:00.
 $script:WorkerPerfSimMemRampEnd = 960.0
 $script:WorkerPerfSimPagesFrom = 930.0
@@ -40,12 +97,12 @@ $script:WorkerPerfSimPeakRamPct = 93.0
 $script:WorkerPerfSimTeamsGrowthMB = ($script:WorkerPerfSimPeakRamPct - $script:WorkerPerfSimBaseRamPct) / 100.0 * $script:WorkerPerfSimRamMB
 
 $script:WorkerPerfSimSignalIds = @('cpu.host', 'cpu.queue', 'cpu.steal', 'mem.used', 'mem.commit', 'mem.pagesin', 'input.session',
-    'disk.latency', 'smb.latency', 'ica.rtt', 'ica.latency', 'probe.connect')
+    'disk.latency', 'smb.latency', 'ica.rtt', 'ica.latency', 'probe.connect', 'cpu.coreMax', 'cpu.coreBusy', 'cpu.perf', 'cpu.utility', 'mem.pagesout')
 
 # Noise: a value in [0, 1) per noise key and whole second. Keys (index into the row of Get-WorkerPerfSimNoise):
 #   1-9 host values, 10-29 volumes and shares, 30+sid / 60+sid / 90+sid / 120+sid profile volume read ops, write ops,
 #   read and write latency, 150+sid base input delay, 180+sid scripted input delay, 210+sid idle time,
-#   240+sid ICA round trip, 300+i probes.
+#   240+sid ICA round trip, 300+i probes, 315-319 strongest core, (free), frequency, (free), pages out.
 $script:WorkerPerfSimNoiseKeys = 320
 $script:WorkerPerfSimNoiseSize = 4096
 $script:WorkerPerfSimNoiseValues = $null
@@ -108,6 +165,32 @@ function Get-WorkerPerfSimTeamsGrowthMB([double]$Seconds) {
     $frac = ($Seconds - $w.A) / ($script:WorkerPerfSimMemRampEnd - $w.A)
     if ($frac -gt 1) { $frac = 1.0 }
     return $script:WorkerPerfSimTeamsGrowthMB * $frac
+}
+
+function Get-WorkerPerfSimLeakMB([double]$Seconds) {
+    # working set simleak.exe has gained (scenario Ursachen, window memleak): a ramp of LeakRampSec, then flat
+    $w = $script:WorkerPerfSimWindows['memleak']
+    if (-not ($Seconds -gt $w.A -and $Seconds -le $w.B)) { return 0.0 }
+    $frac = ($Seconds - $w.A) / $script:WorkerPerfSimLeakRampSec
+    if ($frac -gt 1) { $frac = 1.0 }
+    return $script:WorkerPerfSimLeakMB * $frac
+}
+
+function Get-WorkerPerfSimGrowthMB($Proc, [double]$Seconds) {
+    # working set a growing process has gained: Grow $true (ms-teams.exe of the hour), 'leak', 'memcap'
+    if ($Proc.Grow -is [bool]) {
+        if ($Proc.Grow) { return (Get-WorkerPerfSimTeamsGrowthMB $Seconds) }
+        return 0.0
+    }
+    if ($Proc.Grow -eq 'leak') { return (Get-WorkerPerfSimLeakMB $Seconds) }
+    if ($Proc.Grow -eq 'memcap' -and (Test-WorkerPerfSimWindow 'memcapacity' $Seconds)) { return $script:WorkerPerfSimMemCapMB }
+    return 0.0
+}
+
+function Get-WorkerPerfSimSessionCount([double]$Seconds) {
+    $n = 0
+    foreach ($s in $script:WorkerPerfSimSessions) { if ($Seconds -gt $s.LogonSec -and $Seconds -le $s.LogoffSec) { $n++ } }
+    return $n
 }
 
 function New-WorkerPerfSimProcess {
@@ -186,7 +269,11 @@ function Add-WorkerPerfSimRead([string]$Kind) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly)
+          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly, [double]$CoreBusyPct = 90,
+          [ValidateSet('Stunde', 'Ursachen', 'Tag')][string]$Scenario = 'Stunde', [ValidateRange(1, 5)][int]$Day = 1)
+    # CoreBusyPct: from this load a logical processor counts as busy (cpu.coreBusy), as in the Windows source.
+    # Scenario: the hour with its eight incidents (default), one scene per cause, or a working day; Day: the day of the
+    # scenario Tag (day d starts d - 1 days after StartTime).
     # EventConfig: the event catalogue (Read-WorkerPerfEventConfig); without it the simulation reads events.json beside it.
     # Apps: the application list of the health picture (Read-WorkerPerfHealthApps); without it the area apps is empty.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). The source reads nothing of them and writes no entry of
@@ -198,6 +285,9 @@ function Initialize-WorkerPerfSource {
         $n = [datetime]::Now
         $StartTime = $n.AddTicks(-($n.Ticks % [TimeSpan]::TicksPerSecond))
     }
+    Set-WorkerPerfSimScenario $Scenario $Day
+    $isCauses = ($Scenario -eq 'Ursachen'); $isDay = ($Scenario -eq 'Tag')
+    if ($isDay) { $StartTime = $StartTime.AddDays($Day - 1) }
     $script:WorkerPerfSimStart = $StartTime
     $script:WorkerPerfSimNow = $StartTime
     $script:WorkerPerfSimProbe = $null
@@ -218,10 +308,15 @@ function Initialize-WorkerPerfSource {
         [pscustomobject]@{ Name = 'Dateiserver'; Host = 'fs01.sim.local'; Port = 445; Role = 'Dateiserver' })
 
     # ---- sessions: user001..user025 with the ids 2..26, all logged on before the start ----
+    # (the day: user001..user031, the users from user007 on log on and off during the hour)
     $sessions = New-Object System.Collections.Generic.List[object]
-    for ($sid = 2; $sid -le 26; $sid++) {
+    $lastSid = 26
+    if ($isDay) { $lastSid = 32 }
+    for ($sid = 2; $sid -le $lastSid; $sid++) {
+        $logon = -5400.0 + $sid * 60; $logoff = [double]::PositiveInfinity
+        if ($isDay -and $sid -ge 8) { $logon = 120.0 + ($sid - 8) * 40.0; $logoff = 2520.0 + (33 - $sid) * 38.4 }
         $sessions.Add(@{ Sid = $sid; User = ('user{0:d3}' -f ($sid - 1)); Client = ('WS-{0:d4}' -f (1000 + $sid * 37))
-                LogonSec = -5400.0 + $sid * 60; WinStation = ('ICA-CGP#{0}' -f ($sid - 1)) })
+                LogonSec = $logon; LogoffSec = $logoff; WinStation = ('ICA-CGP#{0}' -f ($sid - 1)) })
     }
     $script:WorkerPerfSimSessions = $sessions.ToArray()
 
@@ -255,6 +350,7 @@ function Initialize-WorkerPerfSource {
         if ($c[0] -eq 'MsMpEng.exe') {
             $p.Path = 'C:\ProgramData\Microsoft\Windows Defender\Platform\4.18.24090.11-0\MsMpEng.exe'; $p.CommandLine = '"' + $p.Path + '"'
             Add-WorkerPerfSimExtra $p 'disk' -Cores 0.39 -ReadBps 30MB
+            if ($isCauses) { Add-WorkerPerfSimExtra $p 'scan' -Cores 4.1 -ReadBps 30MB }
         }
         if ($c[1]) { $services[$nextPid] = [string]$c[1] }
         if ($c[0] -eq 'winlogon.exe') { $winlogonPid = $nextPid }
@@ -268,6 +364,11 @@ function Initialize-WorkerPerfSource {
     $procs.Add($collector)
     $procs.Add((New-WorkerPerfSimProcess -ProcessId 4250 -ParentId $script:WorkerPerfSimCollectorPid -Name 'conhost.exe' -SessionId 0 -CreatedSec -119 `
                 -Path ($sys32 + 'conhost.exe') -WsMB 8 -Handles 110 -Threads 3 -Arguments '0xffffffff -ForceV1'))
+    if ($isCauses) {
+        $w = $script:WorkerPerfSimWindows['commit']
+        $procs.Add((New-WorkerPerfSimProcess -ProcessId 4300 -ParentId 600 -Name 'simreserve.exe' -SessionId 0 -CreatedSec $w.A -EndSec $w.B `
+                    -Path 'C:\Program Files\SimReserve\simreserve.exe' -Cores 0.01 -WsMB 30 -Handles 120 -Threads 4))
+    }
 
     $office = 'C:\Program Files\Microsoft Office\root\Office16\'
     $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
@@ -289,9 +390,22 @@ function Initialize-WorkerPerfSource {
             $c = $catalog[$k]
             $parent = $(if ($k -eq 0) { $winlogonPid } else { $explorerPid })
             $p = New-WorkerPerfSimProcess -ProcessId ($explorerPid + $k * 4) -ParentId $parent -Name $c[0] -SessionId $sid `
-                -CreatedSec ($s.LogonSec + 5 + $k * 7) -Path $c[1] -Cores $c[2] -ReadBps $c[3] -WriteBps $c[4] -WsMB $c[5] -Handles $c[6] -Threads $c[7]
+                -CreatedSec ($s.LogonSec + 5 + $k * 7) -EndSec $s.LogoffSec -Path $c[1] -Cores $c[2] -ReadBps $c[3] -WriteBps $c[4] -WsMB $c[5] -Handles $c[6] -Threads $c[7]
             $key = '{0}|{1}' -f $sid, $c[0]
             if (-not $pidOf.ContainsKey($key)) { $pidOf[$key] = $p.Pid }
+            if ($c[0] -eq 'nexus.exe') {
+                if ($isCauses) {
+                    Add-WorkerPerfSimExtra $p 'host' -Cores 0.145
+                    Add-WorkerPerfSimExtra $p 'capacity' -Cores 0.2
+                    $p.Grow = 'memcap'
+                }
+                if ($isDay) {
+                    # the whole cost of a session lies on its nexus.exe (the other processes of a session take 0.07 cores)
+                    $perSession = $script:WorkerPerfSimTagCoresPerSession
+                    if ($Day -eq 5) { $perSession = $script:WorkerPerfSimTagCoresPerSessionCalm }
+                    $p.Cores = $perSession - 0.07
+                }
+            }
             if ($sid -eq 4 -and $c[0] -eq 'EXCEL.EXE') { Add-WorkerPerfSimExtra $p 'cpu' -Cores 4.8 }
             if ($sid -eq 6 -and $c[0] -eq 'WINWORD.EXE') { Add-WorkerPerfSimExtra $p 'share' -Cores 0.05 -ReadBps 20MB }
             if ($sid -eq 10 -and $c[0] -eq 'OUTLOOK.EXE') { Add-WorkerPerfSimExtra $p 'profile' -Cores 0.04 -ReadBps 6MB -WriteBps 4MB }
@@ -311,6 +425,20 @@ function Initialize-WorkerPerfSource {
             $procs.Add((New-WorkerPerfSimProcess -ProcessId ($explorerPid + 64) -ParentId $explorerPid -Name 'robocopy.exe' -SessionId $sid `
                         -CreatedSec $w.A -EndSec $w.B -Path ($sys32 + 'Robocopy.exe') -Cores 0.1 -ReadBps 40MB -WriteBps 40MB -WsMB 40 -Handles 150 -Threads 9 `
                         -Arguments 'D:\Projekte D:\Archiv /MIR'))
+        }
+        if ($isCauses -and $sid -eq 11) {
+            $w = $script:WorkerPerfSimWindows['singlecore']
+            $calc = New-WorkerPerfSimProcess -ProcessId ($explorerPid + 68) -ParentId $explorerPid -Name 'simcalc.exe' -SessionId $sid `
+                -CreatedSec $w.A -EndSec $w.B -Path 'C:\Program Files\SimCalc\simcalc.exe' -Cores 1.0 -WsMB 120 -Handles 300 -Threads 6
+            $pidOf['{0}|simcalc.exe' -f $sid] = $calc.Pid
+            $procs.Add($calc)
+        }
+        if ($isCauses -and $sid -eq 13) {
+            $w = $script:WorkerPerfSimWindows['memleak']
+            $leak = New-WorkerPerfSimProcess -ProcessId ($explorerPid + 72) -ParentId $explorerPid -Name 'simleak.exe' -SessionId $sid `
+                -CreatedSec $w.A -EndSec $w.B -Path 'C:\Program Files\SimLeak\simleak.exe' -Cores 0.05 -WsMB 200 -Handles 400 -Threads 10
+            $leak.Grow = 'leak'
+            $procs.Add($leak)
         }
     }
     $script:WorkerPerfSimProcs = $procs.ToArray()
@@ -337,6 +465,7 @@ function Initialize-WorkerPerfSource {
         @{ W = 'profile'; Sids = @(10); App = 'OUTLOOK.EXE'; Low = 400; High = 400 }
         @{ W = 'backend'; Sids = @(13, 14, 15, 16, 17, 18, 19, 20); App = 'nexus.exe'; Low = 1200; High = 1200 }
         @{ W = 'hang'; Sids = @(15); App = 'WINWORD.EXE'; Low = 800; High = 800 })
+    if ($isCauses) { $inputScript += @{ W = 'singlecore'; Sids = @(11); App = 'simcalc.exe'; Low = 800; High = 1200 } }
     $bySid = @{}
     foreach ($s in $script:WorkerPerfSimSessions) { $bySid[[int]$s.Sid] = New-Object System.Collections.Generic.List[object] }
     foreach ($row in $inputScript) {
@@ -375,6 +504,14 @@ function Initialize-WorkerPerfSource {
         (New-WorkerPerfSimCrash $cfg 2220 'OUTLOOK.EXE' '16.0.18129.20158' 'olmapi32.dll' '16.0.18129.20100' '0xc0000005' -ProcessId $pidOf['13|OUTLOOK.EXE'])
         (New-WorkerPerfSimSessionEvent $cfg 2230 25 'reconnection' 23)
         (New-WorkerPerfSimCrash $cfg 2600 'spoolsv.exe' '10.0.20348.2849' 'hpsimgr.dll' '61.310.1.25919' '0xc0000005' -ProcessId $spoolerPid))
+    # the scenes of the causes have one pair of events, the scan; the day has none
+    if ($isCauses) {
+        $w = $script:WorkerPerfSimWindows['scan']
+        $script:WorkerPerfSimEvents = @(
+            (New-WorkerPerfSimEvent $cfg $w.A 'defender' $defender 1000 4 'Microsoft Defender Antivirus scan has started.')
+            (New-WorkerPerfSimEvent $cfg $w.B 'defender' $defender 1001 4 'Microsoft Defender Antivirus scan has finished.'))
+    }
+    if ($isDay) { $script:WorkerPerfSimEvents = @() }
     # The lookback has no processes to find a session in, so its crashes name session and user (session id = user number + 1;
     # the user comes from the account in the System part of the event, as for the profile error). One crash names neither,
     # as the classic Application Error 1000 is written without an account: its session is unknown (P1-R32).
@@ -480,6 +617,21 @@ function Get-WorkerPerfFastSample {
     if ($cpuPct -gt 99.5) { $cpuPct = 99.5 }
     $queue = [Math]::Round(1 + 5 * $nz[2])
     if (Test-WorkerPerfSimWindow 'cpu' $e) { $queue = 24 }
+    $scenario = $script:WorkerPerfSimScenario
+    $sessionCount = Get-WorkerPerfSimSessionCount $e
+    if (Test-WorkerPerfSimWindow 'capacity' $e) { $queue = 24 }
+    if ($scenario -eq 'Tag' -and $script:WorkerPerfSimDay -ne 5 -and $sessionCount -ge 31) { $queue = 24 }
+    $steal = 0.1 + 0.7 * $nz[8]
+    if ((Test-WorkerPerfSimWindow 'host' $e) -or (Test-WorkerPerfSimWindow 'steal' $e)) { $steal = 12 + 2 * $nz[8] }
+    # strongest logical processor and busy processors; frequency counters; the hour: four processors busy in its CPU scene
+    $coreMax = 1.5 * $cpuPct + 5 * $nz[315]
+    if ($coreMax -gt 99.5) { $coreMax = 99.5 }
+    $coresBusy = 0
+    if ($scenario -eq 'Stunde') { if (Test-WorkerPerfSimWindow 'cpu' $e) { $coresBusy = 4 } }
+    elseif (Test-WorkerPerfSimWindow 'singlecore' $e) { $coreMax = 99 + $nz[315]; $coresBusy = 1 }
+    elseif ($cpuPct -ge 90) { $coresBusy = $cores }
+    elseif ($cpuPct -ge 75) { $coresBusy = 3 }
+    $perfPct = [Math]::Round(98 + 4 * $nz[317], 1)
 
     # ---- memory ----
     $inMemory = Test-WorkerPerfSimWindow 'memory' $e
@@ -490,6 +642,25 @@ function Get-WorkerPerfFastSample {
     $committedMB = [Math]::Round($script:WorkerPerfSimBaseCommitMB + (1600 * $nz[4] - 800) + $growthMB)
     $pagesIn = 4 * $nz[5]
     if ($inMemory -and $e -gt $script:WorkerPerfSimPagesFrom) { $pagesIn = 390 + 20 * $nz[5] }
+    $pagesOut = 3 * $nz[319]
+    if ($scenario -eq 'Ursachen') {
+        $leakMB = Get-WorkerPerfSimLeakMB $e
+        if ($leakMB -gt 0) {
+            $ramPct = $script:WorkerPerfSimBaseRamPct + 100.0 * $leakMB / $script:WorkerPerfSimRamMB
+            $availMB = [Math]::Round($script:WorkerPerfSimRamMB * (1 - $ramPct / 100.0)); $committedMB += [Math]::Round($leakMB)
+        }
+        if (Test-WorkerPerfSimWindow 'memcapacity' $e) {
+            $ramPct = 95 + 0.5 * $nz[3]
+            $availMB = [Math]::Round($script:WorkerPerfSimRamMB * (1 - $ramPct / 100.0)); $committedMB += [Math]::Round($script:WorkerPerfSimMemCapMB * $sessionCount)
+            if ($e -gt $script:WorkerPerfSimMemCapPagesFrom) { $pagesOut = 300 + 40 * $nz[319]; $pagesIn = 150 + 20 * $nz[5] }
+        }
+        if (Test-WorkerPerfSimWindow 'commit' $e) { $committedMB += [Math]::Round($script:WorkerPerfSimReserveMB) }
+    }
+    if ($scenario -eq 'Tag') {
+        $ramPct = 45 + 0.6 * $sessionCount + (3 * $nz[3] - 1.5)
+        $availMB = [Math]::Round($script:WorkerPerfSimRamMB * (1 - $ramPct / 100.0))
+        $committedMB = [Math]::Round($script:WorkerPerfSimBaseCommitMB + 512 * $sessionCount + (1600 * $nz[4] - 800))
+    }
 
     # ---- volumes ----
     $volumes = New-Object System.Collections.Generic.List[object]
@@ -512,6 +683,7 @@ function Get-WorkerPerfFastSample {
     if ($slot -lt 0) { $slot += 10 }
     $inProfile = Test-WorkerPerfSimWindow 'profile' $e
     foreach ($s in $script:WorkerPerfSimSessions) {
+        if (-not ($e -gt $s.LogonSec -and $e -le $s.LogoffSec)) { continue }
         $sid = [int]$s.Sid
         $name = 'HarddiskVolume{0}' -f ($sid + 8)
         if ($inProfile -and $sid -eq 10) {
@@ -541,6 +713,7 @@ function Get-WorkerPerfFastSample {
     $inSessions = New-Object System.Collections.Generic.List[object]
     $inProcs = New-Object System.Collections.Generic.List[object]
     foreach ($s in $script:WorkerPerfSimSessions) {
+        if (-not ($e -gt $s.LogonSec -and $e -le $s.LogoffSec)) { continue }
         $sid = [int]$s.Sid
         $delay = [Math]::Round(40 * $nz[150 + $sid])
         foreach ($x in $script:WorkerPerfSimInputBySid[$sid]) {
@@ -566,13 +739,15 @@ function Get-WorkerPerfFastSample {
 
     return [pscustomobject]@{
         Time = $script:WorkerPerfSimNow
-        CpuPct = [Math]::Round($cpuPct, 2); ProcQueue = $queue; StealPct = [Math]::Round((0.1 + 0.7 * $nz[8]), 2)
+        CpuPct = [Math]::Round($cpuPct, 2); ProcQueue = $queue; StealPct = [Math]::Round($steal, 2)
         MemAvailMB = $availMB; MemCommittedMB = $committedMB; MemCommitLimitMB = $script:WorkerPerfSimCommitLimitMB
         PagesInPerSec = [Math]::Round($pagesIn, 1)
         DiskReadBps = [Math]::Round($diskR); DiskWriteBps = [Math]::Round($diskW)
         DiskReadIops = [Math]::Round($opsR / 2, 1); DiskWriteIops = [Math]::Round($opsW / 2, 1); DiskQueue = $diskQ
         NetRecvBps = [Math]::Round($netR); NetSentBps = [Math]::Round($netS)
         Volumes = $volumeRows; Shares = $shareRows; InputSessions = $inSessions.ToArray(); InputProcesses = $inProcs.ToArray()
+        CoreMaxPct = [Math]::Round($coreMax, 1); CoresBusy = $coresBusy; PerfPct = $perfPct
+        UtilityPct = [Math]::Round([Math]::Round($cpuPct, 2) * $perfPct / 100, 1); PagesOutPerSec = [Math]::Round($pagesOut, 1)
     }
 }
 
@@ -596,7 +771,7 @@ function Get-WorkerPerfSnapshot {
             $cpu += $x.Cores * $o; $rd += $x.Rd * $o; $wr += $x.Wr * $o
         }
         $ws = $p.WsBytes
-        if ($p.Grow) { $ws += (Get-WorkerPerfSimTeamsGrowthMB $e) * 1MB }
+        $ws += (Get-WorkerPerfSimGrowthMB $p $e) * 1MB
         $cpu100 = [Math]::Floor($cpu * 1e7)
         $user = [Math]::Floor($cpu100 * 0.8)
         $rd = [Math]::Floor($rd); $wr = [Math]::Floor($wr)
@@ -617,6 +792,7 @@ function Get-WorkerPerfSnapshot {
     $citrix = New-Object System.Collections.Generic.List[object]
     if (Test-WorkerPerfSimMeasured 'Citrix') { Add-WorkerPerfSimRead 'citrix' }
     foreach ($s in $script:WorkerPerfSimSessions) {
+        if (-not ($e -gt $s.LogonSec -and $e -le $s.LogoffSec)) { continue }
         $sid = [int]$s.Sid
         $sessions.Add([pscustomobject]@{ SessionId = $sid; State = 'Active'; WinStation = $s.WinStation; User = $s.User
                 Domain = $script:WorkerPerfSimDomain; ClientName = $s.Client; LogonTime = $script:WorkerPerfSimStart.AddSeconds($s.LogonSec)
@@ -937,13 +1113,32 @@ function Get-WorkerPerfExpected {
     $startMs = ([DateTimeOffset]$script:WorkerPerfSimStart).ToUnixTimeMilliseconds()
     $rows = @(
         @{ Key = 'homeoffice'; Type = 'umfeld'; Lead = $null; Chronic = $true; MainApp = $null; MainUser = $null; Affected = 0; DelayApp = $null; Endpoint = $null; Companion = $null }
-        @{ Key = 'cpu'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; MainApp = 'EXCEL.EXE'; MainUser = 'user003'; Affected = 6; DelayApp = $null; Endpoint = $null; Companion = $null }
-        @{ Key = 'memory'; Type = 'engpass'; Lead = 'memory'; Chronic = $false; MainApp = 'ms-teams.exe'; MainUser = 'user007'; Affected = 4; DelayApp = $null; Endpoint = $null; Companion = $null }
+        @{ Key = 'cpu'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; MainApp = 'EXCEL.EXE'; MainUser = 'user003'; Affected = 6; DelayApp = $null; Endpoint = $null; Companion = $null; Classes = @('app') }
+        @{ Key = 'memory'; Type = 'engpass'; Lead = 'memory'; Chronic = $false; MainApp = 'ms-teams.exe'; MainUser = 'user007'; Affected = 4; DelayApp = $null; Endpoint = $null; Companion = $null; Classes = @('mem.app') }
         @{ Key = 'disk'; Type = 'engpass'; Lead = 'disk'; Chronic = $false; MainApp = 'robocopy.exe'; MainUser = 'user011'; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = 'Microsoft Defender' }
         @{ Key = 'share'; Type = 'engpass'; Lead = 'share'; Chronic = $false; MainApp = 'WINWORD.EXE'; MainUser = 'user005'; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = $null }
         @{ Key = 'profile'; Type = 'engpass'; Lead = 'profile'; Chronic = $false; MainApp = 'OUTLOOK.EXE'; MainUser = 'user009'; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = $null }
         @{ Key = 'backend'; Type = 'ohne-engpass'; Lead = $null; Chronic = $false; MainApp = $null; MainUser = $null; Affected = 8; DelayApp = 'nexus.exe'; Endpoint = 'Oracle-Listener'; Companion = $null }
         @{ Key = 'hang'; Type = 'ohne-engpass'; Lead = $null; Chronic = $false; MainApp = $null; MainUser = $null; Affected = 1; DelayApp = $null; Endpoint = $null; Companion = $null })
+    # the scenes of the causes and the day: the classes the classification must give (in the order of precedence)
+    $none = @{ MainApp = $null; MainUser = $null; Affected = 0; DelayApp = $null; Endpoint = $null; Companion = $null }
+    if ($script:WorkerPerfSimScenario -eq 'Ursachen') {
+        $rows = @(
+            @{ Key = 'host'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; Classes = @('host', 'capacity') }
+            @{ Key = 'singlecore'; Type = 'ohne-engpass'; Lead = $null; Chronic = $false; Classes = @('singlecore'); Affected = 1; DelayApp = 'simcalc.exe' }
+            @{ Key = 'capacity'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; Classes = @('capacity') }
+            @{ Key = 'scan'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; Classes = @('oneoff'); MainApp = 'MsMpEng.exe' }
+            @{ Key = 'memleak'; Type = 'engpass'; Lead = 'memory'; Chronic = $false; Classes = @('mem.app'); MainApp = 'simleak.exe'; MainUser = 'user012' }
+            @{ Key = 'memcapacity'; Type = 'engpass'; Lead = 'memory'; Chronic = $false; Classes = @('mem.capacity') }
+            @{ Key = 'commit'; Type = 'engpass'; Lead = 'memory'; Chronic = $false; Classes = @('mem.commit') })
+    }
+    if ($script:WorkerPerfSimScenario -eq 'Tag') {
+        $rows = @(
+            # (on day 3 the CPU time taken away lies inside the peak, in under a tenth of its ticks: the peak stays capacity)
+            @{ Key = 'peak'; Type = 'engpass'; Lead = 'cpu'; Chronic = $true; Classes = @('capacity') }
+            @{ Key = 'steal'; Type = 'engpass'; Lead = 'cpu'; Chronic = $false; Classes = @('host', 'capacity') })
+    }
+    foreach ($r in $rows) { foreach ($k in $none.Keys) { if (-not $r.ContainsKey($k)) { $r[$k] = $none[$k] } }; if (-not $r.ContainsKey('Classes')) { $r['Classes'] = @() } }
     # event incidents: key, kind, patterns, first and last event second, app, driver, event count, users in order of appearance
     $eventRows = @(
         @{ Key = 'crash.memory'; Kind = 'crash'; Patterns = @('resource', 'overlap'); Before = $false; A = 1100; B = 1100; App = 'chrome.exe'; Driver = $null; Count = 1; Users = @('user008') }
@@ -956,14 +1151,17 @@ function Get-WorkerPerfExpected {
         @{ Key = 'before.shared.word'; Kind = 'crash'; Patterns = @('sharedmodule'); Before = $true; A = -431000; B = -431000; App = 'WINWORD.EXE'; Driver = $null; Count = 1; Users = @('user002') }
         @{ Key = 'before.oneuser'; Kind = 'crash'; Patterns = @('oneuser'); Before = $true; A = -259200; B = -258000; App = 'nexus.exe'; Driver = $null; Count = 3; Users = @('user004') }
         @{ Key = 'before.nosession'; Kind = 'crash'; Patterns = @(); Before = $true; A = -172800; B = -172800; App = 'simscan.exe'; Driver = $null; Count = 1; Users = @() })
+    if ($script:WorkerPerfSimScenario -ne 'Stunde') { $eventRows = @($eventRows | Where-Object { $_.Before }) }
     $out = New-Object System.Collections.Generic.List[object]
     foreach ($r in $rows) {
         $w = $script:WorkerPerfSimWindows[$r.Key]
+        if ($w.B -le $w.A) { continue }             # a window that does not hold on this day
         $out.Add([pscustomobject][ordered]@{
                 Key = $r.Key; Type = $r.Type; Lead = $r.Lead; Chronic = $r.Chronic
                 StartMs = [long]($startMs + [long]($w.A * 1000)); EndMs = [long]($startMs + [long]($w.B * 1000))
                 MainApp = $r.MainApp; MainUser = $r.MainUser; Affected = $r.Affected; DelayApp = $r.DelayApp; Endpoint = $r.Endpoint; Companion = $r.Companion
                 Kind = $null; Patterns = [string[]]@(); Before = $false; App = $null; Driver = $null; Count = 0; Users = [string[]]@()
+                Classes = [string[]]@($r.Classes)
             })
     }
     foreach ($r in $eventRows) {
@@ -972,6 +1170,7 @@ function Get-WorkerPerfExpected {
                 StartMs = [long]($startMs + [long]($r.A * 1000)); EndMs = [long]($startMs + [long]($r.B * 1000))
                 MainApp = $null; MainUser = $null; Affected = 0; DelayApp = $null; Endpoint = $null; Companion = $null
                 Kind = $r.Kind; Patterns = [string[]]$r.Patterns; Before = $r.Before; App = $r.App; Driver = $r.Driver; Count = $r.Count; Users = [string[]]$r.Users
+                Classes = [string[]]@()
             })
     }
     $out.ToArray() | Sort-Object -Property @{ Expression = { [bool]$_.Before } }, StartMs

@@ -511,10 +511,10 @@ namespace WorkerPerf
 # change is 0 without calculating (true for AverageCount64; the per-process input delay has one instance per process);
 # 'MsPercent' for 'CPU stolen time': its raw value is taken as milliseconds of stolen time, see ConvertTo-WorkerPerfStealPct.
 $script:WorkerPerfWinCounters = [ordered]@{
-    cpu          = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); Mode = 'Calculate' }
+    cpu          = @{ Category = 'Processor Information'; Counters = @('% Processor Time'); Optional = @('% Processor Performance', '% Processor Utility'); Mode = 'Calculate' }
     queue        = @{ Category = 'System'; Counters = @('Processor Queue Length'); Mode = 'Calculate' }
     steal        = @{ Category = 'VM Processor'; Counters = @('CPU stolen time'); Mode = 'MsPercent' }
-    memory       = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec'); Mode = 'Calculate' }
+    memory       = @{ Category = 'Memory'; Counters = @('Available Bytes', 'Committed Bytes', 'Commit Limit', 'Pages Input/sec'); Optional = @('Pages Output/sec'); Mode = 'Calculate' }
     disk         = @{ Category = 'PhysicalDisk'; Counters = @('Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Disk Reads/sec', 'Disk Writes/sec', 'Current Disk Queue Length'); Mode = 'Calculate' }
     network      = @{ Category = 'Network Interface'; Counters = @('Bytes Received/sec', 'Bytes Sent/sec'); Mode = 'Calculate' }
     volumes      = @{ Category = 'LogicalDisk'; Counters = @('Avg. Disk sec/Read', 'Avg. Disk sec/Write', 'Disk Reads/sec', 'Disk Writes/sec', 'Disk Read Bytes/sec', 'Disk Write Bytes/sec', 'Current Disk Queue Length'); Mode = 'Calculate' }
@@ -530,6 +530,12 @@ $script:WorkerPerfWinCounterCategories = @{ volumes = 'Laufwerke'; shares = 'Lau
 $script:WorkerPerfWinSignalGroups = [ordered]@{
     'cpu.host' = 'cpu'; 'cpu.queue' = 'queue'; 'cpu.steal' = 'steal'; 'mem.used' = 'memory'; 'mem.commit' = 'memory'; 'mem.pagesin' = 'memory'
     'input.session' = 'inputSession'; 'disk.latency' = 'volumes'; 'smb.latency' = 'shares'
+    'cpu.coreMax' = 'cpu'; 'cpu.coreBusy' = 'cpu'
+}
+# signals of an optional counter (key 'Optional' of its group): a counter the server lacks leaves its group measured and
+# only this signal unavailable
+$script:WorkerPerfWinOptionalSignals = [ordered]@{
+    'cpu.perf' = @('cpu', '% Processor Performance'); 'cpu.utility' = @('cpu', '% Processor Utility'); 'mem.pagesout' = @('memory', 'Pages Output/sec')
 }
 
 # Citrix: ICA session counters (one instance per ICA session, "<WinStation> (<user>)", plus a total whose name
@@ -846,6 +852,28 @@ function Get-WorkerPerfWinHostValue($Values, [string]$Group, [string]$Counter, [
     return [Math]::Round($sum, 3)
 }
 
+function Test-WorkerPerfProcessorTotal([string]$Name) {
+    # An instance of "Processor Information" is a total when its name has the part _Total ("_Total", "0,_Total"); every
+    # other instance is one logical processor ("0,0").
+    return ($Name.IndexOf('_Total', [StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
+function Get-WorkerPerfCoreStats($Instances, [double]$CoreBusyPct) {
+    # From the instances of '% Processor Time' (name -> percent): the load of the busiest logical processor and the
+    # number of logical processors at or over CoreBusyPct. Totals never count as a core; both $null without a core.
+    $max = $null; $busy = 0; $n = 0
+    if ($null -ne $Instances) {
+        foreach ($k in $Instances.Keys) {
+            if (Test-WorkerPerfProcessorTotal ([string]$k)) { continue }
+            $v = [double]$Instances[$k]; $n++
+            if ($null -eq $max -or $v -gt $max) { $max = $v }
+            if ($v -ge $CoreBusyPct) { $busy++ }
+        }
+    }
+    if ($n -eq 0) { return @{ CoreMaxPct = $null; CoresBusy = $null } }
+    return @{ CoreMaxPct = $max; CoresBusy = $busy }
+}
+
 function ConvertTo-WorkerPerfStealPct([long]$Raw1, [long]$Raw2, [long]$Time1, [long]$Time2) {
     # 'CPU stolen time' (VMware Tools) declares the type Timer100Ns, but its raw value grows like the milliseconds of
     # the Guest SDK value behind it (VMGuestLib_GetCpuStolenMs): the probe saw 15 per second, which as 100 ns would be
@@ -872,9 +900,11 @@ function ConvertTo-WorkerPerfWinFastSample {
     # A volume the map does not identify (mounted since its last build) is 'profile' only when its LogicalDisk instance
     # is a Citrix UPM mount path; its session comes from the "<user>_UPM_local" folder when that user has exactly one
     # session in Sessions. Every other volume is 'disk'.
-    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1, [object[]]$Sessions = @())
+    # CoreBusyPct: from this load a logical processor counts as busy (CoresBusy; the value of the sizing catalogue).
+    param($Values, [double]$ElapsedSec, [datetime]$Time, $ProfileMap, [int]$LogicalProcessors = 1, [object[]]$Sessions = @(), [double]$CoreBusyPct = 90)
 
     $mb = 1048576.0
+    $coreStats = Get-WorkerPerfCoreStats (Get-WorkerPerfWinGroup $Values 'cpu' '% Processor Time') $CoreBusyPct
     $avail = Get-WorkerPerfWinHostValue $Values 'memory' 'Available Bytes' 'first'
     $committed = Get-WorkerPerfWinHostValue $Values 'memory' 'Committed Bytes' 'first'
     $limit = Get-WorkerPerfWinHostValue $Values 'memory' 'Commit Limit' 'first'
@@ -983,6 +1013,11 @@ function ConvertTo-WorkerPerfWinFastSample {
         Shares           = $shares.ToArray()
         InputSessions    = $inSessions.ToArray()
         InputProcesses   = $inProcs.ToArray()
+        CoreMaxPct       = $coreStats.CoreMaxPct
+        CoresBusy        = $coreStats.CoresBusy
+        PerfPct          = Get-WorkerPerfWinHostValue $Values 'cpu' '% Processor Performance' 'total'
+        UtilityPct       = Get-WorkerPerfWinHostValue $Values 'cpu' '% Processor Utility' 'total'
+        PagesOutPerSec   = Get-WorkerPerfWinHostValue $Values 'memory' 'Pages Output/sec' 'first'
     }
 }
 
@@ -2219,7 +2254,9 @@ function Test-WorkerPerfWinMeasured([string]$Category) {
 
 function Initialize-WorkerPerfSource {
     param([datetime]$StartTime, [object[]]$Endpoints = @(), [string]$CitrixMetricFilter = '', [switch]$IncludeCommandLine, [string[]]$Skip = @(),
-          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly)
+          [object]$EventConfig = $null, [object[]]$Apps = @(), [switch]$HealthOnly, [double]$CoreBusyPct = 90)
+    # CoreBusyPct: from this load a logical processor counts as busy (cpu.coreBusy; the collector passes the value of the
+    # sizing catalogue and notes it in meta.json).
     # StartTime exists for the common interface: the clock of this source is the system clock. EventConfig: the event
     # catalogue (Read-WorkerPerfEventConfig); without it the source reads events.json next to this file.
     # Skip: the categories left out (Resolve-WorkerPerfSkip). For them the source checks and opens nothing, makes no
@@ -2254,7 +2291,7 @@ function Initialize-WorkerPerfSource {
 
     $state = @{
         Categories = @{}; Prev = @{}; Clock = $null; Map = $null; MapPending = $false; MapFailed = $false; VolumeNames = $null; ProfileMapOk = $false
-        LogicalProcessors = 1
+        LogicalProcessors = 1; CoreBusyPct = $CoreBusyPct; Optional = @{}
         IncludeCommandLine = [bool]$IncludeCommandLine; CitrixFilter = $CitrixMetricFilter; Skip = $leftOut
         Ica = $null; IcaCounters = $null; Euem = $false; Logs = (New-Object System.Collections.Generic.List[object])
         EventConfig = $null; SidCache = @{}; SidPauseUntil = [datetime]::MinValue; PrintDrivers = $false; PrintQueue = $null
@@ -2283,6 +2320,18 @@ function Initialize-WorkerPerfSource {
         catch { $reason = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message }
         if ($reason) { $groupStatus[$key] = @{ Available = $false; Detail = ('{0}: {1}' -f $def.Category, $reason) } }
         else { $groupStatus[$key] = @{ Available = $true; Detail = ('{0} / {1}' -f $def.Category, ($def.Counters -join ', ')) } }
+        # optional counters one by one: a missing one leaves the group measured
+        $optReason = @{}
+        $present = New-Object System.Collections.Generic.List[string]
+        if (-not $reason -and $def.ContainsKey('Optional')) {
+            foreach ($c in $def.Optional) {
+                $r = ''
+                try { $r = [string](Test-WorkerPerfWinCounter $def.Category $c) } catch { $r = 'Pruefung fehlgeschlagen: ' + $_.Exception.Message }
+                if ($r) { $optReason[$c] = $r } else { $present.Add($c) }
+            }
+        }
+        $state.Optional[$key] = [string[]]$present.ToArray()
+        $groupStatus[$key]['OptionalReason'] = $optReason
     }
     if ($groupStatus.ContainsKey('steal') -and $groupStatus['steal'].Available) {
         $groupStatus['steal'].Detail += ' (Rohwert als Millisekunden gelesen, Einheit auf dem VDA nicht bestaetigt; je vCPU: _Total geteilt durch die logischen Prozessoren)'
@@ -2293,6 +2342,15 @@ function Initialize-WorkerPerfSource {
         $g = $groupStatus[$script:WorkerPerfWinSignalGroups[$id]]
         if ($null -eq $g) { continue }
         $sources[$id] = @{ Available = $g.Available; Detail = $g.Detail }
+    }
+    foreach ($id in $script:WorkerPerfWinOptionalSignals.Keys) {
+        $key = $script:WorkerPerfWinOptionalSignals[$id][0]; $counter = $script:WorkerPerfWinOptionalSignals[$id][1]
+        $g = $groupStatus[$key]
+        if ($null -eq $g) { continue }
+        $category = $script:WorkerPerfWinCounters[$key].Category
+        if (-not $g.Available) { $sources[$id] = @{ Available = $false; Detail = $g.Detail } }
+        elseif ($g.OptionalReason.ContainsKey($counter)) { $sources[$id] = @{ Available = $false; Detail = ('{0}: {1}' -f $category, $g.OptionalReason[$counter]) } }
+        else { $sources[$id] = @{ Available = $true; Detail = ('{0} / {1}' -f $category, $counter) } }
     }
 
     # ---- Citrix ----
@@ -2472,6 +2530,16 @@ function Get-WorkerPerfFastSample {
         if ($null -ne $previous) {
             $values[$key] = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $def.Counters `
                 -ZeroUnchanged:($def.Mode -eq 'ZeroUnchanged') -MsPercent:($def.Mode -eq 'MsPercent')
+            # the optional counters on their own: one that cannot be calculated costs its value, never the tick
+            if ($st.Optional.ContainsKey($key) -and $st.Optional[$key].Count -gt 0) {
+                try {
+                    $more = Get-WorkerPerfWinCounterValues -Previous $previous -Current $current -Counters $st.Optional[$key]
+                    foreach ($c in @($more.Keys)) { $values[$key][$c] = $more[$c] }
+                }
+                catch {
+                    Write-WarningOnce ('perf.optional.' + $key) ("Zusaetzliche Zaehler von '{0}' nicht berechenbar; ihre Werte fehlen, die Aufzeichnung laeuft weiter: {1}" -f $def.Category, $_.Exception.Message)
+                }
+            }
         }
         $st.Prev[$key] = $current
         if ($key -eq 'volumes') { $volumeNames = [string[]]@(Get-WorkerPerfWinInstanceNames $current 'Disk Reads/sec') }
@@ -2487,7 +2555,7 @@ function Get-WorkerPerfFastSample {
         }
     }
 
-    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map -LogicalProcessors $st.LogicalProcessors -Sessions $sessions
+    return ConvertTo-WorkerPerfWinFastSample -Values $values -ElapsedSec $elapsed -Time $time -ProfileMap $st.Map -LogicalProcessors $st.LogicalProcessors -Sessions $sessions -CoreBusyPct $st.CoreBusyPct
 }
 
 function Get-WorkerPerfSnapshot {
@@ -3254,13 +3322,14 @@ function Read-WorkerPerfWinHealthSize($Ctx) {
 }
 
 function Format-WorkerPerfPendingRenameTop([string[]]$Entries) {
-    # The source paths are the entries 0, 2, 4, ... ("\??\C:\x\a.dll", a leading '!' marks a replace); each counts toward
-    # its folder of drive and at most three levels. '' without entries.
+    # The source paths are the entries 0, 2, 4, ... ("\??\C:\x\a.dll"; a leading '!' marks a replace, a leading '*1'
+    # or another '*' with digits is a flag of the entry, both are dropped); each counts toward its folder of drive and at
+    # most three levels. '' without entries.
     $counts = @{}
     for ($i = 0; $i -lt @($Entries).Count; $i += 2) {
         $p = [string]$Entries[$i]
         if ([string]::IsNullOrEmpty($p)) { continue }
-        $p = $p.TrimStart('!')
+        $p = $p -replace '^(?:!|\*\d+)+', ''
         if ($p.StartsWith('\??\')) { $p = $p.Substring(4) }
         $parts = @($p.Split('\') | Select-Object -First 5)
         if ($parts.Count -gt 1) { $parts = @($parts[0..($parts.Count - 2)]) }

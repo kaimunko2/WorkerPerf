@@ -130,6 +130,17 @@
       ],
       "services": [],
       "note": "Prozesse des WEM-Agenten laut Citrix-Dokumentation; die Kurznamen seiner Dienste (Anzeigenamen „Citrix WEM Agent Host Service“ und „Citrix WEM User Logon Service“) nennt sie nicht; auf dem Zielsystem ungeprüft"
+    },
+    {
+      "role": "Wartung",
+      "label": "Windows Update",
+      "processes": [
+        "TiWorker.exe",
+        "TrustedInstaller.exe",
+        "MoUsoCoreWorker.exe"
+      ],
+      "services": [],
+      "note": "ungeprüft; Prozesse der Windows-Updates, für die Einordnung „Einmalig“"
     }
   ]
 }
