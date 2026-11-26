@@ -1185,6 +1185,12 @@ nennt. Die verwendete Fassung steht in den Daten des Berichts.
 - **`impactVariants`** (freiwillig): andere Fassungen der Wirkung mit Bedingungen. Die erste, deren Bedingungen alle
   zutreffen, ersetzt `impact`; so behauptet der Satz keine Verzögerung, die nicht gemessen wurde.
 
+**Kennung (`id`).** Ein Element darf eine feste Kennung tragen: `<Situation>.<Stichwort>`, das Stichwort aus
+Kleinbuchstaben, Ziffern und Bindestrichen, höchstens 40 Zeichen, im ganzen Katalog nur einmal. Der Quellennachweis
+verweist über sie auf das Element; sie bleibt dieselbe, wenn sein Text oder sein Platz in der Liste sich ändert. Im
+mitgelieferten Katalog hat jedes Element mit Quelle eine Kennung. Ein eigener Katalog braucht keine, und in der
+Anleitung eines Vorfalls erscheint sie nicht.
+
 **Herkunft der Empfehlungen.** Jedes Element der Situation `print`, jedes Element aus einer Quelle der Praxis und die
 Schritte zu den Standardanwendungen und zu Workspace Environment Management nennen in `source` ihre Quelle; der
 Bericht zeigt sie beim Element. Die Druckempfehlungen stammen aus der Dokumentation von Microsoft, Citrix, HP,

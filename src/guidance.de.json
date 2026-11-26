@@ -150,6 +150,7 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
+          "id": "cpu.edge-browser-task-manager",
           "when": ["cause.app", "app.edge"],
           "text": "Im Browser-Task-Manager von Microsoft Edge nachsehen, welcher Tab, welche Erweiterung oder welcher Hilfsprozess die Rechenzeit verbraucht",
           "where": "In der Sitzung des Benutzers: Browser-Task-Manager von Microsoft Edge, nach „CPU“ sortiert",
@@ -157,6 +158,7 @@
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "cpu.edge-videos-webgl-canvas-inhalte",
           "when": ["cause.app", "app.edge"],
           "text": "Klären, ob der Benutzer Videos, WebGL- oder Canvas-Inhalte im Browser nutzte: werden sie ohne Grafikbeschleunigung in Software gerendert, steigt laut Microsoft die CPU-Last",
           "where": "Rückfrage beim Benutzer; Browser-Task-Manager von Microsoft Edge: Grafikprozess und die betroffenen Tabs",
@@ -164,6 +166,7 @@
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "cpu.edge-teams-browser-statt-teams",
           "when": ["cause.app", "app.edge"],
           "text": "Prüfen, ob der Benutzer Microsoft Teams im Browser statt im Teams-Client nutzte: Teams für das Web ist laut Microsoft auf VDI nicht unterstützt, Leistung und Zuverlässigkeit können darunter leiden",
           "where": "Rückfrage beim Benutzer; Browser-Task-Manager von Microsoft Edge: Tab mit Teams",
@@ -171,6 +174,7 @@
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
+          "id": "cpu.webview2-nutzende-anwendung",
           "when": ["cause.app", "app.webview2"],
           "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst; ist es eine solche Anwendung, deren Betreuung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“ und „Anwendungen“: Anwendungen, die in der Sitzung von {user} liefen",
@@ -178,6 +182,7 @@
           "source": "Microsoft: WebView2 end-user FAQ"
         },
         {
+          "id": "cpu.webview2-einstellungen-wirken",
           "when": ["cause.app", "app.webview2"],
           "text": "Einordnen, welche Einstellungen auf {app} wirken: laut Microsoft gelten die Richtlinien für den Browser Microsoft Edge nicht für die WebView2-Runtime und die Anwendungen, die sie nutzen",
           "where": "Gruppenrichtlinien für Microsoft Edge und, getrennt davon, für Microsoft Edge WebView2",
@@ -185,6 +190,7 @@
           "source": "Microsoft: Enterprise management of WebView2"
         },
         {
+          "id": "cpu.office-add-ins-pruefen",
           "when": ["cause.app", "app.office"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
@@ -192,6 +198,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "cpu.outlook-add-ins-pruefen",
           "when": ["cause.app", "app.outlook"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
@@ -199,6 +206,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "cpu.teams-sitzung-medienoptimierung",
           "when": ["cause.app", "app.teams"],
           "text": "Prüfen, ob Teams in der Sitzung von {user} mit Medienoptimierung lief: scheitert die neue VDI-Lösung, fällt Teams laut Citrix auf die gewöhnliche Audio- und Videoumleitung zurück, und die Medien werden auf dem Server verarbeitet",
           "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung; 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
@@ -206,6 +214,7 @@
           "source": "Citrix: Optimization for Microsoft Teams (New)"
         },
         {
+          "id": "cpu.teams-grossveranstaltung-town-hall",
           "when": ["cause.app", "app.teams"],
           "text": "Klären, ob der Benutzer an einer Großveranstaltung (Town Hall, Live-Event) teilnahm: laut Microsoft sind Teilnehmer dort nicht optimiert, die Wiedergabe läuft auf dem Server und verbraucht viel Prozessor, Arbeitsspeicher und Bandbreite",
           "where": "Rückfrage beim Benutzer; Kalender der Veranstaltungen",
@@ -213,6 +222,7 @@
           "source": "Microsoft: New VDI solution for Teams"
         },
         {
+          "id": "cpu.teams-bildschirm-geteilt-kodiert",
           "when": ["cause.app", "app.teams"],
           "text": "Klären, ob der Benutzer seinen Bildschirm geteilt hat: kodiert der Server die Bildschirmfreigabe, steigt laut Microsoft die CPU-Last, deutlich mit der Einstellung für Videos (15 Bilder je Sekunde)",
           "where": "Rückfrage beim Benutzer; Registrierung: HKLM\\Software\\Microsoft\\Teams\\VMSS, Wert MaxFPS",
@@ -220,6 +230,7 @@
           "source": "Microsoft: New VDI solution for Teams"
         },
         {
+          "id": "cpu.wem-cpu-spitzenschutz-protokoll",
           "when": ["cause.app"],
           "text": "Im Ereignisprotokoll des WEM-Agenten nachsehen, ob der CPU-Spitzenschutz von Citrix Workspace Environment Management im Zeitraum eingegriffen hat",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > WEM Agent Service, Ereignisse 7001 und 7002",
@@ -239,6 +250,7 @@
           "sign": "Eintrag in den Versionshinweisen zu hoher CPU-Last dieser Komponente; bei einem Prozess des WEM-Agenten kurz nach Anmeldung oder Wiederverbindung eines Benutzers: der Agent wendet dann die WEM-Aktionen für diese Sitzung an"
         },
         {
+          "id": "cpu.citrix-komponente",
           "when": ["cause.app", "role.Citrix"],
           "text": "{app} gehört zu den Citrix-Komponenten des Servers (VDA oder Workspace Environment Management): prüfen, ob in Citrix Director die Leistungsansicht einer Sitzung dieses Servers geöffnet war; die Praxisquelle Manuel Winkel (2026) berichtet, dass die Prozessorlast auf dem VDA deutlich steigt, solange die Ansicht geöffnet bleibt, und sinkt, wenn sie geschlossen wird",
           "where": "Rückfrage bei den Benutzern von Citrix Director: Uhrzeit, zu der die Ansicht „Session Performance“ geöffnet war; Programme und Features auf dem Server: Version des VDA; Versionshinweise von Citrix zu CVAD 2507 LTSR CU1: ob der Fehler mit der Kennung CVADHELP-29162 dort als behoben geführt ist",
@@ -246,6 +258,7 @@
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – When Citrix Director Itself Becomes a Performance Problem"
         },
         {
+          "id": "cpu.grafikprozess-vda-ctxgfx",
           "when": ["cause.app", "role.Citrix"],
           "text": "Wenn {app} der Grafikprozess des VDA ist (ctxgfx.exe): in den Citrix-Richtlinien der Bereitstellungsgruppe prüfen, ob Grafikeinstellungen über die Voreinstellung angehoben sind; die Praxisquelle GO-EUC (2019, ab VDA 7.18) rät, ohne 3D- oder CAD-Anwendungen alles auf der Voreinstellung zu lassen",
           "where": "Citrix Studio, Richtlinien: „Use video codec for compression“, Bildqualität („Visual quality“), Zielbildrate („Target frame rate“)",
@@ -253,6 +266,7 @@
           "source": "GO-EUC (Empfehlung aus der Praxis): Citrix Policy Templates"
         },
         {
+          "id": "cpu.wem-agent-last-bei-anmeldung",
           "when": ["cause.app", "role.Citrix"],
           "text": "Wenn {app} zum WEM-Agenten gehört und die Last auf Anmeldungen oder seine Aktualisierungen fällt: prüfen, wie viele Gruppen im Active Directory Zuweisungen tragen; die Praxisquelle James Kindon (2022) beschreibt einen Kundenfall, in dem Hunderte Zuweisungen an Gruppen den Agenten bei jeder Anmeldung und Aktualisierung lange rechnen ließen",
           "where": "WEM-Konsole: Zuweisungen (Verknüpfungen, Registrierungs- und Dateiaktionen) je Gruppe; Expertenansicht mit dem Zeitraum des Vorfalls: Anteil der Schutzsoftware",
@@ -266,6 +280,7 @@
           "sign": "Druckwarteschlange mit vielen wartenden Aufträgen, Druckfehler im selben Zeitraum oder Anmeldung eines Benutzers kurz vor Beginn des Vorfalls"
         },
         {
+          "id": "cpu.workspace-environment-management",
           "when": ["cause.app"],
           "text": "In Workspace Environment Management prüfen, ob einem Prozess, vor allem {app}, die Priorität „Realtime“ zugewiesen ist; die Praxisquelle Manuel Winkel (2022) rät davon ab, weil das zu Fehlfunktionen des Systems führen kann; Guy Leech (2016) rät ebenfalls davon ab, weil ein rechenintensiver Prozess mit dieser Priorität schweren Ressourcenmangel auslösen kann",
           "where": "WEM-Konsole, Konfigurationssatz dieser Server: System Optimization, CPU Management, Prozessprioritäten",
@@ -273,6 +288,7 @@
           "source": "Manuel Winkel (Empfehlung aus der Praxis): WEM Administration Console – Part 2 (System Optimization, Policies & Profiles and Security)"
         },
         {
+          "id": "cpu.sitzung-zeitraum-getrennt",
           "when": ["cause.app"],
           "text": "Prüfen, ob die Sitzung von {user} im Zeitraum getrennt war: Prozesse einer getrennten Sitzung laufen weiter; die Praxisquelle Guy Leech (2016) fand auf einem Druckserver Prozesse getrennter Sitzungen als größte Verbraucher; trifft es zu, den Benutzer fragen und die Sitzung abmelden lassen",
           "where": "Task-Manager auf dem Server, Registerkarte „Benutzer“: Status „Getrennt“; Citrix Director: Sitzungen des Servers; Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste: ob ein Zeitlimit für getrennte Sitzungen gilt",
@@ -298,6 +314,7 @@
           "sign": "Echtzeitprüfung ohne die Ausschlüsse, die die Hersteller viel genutzter Anwendungen nennen"
         },
         {
+          "id": "cpu.ausschluesse-schutzsoftware",
           "when": ["cause.security"],
           "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Prozesse mit vollem Pfad; Microsoft führt Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
@@ -329,6 +346,7 @@
           "sign": "Anmeldewelle oder Start derselben Anwendung in vielen Sitzungen kurz vor Beginn des Vorfalls"
         },
         {
+          "id": "cpu.vcpu-zahl-empfehlung",
           "when": ["cause.none"],
           "text": "Zahl der Prozessoren der virtuellen Maschine mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: 8 vCPU für einen Windows Server mit mehreren Sitzungen",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“: logische Prozessoren; vCenter: Einstellungen der virtuellen Maschine",
@@ -336,6 +354,7 @@
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Virtual Delivery Agent (VDA) 2411"
         },
         {
+          "id": "cpu.energiesparplan",
           "when": ["cause.none"],
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
@@ -343,6 +362,7 @@
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
+          "id": "cpu.mehr-sitzungen-als-andere",
           "when": ["cause.none"],
           "text": "Trägt der Server deutlich mehr Sitzungen als die anderen Server derselben Bereitstellungsgruppe, während diese kaum Last haben: Version des VDA und die Namensauflösung des Servers prüfen; die Praxisquelle Manuel Winkel (2026) beschreibt aus einem einzelnen Kundenfall einen Fehler des VDA, bei dem Server ihre Last unvollständig melden und Citrix neue Sitzungen deshalb auf denselben Server schickt",
           "where": "Citrix Director oder Studio: Sitzungen je Server, Version des VDA; auf dem Server: nslookup mit dem eigenen vollständigen Namen (FQDN); Versionshinweise von Citrix zu CVAD 2507 LTSR CU2: ob der Fehler mit der Kennung CVADHELP-28688 dort als behoben geführt ist",
@@ -396,6 +416,7 @@
           "sign": "Wert über dem Soll im Zeitraum des Vorfalls"
         },
         {
+          "id": "cpu.vmware-team-rechenzeit",
           "when": ["class.host"],
           "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
           "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
@@ -403,6 +424,7 @@
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
+          "id": "cpu.anwendung-nur-kern-nutzt",
           "when": ["class.singlecore"],
           "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
@@ -422,66 +444,77 @@
           "precondition": "die Tätigkeit planbar ist (Auswertung, Export, geplanter Lauf eines Dienstes) und regelmäßig andere Sitzungen bremst"
         },
         {
+          "id": "cpu.cpu-spitzenschutz-einschalten",
           "when": ["cause.app"],
           "text": "CPU-Spitzenschutz von Citrix Workspace Environment Management einschalten oder seine Messzeit anpassen („CPU Spikes Protection“, in der WEM-Konsole); er senkt die Priorität eines Prozesses, der den Prozessor über die Messzeit stark belegt, und ist laut Citrix nicht dafür gedacht, die Gesamtlast zu senken; nach James Kindon (2023) die Grenze von WEM selbst bestimmen lassen („Auto Prevent CPU Spikes“) statt eines festen Werts je Größe der virtuellen Maschine",
           "precondition": "einzelne Anwendungen wiederholt die anderen Sitzungen bremsen",
           "source": "Citrix: CPU Management (WEM current release)"
         },
         {
+          "id": "cpu.erweiterungen-edge-abschalten",
           "when": ["cause.app", "app.edge"],
           "text": "Erweiterungen von Microsoft Edge abschalten und einzeln wieder einschalten, bis die verursachende gefunden ist (Einstellung je Benutzer)",
           "precondition": "der Browser-Task-Manager eine Erweiterung als Verbraucher zeigt oder die Last ohne Erweiterungen ausbleibt",
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "cpu.schlafende-tabs-edge",
           "when": ["cause.app", "app.edge"],
           "text": "Schlafende Tabs in Microsoft Edge einschalten (Richtlinie SleepingTabsEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "viele Tabs im Hintergrund offen sind und schlafende Tabs abgeschaltet sind",
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "cpu.edge-weiterlaufen-erweiterungen",
           "when": ["cause.app", "app.edge"],
           "text": "Weiterlaufen von Erweiterungen und Apps im Hintergrund nach dem Schließen von Microsoft Edge abschalten (Richtlinie BackgroundModeEnabled, sonst Einstellung je Benutzer; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "Microsoft Edge nach dem Schließen aller Fenster weiter Rechenzeit verbraucht",
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "cpu.edge-browser-content-redirection",
           "when": ["cause.app", "app.edge"],
           "text": "Browser Content Redirection von Citrix für die betroffenen Seiten prüfen; im Modus „client fetch client render“ nimmt sie dem Server laut Citrix Netz-, CPU- und Speicherlast ab (Citrix-Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Last von einzelnen Seiten mit Video oder Webkonferenz kommt und die Endgeräte die Umleitung unterstützen",
           "source": "Citrix: Browser content redirection (CVAD 2402 LTSR)"
         },
         {
+          "id": "cpu.webview2-gezielte-scan",
           "when": ["cause.app", "app.webview2", "companion.security"],
           "text": "Gezielte Scan-Ausschlüsse für die Programmdateien der WebView2-Runtime und ihren Benutzerdatenordner prüfen; Microsoft rät von pauschalen Ausschlüssen ab (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "Anwendungen mit WebView2 beim Start auffällig lange brauchen und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
+          "id": "cpu.office-add-ins-entfernen",
           "when": ["cause.app", "app.office"],
           "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
           "precondition": "die Störung ohne Add-ins ausbleibt und die Benutzer nach Rücksprache auf die Add-ins verzichten können",
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "cpu.outlook-add-ins-entfernen",
           "when": ["cause.app", "app.outlook"],
           "text": "Add-ins von {app}, die nicht gebraucht werden, entfernen und die übrigen aktuell halten (maschinenweit installierte Add-ins bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen; vom Benutzer installierte sind eine Einstellung je Benutzer)",
           "precondition": "die Störung ohne Add-ins ausbleibt und die Benutzer nach Rücksprache auf die Add-ins verzichten können",
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "cpu.rueckfall-teams-optimierte",
           "when": ["cause.app", "app.teams"],
           "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
+          "id": "cpu.teams-bildrate-vom-kodierten",
           "when": ["cause.app", "app.teams"],
           "text": "Bildrate der vom Server kodierten Bildschirmfreigabe begrenzen (Registrierungswert MaxFPS unter HKLM\\Software\\Microsoft\\Teams\\VMSS zwischen 5 und 10; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "geteilte Bildschirme den Prozessor wiederholt belasten",
           "source": "Microsoft: New VDI solution for Teams"
         },
         {
+          "id": "cpu.zuweisungen-wem-einzelne",
           "when": ["cause.app", "role.Citrix"],
           "text": "Zuweisungen von WEM an einzelne Gruppen verringern (in der WEM-Konsole), wie die Praxisquelle James Kindon (2022) es in einem Kundenfall tat; Verknüpfungen veröffentlichter Anwendungen der Workspace-App überlassen, doppelte Einträge in Gruppenrichtlinien und WEM streichen, Dateikopien in Gruppenrichtlinien für den Computer verlegen (eine Richtlinie wirkt auch auf nicht persistente Server) und den WEM-Agenten aktuell halten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{app} ein Prozess des WEM-Agenten ist und sehr viele Zuweisungen an Gruppen bestehen",
@@ -493,6 +526,7 @@
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
+          "id": "cpu.signaturen-schutzsoftware-master",
           "when": ["event.defender"],
           "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Citrix rät in seinem Leitfaden zu Schutzsoftware, das Master-Image regelmäßig mit den neuesten Signaturen zu aktualisieren, und nennt keinen Abstand; die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
@@ -504,18 +538,21 @@
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
+          "id": "cpu.ausschluesse-io-erzeuger",
           "when": ["companion.security"],
           "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
+          "id": "cpu.sitzungen-gleichmaessiger",
           "when": ["cause.none"],
           "text": "Sitzungen gleichmäßiger auf die Server verteilen oder dem Server mehr Prozessoren (vCPU) geben; laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; Carl Stalhood gibt der virtuellen Maschine 8 vCPU; beide Angaben sind Ausgangspunkte aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum VMware-Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Engpass ohne einzelnen Verursacher an mehreren Tagen auftritt",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
+          "id": "cpu.energiesparplan-hoechstleistung",
           "when": ["cause.none"],
           "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
@@ -562,6 +599,7 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
+          "id": "memory.edge-browser-task-manager",
           "when": ["cause.app", "app.edge"],
           "text": "Im Browser-Task-Manager von Microsoft Edge nachsehen, welcher Tab oder welche Erweiterung den Arbeitsspeicher belegt",
           "where": "In der Sitzung des Benutzers: Browser-Task-Manager von Microsoft Edge, nach „Arbeitsspeicher“ sortiert",
@@ -569,6 +607,7 @@
           "source": "Microsoft: Fix high CPU or memory usage in Microsoft Edge"
         },
         {
+          "id": "memory.arbeitsspeicher-angabe-edge",
           "when": ["cause.app", "app.edge"],
           "text": "Arbeitsspeicher je Benutzer mit der Angabe von Microsoft für Edge auf VDI vergleichen: mindestens 1 GB je Benutzer, mehr für große Webanwendungen und Erweiterungen",
           "where": "Expertenansicht, Reiter „Soll-Ist“ und „Sitzungen“: Arbeitsspeicher des Servers und Zahl der Sitzungen",
@@ -576,6 +615,7 @@
           "source": "Microsoft: Microsoft Edge for Virtual desktop infrastructure (VDI)"
         },
         {
+          "id": "memory.startup-boost-edge-eingeschaltet",
           "when": ["cause.app", "app.edge"],
           "text": "Prüfen, ob der Startup-Boost von Microsoft Edge eingeschaltet ist (Richtlinie StartupBoostEnabled): Edge startet dann bei jeder Anmeldung Prozesse im Hintergrund, auch für Benutzer, die Edge nie öffnen; die Praxisquelle Aaron Parker (2023) nennt das einen Tausch von Prozessor und Arbeitsspeicher gegen schnellere Starts von Edge und rät nicht zum Abschalten; ob der schnellere Start den Arbeitsspeicher je Sitzung wert ist, entscheidet der Betreiber (StartupBoostEnabled = 0 schaltet ab; eine Richtlinie wirkt auch auf nicht persistente Server)",
           "where": "Gruppenrichtlinie oder Workspace Environment Management: Richtlinien für Microsoft Edge",
@@ -583,6 +623,7 @@
           "source": "Aaron Parker (Empfehlung aus der Praxis): Support Frontline Workers on Shared Virtual Desktops"
         },
         {
+          "id": "memory.webview2-nutzende-anwendung",
           "when": ["cause.app", "app.webview2"],
           "text": "Feststellen, welche Anwendung {app} nutzt (zum Beispiel Teams oder Outlook): laut Microsoft liegt zusätzlicher Verbrauch von Prozessor oder Arbeitsspeicher in den meisten Fällen daran, wie die Anwendung WebView2 nutzt, nicht an WebView2 selbst; ist es eine solche Anwendung, deren Betreuung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“ und „Anwendungen“: Anwendungen, die in der Sitzung von {user} liefen",
@@ -590,6 +631,7 @@
           "source": "Microsoft: WebView2 end-user FAQ"
         },
         {
+          "id": "memory.office-add-ins-pruefen",
           "when": ["cause.app", "app.office"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
@@ -597,6 +639,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "memory.outlook-add-ins-pruefen",
           "when": ["cause.app", "app.outlook"],
           "text": "Add-ins von {app} prüfen: laut Microsoft gehören Add-ins zu den häufigsten Ursachen schlechter Leistung von Office-Anwendungen",
           "where": "In der Sitzung des Benutzers: Liste der Add-ins der Anwendung; zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten",
@@ -604,6 +647,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "memory.teams-sitzung-medienoptimierung",
           "when": ["cause.app", "app.teams"],
           "text": "Prüfen, ob Teams in der Sitzung von {user} mit Medienoptimierung lief: scheitert die neue VDI-Lösung, fällt Teams laut Citrix auf die gewöhnliche Audio- und Videoumleitung zurück, und die Medien werden auf dem Server verarbeitet",
           "where": "Teams in der Sitzung des Benutzers: Angabe zum Stand der VDI-Optimierung in den Informationen zur Anwendung; nach Manuel Winkel (2026) nennt die Datei vdi_debug.txt im Diagnosearchiv von Teams (Strg+Alt+Umschalt+1) den Fehlercode der Optimierung; 2003/16026 steht für gesperrte Kanäle von Teams in der Liste der erlaubten virtuellen Kanäle von Citrix",
@@ -611,6 +655,7 @@
           "source": "Citrix: Optimization for Microsoft Teams (New)"
         },
         {
+          "id": "memory.teams-grossveranstaltung-town-hall",
           "when": ["cause.app", "app.teams"],
           "text": "Klären, ob der Benutzer an einer Großveranstaltung (Town Hall, Live-Event) teilnahm: laut Microsoft sind Teilnehmer dort nicht optimiert, die Wiedergabe läuft auf dem Server und verbraucht viel Prozessor, Arbeitsspeicher und Bandbreite",
           "where": "Rückfrage beim Benutzer; Kalender der Veranstaltungen",
@@ -618,6 +663,7 @@
           "source": "Microsoft: New VDI solution for Teams"
         },
         {
+          "id": "memory.teams-groesse-einordnen",
           "when": ["cause.app", "app.teams"],
           "text": "Größe des Servers für Teams einordnen: Citrix maß mit Teams 20 % mehr Arbeitsspeicherbedarf und deutlich weniger Benutzer je Server als ohne Teams (Messung mit dem klassischen Teams)",
           "where": "Expertenansicht, Reiter „Sitzungen“: Zahl der Sitzungen mit Teams; Reiter „Soll-Ist“: RAM-Auslastung",
@@ -625,6 +671,7 @@
           "source": "Citrix: Optimization for Microsoft Teams (Classic)"
         },
         {
+          "id": "memory.wem-speicheroptimierung-protokoll",
           "when": ["cause.app"],
           "text": "Im Ereignisprotokoll des WEM-Agenten nachsehen, ob die Speicheroptimierung von Citrix Workspace Environment Management im Zeitraum Arbeitsspeicher untätiger Prozesse freigegeben hat",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > WEM Agent Service, Ereignisse 8001 bis 8003",
@@ -656,6 +703,7 @@
           "sign": "Sitzungszahl deutlich über der der anderen Server; für den Fehler des VDA: VDA älter als CVAD 2507 LTSR CU2 (dort ist er nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst"
         },
         {
+          "id": "memory.arbeitsspeicher-vm-empfehlung",
           "when": ["cause.none"],
           "text": "Arbeitsspeicher der virtuellen Maschine mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: 24 bis 48 GB für einen Windows Server mit mehreren Sitzungen",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“: Arbeitsspeicher; vCenter: Einstellungen der virtuellen Maschine",
@@ -712,6 +760,7 @@
           "sign": "Arbeitsspeicher-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder Dauerzustand des Arbeitsspeichers im Lagebild"
         },
         {
+          "id": "memory.mcs-io-cache",
           "when": ["cause.none"],
           "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): die Größe des Caches vom Arbeitsspeicher des Servers abziehen; laut Citrix ist der Cache Teil des Arbeitsspeichers der Maschine; nach der Praxisquelle GO-EUC (Test von 2020 mit Windows 10 und einer einzelnen Maschine) kann Windows diesen Teil nicht nutzen; reicht der Rest für die Sitzungen nicht, mit der Citrix-Betreuung den Arbeitsspeicher im Maschinenkatalog erhöhen, wie Citrix es für den Cache im Arbeitsspeicher nahelegt",
           "where": "Citrix Studio, Maschinenkatalog: Arbeitsspeicher und Größe des Caches",
@@ -731,24 +780,28 @@
           "precondition": "der Speicherbedarf von {app} bei mehreren Benutzern oder an mehreren Tagen so hoch ist"
         },
         {
+          "id": "memory.edge-automatisches-verwerfen",
           "when": ["cause.app", "app.edge"],
           "text": "Automatisches Verwerfen schlafender Tabs in Microsoft Edge nicht abschalten (Richtlinie AutoDiscardSleepingTabsEnabled; eine Richtlinie wirkt auch auf nicht persistente Server); es senkt laut Microsoft den Speicherbedarf, indem untätige Tabs im Hintergrund verworfen werden; laut Microsoft verwirft Edge einen Tab erst, wenn er drei Browsersitzungen in Folge im Hintergrund lag; eine neue Browsersitzung beginnt laut Microsoft, wenn der Browser mehr als 12 Stunden nach Beginn der vorigen benutzt wird (mehr als 18 Stunden auf Geräten mit 16 GB Arbeitsspeicher oder mehr)",
           "precondition": "die Richtlinie das automatische Verwerfen abschaltet (ab Microsoft Edge 120)",
           "source": "Microsoft: Configure auto discard sleeping tabs (AutoDiscardSleepingTabsEnabled)"
         },
         {
+          "id": "memory.speichergrenze-instanz-edge",
           "when": ["cause.app", "app.edge"],
           "text": "Speichergrenze je Instanz von Microsoft Edge setzen (Richtlinie TotalMemoryLimitMb; eine Richtlinie wirkt auch auf nicht persistente Server); Edge verwirft dann Tabs, sobald die Grenze überschritten ist, laut Microsoft ohne Garantie, dass sie immer eingehalten wird",
           "precondition": "Microsoft Edge wiederholt der größte Verbraucher von Arbeitsspeicher ist (ab Microsoft Edge 80)",
           "source": "Microsoft: Set limit on megabytes of memory a single Microsoft Edge instance can use (TotalMemoryLimitMb)"
         },
         {
+          "id": "memory.rueckfall-teams-optimierte",
           "when": ["cause.app", "app.teams"],
           "text": "Rückfall von Teams in die nicht optimierte Verarbeitung abschalten oder auf Audio begrenzen (Registrierungswert DisableFallback unter HKLM\\SOFTWARE\\Microsoft\\Teams, 1 schaltet den Rückfall ab, 2 lässt nur Audio zu; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "nicht optimierte Sitzungen den Server wiederholt belasten und die Benutzer dort auf Video oder auf Audio und Video in Teams verzichten können (ab Teams 24257)",
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
+          "id": "memory.leerlaufgrenze-speicheroptimierung",
           "when": ["cause.app"],
           "text": "Leerlaufgrenze der Speicheroptimierung von Citrix Workspace Environment Management prüfen (in der WEM-Konsole); Citrix empfiehlt höchstens 5 %; bei einer höheren Grenze kann laut Citrix ein Prozess, der gerade benutzt wird, als untätig gelten und seinen Arbeitsspeicher verlieren; die Praxis ist sich nicht einig; James Kindon (2023) lässt die Speicheroptimierung fast immer ausgeschaltet, weil sie Arbeitsspeicher untätiger Anwendungen auf das Laufwerk auslagert; Manuel Winkel (2022, Stand WEM 2206) nutzt sie mit einer Leerlaufgrenze von 3 %; nach Guy Leech (2018) nach einer Änderung prüfen, ob Windows mehr Seiten vom Datenträger liest",
           "precondition": "die Speicheroptimierung von WEM eingeschaltet ist und Anwendungen nach einer Pause des Benutzers auffällig träge reagieren",
@@ -760,17 +813,20 @@
           "precondition": "der Arbeitsspeicher ohne einzelnen Verursacher regelmäßig knapp wird"
         },
         {
+          "id": "memory.arbeitsspeicher-vm-groesse",
           "when": ["cause.none"],
           "text": "Arbeitsspeicher der virtuellen Maschine mindestens so groß wählen wie den zugesagten Speicher (Committed Bytes), gemessen im Server selbst; so nennt es die Praxisquelle Carl Stalhood",
           "precondition": "der zugesagte Speicher regelmäßig über dem Arbeitsspeicher der virtuellen Maschine liegt",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
+          "id": "memory.zeitlimit-getrennte-untaetige",
           "text": "Zeitlimit für getrennte und für untätige Sitzungen per Richtlinie setzen (Citrix-Richtlinie oder Gruppenrichtlinie der Remotedesktopdienste; die Praxisquelle Carl Stalhood nennt als Größenordnung 3 Stunden; eine Richtlinie wirkt auch auf nicht persistente Server); nach James Rankin (2023) und James Kindon (2021) nicht am Benutzerobjekt im Active Directory",
           "precondition": "getrennte Sitzungen über Stunden Arbeitsspeicher belegen und die Benutzer ihre Arbeit dort nicht fortsetzen müssen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Group Policy Computer Settings for VDAs"
         },
         {
+          "id": "memory.optimierung-getrennte-sitzungen",
           "text": "Optimierung für getrennte Sitzungen von Citrix Workspace Environment Management einschalten (in der WEM-Konsole); Citrix beschreibt, dass WEM dann nur bei getrennten Sitzungen eingreift, ihre Prozesse herabstuft und ihren Arbeitsspeicher begrenzt, bis der Benutzer sich wieder verbindet; die Praxisquelle James Kindon (2023) nennt die Funktion nützlich und nutzt sie; sie ergänzt das Zeitlimit für getrennte Sitzungen und ersetzt es nicht",
           "precondition": "getrennte Sitzungen Arbeitsspeicher belegen und die Benutzer ihre Arbeit dort fortsetzen müssen (Einstellung „Multi-session optimization“, ab WEM 2112)",
           "source": "James Kindon (Empfehlung aus der Praxis): WEM Advanced Guidance 2023"
@@ -818,6 +874,7 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
+          "id": "disk.outlook-cache-modus",
           "when": ["cause.app", "app.outlook"],
           "text": "Einordnen, ob die Last vom Cache-Modus von Outlook kommt; laut Microsoft braucht der Cache-Modus auf Servern mit mehreren Benutzern zusätzlichen Speicherplatz und zusätzliche Datenträger-I/O",
           "where": "Rückfrage beim Benutzer; Outlook: Kontoeinstellungen des Postfachs (Exchange-Cache-Modus)",
@@ -825,6 +882,7 @@
           "source": "Microsoft: Plan and configure Cached Exchange Mode in Outlook 2016 for Windows"
         },
         {
+          "id": "disk.bedarf-teams-datentraegerzugriffen",
           "when": ["cause.app", "app.teams"],
           "text": "Bedarf von Teams an Datenträgerzugriffen einordnen: Citrix maß mit Teams etwa 50 % mehr Schreib- und 100 % mehr Lesezugriffe als ohne Teams und nennt auf langsamem Speicher einen erheblichen Einfluss (Messung mit dem klassischen Teams)",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Sitzungen“: Zahl der Sitzungen mit Teams; Diagramm „Datenträger-Antwortzeit“",
@@ -856,6 +914,7 @@
           "sign": "Echtzeitprüfung ohne Scan-Ausschluss für Ordner mit vielen oder großen Dateien, die Anwendungen ständig lesen und schreiben"
         },
         {
+          "id": "disk.ausschluesse-schutzsoftware",
           "when": ["cause.security"],
           "text": "Ausschlüsse der Schutzsoftware mit der Empfehlung der Praxisquelle Carl Stalhood (2024) vergleichen: Auslagerungsdatei und Ereignisprotokolle vom Scan ausgenommen, mit WEM-Agent auch dessen Prozesse mit vollem Pfad; Microsoft führt Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; nach John Billekens (Sammlung, geprüft 2026) den Ordner prüfen, in dem der WEM-Agent im Master-Image wirklich installiert ist (auf Servern mit 64 Bit unter „Program Files (x86)“)",
@@ -875,6 +934,7 @@
           "sign": "Anmeldewelle oder Start derselben Anwendung in vielen Sitzungen kurz vor Beginn des Vorfalls"
         },
         {
+          "id": "disk.anmeldung-skript-benutzerprofil",
           "when": ["cause.none"],
           "text": "Prüfen, ob bei der Anmeldung ein Skript das Benutzerprofil aufräumt; die Praxisquelle Aaron Parker (ohne Datum, für FSLogix beschrieben) warnt, dass ein Aufräumen bei der Anmeldung bei vielen gleichzeitigen Anmeldungen Laufwerk und Prozessor belastet",
           "where": "Anmeldeskript in der Gruppenrichtlinie, Aktionen von Workspace Environment Management bei der Anmeldung, Aufgabenplanung im Master-Image (Aufgaben mit Auslöser „Bei Anmeldung“)",
@@ -927,6 +987,7 @@
           "sign": "Laufwerk-Vorfall zur gleichen Uhrzeit an mehreren Tagen oder mehrmals mit demselben Verursacher"
         },
         {
+          "id": "disk.mcs-io-cache",
           "when": ["cause.none"],
           "text": "Wenn der Maschinenkatalog MCS I/O nutzt (Cache im Arbeitsspeicher mit Überlauf auf einen Datenträger): Größe der Datei mcsdif.vhdx und freien Platz auf dem Cache-Datenträger des Servers prüfen; nach der Praxisquelle Thomas Kötzing (2024) wird die Datei nicht wieder kleiner; sie zeigt also den höchsten Stand seit dem Start und nicht die aktuelle Belegung",
           "where": "Cache-Datenträger des Servers: Datei mcsdif.vhdx und freier Platz; Leistungsüberwachung: Indikatoren „Citrix MCS“; Citrix Studio: Maschinenkatalog",
@@ -946,6 +1007,7 @@
           "precondition": "der Scan regelmäßig in die Arbeitszeit fällt und die Vorgaben zur Sicherheit das zulassen"
         },
         {
+          "id": "disk.signaturen-schutzsoftware-master",
           "when": ["event.defender"],
           "text": "Signaturen der Schutzsoftware im Master-Image aktuell halten, damit jeder Server nach seinem Start nur eine kleine Aktualisierung lädt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Citrix rät in seinem Leitfaden zu Schutzsoftware, das Master-Image regelmäßig mit den neuesten Signaturen zu aktualisieren, und nennt keinen Abstand; die Praxisquelle John Billekens (Sammlung, abgerufen 2026) nennt mindestens einmal im Monat",
           "precondition": "Aktualisierungen der Signaturen von Microsoft Defender wiederholt mit Vorfällen kurz nach dem Start von Servern zusammenfallen",
@@ -957,12 +1019,14 @@
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
+          "id": "disk.ausschluesse-io-erzeuger",
           "when": ["companion.security"],
           "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
+          "id": "disk.aufraeumen-benutzerprofils",
           "when": ["cause.none"],
           "text": "Aufräumen des Benutzerprofils von der Anmeldung auf die Abmeldung oder in eine zeitlich gestaffelte Aufgabe verlegen, wie die Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) es vorschlägt (Skript in der Gruppenrichtlinie oder in Workspace Environment Management, eine Richtlinie wirkt auch auf nicht persistente Server; eine geplante Aufgabe bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Aufräumskript bei der Anmeldung läuft und die Last mit Anmeldewellen zusammenfällt",
@@ -1009,6 +1073,7 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
+          "id": "share.outlook-pst-ost-auf-freigabe",
           "when": ["cause.app", "app.outlook"],
           "text": "Prüfen, ob PST- oder OST-Dateien von Outlook direkt auf einer Freigabe liegen; Microsoft unterstützt das auf Servern mit mehreren Sitzungen nur mit schneller Verbindung und einem Outlook je Datei und hilft bei langsamer Leistung durch solche Dateien nicht",
           "where": "In der Sitzung des Benutzers: Outlook, Kontoeinstellungen > Datendateien",
@@ -1028,6 +1093,7 @@
           "sign": "Antwortzeit der Gegenstelle im selben Zeitraum über dem Soll wie die der Freigabe"
         },
         {
+          "id": "share.gegenstelle-dateiserver-endpoint",
           "when": ["endpoint.slow"],
           "text": "Wenn die Gegenstelle ein Dateiserver ist: prüfen, ob {endpoint} das Basisverzeichnis von Benutzern trägt (Eintrag am Benutzerobjekt im Active Directory oder Richtlinie der Remotedesktopdienste); die Praxisquelle Trentent Tye (2016, Labor mit Windows Server 2008 R2) zeigte, dass die Anmeldung dann auf die Zeitüberschreitung im Netz wartet, wenn der Name aufgelöst wird, der Dateiserver aber nicht antwortet",
           "where": "Active Directory, Benutzerobjekt: Registerkarte „Profil“, Basisordner; Gruppenrichtlinie der Remotedesktopdienste: Basisverzeichnis",
@@ -1116,18 +1182,21 @@
           "precondition": "regelmäßig große Datenmengen über die Freigabe bewegt werden"
         },
         {
+          "id": "share.active-write-back-profilverwaltung",
           "when": ["cause.app", "role.Profil"],
           "text": "Active write back der Citrix Profilverwaltung auf die Variante beschränken, die nur beim Sperren und Trennen der Sitzung zurückschreibt statt alle fünf Minuten (Richtlinie der Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); Citrix empfiehlt diese Variante als bewährtes Vorgehen; ist nichts eingestellt, legt die Profilverwaltung die Einstellung laut Citrix selbst fest; die Praxisquellen Carl Stalhood und James Kindon (2025) nennen die Funktion eine Last für den Dateiserver; Carl Stalhood rät, sie ganz abzuschalten, wenn Benutzer nicht auf mehreren Servern zugleich angemeldet sind und Änderungen am Profil nicht schon während der Sitzung gesichert werden müssen",
           "precondition": "Active write back eingeschaltet ist, ohne die Richtlinie „Active write back on session lock and disconnection“, und der Dateiserver mit dem Profilspeicher wiederholt langsam antwortet",
           "source": "Citrix: Configure active write-back"
         },
         {
+          "id": "share.appdata-startmenue-ordnerumleitung",
           "when": ["cause.app"],
           "text": "AppData und Startmenü aus der Ordnerumleitung nehmen und im Profilcontainer lassen, wie die Praxisquelle James Kindon (2023) rät (Einstellung in Workspace Environment Management oder per Gruppenrichtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); was umgeleitet bleiben darf, sieht die Praxis verschieden; James Kindon nennt Desktop und Dokumente; James Rankin (2018) nennt Dokumente, Bilder und ähnliche Datenordner, lässt den Desktop aber im Profilcontainer",
           "precondition": "AppData oder das Startmenü der Benutzer auf die Freigabe umgeleitet ist",
           "source": "James Kindon (Empfehlung aus der Praxis): Stop Redirecting AppData. It's no longer the 80's"
         },
         {
+          "id": "share.laufwerkszuordnung-dort-loeschen",
           "when": ["endpoint.slow"],
           "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
@@ -1144,12 +1213,14 @@
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
+          "id": "share.ausschluesse-io-erzeuger",
           "when": ["companion.security"],
           "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
+          "id": "share.drosselung-smb-clients",
           "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen; die Praxisquelle James Rankin (2021) maß im Labor mit FSLogix und einem Dateiserver 12 statt 17 Sekunden Anmeldung; dabei hatte er auch den Dateiserver geändert; welchen Anteil der Wert daran hatte, sagt er nicht",
           "precondition": "der Dateiserver wiederholt langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
           "source": "Microsoft: Optimizing Windows configuration for VDI desktops"
@@ -1168,6 +1239,7 @@
           "text": "Betreuung von Dateiserver und Netz: mit Uhrzeit, Freigabe und gemessener Antwortzeit"
         },
         {
+          "id": "share.betreuung-speichersystems",
           "text": "Betreuung des Speichersystems unter dem Dateiserver, wenn auf dem Server keine Ursache zu finden ist: mit der Frage, ob dort ein Sicherheits- oder Überwachungsprodukt eingeführt oder geändert wurde; die Praxisquelle Thomas Kötzing (2025) berichtet von einem Fall, in dem ein neuer Virenschutz auf dem Speichersystem viele Sitzungen störte",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix: Wir brauchen einen Infrastruktur-Monitor – für Speichersysteme Plus!"
         }
@@ -1204,6 +1276,7 @@
           "sign": "Anteil im Vorfall weit über dem sonstigen Wert (Ausreißer) oder etwa gleich hoch (gewohnter Großverbraucher)"
         },
         {
+          "id": "profile.outlook-ost-groesse",
           "when": ["cause.app", "app.outlook"],
           "text": "Größe der OST-Datei von Outlook und Zahl der Elemente je Ordner prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden; ist die Datei größer als 10 GB, die lokalen Postfachdaten verkleinern (archivieren, Aufbewahrungsrichtlinien, kürzerer Zeitraum für den Cache-Modus; Einstellung je Benutzer oder per Richtlinie, eine Richtlinie wirkt auch auf nicht persistente Server); nach Aaron Parker (2019, für FSLogix-Container beschrieben) mit dem kleinsten brauchbaren Zeitraum beginnen, üblich sind 3 Monate, und ihn nur für Gruppen verlängern, die mehr brauchen",
           "where": "Profil des Benutzers, dem der Profilcontainer gehört: Outlook-Datendatei (OST); Outlook: Ordnergrößen",
@@ -1211,6 +1284,7 @@
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
         },
         {
+          "id": "profile.teams-ausschlussliste",
           "when": ["cause.app", "app.teams"],
           "text": "Ausschlussliste des Profilcontainers auf Ordner von Teams prüfen: ist die lokale Zwischenspeicherung des Profilcontainers abgeschaltet, sollen laut Citrix keine Ordner unter AppData\\Local\\Packages\\MSTeams_8wekyb3d8bbwe ausgeschlossen sein",
           "where": "Richtlinien der Citrix Profilverwaltung: Einstellungen des Profilcontainers, Ausschlussliste und lokale Zwischenspeicherung",
@@ -1218,6 +1292,7 @@
           "source": "Citrix: Enable roaming for the new Microsoft Teams (Profile Management)"
         },
         {
+          "id": "profile.edge-richtlinien-benutzerdaten",
           "when": ["cause.app", "app.edge"],
           "text": "Prüfen, ob Richtlinien die Benutzerdaten oder den Cache von Microsoft Edge auf eine Freigabe legen (UserDataDir, DiskCacheDir): Umleiten oder Roamen dieser Daten ist laut Microsoft nicht unterstützt und kann Zuverlässigkeit und Leistung beeinträchtigen",
           "where": "Gruppenrichtlinien für Microsoft Edge: UserDataDir und DiskCacheDir",
@@ -1225,6 +1300,7 @@
           "source": "Microsoft: Microsoft Edge for Virtual desktop infrastructure (VDI)"
         },
         {
+          "id": "profile.edge-cache-im-container",
           "when": ["cause.app", "app.edge"],
           "text": "Prüfen, ob der Cache-Ordner von Microsoft Edge vom Profilcontainer ausgenommen ist (AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Cache); die Praxisquelle Aaron Parker (Liste ohne Datum) führt ihn in ihrer Liste der Ausschlüsse für Profilcontainer; die Liste ist für FSLogix geschrieben; übertragbar sind die Pfade",
           "where": "Richtlinie der Citrix Profilverwaltung: Ausschlussliste der Ordner für den Profilcontainer",
@@ -1268,6 +1344,7 @@
           "sign": "Anmeldung oder Start mehrerer Anwendungen kurz vor Beginn des Vorfalls"
         },
         {
+          "id": "profile.ausschlusslisten-profilverwaltung",
           "when": ["cause.none"],
           "text": "Ausschlusslisten der Citrix Profilverwaltung mit der Empfehlung der Praxisquelle Carl Stalhood (2025) vergleichen: Standard-Ausschlussliste für Ordner eingeschaltet, Zwischenspeicher wie INetCache ausgeschlossen",
           "where": "Richtlinien der Citrix Profilverwaltung: Dateisystem, Ausschlusslisten",
@@ -1337,6 +1414,7 @@
           "precondition": "{app} sehr große Datenbestände im betroffenen Profilcontainer hält"
         },
         {
+          "id": "profile.edge-cache-ausnehmen",
           "when": ["cause.app", "app.edge"],
           "text": "Cache-Ordner von Microsoft Edge vom Profilcontainer ausnehmen (Richtlinie der Citrix Profilverwaltung; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) bleiben Daten, die schon im Container liegen, dort, bis sie gelöscht werden oder der Container verkleinert wird",
           "precondition": "der Cache-Ordner von Edge noch nicht ausgenommen ist",
@@ -1353,22 +1431,26 @@
           "precondition": "{security} wiederholt der größte Verbraucher ist und die Verantwortlichen für die Sicherheit zustimmen"
         },
         {
+          "id": "profile.ausschluesse-io-erzeuger",
           "when": ["companion.security"],
           "text": "Ausschlüsse für den größten I/O-Erzeuger so einrichten, wie sein Hersteller sie nennt, also seine Prozesse mit vollem Pfad und Datenordner nur, wo der Hersteller sie nennt (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); den Programmordner der Anwendung nicht ausnehmen, denn Microsoft führt die Programmordner installierter Anwendungen unter den Ordnern, die man bei Microsoft Defender nicht ausnehmen soll",
           "precondition": "{security} wiederholt als Begleiter erscheint, jedes Mal mit demselben größten I/O-Erzeuger, der Hersteller dieser Anwendung Ausschlüsse nennt und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Exclusions to avoid in Microsoft Defender Antivirus and Defender for Endpoint"
         },
         {
+          "id": "profile.einstellungen-profilverwaltung",
           "text": "Einstellungen der Citrix Profilverwaltung für schnelle Anmeldungen prüfen (per Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); die Praxisquelle Carl Stalhood nennt Profil-Streaming mit Streaming für Ordner und beschleunigtem Ordnerspiegeln oder das ganze Profil im Profilcontainer",
           "precondition": "die Verzögerung regelmäßig bei Anmeldungen auftritt",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Profile Management 2411"
         },
         {
+          "id": "profile.verkleinern-profilcontainer",
           "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
           "precondition": "der Profilcontainer des Benutzers viel größer ist als die Daten darin und weiter wächst",
           "source": "James Rankin (Empfehlung aus der Praxis): QuickPost – Citrix UPM VHD compaction feature"
         },
         {
+          "id": "profile.fuer-alle-benutzer-installieren",
           "text": "{app} für alle Benutzer installieren statt im Benutzerprofil (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); nach der Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) liegt eine Anwendung, die sich ins Benutzerprofil installiert, im Profilcontainer jedes Benutzers; die Installation für alle Benutzer folgert diese Anleitung daraus, nicht die Praxisquelle",
           "precondition": "{app} unter AppData installiert ist",
           "source": "Aaron Parker (Empfehlung aus der Praxis): A Practical Guide to FSLogix Containers Capacity Planning and Maintenance"
@@ -1431,6 +1513,7 @@
           "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr; Blockierung durch AppLocker (Ereignis 8004, 8007) im Zeitraum des Vorfalls"
         },
         {
+          "id": "delay.many.director-laufzeit-netz",
           "when": ["unmeasured.ica.latency"],
           "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzungen im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Eingabeverzögerung dieses Vorfalls wurde auf dem Server gemessen; was Benutzer bei Eingaben spüren, enthält dazu die Laufzeit im Netz, die nach der Praxisquelle Benny Tritsch (2024) einen großen Teil ausmachen kann",
           "where": "Citrix Director, Sitzung des Benutzers: Verlauf von ICA Round Trip und Netzwerklatenz",
@@ -1463,30 +1546,35 @@
           "sign": "Verzögerung zur gleichen Uhrzeit an mehreren Tagen (regelmäßiger Lauf, Sicherung, Lastspitze)"
         },
         {
+          "id": "delay.many.energiesparplan",
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
           "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen Carl Stalhood und BIS-F stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
+          "id": "delay.many.explorer-dateidialog-warteten",
           "text": "Wenn die Benutzer im Explorer oder in einem Dateidialog warteten: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle James Rankin (2021, Labor mit Windows 10, Group Policy Preferences, sechs Ziele) maß beim Verbinden etwa 33 Sekunden Zeitüberschreitung je nicht erreichbarer Zuordnung; Thomas Kötzing (2020) nennt für Freigaben, die eine Gruppenrichtlinie verbindet, etwa 30 Sekunden",
           "where": "WEM-Konsole (Aktionen für Laufwerkszuordnungen) oder Gruppenrichtlinie; in einer Sitzung: Explorer, „Dieser PC“, oder der Befehl net use",
           "sign": "Zugeordnetes Laufwerk als getrennt oder nicht verfügbar angezeigt; Warten beim Öffnen des Explorers oder eines Dateidialogs",
           "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations – part #4"
         },
         {
+          "id": "delay.many.anwendungen-beim-start",
           "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen der Benutzer „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle Guy Leech (2016, ein Fall mit XenApp 7.7 und Receiver 4.4) fand das als Ursache einer Wartezeit von 18 bis 20 Sekunden; trifft es zu, die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie; eine Richtlinie wirkt auch auf nicht persistente Server) oder mit der Betreuung von Netz und Proxy eine Erkennung einrichten, die antwortet",
           "where": "In einer Sitzung: Internetoptionen, Verbindungen, LAN-Einstellungen; Betreuung von Netz und Proxy: ob eine automatische Erkennung eingerichtet ist",
           "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         },
         {
+          "id": "delay.many.vmware-host-rechenzeit",
           "text": "Prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzogen hat: die CPU-Bereitschaft (Ready) ist ein Zähler des VMware-Hosts; nach Angabe von VMware zeigt ein anhaltend hoher Wert meist einen Engpass am Host; die Messwerte im Server zeigen das nur zum Teil; die Praxisquelle GO-EUC (2026) wertet dazu auch CPU-Latenz und Co-Stop des VMware-Hosts aus",
           "where": "Expertenansicht, Reiter „Soll-Ist“: Zeile „Entzogene CPU-Zeit je vCPU“; vCenter, Leistungsdiagramm der virtuellen Maschine im Zeitraum des Vorfalls: CPU-Bereitschaft (Ready), CPU-Latenz, Co-Stop",
           "sign": "Anhaltend erhöhte CPU-Bereitschaft im Zeitraum des Vorfalls; die Betreuung von VMware ordnet die Werte ein (die Stufen der Praxisquelle stammen aus einem Labortest von 2026 mit Windows 11 und einer Sitzung je Maschine)",
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
+          "id": "delay.many.vmware-team-rechenzeit",
           "when": ["class.host"],
           "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
           "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
@@ -1494,6 +1582,7 @@
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
+          "id": "delay.many.anwendung-nur-kern-nutzt",
           "when": ["class.singlecore"],
           "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
@@ -1508,17 +1597,20 @@
           "precondition": "die Ursache hinter der Anwendung vermutet wird"
         },
         {
+          "id": "delay.many.rule-enforcement-mode",
           "when": ["event.applocker"],
           "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
           "precondition": "der Modus auf „Overwrite“ steht, Anwendungen blockiert wurden, die vorher liefen, und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Manuel Winkel (Empfehlung aus der Praxis): Finding in the Wild – Citrix WEM – When One User Blocks Other Users' Applications"
         },
         {
+          "id": "delay.many.energiesparplan-hoechstleistung",
           "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         },
         {
+          "id": "delay.many.laufwerkszuordnung-dort-loeschen",
           "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
           "source": "James Rankin (Empfehlung aus der Praxis): (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops"
@@ -1580,6 +1672,7 @@
           "sign": "Scan-Beginn (Ereignis 1000) vor {to} Uhr ohne Scan-Ende (Ereignis 1001 oder 1002) vor {from} Uhr; Blockierung durch AppLocker (Ereignis 8004, 8007) im Zeitraum des Vorfalls"
         },
         {
+          "id": "delay.single.director-laufzeit-netz",
           "when": ["unmeasured.ica.latency"],
           "text": "In Citrix Director die Laufzeit im Netz der betroffenen Sitzung im Zeitraum nachsehen (ICA Round Trip und Netzwerklatenz): die ICA-Netzwerklatenz wurde nicht gemessen; die Eingabeverzögerung dieses Vorfalls wurde auf dem Server gemessen; was Benutzer bei Eingaben spüren, enthält dazu die Laufzeit im Netz, die nach der Praxisquelle Benny Tritsch (2024) einen großen Teil ausmachen kann",
           "where": "Citrix Director, Sitzung des Benutzers: Verlauf von ICA Round Trip und Netzwerklatenz",
@@ -1602,30 +1695,35 @@
           "sign": "Verzögerung, Hänger oder Absturz derselben Anwendung beim selben Benutzer an mehreren Tagen"
         },
         {
+          "id": "delay.single.energiesparplan",
           "text": "Energiesparplan des Servers feststellen",
           "where": "Systemsteuerung > Energieoptionen oder „powercfg /getactivescheme“ in einer Eingabeaufforderung",
           "sign": "Plan „Ausbalanciert“ oder ein Sparplan statt „Höchstleistung“: die Praxisquellen Carl Stalhood und BIS-F stellen für Citrix-Server „Höchstleistung“ ein; Microsoft liefert Windows Server mit „Ausbalanciert“ aus, VMware rät zu „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen",
           "source": "Carl Stalhood (Empfehlung aus der Praxis): Citrix Health Check"
         },
         {
+          "id": "delay.single.anwendung-wartete-laengere",
           "text": "Prüfen, ob die Anwendung, in der der Benutzer wartete, über längere Zeit etwa einen ganzen Prozessor belegte (ihr Anteil an der gesamten CPU entspricht dann 100 % geteilt durch die Zahl der logischen Prozessoren): eine Anwendung, die nur einen Prozessor nutzen kann, ist dann an ihrer Grenze, auch wenn der Server insgesamt wenig Last hat; die Praxisquelle Trentent Tye (2015, XenApp 6.5) fand in einem solchen Fall ein Modul eines anderen Produkts in der Anwendung als Ursache; gehören die Threads mit hoher Last zu einem solchen Modul, dessen Betreuung und den Hersteller der Anwendung ansprechen",
           "where": "Expertenansicht mit dem Zeitraum des Vorfalls, Reiter „Prozesse“: Prozessoranteil der Anwendung; Process Explorer: Threads des Prozesses und die Module, zu denen sie gehören",
           "sign": "Anteil der Anwendung über längere Zeit gleichbleibend bei etwa einem Prozessor; Threads mit hoher Last gehören zu einem Modul eines anderen Produkts (Anmeldung, Schutz, Überwachung)",
           "source": "Trentent Tye (Empfehlung aus der Praxis): Help! My Citrix application is running slow (Meditech, Citrix, Imprivata)"
         },
         {
+          "id": "delay.single.explorer-dateidialog-wartete",
           "text": "Wenn der Benutzer im Explorer oder in einem Dateidialog wartete: prüfen, ob Laufwerkszuordnungen auf einen Dateiserver oder eine Freigabe zeigen, die es nicht mehr gibt oder die nicht erreichbar ist; die Praxisquelle James Rankin (2021, Labor mit Windows 10, Group Policy Preferences, sechs Ziele) maß beim Verbinden etwa 33 Sekunden Zeitüberschreitung je nicht erreichbarer Zuordnung; Thomas Kötzing (2020) nennt für Freigaben, die eine Gruppenrichtlinie verbindet, etwa 30 Sekunden",
           "where": "WEM-Konsole (Aktionen für Laufwerkszuordnungen) oder Gruppenrichtlinie; in einer Sitzung: Explorer, „Dieser PC“, oder der Befehl net use",
           "sign": "Zugeordnetes Laufwerk als getrennt oder nicht verfügbar angezeigt; Warten beim Öffnen des Explorers oder eines Dateidialogs",
           "source": "James Rankin (Empfehlung aus der Praxis): The ultimate guide to Windows logon time optimizations – part #4"
         },
         {
+          "id": "delay.single.anwendungen-beim-start",
           "text": "Wenn Anwendungen beim Start der Sitzung oder beim ersten Zugriff aufs Web warteten: prüfen, ob in den Internetoptionen des Benutzers „Einstellungen automatisch erkennen“ eingeschaltet ist, obwohl im Netz keine automatische Proxy-Erkennung (WPAD) antwortet; die Praxisquelle Guy Leech (2016, ein Fall mit XenApp 7.7 und Receiver 4.4) fand das als Ursache einer Wartezeit von 18 bis 20 Sekunden; trifft es zu, die Einstellung für die Benutzer der Server zentral abschalten (Workspace Environment Management oder Gruppenrichtlinie; eine Richtlinie wirkt auch auf nicht persistente Server) oder mit der Betreuung von Netz und Proxy eine Erkennung einrichten, die antwortet",
           "where": "In einer Sitzung: Internetoptionen, Verbindungen, LAN-Einstellungen; Betreuung von Netz und Proxy: ob eine automatische Erkennung eingerichtet ist",
           "sign": "Einstellung eingeschaltet und keine Antwort auf die automatische Erkennung",
           "source": "Guy Leech (Empfehlung aus der Praxis): The Curious Case of the Slowly Populating Start Menu"
         },
         {
+          "id": "delay.single.vmware-team-rechenzeit",
           "when": ["class.host"],
           "text": "Beim Team von VMware prüfen lassen, ob der VMware-Host dem Server Rechenzeit entzieht, und keine zusätzlichen vCPU vergeben",
           "where": "vCenter: CPU Ready und Co-Stop der VM, Auslastung des VMware-Hosts",
@@ -1633,6 +1731,7 @@
           "source": "VMware: Rightsizing virtual machines on ESXi 8.0: vCPU, memory, and CPU topology guidance"
         },
         {
+          "id": "delay.single.anwendung-nur-kern-nutzt",
           "when": ["class.singlecore"],
           "text": "Prüfen, ob die Anwendung nur einen Kern nutzt; mehr vCPU helfen ihr dann nicht",
           "where": "Task-Manager auf dem Server, Registerkarte „Leistung“, Ansicht „Logische Prozessoren“",
@@ -1647,6 +1746,7 @@
           "precondition": "die Ursache hinter der Anwendung vermutet wird"
         },
         {
+          "id": "delay.single.rule-enforcement-mode",
           "when": ["event.applocker"],
           "text": "„Rule Enforcement Mode“ von WEM Application Security von „Overwrite“ auf „Merge“ stellen, wie die Praxisquelle Manuel Winkel (2026) rät (in der WEM-Konsole); vorher die übrigen AppLocker-Regeln des Servers durchsehen, weil sie dann neben den Regeln von WEM weiter gelten",
           "precondition": "der Modus auf „Overwrite“ steht, Anwendungen blockiert wurden, die vorher liefen, und die Verantwortlichen für die Sicherheit zustimmen",
@@ -1657,11 +1757,13 @@
           "precondition": "dieselbe Anwendung bei diesem Benutzer wiederholt hängt, bei anderen Benutzern aber nicht"
         },
         {
+          "id": "delay.single.energiesparplan-hoechstleistung",
           "text": "Energiesparplan „Höchstleistung“ einstellen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); die Praxisquelle BIS-F stellt ihn beim Versiegeln des Master-Image so ein, während Microsoft Windows Server mit „Ausbalanciert“ ausliefert und VMware „Höchstleistung“ bei der Suche nach der Ursache von Leistungs- und Latenzproblemen rät",
           "precondition": "ein anderer Energiesparplan als „Höchstleistung“ aktiv ist",
           "source": "BIS-F (Empfehlung aus der Praxis): 97_PrepBISF_PRE_BaseImage.ps1"
         },
         {
+          "id": "delay.single.laufwerkszuordnung-dort-loeschen",
           "text": "Laufwerkszuordnung dort löschen oder berichtigen, wo sie festgelegt ist (Workspace Environment Management, Gruppenrichtlinie oder Anmeldeskript; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2020) zählt der Explorer jedes zugeordnete Laufwerk auf; ein nicht erreichbares Ziel bremst ihn deshalb in den Sitzungen; ein Basisverzeichnis am Benutzerobjekt von der Betreuung des Active Directory löschen oder umstellen lassen (nach Trentent Tye, Labor 2016, wartet die Anmeldung sonst auf die Zeitüberschreitung im Netz)",
           "precondition": "eine Laufwerkszuordnung oder ein Basisverzeichnis auf ein Ziel zeigt, das nicht erreichbar ist oder nicht mehr gebraucht wird",
           "source": "James Rankin (Empfehlung aus der Praxis): (Reasons not to be) using network drives on Citrix Virtual Apps and Desktops"
@@ -1705,12 +1807,14 @@
           "sign": "Wert an jedem Tag über dem Soll (Dauerzustand der Netzstrecke) oder nur an einzelnen Tagen und zu bestimmten Zeiten"
         },
         {
+          "id": "chronic.network.fragen-stoerung-aussah",
           "text": "Den Benutzer fragen, wie die Störung aussah, und die Antwort mit Uhrzeit und Standort an die Betreuung des Netzes geben; die Praxisquelle Benny Tritsch (2026) ordnet zu: Bild bleibt stehen, ruckelt oder springt (Laufzeit oder Schwankung im Netz), Teile des Bilds bleiben stehen oder leer (verlorene Pakete), Bild wird unscharf oder klotzig (zu wenig Bandbreite)",
           "where": "Rückfrage beim Benutzer",
           "sign": "Eine der drei Erscheinungen; alle drei liegen außerhalb des Servers; in einem Test der Praxisquelle von 2025 auf Azure (VDA 2507 LTSR, Windows 11, Netzsimulator) hielt HDX bei wenig Bandbreite die Bildrate und senkte die Bildqualität",
           "source": "Benny Tritsch (Empfehlung aus der Praxis): A Guide to Common VDI Screen Artifacts and What They Mean"
         },
         {
+          "id": "chronic.network.welchen-transport-sitzung",
           "text": "Feststellen, über welchen Transport die Sitzung des Benutzers läuft (EDT, also UDP, oder TCP); die Voreinstellung von Citrix ist „Preferred“ (EDT mit Rückfall auf TCP) und bleibt die Regel; meldet der Benutzer schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk und läuft die Sitzung über EDT, die Betreuung des Netzes die MTU auf dieser Strecke prüfen lassen",
           "where": "Citrix Director, Sitzungsdetails, oder auf dem Server der Befehl CtxSession.exe -v; Citrix-Richtlinie: Sitzungszuverlässigkeit und MTU-Erkennung von EDT",
           "sign": "Sitzung über EDT (UDP) und schwarze oder zerstückelte Bilder über VPN, WLAN oder Mobilfunk, wie die Praxisquelle Thomas Kötzing (2025) sie beschreibt",
@@ -1782,6 +1886,7 @@
           "sign": "Auslastung nur dieses Servers so hoch (ungleiche Verteilung der Sitzungen) oder aller Server (zu wenig Kapazität); für den Fehler des VDA: VDA älter als CVAD 2507 LTSR CU2 (dort ist er nach der Praxisquelle behoben, Kennung CVADHELP-28688) oder der Name des Servers wird nicht aufgelöst"
         },
         {
+          "id": "chronic.resource.zurueckgebliebene-prozesse",
           "when": ["lead.memory"],
           "text": "Nach Prozessen suchen, die in Sitzungen zurückgeblieben sind, die es nicht mehr gibt; die Praxisquelle Guy Leech (2018) erkennt sie an einer Sitzungsnummer ohne Sitzung und daran, dass Sitzungsnummern immer weiter steigen, statt wiederverwendet zu werden; finden sich solche Prozesse, das Produkt, zu dem sie gehören, seiner Betreuung melden",
           "where": "Task-Manager auf dem Server, Registerkarte „Details“: Spalte „Sitzungs-ID“ einblenden (Rechtsklick auf einen Spaltenkopf, „Spalten auswählen“) und mit der Registerkarte „Benutzer“ vergleichen",
@@ -1855,6 +1960,7 @@
           "precondition": "{app} ohne Zutun des Benutzers ständig Last erzeugt"
         },
         {
+          "id": "chronic.resource.kapazitaet-anpassen",
           "when": ["cause.none", "lead.cpu"],
           "text": "Kapazität anpassen (weniger Sitzungen je Server, zusätzliche Server oder mehr Prozessoren für die virtuelle Maschine); laut VMware soll eine virtuelle Maschine nicht mehr vCPU haben, als ihre Last nutzen kann, und nicht weniger, als sie braucht; nach GO-EUC (Test von 2019 mit Windows Server 2016 und ESXi 6.7, Schutz gegen Prozessorlücken abgeschaltet) eher mehr Server als größere; GO-EUC nennt als Ausgangspunkt höchstens 8 vCPU je Server; das ist ein Ausgangspunkt aus der Praxis und kein Sollwert für diese Server; ob die Summe der vCPU zum VMware-Host passt, beurteilt die Betreuung von VMware",
           "precondition": "der Prozessor ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt",
@@ -1866,18 +1972,21 @@
           "precondition": "der Arbeitsspeicher ohne einzelnen Verursacher an mehreren Tagen dauerhaft über dem Soll liegt"
         },
         {
+          "id": "chronic.resource.verkleinern-profilcontainer",
           "when": ["lead.profile"],
           "text": "Verkleinern der Profilcontainer bei der Abmeldung einschalten (Richtlinie „Enable VHD disk compaction“ der Citrix Profilverwaltung ab Version 2303; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle James Rankin (2023) braucht das voreingestellte Defragmentieren dabei den Dienst „Laufwerke optimieren“ (defragsvc), den Optimierungswerkzeuge im Master-Image oft abschalten; werden Abmeldungen zu lang, das Defragmentieren in derselben Richtlinie abschalten",
           "precondition": "der Profilcontainer des Benutzers viel größer ist als die Daten darin und weiter wächst",
           "source": "James Rankin (Empfehlung aus der Praxis): QuickPost – Citrix UPM VHD compaction feature"
         },
         {
+          "id": "chronic.resource.drosselung-smb-clients-freigabe",
           "when": ["lead.share"],
           "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen",
           "precondition": "der Dateiserver dauerhaft langsam antwortet, seine Betreuung ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
           "source": "Microsoft: Optimizing Windows configuration for VDI desktops"
         },
         {
+          "id": "chronic.resource.drosselung-smb-clients-profil",
           "when": ["lead.profile"],
           "text": "Drosselung des SMB-Clients abschalten (Registrierungswert DisableBandwidthThrottling = 1 unter HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); der SMB-Client drosselt nach Angabe von Microsoft nur auf Verbindungen mit hoher Laufzeit; Microsoft rät in seiner Anleitung für VDI mit Windows 10 und 11, den Wert auf 1 zu setzen",
           "precondition": "der Profilspeicher dauerhaft langsam antwortet, die Betreuung des Dateiservers ihn selbst nicht überlastet findet und die Server ihn über eine Strecke mit hoher Laufzeit erreichen (anderer Standort, WAN)",
@@ -1933,6 +2042,7 @@
           "sign": "Hersteller und Produktname in den Eigenschaften der Datei"
         },
         {
+          "id": "crash.modul-eines-druckertreibers",
           "when": ["pattern.printdriver"],
           "text": "Ein fehlerhaftes Modul gehört zu einem installierten Druckertreiber (welches, steht im Abschnitt „Wer oder was hat es verursacht“): prüfen, ob die Richtlinie „Isolate print drivers from applications“ abgeschaltet ist",
           "where": "Gruppenrichtlinie: Computerkonfiguration > Administrative Vorlagen > Drucker; Registrierung: HKLM\\Software\\Policies\\Microsoft\\Windows NT\\Printers, Wert ApplicationDriverIsolation; welcher Treiber beteiligt ist: Expertenansicht, Reiter „Drucken“",
@@ -1940,6 +2050,7 @@
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
+          "id": "crash.hp-upd-version",
           "when": ["pattern.printdriver", "driver.vendor.HP"],
           "text": "Bei einem HP Universal Print Driver: Version mit den Versionshinweisen von HP vergleichen und nachlesen, ob das beobachtete Verhalten dort als behoben genannt ist",
           "where": "Expertenansicht, Reiter „Drucken“: Version des Treibers; HP Universal Print Driver Release Notes",
@@ -1947,6 +2058,7 @@
           "source": "HP: HP Universal Print Driver Release Notes"
         },
         {
+          "id": "crash.modell-brother-geraets",
           "when": ["pattern.printdriver", "driver.vendor.Brother"],
           "text": "Modell des Brother-Geräts in der „Citrix Compatible Device List“ von Brother nachschlagen; die Liste beruht auf eigenen Tests von Brother und ist keine Zusage",
           "where": "Website von Brother (support.brother.com): Citrix Compatible Device List",
@@ -2036,6 +2148,7 @@
           "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         },
         {
+          "id": "crash.edge-haeufige-ursachen",
           "when": ["app.edge"],
           "text": "Die von Microsoft genannten häufigen Ursachen prüfen: verbliebene Hintergrundprozesse von Microsoft Edge, Grafiktreiber, beschädigtes Benutzerprofil des Browsers, defekte Installation",
           "where": "Task-Manager auf dem Server: Prozesse msedge.exe, die nach dem Schließen aller Fenster weiterlaufen; Vorfallsansicht, Abschnitt „Belege“",
@@ -2043,6 +2156,7 @@
           "source": "Microsoft: Microsoft Edge stops responding or doesn't start"
         },
         {
+          "id": "crash.edge-einstellung-process-isolation",
           "when": ["app.edge"],
           "text": "Einstellung „Process Isolation“ von Microsoft Edge feststellen (Richtlinie ProcessIsolationEnabled, ab Version 151): laut Microsoft kann sie mit Software unverträglich sein, die in die Prozesse des Browsers eingreift",
           "where": "Gruppenrichtlinien für Microsoft Edge: ProcessIsolationEnabled; Vorfallsansicht, Abschnitt „Belege“: fehlerhaftes Modul",
@@ -2050,6 +2164,7 @@
           "source": "Microsoft: Enable Process Isolation (ProcessIsolationEnabled)"
         },
         {
+          "id": "crash.version-webview2-runtime",
           "when": ["app.webview2"],
           "text": "Version der WebView2-Runtime feststellen: laut Microsoft können abgeschaltete Updates der Runtime zu Kompatibilitätsproblemen mit den Anwendungen führen, die sie nutzen",
           "where": "Programme und Features auf dem Server: Microsoft Edge WebView2 Runtime; bei nicht persistenten Servern ist das der Stand des Master-Image",
@@ -2057,6 +2172,7 @@
           "source": "Microsoft: Microsoft Edge - Update policies"
         },
         {
+          "id": "crash.applocker-webview2-runtime",
           "when": ["app.webview2"],
           "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
@@ -2065,6 +2181,7 @@
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
+          "id": "crash.webview2-software-module-prozesse",
           "when": ["app.webview2"],
           "text": "Prüfen, ob Software Module in die Prozesse von WebView2 lädt: laut Microsoft bricht das Einschleusen von Modulen in Renderer- und Grafikprozesse deren Schutzmodell und verursacht häufig Abstürze",
           "where": "Vorfallsansicht, Abschnitte „Wer oder was hat es verursacht“ und „Belege“: fehlerhaftes Modul des Absturzes",
@@ -2072,6 +2189,7 @@
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
+          "id": "crash.office-add-ins-ursache-vergleich",
           "when": ["app.office"],
           "text": "Add-ins von {app} als Ursache prüfen: zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten, wie Microsoft es für Leistungsprobleme rät",
           "where": "In der Sitzung eines betroffenen Benutzers: Liste der Add-ins der Anwendung; Vorfallsansicht, Abschnitt „Belege“: fehlerhaftes Modul",
@@ -2079,6 +2197,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "crash.office-32-bit-64-bit",
           "when": ["app.office"],
           "text": "Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist: Microsoft empfiehlt für Office LTSC 2024 die 64-Bit-Version auf Geräten mit mindestens 4 GB Arbeitsspeicher, sofern Add-ins und andere Anwendungen damit verträglich sind",
           "where": "Office-Anwendung: Informationen zur Version (Angabe 32 Bit oder 64 Bit)",
@@ -2086,6 +2205,7 @@
           "source": "Microsoft: Overview of Office LTSC 2024"
         },
         {
+          "id": "crash.datendateien-outlook-endungen",
           "when": ["app.outlook", "pattern.securitymodule"],
           "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; laut Microsoft können Daten beschädigt werden, wenn eine Schutzsoftware diese Dateien prüft, während Outlook läuft; es geht um beschädigte Daten, nicht um Geschwindigkeit; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt denselben Ausschluss",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
@@ -2093,6 +2213,7 @@
           "source": "Microsoft: Planning considerations to deploy Outlook for Windows"
         },
         {
+          "id": "crash.outlook-add-ins-ursache-vergleich",
           "when": ["app.outlook"],
           "text": "Add-ins von {app} als Ursache prüfen: zum Vergleich die Anwendung im abgesicherten Modus ohne Add-ins starten, wie Microsoft es für Leistungsprobleme rät",
           "where": "In der Sitzung eines betroffenen Benutzers: Liste der Add-ins der Anwendung; Vorfallsansicht, Abschnitt „Belege“: fehlerhaftes Modul",
@@ -2100,6 +2221,7 @@
           "source": "Microsoft: Performance recommendations for Microsoft 365 Apps on Windows 10"
         },
         {
+          "id": "crash.outlook-office-32-bit-64-bit",
           "when": ["app.outlook"],
           "text": "Feststellen, ob Office als 32-Bit- oder 64-Bit-Version installiert ist: Microsoft empfiehlt für Office LTSC 2024 die 64-Bit-Version auf Geräten mit mindestens 4 GB Arbeitsspeicher, sofern Add-ins und andere Anwendungen damit verträglich sind",
           "where": "Office-Anwendung: Informationen zur Version (Angabe 32 Bit oder 64 Bit)",
@@ -2107,6 +2229,7 @@
           "source": "Microsoft: Overview of Office LTSC 2024"
         },
         {
+          "id": "crash.teams-schutz-ueberwachungs-dlp",
           "when": ["app.teams"],
           "text": "Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift: laut Microsoft kann solche Software Teams verlangsamen und unerwartet beenden",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse und Meldungen zur Zeit des Vorfalls; Vorfallsansicht, Abschnitt „Belege“",
@@ -2114,6 +2237,7 @@
           "source": "Microsoft: Include or exclude Teams from antivirus or DLP applications"
         },
         {
+          "id": "crash.stand-unterstuetzung-teams",
           "when": ["app.teams"],
           "text": "Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen: seit Oktober 2026 unterstützt Microsoft Teams auf Windows Server 2022 nicht mehr (Hinweis auf der Seite zu Teams für VDI, Stand der Seite 25.8.2026); die Tabelle der Anforderungen derselben Seite führt Windows Server 2022 noch; vor einer Meldung an Microsoft klären, ob ein Wechsel auf Windows Server 2025 geplant ist",
           "where": "Betriebssystem des Servers und Version von Teams (Programme und Features, Informationen zur Anwendung)",
@@ -2121,6 +2245,7 @@
           "source": "Microsoft: Install Teams for Virtualized Desktop Infrastructure (VDI)"
         },
         {
+          "id": "crash.printaurus-version-net-framework",
           "when": ["app.printaurus"],
           "text": "Version des .NET Framework prüfen: der SmartSpread Client braucht laut AKI ab PrinTaurus 6.2 mindestens .NET Framework 4.7.2",
           "where": "Registrierung: HKLM\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full, Wert Release",
@@ -2128,6 +2253,7 @@
           "source": "AKI: Release Notes 6.2 deutsch"
         },
         {
+          "id": "crash.version-printaurus-smartspread",
           "when": ["app.printaurus"],
           "text": "Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen: laut AKI sollen beim Update auf Version 6.4 alle Komponenten zum selben Release gehören",
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Landschaftsinformationen der PrinTaurus GUI",
@@ -2147,18 +2273,21 @@
           "precondition": "das Modul zu einem Add-in oder einer Erweiterung gehört, die sich abschalten lässt"
         },
         {
+          "id": "crash.treiber-zuordnung-richtlinie",
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Abstürze immer das Modul dieses Treibers nennen, die Drucker über Citrix-Richtlinien zugeordnet werden und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
+          "id": "crash.treiber-nicht-ueberinstallieren",
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
+          "id": "crash.kpdl-pcl-uni-treiber",
           "when": ["pattern.printdriver", "driver.vendor.Kyocera"],
           "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der KX-Treiber installiert ist und die Benutzer seine zusätzlichen Funktionen nicht brauchen",
@@ -2180,30 +2309,35 @@
           "precondition": "der Absturz mit einem anderen Benutzer beim selben Arbeitsschritt ausbleibt"
         },
         {
+          "id": "crash.webview2-runtime-aktuellen",
           "when": ["app.webview2"],
           "text": "WebView2-Runtime auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Runtime älter ist als der aktuelle Stand von Microsoft und ihre automatische Aktualisierung abgeschaltet ist",
           "source": "Microsoft: Microsoft Edge - Update policies"
         },
         {
+          "id": "crash.office-aktuellen-stand",
           "when": ["app.office"],
           "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
           "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Update Office LTSC 2024"
         },
         {
+          "id": "crash.outlook-office-aktuellen-stand",
           "when": ["app.outlook"],
           "text": "Office auf den aktuellen Stand bringen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); Microsoft empfiehlt, Office LTSC 2024 aktuell zu halten",
           "precondition": "die installierte Version älter ist als der aktuelle Stand von Microsoft",
           "source": "Microsoft: Update Office LTSC 2024"
         },
         {
+          "id": "crash.prozesse-teams-schutzsoftware",
           "when": ["app.teams"],
           "text": "Prozesse von Teams in der Schutzsoftware ausnehmen, wie Microsoft sie nennt (ms-teams.exe, msedgewebview2.exe, ms-teamsupdate.exe, msteams_autostarter.exe; in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); nach John Billekens nimmt ein Ausschluss von msedgewebview2.exe nur nach dem Namen auch jede andere Anwendung mit WebView2 aus",
           "precondition": "die Schutzsoftware nachweislich in Teams eingreift (Meldung oder Modul der Schutzsoftware beim Absturz) und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Include or exclude Teams from antivirus or DLP applications"
         },
         {
+          "id": "crash.printaurus-version-bringen",
           "when": ["app.printaurus"],
           "text": "PrinTaurus auf eine Version bringen, die AKI noch unterstützt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); laut AKI sind alle Versionen vor 6.2 zum 31. Dezember 2025 abgekündigt",
           "precondition": "der SmartSpread Client älter als Version 6.2 ist",
@@ -2212,6 +2346,7 @@
       ],
       "contacts": [
         {
+          "id": "crash.hersteller-druckertreibers",
           "when": ["pattern.printdriver"],
           "text": "Hersteller des Druckertreibers (bei Treibern, die nicht von Microsoft stammen): mit der Frage, ob der Treiber für Terminalserver zertifiziert ist (WHQL), und mit Version, fehlerhaftem Modul und Fehlercode aus den Belegen; Citrix selbst zertifiziert Druckertreiber nicht",
           "source": "Citrix: Best practices, security considerations, and default operations"
@@ -2224,6 +2359,7 @@
           "text": "Betreuung oder Hersteller der abgestürzten Anwendung (bei der Fachanwendung deren Betreuung): mit Uhrzeit, Version, fehlerhaftem Modul und Fehlercode aus den Belegen"
         },
         {
+          "id": "crash.printaurus-support-aki-version",
           "when": ["app.printaurus"],
           "text": "Support von AKI: mit Version des SmartSpread Client, Uhrzeit, fehlerhaftem Modul und Fehlercode aus den Belegen",
           "source": "AKI: Release Notes PrinTaurus 6.4"
@@ -2315,6 +2451,7 @@
           "sign": "Angabe „Nicht geprüft“ mit dem Muster und der Kategorie, die nicht gemessen wurde"
         },
         {
+          "id": "hang.edge-haeufige-ursachen",
           "when": ["app.edge"],
           "text": "Die von Microsoft genannten häufigen Ursachen prüfen: verbliebene Hintergrundprozesse von Microsoft Edge, Grafiktreiber, beschädigtes Benutzerprofil des Browsers, defekte Installation",
           "where": "Task-Manager auf dem Server: Prozesse msedge.exe, die nach dem Schließen aller Fenster weiterlaufen; Vorfallsansicht, Abschnitt „Belege“",
@@ -2322,6 +2459,7 @@
           "source": "Microsoft: Microsoft Edge stops responding or doesn't start"
         },
         {
+          "id": "hang.applocker-webview2-runtime",
           "when": ["app.webview2"],
           "text": "Prüfen, ob AppLocker die WebView2-Runtime oder die Anwendung blockiert, die sie nutzt: laut Microsoft führt das zu leeren Ansichten und fehlenden Unterprozessen; trifft es zu, rät Microsoft, beide zuzulassen, bevorzugt mit Herausgeberregeln",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > AppLocker; Expertenansicht, Reiter „Ereignisse“",
@@ -2330,6 +2468,7 @@
           "source": "Microsoft: Prevent security tools from blocking WebView2 apps"
         },
         {
+          "id": "hang.outlook-add-in-deaktiviert",
           "when": ["app.outlook"],
           "text": "Nachsehen, ob Office ein Add-in von Outlook wegen langsamer Ausführung abgeschaltet hat und wie lange die Add-ins zum Laden brauchen",
           "where": "Ereignisanzeige, Protokoll „Anwendung“, Quelle „Outlook“: Ereignisse 45 (Ladezeiten der Add-ins) und 59 (abgeschaltetes Add-in)",
@@ -2337,6 +2476,7 @@
           "source": "Microsoft: Add-ins are user re-enabled after being disabled by Office programs"
         },
         {
+          "id": "hang.outlook-ost-groesse",
           "when": ["app.outlook"],
           "text": "Größe der OST-Datei von Outlook bei den betroffenen Benutzern prüfen; laut Microsoft beginnen ab etwa 10 GB kurze Pausen der Anwendung, die ab 25 GB häufiger werden",
           "where": "Profil des Benutzers: Outlook-Datendatei (OST)",
@@ -2344,6 +2484,7 @@
           "source": "Microsoft: You may experience application pauses if you have a large Outlook data file"
         },
         {
+          "id": "hang.outlook-ordner-appdata-freigabe",
           "when": ["app.outlook"],
           "text": "Prüfen, ob der Ordner AppData auf eine Freigabe umgeleitet ist und ob die Schutzsoftware ein Add-in oder eine Integration in Outlook mitbringt; beides nennt Microsoft als Ursache dafür, dass Outlook nicht mehr reagiert",
           "where": "Einstellungen der Ordnerumleitung (Gruppenrichtlinie oder Workspace Environment Management); Outlook: Liste der Add-ins",
@@ -2351,6 +2492,7 @@
           "source": "Microsoft: Outlook not responding error or Outlook freezes when you open a file or send mail"
         },
         {
+          "id": "hang.datendateien-outlook-endungen",
           "when": ["app.outlook", "pattern.securitymodule"],
           "text": "Prüfen, ob die Datendateien von Outlook mit den Endungen .ost und .pst von der Echtzeitprüfung ausgenommen sind; laut Microsoft können Daten beschädigt werden, wenn eine Schutzsoftware diese Dateien prüft, während Outlook läuft; es geht um beschädigte Daten, nicht um Geschwindigkeit; die Praxisquelle John Billekens (Sammlung, geprüft 2026) führt denselben Ausschluss",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse der Echtzeitprüfung; bei Microsoft Defender als Dateiendung eintragen, weil Pfade mit %localappdata% oder %appdata% dort nicht auf den Ordner des Benutzers zeigen",
@@ -2358,6 +2500,7 @@
           "source": "Microsoft: Planning considerations to deploy Outlook for Windows"
         },
         {
+          "id": "hang.teams-schutz-ueberwachungs-dlp",
           "when": ["app.teams"],
           "text": "Prüfen, ob Schutz-, Überwachungs- oder DLP-Software in Teams eingreift: laut Microsoft kann solche Software Teams verlangsamen und unerwartet beenden",
           "where": "Verwaltung der Schutzsoftware: Ausschlüsse und Meldungen zur Zeit des Vorfalls; Vorfallsansicht, Abschnitt „Belege“",
@@ -2365,6 +2508,7 @@
           "source": "Microsoft: Include or exclude Teams from antivirus or DLP applications"
         },
         {
+          "id": "hang.version-printaurus-smartspread",
           "when": ["app.printaurus"],
           "text": "Version des PrinTaurus SmartSpread Client mit der Version der übrigen PrinTaurus-Komponenten vergleichen: laut AKI sollen beim Update auf Version 6.4 alle Komponenten zum selben Release gehören",
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Landschaftsinformationen der PrinTaurus GUI",
@@ -2372,6 +2516,7 @@
           "source": "AKI: Release Notes PrinTaurus 6.4"
         },
         {
+          "id": "hang.stand-unterstuetzung-teams",
           "when": ["app.teams"],
           "text": "Stand der Unterstützung von Teams auf dem Betriebssystem des Servers einordnen: seit Oktober 2026 unterstützt Microsoft Teams auf Windows Server 2022 nicht mehr (Hinweis auf der Seite zu Teams für VDI, Stand der Seite 25.8.2026); die Tabelle der Anforderungen derselben Seite führt Windows Server 2022 noch; vor einer Meldung an Microsoft klären, ob ein Wechsel auf Windows Server 2025 geplant ist",
           "where": "Betriebssystem des Servers und Version von Teams (Programme und Features, Informationen zur Anwendung)",
@@ -2495,6 +2640,7 @@
       "impact": "Druckaufträge können verloren gegangen oder liegen geblieben sein; bei einem Ausfall des Dienstes „Druckwarteschlange“ konnte zeitweise kein Benutzer des Servers drucken.",
       "checks": [
         {
+          "id": "print.dienst-laeuft-wieder",
           "when": ["spooler.crash"],
           "text": "Prüfen, ob der Dienst „Druckwarteschlange“ wieder läuft, und ihn sonst starten",
           "where": "Dienste-Konsole (services.msc) auf dem Server",
@@ -2502,6 +2648,7 @@
           "source": "Citrix: Troubleshooting"
         },
         {
+          "id": "print.modul-eines-druckertreibers",
           "when": ["pattern.printdriver"],
           "text": "Ein fehlerhaftes Modul gehört zu einem installierten Druckertreiber (welches, steht im Abschnitt „Wer oder was hat es verursacht“): feststellen, welcher Treiber beteiligt ist und ob jeder Absturz dieses Modul nennt",
           "where": "Vorfallsansicht, Abschnitte „Wer oder was hat es verursacht“ und „Belege“; Expertenansicht, Reiter „Drucken“: Treiberliste, Spalte „An einem Vorfall beteiligt“; Ereignisanzeige, Protokoll „Anwendung“",
@@ -2509,6 +2656,7 @@
           "source": "Citrix: Troubleshooting"
         },
         {
+          "id": "print.kein-muster-erkannt-treiber",
           "when": ["pattern.none"],
           "text": "Kein Muster erkannt: feststellen, welcher Treiber oder welche Druckwarteschlange das Problem auslöst; nach Thomas Kötzing (Fall von 2025) zeigt ein Speicherabbild von spoolsv.exe oder splwow64.exe vom nächsten Absturz die DLL des Druckertreibers; das Speicherabbild sichert und wertet die Betreuung dieses Servers aus, bei Bedarf mit dem Hersteller des Treibers",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Treiber, Drucker und Meldungstext; Expertenansicht, Reiter „Drucken“: Treiberliste und Druckwarteschlangen",
@@ -2516,6 +2664,7 @@
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
+          "id": "print.speichermangel-ursache-druckfehler",
           "when": ["pattern.resource"],
           "text": "Speichermangel als Ursache prüfen: der Druckfehler fiel in eine Zeit mit knappem Arbeitsspeicher",
           "where": "Lagebild: Vorfall „Arbeitsspeicher des Servers knapp“ im selben Zeitraum; Expertenansicht, Reiter „Soll-Ist“: RAM- und Commit-Auslastung",
@@ -2523,6 +2672,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.modul-der-schutzsoftware",
           "when": ["pattern.securitymodule"],
           "text": "Ein fehlerhaftes Modul gehört zur Schutzsoftware (welches, steht im Abschnitt „Wer oder was hat es verursacht“): deren Meldungen zur Uhrzeit des Druckfehlers ansehen",
           "where": "Verwaltung der Schutzsoftware: Meldungen und blockierte Vorgänge; Vorfallsansicht, Abschnitt „Belege“",
@@ -2530,6 +2680,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.ein-benutzer-wiederholt",
           "when": ["pattern.oneuser"],
           "text": "Nur {user} ist betroffen, und das wiederholt: Drucker, Druckeinstellungen und Profil dieses Benutzers prüfen",
           "where": "Sitzung des Benutzers: zugeordnete Drucker und Standarddrucker; zum Vergleich derselbe Ausdruck mit einem anderen Benutzer",
@@ -2537,6 +2688,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.druckfehler-fiel-zeitraum",
           "when": ["pattern.overlap"],
           "text": "Der Druckfehler fiel in den Zeitraum eines Leistungsvorfalls: auch dessen Anleitung ansehen, beide können dieselbe Ursache haben",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitgleich mit Vorfall …“",
@@ -2544,6 +2696,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.zeitnahes-ereignis",
           "when": ["pattern.companion"],
           "text": "Zeitnahes Ereignis prüfen: höchstens zwei Minuten vor oder nach dem Druckfehler gab es ein weiteres Ereignis zu Datenträger, Dateiserver, Profil oder Schutzsoftware",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Hinweis „Zeitnah“; Expertenansicht, Reiter „Ereignisse“",
@@ -2552,6 +2705,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.treiberisolierung-pruefen",
           "when": ["driver.shared"],
           "text": "Treiberisolierung von {driver} prüfen: der Treiber läuft im Prozess des Dienstes „Druckwarteschlange“ oder teilt sich einen Prozess mit anderen Treibern",
           "where": "Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“; ändern lässt sich die Einstellung je Treiber in der Druckverwaltung (Treiber, Kontextmenü des Treibers), bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen",
@@ -2559,6 +2713,7 @@
           "source": "Microsoft: Printer driver isolation"
         },
         {
+          "id": "print.absturz-einordnen",
           "when": ["driver.isolated", "spooler.crash"],
           "text": "Einordnen, was abgestürzt ist: der Treiber {driver} läuft isoliert in einem eigenen Prozess, ein Fehler dieses Treibers sollte den Dienst „Druckwarteschlange“ selbst deshalb nicht beenden",
           "where": "Vorfallsansicht, Abschnitt „Belege“: Name des abgestürzten Prozesses; Expertenansicht, Reiter „Drucken“: Spalte „Isolierung“",
@@ -2566,6 +2721,7 @@
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
+          "id": "print.gruppenrichtlinie-treiberisolierung",
           "when": ["spooler.crash"],
           "text": "Gruppenrichtlinie zur Treiberisolierung prüfen; nach Thomas Kötzing (2017) schaltet man die Isolierung per Gruppenrichtlinie ein, damit ein Treiberfehler den Dienst nicht beendet",
           "where": "Gruppenrichtlinie: Computerkonfiguration > Administrative Vorlagen > Drucker; Registrierung: HKLM\\Software\\Policies\\Microsoft\\Windows NT\\Printers, Wert PrintDriverIsolationExecutionPolicy",
@@ -2573,6 +2729,7 @@
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
+          "id": "print.stand-druckertreiber",
           "when": ["spooler.crash"],
           "text": "Stand der Druckertreiber und Druckkomponenten mit den aktuellen Versionen der Hersteller vergleichen",
           "where": "Expertenansicht, Reiter „Drucken“: Spalte „Version“ (wurde Drucken nicht gemessen: Druckverwaltung des Servers, Treiber); Download-Seiten der Druckerhersteller",
@@ -2580,6 +2737,7 @@
           "source": "Microsoft: Troubleshoot printing issues caused by Print Spooler service not running"
         },
         {
+          "id": "print.hp-upd-version",
           "when": ["driver.vendor.HP"],
           "text": "Bei einem HP Universal Print Driver: Version mit den Versionshinweisen von HP vergleichen und nachlesen, ob das beobachtete Verhalten dort als behoben genannt ist",
           "where": "Expertenansicht, Reiter „Drucken“: Version des Treibers; HP Universal Print Driver Release Notes",
@@ -2587,6 +2745,7 @@
           "source": "HP: HP Universal Print Driver Release Notes"
         },
         {
+          "id": "print.vollstaendige-kx-treiber",
           "when": ["driver.vendor.Kyocera"],
           "text": "Prüfen, ob auf dem Server der vollständige KX-Treiber von Kyocera installiert ist: für Citrix- und Terminalserver-Umgebungen empfiehlt Kyocera stattdessen seine KPDL- oder PCL-Uni-Treiber",
           "where": "Expertenansicht, Reiter „Drucken“: Treiberliste; Druckverwaltung des Servers: Treiber",
@@ -2594,6 +2753,7 @@
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
+          "id": "print.modell-brother-geraets",
           "when": ["driver.vendor.Brother"],
           "text": "Modell des Brother-Geräts in der „Citrix Compatible Device List“ von Brother nachschlagen; die Liste beruht auf eigenen Tests von Brother und ist keine Zusage",
           "where": "Website von Brother (support.brother.com): Citrix Compatible Device List",
@@ -2601,6 +2761,7 @@
           "source": "Brother: Citrix® Compatible Device List"
         },
         {
+          "id": "print.spool-ordner-abhaengigkeiten",
           "when": ["spooler.crash"],
           "text": "Spool-Ordner und Abhängigkeiten des Dienstes „Druckwarteschlange“ prüfen",
           "where": "Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS (oder der Ordner aus dem Registrierungswert DefaultSpoolDirectory); Registrierung: HKLM\\SYSTEM\\CurrentControlSet\\Services\\Spooler, Wert DependOnService (zum Vergleich: derselbe Wert auf einem Server ohne Druckproblem)",
@@ -2608,6 +2769,7 @@
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
+          "id": "print.dienst-druckwarteschlange-starttyp",
           "when": ["spooler.crash", "driver.vendor.Brother"],
           "text": "Prüfen, ob der Dienst „Druckwarteschlange“ auf den Starttyp „Automatisch“ gestellt ist und sich starten lässt",
           "where": "Dienste-Konsole (services.msc) auf dem Server",
@@ -2615,6 +2777,7 @@
           "source": "Brother: \"User Intervention Required\" when attempting to print"
         },
         {
+          "id": "print.drucker-richtlinien-zugeordnet",
           "when": ["pattern.printdriver"],
           "text": "Wenn die Drucker über Citrix-Richtlinien zugeordnet werden: Citrix-Richtlinie „Universal print driver usage“ prüfen; sie bestimmt, ob Clientdrucker mit dem Herstellertreiber oder mit dem Citrix-Universaltreiber angelegt werden",
           "where": "Citrix Studio oder Web Studio: Richtlinien, Einstellungen zum Drucken (Treiber)",
@@ -2622,6 +2785,7 @@
           "source": "Citrix: Drivers policy settings"
         },
         {
+          "id": "print.herkunft-der-drucker",
           "when": ["pattern.printdriver"],
           "text": "Prüfen, woher die Drucker mit dem Treiber {driver} kommen: Drucker eines Windows-Druckservers brauchen den Herstellertreiber auf dem Server, Drucker eines Citrix Universal Print Server können auch den Citrix-Universaltreiber nutzen",
           "where": "Druckverwaltung des Servers: Drucker und ihre Anschlüsse; Zuordnung der Drucker (Zuordnungswerkzeug wie PrinTaurus SmartSpread oder Citrix-Richtlinien für Sitzungsdrucker)",
@@ -2629,6 +2793,7 @@
           "source": "Citrix: Network Printers (on the VDA)"
         },
         {
+          "id": "print.treiberpaket-druckmonitor",
           "when": ["pattern.printdriver"],
           "text": "Prüfen, ob das Treiberpaket von {driver} einen eigenen Druckmonitor installiert hat; die Praxisquelle Thomas Kötzing (2017) rät, keine Treiber fremder Hersteller mit Druckmonitor zu verwenden und ein Paket ohne Monitor zu wählen oder den Monitor zu entfernen",
           "where": "Im Master-Image, zum Beispiel mit Autoruns, Registerkarte „Print Monitors“; das Treiberpaket wählt die Betreuung der Druckserver, das Master-Image trägt dasselbe Paket",
@@ -2636,6 +2801,7 @@
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Die zehn Regeln zum Drucken unter Citrix"
         },
         {
+          "id": "print.auftraegen-haengen-bleiben",
           "when": ["queue.stuck"],
           "text": "Bei Aufträgen, die hängen bleiben oder fehlschlagen: eingrenzen, an welchem Treiber oder welcher Druckwarteschlange es liegt, und im Spool-Ordner nach alten Dateien suchen",
           "where": "Expertenansicht, Reiter „Drucken“: Druckwarteschlangen mit Auftrags- oder „nicht bereit“-Fehlern; Testdruck aus dem Editor über eine Druckwarteschlange mit anderem Treiber; Spool-Ordner %systemroot%\\System32\\spool\\PRINTERS",
@@ -2643,6 +2809,7 @@
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
+          "id": "print.druckwarteschlangen-hp-universal",
           "when": ["queue.stuck", "driver.vendor.HP"],
           "text": "Bei Druckwarteschlangen mit dem HP Universal Print Driver und dem Status „Offline“ den Anschluss prüfen: SNMP-Einstellungen und Anschlusstyp",
           "where": "Druckereigenschaften > Anschlüsse > Anschluss konfigurieren: „SNMP-Status aktiviert“ und Communityname; SNMP-Einstellungen am Drucker",
@@ -2650,6 +2817,7 @@
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.druckwarteschlangen-brother",
           "when": ["queue.stuck", "driver.vendor.Brother"],
           "text": "In den Druckwarteschlangen der Brother-Geräte mit Netzwerkanschluss nach Aufträgen suchen, die stehen bleiben",
           "where": "Druckwarteschlange des Druckers auf dem Server",
@@ -2657,6 +2825,7 @@
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },
         {
+          "id": "print.druckwarteschlangen-druckserver",
           "when": ["queue.stuck"],
           "text": "Prüfen, ob die Druckwarteschlangen der Druckserver, die das Zuordnungswerkzeug den Benutzern zuordnet, noch bestehen und ob ihr Druckserver antwortet; nach der Praxisquelle Trentent Tye (2016, XenApp 6.5) halten solche Zuordnungen auch die Anmeldung auf",
           "where": "Verwaltung des Zuordnungswerkzeugs: zugeordnete Druckwarteschlangen; Druckserver: ob die Warteschlange besteht und der Druckserver erreichbar ist",
@@ -2664,6 +2833,7 @@
           "source": "Trentent Tye (Empfehlung aus der Praxis): ControlUp - Dissecting Logon Times a step further (Printer loading)"
         },
         {
+          "id": "print.eingrenzung-hp-festhalten",
           "when": ["driver.vendor.HP"],
           "text": "Für die Eingrenzung nach HP festhalten, welcher Treiber den Clientdruckern zugeordnet ist und ob das Problem auch außerhalb einer Sitzung auftritt",
           "where": "Zuordnung der Drucker und ihrer Treiber (Zuordnungswerkzeug oder Citrix-Richtlinien zur Treiberzuordnung); Arbeitsplatz außerhalb einer Citrix-Sitzung; zum Vergleich ein sauberes Testsystem mit dem aktuellen HP Universal Print Driver in Standardeinstellung",
@@ -2671,6 +2841,7 @@
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.druckproblem-seit-beginn",
           "when": ["before"],
           "text": "Prüfen, ob das Druckproblem seit Beginn der Messung wieder aufgetreten ist und ob es an einem Treiber oder einer Druckwarteschlange hängt",
           "where": "Lagebild: Vorfälle der Messzeit; Bereich „Vor der Messung“; Expertenansicht, Reiter „Drucken“",
@@ -2681,12 +2852,14 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.dienst-print-manager",
           "text": "Prüfen, ob der Dienst „Citrix Print Manager Service“ (CpSvc.exe) läuft; fällt er aus, legt Citrix seine Drucker in den Sitzungen nicht an",
           "where": "Dienste-Konsole (services.msc) auf dem Server; Ereignisanzeige, Protokolle „Anwendung“ und „System“",
           "sign": "Dienst beendet oder Fehlereintrag zu CpSvc.exe; fehlende Drucker, die Citrix anlegt (Clientdrucker, Sitzungsdrucker)",
           "source": "Citrix: Troubleshooting"
         },
         {
+          "id": "print.von-hand-pruefen-drucken-aus",
           "when": ["skipped.Drucken"],
           "text": "Treiber und Druckwarteschlangen von Hand prüfen und die nächste Messung ohne „-Skip Drucken“ starten: Treiberliste und Zähler der Druckwarteschlangen wurden nicht gemessen",
           "where": "Druckverwaltung des Servers: Treiber und Druckwarteschlangen; Aufruf von Start-WorkerPerfCapture.ps1 auf dem Server",
@@ -2694,6 +2867,7 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.von-hand-eingrenzen",
           "when": ["pattern.unchecked"],
           "text": "Treiber, Druckwarteschlange und zeitgleiche Störungen von Hand eingrenzen: mindestens ein Muster wurde nicht geprüft; welches und warum, steht bei der Ursache",
           "where": "Vorfallsansicht, Abschnitt „Wer oder was hat es verursacht“: Angabe „Nicht geprüft“",
@@ -2701,18 +2875,21 @@
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.zuordnungswerkzeug-drucker",
           "text": "Wenn ein Zuordnungswerkzeug die Drucker zuordnet: prüfen, ob die Zuordnung bei der Anmeldung und nach einer Wiederverbindung gelaufen ist und ob der Prozess des Werkzeugs in den Sitzungen läuft",
           "where": "Sitzung eines betroffenen Benutzers: zugeordnete Drucker und Standarddrucker; Expertenansicht, Reiter „Drucken“: Prozesse der Rolle „Drucken“; Verwaltung des Zuordnungswerkzeugs",
           "sign": "Drucker, die fehlen, doppelt vorhanden sind oder zu einem anderen Endgerät gehören; Prozess des Zuordnungswerkzeugs in der Sitzung beendet",
           "source": "WorkerPerf: Hinweis zur Auswertung"
         },
         {
+          "id": "print.falschem-standarddrucker-doppelt",
           "text": "Bei falschem Standarddrucker, doppelt angezeigten Druckern oder falschen Druckern nach einem Wechsel des Endgeräts: Version des PrinTaurus SmartSpread Client feststellen und prüfen, ob Drucker- und Freigabename der betroffenen Druckwarteschlange verschieden sind",
           "where": "Programme und Features auf dem Server: PrinTaurus SmartSpread Client; Druckserver: Name und Freigabename der Druckwarteschlange; nach James Kindon (2018) auch prüfen, ob zusätzlich WEM Drucker zuordnet oder „Delete network printers at startup“ gesetzt ist; die Drucker soll nur ein Werkzeug zuordnen",
           "sign": "Client älter als Version 6.2 (laut AKI wurde bis dahin der erzwungene Standarddrucker bei verschiedenen Namen nicht richtig zugewiesen; als Änderung der Version 6.2 führt AKI auch, dass die Zuordnungen passend zum Endgerät gesetzt werden, wenn der Benutzer es ohne Neuanmeldung wechselt); ab 6.2 zeigt Windows eine Druckwarteschlange mit verschiedenen Namen doppelt an (laut AKI eine bekannte Einschränkung)",
           "source": "AKI: Release Notes 6.2 deutsch"
         },
         {
+          "id": "print.rueckblick-reichweite",
           "when": ["before"],
           "text": "Einordnen, wie weit der Rückblick reicht: bei nicht persistenten Servern beginnen die Ereignisprotokolle mit dem letzten Neustart, ein Druckproblem eines früheren Tages ist deshalb nur zu sehen, wenn der Server seither nicht neu gestartet wurde",
           "where": "Bereich „Vor der Messung“: Zeitraum, den der Rückblick abdeckt; letzter Neustart des Servers (Task-Manager, Registerkarte „Leistung“: Betriebszeit)",
@@ -2723,160 +2900,187 @@
       ],
       "remedies": [
         {
+          "id": "print.treiber-isolieren",
           "when": ["driver.shared", "pattern.printdriver"],
           "text": "Treiber {driver} in einem eigenen Prozess laufen lassen (Isolierung „isoliert“, je Treiber einstellbar in der Druckverwaltung; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Treiber in einem eigenen Prozess lauffähig ist (bei Isolierung „keine“ hat sein Hersteller das nicht zugesagt), häufig Fehler verursacht oder Arbeitsspeicher verliert und damit andere Treiber im selben Prozess stört und die Wirkung zuerst auf einem Testserver geprüft ist",
           "source": "Microsoft: Printer driver isolation"
         },
         {
+          "id": "print.treiber-entfernen",
           "when": ["spooler.crash", "pattern.printdriver"],
           "text": "Treiber {driver} entfernen und die betroffenen Drucker zum Test mit dem Citrix-Universaltreiber oder einem generischen Microsoft-Treiber betreiben (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "die Abstürze des Dienstes „Druckwarteschlange“ immer das Modul dieses Treibers nennen, der Treiber von einem Druckerhersteller stammt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Citrix: Troubleshooting"
         },
         {
+          "id": "print.richtlinie-override-print",
           "when": ["driver.shared", "spooler.crash"],
           "text": "Richtlinie „Override print driver execution compatibility setting reported by print driver“ aktivieren (Registrierungswert PrintDriverIsolationOverrideCompat); der Dienst „Druckwarteschlange“ isoliert dann alle Treiber, die die Isolierung nicht ausdrücklich ablehnen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "Treiber mit der Isolierung „keine“ den Dienst „Druckwarteschlange“ zum Absturz bringen, die Wirkung auf einem Testserver geprüft ist und die Richtlinie auf dem Server gilt (Microsoft beschreibt die Richtlinie für Windows 10 und 11)",
           "source": "Microsoft: Policy CSP - ADMX_Printing"
         },
         {
+          "id": "print.universaltreiber-regel-verwenden",
           "when": ["pattern.printdriver"],
           "text": "Citrix-Universaltreiber als Regel verwenden und nicht mehr benötigte Druckertreiber deinstallieren, damit Zahl und Konflikte der Treiber klein bleiben (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "Citrix die Drucker anlegt (Clientdrucker oder Sitzungsdrucker über Citrix-Richtlinien), die Drucker mit dem Universaltreiber die benötigten Funktionen bieten und die Treiber in einem Wartungsfenster entfernt werden",
           "source": "Citrix: Best practices"
         },
         {
+          "id": "print.treiber-zuordnung-richtlinie",
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} über die Citrix-Richtlinie „Printer driver mapping and compatibility“ durch einen geprüften Treiber ersetzen oder sperren („Do not create“) und die Drucker danach gründlich testen (eine Richtlinie wirkt auch auf nicht persistente Server)",
           "precondition": "die Drucker über Citrix-Richtlinien zugeordnet werden, der Universaltreiber nicht für alle Drucker in Frage kommt und Clientdrucker automatisch mit diesem Treiber angelegt werden",
           "source": "Citrix: Maintain the printing environment"
         },
         {
+          "id": "print.treiber-nicht-ueberinstallieren",
           "when": ["pattern.printdriver"],
           "text": "Treiber {driver} nicht über die vorhandene Version aktualisieren, sondern sauber erneuern (deinstallieren, Server neu starten, neue Version installieren; bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Hersteller eine neuere Version des Treibers anbietet und ein Wartungsfenster für den Neustart besteht, der alle Sitzungen des Servers beendet",
           "source": "Citrix: Best practices"
         },
         {
+          "id": "print.treiberwahl-automatisch-angelegte",
           "when": ["pattern.printdriver", "driver.vendor.HP"],
           "text": "Treiberwahl für automatisch angelegte Clientdrucker von HP nach dem Endgerät richten; laut HP ist der Citrix-Universaltreiber die bessere Wahl für Windows-Endgeräte, der HP Universal Print Driver für Thin Clients und Endgeräte ohne Windows (Treiberwechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein HP-Treiber für Clientdrucker ersetzt werden soll",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.hostbasierte-hp-treiber",
           "when": ["pattern.printdriver", "driver.vendor.HP"],
           "text": "Hostbasierte HP-Treiber nicht auf dem Server betreiben; HP empfiehlt sie auf Citrix-Servern nicht, und laut HP können diese Clientdrucker über den Citrix-Universaltreiber bedient werden, während der hostbasierte Treiber auf dem Endgerät bleibt (Entfernen des Treibers bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "{driver} ein hostbasierter Treiber ist und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
         },
         {
+          "id": "print.hp-upd-entfernen",
           "when": ["pattern.printdriver", "driver.vendor.HP"],
           "text": "HP Universal Print Driver in der Reihenfolge von HP entfernen (erst alle Drucker löschen, die ihn verwenden, dann den Treiber in den Druckservereigenschaften auf der Registerkarte „Treiber“; am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein HP Universal Print Driver entfernt oder ersetzt werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.dienst-druckwarteschlange-anhalten",
           "when": ["pattern.printdriver", "driver.vendor.HP"],
           "text": "Dienst „Druckwarteschlange“ anhalten und wieder starten; dabei können alle Benutzer des Servers kurz nicht drucken, und laufende Druckaufträge können verloren gehen",
           "precondition": "Windows beim Entfernen des HP Universal Print Driver meldet, der Treiber sei in Gebrauch, und ein Wartungsfenster besteht",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.spool-ordner-hand-leeren",
           "when": ["spooler.crash"],
           "text": "Spool-Ordner von Hand leeren (Dienst „Druckwarteschlange“ anhalten, die Dateien im Spool-Ordner löschen, Dienst wieder starten); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
           "precondition": "die Benutzer des Servers informiert sind und der Neustart des Dienstes nicht hilft oder der Ausfall sich wiederholt",
           "source": "Citrix: Troubleshooting"
         },
         {
+          "id": "print.spool-ordner-schutzsoftware",
           "when": ["spooler.crash"],
           "text": "Spool-Ordner in der Schutzsoftware vom Scan ausnehmen (in der zentralen Verwaltung der Schutzsoftware oder per Richtlinie, sonst bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); nach der Sammlung von John Billekens genügt die enge Liste, die Microsoft für die Rolle Druckserver nennt (Ordner spool\\PRINTERS, Dateiendungen .shd und .spl, spoolsv.exe mit vollem Pfad), nicht der ganze Ordner System32\\spool",
           "precondition": "die Schutzsoftware nachweislich Dateien blockiert, die der Dienst „Druckwarteschlange“ braucht (Meldung der Schutzsoftware zur Uhrzeit des Ausfalls), und die Verantwortlichen für die Sicherheit zustimmen",
           "source": "Microsoft: Troubleshoot printing issues caused by Print Spooler service not running"
         },
         {
+          "id": "print.treiber-der-warteschlange-aktuell",
           "when": ["queue.stuck"],
           "text": "Treiber der betroffenen Druckwarteschlange auf die aktuelle Version des Herstellers bringen; ist er schon aktuell, einen generischen, mit Windows gelieferten Treiber verwenden (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "sich hängende oder fehlgeschlagene Aufträge auf einen Treiber eingrenzen lassen",
           "source": "Microsoft: Troubleshooting scenarios for printing"
         },
         {
+          "id": "print.auftraege-haengen-alt",
           "when": ["queue.stuck"],
           "text": "Aufträge, die hängen oder alt sind, regelmäßig aus den Druckwarteschlangen löschen",
           "precondition": "Aufträge über längere Zeit in einer Druckwarteschlange stehen bleiben",
           "source": "Citrix: Best practices"
         },
         {
+          "id": "print.brother-dienst-zuruecksetzen",
           "when": ["queue.stuck", "driver.vendor.Brother"],
           "text": "Dienst „Druckwarteschlange“ zurücksetzen, wie Brother es beschreibt („net stop spooler“, alle Dateien im Ordner PRINTERS löschen, „net start spooler“); dabei gehen die wartenden Druckaufträge aller Benutzer des Servers verloren; bei nicht persistenten Servern setzt auch ein Neustart den Spool-Ordner auf den Stand des Master-Image zurück",
           "precondition": "Aufträge an Brother-Geräten mit Netzwerkanschluss im Status „Error - Sent to Printer“, „Sent to Printer“ oder „Deleting - Printing“ stehen bleiben, sich in der Druckwarteschlange nicht einzeln löschen lassen und die Benutzer des Servers informiert sind (die Seite von Brother nennt Windows Vista bis 10)",
           "source": "Brother: I'm using Windows Vista, Windows 7, Windows 8 or Windows 10 and a network connected Brother machine. The following errors \"Error - Sent to Printer\", \"Sent to Printer\" or \"Deleting - Printing\" appear in the PC Print Queue."
         },
         {
+          "id": "print.verwaiste-druckwarteschlangen",
           "when": ["queue.stuck"],
           "text": "Druckwarteschlangen, deren Druckserver es nicht mehr gibt oder der umgezogen ist, aus den Regeln des Zuordnungswerkzeugs streichen lassen (zentrale Einstellung des Werkzeugs, nicht am Server); die Praxisquelle Trentent Tye (2016, XenApp 6.5) fand solche veralteten Zuordnungen als Ursache langer Anmeldungen",
           "precondition": "eine zugeordnete Druckwarteschlange auf einen Druckserver zeigt, der nicht antwortet oder die Warteschlange nicht mehr hat",
           "source": "Trentent Tye (Empfehlung aus der Praxis): ControlUp - Dissecting Logon Times a step further (Printer loading)"
         },
         {
+          "id": "print.hp-upd-traditional-mode",
           "when": ["driver.vendor.HP"],
           "text": "HP Universal Print Driver auf dem Server im „Traditional Mode“ installieren (install.exe oder Druckerinstallations-Assistent); den „Dynamic Mode“ unterstützt HP auf Citrix-Servern nicht, weil sich dann mehrere Benutzer den einen Anschluss der Druckwarteschlange teilen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der HP Universal Print Driver auf dem Server im „Dynamic Mode“ installiert ist",
           "source": "HP: HP Print and Scan Devices Supported in Citrix Virtual Apps and Virtual Desktops Environments"
         },
         {
+          "id": "print.kpdl-pcl-uni-treiber",
           "when": ["driver.vendor.Kyocera"],
           "text": "KPDL- oder PCL-Uni-Treiber von Kyocera statt des KX-Treibers verwenden; Kyocera empfiehlt sie für Citrix- und Terminalserver-Umgebungen wegen ihrer geringeren Größe (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der KX-Treiber installiert ist und die Benutzer seine zusätzlichen Funktionen nicht brauchen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
+          "id": "print.kx-treiber-installationsprogramm",
           "when": ["driver.vendor.Kyocera"],
           "text": "KX-Treiber nicht mit dem Installationsprogramm über die vorhandene Version aktualisieren, sondern erst die alte Version deinstallieren und dann die neue installieren; die Aktualisierung per Installationsprogramm hat Kyocera in Druckserver-Umgebungen entfernt (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein KX-Treiber auf einem Server mit freigegebenen Druckern erneuert werden soll und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
         },
         {
+          "id": "print.kyocera-treiber-web-paket",
           "when": ["driver.vendor.Kyocera"],
           "text": "Kyocera-Treiber aus einem Web-Paket mit KmUninstall.exe aus dem Ordner \\Program Files\\Kyocera entfernen und danach die Treiberliste kontrollieren; laut Kyocera lassen sich alternative Treiber in manchen Fällen nicht mit dem Deinstallationsprogramm löschen (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Kyocera-Treiber entfernt werden soll, im Startmenü ein Eintrag zum Deinstallieren fehlt und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Kyocera: Release Notes April 29, 2025 (DVD Contents)"
         },
         {
+          "id": "print.kx-wechsel-auf-typ-4",
           "when": ["driver.vendor.Kyocera", "driver.v3"],
           "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 3 auf den KX-Treiber Typ 4 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht und hat zum Beispiel keinen Status Monitor (Wechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Wechsel auf die Bauart Typ 4 erwogen wird",
           "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
         },
         {
+          "id": "print.kx-wechsel-auf-typ-3",
           "when": ["driver.vendor.Kyocera", "driver.v4"],
           "text": "Funktionsumfang vergleichen, bevor vom KX-Treiber der Bauart Typ 4 (PCL 6 oder XPS) auf den KX-Treiber Typ 3 gewechselt wird; laut Kyocera ersetzt der Typ-4-Treiber den Typ-3-Treiber nicht, der Funktionsumfang beider unterscheidet sich (Wechsel bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Wechsel auf die Bauart Typ 3 erwogen wird",
           "source": "Kyocera: Class leading performance with the KYOCERA V4 KX DRIVER. (data sheet)"
         },
         {
+          "id": "print.brother-universal-printer",
           "when": ["driver.vendor.Brother"],
           "text": "Brother Universal Printer Driver als gemeinsamen Treiber für die Brother-Geräte im Netz prüfen (ein Treiber statt je Modell ein eigener, nur für Geräte mit Netzwerkanschluss); die gelesene Seite von Brother nennt Windows Server nur bis 2016 (Installation bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "mehrere Brother-Treiber für einzelne Modelle installiert sind und Brother den Treiber für Windows Server 2022 anbietet",
           "source": "Brother: Use the Universal Printer Driver for BR-Script. (PostScript language emulation)"
         },
         {
+          "id": "print.brother-treiber-vollstaendig",
           "when": ["driver.vendor.Brother"],
           "text": "Brother-Treiber vollständig entfernen (zuerst über „Brother Utilities“ deinstallieren, sonst mit dem „Uninstall Tool“ von Brother; Administratorrechte nötig); die Seite von Brother nennt dafür Windows 7 bis 11 (am Server selbst nur bis zum Neustart wirksam; dauerhaft bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "ein Brother-Treiber entfernt oder neu installiert werden soll, Brother das „Uninstall Tool“ für das Betriebssystem des Servers anbietet und ein Wartungsfenster besteht, in dem die Drucker mit diesem Treiber für alle Benutzer ausfallen dürfen",
           "source": "Brother: Uninstall the Brother Software and Drivers (Windows)"
         },
         {
+          "id": "print.printaurus-smartspread-client",
           "text": "PrinTaurus SmartSpread Client und die übrigen PrinTaurus-Komponenten auf denselben Release-Stand bringen, bei doppelt angezeigten Druckern auf Version 6.4 oder neuer (Client bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); laut AKI behebt 6.4 Fehler des Clients, die Druckwarteschlangen doppelt anzeigten",
           "precondition": "der Client älter als Version 6.4 ist oder einen anderen Release-Stand hat als die Druckserver (die Regel, dass alle Komponenten zum selben Release gehören sollen, nennt AKI für das Update auf 6.4)",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         },
         {
+          "id": "print.lokale-ipp-druckerwarteschlangen",
           "text": "Lokale IPP-Druckerwarteschlangen von PrinTaurus SmartSpread den Benutzern dieses Servers nicht zuweisen; laut AKI ist die Funktion in Version 6.4 nur für Fat Clients verfügbar und in Citrix- oder Terminalserver-Umgebungen nicht unterstützt",
           "precondition": "PrinTaurus 6.4 im Einsatz ist und Benutzern dieses Servers IPP-Verbindungen zugewiesen sind",
           "source": "AKI: Release Notes PrinTaurus 6.4"
         },
         {
+          "id": "print.protokoll-windows-printservice",
           "text": "Protokoll „Microsoft-Windows-PrintService/Operational“ einschalten und so groß wählen, dass es die Zeit zwischen zwei Neustarts fasst (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen); es führt Einträge je Drucker und je Auftrag, die dem Protokoll „Admin“ fehlen; die Praxisquelle Trentent Tye (2019) schaltet es ein, um Anmeldezeit einzelnen Druckern zuzuordnen",
           "precondition": "das Protokoll ausgeschaltet ist und das nächste Druckproblem von Hand untersucht werden soll",
           "source": "Trentent Tye (Empfehlung aus der Praxis): Printers and their impact on logon duration"
@@ -2884,16 +3088,19 @@
       ],
       "contacts": [
         {
+          "id": "print.hersteller-druckertreibers",
           "when": ["pattern.printdriver"],
           "text": "Hersteller des Druckertreibers (bei Treibern, die nicht von Microsoft stammen): mit der Frage, ob der Treiber für Terminalserver zertifiziert ist (WHQL), und mit Version, fehlerhaftem Modul und Fehlercode aus den Belegen; Citrix selbst zertifiziert Druckertreiber nicht",
           "source": "Citrix: Best practices, security considerations, and default operations"
         },
         {
+          "id": "print.support-hp-angabe-treiber",
           "when": ["driver.vendor.HP"],
           "text": "Support von HP: mit der Angabe, welcher Treiber zugeordnet ist, ob das Problem auch außerhalb einer Sitzung auftritt, und mit den Fehlereinträgen des Dienstes „Druckwarteschlange“ aus der Ereignisanzeige",
           "source": "HP: System Administrator's Guide For the HP V3 Universal Print Driver (PCL 6/PS) and the HP Print Administrator's Resource Kit (PARK)"
         },
         {
+          "id": "print.support-kyocera-help",
           "when": ["driver.vendor.Kyocera"],
           "text": "Support von Kyocera (Help Desk), wenn der KX-Treiber gebraucht wird oder eine vorhandene Version des KX-Treibers erneuert werden soll",
           "source": "Kyocera: KX DRIVER INSTALLER Release Notes (KYOCERA Document Solutions America, Inc.)"
@@ -2968,12 +3175,14 @@
           "sign": "Fehlerzeile zur Uhrzeit der Anmeldung mit Pfad und Fehlercode"
         },
         {
+          "id": "profileerror.protokoll-benutzerprofildiensts",
           "text": "Im Protokoll des Benutzerprofildiensts die Anmeldungen und Abmeldungen des Benutzers nachlesen; die Praxisquelle Guy Leech (2018) liest daraus Beginn und Ende jeder Sitzung: Ereignis 1 steht für den Beginn der Verarbeitung des Profils bei der Anmeldung, Ereignis 4 für ihr Ende bei der Abmeldung",
           "where": "Ereignisanzeige: Anwendungs- und Dienstprotokolle > Microsoft > Windows > User Profile Service > Operational; die Sitzungsnummer steht in den Details des Ereignisses; das Protokoll reicht nur bis zum letzten Neustart des Servers zurück",
           "sign": "Frühere, schon beendete Sitzung des Benutzers mit Ereignis 1, aber ohne passendes Ereignis 4: ihre Abmeldung wurde nicht abgeschlossen; sie kann das Profil noch halten (das folgert diese Anleitung, nicht die Praxisquelle)",
           "source": "Guy Leech (Empfehlung aus der Praxis): Showing Current & Historical User Sessions"
         },
         {
+          "id": "profileerror.profilcontainer-voll-fast",
           "text": "Wenn der Profilcontainer voll oder fast voll ist: Höchstgröße und automatische Vergrößerung des Containers in der Richtlinie der Citrix Profilverwaltung prüfen; die Praxisquelle Aaron Parker (2019, für FSLogix beschrieben) warnt, dass Anwendungen einen vollen Container nicht abfangen, und bemisst die Größe nach den vorhandenen Profilen mit Zuwachs",
           "where": "Richtlinie der Citrix Profilverwaltung: Größe des Profilcontainers und automatische Vergrößerung; Profilspeicher: Größe der Containerdatei des Benutzers",
           "sign": "Höchstgröße knapp über der heutigen Belegung und keine automatische Vergrößerung",
@@ -2993,6 +3202,7 @@
           "precondition": "der Fehler nur bei diesem Benutzer auftritt und seine Profildateien beschädigt sind"
         },
         {
+          "id": "profileerror.automatically-reattach-vhdx",
           "when": ["pattern.companion"],
           "text": "„Automatically reattach VHDX disks“ der Citrix Profilverwaltung einschalten (Richtlinie, ab Version 2402 LTSR; eine Richtlinie wirkt auch auf nicht persistente Server), damit der Profilcontainer nach einem kurzen Ausfall wieder eingebunden wird; die Praxisquelle Thomas Kötzing (2026) nennt für wiederkehrende Ausfälle zusätzlich „Enable local caching for profile containers“; Thomas Kötzing (2026) nennt dafür auf nicht persistenten Servern etwa 5 Sekunden längere Anmeldungen (seine Angabe, keine Messreihe); mit lokalem Cache auch die Vorgaben von Citrix für das neue Teams in der Profilverwaltung umsetzen; mit lokalem Cache den freien Platz des Servers beobachten",
           "precondition": "Ausfälle des Speichers oder des Netzes zum Profilspeicher wiederkehren",
@@ -3003,11 +3213,13 @@
           "precondition": "eine zweite oder hängengebliebene Sitzung desselben Benutzers besteht"
         },
         {
+          "id": "profileerror.zurueckschreiben-mehreren",
           "text": "Zurückschreiben aus mehreren Sitzungen für Profilcontainer in der Citrix Profilverwaltung einschalten und den exklusiven Zugriff auf den Profilcontainer nicht zugleich einschalten (Richtlinie; eine Richtlinie wirkt auch auf nicht persistente Server); nach der Praxisquelle Thomas Kötzing (2026) bekommt eine weitere Sitzung dann einen eigenen beschreibbaren Container, und die Änderungen werden zurückgeschrieben, sobald die Sperre frei ist; bei gleichzeitigen Sitzungen gewinnt die letzte Änderung",
           "precondition": "Profilfehler wiederkehren, weil eine zweite oder hängengebliebene Sitzung desselben Benutzers den Profilcontainer sperrt (Einstellung „Enable multi-session write-back for profile containers“)",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Citrix UPM wie FSLogix nutzen – nur besser!"
         },
         {
+          "id": "profileerror.wartungsmodus-setzen-neu",
           "text": "Server in den Wartungsmodus setzen und neu starten, sobald er leer ist, damit er mit einer sauberen Profilliste startet; nach der Praxisquelle Thomas Kötzing (2024) verursachen Einträge mit der Endung .bak in der Profilliste der Registrierung temporäre Profile; liegt ein solcher Eintrag oder ein Rest des Profils schon im Master-Image, es dort bereinigen (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "precondition": "der Benutzer mit einem temporären Profil angemeldet wurde und ein Eintrag mit der Endung .bak für ihn besteht",
           "source": "Thomas Kötzing (Empfehlung aus der Praxis): Powershell-Skript zum Löschen von temporären Benutzerprofilen"
@@ -3088,6 +3300,7 @@
           "whereQuick": "Bereich „Vor dem Lesen“; Ereignisanzeige, Protokoll „System“ und Anwendungs- und Dienstprotokolle > Microsoft > Windows > SMBClient"
         },
         {
+          "id": "system.datentraeger-dateisystemfehler",
           "text": "Wenn der Datenträger- oder Dateisystemfehler das Systemlaufwerk oder den Cache-Datenträger von MCS nennt und dieser fast voll ist: feststellen, was ihn seit dem Start des Servers füllt; die Praxisquelle Guy Leech (Skript ohne Datum) listet dafür die seit dem Start erzeugten oder geänderten Dateien nach Größe auf; finden sich wenige große oder schnell wachsende Dateien eines Produkts, den Schreiber abstellen oder umleiten (bei nicht persistenten Servern im Master-Image, danach die Server neu bereitstellen)",
           "where": "Auf dem Server: Dateien mit Änderungsdatum nach dem letzten Start in Protokoll-, Cache- und Aktualisierungsordnern, die größten zuerst, mit dem Skript der Praxisquelle („Get files modified since boot.ps1“) oder einer Dateisuche nach Änderungsdatum (eine Suche über das ganze Laufwerk dauert lange)",
           "sign": "Wenige große oder schnell wachsende Dateien eines Produkts; die Größe der Dateien entspricht der Belegung des Caches nicht genau",

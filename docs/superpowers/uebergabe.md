@@ -28,8 +28,9 @@ Regeln, die von Plan oder Entwurf abweichen (Entscheidungen dieser Sitzung; am e
 - **Leistung je Kern** wird bei breiter Last über dem Ziel nicht gefragt; dann gilt „Kapazität“.
 - **Größenwechsel:** Last und Hochrechnung stammen nur aus den Aufzeichnungen mit der letzten Größe.
 - Das Satzfeld der Einordnung heißt in den Berichtsdaten `advice` (`direction` ist ein Schlüsselwortfeld).
-- Die zwei Schritte der Einordnung stehen am Ende von `checks` in `guidance.de.json` und werden durch die Reihungsregel
-  nach vorn gestellt (sonst verschieben sich die Indexverweise in `docs/guidance/quellen.md`).
+- Der Nachweis `docs/guidance/quellen.md` verweist über Kennungen (Feld `id` im Katalog) auf die Schritte, nicht mehr
+  über ihre Position. Ein neuer Schritt mit Quelle braucht eine Kennung; sein Platz in der Liste ist frei. Die zwei
+  Schritte der Einordnung stehen weiter am Ende von `checks` und werden durch die Reihungsregel nach vorn gestellt.
 
 Kleinigkeiten, gesammelt und nicht umgesetzt:
 

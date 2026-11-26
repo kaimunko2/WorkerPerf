@@ -77,7 +77,9 @@ BeforeAll {
             @(foreach ($e in @($Guide.checks) + @($Guide.remedies) + @($Guide.contacts)) { foreach ($k in @($e.Keys)) { if ($null -ne $e[$k]) { [string]$e[$k] } } })
     }
     function Get-Elements($Catalogue) {
-        # every check, remedy and contact of the catalogue: position ('print.remedies[2]'), conditions, source, texts
+        # every check, remedy and contact of the catalogue: position ('print.remedies[2]'), its id ('' without one), the
+        # reference the source record uses for it (Ref: the id, or the position of an element without id), conditions,
+        # source, texts
         foreach ($s in $script:WorkerPerfSituations) {
             foreach ($list in 'checks', 'remedies', 'contacts') {
                 $elements = @($Catalogue.situations.$s.$list)
@@ -86,7 +88,9 @@ BeforeAll {
                     $when = @(); if ($el.PSObject.Properties['when']) { $when = @($el.when) }
                     $source = ''; if ($el.PSObject.Properties['source']) { $source = [string]$el.source }
                     $texts = @(foreach ($f in 'text', 'where', 'sign', 'precondition') { if ($el.PSObject.Properties[$f]) { [string]$el.$f } })
-                    [pscustomobject]@{ Situation = $s; List = $list; Position = "$s.$list[$k]"; When = $when; Source = $source; Texts = $texts }
+                    $id = ''; if ($el.PSObject.Properties['id']) { $id = [string]$el.id }
+                    $ref = $id; if (-not $ref) { $ref = "$s.$list[$k]" }
+                    [pscustomobject]@{ Situation = $s; List = $list; Position = "$s.$list[$k]"; Id = $id; Ref = $ref; When = $when; Source = $source; Texts = $texts }
                 }
             }
         }
@@ -168,25 +172,37 @@ BeforeAll {
         }
     }
     function Get-Placeholders([string]$Text) { @([regex]::Matches($Text, '\{([A-Za-z0-9]+)\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) }
+    function Get-Ids([string]$Text) {
+        # the ids of catalogue elements a text names in backticks: '<situation>.<keyword>' (Aussage geaendert (Kennungen))
+        foreach ($m in [regex]::Matches($Text, '`((?:' + (@($script:WorkerPerfSituations | Sort-Object Length -Descending | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')\.[a-z0-9]+(?:-[a-z0-9]+)*)`')) { $m.Groups[1].Value }
+    }
+    function Get-SwappedCatalogue([string]$Situation, [string]$List, [int]$A, [int]$B) {
+        # the catalogue as read, with two elements of one list in each other's place
+        $c = Get-Content $script:CatalogueFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $l = $c.situations.$Situation.$List; $x = $l[$A]; $l[$A] = $l[$B]; $l[$B] = $x
+        $c
+    }
     function Get-Positions([string]$Text) { @([regex]::Matches($Text, '`([a-z.]+\.(?:checks|remedies|contacts)\[\d+\])`') | ForEach-Object { $_.Groups[1].Value }) }
     function Get-SourceRows([string]$Path) {
         # the rows of the tables of adopted sources in docs/guidance/quellen.md: vendor or source from practice (heading
         # '## <vendor>' or '## <vendor> – <topic>', also the section 'WorkerPerf' of the report's own notes), title (first
-        # cell), the catalogue positions the row adopts (the first cell after the title that names positions) and the
-        # positions its remaining cells (the note) speak about; a row without positions is no row of an adopted source
+        # cell), the ids of the catalogue elements the row adopts (the first cell after the title that names ids) and the
+        # ids its remaining cells (the note) speak about; a row without ids is no row of an adopted source
         $vendor = ''
         foreach ($line in [IO.File]::ReadAllLines($Path)) {
+            # the section of the health picture at the end has its own keys in backticks ('profile.service') and its own tests
+            if ($line -match '^## Zustandsbild') { break }
             $m = [regex]::Match($line, '^##\s+(.+?)\s*$')
             if ($m.Success) { $vendor = ($m.Groups[1].Value -split ' – ', 2)[0]; continue }
             if ($line -notmatch '^\|') { continue }
             $cells = @($line.Trim('|') -split '\|')
-            $positions = @(); $noted = @()
+            $ids = @(); $noted = @()
             for ($k = 1; $k -lt $cells.Count; $k++) {
-                $found = @(Get-Positions $cells[$k])
-                if ($positions.Count -eq 0) { $positions = $found } else { $noted += $found }
+                $found = @(Get-Ids $cells[$k])
+                if ($ids.Count -eq 0) { $ids = $found } else { $noted += $found }
             }
-            if ($positions.Count -eq 0) { continue }
-            [pscustomobject]@{ Vendor = $vendor; Title = $cells[0].Trim(); Positions = $positions; Noted = $noted; Line = $line }
+            if ($ids.Count -eq 0) { continue }
+            [pscustomobject]@{ Vendor = $vendor; Title = $cells[0].Trim(); Ids = $ids; Noted = $noted; Line = $line }
         }
     }
 }
@@ -1770,44 +1786,63 @@ Describe 'Nachweis der Druckempfehlungen' {
         $script:Doc = $(if ($cut -ge 0) { $all.Substring(0, $cut + 1) } else { $all })
         function Get-NamedElements([string]$Text) {
             # the elements a text of the record names by list, first words in quotation marks and situation (Abhilfe „… …“
-            # der Situation `print`): the words as written, and the positions of the elements of that list whose text
-            # starts with them (a placeholder in its declared form ‹…› back to the placeholder). One position: found.
+            # der Situation `print`): the words as written, and the references (id, or position without one) of the
+            # elements of that list whose text starts with them (a placeholder in its declared form ‹…› back to the
+            # placeholder). One reference: found.
             $forms = @{}; foreach ($m in [regex]::Matches($script:Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
             $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
             foreach ($m in [regex]::Matches(($Text -replace '\s+', ' '), '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`')) {
                 $words = $m.Groups[2].Value; foreach ($f in $forms.Keys) { $words = $words.Replace($f, $forms[$f]) }
                 $list = $lists[$m.Groups[1].Value]; $situation = $m.Groups[3].Value
                 $elements = @($script:Real.situations.$situation.$list); $hits = @()
-                for ($k = 0; $k -lt $elements.Count; $k++) { if (([string]$elements[$k].text).StartsWith($words, [StringComparison]::Ordinal)) { $hits += "$situation.$list[$k]" } }
-                [pscustomobject]@{ Name = $m.Value; Words = $words; Positions = $hits }
+                for ($k = 0; $k -lt $elements.Count; $k++) { if (([string]$elements[$k].text).StartsWith($words, [StringComparison]::Ordinal)) { if ($elements[$k].PSObject.Properties['id']) { $hits += [string]$elements[$k].id } else { $hits += "$situation.$list[$k]" } } }
+                [pscustomobject]@{ Name = $m.Value; Words = $words; Refs = $hits }
             }
         }
     }
-    It 'fuehrt jedes Element mit Quelle an seiner Stelle unter seinem Dokument' {
+    It 'gibt jedem Schritt mit Quelle im mitgelieferten Katalog eine Kennung' {
+        $missing = @($Sourced | Where-Object { -not $_.Id } | ForEach-Object { '{0}: {1}' -f $_.Position, $_.Texts[0].Substring(0, [Math]::Min(50, $_.Texts[0].Length)) })
+        $missing | Should -BeNullOrEmpty
+        @($Sourced | ForEach-Object { $_.Id } | Sort-Object -Unique).Count | Should -Be $Sourced.Count
+    }
+    It 'nennt im Nachweis keine Position mehr, nur Kennungen' {
+        @(Get-Positions $Doc).Count | Should -Be 0
+        @(Get-Ids $Doc | Sort-Object -Unique).Count | Should -BeGreaterOrEqual $Sourced.Count
+    }
+    It 'bleibt gruen, wenn zwei Schritte mit Quelle ihre Plaetze tauschen' {
+        # the same ids with the same sources, wherever the steps stand: what the record is compared with does not move
+        $list = @($Real.situations.print.remedies); $a = -1; $b = -1
+        for ($k = 0; $k -lt $list.Count; $k++) { if ($list[$k].PSObject.Properties['id']) { if ($a -lt 0) { $a = $k } elseif ($b -lt 0) { $b = $k } } }
+        $b | Should -BeGreaterThan $a
+        $swapped = @(Get-Elements (Get-SwappedCatalogue 'print' 'remedies' $a $b))
+        @($swapped | Where-Object { $_.Position -eq "print.remedies[$a]" })[0].Id | Should -Be ([string]$list[$b].id)
+        @($swapped | Where-Object Id | ForEach-Object { $_.Id + '=' + $_.Source } | Sort-Object) | Should -Be @($Sourced | ForEach-Object { $_.Id + '=' + $_.Source } | Sort-Object)
+    }
+    It 'fuehrt jedes Element mit Quelle mit seiner Kennung unter seinem Dokument' {                                     # Aussage geaendert (Kennungen)
         $Sourced.Count | Should -BeGreaterThan 20
         $listed = @{}
-        foreach ($row in $Rows) { foreach ($p in $row.Positions) { $listed[$p] = "$($row.Vendor): $($row.Title)" } }
+        foreach ($row in $Rows) { foreach ($p in $row.Ids) { $listed[$p] = "$($row.Vendor): $($row.Title)" } }
         foreach ($e in $Sourced) {
-            $listed.ContainsKey($e.Position) | Should -BeTrue -Because "$($e.Position) fehlt im Nachweis"
-            $listed[$e.Position] | Should -BeExactly $e.Source -Because $e.Position
+            $listed.ContainsKey($e.Id) | Should -BeTrue -Because "$($e.Position) ($($e.Id)) fehlt im Nachweis"
+            $listed[$e.Id] | Should -BeExactly $e.Source -Because $e.Id
         }
     }
-    It 'nennt im Nachweis keine Stelle, die der Katalog nicht hat, und keine doppelt' {
-        $bySource = @{}; foreach ($e in $Sourced) { $bySource[$e.Position] = $e.Source }
+    It 'nennt im Nachweis keine Kennung, die der Katalog nicht hat, und keine doppelt' {                                  # Aussage geaendert (Kennungen)
+        $bySource = @{}; foreach ($e in $Sourced) { $bySource[$e.Id] = $e.Source }
         $seen = @{}
         foreach ($row in $Rows) {
-            foreach ($p in $row.Positions) {
+            foreach ($p in $row.Ids) {
                 $bySource.ContainsKey($p) | Should -BeTrue -Because "$p steht im Nachweis, aber nicht im Katalog"
                 $bySource[$p] | Should -BeExactly "$($row.Vendor): $($row.Title)" -Because $p
                 $seen.ContainsKey($p) | Should -BeFalse -Because "$p steht zweimal im Nachweis"; $seen[$p] = $true
             }
-            # a note names an element by its first words, never by its position (fix round 4, C4), and speaks only about
+            # a note names an element by its first words, never by its id (fix round 4, C4), and speaks only about
             # elements of its own row
             $row.Noted | Should -Be @() -Because "Hinweis zu $($row.Title)"
             foreach ($n in @(Get-NamedElements $row.Line)) {
                 $n.Words | Should -Not -Match '[‹›]' -Because $n.Name
-                $n.Positions.Count | Should -Be 1 -Because "$($n.Name) im Hinweis zu $($row.Title)"
-                $row.Positions | Should -Contain $n.Positions[0] -Because "$($n.Name) im Hinweis zu $($row.Title)"
+                $n.Refs.Count | Should -Be 1 -Because "$($n.Name) im Hinweis zu $($row.Title)"
+                $row.Ids | Should -Contain $n.Refs[0] -Because "$($n.Name) im Hinweis zu $($row.Title)"
             }
             if ($row.Vendor -eq 'WorkerPerf') { continue }
             $row.Line | Should -Match 'https://' -Because $row.Title
@@ -1818,29 +1853,29 @@ Describe 'Nachweis der Druckempfehlungen' {
     It 'fuehrt die eigenen Hinweise der Auswertung in einem Abschnitt und sagt, was auf dem Zielsystem zu bestaetigen ist' {      # ruling P3-R35, item B5
         $own = @($Rows | Where-Object { $_.Vendor -eq 'WorkerPerf' })
         $own.Count | Should -Be 1; $own[0].Title | Should -Be 'Hinweis zur Auswertung'
-        @($own[0].Positions | Sort-Object) | Should -Be @($Sourced | Where-Object { $_.Source -ceq $OwnSource } | ForEach-Object { $_.Position } | Sort-Object)
+        @($own[0].Ids | Sort-Object) | Should -Be @($Sourced | Where-Object { $_.Source -ceq $OwnSource } | ForEach-Object { $_.Id } | Sort-Object)
         $Doc | Should -Match '(?m)^## Auf dem Zielsystem zu bestätigen$'
         $at = $Doc.IndexOf("`n## Auf dem Zielsystem zu bestätigen`n")
         $section = $Doc.Substring($at)
-        # the list names its elements by their first words, never by their position (fix round 4, C4); each is found
-        @(Get-Positions $section) | Should -Be @()
+        # the list names its elements by their first words, never by their id (fix round 4, C4); each is found
+        @(Get-Ids $section) | Should -Be @()
         $named = @(Get-NamedElements $section); $named.Count | Should -Be 6
-        foreach ($n in $named) { $n.Words | Should -Not -Match '[‹›]' -Because $n.Name; $n.Positions.Count | Should -Be 1 -Because $n.Name }
+        foreach ($n in $named) { $n.Words | Should -Not -Match '[‹›]' -Because $n.Name; $n.Refs.Count | Should -Be 1 -Because $n.Name }
         # what the list says about them still stands in them
-        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
-        $texts = @($named | ForEach-Object { $byPosition[$_.Positions[0]].Texts -join ' ' })
+        $byRef = @{}; foreach ($e in (Get-Elements $Real)) { $byRef[$e.Ref] = $e }
+        $texts = @($named | ForEach-Object { $byRef[$_.Refs[0]].Texts -join ' ' })
         $texts[0] | Should -Match 'DependOnService'
         $texts[1] | Should -Match 'Isolate print drivers from applications'; $texts[2] | Should -Match 'Execute print drivers in isolated processes'
         $texts[3] | Should -Match 'Override print driver execution compatibility setting reported by print driver'
         $texts[4] | Should -Match 'Druckverwaltung'; $texts[5] | Should -Match 'Druckverwaltung'
-        @($named | ForEach-Object { $_.Positions[0] -replace '\[\d+\]$', '' }) | Should -Be @('print.checks', 'crash.checks', 'print.checks', 'print.remedies', 'print.checks', 'print.remedies')
+        @($named | ForEach-Object { $byRef[$_.Refs[0]].Position -replace '\[\d+\]$', '' }) | Should -Be @('print.checks', 'crash.checks', 'print.checks', 'print.remedies', 'print.checks', 'print.remedies')
         foreach ($word in 'DependOnService', 'Betriebsbereit', 'PrintDriverIsolationOverrideCompat', 'temporäres Profil') { $section | Should -Match ([regex]::Escape($word)) }
     }
     It 'nennt im Abschnitt Zielumgebung die Elemente mit ihren ersten Worten statt mit ihrer Stelle' {                           # fix round 3, A4
         $at = $Doc.IndexOf("`n## Zielumgebung`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
         $section = $Doc.Substring($at, $next - $at) -replace '\s+', ' '
-        # one position only: the example that explains what a position is
-        @(Get-Positions $section | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
+        # one id only: the example that explains what an id is                                                              # Aussage geaendert (Kennungen)
+        @(Get-Ids $section | Sort-Object -Unique) | Should -Be @('print.richtlinie-override-print')
         $forms = @{}; foreach ($m in [regex]::Matches($Doc, '‹([^›]+)› für `\{(\w+)\}`')) { $forms['‹' + $m.Groups[1].Value + '›'] = '{' + $m.Groups[2].Value + '}' }
         $lists = @{ 'Prüfschritt' = 'checks'; 'Abhilfe' = 'remedies'; 'Kontakt' = 'contacts' }
         $named = @([regex]::Matches($section, '(Prüfschritt|Abhilfe|Kontakt) „(.+?) …“ der Situation `([a-z.]+)`'))
@@ -1879,27 +1914,27 @@ Describe 'Nachweis der Druckempfehlungen' {
             $t = [regex]::Replace($Text.Substring(0, $cut), '\{(\w+)\}', { param($m) if ($forms.ContainsKey($m.Groups[1].Value)) { $forms[$m.Groups[1].Value] } else { $m.Value } }).Replace('|', '/')
             if ($t.Length -gt 110) { $t = $t.Substring(0, 107).TrimEnd() + ' …' }
             $t }
-        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $byRef = @{}; foreach ($e in (Get-Elements $Real)) { $byRef[$e.Ref] = $e }
         $from = $Doc.IndexOf("`n## AKI`n"); $to = $Doc.IndexOf("`n## Ausnahmen: Praxisquelle vor Hersteller`n"); $from | Should -BeGreaterThan 0; $to | Should -BeGreaterThan $from
         $labels = 0; $withForm = New-Object System.Collections.Generic.List[string]
         foreach ($line in @($Doc.Substring($from, $to - $from) -split "`n" | Where-Object { $_ -match '^\| ' })) {
             $cells = @($line -split ' \| ')
             if ($cells.Count -lt 5 -or $cells[3] -notmatch '^`') { continue }
             foreach ($entry in @($cells[3] -split '<br>')) {
-                $m = [regex]::Match($entry, '^`([a-z.]+\.(?:checks|remedies|contacts)\[\d+\])` (.+)$'); $m.Success | Should -BeTrue -Because $entry
-                $e = $byPosition[$m.Groups[1].Value]; $e | Should -Not -BeNullOrEmpty -Because $entry
+                $m = [regex]::Match($entry, '^`([a-z.]+\.[a-z0-9-]+)` (.+)$'); $m.Success | Should -BeTrue -Because $entry                       # Aussage geaendert (Kennungen)
+                $e = $byRef[$m.Groups[1].Value]; $e | Should -Not -BeNullOrEmpty -Because $entry
                 $want = & $label $e.Texts[0]
                 $want | Should -Not -Match '[{}]' -Because "$($e.Position): ein Platzhalter hat im Nachweis keine erklaerte Form"
                 # a step for every Office program that stands a second time for Outlook says so
                 if ($e.When -contains 'app.outlook' -and @($Sourced | Where-Object { $_.When -contains 'app.office' -and $_.Texts[0] -ceq $e.Texts[0] }).Count -gt 0) { $want += ' (für Outlook)' }
                 $m.Groups[2].Value | Should -BeExactly $want -Because $e.Position
-                $labels++; if ($want -match '‹') { $withForm.Add($e.Position) }
+                $labels++; if ($want -match '‹') { $withForm.Add($e.Id) }
             }
         }
         $labels | Should -BeGreaterThan 80
         # the labels with a placeholder today: the steps that name the application or the user in their first words
         $withForm.Count | Should -BeGreaterThan 9
-        foreach ($p in 'cpu.checks[6]', 'cpu.checks[7]', 'cpu.checks[8]', 'memory.checks[6]') { $withForm | Should -Contain $p }      # memory: moved by round 5
+        foreach ($p in 'cpu.webview2-nutzende-anwendung', 'cpu.webview2-einstellungen-wirken', 'cpu.office-add-ins-pruefen', 'memory.webview2-nutzende-anwendung') { $withForm | Should -Contain $p }      # memory: moved by round 5
         $Doc | Should -Match 'Add-ins von ‹Anwendung› prüfen'; $Doc | Should -Match 'in der Sitzung von ‹Benutzer› mit Medienoptimierung lief'
     }
     It 'nennt die gemessene Maschine im Nachweis Server, nie Worker' {                                                              # fix round 4, A1 (ruling P3-R66)
@@ -1920,15 +1955,16 @@ Describe 'Nachweis der Druckempfehlungen' {
         # the notes of the tables name eighteen elements today; the test of the rows checks each against its row
         $inNotes = @($Rows | ForEach-Object { Get-NamedElements $_.Line })
         $inNotes.Count | Should -BeGreaterThan 15
-        @($inNotes | Where-Object { $_.Positions.Count -ne 1 } | ForEach-Object { $_.Name }) | Should -Be @()
-        # outside the tables a position stands only where the record explains what a position is
+        @($inNotes | Where-Object { $_.Refs.Count -ne 1 } | ForEach-Object { $_.Name }) | Should -Be @()
+        # outside the tables an id stands only where the record explains what an id is                                      # Aussage geaendert (Kennungen)
         $prose = @($Doc -split "`n" | Where-Object { $_ -notmatch '^\|' }) -join "`n"
-        @(Get-Positions $prose | Sort-Object -Unique) | Should -Be @('print.remedies[2]')
-        $Doc | Should -Match 'der Abschnitt „Auf dem Zielsystem zu bestätigen“ und die Hinweise in den\s+Tabellen\s+nennen\s+ein\s+Element\s+nicht\s+mit\s+seiner\s+Stelle'
+        @(Get-Ids $prose | Sort-Object -Unique) | Should -Be @('print.richtlinie-override-print')
+        $Doc | Should -Match 'Sie steht im\s+Katalog\s+im\s+Feld\s+`id`'
+        $Doc | Should -Match 'der Abschnitt „Auf dem Zielsystem zu bestätigen“ und die Hinweise in den\s+Tabellen\s+nennen\s+ein\s+Element\s+nicht\s+mit\s+seiner\s+Kennung'
         $Doc | Should -Match '‹Treiber› für `\{driver\}`'
         # the finder finds what it is meant to find, and nothing for words no element starts with
         $found = @(Get-NamedElements 'siehe Abhilfe „Spool-Ordner von Hand leeren …“ der Situation `print` und Prüfschritt „Gibt es nicht …“ der Situation `cpu`')
-        $found.Count | Should -Be 2; $found[0].Positions.Count | Should -Be 1; $found[0].Positions[0] | Should -Match '^print\.remedies\[\d+\]$'; $found[1].Positions.Count | Should -Be 0
+        $found.Count | Should -Be 2; $found[0].Refs.Count | Should -Be 1; $found[0].Refs[0] | Should -Be 'print.spool-ordner-hand-leeren'; $found[1].Refs.Count | Should -Be 0
     }
     It 'bricht den Fliesstext vor den Tabellen und die Liste am Ende nach hoechstens 120 Zeichen um' {                             # fix round 4, C3
         $lines = @($Doc -split "`n")
@@ -1992,7 +2028,7 @@ Describe 'Nachweis der Druckempfehlungen' {
     It 'nennt unter jedem Element, das eine Quelle der Runde 5 nur stuetzt, diese Quelle mit Titel, Adresse und Datum' {      # round 5 (ruling P3-R68)
         # a line "- <Liste> „<erste Worte> …“ der Situation `<s>` – auch gestützt durch: „<Titel>“, <Adresse>, <Datum>" in
         # the section of the source: the element is found, and its text names the source
-        $byPosition = @{}; foreach ($e in (Get-Elements $Real)) { $byPosition[$e.Position] = $e }
+        $byRef = @{}; foreach ($e in (Get-Elements $Real)) { $byRef[$e.Ref] = $e }
         $backed = @{}; $heading = ''; $count = 0; $silent = 0
         foreach ($line in @($Doc -split "`n")) {
             $m = [regex]::Match($line, '^## (.+?) \(Empfehlung aus der Praxis\)$'); if ($m.Success) { $heading = $m.Groups[1].Value; continue }
@@ -2002,8 +2038,8 @@ Describe 'Nachweis der Druckempfehlungen' {
             $heading | Should -BeIn @($PracticeNames | Where-Object { $_ -notin 'Carl Stalhood', 'BIS-F' }) -Because $line
             $line | Should -Match '^- (Prüfschritt|Abhilfe|Kontakt) „.+ …“ der Situation `[a-z.]+` – auch gestützt durch: „.+“, <https://[^>]+>, .*\b(19|20)\d\d\b' -Because $line
             $named = @(Get-NamedElements $line); $named.Count | Should -Be 1 -Because $line
-            $named[0].Positions.Count | Should -Be 1 -Because $line
-            $e = $byPosition[$named[0].Positions[0]]
+            $named[0].Refs.Count | Should -Be 1 -Because $line
+            $e = $byRef[$named[0].Refs[0]]
             $word = @($PracticeWords.Keys | Where-Object { $PracticeWords[$_] -eq $heading })[0]
             # fix round 1: a line that says "im Element nicht genannt" keeps a document whose sentence was taken out of the
             # element; then the element does not name the source, else it does
@@ -2096,7 +2132,7 @@ Describe 'Nachweis der Druckempfehlungen' {
         $at = $Doc.IndexOf("`n## Ausnahmen: Praxisquelle vor Hersteller`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
         $section = $Doc.Substring($at, $next - $at)
         foreach ($word in 'Energiesparplan', 'Höchstleistung', 'Ausbalanciert', 'VMware', 'Begründung des Auftraggebers', 'Citrix-Terminalserver', 'Receive Side Scaling', '2026-11-13') { $section | Should -Match ([regex]::Escape($word)) }
-        @(Get-Positions $section) | Should -Be @()
+        @(Get-Ids $section) | Should -Be @()
         # the target environment is described generally
         $at = $Doc.IndexOf("`n## Zielumgebung`n"); $next = $Doc.IndexOf("`n## ", $at + 4)
         $section = $Doc.Substring($at, $next - $at)
