@@ -4,9 +4,10 @@
 >
 > - Die **Windows-Datenquelle** des Collectors ist geschrieben. Sie beruht auf dem Ergebnis des Quellen-Prüfskripts
 >   von einem echten VDA (Windows Server 2022, deutsche Oberfläche, Citrix): welche Zähler, Klassen und Namen dort
->   vorhanden sind (siehe [Datenquellen](#datenquellen)). Getestet ist sie bisher nur unter Linux mit
->   nachgestellten Windows-Aufrufen; **auf einem echten Server ist sie noch nicht gelaufen.** Der nächste Schritt
->   ist eine Kurzmessung auf einem Server (siehe [Offene Punkte](#offene-punkte)).
+>   vorhanden sind (siehe [Datenquellen](#datenquellen)). Die automatischen Tests laufen unter Linux mit
+>   nachgestellten Windows-Aufrufen. **Auf einem echten Server ist sie gelaufen** (drei Läufe im November 2026, der
+>   längste rund drei Stunden); was diese Läufe zeigten, ist eingearbeitet. Was noch zu bestätigen ist, steht unter
+>   [Offene Punkte](#offene-punkte).
 > - Das **Quellen-Prüfskript** bleibt der erste Schritt auf jedem weiteren Server. Es liest nur, dauert einige
 >   Minuten und schreibt eine JSON-Datei, in der Benutzer-, Client- und Servernamen maskiert sind; die Datei vor der
 >   Weitergabe bitte durchsehen. Aufruf in einer administrativen Konsole auf dem Server:
@@ -26,8 +27,8 @@
 >   getestet; die Texte der Anleitung sind erst an echten Aufzeichnungen zu bewerten.
 > - **Ereignisse, Abstürze und Drucken:** Auswertung und Bericht sind fertig und mit der Simulation getestet
 >   ([Vorfälle aus Ereignissen](#vorfälle-aus-ereignissen)). Die Windows-Datenquelle liest alle Protokolle aus
->   `events.json`, den Rückblick, die Treiberliste und die Zähler der Druckwarteschlangen. **Auf einem echten Server
->   ist dieser Teil noch nicht gelaufen**; getestet ist er unter Linux mit nachgestellten Windows-Aufrufen.
+>   `events.json`, den Rückblick, die Treiberliste und die Zähler der Druckwarteschlangen. **Auf dem Test-Server ist dieser
+>   Teil mitgelaufen** (drei Läufe); die automatischen Tests laufen unter Linux mit nachgestellten Windows-Aufrufen.
 > - **Maskierte Berichte:** Die Auswertung kann Namen im Bericht durch Ersatznamen wie „Benutzer 01" ersetzen
 >   (`-Mask Personen` oder `-Mask Alles`, siehe [Bericht maskiert weitergeben](#bericht-maskiert-weitergeben)).
 >   Das ist fertig und mit der Simulation getestet; **unter Windows PowerShell 5.1 auf einem Server ist es noch
@@ -35,8 +36,9 @@
 > - **Zustandsbild:** Der Collector liest beim Start einmal den Zustand des Servers (Größe, Betrieb, Sitzungen, Citrix,
 >   Profilverwaltung, Drucken, Sicherheitsprodukte, Netz, Ereignisbild, Wartung, Anwendungen) und die Auswertung
 >   bewertet ihn gegen einen Katalog mit Quellen; ein Schnelllauf (`-HealthOnly`) liefert es ohne Messung (siehe
->   [Zustandsbild](#zustandsbild)). Fertig und mit der Simulation getestet; **auf einem echten Server ist das Lesen
->   noch nicht gelaufen** (siehe [Offene Punkte](#offene-punkte)).
+>   [Zustandsbild](#zustandsbild)). Fertig, mit der Simulation getestet und **auf einem echten Server gelesen** (zwei
+>   Läufe; die Texte der dort auffälligen Prüfungen sind danach überarbeitet). Was noch zu bestätigen ist, steht unter
+>   [Offene Punkte](#offene-punkte).
 > - **Demo ansehen:** [Bericht einer simulierten Stunde mit acht Leistungsvorfällen und vier Vorfällen aus
 >   Ereignissen](https://kaimunko2.github.io/WorkerPerf/), simulierte Daten (GitHub Pages; Einrichtung siehe
 >   [Demo-Bericht](#demo-bericht)).
@@ -71,9 +73,9 @@ Start-WorkerPerfCapture.ps1  ──►  CSV-Ordner  ──►  New-WorkerPerfRep
 
 ### 1. Aufzeichnen
 
-> **Noch nicht auf einem echten Server erprobt:** Die Windows-Datenquelle ist geschrieben, aber bisher nur mit
-> nachgestellten Windows-Aufrufen getestet. Die erste Messung auf einem Server sollte eine Kurzmessung von etwa
-> 10 Minuten sein (siehe [Offene Punkte](#offene-punkte)).
+> **Auf einem neuen Server zuerst kurz messen:** Die Windows-Datenquelle ist auf einem echten Server gelaufen, aber nur
+> auf einem. Die erste Messung auf jedem weiteren Server sollte eine Kurzmessung von etwa 10 Minuten sein (siehe
+> [Offene Punkte](#offene-punkte)).
 
 Der Collector misst in zwei Takten: Alle 2 Sekunden erfasst er die Server-Signale (CPU, Speicher,
 Datenträger, Freigaben, Netzwerk) und die Eingabeverzögerung je Sitzung und Prozess. Alle 15 Sekunden
@@ -424,9 +426,9 @@ Auswertung gegen den Katalog `src/health.de.json`. Eine ältere Aufzeichnung lä
 Katalog neu auswerten. Das Zustandsbild gehört zu jeder Messung, solange sie nicht mit `-Skip Zustand` läuft; als
 Schnelllauf (`-HealthOnly`) entsteht es ohne Messung.
 
-**Stand:** Das Lesen unter Windows ist geschrieben und mit nachgestellten Windows-Aufrufen getestet. Auf einem echten
-Server ist es noch nicht gelaufen; welche Werte sich dort mit den vorhandenen Rechten lesen lassen, zeigt der erste
-Lauf (siehe [Offene Punkte](#offene-punkte)).
+**Stand:** Das Lesen unter Windows ist auf einem echten Server gelaufen (zwei Läufe); die Texte der siebzehn Prüfungen,
+die dort „Prüfen“ oder „Handeln“ ergaben, sind danach überarbeitet. Welche Werte sich auf einem anderen Server mit den
+vorhandenen Rechten lesen lassen, zeigt dort der erste Lauf (siehe [Offene Punkte](#offene-punkte)).
 
 ### Was gelesen wird, und was nicht
 
@@ -1505,9 +1507,9 @@ Prozesszeilen entstehen nur für Prozesse, die sich seit dem letzten Schnappschu
 |---|---|---|
 | Alle Signale | Simulation: festes 60-Minuten-Drehbuch mit acht Leistungsvorfällen und vier Vorfällen aus Ereignissen, dazu Sitzungs- und Defender-/AppLocker-Ereignisse, ein Rückblick über sieben Tage mit vier Vorfällen (einer davon ein Absturz ohne Sitzung), Treiberliste und Warteschlangen (`-Simulate`) | vorhanden, in den Tests geprüft |
 | Verfügbarkeit der Quellen auf einem VDA | Quellen-Prüfskript `Test-WorkerPerfSources.ps1` | auf einem VDA gelaufen (Windows Server 2022, de-DE, VMware, Citrix), zweimal: mit angemeldeten Benutzern und fast leer |
-| Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | geschrieben; unter Linux mit nachgestellten Windows-Aufrufen getestet, **auf einem echten Server noch nicht gelaufen** |
-| Ereignisprotokolle, Rückblick, Druckertreiber, Druckwarteschlangen | Windows-Datenquelle, Quellen in der Tabelle unten | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
-| Zustandsbild (elf Bereiche, siehe [Zustandsbild](#zustandsbild)) | Windows-Datenquelle: lokale CIM-Abfragen, Registrierung (`HKLM`, lesend), Ereignisprotokolle, Dateiversionen, lokale Aufgabenplanung; Anwendungen nach `src/apps.json`; die Simulation liefert ein erfundenes Zustandsbild | geschrieben und mit nachgestellten Windows-Aufrufen getestet; **auf einem echten Server noch nicht gelaufen** |
+| Windows-Datenquelle des Collectors | `src/WorkerPerf.Sources.Windows.ps1`, Quellen in der Tabelle unten | unter Linux mit nachgestellten Windows-Aufrufen getestet; **auf dem Test-Server gelaufen** (drei Läufe), siehe [Offene Punkte](#offene-punkte) |
+| Ereignisprotokolle, Rückblick, Druckertreiber, Druckwarteschlangen | Windows-Datenquelle, Quellen in der Tabelle unten | nach Prüfergebnis; auf dem Test-Server mitgelaufen, im Einzelnen nicht nachgeprüft |
+| Zustandsbild (elf Bereiche, siehe [Zustandsbild](#zustandsbild)) | Windows-Datenquelle: lokale CIM-Abfragen, Registrierung (`HKLM`, lesend), Ereignisprotokolle, Dateiversionen, lokale Aufgabenplanung; Anwendungen nach `src/apps.json`; die Simulation liefert ein erfundenes Zustandsbild | mit nachgestellten Windows-Aufrufen getestet; **auf dem Test-Server gelesen** (zwei Läufe) |
 
 Die Windows-Datenquelle liest die Leistungsindikatoren über die .NET-Schnittstelle
 `System.Diagnostics.PerformanceCounterCategory` mit den **englischen** Namen. Das funktioniert unabhängig von
@@ -1531,10 +1533,10 @@ Zähler der Kategorie `ICA Session` sind Momentanwerte und werden einmal je Schn
 | ICA Round Trip | `root\citrix\euem` / `Citrix_Euem_RoundTrip` (`RoundtripTime`, `NetworkLatency`) | Klasse vorhanden; Werte zeigte das Prüfskript nicht |
 | Profilcontainer | `MSFT_Disk` mit `BusType` 15, Partitionen und Zugriffspfade | vorhanden: Citrix Profile Management, drei Container je Benutzer; Speicherort und Einhängepfad nennen beide den Benutzer |
 | Prozesse, Dienste, Sitzungen | `Win32_Process`, `Win32_Service`, WTS-Schnittstelle | vorhanden; ein Prozess-Schnappschuss von 800 Prozessen dauerte etwa 0,4 s |
-| Ereignisprotokolle | die Protokolle, Quellen und Kennungen aus `events.json` (Tabelle unten) über `EventLogReader` (wie das Prüfskript): je Protokollname eine strukturierte XML-Abfrage, darin je Quelle eine Auswahl mit ihren Kennungen (höchstens 12 je Auswahl, also höchstens 20 Ausdrücke) und, wo der Eintrag sie nennt, ihren Ebenen, und den Zeitgrenzen als UTC-Zeitpunkte (`Get-WinEvent -FilterHashtable` würde die Zeitgrenzen als Ortszeit lesen); die Felder aus `ToXml()`, der Meldungstext aus `FormatDescription()`, der Benutzer aus den Datenfeldern, sonst aus dem Konto im Systemteil des Ereignisses. Ein Protokoll, für das `events.json` keinen Eintrag hat, wird nicht geöffnet | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Ein vorhandenes, aber abgeschaltetes Protokoll ist für die Messzeit „Protokoll abgeschaltet"; der Rückblick liest die Ereignisse, die es noch enthält (dass das bei einem abgeschalteten Protokoll geht, ist nicht auf einem Server geprüft); der Collector schaltet es nicht ein. Scheitert die Abfrage eines vorhandenen Protokolls oder schlagen drei Datensätze in Folge fehl, endet das Lesen dieses Protokolls; das steht einmal je Protokoll mit der Fehlerklasse in `meta.json` (`SourceErrors`) und auf der Konsole. Ein einzelner nicht lesbarer Datensatz wird übersprungen, ein nicht formatierbarer Meldungstext bleibt leer; beides zählt `EventReadCounts` |
-| Rückblick | dieselben Abfragen über `-EventLookbackDays` Tage, ohne Sitzungsprotokoll, die neuesten höchstens 2000 Ereignisse je Protokoll; ein Zeitbudget von 60 s, geprüft vor jedem Protokoll und zwischen seinen Datensätzen. Überschreiten kann es nur, was zwischen zwei Prüfungen liegt: das Öffnen einer Abfrage und das Lesen und Formatieren eines Datensatzes. Ein Protokoll, das die Obergrenze erreicht, nicht lesbar war oder wegen des Budgets nicht zu Ende gelesen wurde, gilt im Bericht als unvollständig | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
-| Druckertreiber | `root/StandardCimv2` / `MSFT_PrinterDriver` (`Name`, `Manufacturer`, `MajorVersion`, `DriverVersion`, Treiber-, Konfigurations-, Daten- und abhängige Dateien); Isolierung aus `PrintDriverIsolationGroups`, sonst aus den Richtlinien `PrintDriverIsolationExecutionPolicy` und `PrintDriverIsolationOverrideCompat` und dem Attribut 0x4 (`PrinterDriverAttributes`) im Registrierungsschlüssel des Treibers | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen. Die Isolierung ist die wirksame, wie Windows sie ableitet (dieselbe Regel wie im Prüfskript); ohne gesetzten Wert `PrintDriverIsolationGroups` entscheiden Richtlinie und Attribut. Lässt sich das Attribut nicht lesen und entscheiden die Richtlinien nicht, bleibt `Isolation` leer |
-| Druckwarteschlangen | `Print Queue` / `Jobs`, `Job Errors`, `Not Ready Errors` (Momentanwerte), alle Instanzen außer `_Total` | nach Prüfergebnis, auf einem echten Server noch nicht gelaufen |
+| Ereignisprotokolle | die Protokolle, Quellen und Kennungen aus `events.json` (Tabelle unten) über `EventLogReader` (wie das Prüfskript): je Protokollname eine strukturierte XML-Abfrage, darin je Quelle eine Auswahl mit ihren Kennungen (höchstens 12 je Auswahl, also höchstens 20 Ausdrücke) und, wo der Eintrag sie nennt, ihren Ebenen, und den Zeitgrenzen als UTC-Zeitpunkte (`Get-WinEvent -FilterHashtable` würde die Zeitgrenzen als Ortszeit lesen); die Felder aus `ToXml()`, der Meldungstext aus `FormatDescription()`, der Benutzer aus den Datenfeldern, sonst aus dem Konto im Systemteil des Ereignisses. Ein Protokoll, für das `events.json` keinen Eintrag hat, wird nicht geöffnet | nach Prüfergebnis; auf dem Test-Server mitgelaufen, im Einzelnen nicht nachgeprüft. Ein vorhandenes, aber abgeschaltetes Protokoll ist für die Messzeit „Protokoll abgeschaltet"; der Rückblick liest die Ereignisse, die es noch enthält (dass das bei einem abgeschalteten Protokoll geht, ist nicht auf einem Server geprüft); der Collector schaltet es nicht ein. Scheitert die Abfrage eines vorhandenen Protokolls oder schlagen drei Datensätze in Folge fehl, endet das Lesen dieses Protokolls; das steht einmal je Protokoll mit der Fehlerklasse in `meta.json` (`SourceErrors`) und auf der Konsole. Ein einzelner nicht lesbarer Datensatz wird übersprungen, ein nicht formatierbarer Meldungstext bleibt leer; beides zählt `EventReadCounts` |
+| Rückblick | dieselben Abfragen über `-EventLookbackDays` Tage, ohne Sitzungsprotokoll, die neuesten höchstens 2000 Ereignisse je Protokoll; ein Zeitbudget von 60 s, geprüft vor jedem Protokoll und zwischen seinen Datensätzen. Überschreiten kann es nur, was zwischen zwei Prüfungen liegt: das Öffnen einer Abfrage und das Lesen und Formatieren eines Datensatzes. Ein Protokoll, das die Obergrenze erreicht, nicht lesbar war oder wegen des Budgets nicht zu Ende gelesen wurde, gilt im Bericht als unvollständig | nach Prüfergebnis; auf dem Test-Server mitgelaufen, im Einzelnen nicht nachgeprüft |
+| Druckertreiber | `root/StandardCimv2` / `MSFT_PrinterDriver` (`Name`, `Manufacturer`, `MajorVersion`, `DriverVersion`, Treiber-, Konfigurations-, Daten- und abhängige Dateien); Isolierung aus `PrintDriverIsolationGroups`, sonst aus den Richtlinien `PrintDriverIsolationExecutionPolicy` und `PrintDriverIsolationOverrideCompat` und dem Attribut 0x4 (`PrinterDriverAttributes`) im Registrierungsschlüssel des Treibers | nach Prüfergebnis; auf dem Test-Server mitgelaufen, im Einzelnen nicht nachgeprüft. Die Isolierung ist die wirksame, wie Windows sie ableitet (dieselbe Regel wie im Prüfskript); ohne gesetzten Wert `PrintDriverIsolationGroups` entscheiden Richtlinie und Attribut. Lässt sich das Attribut nicht lesen und entscheiden die Richtlinien nicht, bleibt `Isolation` leer |
+| Druckwarteschlangen | `Print Queue` / `Jobs`, `Job Errors`, `Not Ready Errors` (Momentanwerte), alle Instanzen außer `_Total` | nach Prüfergebnis; auf dem Test-Server mitgelaufen, im Einzelnen nicht nachgeprüft |
 | Verbindungsproben | TCP-Verbindungsaufbau zu den Gegenstellen aus `endpoints.json`, Zeitlimit 2 s | nicht geprüft (beim Prüflauf keine Datei mit Gegenstellen) |
 
 **Ereignisquellen.** Die Liste der Protokolle, Quellen und Kennungen steht in `src/events.json`: je Eintrag
@@ -1613,10 +1615,44 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
 
 ## Offene Punkte
 
-- **Erster echter Lauf des Zustandsbilds (Schnelllauf auf dem Test-Server):** `Start-WorkerPerfCapture.ps1 -HealthOnly`
+**Stand der echten Läufe (November 2026).** Drei Läufe auf dem Test-Server, der längste rund drei Stunden; das
+Zustandsbild wurde dabei zweimal gelesen. Die Aufzeichnungen bleiben außerhalb des Repositorys. Aus den Läufen
+eingearbeitet:
+
+- eingelesene Seiten allein bilden keinen Arbeitsspeicher-Engpass mehr;
+- Profilcontainer und ICA-Werte ohne Sitzung bekommen ihre Sitzung aus dem Benutzer im Pfad oder im Instanznamen;
+- die Verdichtung beginnt erst nach drei Takten in Folge über der Schwelle (einzelne kurze Eingabeverzögerungen hielten
+  sie in 245 von 300 Takten offen) und wird je Auslöser erst nach 5 Minuten unter der Schwelle wieder scharf (im
+  dreistündigen Lauf war sie in 54 % der Takte aktiv, die Last der Messung stieg auf etwa 3 %);
+- Ereignisse werden einmal je Minute gelesen statt alle 15 Sekunden (das Lesen kostete den Dienst EventLog den größten
+  Teil der Zeit eines Schnappschusses);
+- die Eingabeverzögerung ist nach der Wahrnehmung gestuft (aus zwölf Verzögerungs-Vorfällen des zweiten Laufs wurden
+  vier);
+- anhaltender Speichermangel bildet einen Dauerzustand statt vieler kurzer Vorfälle (im dreistündigen Lauf 79);
+- die Texte des Zustandsbilds sagen zuerst die Wirkung für die Benutzer; die Liste der wartenden Dateien nennt ihre Ordner.
+
+Die Regeln zur Verdichtung, zum Dauerzustand des Speichers und alle Regeln der [Größe des Servers](#größe-des-servers)
+sind nach dem dritten Lauf entstanden und auf einem echten Server noch nicht gelaufen. Welche der folgenden Punkte die
+drei Läufe im Einzelnen schon bestätigt haben, ist hier nicht festgehalten; ein Punkt gilt als offen, bis er hier
+gestrichen ist.
+
+- **Erster echter Lauf der Größe des Servers:** eine Messung mit dem aktuellen Collector, danach
+  `New-WorkerPerfReport.ps1` und, mit mehreren Aufzeichnungen, `New-WorkerPerfSizingReport.ps1`. Vorher einmal das
+  Prüfskript (`Test-WorkerPerfSources.ps1`) laufen lassen: es liest die neuen Zähler. Zu klären:
+  - **Instanznamen von „Processor Information“:** der Collector wertet jede Instanz mit dem Bestandteil `_Total` als
+    Gesamtinstanz und alle übrigen als logische Prozessoren.
+  - **`% Processor Performance` und `% Processor Utility` in der VMware-VM:** ob sie schwanken und sinnvolle Werte
+    liefern; bis dahin zeigt der Bericht sie ohne Bewertung.
+  - **Laufzeit des Lesens je Kern** bei vielen vCPUs im Takt von 2 s (`CollectMs` in `ticks.csv`).
+  - **Die Schwellen der Einordnung:** entzogene CPU-Zeit ab 10 % der Takte eines Vorfalls, „Leistung je Kern“ nur ohne
+    breite Last, Kette des Speichermangels (Lücken bis 5 Minuten, länger als 15 Minuten): ob sie auf echten Vorfällen
+    die erwartete Klasse ergeben.
+- **Vergleich verschiedener Server (Phase 2 der Größe des Servers):** Aufzeichnungen mehrerer Server nebeneinander, etwa
+  ein gut und ein schlecht laufender. Dafür gibt es noch keinen Entwurf; das Datenformat des Größenberichts ist darauf
+  vorbereitet.
+- **Zustandsbild auf weiteren Servern (Schnelllauf):** `Start-WorkerPerfCapture.ps1 -HealthOnly`
   in einer neuen administrativen Konsole, danach `New-WorkerPerfReport.ps1 -Path <Ordner>`; die Aufzeichnung bleibt
-  außerhalb des Repositorys. Der Baustein gilt erst danach als fertig; der Lauf führt zu einer Anpassungsrunde von
-  Lesewegen und Katalog. Zu klären:
+  außerhalb des Repositorys. Auf dem Test-Server ist das Lesen gelaufen. Auf einem anderen Server zu klären:
   - **Instanznamen der Quellen:** welche Namen die gelesenen Quellen auf einem echten Server tragen (Citrix-Dienste,
     Richtlinienorte der Citrix-Richtlinien und der Profilverwaltung, Defender-Klassen, Filtertreiber der Produkte der
     Rollenliste, der Ordner `WindowsApps` für Teams, DNS-Server auch über IPv6) und ob Schlüssel- oder Wertnamen Namen des
@@ -1633,13 +1669,14 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
     - Die Praxisquellen außer BIS-F und carlstalhood.com tragen in der ersten Fassung keine Prüfung; der Auftraggeber
       entscheidet, ob ihre Kandidaten vor oder nach dem ersten echten Lauf in den Katalog kommen.
     - Die simulierte Demo hat den Energiesparplan „Höchstleistung" und zeigt die Abweichung davon deshalb nicht.
-- **Windows-Datenquelle auf einem echten Server:** noch nicht gelaufen. Erster Schritt ist eine Kurzmessung
+- **Windows-Datenquelle auf einem weiteren Server:** auf dem Test-Server gelaufen. Auf jedem weiteren Server ist der
+  erste Schritt eine Kurzmessung
   (`Start-WorkerPerfCapture.ps1 -DurationMinutes 10` in einer administrativen Konsole auf einem Server mit
   angemeldeten Benutzern, danach `New-WorkerPerfReport.ps1`). Zu prüfen: keine Warnungen zu Quellen, die laut
   Prüfskript vorhanden sind; Werte in jeder Spalte von `ticks.csv`; Profilcontainer in `volumes.csv` mit
   Sitzung; ICA-Werte in `citrix.csv` mit Sitzung; die Messdauer je Takt (`CollectMs`) deutlich unter 2 s.
-- **Ereignisse, Rückblick und Drucken unter Windows:** geschrieben, auf einem echten Server noch nicht gelaufen.
-  Bei der ersten Kurzmessung mit Rückblick prüfen: keine Warnung zu einem Protokoll, das laut Prüfskript vorhanden
+- **Ereignisse, Rückblick und Drucken unter Windows:** auf dem Test-Server mitgelaufen (Ereignisse seitdem einmal je
+  Minute). Offen ist eine Obergrenze für die Ereignisabfrage. Bei einer Kurzmessung mit Rückblick weiter prüfen: keine Warnung zu einem Protokoll, das laut Prüfskript vorhanden
   ist; wie groß `events_before.csv` und `events.csv` werden; wie lange der Rückblick vor dem ersten Takt dauert
   (das Budget von 60 s plus das Lesen eines Datensatzes, das beim Erreichen des Budgets läuft; danach gilt der Rest
   als unvollständig).
@@ -1680,8 +1717,10 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
 - **Maskierung unter Windows PowerShell 5.1:** `-Mask` und `-MaskMapFile` sind nur unter PowerShell 7 mit der
   Simulation getestet. Bei der ersten echten Auswertung einmal mit `-Mask Alles` auswerten, den Bericht durchsehen
   und prüfen, dass kein echter Benutzer-, Client- oder Servername mehr darin steht.
-- **Kosten des schnellen Takts unter Windows PowerShell 5.1:** nicht gemessen. Gemessen ist nur die Prozessabfrage
-  des Prüfskripts (0,4 s für 800 Prozesse). Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
+- **Kosten des schnellen Takts unter Windows PowerShell 5.1:** im dreistündigen Lauf lag die Last der Messung mit
+  häufiger Verdichtung bei etwa 3 %; die Verdichtung ist seitdem begrenzt, und die fünf neuen Werte je Takt sind
+  dazugekommen. Beides ist noch nicht nachgemessen. Offen ist auch ein Zwischenspeicher für die Stammdaten der
+  Prozesse. Die Kurzmessung zeigt die Dauer je Takt und je Schnappschuss im Block
   „Messqualität" (siehe [Auswirkung der Messung auf den Server](#auswirkung-der-messung-auf-den-server)).
 - **Einheit der entzogenen CPU-Zeit:** Der Collector liest den Rohwert von `VM Processor` / `CPU stolen time`
   als Millisekunden der ganzen VM und teilt durch die Zahl der vCPUs; der Zählertyp `Timer100Ns` würde 100 ns
@@ -1695,7 +1734,8 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   `inputdelay.csv` prüfen, dass kurze Spitzen erscheinen; laufen gleichzeitig die Leistungsüberwachung oder ein
   anderes Werkzeug mit diesem Zähler, sieht der Collector Mittelwerte zweier Spitzen.
 - **Zuordnung der ICA-Werte zur Sitzung:** über den Namen der WinStation (`ICA-CGP 2` gegen `ICA-CGP#2`),
-  sonst über den Benutzernamen, wenn er nur eine Sitzung hat. Die Schreibweise der WinStation-Namen hat das
+  sonst über den Benutzernamen, wenn er nur eine Sitzung hat; seit dem ersten echten Lauf ordnet auch die Auswertung
+  einen Wert ohne Sitzung so zu, auch in schon vorhandenen Aufzeichnungen. Die Schreibweise der WinStation-Namen hat das
   Prüfskript nicht erfasst.
 - **Rollen:** In `roles.json` sind für Arctic Wolf Aurora der Dienst und Prozess `CylanceSvc` eingetragen, für
   Nexus KIS die Anwendung und der Prozess ihres Dienstes (unter `processes`, weil der Kurzname des Dienstes nicht
@@ -1704,9 +1744,10 @@ Namen in freiem Text kann das Skript nicht sicher erkennen; die Datei wird desha
   geprüft; `sessions.csv` und `citrix.csv` schreiben jede Sitzung bei jedem Schnappschuss. Die Kategorie
   `ICA Session` hat rund 80 Zähler je Sitzung; mit dem Standard von `-CitrixMetricFilter` (Latenz, Round Trip,
   Bandbreite) und ohne Bandbreiten von 0 bleiben je Sitzung und Schnappschuss etwa 5 bis 10 Zeilen.
-- **Eingabeverzögerung mit `minTicks` 1:** Jeder einzelne Takt ab 150 ms bildet einen Befund. Auf einem echten
-  Server kann das viele kurze Vorfälle erzeugen und Sitzungen als „betroffen" zählen, die nur einen kurzen
-  Ausschlag hatten. Mit der ersten echten Aufzeichnung ansehen und `minTicks` in `thresholds.json` anpassen.
+- **Eingabeverzögerung mit `minTicks` 1:** Jeder einzelne Takt ab 150 ms bildet weiter einen Befund in der Tabelle der
+  Messwerte. Einen Vorfall bildet er seit dem zweiten echten Lauf nur noch nach den Stufen der Wahrnehmung (eine kurze
+  Spitze unter 500 ms ist ein Hinweis, kein Vorfall). Ob die Stufen auf weiteren Aufzeichnungen passen, bleibt zu
+  beobachten.
 - **Speicher-Zuordnung über Working Sets:** Unter Speicherdruck verkleinert Windows die Working Sets; der
   Verursacher kann dadurch kleiner erscheinen. Private Bytes werden mit aufgezeichnet, aber noch nicht für die
   Zuordnung verwendet.
