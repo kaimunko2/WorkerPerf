@@ -104,5 +104,43 @@ Describe 'Join-WorkerPerfIncidents' {
         $i = Join-Test (In 1219 2 2); $i[0].Severity | Should -Be 1
         $i = Join-Test (In 7453 1 2); $i[0].Severity | Should -Be 2                   # Haenger ab 5 s: kritisch
     }
+    It 'fasst anhaltenden Speichermangel zu einem Dauerzustand zusammen (dritter echter Lauf)' {
+        # 40 kurze Befunde von mem.used ueber 80 Minuten (je 90 s, 30 s Luecke), dazu kritisches Seiten-Einlesen: ein Vorfall statt vieler
+        $fs = @(foreach ($n in 0..39) { New-TestFinding memory (120 * $n) (120 * $n + 90) -SignalId 'mem.used'
+                                        New-TestFinding memory (120 * $n + 20) (120 * $n + 40) -Severity 2 -SignalId 'mem.pagesin' })
+        $fs[0].PeakValue = 80; $fs[10].PeakValue = 93; $fs[10].Severity = 2; $fs[10].PeakTimeMs = $T0 + 600000
+        $i = @(Join-WorkerPerfIncidents -Findings $fs)
+        $i.Count | Should -Be 1; $i[0].Chronic | Should -BeTrue; $i[0].Type | Should -Be 'engpass'; $i[0].Lead | Should -Be 'memory'; $i[0].Severity | Should -Be 2
+        $i[0].StartMs | Should -Be $T0; $i[0].EndMs | Should -Be ($T0 + 4770000)
+        $lead = Get-WorkerPerfLeadFinding $i[0]
+        $lead.SignalId | Should -Be 'mem.used'; $lead.StartMs | Should -Be $T0; $lead.EndMs | Should -Be ($T0 + 4770000)
+        $lead.PeakValue | Should -Be 93; $lead.PeakTimeMs | Should -Be ($T0 + 600000); $lead.Severity | Should -Be 2; $lead.BadPoints | Should -Be 120
+        @($i[0].Findings | Where-Object { $_.SignalId -eq 'mem.pagesin' }).Count | Should -Be 40      # Belege des Dauerzustands
+        # ein anderer Vorfall in dieser Zeit bleibt eigenstaendig und nennt den Dauerzustand
+        $j = @(Join-WorkerPerfIncidents -Findings (@($fs) + @(New-TestFinding cpu 600 660)))
+        $j.Count | Should -Be 2; $c = $j | Where-Object { -not $_.Chronic }
+        $c.Lead | Should -Be 'cpu'; @($c.Findings).Count | Should -Be 1; $c.ChronicContext[0].SignalId | Should -Be 'mem.used'; $c.ChronicContext[0].Explains | Should -BeTrue
+    }
+    It 'laesst vereinzelten Speichermangel als einzelne Vorfaelle stehen' {
+        # Luecke ueber 5 Minuten: keine Kette
+        (Join-Test (New-TestFinding memory 0 600 -SignalId 'mem.used') (New-TestFinding memory 901 1500 -SignalId 'mem.used')).Count | Should -Be 2
+        # Kette bis 15 Minuten: kein Dauerzustand
+        $i = Join-Test (New-TestFinding memory 0 300 -SignalId 'mem.used') (New-TestFinding memory 400 900 -SignalId 'mem.used')
+        $i.Count | Should -Be 2; @($i | Where-Object Chronic).Count | Should -Be 0
+        # weniger als die Haelfte der Zeit ueber der Schwelle: kein Dauerzustand
+        $i = Join-Test (New-TestFinding memory 0 60 -SignalId 'mem.used') (New-TestFinding memory 350 410 -SignalId 'mem.used') (New-TestFinding memory 700 760 -SignalId 'mem.used') (New-TestFinding memory 1050 1110 -SignalId 'mem.used')
+        $i.Count | Should -Be 4; @($i | Where-Object Chronic).Count | Should -Be 0
+        # verschiedene Signale bilden keine gemeinsame Kette; andere Ressourcen gar keine
+        $i = Join-Test (New-TestFinding memory 0 500 -SignalId 'mem.used') (New-TestFinding memory 520 1000 -SignalId 'mem.commit')
+        $i.Count | Should -Be 2; @($i | Where-Object Chronic).Count | Should -Be 0
+        $i = Join-Test (New-TestFinding cpu 0 500 -SignalId 'cpu.host') (New-TestFinding cpu 520 1000 -SignalId 'cpu.host')
+        $i.Count | Should -Be 2; @($i | Where-Object Chronic).Count | Should -Be 0
+    }
+    It 'nimmt kurze Speicherbefunde in einen einzelnen langen Speicherbefund auf' {
+        $i = Join-Test (New-TestFinding memory 0 3600 -SignalId 'mem.used') (New-TestFinding memory 600 630 -Severity 2 -SignalId 'mem.pagesin') (New-TestFinding memory 900 960 -SignalId 'mem.commit') (New-TestFinding input 605 615 -SessionIndex 2)
+        $i.Count | Should -Be 2; $c = $i | Where-Object Chronic
+        @($c.Findings).Count | Should -Be 3; (Get-WorkerPerfLeadFinding $c).SignalId | Should -Be 'mem.used'
+        $o = $i | Where-Object { -not $_.Chronic }; @($o.Findings).Count | Should -Be 1; $o.ChronicContext[0].SignalId | Should -Be 'mem.used'
+    }
     It 'liefert ohne Befunde nichts' { @(Join-WorkerPerfIncidents -Findings @()).Count | Should -Be 0 }
 }

@@ -203,10 +203,40 @@ function Group-WorkerPerfFindingsByTime {
 }
 
 function Join-WorkerPerfIncidents {
-    param([AllowEmptyCollection()][object[]]$Findings, [int]$MergeSeconds = 10, [int]$ChronicMinutes = 15)
+    param([AllowEmptyCollection()][object[]]$Findings, [int]$MergeSeconds = 10, [int]$ChronicMinutes = 15, [int]$ChainGapMinutes = 5,
+        [int]$ChainMinCoverPct = 50)
     $workerOrder = @('cpu', 'memory', 'disk', 'share', 'profile')
     $gapMs = [long]$MergeSeconds * 1000
     $chronicMs = [long]$ChronicMinutes * 60000
+    # A lasting memory shortage whose value swings around its threshold falls apart into many short findings. Findings of
+    # the same signal of a tight memory (mem.used, mem.commit) with gaps of at most ChainGapMinutes form a chain; a chain
+    # that lasts longer than ChronicMinutes and is over the threshold in at least ChainMinCoverPct of that time becomes
+    # one finding (worst severity and peak, the bad points added up), which is a chronic state below.
+    $chainGapMs = [long]$ChainGapMinutes * 60000
+    $chained = New-Object System.Collections.Generic.List[object]
+    $bySignal = New-Object System.Collections.Specialized.OrderedDictionary
+    foreach ($f in @($Findings)) {
+        if ($f.SignalId -ne 'mem.used' -and $f.SignalId -ne 'mem.commit') { $chained.Add($f); continue }
+        $key = [string]$f.SignalId + '|' + [string]$f.Instance
+        if (-not $bySignal.Contains($key)) { $bySignal[$key] = New-Object System.Collections.Generic.List[object] }
+        $bySignal[$key].Add($f)
+    }
+    foreach ($key in $bySignal.Keys) {
+        foreach ($g in (Group-WorkerPerfFindingsByTime -Items $bySignal[$key].ToArray() -GapMs $chainGapMs)) {
+            $first = $g[0]; $end = [long]$first.EndMs; $covered = 0L
+            foreach ($f in $g) { $covered += [long]($f.EndMs - $f.StartMs); if ($f.EndMs -gt $end) { $end = [long]$f.EndMs } }
+            $span = $end - [long]$first.StartMs
+            if ($g.Count -lt 2 -or $span -le $chronicMs -or ($covered * 100) -lt ($span * $ChainMinCoverPct)) { foreach ($f in $g) { $chained.Add($f) }; continue }
+            $m = $first.Clone(); $m.EndMs = $end; $m.BadPoints = 0
+            foreach ($f in $g) {
+                $m.BadPoints += [int]$f.BadPoints
+                if ([int]$f.Severity -gt [int]$m.Severity) { $m.Severity = [int]$f.Severity }
+                if ([double]$f.PeakValue -gt [double]$m.PeakValue) { $m.PeakValue = [double]$f.PeakValue; $m.PeakTimeMs = [long]$f.PeakTimeMs }
+            }
+            $chained.Add($m)
+        }
+    }
+    $Findings = @($chained.ToArray() | Sort-Object -Property @{ Expression = { $_.StartMs } }, @{ Expression = { $_.SignalId } }, @{ Expression = { $_.Instance } })
     # Pages read from disk alone are no memory shortage: without a tight memory they are file reads through the memory
     # map (program starts, event logs). Such a finding joins an incident only while a finding of mem.used or mem.commit
     # lies within the merge gap; otherwise it stays in the findings and the table of signals, but forms no incident.
@@ -231,8 +261,19 @@ function Join-WorkerPerfIncidents {
     $chronicFindings = New-Object System.Collections.Generic.List[object]
     $coreFindings = New-Object System.Collections.Generic.List[object]
     $sessionFindings = New-Object System.Collections.Generic.List[object]
+    # A short memory finding (pages read from disk above all) within a chronic state of a tight memory is evidence of that
+    # state: it joins its incident and forms none of its own, so a lasting shortage stays one incident.
+    $chronicMemory = @(@($Findings) | Where-Object { ($_.SignalId -eq 'mem.used' -or $_.SignalId -eq 'mem.commit') -and ($_.EndMs - $_.StartMs) -gt $chronicMs })
+    $absorbed = @{}
     foreach ($f in @($Findings)) {
-        if (($f.EndMs - $f.StartMs) -gt $chronicMs) { $chronicFindings.Add($f) }
+        if (($f.EndMs - $f.StartMs) -gt $chronicMs) { $chronicFindings.Add($f); continue }
+        $into = $null
+        if ($f.Resource -eq 'memory') { foreach ($c in $chronicMemory) { if ($f.StartMs -le $c.EndMs -and $f.EndMs -ge $c.StartMs) { $into = $c; break } } }
+        if ($null -ne $into) {
+            $k = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($into)
+            if (-not $absorbed.ContainsKey($k)) { $absorbed[$k] = New-Object System.Collections.Generic.List[object] }
+            $absorbed[$k].Add($f)
+        }
         elseif ($f.Resource -eq 'profile' -or $f.Resource -eq 'network') { $sessionFindings.Add($f) }
         else { $coreFindings.Add($f) }
     }
@@ -240,7 +281,10 @@ function Join-WorkerPerfIncidents {
     # phase 1: incidents with window and findings only
     $raw = New-Object System.Collections.Generic.List[object]
     foreach ($f in $chronicFindings) {
+        # the chronic finding stays the first of its list (the classification below reads it there)
         $l = New-Object System.Collections.Generic.List[object]; $l.Add($f)
+        $k = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($f)
+        if ($absorbed.ContainsKey($k)) { $l.AddRange($absorbed[$k]) }
         $raw.Add(@{ Chronic = $true; StartMs = [long]$f.StartMs; EndMs = [long]$f.EndMs; List = $l })
     }
     $coreIncidents = New-Object System.Collections.Generic.List[object]
@@ -876,6 +920,8 @@ function Get-WorkerPerfLeadFinding($Incident) {
         if ($sel.Count -gt 0) { $pool = $sel }
     }
     if ($pool.Count -eq 0) { return $null }
+    # a chronic state is told by the finding that lasts (the longest), not by a short one it took in
+    if ([bool]$Incident.Chronic) { return @($pool | Sort-Object -Property @{ Expression = { $_.EndMs - $_.StartMs }; Descending = $true }, @{ Expression = { $_.StartMs } })[0] }
     return @($pool | Sort-Object -Property @{ Expression = { [int]$_.Severity }; Descending = $true }, @{ Expression = { $_.StartMs } })[0]
 }
 
