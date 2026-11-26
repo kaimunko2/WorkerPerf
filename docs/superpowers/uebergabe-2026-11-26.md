@@ -17,7 +17,7 @@ Repository und fehlen in einer neuen Sitzung. Alles Nötige steht hier, im Plan 
     Literale im Plan (Zählwerte in Tests, Funktionsnamen) noch stimmen, und Abweichungen als Entscheidung festhalten.
   - Noch keine Task umgesetzt. Die Vorabprüfung des Plans wurde nie fertig (Ausgabelimit).
 
-## 2. Offene Punkte aus Lauf 3 (warten auf das OK des Benutzers)
+## 2. Punkte aus Lauf 3 (1–3 am 26.11. freigegeben: vor dem Baustein umsetzen)
 
 1. **Präfix in `operation.pendingRenameTop`.**
    - Einträge der Liste PendingFileRenameOperations beginnen mit `*1` vor `\??\`.
